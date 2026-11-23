@@ -139,7 +139,7 @@ func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.
 	}
 	if _, err := substore.SaveCache(ctx, "sub1", subNodes, &substore.CacheMetadata{
 		SubscriptionName: "Sub One",
-		URL:              "https://sub.example.com/feed",
+		URL:              new("https://sub.example.com/feed"),
 	}); err != nil {
 		t.Fatal(err)
 	}

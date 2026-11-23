@@ -12,48 +12,32 @@ type Traffic struct {
 	Download *json.Number `json:"download"`
 	Total    *json.Number `json:"total"`
 	Expire   *json.Number `json:"expire"`
-	Fields   model.Fields
-	Raw      model.Raw
 }
 
-// UnmarshalJSON retains stored members with the shared model codec.
-func (r *Traffic) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, r, &r.Raw) }
-
-// MarshalJSON preserves unknown and unchanged members.
-func (r Traffic) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.Raw) }
-
-// CacheMetadata records only data learned from the same subscription response.
+// CacheMetadata records only data learned from the same subscription response
+// (subscription_refresh.source_cache_metadata): subscription_name, url and
+// fetched_at are always written (url and fetched_at may be null), the others
+// only when known.
 type CacheMetadata struct {
 	SubscriptionName string            `json:"subscription_name"`
-	URL              string            `json:"url"`
-	Source           string            `json:"source"`
-	FetchedAt        string            `json:"fetched_at"`
-	Traffic          *Traffic          `json:"traffic"`
-	Hosts            *subs.HostsData   `json:"hosts"`
-	Dialers          *subs.DialersData `json:"dialers"`
-	Fields           model.Fields
-	Raw              model.Raw
+	URL              *string           `json:"url" text:"strict"`
+	Source           string            `json:"source,omitzero"`
+	FetchedAt        *string           `json:"fetched_at"`
+	Traffic          *Traffic          `json:"traffic,omitzero"`
+	Hosts            *subs.HostsData   `json:"hosts,omitzero"`
+	Dialers          *subs.DialersData `json:"dialers,omitzero"`
 }
 
-// UnmarshalJSON retains stored members with the shared model codec.
-func (r *CacheMetadata) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, r, &r.Raw) }
-
-// MarshalJSON preserves unknown and unchanged members.
-func (r CacheMetadata) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.Raw) }
-
-// Cache is one subscription's nodes and source metadata, retaining unknown members.
+// Cache is one subscription's nodes and source metadata
+// (subscription_cache.save_subscription_nodes). Issues are the value-free
+// diagnostics of the stored file: a member of the wrong type reads as its
+// zero value, and readers that must not trust such a cache (the refresh
+// owner's URL check) look at them.
 type Cache struct {
-	SubscriptionID string         `json:"subscription_id"`
-	UpdatedAt      string         `json:"updated_at"`
-	Count          *model.Int     `json:"count"`
-	Nodes          []model.Node   `json:"nodes"`
-	Metadata       *CacheMetadata `json:"metadata"`
-	Fields         model.Fields
-	Raw            model.Raw
+	SubscriptionID string             `json:"subscription_id"`
+	UpdatedAt      string             `json:"updated_at" text:"strict"`
+	Count          *model.Int         `json:"count"`
+	Nodes          []model.Node       `json:"nodes"`
+	Metadata       *CacheMetadata     `json:"metadata,omitzero"`
+	Issues         []model.FieldIssue `json:"-"`
 }
-
-// UnmarshalJSON retains stored members with the shared model codec.
-func (r *Cache) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, r, &r.Raw) }
-
-// MarshalJSON preserves unknown and unchanged members.
-func (r Cache) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.Raw) }

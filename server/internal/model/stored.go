@@ -1057,6 +1057,13 @@ func decodePlain[W any](data []byte, out *W) error {
 	return nil
 }
 
+// DecodeLenient decodes stored or reported JSON, which must be an object,
+// into W (a plain record's method-free wire type) with the lenient leaf
+// rules; issues are not reported. Records outside this package use it in
+// their UnmarshalJSON, so a member of the wrong type reads as its zero value
+// whichever JSON package decodes them.
+func DecodeLenient[W any](data []byte, out *W) error { return decodePlain(data, out) }
+
 // DecodeInputMember strictly decodes input data into a declared member of a
 // plain record (rec is a pointer; record names it in errors). A value of
 // another JSON type is a *MemberTypeError and leaves the record unchanged.

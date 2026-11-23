@@ -131,17 +131,37 @@ func TestTypedCacheEvidenceNeverClaimsNumericURLOrTimestamp(t *testing.T) {
 	env.Clock = &fakeClock{now: corpusNow}
 	t.Cleanup(SetRefreshEnv(env))
 	var valid TransportReceipt
-	_ = json.Unmarshal([]byte(`{"text":"proxies: []","fetched_at":"2026-11-01T00:00:00Z"}`), &valid)
-	if !strictReceiptFresh(valid, 86400) {
+	if !receiptFresh([]byte(`{"text":"proxies: []","fetched_at":"2026-11-01T00:00:00Z"}`), &valid, 86400) {
 		t.Fatal("valid receipt not fresh")
 	}
-	for _, raw := range []string{`{"metadata":{"url":5},"updated_at":"2026-11-01T00:00:00Z"}`, `{"metadata":false}`, `{"metadata":null}`} {
-		var cache NodeCache
-		if err := json.Unmarshal([]byte(raw), &cache); err != nil {
+	// The stored cache is read as the subscription owner reads it; its
+	// decode issues mark the metadata damaged.
+	for _, raw := range []string{`{"metadata":{"url":5},"updated_at":"2026-11-01T00:00:00Z"}`, `{"metadata":false}`, `{"metadata":{"url":true}}`} {
+		var stored substore.Cache
+		issues, err := model.DecodeStored([]byte(raw), &stored, "")
+		if err != nil {
 			t.Fatal(err)
 		}
-		if _, malformed := cacheURL(&cache); !malformed {
-			t.Fatal("R5 fallback accepted ownership", raw)
+		stored.Issues = issues
+		cache, err := sourceCache(&stored, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, malformed := cacheURL(cache); !malformed {
+			t.Fatal("damaged metadata accepted ownership", raw)
+		}
+	}
+	for _, raw := range []string{`{"metadata":null}`, `{"metadata":{"url":null}}`} {
+		var stored substore.Cache
+		if _, err := model.DecodeStored([]byte(raw), &stored, ""); err != nil {
+			t.Fatal(err)
+		}
+		cache, err := sourceCache(&stored, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if address, malformed := cacheURL(cache); malformed || address != nil {
+			t.Fatal("legacy cache without URL is not unknown", raw)
 		}
 	}
 	if !fresh("2026-11-01", 86400) {
@@ -149,10 +169,7 @@ func TestTypedCacheEvidenceNeverClaimsNumericURLOrTimestamp(t *testing.T) {
 	}
 	for _, raw := range []string{`{"text":5,"fetched_at":"2026-11-01T00:00:00Z"}`, `{"text":"proxies: []","fetched_at":20261101}`} {
 		var receipt TransportReceipt
-		if err := json.Unmarshal([]byte(raw), &receipt); err != nil {
-			t.Fatal(err)
-		}
-		if strictReceiptFresh(receipt, 86400) {
+		if receiptFresh([]byte(raw), &receipt, 86400) {
 			t.Fatal("numeric receipt promoted", raw)
 		}
 	}

@@ -136,7 +136,7 @@ func newO10Fixture(t *testing.T) *o10Fixture {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := substore.SaveCache(ctx, sub.id, nodes, &substore.CacheMetadata{URL: o10FeedURL(sub.id), SubscriptionName: sub.id, FetchedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+		if _, err := substore.SaveCache(ctx, sub.id, nodes, &substore.CacheMetadata{URL: new(o10FeedURL(sub.id)), SubscriptionName: sub.id, FetchedAt: new(time.Now().UTC().Format(time.RFC3339))}); err != nil {
 			t.Fatal(err)
 		}
 	}

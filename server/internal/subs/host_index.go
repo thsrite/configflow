@@ -11,17 +11,34 @@ import (
 // It is separate from substore's owner record to keep the dependency acyclic.
 type SourceMetadata struct {
 	URL     string       `json:"url"`
-	Hosts   *HostsData   `json:"hosts"`
-	Dialers *DialersData `json:"dialers"`
-	Fields  model.Fields
-	Raw     model.Raw
+	Hosts   *HostsData   `json:"hosts,omitzero"`
+	Dialers *DialersData `json:"dialers,omitzero"`
+	// hostsDamaged: the stored hosts record has no entries object, so there
+	// is no host index (a missing map is not an empty valid one).
+	hostsDamaged bool
 }
 
-// UnmarshalJSON reads the cache record with shared R5 and retains null presence.
-func (m *SourceMetadata) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, m, &m.Raw) }
+type sourceMetadataWire SourceMetadata
 
-// MarshalJSON retains original cache metadata for boundary transcoding.
-func (m SourceMetadata) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&m, &m.Raw) }
+// UnmarshalJSON reads stored cache metadata leniently.
+func (m *SourceMetadata) UnmarshalJSON(b []byte) error {
+	if err := model.DecodeLenient(b, (*sourceMetadataWire)(m)); err != nil {
+		return err
+	}
+	var members struct {
+		Hosts json.RawMessage `json:"hosts"`
+	}
+	if jsondecode.Unmarshal(b, &members) != nil || m.Hosts == nil {
+		return nil
+	}
+	var hosts struct {
+		Entries json.RawMessage `json:"entries"`
+	}
+	if jsondecode.Unmarshal(members.Hosts, &hosts) != nil || len(hosts.Entries) == 0 || hosts.Entries[0] != '{' {
+		m.hostsDamaged = true
+	}
+	return nil
+}
 
 // SubscriptionCache is a single already-loaded subscription cache, never a full config.
 type SubscriptionCache struct {
@@ -32,18 +49,13 @@ type SubscriptionCache struct {
 type sourceCachePayload struct {
 	Nodes    json.RawMessage `json:"nodes"`
 	Metadata *SourceMetadata `json:"metadata"`
-	Fields   model.Fields
-	Raw      model.Raw
 }
-
-func (p *sourceCachePayload) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, p, &p.Raw) }
-func (p sourceCachePayload) MarshalJSON() ([]byte, error)  { return model.EncodeRecord(&p, &p.Raw) }
 
 // UnmarshalJSON consumes valid node records individually, so a corrupt sibling
 // does not discard usable cached nodes. It never writes or repairs the source.
 func (c *SubscriptionCache) UnmarshalJSON(b []byte) error {
 	var payload sourceCachePayload
-	if err := json.Unmarshal(b, &payload); err != nil {
+	if err := model.DecodeLenient(b, &payload); err != nil {
 		return err
 	}
 	var records []json.RawMessage
@@ -77,22 +89,15 @@ func NewHostIndex(cache *SubscriptionCache) (*HostIndex, error) {
 		return nil, nil
 	}
 	record := cache.Metadata.Hosts
-	// Record provenance retains absent/null/wrong entries. Inspect that owned
-	// subrecord once; do not turn a missing map into an empty valid cache index.
-	data, err := model.Marshal(record)
+	// A missing or malformed entries map is not an empty valid cache index.
+	if cache.Metadata.hostsDamaged {
+		return nil, nil
+	}
+	data, err := model.Marshal(record.Entries)
 	if err != nil {
 		return nil, err
 	}
-	var wire struct {
-		Entries json.RawMessage `json:"entries"`
-	}
-	if err := jsondecode.Unmarshal(data, &wire); err != nil {
-		return nil, err
-	}
-	if len(wire.Entries) == 0 || wire.Entries[0] != '{' {
-		return nil, nil
-	}
-	entries, err := yamlx.FromJSON(wire.Entries)
+	entries, err := yamlx.FromJSON(data)
 	if err != nil {
 		return nil, err
 	}

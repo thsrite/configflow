@@ -46,7 +46,7 @@ func preparedFixture(t *testing.T, goal string) (*Service, context.Context) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record.ProfileRevision = pointer(seeded.Revision)
+	record.ProfileRevision = pointer(model.Int(seeded.Revision))
 	if err := store.write(ctx, record); err != nil {
 		t.Fatal(err)
 	}

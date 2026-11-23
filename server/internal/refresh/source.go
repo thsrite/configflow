@@ -1,6 +1,7 @@
 package refresh
 
 import (
+	"bytes"
 	"configflow/internal/convert"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -155,50 +156,28 @@ func DownloadNodes(ctx context.Context, sub model.Subscription) ([]model.Node, *
 // FetchSourceFn fetches one source within the admitted owner generation.
 type FetchSourceFn func(context.Context, string, string) (*SourceResult, error)
 
-// TransportReceipt is the typed read projection of a downloaded source.
+// TransportReceipt is the typed read projection of a downloaded source; text
+// and fetched_at must be text (text:"strict").
 type TransportReceipt struct {
-	Text      string   `json:"text"`
-	FetchedAt string   `json:"fetched_at"`
-	Traffic   *Traffic `json:"traffic"`
-	Fields    model.Fields
-	Raw       model.Raw
+	Text      string   `json:"text" text:"strict"`
+	FetchedAt string   `json:"fetched_at" text:"strict"`
+	Traffic   *Traffic `json:"traffic,omitzero"`
 }
 
-func (r *TransportReceipt) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, r, &r.Raw)
-}
-func (r TransportReceipt) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.Raw) }
-
-// cacheURL retains the declaration protocol: malformed non-null URLs are not
-// "unknown" legacy URLs and must not claim a cache through R5 fallback.
+// cacheURL returns the URL the cache was made from. A malformed metadata
+// object or a non-null URL that is not text is not an "unknown" legacy URL
+// and must not claim a cache.
 func cacheURL(cache *NodeCache) (*string, bool) {
 	if cache == nil {
 		return nil, false
 	}
-	var raw json.RawMessage
-	var present bool
-	var err error
-	if cache.Metadata == nil {
-		raw, present, err = cache.Raw.MemberJSON("metadata", cache.Metadata)
-		if err != nil {
-			return nil, true
-		}
-		if !present {
-			return nil, false
-		}
+	if cache.MetadataDamaged {
 		return nil, true
 	}
-	raw, present, err = cache.Metadata.Raw.MemberJSON("url", cache.Metadata.URL)
-	if err != nil {
-		return nil, true
-	}
-	if !present || string(raw) == "null" {
+	if cache.Metadata == nil || cache.Metadata.URL == nil {
 		return nil, false
 	}
-	var address string
-	if json.Unmarshal(raw, &address) != nil {
-		return nil, true
-	}
+	address := *cache.Metadata.URL
 	return &address, false
 }
 
@@ -269,7 +248,7 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 
 	if data, err := readSharedData(ctx, DownloadCachePath(sub.URL)); err == nil {
 		var receipt TransportReceipt
-		if json.Unmarshal(data, &receipt) == nil && !model.IssueUnder(model.Issues(receipt), "text") && strictReceiptFresh(receipt, interval) {
+		if receiptFresh(data, &receipt, interval) {
 			if err := validateSourceYAMLPolicy(receipt.Text); err != nil {
 				return nil, err
 			}
@@ -303,14 +282,28 @@ func validateSourceYAMLPolicy(text string) error {
 	return nil
 }
 
-func strictReceiptFresh(receipt TransportReceipt, interval int64) bool {
-	text, _, err := receipt.Raw.MemberJSON("text", receipt.Text)
-	if err != nil || len(text) == 0 || text[0] != '"' {
+// receiptFresh decodes a transport receipt and reports whether it can be
+// served: an object whose text and fetched_at are present text, fetched
+// within interval.
+func receiptFresh(data []byte, receipt *TransportReceipt, interval int64) bool {
+	var members struct {
+		Text      json.RawMessage `json:"text"`
+		FetchedAt json.RawMessage `json:"fetched_at"`
+	}
+	if trimmed := bytes.TrimSpace(data); len(trimmed) == 0 || trimmed[0] != '{' || json.Unmarshal(data, &members) != nil {
 		return false
 	}
-	at, _, err := receipt.Raw.MemberJSON("fetched_at", receipt.FetchedAt)
-	if err != nil || len(at) == 0 || at[0] != '"' {
+	if !isText(members.Text) || !isText(members.FetchedAt) {
+		return false
+	}
+	if _, err := model.DecodeStored(data, receipt, ""); err != nil {
 		return false
 	}
 	return fresh(receipt.FetchedAt, interval)
+}
+
+// isText reports a JSON string value.
+func isText(raw json.RawMessage) bool {
+	raw = bytes.TrimSpace(raw)
+	return len(raw) > 0 && raw[0] == '"'
 }

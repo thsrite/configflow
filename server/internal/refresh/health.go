@@ -1,6 +1,7 @@
 package refresh
 
 import (
+	"bytes"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -70,37 +71,32 @@ func FetchTraffic(ctx context.Context, address string) (*Traffic, error) {
 	return parseTraffic(response.Header.Get("subscription-userinfo"))
 }
 
-// FetchEvent is a bounded health-history point.
+// FetchEvent is a bounded health-history point (subscription_health.record).
 type FetchEvent struct {
 	At     string     `json:"at"`
 	Status string     `json:"status"`
 	Count  *model.Int `json:"count"`
-	Fields model.Fields
-	Raw    model.Raw
 }
 
-func (r *FetchEvent) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
-func (r FetchEvent) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&r, &r.Raw) }
-
-// HealthEntry is one subscription's history and latest traffic.
+// HealthEntry is one subscription's history and latest traffic; traffic and
+// traffic_at are written once traffic was reported.
 type HealthEntry struct {
 	History   []FetchEvent `json:"history"`
-	Traffic   *Traffic     `json:"traffic"`
-	TrafficAt *string      `json:"traffic_at"`
-	Fields    model.Fields
-	Raw       model.Raw
+	Traffic   *Traffic     `json:"traffic,omitzero"`
+	TrafficAt *string      `json:"traffic_at,omitzero"`
 }
 
-func (r *HealthEntry) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
-func (r HealthEntry) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&r, &r.Raw) }
-
-// HealthSnapshot retains unowned members and entries as raw JSON.
+// HealthSnapshot keeps every subscription's entry as stored; only the entry
+// that is recorded is rewritten.
 type HealthSnapshot map[string]json.RawMessage
 
-// Entry returns an independent typed entry, following model R5 for wrong fields.
+// Entry returns an independent typed entry. A member of the wrong type reads
+// as its zero value; an entry that is not an object reads as empty.
 func (s HealthSnapshot) Entry(id string) *HealthEntry {
 	var entry HealthEntry
-	_ = json.Unmarshal(s[id], &entry)
+	if raw := bytes.TrimSpace(s[id]); len(raw) > 0 && raw[0] == '{' {
+		_, _ = model.DecodeStored(raw, &entry, "")
+	}
 	return &entry
 }
 
@@ -186,16 +182,10 @@ func RecordHealth(ctx context.Context, id string, input FetchEventInput) (*Healt
 	}
 	count := input.Count
 	entry.History = append(history, FetchEvent{At: healthNow(), Status: status, Count: &count})
-	if input.Traffic != nil {
-		raw, err := model.Marshal(input.Traffic)
-		if err != nil {
-			return nil, err
-		}
-		if len(raw) > 2 {
-			entry.Traffic = input.Traffic
-			at := healthNow()
-			entry.TrafficAt = &at
-		}
+	if !input.Traffic.empty() {
+		entry.Traffic = input.Traffic
+		at := healthNow()
+		entry.TrafficAt = &at
 	}
 	raw, err := model.Marshal(entry)
 	if err != nil {

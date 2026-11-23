@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"configflow/internal/jsonresp"
 	"configflow/internal/model"
 	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
@@ -333,47 +332,61 @@ type DNSReport struct {
 }
 
 type dnsSettings struct {
-	Enable       *bool  `json:"enable"`
-	UseHosts     *bool  `json:"use-hosts"`
-	Listen       string `json:"listen"`
-	EnhancedMode string `json:"enhanced-mode"`
-	FilterMode   string `json:"fake-ip-filter-mode"`
-	Fields       model.Fields
-	Raw          model.Raw
+	Enable       *bool
+	UseHosts     *bool
+	Listen       string
+	EnhancedMode string
+	FilterMode   string
 }
 
-func (d *dnsSettings) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, d, &d.Raw) }
-
-// readDNSSettings decodes only the consumed fixed scalar members, once. The
-// potentially large and open hosts, policy and filter graphs remain Nodes.
+// readDNSSettings decodes only the consumed fixed scalar members, once; a
+// member of another type than its own (or null) reads as absent, and text
+// members accept number literals. The potentially large and open hosts,
+// policy and filter graphs remain Nodes.
 func readDNSSettings(dns *yamlx.Node) (dnsSettings, error) {
-	fixed := struct {
-		Enable       json.RawMessage `json:"enable,omitempty"`
-		UseHosts     json.RawMessage `json:"use-hosts,omitempty"`
-		Listen       json.RawMessage `json:"listen,omitempty"`
-		EnhancedMode json.RawMessage `json:"enhanced-mode,omitempty"`
-		FilterMode   json.RawMessage `json:"fake-ip-filter-mode,omitempty"`
-	}{}
-	fields := []struct {
-		name string
-		out  *json.RawMessage
-	}{{"enable", &fixed.Enable}, {"use-hosts", &fixed.UseHosts}, {"listen", &fixed.Listen}, {"enhanced-mode", &fixed.EnhancedMode}, {"fake-ip-filter-mode", &fixed.FilterMode}}
-	for _, field := range fields {
-		if value := yamlx.Get(dns, field.name); value != nil {
-			data, err := yamlx.ToJSON(value)
-			if err != nil {
-				return dnsSettings{}, err
-			}
-			*field.out = data
+	member := func(name string) (json.RawMessage, error) {
+		value := yamlx.Get(dns, name)
+		if value == nil {
+			return nil, nil
 		}
+		return yamlx.ToJSON(value)
 	}
-	data, err := jsonresp.Encode(fixed)
+	flag := func(name string) (*bool, error) {
+		data, err := member(name)
+		var value bool
+		if err != nil || data == nil || json.Unmarshal(data, &value) != nil {
+			return nil, err
+		}
+		return &value, nil
+	}
+	text := func(name string) (string, error) {
+		data, err := member(name)
+		var value model.String
+		if err != nil || data == nil || json.Unmarshal(data, &value) != nil {
+			return "", err
+		}
+		return string(value), nil
+	}
 	var out dnsSettings
-	if err == nil {
-		err = json.Unmarshal(data, &out)
+	var err error
+	if out.Enable, err = flag("enable"); err != nil {
+		return dnsSettings{}, err
 	}
-	return out, err
+	if out.UseHosts, err = flag("use-hosts"); err != nil {
+		return dnsSettings{}, err
+	}
+	if out.Listen, err = text("listen"); err != nil {
+		return dnsSettings{}, err
+	}
+	if out.EnhancedMode, err = text("enhanced-mode"); err != nil {
+		return dnsSettings{}, err
+	}
+	if out.FilterMode, err = text("fake-ip-filter-mode"); err != nil {
+		return dnsSettings{}, err
+	}
+	return out, nil
 }
+
 func dnsText(n *yamlx.Node) (string, bool) {
 	n = yamlx.Resolve(n)
 	if n == nil || n.Kind != yaml.ScalarNode || n.ShortTag() != "!!str" {

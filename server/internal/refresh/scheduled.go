@@ -103,8 +103,7 @@ func sourceCacheAtID(ctx context.Context, id, subURL string) (*string, error) {
 	if malformed || url == nil || *url != subURL {
 		return nil, nil
 	}
-	raw, _, err := cache.Raw.MemberJSON("updated_at", cache.UpdatedAt)
-	if err != nil || len(raw) == 0 || raw[0] != '"' {
+	if cache.UpdatedAtDamaged || cache.UpdatedAt == nil {
 		return nil, nil
 	}
 	return cache.UpdatedAt, nil

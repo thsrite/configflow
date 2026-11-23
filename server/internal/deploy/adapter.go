@@ -1169,5 +1169,5 @@ func refreshTraffic(t *substore.Traffic) *refresh.Traffic {
 	if t == nil {
 		return nil
 	}
-	return &refresh.Traffic{Upload: t.Upload, Download: t.Download, Total: t.Total, Expire: t.Expire, Fields: t.Fields, Raw: t.Raw}
+	return &refresh.Traffic{Upload: t.Upload, Download: t.Download, Total: t.Total, Expire: t.Expire}
 }

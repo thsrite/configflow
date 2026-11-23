@@ -259,7 +259,7 @@ func ExtractHosts(text string) *HostsData {
 // HostDigest is the native D2 identity of validated host entries. Switching
 // encoders deliberately reports one change; it is not a device configuration hash.
 func HostDigest(record *HostsData) (string, error) {
-	entries := model.Map[model.Dynamic]{}
+	entries := model.OrderedMap[model.Dynamic]{}
 	if record != nil && record.Entries.Len() > 0 {
 		entries = record.Entries
 	}
@@ -284,7 +284,7 @@ type HostChange struct {
 
 // CompareHosts compares entry values without changing or normalizing stored metadata.
 func CompareHosts(previous, current *HostsData) (HostChange, error) {
-	oldEntries, newEntries := model.Map[model.Dynamic]{}, model.Map[model.Dynamic]{}
+	oldEntries, newEntries := model.OrderedMap[model.Dynamic]{}, model.OrderedMap[model.Dynamic]{}
 	if previous != nil {
 		oldEntries = previous.Entries
 	}

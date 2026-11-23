@@ -28,7 +28,7 @@ func manyCacheNodes(t *testing.T, n int, tag string) []model.Node {
 // gets its own record, and a rewritten or removed file is seen at once.
 func TestO10CacheDecodeReusedWhileFileUnchanged(t *testing.T) {
 	ctx, r := sharedRepo(t)
-	must[*Cache](t)(SaveCache(ctx, "keep", manyCacheNodes(t, 200, "a"), &CacheMetadata{URL: "https://example.test/keep", FetchedAt: "2026-01-01T00:00:00Z"}))
+	must[*Cache](t)(SaveCache(ctx, "keep", manyCacheNodes(t, 200, "a"), &CacheMetadata{URL: new("https://example.test/keep"), FetchedAt: new("2026-01-01T00:00:00Z")}))
 
 	first := must[*Cache](t)(LoadCache(ctx, "keep"))
 	var before, after runtime.MemStats
@@ -48,11 +48,11 @@ func TestO10CacheDecodeReusedWhileFileUnchanged(t *testing.T) {
 	// Copies are independent of each other and of the kept decode.
 	first.Nodes[0].Name = "changed"
 	first.Nodes = append(first.Nodes, model.Node{Name: "extra"})
-	first.Metadata.URL = "https://changed.example.test"
+	first.Metadata.URL = new("https://changed.example.test")
 	*first.Count = 1
 	third := must[*Cache](t)(LoadCache(ctx, "keep"))
-	if third.Nodes[0].Name != "a-000" || len(third.Nodes) != 200 || third.Metadata.URL != "https://example.test/keep" || *third.Count != 200 {
-		t.Fatalf("kept decode modified through a copy: %q %d %q %d", third.Nodes[0].Name, len(third.Nodes), third.Metadata.URL, *third.Count)
+	if third.Nodes[0].Name != "a-000" || len(third.Nodes) != 200 || *third.Metadata.URL != "https://example.test/keep" || *third.Count != 200 {
+		t.Fatalf("kept decode modified through a copy: %q %d %q %d", third.Nodes[0].Name, len(third.Nodes), *third.Metadata.URL, *third.Count)
 	}
 	shared := must[*Cache](t)(LoadCacheShared(ctx, "keep"))
 	if again := must[*Cache](t)(LoadCacheShared(ctx, "keep")); again != shared {
@@ -69,9 +69,9 @@ func TestO10CacheDecodeReusedWhileFileUnchanged(t *testing.T) {
 	}
 
 	// A rewrite (same node count, so the same size is likely) is seen at once.
-	must[*Cache](t)(SaveCache(ctx, "keep", manyCacheNodes(t, 200, "b"), &CacheMetadata{URL: "https://example.test/moved", FetchedAt: "2026-01-01T00:00:00Z"}))
-	if got := must[*Cache](t)(LoadCache(ctx, "keep")); got.Nodes[0].Name != "b-000" || got.Metadata.URL != "https://example.test/moved" {
-		t.Fatalf("rewrite not seen: %q %q", got.Nodes[0].Name, got.Metadata.URL)
+	must[*Cache](t)(SaveCache(ctx, "keep", manyCacheNodes(t, 200, "b"), &CacheMetadata{URL: new("https://example.test/moved"), FetchedAt: new("2026-01-01T00:00:00Z")}))
+	if got := must[*Cache](t)(LoadCache(ctx, "keep")); got.Nodes[0].Name != "b-000" || *got.Metadata.URL != "https://example.test/moved" {
+		t.Fatalf("rewrite not seen: %q %q", got.Nodes[0].Name, *got.Metadata.URL)
 	}
 	if got := must[*Cache](t)(LoadCacheShared(ctx, "keep")); got == shared || got.Nodes[0].Name != "b-000" {
 		t.Fatal("shared record not replaced after a rewrite")

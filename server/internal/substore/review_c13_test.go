@@ -391,10 +391,10 @@ func stateOf(r *Runtime) *runtimeState {
 
 // lastUsed is the stored last_used as a float.
 func lastUsed(state *runtimeState) float64 {
-	if state == nil {
+	if state == nil || state.LastUsed == nil {
 		return 0
 	}
-	return state.LastUsed
+	return *state.LastUsed
 }
 
 func hasLastUsed(r *Runtime) bool {

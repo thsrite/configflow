@@ -331,7 +331,7 @@ func policyCache(t *testing.T, ctx context.Context) *substore.Cache {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache, err := substore.SaveCache(ctx, "s", nodes, &substore.CacheMetadata{URL: policyURL})
+	cache, err := substore.SaveCache(ctx, "s", nodes, &substore.CacheMetadata{URL: new(policyURL)})
 	if err != nil {
 		t.Fatal(err)
 	}

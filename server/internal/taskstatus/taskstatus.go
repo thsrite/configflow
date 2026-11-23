@@ -94,29 +94,37 @@ func (s *Store) lockedContext(ctx context.Context, fn func(path string) error) e
 // Snapshot preserves unowned receipts and unknown JSON members without converting numbers.
 type Snapshot map[string]json.RawMessage
 
-// Receipt is the owned task status schema. Raw provenance preserves unrelated stored fields.
+// Receipt is one task's result (task_status.record). Every member is
+// optional: record() writes the last-run members, the counters once a run
+// counted, and the cache members only for failures. A stored member of the
+// wrong type reads as absent and is reported; the counters stay opaque JSON
+// (Count refuses a malformed one, so the receipt is not rewritten).
 type Receipt struct {
-	LastRunAt           *string         `json:"last_run_at"`
-	LastFinishedAt      *string         `json:"last_finished_at"`
-	LastStatus          *string         `json:"last_status"`
-	LastDurationMs      *model.Int      `json:"last_duration_ms"`
-	LastTrigger         *string         `json:"last_trigger"`
-	LastError           *string         `json:"last_error"`
-	RunCount            json.RawMessage `json:"run_count"`
-	FailureCount        json.RawMessage `json:"failure_count"`
-	ConsecutiveFailures json.RawMessage `json:"consecutive_failures"`
-	LastSuccessAt       *string         `json:"last_success_at"`
-	CacheRetained       *bool           `json:"cache_retained"`
-	CacheUpdatedAt      *string         `json:"cache_updated_at"`
-	Extra               model.Fields
-	Raw                 model.Raw
+	LastRunAt           *string         `json:"last_run_at,omitzero" text:"strict"`
+	LastFinishedAt      *string         `json:"last_finished_at,omitzero"`
+	LastStatus          *string         `json:"last_status,omitzero"`
+	LastDurationMs      *model.Int      `json:"last_duration_ms,omitzero"`
+	LastTrigger         *string         `json:"last_trigger,omitzero"`
+	LastError           *string         `json:"last_error,omitzero"`
+	RunCount            json.RawMessage `json:"run_count,omitzero"`
+	FailureCount        json.RawMessage `json:"failure_count,omitzero"`
+	ConsecutiveFailures json.RawMessage `json:"consecutive_failures,omitzero"`
+	LastSuccessAt       *string         `json:"last_success_at,omitzero"`
+	CacheRetained       *bool           `json:"cache_retained,omitzero"`
+	CacheUpdatedAt      *string         `json:"cache_updated_at,omitzero"`
 }
 
-// UnmarshalJSON decodes a receipt while retaining unknown or malformed members.
-func (r *Receipt) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
-
-// MarshalJSON preserves unedited stored members.
-func (r Receipt) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.Raw) }
+// UnmarshalJSON decodes a stored receipt leniently. Receipts are read on
+// every task list refresh, so issues are not logged here.
+func (r *Receipt) UnmarshalJSON(data []byte) error {
+	type wire Receipt
+	var decoded wire
+	if _, err := model.DecodeStored(data, &decoded, ""); err != nil {
+		return err
+	}
+	*r = Receipt(decoded)
+	return nil
+}
 
 // Entry returns a private typed view of a receipt, or an empty receipt for non-objects.
 func (s Snapshot) Entry(key string) *Receipt {
@@ -270,9 +278,7 @@ func (s *Store) SaveResult(ctx context.Context, key string, r Result) (*Receipt,
 			}
 		}
 		if r.OK || r.Skipped {
-			if err := model.ClearMember(entry, &entry.Raw, "cache_retained"); err != nil {
-				return err
-			}
+			entry.CacheRetained = nil
 		} else if r.CacheRetained != nil {
 			entry.CacheRetained = r.CacheRetained
 		}

@@ -26,7 +26,7 @@ func TestAtomicWizardRecordsUseSharedReadOnlyReader(t *testing.T) {
 		if err := json.Unmarshal(sessions[0].Raw, &record); err != nil {
 			return err
 		}
-		record.Fields.Set("synthetic_future", json.RawMessage(`{"keep":true}`))
+		record.LocalDNS = new("192.0.2.53")
 		return store.write(held, &record)
 	}); err != nil {
 		t.Fatal(err)
@@ -39,8 +39,8 @@ func TestAtomicWizardRecordsUseSharedReadOnlyReader(t *testing.T) {
 	if err := json.Unmarshal(sessions[0].Raw, &fields); err != nil {
 		t.Fatal(err)
 	}
-	if string(fields["synthetic_future"]) != `{"keep":true}` {
-		t.Fatal("unknown stored member lost")
+	if string(fields["local_dns"]) != `"192.0.2.53"` {
+		t.Fatal("stored member written under the lock lost")
 	}
 	if lockx.Violations() != before {
 		t.Fatal("shared read/write integration violated lock order")

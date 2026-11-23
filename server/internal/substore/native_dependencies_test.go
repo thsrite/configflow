@@ -4,7 +4,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -15,11 +14,11 @@ import (
 
 func TestN89ReleaseProtocolRecord(t *testing.T) {
 	var payload releasePayload
-	err := json.Unmarshal([]byte(`{"tag_name":"V2.43.1","body":"notes","assets":[{"name":"other"},{"name":"sub-store.bundle.js","browser_download_url":"https://example.com/bundle.js","size":600000,"digest":"sha256:abc"}]}`), &payload)
+	issues, err := model.DecodeStored([]byte(`{"tag_name":"V2.43.1","body":"notes","assets":[{"name":"other"},{"name":"sub-store.bundle.js","browser_download_url":"https://example.com/bundle.js","size":600000,"digest":"sha256:abc"}]}`), &payload, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if issues := model.Issues(&payload); len(issues) != 0 {
+	if len(issues) != 0 {
 		t.Fatalf("protocol issues %#v, payload %#v", issues, payload)
 	}
 	if payload.TagName != "V2.43.1" || len(payload.Assets) != 2 {

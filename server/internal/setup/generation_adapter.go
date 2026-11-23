@@ -52,28 +52,19 @@ func resourceNodes(ctx context.Context, fields map[string]json.RawMessage, recor
 					return 0, nil, nil, err
 				}
 				if cache != nil {
+					// The cache metadata always records its source URL (null
+					// when the subscription had none).
 					if cache.Metadata != nil {
-						raw, err := cache.Metadata.MarshalJSON()
+						url, err := json.Marshal(cache.Metadata.URL)
 						if err != nil {
 							return 0, nil, nil, err
 						}
-						var metadata model.Fields
-						if err = json.Unmarshal(raw, &metadata); err != nil {
+						expected, _, err := model.EncodeMember(&source, "url")
+						if err != nil {
 							return 0, nil, nil, err
 						}
-						if url, present := metadata.Get("url"); present {
-							sourceRaw, err := source.MarshalJSON()
-							if err != nil {
-								return 0, nil, nil, err
-							}
-							var sourceFields model.Fields
-							if err = json.Unmarshal(sourceRaw, &sourceFields); err != nil {
-								return 0, nil, nil, err
-							}
-							expected, _ := sourceFields.Get("url")
-							if !equalJSONValue(url, expected) {
-								return 0, nil, nil, failure(msgChangedSourceURL, 400)
-							}
+						if !equalJSONValue(url, expected) {
+							return 0, nil, nil, failure(msgChangedSourceURL, 400)
 						}
 					}
 					nodes = subs.FilterNodes(source, cache.Nodes)

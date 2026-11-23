@@ -103,16 +103,8 @@ func TestN89RuntimeReadsOriginalPythonBytes(t *testing.T) {
 	}
 	runtime := NewRuntime(&Env{}, root, 300)
 	state, err := runtime.loadState()
-	if err != nil || state.State == nil || *state.State != "failed" || state.Error != "旧状态" || state.LastUsed != 123.5 {
+	if err != nil || state.State == nil || *state.State != "failed" || state.errorText() != "旧状态" || state.LastUsed == nil || *state.LastUsed != 123.5 {
 		t.Fatalf("old state not read: %+v %v", state, err)
-	}
-	unknown, _ := state.Fields.Get("future")
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(unknown, &fields); err != nil {
-		t.Fatal(err)
-	}
-	if string(fields["number"]) != "9007199254740993123" {
-		t.Fatal("unknown exact number lost")
 	}
 	after, err := os.ReadFile(filepath.Join(root, "state.json"))
 	if err != nil || !bytes.Equal(data, after) {
@@ -184,13 +176,17 @@ func TestN89RuntimeStateCommitLifetimeAndRawMembers(t *testing.T) {
 				if err := json.Unmarshal(after, &edited); err != nil {
 					t.Fatal(err)
 				}
-				for _, key := range []string{"error", "future"} {
-					if !bytes.Equal(original[key], edited[key]) {
-						t.Fatalf("unowned state member changed: %s", key)
-					}
+				// The error text is kept (written in Go's encoding); an
+				// undeclared member is dropped (O18 T1d).
+				var before, now string
+				if json.Unmarshal(original["error"], &before) != nil || json.Unmarshal(edited["error"], &now) != nil || before != now {
+					t.Fatalf("error text changed: %s -> %s", original["error"], edited["error"])
+				}
+				if _, kept := edited["future"]; kept {
+					t.Fatal("undeclared state member kept")
 				}
 				state, err := owner.loadState()
-				if err != nil || state.State == nil || *state.State != "running" || state.LastUsed != 1000 {
+				if err != nil || state.State == nil || *state.State != "running" || state.LastUsed == nil || *state.LastUsed != 1000 {
 					t.Fatalf("state not committed: %+v %v", state, err)
 				}
 			}

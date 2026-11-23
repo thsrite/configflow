@@ -24,20 +24,18 @@ func (e *RuntimeStateError) Error() string {
 	return msgRuntimeStateShape
 }
 
+// runtimeState is state.json: the members the runtime wrote (Python merges
+// each write into the previous file). invalidLastUsed: last_used is null or
+// not a number, which stops idle handling (RuntimeStateError).
 type runtimeState struct {
-	State           *string `json:"state"`
-	Error           string  `json:"error"`
-	LastUsed        float64 `json:"last_used"`
-	Fields          model.Fields
-	Raw             model.Raw
+	State           *string  `json:"state,omitzero"`
+	Error           *string  `json:"error,omitzero"`
+	LastUsed        *float64 `json:"last_used,omitzero"`
 	invalidLastUsed bool
 }
 
-// UnmarshalJSON retains unowned runtime-state fields using the shared codec.
-func (r *runtimeState) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, r, &r.Raw) }
-
-// MarshalJSON preserves unchanged runtime-state fields.
-func (r runtimeState) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.Raw) }
+// errorText is the stored error ("" when absent).
+func (r *runtimeState) errorText() string { return model.TextValue(r.Error) }
 
 type runtimePatch struct {
 	State    *string  `json:"state"`
@@ -77,20 +75,20 @@ func (r *Runtime) loadState() (*runtimeState, error) {
 		return nil, &RuntimeStateError{}
 	}
 	var state runtimeState
-	if err := json.Unmarshal(raw, &state); err != nil {
+	issues, err := model.DecodeStored(raw, &state, "")
+	if err != nil {
 		return &runtimeState{}, nil
 	}
 	var members struct {
 		LastUsed json.RawMessage `json:"last_used"`
 	}
-	if jsondecode.Unmarshal(raw, &members) == nil && bytes.Equal(bytes.TrimSpace(members.LastUsed), []byte("null")) {
+	if model.IssueUnder(issues, "last_used") || (jsondecode.Unmarshal(raw, &members) == nil && bytes.Equal(bytes.TrimSpace(members.LastUsed), []byte("null"))) {
 		state.invalidLastUsed = true
 	}
 	return &state, nil
 }
 func (r *runtimeState) empty() bool {
-	data, err := model.Marshal(r)
-	return err == nil && bytes.Equal(data, []byte("{}"))
+	return r.State == nil && r.Error == nil && r.LastUsed == nil && !r.invalidLastUsed
 }
 
 // writeState is called under the existing control lease. Rename is its commit.
@@ -110,31 +108,14 @@ func (r *Runtime) writeStateUsing(ctx context.Context, patch runtimePatch, befor
 		return err
 	}
 	if patch.State != nil {
-		data, err := model.Marshal(*patch.State)
-		if err != nil {
-			return err
-		}
-		if err := model.SetMemberJSON(state, &state.Raw, "state", data); err != nil {
-			return err
-		}
+		state.State = new(*patch.State)
 	}
 	if patch.Error != nil {
-		data, err := model.Marshal(*patch.Error)
-		if err != nil {
-			return err
-		}
-		if err := model.SetMemberJSON(state, &state.Raw, "error", data); err != nil {
-			return err
-		}
+		state.Error = new(*patch.Error)
 	}
 	if patch.LastUsed != nil {
-		data, err := model.Marshal(*patch.LastUsed)
-		if err != nil {
-			return err
-		}
-		if err := model.SetMemberJSON(state, &state.Raw, "last_used", data); err != nil {
-			return err
-		}
+		state.LastUsed = new(*patch.LastUsed)
+		state.invalidLastUsed = false
 	}
 	data, err := model.Marshal(state)
 	if err != nil {

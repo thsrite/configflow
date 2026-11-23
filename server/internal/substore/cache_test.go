@@ -188,7 +188,7 @@ func TestSavedCacheBytes(t *testing.T) {
 	cacheClock = fixedClock{time.Date(2026, 11, 15, 8, 0, 0, 0, time.UTC)}
 	defer func() { cacheClock = previous }()
 	payload := must[*Cache](t)(SaveCache(ctx, "keep", []model.Node{testCacheNode(t)},
-		&CacheMetadata{SubscriptionName: "机场", URL: "https://example.test/keep"}))
+		&CacheMetadata{SubscriptionName: "机场", URL: new("https://example.test/keep")}))
 	data, err := os.ReadFile(filepath.Join(must[string](t)(r.SharedCacheDir()), "keep.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestSavedCacheBytes(t *testing.T) {
 		t.Fatal("payload time")
 	}
 	// fetched_at replaces updated_at; an empty nodes list has count 0.
-	payload = must[*Cache](t)(SaveCache(ctx, "keep", nil, &CacheMetadata{FetchedAt: "2026-01-01T00:00:00.5+00:00"}))
+	payload = must[*Cache](t)(SaveCache(ctx, "keep", nil, &CacheMetadata{FetchedAt: new("2026-01-01T00:00:00.5+00:00")}))
 	if payload.UpdatedAt != "2026-01-01T00:00:00.5+00:00" || payload.Count == nil || int64(*payload.Count) != 0 {
 		t.Fatalf("payload %+v", payload)
 	}

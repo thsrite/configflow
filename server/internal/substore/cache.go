@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"syscall"
+	"unicode/utf8"
 )
 
 var cacheLog = logx.Get("backend.utils.subscription_cache")
@@ -200,19 +201,9 @@ func saveCache(ctx context.Context, id string, payload *Cache) (*Cache, error) {
 	if err != nil {
 		return nil, err
 	}
-	if metadata != nil {
-		data, err := model.Marshal(metadata)
-		if err != nil {
-			return nil, err
-		}
-		if bytes.Equal(data, []byte("{}")) {
-			metadata = nil
-		}
-	}
-	if metadata == nil {
-		if err := model.ClearMember(payload, &payload.Raw, "metadata"); err != nil {
-			return nil, err
-		}
+	// Python: `if metadata:` (an empty dict is no metadata).
+	if metadata != nil && *metadata == (CacheMetadata{}) {
+		metadata = nil
 	}
 	payload.SubscriptionID = id
 	payload.UpdatedAt = strings.Replace(isoFormat(cacheClock.Now()), "+00:00", "Z", 1)
@@ -222,8 +213,8 @@ func saveCache(ctx context.Context, id string, payload *Cache) (*Cache, error) {
 		payload.Count = &count
 	}
 	count := *payload.Count
-	if metadata != nil && metadata.FetchedAt != "" {
-		payload.UpdatedAt = metadata.FetchedAt
+	if metadata != nil && metadata.FetchedAt != nil && *metadata.FetchedAt != "" {
+		payload.UpdatedAt = *metadata.FetchedAt
 	}
 	previous, err := LoadCache(ctx, id)
 	if err != nil {
@@ -274,7 +265,7 @@ func cacheHosts(cache *Cache) *subs.HostsData {
 }
 func noteHostsChange(ctx context.Context, id string, previous, current *Cache) {
 	old, new := cacheHosts(previous), cacheHosts(current)
-	var before, after model.Map[model.Dynamic]
+	var before, after model.OrderedMap[model.Dynamic]
 	if old != nil {
 		before = old.Entries
 	}
@@ -412,11 +403,18 @@ func decodeCacheFile(ctx context.Context, id, path string) (*Cache, error) {
 		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, msgCacheRootShape))
 		return nil, nil
 	}
+	if !utf8.Valid(data) {
+		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, msgCacheRootShape))
+		return nil, nil
+	}
 	var cache Cache
-	if err := jsonresp.DecodeStored(data, &cache); err != nil {
+	data, _ = jsonresp.NormalizeNonFinite(data)
+	issues, err := model.DecodeStored(data, &cache, "")
+	if err != nil {
 		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, err))
 		return nil, nil
 	}
+	cache.Issues = issues
 	if cache.Count == nil {
 		var envelope struct {
 			Nodes json.RawMessage `json:"nodes"`

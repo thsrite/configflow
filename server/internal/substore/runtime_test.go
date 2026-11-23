@@ -461,7 +461,7 @@ func TestStartTimesOutWhenNeverReady(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 	state := stateOf(rt)
-	if state == nil || state.State == nil || *state.State != "failed" || state.Error != err.Error() {
+	if state == nil || state.State == nil || *state.State != "failed" || state.errorText() != err.Error() {
 		t.Fatalf("state %+v", state)
 	}
 	if elapsed := rt.scheduler(context.Background()).Now().Sub(started); elapsed != startupWait {

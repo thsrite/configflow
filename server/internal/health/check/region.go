@@ -34,8 +34,8 @@ const (
 
 // PageRequest describes a single HTTP page fetch and regex marker map for the Agent.
 type PageRequest struct {
-	ID      string            `json:"id"`
-	URL     string            `json:"url"`
+	ID      string                   `json:"id"`
+	URL     string                   `json:"url"`
 	Headers model.OrderedMap[string] `json:"headers,omitzero"`
 	Markers model.OrderedMap[string] `json:"markers,omitzero"`
 }
@@ -149,12 +149,12 @@ func RegionLabel(code string) string {
 
 // RegionResult holds the Agent's response for one PageRequest.
 type RegionResult struct {
-	ID        string                  `json:"id"`
-	Status    *model.Int              `json:"status"`
-	FinalURL  string                  `json:"final_url"`
-	Redirects []string                `json:"redirects"`
+	ID        string                         `json:"id"`
+	Status    *model.Int                     `json:"status"`
+	FinalURL  string                         `json:"final_url"`
+	Redirects []string                       `json:"redirects"`
 	Markers   model.OrderedMap[NullableText] `json:"markers"`
-	Error     string                  `json:"error"`
+	Error     string                         `json:"error"`
 	hasID     bool
 	empty     bool
 }

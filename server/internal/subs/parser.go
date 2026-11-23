@@ -313,12 +313,7 @@ type vmessFields struct {
 	Server  string    `json:"add"`
 	Port    model.Int `json:"port"`
 	AlterID model.Int `json:"aid"`
-	Fields  model.Fields
-	Raw     model.Raw
 }
-
-func (r *vmessFields) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
-func (r vmessFields) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&r, &r.Raw) }
 
 func wireValue(raw json.RawMessage, fallback *yamlx.Node) (*yamlx.Node, error) {
 	if len(raw) == 0 {
@@ -350,10 +345,11 @@ func parseVMessNode(uri string) (*model.Node, *WrongText, error) {
 		return nil, nil, err
 	}
 	var source vmessFields
-	if err := json.Unmarshal(projected, &source); err != nil {
+	issues, err := model.DecodeStored(projected, &source, "")
+	if err != nil {
 		return nil, nil, err
 	}
-	if issues := model.Issues(&source); model.IssueUnder(issues, "port") || model.IssueUnder(issues, "aid") {
+	if model.IssueUnder(issues, "port") || model.IssueUnder(issues, "aid") {
 		return nil, nil, errShareLink
 	}
 	params := yamlx.Map()

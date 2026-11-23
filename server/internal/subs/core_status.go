@@ -88,22 +88,24 @@ type CoreAgent struct {
 	ProfileID        string  `json:"profile_id"`
 	ServiceType      *string `json:"service_type"`
 	DiscoveryEnabled *bool   `json:"domain_discovery_enabled"`
-	Fields           model.Fields
-	Raw              model.Raw
 }
 
-// UnmarshalJSON reads discovery bindings with the shared stored-record policy.
-func (a *CoreAgent) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, a, &a.Raw) }
+type coreAgentWire CoreAgent
+
+// UnmarshalJSON reads a discovery binding leniently.
+func (a *CoreAgent) UnmarshalJSON(b []byte) error { return model.DecodeLenient(b, (*coreAgentWire)(a)) }
 
 // CoreStatus contains the reported core version, without retaining traffic samples.
 type CoreStatus struct {
 	MihomoVersion string `json:"mihomo_version"`
-	Fields        model.Fields
-	Raw           model.Raw
 }
 
-// UnmarshalJSON reads reported status with the shared stored-record policy.
-func (s *CoreStatus) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, s, &s.Raw) }
+type coreStatusWire CoreStatus
+
+// UnmarshalJSON reads reported status leniently.
+func (s *CoreStatus) UnmarshalJSON(b []byte) error {
+	return model.DecodeLenient(b, (*coreStatusWire)(s))
+}
 
 // CoreStatusLoader reads one agent's status using its owning store.
 type CoreStatusLoader func(agentID string) CoreStatus

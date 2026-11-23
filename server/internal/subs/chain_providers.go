@@ -11,25 +11,30 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// chainOriginal is one generation-time chain candidate; members other than
+// name are not read.
 type chainOriginal struct {
-	Name   string `json:"name"`
-	Fields model.Fields
-	Raw    model.Raw
+	Name string `json:"name"`
 }
-
-func (r *chainOriginal) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, r, &r.Raw) }
-func (r chainOriginal) MarshalJSON() ([]byte, error)  { return model.EncodeRecord(&r, &r.Raw) }
 
 type chainFilters struct {
 	Filter        *string   `json:"filter"`
 	ExcludeFilter *string   `json:"exclude-filter"`
 	ExcludeType   *string   `json:"exclude-type"`
 	Use           *[]string `json:"use"`
-	Fields        model.Fields
-	Raw           model.Raw
 }
 
-func (f *chainFilters) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, f, &f.Raw) }
+// typeIssues returns the issues of values with the wrong type (members a
+// record does not declare are not read and not reported).
+func typeIssues(issues []model.FieldIssue) []model.FieldIssue {
+	var out []model.FieldIssue
+	for _, issue := range issues {
+		if issue.Kind != model.IssueUnknown {
+			out = append(out, issue)
+		}
+	}
+	return out
+}
 func readChainFilters(group *yamlx.Node) (chainFilters, error) {
 	projection := yamlx.Map()
 	for _, field := range []string{"filter", "exclude-filter", "exclude-type", "use"} {
@@ -42,10 +47,11 @@ func readChainFilters(group *yamlx.Node) (chainFilters, error) {
 		return chainFilters{}, err
 	}
 	var out chainFilters
-	if err := json.Unmarshal(data, &out); err != nil {
+	found, err := model.DecodeStored(data, &out, "")
+	if err != nil {
 		return out, err
 	}
-	if issues := model.Issues(&out); len(issues) > 0 {
+	if issues := typeIssues(found); len(issues) > 0 {
 		return out, fmt.Errorf(msgChainFieldInvalid, issues[0].Path)
 	}
 	return out, nil
@@ -165,14 +171,15 @@ func ChainProviders(config *model.Config, main *yamlx.Node) (failure error) {
 		if strings.Contains(filterValue, "`") {
 			patterns = strings.Split(filterValue, "`")
 		}
-		originals := model.Map[chainOriginal]{}
+		originals := model.OrderedMap[chainOriginal]{}
 		if data := source.ChainOriginalCandidates.JSON(); data != nil {
-			if err := json.Unmarshal(data, &originals); err != nil {
+			issues, err := model.DecodeStored(data, &originals, "")
+			if err != nil {
 				return err
 			}
-		}
-		if issues := model.Issues(&originals); len(issues) > 0 {
-			return fmt.Errorf(msgChainFieldInvalid, "_chain_original_candidates")
+			if len(typeIssues(issues)) > 0 {
+				return fmt.Errorf(msgChainFieldInvalid, "_chain_original_candidates")
+			}
 		}
 		static := []FilterCandidate{}
 		for id, original := range originals.All() {

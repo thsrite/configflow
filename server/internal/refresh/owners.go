@@ -175,15 +175,29 @@ func sourceCache(cache *substore.Cache, err error) (*NodeCache, error) {
 	if err != nil || cache == nil {
 		return nil, err
 	}
-	raw, err := json.Marshal(cache)
-	if err != nil {
-		return nil, err
+	out := &NodeCache{Nodes: cache.Nodes, UpdatedAt: new(cache.UpdatedAt)}
+	if cache.Count != nil {
+		out.Count = *cache.Count
 	}
-	var out NodeCache
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, err
+	for _, issue := range cache.Issues {
+		switch issue.Path {
+		case "metadata", "metadata.url":
+			out.MetadataDamaged = true
+		case "updated_at":
+			out.UpdatedAtDamaged = true
+		}
 	}
-	return &out, nil
+	if cache.Metadata != nil && !out.MetadataDamaged {
+		raw, err := model.Marshal(cache.Metadata)
+		if err != nil {
+			return nil, err
+		}
+		out.Metadata = &SourceMetadata{}
+		if _, err := model.DecodeStored(raw, out.Metadata, ""); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // detached keeps the admitted Runtime generation while completing request work.

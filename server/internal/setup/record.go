@@ -22,75 +22,95 @@ type Record struct {
 	UpdatedAt              string          `json:"updated_at"`
 	SubscriptionIDs        []string        `json:"subscription_ids"`
 	NodeIDs                []string        `json:"node_ids"`
-	Prepared               *bool           `json:"prepared"`
-	ProfileRevision        *model.Int      `json:"profile_revision"`
-	Completed              *bool           `json:"completed"`
-	Abandoned              *bool           `json:"abandoned"`
-	AbandonedAt            *string         `json:"abandoned_at"`
-	DigestVersion          *model.Int      `json:"digest_version"`
-	OwnedDigest            *string         `json:"owned_digest"`
-	OwnedDigestWithoutBase *string         `json:"owned_digest_without_base"`
-	DNSFallback            *string         `json:"dns_fallback"`
-	TrafficFallback        *string         `json:"traffic_fallback"`
-	LocalDNS               *string         `json:"local_dns"`
-	DomainRules            *Selections     `json:"domain_rules"`
-	QueryRecorder          *bool           `json:"query_recorder"`
-	NodeCount              *model.Int      `json:"node_count"`
-	ConfigRevision         *model.Int      `json:"config_revision"`
-	MihomoChanges          *[]string       `json:"mihomo_changes"`
-	ControllerSecretSaved  *bool           `json:"controller_secret_saved"`
-	ControllerAddress      *string         `json:"controller_address"`
-	LegacyTakeover         *bool           `json:"legacy_takeover"`
-	RouterMode             *string         `json:"router_mode"`
-	RouterID               *string         `json:"router_id"`
-	RouterDraft            json.RawMessage `json:"router_draft"`
-	Installation           json.RawMessage `json:"installation"`
-	RouteInstructions      json.RawMessage `json:"route_instructions"`
-	RouterVerification     *string         `json:"router_verification"`
-	PreviousDefault        *string         `json:"previous_default"`
-	Fields                 model.Fields
-	raw                    model.Raw
+	Prepared               *bool           `json:"prepared,omitzero"`
+	ProfileRevision        *model.Int      `json:"profile_revision,omitzero"`
+	Completed              *bool           `json:"completed,omitzero"`
+	Abandoned              *bool           `json:"abandoned,omitzero"`
+	AbandonedAt            *string         `json:"abandoned_at,omitzero"`
+	DigestVersion          *model.Int      `json:"digest_version,omitzero"`
+	OwnedDigest            *string         `json:"owned_digest,omitzero"`
+	OwnedDigestWithoutBase *string         `json:"owned_digest_without_base,omitzero"`
+	DNSFallback            *string         `json:"dns_fallback,omitzero"`
+	TrafficFallback        *string         `json:"traffic_fallback,omitzero"`
+	LocalDNS               *string         `json:"local_dns,omitzero"`
+	DomainRules            *Selections     `json:"domain_rules,omitzero"`
+	QueryRecorder          *bool           `json:"query_recorder,omitzero"`
+	NodeCount              *model.Int      `json:"node_count,omitzero"`
+	ConfigRevision         *model.Int      `json:"config_revision,omitzero"`
+	MihomoChanges          *[]string       `json:"mihomo_changes,omitzero"`
+	ControllerSecretSaved  *bool           `json:"controller_secret_saved,omitzero"`
+	ControllerAddress      *string         `json:"controller_address,omitzero"`
+	LegacyTakeover         *bool           `json:"legacy_takeover,omitzero"`
+	RouterMode             *string         `json:"router_mode,omitzero"`
+	RouterID               *string         `json:"router_id,omitzero"`
+	RouterDraft            json.RawMessage `json:"router_draft,omitzero"`
+	Installation           json.RawMessage `json:"installation,omitzero"`
+	RouteInstructions      json.RawMessage `json:"route_instructions,omitzero"`
+	RouterVerification     *string         `json:"router_verification,omitzero"`
+	PreviousDefault        *string         `json:"previous_default,omitzero"`
 }
 
-// UnmarshalJSON preserves stored fields and rejects invalid ownership evidence.
+type recordWire Record
+
+// UnmarshalJSON decodes a stored session and rejects one with a member of the
+// wrong type (it is corrupt ownership evidence, never repaired). Members the
+// session does not declare are dropped.
 func (r *Record) UnmarshalJSON(data []byte) error {
-	var next Record
-	if err := model.DecodeRecord(data, &next, &next.raw); err != nil {
+	if err := requireObject(data); err != nil {
 		return err
 	}
-	if len(next.raw.Issues()) != 0 {
-		return fmt.Errorf("%w: invalid wizard members", ErrCorruptRecord)
+	var next recordWire
+	issues, err := model.DecodeStored(data, &next, "")
+	if err != nil {
+		return err
 	}
-	*r = next
+	for _, issue := range issues {
+		if issue.Kind != model.IssueUnknown {
+			return fmt.Errorf("%w: invalid wizard members", ErrCorruptRecord)
+		}
+	}
+	*r = Record(next)
 	return nil
 }
-
-// MarshalJSON preserves unknown and unchanged wizard members.
-func (r Record) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.raw) }
 
 // Selections contains the two independently ordered domain-rule choices.
 type Selections struct {
 	Direct []string `json:"direct"`
 	Proxy  []string `json:"proxy"`
-	Fields model.Fields
-	raw    model.Raw
 }
 
-// UnmarshalJSON preserves legacy selection members and rejects wrong types.
+type selectionsWire Selections
+
+// UnmarshalJSON rejects selections with a member of the wrong type.
 func (s *Selections) UnmarshalJSON(data []byte) error {
-	var next Selections
-	if err := model.DecodeRecord(data, &next, &next.raw); err != nil {
+	if err := requireObject(data); err != nil {
 		return err
 	}
-	if len(next.raw.Issues()) != 0 {
-		return ErrCorruptRecord
+	var next selectionsWire
+	issues, err := model.DecodeStored(data, &next, "")
+	if err != nil {
+		return err
 	}
-	*s = next
+	for _, issue := range issues {
+		if issue.Kind != model.IssueUnknown {
+			return ErrCorruptRecord
+		}
+	}
+	*s = Selections(next)
 	return nil
 }
 
-// MarshalJSON preserves unknown selection members.
-func (s Selections) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&s, &s.raw) }
+// requireObject refuses stored data that is not a JSON object.
+func requireObject(data []byte) error {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil {
+		return err
+	}
+	if members == nil {
+		return ErrCorruptRecord
+	}
+	return nil
+}
 
 func pointer[T any](value T) *T { return &value }
 func enabled(value *bool) bool  { return value != nil && *value }

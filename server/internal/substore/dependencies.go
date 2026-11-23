@@ -1,6 +1,7 @@
 package substore
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -168,12 +169,19 @@ func (d *Dependencies) fetchRelease(ctx context.Context) (*Release, error) {
 	if err != nil {
 		return nil, err
 	}
+	if trimmed := bytes.TrimSpace(data); len(trimmed) == 0 || trimmed[0] != '{' {
+		var source releasePayload
+		return nil, &ReleaseError{Message: msgReleaseShape, Cause: json.Unmarshal(data, &source)}
+	}
 	var source releasePayload
-	if err := json.Unmarshal(data, &source); err != nil {
+	issues, err := model.DecodeStored(data, &source, "")
+	if err != nil {
 		return nil, &ReleaseError{Message: msgReleaseShape, Cause: err}
 	}
-	for _, issue := range model.Issues(&source) {
-		return nil, &ReleaseError{Message: fmt.Sprintf(msgReleaseField, issue.Path)}
+	for _, issue := range issues {
+		if issue.Kind != model.IssueUnknown {
+			return nil, &ReleaseError{Message: fmt.Sprintf(msgReleaseField, issue.Path)}
+		}
 	}
 	for _, asset := range source.Assets {
 		if asset.Name != SubStoreAsset {

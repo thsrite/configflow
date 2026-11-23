@@ -16,9 +16,9 @@ import (
 // Navigation is a frontend destination with typed query values. Python's
 // target() always writes all three members.
 type Navigation struct {
-	Path  string                  `json:"path"`
+	Path  string                   `json:"path"`
 	Query model.OrderedMap[string] `json:"query"`
-	Label string                  `json:"label"`
+	Label string                   `json:"label"`
 }
 
 // Destination constructs a complete destination, including an empty query object.

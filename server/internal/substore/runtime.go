@@ -538,10 +538,14 @@ func (r *Runtime) Tick(ctx context.Context) error {
 			if state.State != nil && *state.State == "sleeping" {
 				return nil
 			}
-			if state.invalidLastUsed || model.IssueUnder(model.Issues(state), "last_used") {
+			if state.invalidLastUsed {
 				return &RuntimeStateError{Field: "last_used"}
 			}
-			if now-state.LastUsed >= r.IdleSeconds {
+			lastUsed := 0.0
+			if state.LastUsed != nil {
+				lastUsed = *state.LastUsed
+			}
+			if now-lastUsed >= r.IdleSeconds {
 				status, err := r.runCommand(ctx, "status")
 				if err != nil {
 					return err
@@ -552,7 +556,7 @@ func (r *Runtime) Tick(ctx context.Context) error {
 					}
 				}
 				current := "sleeping"
-				if state.Error != "" {
+				if state.errorText() != "" {
 					current = "failed"
 				}
 				return r.writeState(ctx, runtimePatch{State: new(current)})
@@ -613,7 +617,7 @@ func (r *Runtime) Snapshot(ctx context.Context, running bool) (*RuntimeStatus, e
 	}
 	message := ""
 	if current == "failed" {
-		message = state.Error
+		message = state.errorText()
 	}
 	return &RuntimeStatus{Managed: managed, Mode: mode, State: current, IdleSeconds: r.IdleSeconds, Error: message}, nil
 }

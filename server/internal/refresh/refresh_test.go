@@ -248,7 +248,7 @@ func (f *fixture) cacheSource(age time.Duration, url string) *substore.Cache {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	value, err := substore.SaveCache(f.ctx, "s", nodes, &substore.CacheMetadata{URL: url})
+	value, err := substore.SaveCache(f.ctx, "s", nodes, &substore.CacheMetadata{URL: new(url)})
 	if err != nil {
 		f.t.Fatal(err)
 	}

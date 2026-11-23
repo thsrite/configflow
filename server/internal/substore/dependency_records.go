@@ -86,28 +86,19 @@ func (e *ReleaseError) Error() string { return e.Message }
 // Unwrap preserves the underlying JSON decoding error.
 func (e *ReleaseError) Unwrap() error { return e.Cause }
 
+// releasePayload is the part of a GitHub release the update check reads; the
+// API's other members are ignored.
 type releasePayload struct {
 	TagName     string         `json:"tag_name"`
 	PublishedAt string         `json:"published_at"`
 	HTMLURL     string         `json:"html_url"`
 	Body        string         `json:"body"`
 	Assets      []releaseAsset `json:"assets"`
-	Fields      model.Fields
-	Raw         model.Raw
 }
-
-func (r *releasePayload) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, r, &r.Raw) }
 
 type releaseAsset struct {
 	Name        string    `json:"name"`
 	DownloadURL string    `json:"browser_download_url"`
 	Digest      string    `json:"digest"`
 	Size        model.Int `json:"size"`
-	Fields      model.Fields
-	Raw         model.Raw
 }
-
-func (r *releaseAsset) UnmarshalJSON(b []byte) error { return model.DecodeRecord(b, r, &r.Raw) }
-
-func (r releasePayload) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.Raw) }
-func (r releaseAsset) MarshalJSON() ([]byte, error)   { return model.EncodeRecord(&r, &r.Raw) }

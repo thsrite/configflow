@@ -590,10 +590,10 @@ func saveLatencyResults(ctx context.Context, results model.OrderedMap[LatencyEnt
 
 // TestOutcome is the API result of a RunLatencyTests execution.
 type TestOutcome struct {
-	TestedAt string                  `json:"tested_at"`
+	TestedAt string                         `json:"tested_at"`
 	Results  model.OrderedMap[LatencyEntry] `json:"results"`
-	Missing  []string                `json:"missing"`
-	Settings ProbeSettings           `json:"settings"`
+	Missing  []string                       `json:"missing"`
+	Settings ProbeSettings                  `json:"settings"`
 }
 
 // RunLatencyTests executes an exclusive node latency probe for names or keys

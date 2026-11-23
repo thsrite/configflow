@@ -9,18 +9,17 @@ import (
 	"encoding/json"
 )
 
-// Traffic holds provider quota numbers without rounding arbitrary-size tokens.
+// Traffic holds provider quota numbers without rounding arbitrary-size
+// tokens; only the numbers the provider reported are present.
 type Traffic struct {
-	Upload   *json.Number `json:"upload"`
-	Download *json.Number `json:"download"`
-	Total    *json.Number `json:"total"`
-	Expire   *json.Number `json:"expire"`
-	Fields   model.Fields
-	Raw      model.Raw
+	Upload   *json.Number `json:"upload,omitzero"`
+	Download *json.Number `json:"download,omitzero"`
+	Total    *json.Number `json:"total,omitzero"`
+	Expire   *json.Number `json:"expire,omitzero"`
 }
 
-func (r *Traffic) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
-func (r Traffic) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&r, &r.Raw) }
+// empty reports traffic without any number (Python: `if traffic:`).
+func (r *Traffic) empty() bool { return r == nil || *r == (Traffic{}) }
 
 // SourceResult is the text and provenance of one subscription fetch.
 type SourceResult struct {
@@ -30,31 +29,28 @@ type SourceResult struct {
 
 // SourceMetadata belongs to the subscription cache. Hosts/Dialers are opaque
 // owner payloads; refresh neither interprets nor changes their private schema.
+// subscription_name, url and fetched_at are always written (url and
+// fetched_at may be null).
 type SourceMetadata struct {
 	SubscriptionName string          `json:"subscription_name"`
 	URL              *string         `json:"url"`
 	FetchedAt        *string         `json:"fetched_at"`
-	Hosts            json.RawMessage `json:"hosts,omitempty"`
-	Dialers          json.RawMessage `json:"dialers,omitempty"`
-	Fields           model.Fields
-	Raw              model.Raw
+	Hosts            json.RawMessage `json:"hosts,omitzero"`
+	Dialers          json.RawMessage `json:"dialers,omitzero"`
 }
-
-func (r *SourceMetadata) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
-func (r SourceMetadata) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&r, &r.Raw) }
 
 // NodeCache is the consumed view of the subscription owner's stored receipt.
+// MetadataDamaged: the stored metadata is not an object or its url is not
+// text (the cache must not be claimed for any URL); UpdatedAtDamaged: the
+// stored updated_at is not text.
 type NodeCache struct {
-	Nodes     []model.Node    `json:"nodes"`
-	Count     model.Int       `json:"count"`
-	UpdatedAt *string         `json:"updated_at"`
-	Metadata  *SourceMetadata `json:"metadata"`
-	Fields    model.Fields
-	Raw       model.Raw
+	Nodes            []model.Node    `json:"nodes"`
+	Count            model.Int       `json:"count"`
+	UpdatedAt        *string         `json:"updated_at"`
+	Metadata         *SourceMetadata `json:"metadata,omitzero"`
+	MetadataDamaged  bool            `json:"-"`
+	UpdatedAtDamaged bool            `json:"-"`
 }
-
-func (r *NodeCache) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.Raw) }
-func (r NodeCache) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&r, &r.Raw) }
 
 // SourceOwners are the existing subscription/parser/cache collaborators.
 // Every I/O callback receives the admitted owner's Runtime generation.
