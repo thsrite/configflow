@@ -55,7 +55,7 @@ func (s *RuleSyncService) baseline(ctx context.Context, config json.RawMessage, 
 	if err != nil {
 		return nil, err
 	}
-	return &RuleSyncBaseline{Control: control, Rules: records, Desired: desired, StaticResources: static, Policy: syncNull(slices.Clone(d.policyManifest)), NATList: nat}, nil
+	return &RuleSyncBaseline{Control: control, Rules: records, Desired: desired, StaticResources: static, Policy: syncNull(slices.Clone(d.PolicyManifest())), NATList: nat}, nil
 }
 
 // Capture records a verified explicit publication. It is called under the
@@ -110,7 +110,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 			if err != nil {
 				return err
 			}
-			manifest, err := policyManifest(d.policyManifest)
+			manifest, err := policyManifest(d.PolicyManifest())
 			if err != nil {
 				return err
 			}
@@ -123,7 +123,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 			if manifest == nil || manifest.Spec == nil || !maps.Equal(destinations, device.StringSet(manifest.Spec.Destinations...)) {
 				return device.Error(messageSyncCapturePolicy)
 			}
-			if err = VerifyROSPolicy(work, d, &ROSPolicyCheck{Spec: manifest.Spec, Previous: d.policyManifest}); err != nil {
+			if err = VerifyROSPolicy(work, d, &ROSPolicyCheck{Spec: manifest.Spec, Previous: d.PolicyManifest()}); err != nil {
 				return err
 			}
 		}
@@ -157,11 +157,11 @@ func (s *RuleSyncService) saveManifest(ctx context.Context, profile string, r *R
 	}
 	current := findSyncRouter(latest, r.ID)
 	publication := repo.RouterPublicationJSON{}
-	if current == nil || !device.JSONEqual(syncNull(current.State("ros_policy_state")), syncNull(d.policyManifest)) {
-		publication.Manifest = repo.JSONUpdate{Set: true, Value: d.policyManifest}
+	if current == nil || !device.JSONEqual(syncNull(current.State("ros_policy_state")), syncNull(d.PolicyManifest())) {
+		publication.Manifest = repo.JSONUpdate{Set: true, Value: d.PolicyManifest()}
 	}
-	if d.ipv6RoutesManifestSet && (current == nil || !device.JSONEqual(syncNull(current.State("ipv6_routes_state")), syncNull(d.ipv6RoutesManifest))) {
-		publication.IPv6Routes = repo.JSONUpdate{Set: true, Value: d.ipv6RoutesManifest}
+	if d.IPv6RoutesManifestSet() && (current == nil || !device.JSONEqual(syncNull(current.State("ipv6_routes_state")), syncNull(d.IPv6RoutesManifest()))) {
+		publication.IPv6Routes = repo.JSONUpdate{Set: true, Value: d.IPv6RoutesManifest()}
 	}
 	if !publication.Manifest.Set && !publication.IPv6Routes.Set {
 		return nil
@@ -448,7 +448,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 				} else {
 					next := *base
 					next.StaticResources = static
-					next.Policy = syncNull(slices.Clone(d.policyManifest))
+					next.Policy = syncNull(slices.Clone(d.PolicyManifest()))
 					base = &next
 					receipt.Baseline = base
 				}

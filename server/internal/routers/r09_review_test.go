@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"reflect"
@@ -59,28 +60,28 @@ func TestR09ReviewPartialRollbackKeepsRestoredObjectsOwned(t *testing.T) {
 	// the old one; the old bypass member is restored under a new ID.
 	refused := routerfake.Row{"message": "injected refusal"}
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{
-		{Method: "PUT", Path: rosNetwatch, Count: 1, Status: 400, Body: refused},
-		{Method: "PUT", Path: rosNetwatch, Count: 2, Status: 400, Body: refused},
+		{Method: "PUT", Path: ros.PathNetwatch, Count: 1, Status: 400, Body: refused},
+		{Method: "PUT", Path: ros.PathNetwatch, Count: 2, Status: 400, Body: refused},
 	}})
 	_, err := d.ApplyDNSGuard(context.Background(), *op)
 	if err == nil || device.RouterErrorKind(err) != KindRollback {
 		t.Fatalf("incomplete rollback not reported: %v", err)
 	}
-	restored := r09ReviewOwned(t, guardRaw(d.dnsGuardManifest), "bypass:192.0.2.50/32")
+	restored := r09ReviewOwned(t, ros.GuardRaw(d.DNSGuardManifest()), "bypass:192.0.2.50/32")
 	if restored.ID == old.ID {
 		t.Fatalf("restored member still recorded under its deleted ID %s", old.ID)
 	}
-	row := r09ReviewRow(f.Snapshot().Tables[rosAddresses], restored.ID)
+	row := r09ReviewRow(f.Snapshot().Tables[ros.PathAddresses], restored.ID)
 	if row == nil || row["address"] != "192.0.2.50" {
 		t.Fatalf("manifest does not point at the restored member: %v", row)
 	}
 	for _, settings := range []DNSGuard{changed, r09Base("partial").Settings} {
-		next := r09Plan(t, d, settings, guardRaw(d.dnsGuardManifest))
+		next := r09Plan(t, d, settings, ros.GuardRaw(d.DNSGuardManifest()))
 		if len(next.Blockers) != 0 || next.Status != "pending" || len(next.Ops) != 1 {
 			t.Fatalf("own restored objects block the next preview: %s", r09Raw(next))
 		}
 	}
-	r09ApplyPlan(t, d, r09Plan(t, d, changed, guardRaw(d.dnsGuardManifest)))
+	r09ApplyPlan(t, d, r09Plan(t, d, changed, ros.GuardRaw(d.DNSGuardManifest())))
 }
 
 // The publication-time block is also the continuous detector: a copy of the
@@ -96,13 +97,13 @@ func TestR09ReviewPostPublishCopyIsDetected(t *testing.T) {
 			}
 			snapshot := f.Snapshot()
 			hijack := r09ReviewOwned(t, previous, "hijack-udp")
-			source := r09ReviewRow(snapshot.Tables[rosNAT], hijack.ID)
+			source := r09ReviewRow(snapshot.Tables[ros.PathNAT], hijack.ID)
 			copied := routerfake.Row{}
 			for key, value := range source {
 				copied[key] = value
 			}
 			copied[".id"], copied["disabled"], copied["in-interface"] = "*F1", disabled, "vlan20"
-			snapshot.Tables[rosNAT] = append(snapshot.Tables[rosNAT], copied)
+			snapshot.Tables[ros.PathNAT] = append(snapshot.Tables[ros.PathNAT], copied)
 			f.ReplaceTables(snapshot.Tables)
 			count := len(f.Calls())
 			p := r09Plan(t, d, settings, previous)
@@ -123,7 +124,7 @@ func TestR09ReviewPostPublishCopyIsDetected(t *testing.T) {
 			}
 			r09ApplyPlan(t, d, p)
 			after := f.Snapshot()
-			if len(after.Tables[rosNetwatch]) != 0 || r09ReviewRow(after.Tables[rosNAT], "*F1") == nil {
+			if len(after.Tables[ros.PathNetwatch]) != 0 || r09ReviewRow(after.Tables[ros.PathNAT], "*F1") == nil {
 				t.Fatalf("withdrawal kept the Netwatch or removed the copy: %v", after.Tables)
 			}
 		})
@@ -139,11 +140,11 @@ func TestR09ReviewRestoredHijacksAreNotForeign(t *testing.T) {
 	off.Enabled = false
 	p := r09Plan(t, d, off, previous)
 	first := r09ReviewOwned(t, previous, "bypass:192.0.2.2/32")
-	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: rosAddresses + "/" + first.ID, Status: 400, Body: routerfake.Row{"message": "injected refusal"}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: ros.PathAddresses + "/" + first.ID, Status: 400, Body: routerfake.Row{"message": "injected refusal"}}}})
 	if _, err := d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace)); err == nil || device.RouterErrorKind(err) == KindRollback {
 		t.Fatalf("refused withdrawal should roll back completely: %v", err)
 	}
-	manifest := guardRaw(d.dnsGuardManifest)
+	manifest := ros.GuardRaw(d.DNSGuardManifest())
 	for _, role := range []string{"hijack-udp", "hijack-tcp", "netwatch"} {
 		if r09ReviewOwned(t, manifest, role).ID == r09ReviewOwned(t, previous, role).ID {
 			t.Fatalf("%s was not re-created by the rollback", role)

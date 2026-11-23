@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -244,7 +245,7 @@ func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
 			t.Fatal("L1 rival blocked")
 		}
 	}
-	if len(fake.Calls()) != calls || len(fake.Snapshot().Tables[rosRoutes]) != 1 {
+	if len(fake.Calls()) != calls || len(fake.Snapshot().Tables[ros.PathRoutes]) != 1 {
 		t.Fatal("another publisher wrote the device")
 	}
 	unblock()
@@ -274,7 +275,7 @@ func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
 	if err := r.SaveRouterPublicationJSON(held, "live", connRaw, repo.RouterPublicationJSON{Manifest: repo.JSONUpdate{Set: true, Value: json.RawMessage("null")}}); err != nil {
 		t.Fatal("next publisher could not save withdrawal", err)
 	}
-	if len(fake.Snapshot().Tables[rosRoutes]) != 0 || lockx.Violations() != violations || violations != 0 {
+	if len(fake.Snapshot().Tables[ros.PathRoutes]) != 0 || lockx.Violations() != violations || violations != 0 {
 		t.Fatal("withdrawal failed or L1/L2/L3 order violated")
 	}
 }

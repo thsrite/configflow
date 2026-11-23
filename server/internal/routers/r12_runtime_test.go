@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -111,7 +112,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 			req := PublishRequest{ProfileID: "default", RouterID: r.ID, Expected: plan.Fingerprint, Router: r, Repo: db, Agents: source, NewDriver: func(r *Router) Driver {
 				d := NewRouterOS(server.URL, r.Username, r.Password, false)
 				publicationDriver = d
-				d.client = &r09AfterReadHTTP{DeviceHTTP: d.client, after: func(method, url string) {
+				d.SetHTTP(&r09AfterReadHTTP{DeviceHTTP: d.HTTP(), after: func(method, url string) {
 					if triggered {
 						return
 					}
@@ -121,7 +122,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 					}
 					// The feature owner has finished and published its in-memory proof; the
 					// next readback boundary cancels the real Runtime, before any next write.
-					if mode == "shutdown_after_write" && d.ipv6FakeIPManifestSet && effectful(d.ipv6FakeIPManifest) && strings.Contains(string(d.ipv6FakeIPManifest), "resources") && strings.HasSuffix(url, rosIPv6Routes) {
+					if mode == "shutdown_after_write" && d.IPv6FakeIPManifestSet() && effectful(d.IPv6FakeIPManifest()) && strings.Contains(string(d.IPv6FakeIPManifest()), "resources") && strings.HasSuffix(url, ros.PathIPv6Routes) {
 						triggered = true
 						runtime.Shutdown(t.Context())
 						callsAtShutdown = len(f.Calls())
@@ -131,7 +132,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 						runtime.Shutdown(t.Context())
 						callsAtShutdown = len(f.Calls())
 					}
-				}}
+				}})
 				return d
 			}}
 			previous := repo.SetHooks(repo.Hooks{})

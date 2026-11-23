@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"fmt"
 	"maps"
@@ -37,7 +38,7 @@ func (d *Ikuai) fixedNewAllocation(ctx context.Context, known map[string]bool, p
 	}
 	matches := []ikuaiRow{}
 	for _, row := range rows {
-		if row.is("tagname", payload.text("tagname")) {
+		if row.is("tagname", payload.Text("tagname")) {
 			matches = append(matches, row)
 		}
 	}
@@ -48,7 +49,7 @@ func (d *Ikuai) fixedNewAllocation(ctx context.Context, known map[string]bool, p
 	if err != nil {
 		return nil, err
 	}
-	if !sameRow(fields, fixedIKExpected(payload)) {
+	if !ros.SameRow(fields, fixedIKExpected(payload)) {
 		return nil, nil
 	}
 	return matches[0], nil
@@ -68,7 +69,7 @@ func (d *Ikuai) removeFixedAllocation(ctx context.Context, b *FixedIPBinding, ex
 	if err != nil {
 		return err
 	}
-	if !strings.HasPrefix(b.Comment, fixedIPPrefix) || !fixedIKMatches(current, b) || !sameRow(fields, expected) {
+	if !strings.HasPrefix(b.Comment, fixedIPPrefix) || !fixedIKMatches(current, b) || !ros.SameRow(fields, expected) {
 		return device.KindError(KindConflict, messageFixedIKExternal)
 	}
 	if _, err = d.writeForm(ctx, "dhcp_static", "del", ikuaiRow{"id": b.ID}, 0); err != nil {
@@ -144,7 +145,7 @@ func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (binding
 			rows, e = d.fixedStatic(ctx)
 			if e == nil {
 				for _, row := range rows {
-					if row.is("tagname", payload.text("tagname")) {
+					if row.is("tagname", payload.Text("tagname")) {
 						e = device.Error(messageFixedIKChanged)
 						break
 					}
@@ -176,7 +177,7 @@ func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (binding
 	if err != nil {
 		return nil, err
 	}
-	if !sameRow(fields, fixedIKExpected(payload)) {
+	if !ros.SameRow(fields, fixedIKExpected(payload)) {
 		return nil, device.Error(messageFixedIKIDCheck)
 	}
 	binding = fixedIKBinding(actual)
@@ -267,14 +268,14 @@ func (d *Ikuai) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*
 			if e != nil {
 				return nil, e
 			}
-			if fixedIKMatches(row, b) && sameRow(fields, b.Undo.Expected) {
+			if fixedIKMatches(row, b) && ros.SameRow(fields, b.Undo.Expected) {
 				return fixedIKBinding(row), nil
 			}
 			return nil, device.Error(messageFixedIKRestoreID)
 		}
 	}
 	for _, row := range rows {
-		if row.is("ip_addr", b.IP) || fixedMAC(row.text("mac")) == b.MAC || row.is("tagname", b.Undo.Expected.text("tagname")) {
+		if row.is("ip_addr", b.IP) || fixedMAC(row.text("mac")) == b.MAC || row.is("tagname", b.Undo.Expected.Text("tagname")) {
 			return nil, device.Error(messageFixedIKRestoreConflict)
 		}
 	}

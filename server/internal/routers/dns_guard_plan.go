@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,17 +14,17 @@ import (
 // SnapshotDNSGuard reads only the bypass list plus managed moved IDs, and the
 // three small firewall/health tables. Only Netwatch can degrade to unreadable.
 func SnapshotDNSGuard(ctx context.Context, d *RouterOS) (*DNSGuardSnapshot, error) {
-	manifest, err := parseDNSGuardManifest(d.dnsGuardManifest)
+	manifest, err := parseDNSGuardManifest(d.DNSGuardManifest())
 	if err != nil {
 		return nil, err
 	}
 	live := DNSGuardSnapshot{}
 	for _, path := range dnsGuardPaths {
 		var rows []Row
-		if path == rosAddresses {
-			rows, err = d.filteredAddresses(ctx, DNSGuardBypassList)
+		if path == ros.PathAddresses {
+			rows, err = d.FilteredAddresses(ctx, DNSGuardBypassList)
 			if err == nil && manifest != nil {
-				present := rowIDs(rows)
+				present := ros.RowIDs(rows)
 				missing := []string{}
 				for _, e := range manifest.Resources {
 					if e.Path == path && !present[e.ID] {
@@ -35,10 +36,10 @@ func SnapshotDNSGuard(ctx context.Context, d *RouterOS) (*DNSGuardSnapshot, erro
 				rows = append(rows, moved...)
 			}
 		} else {
-			rows, err = d.list(ctx, path)
+			rows, err = d.List(ctx, path)
 		}
 		if err != nil {
-			if path != rosNetwatch || !device.IsRouterError(err) {
+			if path != ros.PathNetwatch || !device.IsRouterError(err) {
 				return nil, err
 			}
 			rows = nil
@@ -49,7 +50,7 @@ func SnapshotDNSGuard(ctx context.Context, d *RouterOS) (*DNSGuardSnapshot, erro
 }
 
 func guardComparable(role string, config Row, failover bool) Row {
-	out := cloneRow(config)
+	out := ros.CloneRow(config)
 	if failover && strings.HasPrefix(role, "hijack") {
 		delete(out, "disabled")
 	}
@@ -65,7 +66,7 @@ func guardOwned(previous *DNSGuardManifest, live *DNSGuardSnapshot) ([]DNSGuardR
 	for _, path := range dnsGuardPaths {
 		indices[path] = map[string][]Row{}
 		for _, row := range (*live)[path] {
-			indices[path][row.id()] = append(indices[path][row.id()], row)
+			indices[path][row.ID()] = append(indices[path][row.ID()], row)
 		}
 	}
 	for _, e := range previous.Resources {
@@ -79,7 +80,7 @@ func guardOwned(previous *DNSGuardManifest, live *DNSGuardSnapshot) ([]DNSGuardR
 		if len(matches) == 0 {
 			continue
 		}
-		if !sameRow(guardComparable(e.Role, stableROSRow(e.Path, matches[0]), failover), guardComparable(e.Role, e.Config, failover)) {
+		if !ros.SameRow(guardComparable(e.Role, ros.StableRow(e.Path, matches[0]), failover), guardComparable(e.Role, e.Config, failover)) {
 			return nil, device.Error(fmt.Sprintf(messageGuardEdited, e.Path, e.ID))
 		}
 		owned = append(owned, e)
@@ -91,7 +92,7 @@ func guardMatches(item DNSGuardCreate, row Row, failover bool) bool {
 		if failover && strings.HasPrefix(item.Role, "hijack") && key == "disabled" {
 			continue
 		}
-		if comparable(key, row[key]) != comparable(key, value) {
+		if ros.Comparable(key, row[key]) != ros.Comparable(key, value) {
 			return false
 		}
 	}
@@ -99,10 +100,10 @@ func guardMatches(item DNSGuardCreate, row Row, failover bool) bool {
 }
 func guardOnTop(id string, nat []Row, owned map[[2]string]bool) bool {
 	for _, row := range nat {
-		if row.id() == id {
+		if row.ID() == id {
 			return true
 		}
-		if row.is("chain", "dstnat") && row.text("dst-port") == "53" && !row.flag("disabled") && !owned[[2]string{rosNAT, row.id()}] {
+		if row.Is("chain", "dstnat") && row.Text("dst-port") == "53" && !row.Flag("disabled") && !owned[[2]string{ros.PathNAT, row.ID()}] {
 			return false
 		}
 	}
@@ -113,7 +114,7 @@ func guardForeignHijack(nat []Row, owned map[[2]string]bool) bool {
 	for _, row := range nat {
 		// Netwatch selects all matching comments, including disabled rules and
 		// rules outside dstnat/53. Only the manifest proof establishes ownership.
-		if row.is("comment", dnsGuardHijack) && !owned[[2]string{rosNAT, row.id()}] {
+		if row.Is("comment", dnsGuardHijack) && !owned[[2]string{ros.PathNAT, row.ID()}] {
 			return true
 		}
 	}
@@ -165,28 +166,28 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 	}
 	for _, path := range dnsGuardPaths {
 		for _, row := range (*live)[path] {
-			rows[[2]string{path, row.id()}] = row
+			rows[[2]string{path, row.ID()}] = row
 		}
 	}
 	if spec != nil {
-		if guardForeignHijack((*live)[rosNAT], ownedIDs) {
+		if guardForeignHijack((*live)[ros.PathNAT], ownedIDs) {
 			return fail(device.Error(messageGuardHijackCollision))
 		}
-		if spec.Failover && (*live)[rosNetwatch] == nil {
+		if spec.Failover && (*live)[ros.PathNetwatch] == nil {
 			p.Blockers = append(p.Blockers, messageGuardWatchUnsupported)
 		}
-		for _, reserved := range []struct{ path, key, name, label string }{{rosAddresses, "list", DNSGuardBypassList, messageGuardAddressList}, {rosNetwatch, "name", dnsGuardWatch, "Netwatch"}} {
+		for _, reserved := range []struct{ path, key, name, label string }{{ros.PathAddresses, "list", DNSGuardBypassList, messageGuardAddressList}, {ros.PathNetwatch, "name", dnsGuardWatch, "Netwatch"}} {
 			for _, row := range (*live)[reserved.path] {
-				if row.is(reserved.key, reserved.name) && !ownedIDs[[2]string{reserved.path, row.id()}] {
+				if row.Is(reserved.key, reserved.name) && !ownedIDs[[2]string{reserved.path, row.ID()}] {
 					p.Blockers = append(p.Blockers, fmt.Sprintf(messageGuardNameCollision, reserved.label, reserved.name))
 					break
 				}
 			}
 		}
 		others := []string{}
-		for _, row := range (*live)[rosNAT] {
-			if row.is("chain", "dstnat") && row.text("dst-port") == "53" && (row.is("action", "dst-nat") || row.is("action", "redirect")) && !row.flag("disabled") && !ownedIDs[[2]string{rosNAT, row.id()}] {
-				others = append(others, device.FirstNonEmpty(row.text("comment"), row.id()))
+		for _, row := range (*live)[ros.PathNAT] {
+			if row.Is("chain", "dstnat") && row.Text("dst-port") == "53" && (row.Is("action", "dst-nat") || row.Is("action", "redirect")) && !row.Flag("disabled") && !ownedIDs[[2]string{ros.PathNAT, row.ID()}] {
+				others = append(others, device.FirstNonEmpty(row.Text("comment"), row.ID()))
 			}
 		}
 		if len(others) > 0 {
@@ -204,7 +205,7 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 		row := rows[[2]string{item.Path, e.ID}]
 		keep := row != nil && e.Path == item.Path && guardMatches(item, row, failover)
 		if keep && strings.HasPrefix(item.Role, "hijack") {
-			keep = guardOnTop(e.ID, (*live)[rosNAT], ownedIDs)
+			keep = guardOnTop(e.ID, (*live)[ros.PathNAT], ownedIDs)
 		}
 		status := "add"
 		if row != nil || len(owned) == 0 {
@@ -217,7 +218,7 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 		} else {
 			created = append(created, item)
 		}
-		p.Items = append(p.Items, DNSGuardItem{Role: item.Role, Object: guardObjectName(item.Path), Detail: guardDescribe(item.Role, item.Values), Status: status, Paused: strings.HasPrefix(item.Role, "hijack") && row != nil && row.flag("disabled")})
+		p.Items = append(p.Items, DNSGuardItem{Role: item.Role, Object: guardObjectName(item.Path), Detail: guardDescribe(item.Role, item.Values), Status: status, Paused: strings.HasPrefix(item.Role, "hijack") && row != nil && row.Flag("disabled")})
 	}
 	roleSet := device.StringSet(p.Roles...)
 	for _, e := range owned {
@@ -228,7 +229,7 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 			}
 		}
 	}
-	op := &DNSGuardReplace{OpHead: OpHead{Kind: "dns_guard_replace", Summary: guardSummary(spec, previous)}, Spec: spec, Previous: guardRaw(request.Previous), Owned: owned, Create: created}
+	op := &DNSGuardReplace{OpHead: OpHead{Kind: "dns_guard_replace", Summary: guardSummary(spec, previous)}, Spec: spec, Previous: ros.GuardRaw(request.Previous), Owned: owned, Create: created}
 	if spec == nil && len(owned) == 0 {
 		p.Message = messageGuardDisabled
 		if previous != nil {

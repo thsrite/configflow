@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -142,7 +143,7 @@ func TestR12PythonWholePlanAndExecution(t *testing.T) {
 				var writes func() any
 				if vendor == "routeros" {
 					s := r08State()
-					s.Tables[rosRoutes] = s.Tables[rosRoutes][:1]
+					s.Tables[ros.PathRoutes] = s.Tables[ros.PathRoutes][:1]
 					if mode == "adopt" || mode == "empty" || mode == "conflict" {
 						gw := "192.0.2.4"
 						comment := "manual"
@@ -153,20 +154,20 @@ func TestR12PythonWholePlanAndExecution(t *testing.T) {
 							gw = "192.0.2.9"
 						}
 						for i, c := range []string{"198.18.0.0/16", "198.51.100.0/25"} {
-							s.Tables[rosRoutes] = append(s.Tables[rosRoutes], routerfake.Row{".id": []string{"*A", "*B"}[i], "dst-address": c, "gateway": gw, "routing-table": "main", "disabled": "false", "active": "true", "comment": comment})
+							s.Tables[ros.PathRoutes] = append(s.Tables[ros.PathRoutes], routerfake.Row{".id": []string{"*A", "*B"}[i], "dst-address": c, "gateway": gw, "routing-table": "main", "disabled": "false", "active": "true", "comment": comment})
 						}
 					}
 					if mode == "dhcp" {
 						r.DNSAgentID = "dns"
 						desired.DNSSettings = &DNSSettings{AgentID: "dns", Server: "192.0.2.2"}
-						s.Tables[rosDHCPNetworks] = []routerfake.Row{{".id": "*D0", "address": "192.0.2.0/24", "gateway": "192.0.2.1", "dns-server": "192.0.2.99", "dns-none": "false"}}
-						s.Tables[rosDHCPServers] = []routerfake.Row{{".id": "*D1", "interface": "bridge", "disabled": "false"}}
+						s.Tables[ros.PathDHCPNetworks] = []routerfake.Row{{".id": "*D0", "address": "192.0.2.0/24", "gateway": "192.0.2.1", "dns-server": "192.0.2.99", "dns-none": "false"}}
+						s.Tables[ros.PathDHCPServers] = []routerfake.Row{{".id": "*D1", "interface": "bridge", "disabled": "false"}}
 					}
 					if mode == "nat_failure" || mode == "return_nat_failure" {
-						s.Faults = []routerfake.Fault{{Method: "PUT", Path: rosNAT, Count: 1, Status: 400}}
+						s.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathNAT, Count: 1, Status: 400}}
 					}
 					if mode == "route_failure" {
-						s.Faults = []routerfake.Fault{{Method: "PUT", Path: rosRoutes, Count: 1, Status: 400}}
+						s.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathRoutes, Count: 1, Status: 400}}
 					}
 					f := routerfake.New(nil)
 					f.Reset(s)

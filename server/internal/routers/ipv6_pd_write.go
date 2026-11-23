@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"reflect"
@@ -12,16 +13,11 @@ import (
 	"configflow/internal/ctxx"
 )
 
-// SetIPv6PDGuardManifest supplies an independent copy of the stored PD receipt.
-func (d *RouterOS) SetIPv6PDGuardManifest(raw json.RawMessage) {
-	d.ipv6PDGuardManifest = guardRaw(raw)
-	d.ipv6PDGuardManifestSet = true
-}
 func pdCreateGuard(path string, values Row) func([]Row) error {
 	return func(rows []Row) error {
 		if path == pdScripts || path == pdSchedulers {
 			for _, row := range rows {
-				if row.text("name") == values.text("name") {
+				if row.Text("name") == values.Text("name") {
 					return device.Error(messagePDPreviewChanged)
 				}
 			}
@@ -30,7 +26,7 @@ func pdCreateGuard(path string, values Row) func([]Row) error {
 	}
 }
 func (d *RouterOS) pdGone(ctx context.Context, path, id string) bool {
-	_, e := d.get(ctx, path+"/"+escapeROSPathID(id), rosTimeout)
+	_, e := d.Get(ctx, path+"/"+ros.EscapePathID(id), ros.Timeout)
 	return device.RouterErrorKind(e) == KindMissingResource
 }
 func (d *RouterOS) rollbackPD(ctx context.Context, changes []ROSChange) (map[[2]string]string, map[[3]string]bool, error) {
@@ -41,8 +37,8 @@ func (d *RouterOS) rollbackPD(ctx context.Context, changes []ROSChange) (map[[2]
 		if e := ctx.Err(); e != nil {
 			return remap, completed, e
 		}
-		allowed := slices.Contains([]string{pdScripts, pdSchedulers, pdClients, pdLists, pdPrefixes}, c.Path)
-		if !allowed || !rosIDPattern.MatchString(c.ID) || len(c.Expected) == 0 || !slices.Contains([]string{"PATCH", "RESTORE", "DELETE"}, c.Method) {
+		allowed := slices.Contains([]string{pdScripts, pdSchedulers, pdClients, ros.PathIPv6AddressLists, pdPrefixes}, c.Path)
+		if !allowed || !ros.IDPattern.MatchString(c.ID) || len(c.Expected) == 0 || !slices.Contains([]string{"PATCH", "RESTORE", "DELETE"}, c.Method) {
 			failures = append(failures, device.MessageOperationFormat)
 			continue
 		}
@@ -50,14 +46,14 @@ func (d *RouterOS) rollbackPD(ctx context.Context, changes []ROSChange) (map[[2]
 			failures = append(failures, device.MessageOperationFormat)
 			continue
 		}
-		check, e := d.perform(ctx, c, &[]ROSChange{}, true, pdCreateGuard(c.Path, c.Values))
+		check, e := d.Perform(ctx, c, &[]ROSChange{}, true, pdCreateGuard(c.Path, c.Values))
 		// The PUT reply proves the restored ID even if its verification read fails.
 		// Keep the original config proof; never bless a changed readback as our write.
-		if e == nil && c.Method == "RESTORE" && rosIDPattern.MatchString(check.ID) {
+		if e == nil && c.Method == "RESTORE" && ros.IDPattern.MatchString(check.ID) {
 			remap[[2]string{c.Path, c.ID}] = check.ID
 		}
 		if e == nil {
-			e = d.verifyChange(ctx, check)
+			e = d.VerifyChange(ctx, check)
 		}
 		// A lost compensation reply is not failure when a fresh GET proves absence.
 		if e != nil && c.Method == "DELETE" && d.pdGone(ctx, c.Path, c.ID) {
@@ -82,7 +78,7 @@ func pdRemapped(previous json.RawMessage, remap map[[2]string]string) json.RawMe
 	var doc map[string]json.RawMessage
 	var entries []map[string]json.RawMessage
 	if json.Unmarshal(previous, &doc) != nil || json.Unmarshal(doc["resources"], &entries) != nil {
-		return guardRaw(previous)
+		return ros.GuardRaw(previous)
 	}
 	for _, r := range entries {
 		var path, id string
@@ -198,7 +194,7 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	router := &Router{RouterSettings: RouterSettings{Type: "routeros", IPv6PDGuard: &PDGuard{Enabled: op.Enabled}}, Extra: map[string]json.RawMessage{"ipv6_pd_guard_state": guardRaw(op.Previous)}}
+	router := &Router{RouterSettings: RouterSettings{Type: "routeros", IPv6PDGuard: &PDGuard{Enabled: op.Enabled}}, Extra: map[string]json.RawMessage{"ipv6_pd_guard_state": ros.GuardRaw(op.Previous)}}
 	fresh, e := InspectIPv6PDGuard(ctx, router, op.Gateway, d)
 	if e != nil {
 		return nil, e
@@ -220,16 +216,16 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 		if e := ctx.Err(); e != nil {
 			return e
 		}
-		check, e := d.perform(ctx, c.ROSChange, &undo, false, pdCreateGuard(c.Path, c.Values))
+		check, e := d.Perform(ctx, c.ROSChange, &undo, false, pdCreateGuard(c.Path, c.Values))
 		if check.ID != "" && c.Method == "PUT" {
-			proof := d.ownershipSnapshot(c.Path, mergeRows(c.Values, check.created))
+			proof := d.OwnershipSnapshot(c.Path, ros.MergeRows(c.Values, check.Created))
 			created[c.Role] = IPv6PDResource{c.Role, c.Path, check.ID, proof}
 			expected[c.Role] = created[c.Role]
 		}
 		if e != nil {
 			return e
 		}
-		if e = d.verifyChange(ctx, check); e != nil {
+		if e = d.VerifyChange(ctx, check); e != nil {
 			return e
 		}
 		if c.Role != "state" && c.Method == "PATCH" {
@@ -237,7 +233,7 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 			if entry.ID == c.ID {
 				var row Row
 				_ = json.Unmarshal(c.Expected, &row)
-				entry.Config = d.ownershipSnapshot(c.Path, mergeRows(row, c.Values))
+				entry.Config = d.OwnershipSnapshot(c.Path, ros.MergeRows(row, c.Values))
 				expected[c.Role] = entry
 			}
 		}
@@ -250,9 +246,9 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 			}
 		}
 		if !op.Enabled && slices.ContainsFunc(op.Changes, func(c IPv6PDChange) bool { return c.Path == pdScripts }) {
-			for _, path := range []string{pdLists, pdPrefixes} {
+			for _, path := range []string{ros.PathIPv6AddressLists, pdPrefixes} {
 				query := path
-				if path == pdLists {
+				if path == ros.PathIPv6AddressLists {
 					query += "?list=" + pdLast
 				}
 				rows, e := pdRows(ctx, d, query)
@@ -260,7 +256,7 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 					return e
 				}
 				for _, row := range rows {
-					if path == pdLists || pdDeprecated.MatchString(row.text("comment")) && !policyFlag(row["dynamic"]) {
+					if path == ros.PathIPv6AddressLists || pdDeprecated.MatchString(row.Text("comment")) && !ros.PolicyFlag(row["dynamic"]) {
 						if e := apply(pdChange(d, "state", "DELETE", path, row, nil)); e != nil {
 							return e
 						}
@@ -289,8 +285,8 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 				} else if role == "scheduler" {
 					rows = live.schedulers
 				}
-				row := findRow(rows, entry.ID)
-				if row == nil || !sameRow(d.ownershipSnapshot(entry.Path, row), entry.Config) {
+				row := ros.FindRow(rows, entry.ID)
+				if row == nil || !ros.SameRow(d.OwnershipSnapshot(entry.Path, row), entry.Config) {
 					return device.Error(messagePDOwnership)
 				}
 				resources = append(resources, entry)
@@ -321,7 +317,7 @@ func (d *RouterOS) ApplyIPv6PDGuard(ctx context.Context, op IPv6PDGuardSync) (*I
 		}
 		return nil, e
 	}
-	return &IPv6PDGuardUndo{Kind: "ipv6_pd_guard_restore", Changes: undo, Previous: guardRaw(op.Previous)}, nil
+	return &IPv6PDGuardUndo{Kind: "ipv6_pd_guard_restore", Changes: undo, Previous: ros.GuardRaw(op.Previous)}, nil
 }
 
 // RestoreIPv6PDGuard compensates and remaps successful restorations even when
@@ -337,7 +333,7 @@ func (d *RouterOS) RestoreIPv6PDGuard(ctx context.Context, op IPv6PDGuardUndo) e
 			return ctx.Err()
 		}
 		var current IPv6PDManifest
-		_ = jsondecode.Unmarshal(d.ipv6PDGuardManifest, &current)
+		_ = jsondecode.Unmarshal(d.IPv6PDGuardManifest(), &current)
 		retained := map[string]IPv6PDResource{}
 		for _, r := range current.Resources {
 			if r.Config != nil && !completed[[3]string{"DELETE", r.Path, r.ID}] && !completed[[3]string{"PATCH", r.Path, r.ID}] {
@@ -366,19 +362,19 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 		// removal check alone must not report that live runtime state as withdrawn.
 		swept := slices.ContainsFunc(check.Removed, func(item [2]string) bool { return item[0] == pdScripts })
 		if swept && (len(live.last) > 0 || slices.ContainsFunc(live.prefixes, func(row Row) bool {
-			return pdDeprecated.MatchString(row.text("comment")) && !policyFlag(row["dynamic"])
+			return pdDeprecated.MatchString(row.Text("comment")) && !ros.PolicyFlag(row["dynamic"])
 		})) {
 			return device.Error(messagePDVerifyWithdraw)
 		}
-		if device.HasStoredState(d.ipv6PDGuardManifest) {
+		if device.HasStoredState(d.IPv6PDGuardManifest()) {
 			return device.Error(messagePDVerifyWithdraw)
 		}
 		for _, v := range []struct {
 			path string
 			rows []Row
-		}{{pdScripts, live.scripts}, {pdSchedulers, live.schedulers}, {pdLists, live.last}, {pdPrefixes, live.prefixes}} {
+		}{{pdScripts, live.scripts}, {pdSchedulers, live.schedulers}, {ros.PathIPv6AddressLists, live.last}, {pdPrefixes, live.prefixes}} {
 			for _, r := range v.rows {
-				if slices.Contains(check.Removed, [2]string{v.path, r.id()}) {
+				if slices.Contains(check.Removed, [2]string{v.path, r.ID()}) {
 					return device.Error(messagePDVerifyWithdraw)
 				}
 			}
@@ -396,7 +392,7 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 	if pdScriptState(script, spec).state != "ok" || pdSchedulerState(scheduler).state != "ok" || !slices.Contains([]string{"ok", "shared"}, pdHookState(client).state) {
 		return device.Error(messagePDVerifyTemplate)
 	}
-	owned, e := pdOwned(d, d.ipv6PDGuardManifest, live)
+	owned, e := pdOwned(d, d.IPv6PDGuardManifest(), live)
 	if e != nil {
 		return e
 	}
@@ -404,7 +400,7 @@ func VerifyIPv6PDGuard(ctx context.Context, d *RouterOS, check *IPv6PDGuardCheck
 	current := map[string]Row{"script": script, "scheduler": scheduler, "hook": client}
 	for role, row := range owned {
 		roles = append(roles, role)
-		if current[role] == nil || current[role].id() != row.id() {
+		if current[role] == nil || current[role].ID() != row.ID() {
 			return device.Error(messagePDVerifyManifest)
 		}
 	}

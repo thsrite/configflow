@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"encoding/json"
 	"slices"
 )
@@ -28,7 +29,7 @@ type DNSGuardSpec struct {
 }
 
 // DNSGuardResource is an object proven by its ID and complete stable configuration.
-type DNSGuardResource = rosResourceManifest
+type DNSGuardResource = ros.ResourceManifest
 
 // DNSGuardManifest records the guard's creation order and ownership proof.
 type DNSGuardManifest struct {
@@ -105,15 +106,9 @@ const (
 	dnsGuardHijack     = dnsGuardPrefix + "hijack"
 )
 
-var dnsGuardPaths = []string{rosAddresses, rosNAT, rosFilter, rosNetwatch}
+var dnsGuardPaths = []string{ros.PathAddresses, ros.PathNAT, ros.PathFilter, ros.PathNetwatch}
 
 func guardPath(path string) bool { return slices.Contains(dnsGuardPaths, path) }
-func guardRaw(raw json.RawMessage) json.RawMessage {
-	if len(raw) == 0 {
-		return json.RawMessage("null")
-	}
-	return slices.Clone(raw)
-}
 
 func parseDNSGuardManifest(raw json.RawMessage) (*DNSGuardManifest, error) {
 	if len(raw) == 0 || string(raw) == "null" {
@@ -135,7 +130,7 @@ func parseDNSGuardManifest(raw json.RawMessage) (*DNSGuardManifest, error) {
 	roles := map[string]bool{}
 	for _, e := range m.Resources {
 		key := [2]string{e.Path, e.ID}
-		if !guardPath(e.Path) || !rosIDPattern.MatchString(e.ID) || e.Role == "" || e.Config == nil || seen[key] || roles[e.Role] {
+		if !guardPath(e.Path) || !ros.IDPattern.MatchString(e.ID) || e.Role == "" || e.Config == nil || seen[key] || roles[e.Role] {
 			return nil, device.Error(messageGuardManifest)
 		}
 		seen[key] = true

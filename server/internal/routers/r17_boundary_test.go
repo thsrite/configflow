@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"encoding/json"
 	"net/http/httptest"
 	"os"
@@ -98,10 +99,10 @@ func TestR17RealPythonVendorBoundaries(t *testing.T) {
 				if vendor == "routeros" {
 					seed := r17ROSState(mode == "convert")
 					if mode == "scope" {
-						seed.Tables[rosDHCPServers][0]["disabled"] = "true"
+						seed.Tables[ros.PathDHCPServers][0]["disabled"] = "true"
 					}
 					if mode == "ambiguous" {
-						seed.Tables[rosDHCPServers] = append(seed.Tables[rosDHCPServers], routerfake.Row{".id": "*9", "name": "other", "interface": "bridge", "disabled": "false"})
+						seed.Tables[ros.PathDHCPServers] = append(seed.Tables[ros.PathDHCPServers], routerfake.Row{".id": "*9", "name": "other", "interface": "bridge", "disabled": "false"})
 					}
 					if mode == "conflict" {
 						seed.Tables[fixedROSLeases] = []routerfake.Row{{".id": "*E0", "address": ip, "mac-address": "02:00:00:00:00:99", "server": "dhcp-example", "comment": "manual", "disabled": "false"}}

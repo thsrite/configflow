@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,12 +26,12 @@ const r08Target = "198.51.100.0/25"
 
 func r08State() routerfake.State {
 	return routerfake.State{PolicyWire: true, Tables: map[string][]routerfake.Row{
-		rosTables: {{".id": "*0", "name": "main", "fib": ""}},
-		rosRoutes: {
+		ros.PathTables: {{".id": "*0", "name": "main", "fib": ""}},
+		ros.PathRoutes: {
 			{".id": "*1", "dst-address": "192.0.2.0/24", "gateway": "bridge", "routing-table": "main", "immediate-gw": "bridge", "active": "true", "connect": "true", "dynamic": "true"},
 			{".id": "*2", "dst-address": "198.18.0.0/16", "gateway": r08Gateway, "routing-table": "main", "active": "true", "immediate-gw": r08Gateway + "%bridge", "disabled": "false", "comment": "cf"},
 		},
-		rosNAT: {{".id": "*3", "chain": "srcnat", "action": "masquerade", "out-interface": "wan", "disabled": "false"}},
+		ros.PathNAT: {{".id": "*3", "chain": "srcnat", "action": "masquerade", "out-interface": "wan", "disabled": "false"}},
 	}}
 }
 
@@ -49,7 +50,7 @@ func r08Desired(selected bool) *Desired {
 }
 
 func r08Plan(ctx context.Context, d *RouterOS, desired *Desired) (*ROSPolicyPlan, error) {
-	desired.ROSPolicy.Previous = slices.Clone(d.policyManifest)
+	desired.ROSPolicy.Previous = slices.Clone(d.PolicyManifest())
 	state, err := r08InspectState(ctx, d)
 	if err != nil {
 		return nil, err
@@ -69,7 +70,7 @@ func r08InspectState(ctx context.Context, d *RouterOS) (*RouterState, error) {
 	state.NatContext.RoutingRules = (*state.ROSPolicy)["/routing/rule"]
 	state.NatContext.VRFs = (*state.ROSPolicy)["/ip/vrf"]
 	if state.NatContext.Mangle == nil {
-		state.NatContext.Mangle = (*state.ROSPolicy)[rosMangle]
+		state.NatContext.Mangle = (*state.ROSPolicy)[ros.PathMangle]
 	}
 	return state, nil
 }
@@ -122,7 +123,7 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 		}
 		switch step.Action {
 		case "report":
-			step.Desired.ROSPolicy.Previous = slices.Clone(d.policyManifest)
+			step.Desired.ROSPolicy.Previous = slices.Clone(d.PolicyManifest())
 			var state *RouterState
 			state, err = r08InspectState(ctx, d)
 			if err == nil {
@@ -134,25 +135,25 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 			}
 		case "legacy":
 			var fields map[string]json.RawMessage
-			_ = json.Unmarshal(d.policyManifest, &fields)
-			manifest, _ := policyManifest(d.policyManifest)
+			_ = json.Unmarshal(d.PolicyManifest(), &fields)
+			manifest, _ := policyManifest(d.PolicyManifest())
 			rename := map[string]string{"CF_Source_Proxy_IP_01": "cfp_0123456789abcdef_src", "CF_Destination_Proxy_IP_01": "cfp_0123456789abcdef_dst", "CF_Bypass_IP_01": "cfp_0123456789abcdef_bypass", "CF_Proxy_Routing_01": "cfp_0123456789abcdef"}
 			patches := map[string]map[string]routerfake.Row{}
 			for i, item := range manifest.Resources {
-				config := cloneRow(item.Config)
+				config := ros.CloneRow(item.Config)
 				for key, value := range config {
 					if name, ok := rename[value]; ok {
 						config[key] = name
 					}
 				}
-				if item.Path == rosMangle {
-					if config.is("action", "jump") {
+				if item.Path == ros.PathMangle {
+					if config.Is("action", "jump") {
 						config["routing-mark"] = "main"
 					}
 					config["invalid"] = "true"
 				}
 				manifest.Resources[i].Config = config
-				patch := cloneRow(config)
+				patch := ros.CloneRow(config)
 				patch["invalid"] = "false"
 				if patches[item.Path] == nil {
 					patches[item.Path] = map[string]routerfake.Row{}
@@ -182,7 +183,7 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 			}
 		case "view":
 			var value []ROSPolicyObject
-			value, err = ReadPolicyObjects(ctx, d, d.policyManifest)
+			value, err = ReadPolicyObjects(ctx, d, d.PolicyManifest())
 			if err == nil {
 				appendResult(value)
 			}
@@ -240,7 +241,7 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 		}
 		out.Error = &r08Error{class, err.Error()}
 	}
-	out.Manifest = slices.Clone(d.policyManifest)
+	out.Manifest = slices.Clone(d.PolicyManifest())
 	if len(out.Manifest) == 0 {
 		out.Manifest = json.RawMessage(`null`)
 	}
@@ -413,12 +414,12 @@ func r08Cases() []r08Case {
 		{"rollback", r08State(), []r08Step{{Action: "rollback", Desired: r08Desired(true)}}},
 	}
 	reportState := r08State()
-	delete(reportState.Tables[rosNAT][0], "out-interface")
+	delete(reportState.Tables[ros.PathNAT][0], "out-interface")
 	cases = append(cases, r08Case{"report_policy_nat_retirement", reportState, []r08Step{{Action: "report", Desired: r08Desired(true)}, {Action: "publish", Desired: r08Desired(true)}, {Action: "report", Desired: r08Desired(true)}, {Action: "report", Desired: r08Desired(false)}}})
 	nestedState := r08State()
-	delete(nestedState.Tables[rosNAT][0], "out-interface")
+	delete(nestedState.Tables[ros.PathNAT][0], "out-interface")
 	sources := []string{}
-	for _, network := range ClientSourceNetworks(netip.MustParseAddr(r08Gateway)) {
+	for _, network := range ros.ClientSourceNetworks(netip.MustParseAddr(r08Gateway)) {
 		sources = append(sources, network.String())
 	}
 	nested := NATListSync{OpHead: OpHead{Kind: "nat_list_sync"}, Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, OutInterface: "bridge", Sources: sources, Destinations: []string{"198.18.0.0/16", r08Target}, SrcAdd: sources, DstAdd: []string{"198.18.0.0/16", r08Target}, SrcRemove: []ROSResource{}, DstRemove: []ROSResource{}, Legacy: []ROSResource{}, Stale: []ROSResource{}}
@@ -429,13 +430,13 @@ func r08Cases() []r08Case {
 	}
 	state := r08State()
 	for i := range 5 {
-		state.Tables[rosRoutes] = append(state.Tables[rosRoutes], routerfake.Row{".id": fmt.Sprintf("*%X", 200+i), "dst-address": fmt.Sprintf("198.51.100.%d/32", i), "gateway": r08Gateway, "comment": "cf-old", "routing-table": "main", "disabled": "false", "active": "true", "immediate-gw": r08Gateway + "%bridge"})
+		state.Tables[ros.PathRoutes] = append(state.Tables[ros.PathRoutes], routerfake.Row{".id": fmt.Sprintf("*%X", 200+i), "dst-address": fmt.Sprintf("198.51.100.%d/32", i), "gateway": r08Gateway, "comment": "cf-old", "routing-table": "main", "disabled": "false", "active": "true", "immediate-gw": r08Gateway + "%bridge"})
 	}
 	cases = append(cases, r08Case{"batched_route_migration_rollback", state, []r08Step{{Action: "rollback", Desired: r08Desired(true)}}})
 	for _, nat := range []bool{false, true} {
 		state := r08State()
 		if nat {
-			delete(state.Tables[rosNAT][0], "out-interface")
+			delete(state.Tables[ros.PathNAT][0], "out-interface")
 		}
 		cases = append(cases, r08Case{fmt.Sprintf("replace_withdraw_%t", nat), state, []r08Step{
 			{Action: "publish", Desired: r08Desired(true)},
@@ -447,14 +448,14 @@ func r08Cases() []r08Case {
 			{Action: "view"},
 			{Action: "publish", Desired: func() *Desired { d := r08Desired(false); d.ProxyCIDRs = d.ProxyCIDRs[:1]; return d }()},
 		}})
-		for _, path := range []string{rosTables, rosRoutes, rosMangle, rosNAT} {
-			if path == rosNAT && !nat {
+		for _, path := range []string{ros.PathTables, ros.PathRoutes, ros.PathMangle, ros.PathNAT} {
+			if path == ros.PathNAT && !nat {
 				continue
 			}
 			for _, lost := range []bool{false, true} {
 				s := r08State()
 				if nat {
-					delete(s.Tables[rosNAT][0], "out-interface")
+					delete(s.Tables[ros.PathNAT][0], "out-interface")
 				}
 				fault := routerfake.Fault{Method: "PUT", Path: path, Count: 1, Status: 400}
 				if lost {
@@ -487,9 +488,9 @@ func r08Cases() []r08Case {
 		desired := r08Desired(true)
 		switch kind {
 		case "fasttrack":
-			state.Tables[rosFilter] = []routerfake.Row{{".id": "*F", "chain": "forward", "action": "fasttrack-connection"}}
+			state.Tables[ros.PathFilter] = []routerfake.Row{{".id": "*F", "chain": "forward", "action": "fasttrack-connection"}}
 		case "prerouting":
-			state.Tables[rosMangle] = []routerfake.Row{{".id": "*F", "chain": "prerouting", "action": "jump", "jump-target": "foreign"}}
+			state.Tables[ros.PathMangle] = []routerfake.Row{{".id": "*F", "chain": "prerouting", "action": "jump", "jump-target": "foreign"}}
 		case "vrf":
 			state.Tables["/ip/vrf"] = []routerfake.Row{{".id": "*F", "name": "foreign"}}
 		case "foreign_route", "route_migration":
@@ -497,7 +498,7 @@ func r08Cases() []r08Case {
 			if kind == "route_migration" {
 				comment = "cf-old"
 			}
-			state.Tables[rosRoutes] = append(state.Tables[rosRoutes], routerfake.Row{".id": "*F", "dst-address": r08Target, "gateway": r08Gateway, "comment": comment, "active": "true", "disabled": "false", "routing-table": "main", "immediate-gw": r08Gateway + "%bridge"})
+			state.Tables[ros.PathRoutes] = append(state.Tables[ros.PathRoutes], routerfake.Row{".id": "*F", "dst-address": r08Target, "gateway": r08Gateway, "comment": comment, "active": "true", "disabled": "false", "routing-table": "main", "immediate-gw": r08Gateway + "%bridge"})
 		case "static_overlap":
 			desired.ProxyCIDRs = append(desired.ProxyCIDRs, desired.ROSPolicy.CIDRs...)
 		case "nat_migration", "list_nat", "inverse_nat":
@@ -505,14 +506,14 @@ func r08Cases() []r08Case {
 			if kind == "list_nat" {
 				delete(row, "dst-address")
 				row["dst-address-list"] = "legacy"
-				state.Tables[rosAddresses] = []routerfake.Row{{".id": "*E", "list": "legacy", "address": "198.51.100.0/24"}}
+				state.Tables[ros.PathAddresses] = []routerfake.Row{{".id": "*E", "list": "legacy", "address": "198.51.100.0/24"}}
 			}
 			if kind == "inverse_nat" {
 				row["dst-address"] = "!198.51.100.0/24"
 			}
-			state.Tables[rosNAT] = append([]routerfake.Row{row}, state.Tables[rosNAT]...)
+			state.Tables[ros.PathNAT] = append([]routerfake.Row{row}, state.Tables[ros.PathNAT]...)
 		case "occupied":
-			state.Tables[rosFilter] = []routerfake.Row{{".id": "*F", "src-address-list": "CF_Source_Proxy_IP_01", "chain": "input", "action": "drop"}}
+			state.Tables[ros.PathFilter] = []routerfake.Row{{".id": "*F", "src-address-list": "CF_Source_Proxy_IP_01", "chain": "input", "action": "drop"}}
 		}
 		action := "plan"
 		if kind == "foreign_route" || kind == "nat_migration" || kind == "occupied" {
@@ -520,7 +521,7 @@ func r08Cases() []r08Case {
 		}
 		cases = append(cases, r08Case{kind, state, []r08Step{{Action: action, Desired: desired}}})
 	}
-	for _, path := range []string{rosAddresses + "/*65", rosTables + "/*68", rosRoutes + "/*69", rosMangle + "/*6C"} {
+	for _, path := range []string{ros.PathAddresses + "/*65", ros.PathTables + "/*68", ros.PathRoutes + "/*69", ros.PathMangle + "/*6C"} {
 		desired := r08Desired(true)
 		desired.ROSPolicy.CIDRs = []ProxyCIDR{{"203.0.113.0/24", []string{"Replacement"}}}
 		mutation := &routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: path, Count: 1, Status: 400}}}
@@ -530,7 +531,7 @@ func r08Cases() []r08Case {
 		for _, condition := range []string{"complete", "inactive", "wrong-nat-source", "protocol-nat", "late-nat"} {
 			state := r08State()
 			if nat {
-				delete(state.Tables[rosNAT][0], "out-interface")
+				delete(state.Tables[ros.PathNAT][0], "out-interface")
 			}
 			prepares := []map[string]any{}
 			mutation := &routerfake.ExternalWrite{}
@@ -548,12 +549,12 @@ func r08Cases() []r08Case {
 					if condition == "protocol-nat" {
 						row["protocol"] = "tcp"
 					}
-					mutation.ExtraRows = map[string][]routerfake.Row{rosNAT: {row}}
+					mutation.ExtraRows = map[string][]routerfake.Row{ros.PathNAT: {row}}
 				}
 			}
 			prepares = append(prepares, map[string]any{"kind": "route_add", "cidr": r08Target, "gateway": r08Gateway, "comment": "cf"})
 			if condition == "inactive" {
-				mutation.Faults = []routerfake.Fault{{Method: "PUT", Path: rosRoutes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{rosRoutes: {"*6D": {"active": "false"}, "*6F": {"active": "false"}}}}}
+				mutation.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathRoutes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{ros.PathRoutes: {"*6D": {"active": "false"}, "*6F": {"active": "false"}}}}}
 			}
 			bypass, notRequired := []string{}, []CIDRGateway{}
 			if nat {
@@ -569,24 +570,24 @@ func r08Cases() []r08Case {
 		mutation := &routerfake.ExternalWrite{}
 		switch drift {
 		case "comment", "unknown-field":
-			mutation.PatchRows = map[string]map[string]routerfake.Row{rosMangle: {"*6C": {drift: "external"}}}
+			mutation.PatchRows = map[string]map[string]routerfake.Row{ros.PathMangle: {"*6C": {drift: "external"}}}
 		case "order":
-			mutation.RemoveIDs = map[string][]string{rosMangle: {"*6A"}}
-			mutation.ExtraRows = map[string][]routerfake.Row{rosMangle: {{".id": "*6A", "chain": "CF_Proxy_Routing_01", "action": "return", "src-address-list": "CF_Bypass_IP_01", "comment": "cf-ros-policy-test", "disabled": "false"}}}
+			mutation.RemoveIDs = map[string][]string{ros.PathMangle: {"*6A"}}
+			mutation.ExtraRows = map[string][]routerfake.Row{ros.PathMangle: {{".id": "*6A", "chain": "CF_Proxy_Routing_01", "action": "return", "src-address-list": "CF_Bypass_IP_01", "comment": "cf-ros-policy-test", "disabled": "false"}}}
 		case "invalid":
-			mutation.PatchRows = map[string]map[string]routerfake.Row{rosMangle: {"*6C": {"invalid": "true"}}}
+			mutation.PatchRows = map[string]map[string]routerfake.Row{ros.PathMangle: {"*6C": {"invalid": "true"}}}
 		case "next-hop":
-			mutation.PatchRows = map[string]map[string]routerfake.Row{rosRoutes: {"*69": {"immediate-gw": r08Gateway + "%wan"}}}
+			mutation.PatchRows = map[string]map[string]routerfake.Row{ros.PathRoutes: {"*69": {"immediate-gw": r08Gateway + "%wan"}}}
 		case "fib":
-			mutation.PatchRows = map[string]map[string]routerfake.Row{rosTables: {"*68": {"fib": "false"}}}
+			mutation.PatchRows = map[string]map[string]routerfake.Row{ros.PathTables: {"*68": {"fib": "false"}}}
 		case "fasttrack":
-			mutation.ExtraRows = map[string][]routerfake.Row{rosFilter: {{".id": "*F", "chain": "forward", "action": "fasttrack-connection"}}}
+			mutation.ExtraRows = map[string][]routerfake.Row{ros.PathFilter: {{".id": "*F", "chain": "forward", "action": "fasttrack-connection"}}}
 		case "counter":
-			mutation.PatchRows = map[string]map[string]routerfake.Row{rosMangle: {"*6C": {"bytes": "99999", "packets": "777"}}}
+			mutation.PatchRows = map[string]map[string]routerfake.Row{ros.PathMangle: {"*6C": {"bytes": "99999", "packets": "777"}}}
 		case "moved-list":
-			mutation.PatchRows = map[string]map[string]routerfake.Row{rosAddresses: {"*65": {"list": "moved", "address": "192.0.2.99"}}}
+			mutation.PatchRows = map[string]map[string]routerfake.Row{ros.PathAddresses: {"*65": {"list": "moved", "address": "192.0.2.99"}}}
 		case "foreign-reference":
-			mutation.ExtraRows = map[string][]routerfake.Row{rosFilter: {{".id": "*F", "chain": "input", "action": "drop", "src-address-list": "CF_Source_Proxy_IP_01"}}}
+			mutation.ExtraRows = map[string][]routerfake.Row{ros.PathFilter: {{".id": "*F", "chain": "input", "action": "drop", "src-address-list": "CF_Source_Proxy_IP_01"}}}
 		}
 		cases = append(cases, r08Case{"live_drift_" + drift, r08State(), []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "plan", Desired: r08Desired(true), Mutation: mutation}, {Action: "view"}}})
 	}

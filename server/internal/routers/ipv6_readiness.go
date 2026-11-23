@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -51,7 +52,7 @@ type IPv6Readiness struct {
 type readinessTable struct{ key, path string }
 
 func readinessTables() []readinessTable {
-	out := []readinessTable{{"routes", rosIPv6Routes}, {"addresses", rosIPv6Addresses}, {"nd", rosIPv6ND}, {"dhcp", pdClients}, {"nat", "/ipv6/firewall/nat"}, {"filter", "/ipv6/firewall/filter"}, {"ipv4_addresses", rosIPv4Addresses}}
+	out := []readinessTable{{"routes", ros.PathIPv6Routes}, {"addresses", rosIPv6Addresses}, {"nd", ros.PathIPv6ND}, {"dhcp", pdClients}, {"nat", "/ipv6/firewall/nat"}, {"filter", "/ipv6/firewall/filter"}, {"ipv4_addresses", rosIPv4Addresses}}
 	paths := PolicyTablePaths()
 	for _, key := range []string{"raw", "mangle", "ipv4_routes", "ipv4_filter", "ipv4_nat", "ipv4_raw", "ipv4_mangle", "interface_lists", "interface_members", "interfaces", "routing_rules"} {
 		out = append(out, readinessTable{key, paths[key]})
@@ -69,7 +70,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	failed := []string{}
 	checks := []IPv6ReadinessCheck{}
 	for _, t := range readinessTables() {
-		rows, e := d.list(ctx, t.path)
+		rows, e := d.List(ctx, t.path)
 		if e != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -88,8 +89,8 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		for _, table := range []string{"filter", "nat", "raw", "mangle"} {
 			for _, row := range snapshot[prefix+table] {
 				for _, field := range []string{"src-address-list", "dst-address-list"} {
-					if row.set(field) {
-						names = append(names, strings.TrimLeft(row.text(field), "!"))
+					if row.Set(field) {
+						names = append(names, strings.TrimLeft(row.Text(field), "!"))
 					}
 				}
 			}
@@ -98,10 +99,10 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		slices.Sort(names)
 		path := paths[key]
 		if prefix == "" {
-			path = pdLists
+			path = ros.PathIPv6AddressLists
 		}
 		for _, name := range names {
-			rows, e := d.list(ctx, path+"?list="+strings.ReplaceAll(url.QueryEscape(name), "+", "%20"))
+			rows, e := d.List(ctx, path+"?list="+strings.ReplaceAll(url.QueryEscape(name), "+", "%20"))
 			if e != nil {
 				if ctx.Err() != nil {
 					return nil, ctx.Err()
@@ -114,9 +115,9 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		}
 	}
 	dns := Row{}
-	value, e := d.get(ctx, "/ip/dns", rosTimeout)
+	value, e := d.Get(ctx, "/ip/dns", ros.Timeout)
 	if e == nil {
-		if m := asRow(value); m != nil {
+		if m := ros.AsRow(value); m != nil {
 			dns = m
 		} else {
 			e = device.Error(messageReadinessDNS)
@@ -154,7 +155,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	}
 	defaults := []Row{}
 	for _, row := range snapshot["routes"] {
-		if row.is("dst-address", "::/0") && row.textOr("routing-table", "main") == "main" && ipv6Enabled(row) && policyFlag(row["active"]) && !policyFlag(row["blackhole"]) && !policyFlag(row["unreachable"]) && !policyFlag(row["prohibit"]) {
+		if row.Is("dst-address", "::/0") && row.TextOr("routing-table", "main") == "main" && ipv6Enabled(row) && ros.PolicyFlag(row["active"]) && !ros.PolicyFlag(row["blackhole"]) && !ros.PolicyFlag(row["unreachable"]) && !ros.PolicyFlag(row["prohibit"]) {
 			defaults = append(defaults, row)
 		}
 	}
@@ -165,7 +166,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	add("wan", messageReadinessWANLabel, status, message, nil)
 	nd := []Row{}
 	for _, row := range snapshot["nd"] {
-		if ipv6Enabled(row) && (row.is("interface", lan) || row.is("interface", "all")) {
+		if ipv6Enabled(row) && (row.Is("interface", lan) || row.Is("interface", "all")) {
 			nd = append(nd, row)
 		}
 	}
@@ -176,21 +177,21 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 	add("ra", messageReadinessRALabel, status, message, nil)
 	details := []string{}
 	for _, row := range snapshot["dhcp"] {
-		if ipv6Enabled(row) && policyFlag(row["use-peer-dns"]) {
+		if ipv6Enabled(row) && ros.PolicyFlag(row["use-peer-dns"]) {
 			details = append(details, messageReadinessPeerDNS)
 			break
 		}
 	}
 	for _, row := range nd {
-		if policyFlag(row["advertise-dns"]) {
+		if ros.PolicyFlag(row["advertise-dns"]) {
 			details = append(details, messageReadinessRADNS)
 			break
 		}
 	}
-	if dns.set("dynamic-servers") {
+	if dns.Set("dynamic-servers") {
 		details = append(details, messageReadinessDynamicDNS)
 	}
-	if dnsTarget != "" && dns.text("servers") != dnsTarget {
+	if dnsTarget != "" && dns.Text("servers") != dnsTarget {
 		details = append(details, messageReadinessSelectedDNS)
 	}
 	status, message = "ok", messageReadinessDNSOK
@@ -222,8 +223,8 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		}
 		rows, conflicts := []Row{}, []Row{}
 		for _, row := range snapshot["routes"] {
-			p, ok := ipv6Network(row.text("dst-address"))
-			if row.textOr("routing-table", "main") != "main" || !ok {
+			p, ok := ipv6Network(row.Text("dst-address"))
+			if row.TextOr("routing-table", "main") != "main" || !ok {
 				continue
 			}
 			if p == target {
@@ -234,7 +235,7 @@ func InspectIPv6Readiness(ctx context.Context, d *RouterOS, r *Router, agent *mo
 		}
 		overlap := false
 		for _, row := range snapshot["addresses"] {
-			p, ok := ipv6Network(row.text("address"))
+			p, ok := ipv6Network(row.Text("address"))
 			overlap = overlap || ok && p.Overlaps(target)
 		}
 		idle := ""
@@ -329,11 +330,11 @@ type IPv6ReadinessReceipt struct {
 }
 
 func readinessOwned(row, values Row) bool {
-	if !ipv6Enabled(row) || policyFlag(row["dynamic"]) || policyFlag(row["connect"]) {
+	if !ipv6Enabled(row) || ros.PolicyFlag(row["dynamic"]) || ros.PolicyFlag(row["connect"]) {
 		return false
 	}
 	for k, v := range values {
-		if k != "disabled" && comparable(k, row[k]) != comparable(k, v) {
+		if k != "disabled" && ros.Comparable(k, row[k]) != ros.Comparable(k, v) {
 			return false
 		}
 	}
@@ -347,19 +348,19 @@ func (d *RouterOS) AddMissingIPv6Route(ctx context.Context, plan Row) (*IPv6Read
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	p, ok := ipv6Network(plan.text("dst-address"))
-	g := plan.text("gateway")
+	p, ok := ipv6Network(plan.Text("dst-address"))
+	g := plan.Text("gateway")
 	a, _, scoped := strings.Cut(g, "%")
 	addr, e := netip.ParseAddr(a)
-	if !ok || p.String() != plan.text("dst-address") || e != nil || !addr.Is6() || !scoped || !ipv6ValidSpec(&IPv6RouteSpec{p.String(), g}) || len(plan) != 5 || !plan.is("routing-table", "main") || !plan.is("distance", "1") || !plan.is("disabled", "false") {
+	if !ok || p.String() != plan.Text("dst-address") || e != nil || !addr.Is6() || !scoped || !ipv6ValidSpec(&IPv6RouteSpec{p.String(), g}) || len(plan) != 5 || !plan.Is("routing-table", "main") || !plan.Is("distance", "1") || !plan.Is("disabled", "false") {
 		return nil, device.Error(device.MessageOperationFormat)
 	}
-	rows, e := d.list(ctx, rosIPv6Routes)
+	rows, e := d.List(ctx, ros.PathIPv6Routes)
 	if e != nil {
 		return nil, e
 	}
 	for _, r := range rows {
-		if ipv6Key(r) == p.String() && r.textOr("routing-table", "main") == "main" {
+		if ipv6Key(r) == p.String() && r.TextOr("routing-table", "main") == "main" {
 			return nil, device.Error(messageReadinessRouteChanged)
 		}
 	}
@@ -367,30 +368,30 @@ func (d *RouterOS) AddMissingIPv6Route(ctx context.Context, plan Row) (*IPv6Read
 	if _, e = rand.Read(token); e != nil {
 		return nil, e
 	}
-	values := cloneRow(plan)
+	values := ros.CloneRow(plan)
 	values["comment"] = "cf-ipv6-readiness:" + hex.EncodeToString(token)
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	_, writeErr := d.request(ctx, "PUT", rosIPv6Routes, values, rosTimeout)
-	rows, readErr := d.list(ctx, rosIPv6Routes)
+	_, writeErr := d.Request(ctx, "PUT", ros.PathIPv6Routes, values, ros.Timeout)
+	rows, readErr := d.List(ctx, ros.PathIPv6Routes)
 	matched := []Row{}
 	for _, r := range rows {
-		if r.is("comment", values.text("comment")) {
+		if r.Is("comment", values.Text("comment")) {
 			matched = append(matched, r)
 		}
 	}
-	if writeErr == nil && readErr == nil && len(matched) == 1 && readinessOwned(matched[0], values) && rosIDPattern.MatchString(matched[0].id()) && policyFlag(matched[0]["active"]) {
+	if writeErr == nil && readErr == nil && len(matched) == 1 && readinessOwned(matched[0], values) && ros.IDPattern.MatchString(matched[0].ID()) && ros.PolicyFlag(matched[0]["active"]) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		return &IPv6ReadinessReceipt{matched[0].id(), values, d.ownershipSnapshot(rosIPv6Routes, matched[0])}, nil
+		return &IPv6ReadinessReceipt{matched[0].ID(), values, d.OwnershipSnapshot(ros.PathIPv6Routes, matched[0])}, nil
 	}
 	if readErr != nil {
 		return nil, device.Error(messageReadinessUncertain)
 	}
 	if len(matched) == 1 && readinessOwned(matched[0], values) {
-		if e := d.UndoIPv6ReadinessRoute(ctx, IPv6ReadinessReceipt{matched[0].id(), values, d.ownershipSnapshot(rosIPv6Routes, matched[0])}); e != nil {
+		if e := d.UndoIPv6ReadinessRoute(ctx, IPv6ReadinessReceipt{matched[0].ID(), values, d.OwnershipSnapshot(ros.PathIPv6Routes, matched[0])}); e != nil {
 			return nil, device.Error(messageReadinessUncertain)
 		}
 	} else if len(matched) > 0 {
@@ -408,24 +409,24 @@ func (d *RouterOS) UndoIPv6ReadinessRoute(ctx context.Context, receipt IPv6Readi
 	if e := ctx.Err(); e != nil {
 		return e
 	}
-	if !rosIDPattern.MatchString(receipt.ID) || !strings.HasPrefix(receipt.Values.text("comment"), "cf-ipv6-readiness:") || len(receipt.Values.text("comment")) != len("cf-ipv6-readiness:")+24 {
+	if !ros.IDPattern.MatchString(receipt.ID) || !strings.HasPrefix(receipt.Values.Text("comment"), "cf-ipv6-readiness:") || len(receipt.Values.Text("comment")) != len("cf-ipv6-readiness:")+24 {
 		return device.Error(device.MessageOperationFormat)
 	}
-	row, e := d.find(ctx, rosIPv6Routes, receipt.ID)
+	row, e := d.Find(ctx, ros.PathIPv6Routes, receipt.ID)
 	if e != nil {
 		return e
 	}
 	if row == nil {
 		return nil
 	}
-	if !readinessOwned(row, receipt.Values) || receipt.Config != nil && !sameRow(d.ownershipSnapshot(rosIPv6Routes, row), receipt.Config) {
+	if !readinessOwned(row, receipt.Values) || receipt.Config != nil && !ros.SameRow(d.OwnershipSnapshot(ros.PathIPv6Routes, row), receipt.Config) {
 		return device.Error(messageReadinessRouteEdited)
 	}
 	if e := ctx.Err(); e != nil {
 		return e
 	}
-	_, e = d.request(ctx, "DELETE", rosIPv6Routes+"/"+escapeROSPathID(receipt.ID), nil, rosTimeout)
-	if e != nil && d.pdGone(ctx, rosIPv6Routes, receipt.ID) {
+	_, e = d.Request(ctx, "DELETE", ros.PathIPv6Routes+"/"+ros.EscapePathID(receipt.ID), nil, ros.Timeout)
+	if e != nil && d.pdGone(ctx, ros.PathIPv6Routes, receipt.ID) {
 		return nil
 	}
 	return e

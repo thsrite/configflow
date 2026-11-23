@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -37,8 +38,8 @@ func r11PDPlan(t *testing.T, d *RouterOS, enabled bool) *IPv6PDGuardPlan {
 	t.Helper()
 	r := r10Router()
 	r.IPv6PDGuard = &PDGuard{Enabled: enabled}
-	if d.ipv6PDGuardManifestSet {
-		r.Extra["ipv6_pd_guard_state"] = guardRaw(d.ipv6PDGuardManifest)
+	if d.IPv6PDGuardManifestSet() {
+		r.Extra["ipv6_pd_guard_state"] = ros.GuardRaw(d.IPv6PDGuardManifest())
 	}
 	p, e := InspectIPv6PDGuard(t.Context(), r, "192.0.2.4", d)
 	if e != nil {
@@ -69,7 +70,7 @@ func r11PDApply(t *testing.T, d *RouterOS, p *IPv6PDGuardPlan) *IPv6PDGuardUndo 
 func r11Manifest(t *testing.T, d *RouterOS) IPv6PDManifest {
 	t.Helper()
 	var m IPv6PDManifest
-	if e := json.Unmarshal(d.ipv6PDGuardManifest, &m); e != nil {
+	if e := json.Unmarshal(d.IPv6PDGuardManifest(), &m); e != nil {
 		t.Fatal(e)
 	}
 	return m
@@ -168,24 +169,24 @@ func TestR11RuntimeOwners(t *testing.T) {
 				triggered := false
 				if strings.HasPrefix(mode, "shutdown_after_") {
 					reads := 0
-					d.client = &r09AfterReadHTTP{DeviceHTTP: d.client, after: func(method, url string) {
+					d.SetHTTP(&r09AfterReadHTTP{DeviceHTTP: d.HTTP(), after: func(method, url string) {
 						if method != "GET" {
 							return
 						}
 						trigger := false
 						switch feature {
 						case "pd":
-							if strings.HasSuffix(url, pdLists+"?list="+pdLast) {
+							if strings.HasSuffix(url, ros.PathIPv6AddressLists+"?list="+pdLast) {
 								reads++
 								trigger = reads == 1 && mode == "shutdown_after_snapshot" || reads == 2 && mode == "shutdown_after_final_read"
 							}
 						case "dns":
-							if strings.HasSuffix(url, rosIPv6ND) {
+							if strings.HasSuffix(url, ros.PathIPv6ND) {
 								reads++
 								trigger = reads == 1 && mode == "shutdown_after_snapshot" || reads == 3 && mode == "shutdown_after_final_read"
 							}
 						case "readiness":
-							if strings.HasSuffix(url, rosIPv6Routes) {
+							if strings.HasSuffix(url, ros.PathIPv6Routes) {
 								reads++
 								trigger = reads == 1 && mode == "shutdown_after_snapshot" || reads == 2 && mode == "shutdown_after_final_read"
 							}
@@ -194,7 +195,7 @@ func TestR11RuntimeOwners(t *testing.T) {
 							triggered = true
 							rt.Shutdown(t.Context())
 						}
-					}}
+					}})
 				} else {
 					rt.Shutdown(t.Context())
 				}
@@ -232,16 +233,16 @@ func TestR11PDRuntimeSweepAndIDNamespaces(t *testing.T) {
 	r11PDApply(t, d, r11PDPlan(t, d, true))
 	m := r11Manifest(t, d)
 	id := m.Resources[0].ID
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{pdPrefixes: {{".id": id, "prefix": "2001:db8:2::/64", "interface": "bridge", "dynamic": "true"}, {".id": "*F1", "prefix": "2001:db8:3::/64", "interface": "bridge", "comment": "cf-pd: deprecated until 12345", "dynamic": "false"}, {".id": "*F2", "prefix": "2001:db8:4::/64", "interface": "bridge", "comment": "user", "dynamic": "false"}}, pdLists: {{".id": "*F3", "list": pdLast, "address": "2001:db8:1::/64"}, {".id": "*F4", "list": "geo6", "address": "2001:db8:5::/48"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{pdPrefixes: {{".id": id, "prefix": "2001:db8:2::/64", "interface": "bridge", "dynamic": "true"}, {".id": "*F1", "prefix": "2001:db8:3::/64", "interface": "bridge", "comment": "cf-pd: deprecated until 12345", "dynamic": "false"}, {".id": "*F2", "prefix": "2001:db8:4::/64", "interface": "bridge", "comment": "user", "dynamic": "false"}}, ros.PathIPv6AddressLists: {{".id": "*F3", "list": pdLast, "address": "2001:db8:1::/64"}, {".id": "*F4", "list": "geo6", "address": "2001:db8:5::/48"}}}}})
 	// A hook loop already in flight writes cf-pd-last after deleting the script.
-	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: pdScripts + "/*65", Count: 1, AfterCommit: true, ExtraRows: map[string][]routerfake.Row{pdLists: {{".id": "*F5", "list": pdLast, "address": "2001:db8:1::/64"}}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: pdScripts + "/*65", Count: 1, AfterCommit: true, ExtraRows: map[string][]routerfake.Row{ros.PathIPv6AddressLists: {{".id": "*F5", "list": pdLast, "address": "2001:db8:1::/64"}}}}}})
 	off := r11PDPlan(t, d, false)
 	r11PDApply(t, d, off)
 	if e := VerifyIPv6PDGuard(t.Context(), d, off.Check); e != nil {
 		t.Fatal(e)
 	}
 	snap := f.Snapshot()
-	if len(snap.Tables[pdLists]) != 1 || snap.Tables[pdLists][0]["list"] != "geo6" || len(snap.Tables[pdPrefixes]) != 2 {
+	if len(snap.Tables[ros.PathIPv6AddressLists]) != 1 || snap.Tables[ros.PathIPv6AddressLists][0]["list"] != "geo6" || len(snap.Tables[pdPrefixes]) != 2 {
 		t.Fatal("sweep touched foreign or dynamic state", snap.Tables)
 	}
 }
@@ -253,7 +254,7 @@ func TestR11PDLostCompensationDelete(t *testing.T) {
 	if e == nil || device.RouterErrorKind(e) == KindRollback {
 		t.Fatalf("lost DELETE reply should be proven absent, retaining original failure only: %v", e)
 	}
-	if len(f.Snapshot().Tables[pdScripts]) != 0 || len(f.Snapshot().Tables[pdSchedulers]) != 0 || device.HasStoredState(d.ipv6PDGuardManifest) {
+	if len(f.Snapshot().Tables[pdScripts]) != 0 || len(f.Snapshot().Tables[pdSchedulers]) != 0 || device.HasStoredState(d.IPv6PDGuardManifest()) {
 		t.Fatal("compensation did not finish")
 	}
 }
@@ -315,8 +316,8 @@ func TestR11PDRefusedCompensationKeepsBirthProof(t *testing.T) {
 				t.Fatal(e)
 			}
 			var m IPv6PDManifest
-			if json.Unmarshal(d.ipv6PDGuardManifest, &m) != nil {
-				t.Fatal("trusted new object abandoned", string(d.ipv6PDGuardManifest))
+			if json.Unmarshal(d.IPv6PDGuardManifest(), &m) != nil {
+				t.Fatal("trusted new object abandoned", string(d.IPv6PDGuardManifest()))
 			}
 			id := ""
 			for _, r := range m.Resources {
@@ -343,7 +344,7 @@ func TestR11PDRejectsCorruptOwnershipAndCopies(t *testing.T) {
 			d, f := r11Driver(t)
 			r11PDApply(t, d, r11PDPlan(t, d, true))
 			var doc map[string]any
-			_ = json.Unmarshal(d.ipv6PDGuardManifest, &doc)
+			_ = json.Unmarshal(d.IPv6PDGuardManifest(), &doc)
 			resources := doc["resources"].([]any)
 			entry := resources[0].(map[string]any)
 			switch mutation {
@@ -383,8 +384,8 @@ func TestR11DNSFinalReadAndRollbackProtectsRA(t *testing.T) {
 			d, f := r11Driver(t)
 			p := r11DNSPlan(t, d)
 			count := 0
-			d.client = &r09AfterReadHTTP{DeviceHTTP: d.client, after: func(method, url string) {
-				if method == "GET" && strings.HasSuffix(url, rosIPv6ND) {
+			d.SetHTTP(&r09AfterReadHTTP{DeviceHTTP: d.HTTP(), after: func(method, url string) {
+				if method == "GET" && strings.HasSuffix(url, ros.PathIPv6ND) {
 					count++
 					if count == 1 {
 						value := "true"
@@ -394,14 +395,14 @@ func TestR11DNSFinalReadAndRollbackProtectsRA(t *testing.T) {
 						if field == "ra-lifetime" {
 							value = "1h"
 						}
-						f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosIPv6ND: {"*E0": {field: value}}}}})
+						f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6ND: {"*E0": {field: value}}}}})
 					}
 				}
-			}}
+			}})
 			if _, e := d.ApplyIPv6DNS(t.Context(), *p.Ops[0].(*IPv6DNSUpdate)); e == nil {
 				t.Fatal("late edit accepted")
 			}
-			if findFake(f.Snapshot().Tables[rosIPv6ND], "*E0")["advertise-dns"] != "yes" {
+			if findFake(f.Snapshot().Tables[ros.PathIPv6ND], "*E0")["advertise-dns"] != "yes" {
 				t.Fatal("changed edited RA")
 			}
 		})
@@ -412,12 +413,12 @@ func TestR11DNSFinalReadAndRollbackProtectsRA(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosIPv6ND: {"*E0": {"ra-lifetime": "1h"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6ND: {"*E0": {"ra-lifetime": "1h"}}}}})
 	raw, _ := json.Marshal(u)
 	if _, e = d.Apply(t.Context(), raw); device.RouterErrorKind(e) != KindRollback {
 		t.Fatal("undo overwrote external RA", e)
 	}
-	if findFake(f.Snapshot().Tables[rosIPv6ND], "*E0")["advertise-dns"] != "no" {
+	if findFake(f.Snapshot().Tables[ros.PathIPv6ND], "*E0")["advertise-dns"] != "no" {
 		t.Fatal("external RA overwritten")
 	}
 }
@@ -433,20 +434,20 @@ func TestR11ReadinessReusesSnapshots(t *testing.T) {
 	for _, c := range f.Calls() {
 		counts[c.Path]++
 	}
-	if counts["/ipv6/firewall/filter"] != 1 || counts["/interface"] != 1 || counts[pdLists] != 1 {
+	if counts["/ipv6/firewall/filter"] != 1 || counts["/interface"] != 1 || counts[ros.PathIPv6AddressLists] != 1 {
 		t.Fatal("reread snapshots", counts)
 	}
 	if len(r10Writes(t, f.Calls()).([]any)) != 0 {
 		t.Fatal("readiness wrote")
 	}
 	initial := p.Fingerprint
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosIPv6Routes: {{".id": "*F2", "dst-address": "2001:db8:9::/48", "gateway": "wan", "active": "true", "expires-after": "5m"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathIPv6Routes: {{".id": "*F2", "dst-address": "2001:db8:9::/48", "gateway": "wan", "active": "true", "expires-after": "5m"}}}}})
 	p, e = InspectIPv6Readiness(t.Context(), d, r10Router(), s.Agent, s.Host, s.Configuration, "", PolicyContext{})
 	if e != nil || p.Fingerprint == initial {
 		t.Fatal("real route change not fingerprinted", e)
 	}
 	initial = p.Fingerprint
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosIPv6Routes: {"*F2": {"expires-after": "4m"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6Routes: {"*F2": {"expires-after": "4m"}}}}})
 	p, e = InspectIPv6Readiness(t.Context(), d, r10Router(), s.Agent, s.Host, s.Configuration, "", PolicyContext{})
 	if e != nil || p.Fingerprint != initial {
 		t.Fatal("lease timer changed stable fingerprint", e)
@@ -458,11 +459,11 @@ func TestR11ReadinessRouteReceipts(t *testing.T) {
 			d, f := r11Driver(t)
 			plan := Row{"dst-address": "fd00:face::/64", "gateway": "fe80::4%bridge", "routing-table": "main", "disabled": "false", "distance": "1"}
 			if mode == "lost_put" {
-				f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: rosIPv6Routes, Count: 1, AfterCommit: true, LoseReply: true}}})
+				f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: ros.PathIPv6Routes, Count: 1, AfterCommit: true, LoseReply: true}}})
 			}
 			u, e := d.AddMissingIPv6Route(t.Context(), plan)
 			if mode == "lost_put" {
-				if e == nil || len(f.Snapshot().Tables[rosIPv6Routes]) != 0 {
+				if e == nil || len(f.Snapshot().Tables[ros.PathIPv6Routes]) != 0 {
 					t.Fatal("lost write not compensated", e)
 				}
 				return
@@ -471,17 +472,17 @@ func TestR11ReadinessRouteReceipts(t *testing.T) {
 				t.Fatal(e)
 			}
 			if mode == "lost_delete" {
-				f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: rosIPv6Routes, Count: 1, AfterCommit: true, LoseReply: true}}})
+				f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: ros.PathIPv6Routes, Count: 1, AfterCommit: true, LoseReply: true}}})
 			}
 			if mode == "external_edit" {
-				f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosIPv6Routes: {u.ID: {"gateway": "fe80::9%bridge"}}}}})
+				f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6Routes: {u.ID: {"gateway": "fe80::9%bridge"}}}}})
 			}
 			e = d.UndoIPv6ReadinessRoute(t.Context(), *u)
 			if mode == "external_edit" {
-				if e == nil || len(f.Snapshot().Tables[rosIPv6Routes]) != 1 {
+				if e == nil || len(f.Snapshot().Tables[ros.PathIPv6Routes]) != 1 {
 					t.Fatal("external object removed")
 				}
-			} else if e != nil || len(f.Snapshot().Tables[rosIPv6Routes]) != 0 {
+			} else if e != nil || len(f.Snapshot().Tables[ros.PathIPv6Routes]) != 0 {
 				t.Fatal("receipt undo failed", e)
 			}
 		})
@@ -538,13 +539,13 @@ func TestR11RawWireAndProductionTimeouts(t *testing.T) {
 	source, _ := IPv6PDWatchSource("bridge", "pool-example")
 	sourceJSON, _ := json.Marshal(source)
 	wantScript := `{"comment":"cf-pd: IPv6 prefix change guard (ConfigFlow)","name":"cf-pd-watch","policy":"read,write,test","source":` + strings.NewReplacer(`\u0026`, "&", `\u003c`, "<", `\u003e`, ">").Replace(string(sourceJSON)) + `}`
-	expected := map[string][]string{pdScripts: {wantScript}, pdSchedulers: {`{"comment":"cf-pd","disabled":"false","interval":"30s","name":"cf-pd-poll","on-event":"/system script run cf-pd-watch","policy":"read,write,test","start-time":"startup"}`}, pdClients: {`{"script":":if ($\"pd-valid\" = 1) do={:for i from=1 to=10 do={:delay 1s; /system script run cf-pd-watch}}"}`, `{"script":""}`}, rosIPv6ND: {`{"advertise-dns":"no"}`, `{"advertise-dns":"yes"}`}}
+	expected := map[string][]string{pdScripts: {wantScript}, pdSchedulers: {`{"comment":"cf-pd","disabled":"false","interval":"30s","name":"cf-pd-poll","on-event":"/system script run cf-pd-watch","policy":"read,write,test","start-time":"startup"}`}, pdClients: {`{"script":":if ($\"pd-valid\" = 1) do={:for i from=1 to=10 do={:delay 1s; /system script run cf-pd-watch}}"}`, `{"script":""}`}, ros.PathIPv6ND: {`{"advertise-dns":"no"}`, `{"advertise-dns":"yes"}`}}
 	mu.Lock()
 	defer mu.Unlock()
 	matched := map[string]int{}
 	querySeen := false
 	for _, c := range seen {
-		if c.path == pdLists && c.query == "list=LAN%20list%2F%E4%B8%AD%E6%96%87" {
+		if c.path == ros.PathIPv6AddressLists && c.query == "list=LAN%20list%2F%E4%B8%AD%E6%96%87" {
 			querySeen = true
 		}
 		if c.method == "GET" || c.method == "DELETE" {
@@ -581,7 +582,7 @@ func TestR11LegacyAndUnknownManifestRoundTrip(t *testing.T) {
 			d, f := r11Driver(t)
 			r11PDApply(t, d, r11PDPlan(t, d, true))
 			var doc map[string]json.RawMessage
-			_ = json.Unmarshal(d.ipv6PDGuardManifest, &doc)
+			_ = json.Unmarshal(d.IPv6PDGuardManifest(), &doc)
 			var resources []map[string]json.RawMessage
 			_ = json.Unmarshal(doc["resources"], &resources)
 			if mode == "legacy" || mode == "legacy_external" {
@@ -618,7 +619,7 @@ func TestR11LegacyAndUnknownManifestRoundTrip(t *testing.T) {
 					t.Fatal(e)
 				}
 				var restored map[string]json.RawMessage
-				_ = json.Unmarshal(d.ipv6PDGuardManifest, &restored)
+				_ = json.Unmarshal(d.IPv6PDGuardManifest(), &restored)
 				if !bytes.Equal(restored["future"], doc["future"]) {
 					t.Fatal("future metadata lost")
 				}
@@ -631,7 +632,7 @@ func TestR11LegacyAndUnknownManifestRoundTrip(t *testing.T) {
 				}
 				// The model-backed stored document retains this new proof as an unknown member
 				// of the legacy ID resource, across an unrelated saved display-name edit.
-				source := append([]byte(`{"id":"synthetic","name":"Before","ipv6_pd_guard_state":`), d.ipv6PDGuardManifest...)
+				source := append([]byte(`{"id":"synthetic","name":"Before","ipv6_pd_guard_state":`), d.IPv6PDGuardManifest()...)
 				source = append(source, '}')
 				var modelRouter model.Router
 				if e := json.Unmarshal(source, &modelRouter); e != nil {
@@ -646,7 +647,7 @@ func TestR11LegacyAndUnknownManifestRoundTrip(t *testing.T) {
 					State json.RawMessage `json:"ipv6_pd_guard_state"`
 				}
 				_ = json.Unmarshal(saved, &stored)
-				if !reflect.DeepEqual(r08Comparable(t, stored.State), r08Comparable(t, d.ipv6PDGuardManifest)) {
+				if !reflect.DeepEqual(r08Comparable(t, stored.State), r08Comparable(t, d.IPv6PDGuardManifest())) {
 					t.Fatal("model save lost stable proofs")
 				}
 			}
@@ -736,13 +737,13 @@ func FuzzR11DNSRow(f *testing.F) {
 			return
 		}
 		for _, key := range []string{"disabled", "invalid", "dynamic"} {
-			_, _ = ipv6DNSFlag(row, key)
+			_, _ = ros.IPv6DNSFlag(row, key)
 		}
 		_, _ = ipv6DNSServers(row)
 		_ = ipv6DNSCLI(row["dns"])
-		if p := payload(rosIPv6ND, row); p != nil {
+		if p := ros.Payload(ros.PathIPv6ND, row); p != nil {
 			for _, key := range []string{"disabled", "invalid", "dynamic"} {
-				if flag, e := ipv6DNSFlag(row, key); e != nil || flag && key != "disabled" {
+				if flag, e := ros.IPv6DNSFlag(row, key); e != nil || flag && key != "disabled" {
 					t.Fatal("unrecognised or noneditable flag became writable")
 				}
 			}
@@ -779,7 +780,7 @@ func TestR11DNSUnknownAndNoopEvidence(t *testing.T) {
 		for _, value := range []any{nil, "unknown", []any{}, map[string]any{}} {
 			t.Run(field+"/"+fmt.Sprint(value), func(t *testing.T) {
 				d, f := r11Driver(t)
-				f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosIPv6ND: {"*E0": {field: value}}}}})
+				f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6ND: {"*E0": {field: value}}}}})
 				p := r11DNSPlan(t, d)
 				if p.Status != "blocked" || len(p.Ops) > 0 {
 					t.Fatal("unknown flag authorised write")
@@ -788,12 +789,12 @@ func TestR11DNSUnknownAndNoopEvidence(t *testing.T) {
 		}
 	}
 	d, f := r11Driver(t)
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{rosIPv6ND: {"*E0"}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{ros.PathIPv6ND: {"*E0"}}}})
 	p := r11DNSPlan(t, d)
 	if p.Status != "synced" {
 		t.Fatal(p)
 	}
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosIPv6ND: {{".id": "*E1", "interface": "bridge", "advertise-dns": "yes"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathIPv6ND: {{".id": "*E1", "interface": "bridge", "advertise-dns": "yes"}}}}})
 	if e := VerifyIPv6DNS(t.Context(), d, p.Check); e == nil {
 		t.Fatal("noop failed to detect new DNS")
 	}
@@ -809,7 +810,7 @@ func TestR11PDCountersAndLeaseEvidence(t *testing.T) {
 	}
 }
 func TestR11PDWithdrawalDetectsLateRuntimeState(t *testing.T) {
-	for _, path := range []string{pdLists, pdPrefixes} {
+	for _, path := range []string{ros.PathIPv6AddressLists, pdPrefixes} {
 		t.Run(path, func(t *testing.T) {
 			d, f := r11Driver(t)
 			r11PDApply(t, d, r11PDPlan(t, d, true))
@@ -829,18 +830,18 @@ func TestR11PDWithdrawalDetectsLateRuntimeState(t *testing.T) {
 func TestR11PDStateCleanupDoesNotReadGeoIPLists(t *testing.T) {
 	d, f := r11Driver(t)
 	r11PDApply(t, d, r11PDPlan(t, d, true))
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{pdLists: {{".id": "*FA", "list": pdLast, "address": "2001:db8:1::/64"}, {".id": "*FB", "list": "geo6", "address": "2001:db8:9::/48"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathIPv6AddressLists: {{".id": "*FA", "list": pdLast, "address": "2001:db8:1::/64"}, {".id": "*FB", "list": "geo6", "address": "2001:db8:9::/48"}}}}})
 	p := r11PDPlan(t, d, false)
 	u := r11PDApply(t, d, p)
 	if e := d.RestoreIPv6PDGuard(t.Context(), *u); e != nil {
 		t.Fatal(e)
 	}
 	for _, c := range f.Calls() {
-		if c.Method == "GET" && c.Path == pdLists && c.Query.Get("list") != pdLast {
+		if c.Method == "GET" && c.Path == ros.PathIPv6AddressLists && c.Query.Get("list") != pdLast {
 			t.Fatal("PD transaction fetched the unbounded global IPv6 list", c)
 		}
 	}
-	if findFake(f.Snapshot().Tables[pdLists], "*FB") == nil {
+	if findFake(f.Snapshot().Tables[ros.PathIPv6AddressLists], "*FB") == nil {
 		t.Fatal("foreign GeoIP entry modified")
 	}
 }

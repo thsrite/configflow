@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"net/http/httptest"
 	"testing"
 
@@ -19,8 +20,8 @@ func TestR12AdvisoryWholePlansPython(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := r08State()
-			s.Tables[rosRoutes] = append(s.Tables[rosRoutes], routerfake.Row{".id": "*9", "dst-address": "198.51.100.0/25", "gateway": "192.0.2.4", "routing-table": "main", "active": "true", "disabled": "false", "comment": "cf"})
-			s.Tables[rosFilter] = tc.rows
+			s.Tables[ros.PathRoutes] = append(s.Tables[ros.PathRoutes], routerfake.Row{".id": "*9", "dst-address": "198.51.100.0/25", "gateway": "192.0.2.4", "routing-table": "main", "active": "true", "disabled": "false", "comment": "cf"})
+			s.Tables[ros.PathFilter] = tc.rows
 			s.Tables["/interface/list"] = []routerfake.Row{{"name": "LAN"}, {"name": "WAN"}}
 			s.Tables["/interface/list/member"] = []routerfake.Row{{"list": "LAN", "interface": "bridge"}, {"list": "WAN", "interface": "wan"}}
 			f := routerfake.New(nil)

@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/devhttp"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,36 +46,36 @@ func SnapshotROSPolicy(ctx context.Context, d *RouterOS) (*ROSPolicySnapshot, er
 func (d *RouterOS) snapshotPolicy(ctx context.Context, reserve bool) (*ROSPolicySnapshot, error) {
 	result := ROSPolicySnapshot{}
 	for _, path := range policyPaths {
-		if path == rosAddresses {
+		if path == ros.PathAddresses {
 			continue
 		}
-		rows, err := d.list(ctx, path)
+		rows, err := d.List(ctx, path)
 		if err != nil {
 			return nil, err
 		}
 		result[path] = rows
 	}
-	names := referencedAddressLists(result[rosNAT])
-	for name := range d.knownAddresses() {
+	names := ros.ReferencedAddressLists(result[ros.PathNAT])
+	for name := range d.KnownAddresses() {
 		names = append(names, name)
 	}
 	lists, err := d.ReadAddresses(ctx, names)
 	if err != nil {
 		return nil, err
 	}
-	result[rosAddresses] = []Row{}
+	result[ros.PathAddresses] = []Row{}
 	for _, name := range slices.Sorted(maps.Keys(lists)) {
-		result[rosAddresses] = append(result[rosAddresses], lists[name]...)
+		result[ros.PathAddresses] = append(result[ros.PathAddresses], lists[name]...)
 	}
-	manifest, err := policyManifest(d.policyManifest)
+	manifest, err := policyManifest(d.PolicyManifest())
 	if err != nil {
 		return nil, err
 	}
-	present := rowIDs(result[rosAddresses])
+	present := ros.RowIDs(result[ros.PathAddresses])
 	missing := []string{}
 	if manifest != nil {
 		for _, entry := range manifest.Resources {
-			if entry.Path == rosAddresses && !present[entry.ID] {
+			if entry.Path == ros.PathAddresses && !present[entry.ID] {
 				missing = append(missing, entry.ID)
 			}
 		}
@@ -83,7 +84,7 @@ func (d *RouterOS) snapshotPolicy(ctx context.Context, reserve bool) (*ROSPolicy
 	if err != nil {
 		return nil, err
 	}
-	result[rosAddresses] = append(result[rosAddresses], located...)
+	result[ros.PathAddresses] = append(result[ros.PathAddresses], located...)
 	if reserve {
 		occupied, err := d.OccupiedAddressNames(ctx, policyNamePatterns, names)
 		if err != nil {
@@ -94,22 +95,22 @@ func (d *RouterOS) snapshotPolicy(ctx context.Context, reserve bool) (*ROSPolicy
 			result[rosListNames] = append(result[rosListNames], Row{".id": "name:" + name, "occupied-list": name})
 		}
 	}
-	value, err := d.get(ctx, rosSettings, rosTimeout)
+	value, err := d.Get(ctx, rosSettings, ros.Timeout)
 	if err != nil {
 		return nil, err
 	}
-	settings := asRow(value)
+	settings := ros.AsRow(value)
 	if settings == nil {
 		return nil, device.Error(messagePolicySettingsUnreadable)
 	}
 	// A null lookup order is unknown, not missing.
-	markNulls(settings, value, []string{"policy-rules"})
+	ros.MarkNulls(settings, value, []string{"policy-rules"})
 	settings[".id"] = "routing-settings"
 	result[rosSettings] = []Row{settings}
-	if !settings.has("policy-rules") {
-		value, err := d.get(ctx, "/system/resource", rosTimeout)
+	if !settings.Has("policy-rules") {
+		value, err := d.Get(ctx, "/system/resource", ros.Timeout)
 		if err == nil {
-			if fields := strings.Fields(asRow(value).text("version")); len(fields) > 0 {
+			if fields := strings.Fields(ros.AsRow(value).Text("version")); len(fields) > 0 {
 				settings["routeros-version"] = fields[0]
 			}
 		}
@@ -122,10 +123,10 @@ func stablePolicy(snapshot ROSPolicySnapshot) ROSPolicySnapshot {
 	for path, rows := range snapshot {
 		result[path] = []Row{}
 		for _, row := range rows {
-			if path == rosAddresses && row.flag("dynamic") {
+			if path == ros.PathAddresses && row.Flag("dynamic") {
 				continue
 			}
-			value := configROSRow(row)
+			value := ros.ConfigROSRow(row)
 			value[".id"] = row[".id"]
 			result[path] = append(result[path], value)
 		}
@@ -151,7 +152,7 @@ func OwnedROSPolicyRows(raw json.RawMessage, snap *ROSPolicySnapshot) ([]ROSReso
 	for path, rows := range *snap {
 		indexed[path] = map[string][]Row{}
 		for _, row := range rows {
-			indexed[path][row.id()] = append(indexed[path][row.id()], row)
+			indexed[path][row.ID()] = append(indexed[path][row.ID()], row)
 		}
 	}
 	for _, entry := range manifest.Resources {
@@ -160,10 +161,10 @@ func OwnedROSPolicyRows(raw json.RawMessage, snap *ROSPolicySnapshot) ([]ROSReso
 			return nil, device.Error(messagePolicyDuplicateID)
 		}
 		if len(matches) == 1 {
-			if !sameRow(configROSRow(matches[0]), configROSRow(entry.Config)) {
+			if !ros.SameRow(ros.ConfigROSRow(matches[0]), ros.ConfigROSRow(entry.Config)) {
 				return nil, device.Error(fmt.Sprintf(messagePolicyExternalEdit, entry.Path, entry.ID))
 			}
-			owned = append(owned, ROSResource{entry.Path, entry.ID, cloneRow(entry.Config)})
+			owned = append(owned, ROSResource{Path: entry.Path, ID: entry.ID, Config: ros.CloneRow(entry.Config)})
 		}
 	}
 	return owned, nil
@@ -182,27 +183,27 @@ func checkPolicyReferences(owned []ROSResource, live ROSPolicySnapshot) error {
 	for _, item := range owned {
 		field := ""
 		switch item.Path {
-		case rosTables:
+		case ros.PathTables:
 			field = "name"
-		case rosAddresses:
+		case ros.PathAddresses:
 			field = "list"
-		case rosMangle:
-			if !item.Config.is("chain", "prerouting") {
+		case ros.PathMangle:
+			if !item.Config.Is("chain", "prerouting") {
 				field = "chain"
 			}
 		}
-		if name := item.Config.text(field); name != "" {
+		if name := item.Config.Text(field); name != "" {
 			names[name] = true
 		}
 	}
 	refs := device.StringSet("table", "routing-table", "new-routing-mark", "routing-mark", "src-address-list", "dst-address-list", "jump-target", "chain", "list", "name")
 	for _, path := range slices.Sorted(maps.Keys(live)) {
 		for _, row := range live[path] {
-			if keys[[2]string{path, row.id()}] {
+			if keys[[2]string{path, row.ID()}] {
 				continue
 			}
 			for _, key := range slices.Sorted(maps.Keys(row)) {
-				value := row.text(key)
+				value := row.Text(key)
 				if refs[key] && names[strings.TrimLeft(value, "!")] {
 					return device.Error(messagePolicyReference + value)
 				}
@@ -221,8 +222,8 @@ func checkPolicyReferences(owned []ROSResource, live ROSPolicySnapshot) error {
 
 func checkPolicyOrder(live ROSPolicySnapshot) error {
 	settings := live[rosSettings]
-	if len(settings) == 1 && !settings[0].has("policy-rules") {
-		version := settings[0].text("routeros-version")
+	if len(settings) == 1 && !settings[0].Has("policy-rules") {
+		version := settings[0].Text("routeros-version")
 		major, minor := 0, 0
 		parts := policyVersionPattern.FindStringSubmatch(version)
 		if len(parts) == 3 {
@@ -238,7 +239,7 @@ func checkPolicyOrder(live ROSPolicySnapshot) error {
 		return device.Error(messagePolicyOrderUnknown)
 	}
 	value, present := settings[0]["policy-rules"]
-	order, ok := textList(value)
+	order, ok := ros.TextList(value)
 	if !present || !ok {
 		return device.Error(messagePolicyOrderUnknown)
 	}
@@ -262,7 +263,7 @@ func checkPolicyOrder(live ROSPolicySnapshot) error {
 }
 
 func checkPolicyEgress(row Row, gateway, iface string) error {
-	if row == nil || !row.enabled() || !rosFlag(row["active"]) || row.text("immediate-gw") != gateway+"%"+iface || row.flag("invalid", "blackhole", "ecmp") {
+	if row == nil || !row.Enabled() || !ros.Flag(row["active"]) || row.Text("immediate-gw") != gateway+"%"+iface || row.Flag("invalid", "blackhole", "ecmp") {
 		return device.Error(messagePolicyEgressChanged)
 	}
 	return nil
@@ -276,7 +277,7 @@ func policyHealth(raw json.RawMessage, live ROSPolicySnapshot) error {
 	for path, rows := range live {
 		byPath[path], _ = indexROSRows(rows)
 	}
-	for _, path := range []string{rosMangle, rosNAT} {
+	for _, path := range []string{ros.PathMangle, ros.PathNAT} {
 		expected, present := []string{}, []string{}
 		keys := map[string]bool{}
 		for _, item := range manifest.Resources {
@@ -286,8 +287,8 @@ func policyHealth(raw json.RawMessage, live ROSPolicySnapshot) error {
 			}
 		}
 		for _, row := range live[path] {
-			if keys[row.id()] {
-				present = append(present, row.id())
+			if keys[row.ID()] {
+				present = append(present, row.ID())
 			}
 		}
 		if len(present) == len(expected) && !slices.Equal(present, expected) {
@@ -299,11 +300,11 @@ func policyHealth(raw json.RawMessage, live ROSPolicySnapshot) error {
 		if row == nil {
 			continue
 		}
-		if row.flag("invalid") {
+		if row.Flag("invalid") {
 			return device.Error(fmt.Sprintf(messagePolicyNotActive, item.Path, item.ID))
 		}
-		if item.Path == rosRoutes {
-			if !rosFlag(row["active"]) {
+		if item.Path == ros.PathRoutes {
+			if !ros.Flag(row["active"]) {
 				return device.Error(messagePolicyRouteInactive)
 			}
 			if manifest.Spec != nil && manifest.Spec.EgressInterface != "" {
@@ -312,9 +313,9 @@ func policyHealth(raw json.RawMessage, live ROSPolicySnapshot) error {
 				}
 			}
 		}
-		if item.Path == rosNAT {
-			for _, other := range live[rosNAT][:indexOfRow(live[rosNAT], item.ID)] {
-				if other.enabled() && other.is("chain", "srcnat") && !slices.Contains(nonTranslating, other.text("action")) {
+		if item.Path == ros.PathNAT {
+			for _, other := range live[ros.PathNAT][:ros.IndexOfRow(live[ros.PathNAT], item.ID)] {
+				if other.Enabled() && other.Is("chain", "srcnat") && !slices.Contains(ros.NonTranslating, other.Text("action")) {
 					return device.Error(messagePolicyNATPreceded)
 				}
 			}
@@ -346,12 +347,12 @@ func ReadPolicyObjects(ctx context.Context, d *RouterOS, raw json.RawMessage) ([
 	if manifest == nil {
 		return result, nil
 	}
-	kinds := map[string]string{rosAddresses: "addresses", rosTables: "tables", rosMangle: "mangle", rosRoutes: "routes", rosNAT: "nat"}
+	kinds := map[string]string{ros.PathAddresses: "addresses", ros.PathTables: "tables", ros.PathMangle: "mangle", ros.PathRoutes: "routes", ros.PathNAT: "nat"}
 	roles := map[string]string{}
 	for _, entry := range manifest.Resources {
-		if entry.Path == rosMangle && entry.Config.is("chain", "prerouting") && entry.Config.is("action", "jump") {
+		if entry.Path == ros.PathMangle && entry.Config.Is("chain", "prerouting") && entry.Config.Is("action", "jump") {
 			for _, field := range [][2]string{{"src-address-list", "source"}, {"dst-address-list", "destination"}} {
-				if name := entry.Config.text(field[0]); name != "" {
+				if name := entry.Config.Text(field[0]); name != "" {
 					roles[name] = field[1]
 				}
 			}
@@ -361,7 +362,7 @@ func ReadPolicyObjects(ctx context.Context, d *RouterOS, raw json.RawMessage) ([
 	for _, entry := range manifest.Resources {
 		if kinds[entry.Path] != "" {
 			if _, ok := live[entry.Path]; !ok {
-				live[entry.Path], err = d.list(ctx, entry.Path)
+				live[entry.Path], err = d.List(ctx, entry.Path)
 				if err != nil {
 					return nil, err
 				}
@@ -373,25 +374,25 @@ func ReadPolicyObjects(ctx context.Context, d *RouterOS, raw json.RawMessage) ([
 		if kind == "" {
 			continue
 		}
-		row := findRow(live[entry.Path], entry.ID)
+		row := ros.FindRow(live[entry.Path], entry.ID)
 		status := "missing"
 		shown := entry.Config
 		if row != nil {
 			shown = row
 			status = "matched"
-			if !sameRow(configROSRow(row), configROSRow(entry.Config)) {
+			if !ros.SameRow(ros.ConfigROSRow(row), ros.ConfigROSRow(entry.Config)) {
 				status = "changed"
 			}
 		}
-		if entry.Path == rosTables {
-			shown = ComparableValues(rosTables, shown)
+		if entry.Path == ros.PathTables {
+			shown = ros.ComparableValues(ros.PathTables, shown)
 		}
 		editor := "settings"
-		if entry.Path == rosAddresses {
-			editor = device.FirstNonEmpty(roles[entry.Config.text("list")], editor)
+		if entry.Path == ros.PathAddresses {
+			editor = device.FirstNonEmpty(roles[entry.Config.Text("list")], editor)
 		}
-		fields := selectFields([]Row{shown}, policyPublicFields)[0]
-		result = append(result, ROSPolicyObject{entry.ID, kind, status, editor, entry.Config.text("address"), fields})
+		fields := ros.SelectFields([]Row{shown}, policyPublicFields)[0]
+		result = append(result, ROSPolicyObject{entry.ID, kind, status, editor, entry.Config.Text("address"), fields})
 	}
 	return result, nil
 }

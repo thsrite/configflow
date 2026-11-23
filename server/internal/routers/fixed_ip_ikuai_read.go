@@ -39,10 +39,10 @@ func fixedIKFields(row ikuaiRow) (Row, error) {
 		}
 		result[key] = text
 	}
-	if !slices.Contains([]string{"yes", "no"}, result.text("enabled")) || routerdoc.IPv4(result.text("ip_addr")) == "" || fixedMAC(result.text("mac")) == "" {
+	if !slices.Contains([]string{"yes", "no"}, result.Text("enabled")) || routerdoc.IPv4(result.Text("ip_addr")) == "" || fixedMAC(result.Text("mac")) == "" {
 		return nil, device.Error(messageFixedIKFields)
 	}
-	result["mac"] = fixedMAC(result.text("mac"))
+	result["mac"] = fixedMAC(result.Text("mac"))
 	return result, nil
 }
 func (d *Ikuai) fixedStatic(ctx context.Context) ([]ikuaiRow, error) {

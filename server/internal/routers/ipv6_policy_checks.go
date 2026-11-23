@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -94,8 +95,8 @@ func policyRouteInterface(s *PolicySnapshot, destination string) (string, string
 	matches := []Row{}
 	partial := []int{}
 	for _, row := range s.Routes {
-		network, ok := policyNetwork(row.text("dst-address"))
-		if !policyEnabled(row) || !policyFlag(row["active"]) || row.textOr("routing-table", "main") != "main" || !ok || network.Addr().BitLen() != target.Addr().BitLen() {
+		network, ok := policyNetwork(row.Text("dst-address"))
+		if !policyEnabled(row) || !ros.PolicyFlag(row["active"]) || row.TextOr("routing-table", "main") != "main" || !ok || network.Addr().BitLen() != target.Addr().BitLen() {
 			continue
 		}
 		if target.Bits() >= network.Bits() && network.Contains(target.Addr()) {
@@ -121,13 +122,13 @@ func policyRouteInterface(s *PolicySnapshot, destination string) (string, string
 	interfaces := map[string]bool{}
 	for _, row := range matches {
 		for _, key := range []string{"blackhole", "unreachable", "prohibit"} {
-			if policyFlag(row[key]) {
+			if ros.PolicyFlag(row[key]) {
 				return "", messagePolicyRouteDiscard
 			}
 		}
-		gateway := row.text("immediate-gw")
+		gateway := row.Text("immediate-gw")
 		if gateway == "" {
-			gateway = row.text("gateway")
+			gateway = row.Text("gateway")
 		}
 		if strings.Contains(gateway, ",") || gateway == "" {
 			return "", messagePolicyRouteAmbiguous
@@ -209,8 +210,8 @@ func policyRouteUncertain(env PolicyEnvironment, s *PolicySnapshot, p PolicyPack
 		if !policyEnabled(row) {
 			continue
 		}
-		action := row.textOr("action", "lookup")
-		if row.is("table", "main") && (action == "lookup" || action == "lookup-only-in-table") {
+		action := row.TextOr("action", "lookup")
+		if row.Is("table", "main") && (action == "lookup" || action == "lookup-only-in-table") {
 			continue
 		}
 		conditions := Row{}
@@ -247,8 +248,8 @@ func policyFakeGateway(s *PolicySnapshot, target netip.Prefix, agent *model.Agen
 	best := -1
 	matches := []Row{}
 	for _, row := range s.Routes {
-		n, ok := policyNetwork(row.text("dst-address"))
-		if !ok || n.Addr().BitLen() != target.Addr().BitLen() || target.Bits() < n.Bits() || !n.Contains(target.Addr()) || !policyEnabled(row) || !policyFlag(row["active"]) || row.textOr("routing-table", "main") != "main" {
+		n, ok := policyNetwork(row.Text("dst-address"))
+		if !ok || n.Addr().BitLen() != target.Addr().BitLen() || target.Bits() < n.Bits() || !n.Contains(target.Addr()) || !policyEnabled(row) || !ros.PolicyFlag(row["active"]) || row.TextOr("routing-table", "main") != "main" {
 			continue
 		}
 		if n.Bits() > best {
@@ -263,9 +264,9 @@ func policyFakeGateway(s *PolicySnapshot, target netip.Prefix, agent *model.Agen
 		return false
 	}
 	for _, row := range matches {
-		gw := row.text("immediate-gw")
+		gw := row.Text("immediate-gw")
 		if gw == "" {
-			gw = row.text("gateway")
+			gw = row.Text("gateway")
 		}
 		if !known[strings.SplitN(gw, "%", 2)[0]] {
 			return false
@@ -378,7 +379,7 @@ func PolicyChecks(env PolicyEnvironment, agent *model.Agent, host IPv6Host, conf
 	}
 	wan := ""
 	for _, row := range env.IPv6.Routes {
-		if row.is("dst-address", "::/0") && policyEnabled(row) && policyFlag(row["active"]) {
+		if row.Is("dst-address", "::/0") && policyEnabled(row) && ros.PolicyFlag(row["active"]) {
 			wan, _ = policyRouteInterface(&env.IPv6, "::/0")
 			break
 		}

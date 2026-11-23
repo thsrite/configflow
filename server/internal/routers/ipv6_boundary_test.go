@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,7 +33,7 @@ func r10Router() *Router {
 }
 func r10State() routerfake.State {
 	return routerfake.State{IPv6Wire: true, Tables: map[string][]routerfake.Row{
-		rosIPv6Routes: {}, rosIPv6Addresses: {{".id": "*A1", "address": "fd00:1::1/64", "interface": "bridge"}}, rosIPv4Addresses: {{".id": "*B1", "address": "192.0.2.1/24", "interface": "bridge", "actual-interface": "bridge"}}, "/ipv6/firewall/filter": {}, "/ipv6/firewall/address-list": {}, "/interface": {{".id": "*C1", "name": "bridge"}}, "/interface/list": {}, "/interface/list/member": {},
+		ros.PathIPv6Routes: {}, rosIPv6Addresses: {{".id": "*A1", "address": "fd00:1::1/64", "interface": "bridge"}}, rosIPv4Addresses: {{".id": "*B1", "address": "192.0.2.1/24", "interface": "bridge", "actual-interface": "bridge"}}, "/ipv6/firewall/filter": {}, "/ipv6/firewall/address-list": {}, "/interface": {{".id": "*C1", "name": "bridge"}}, "/interface/list": {}, "/interface/list/member": {},
 	}}
 }
 func r10Wanted(n int) *Desired {
@@ -111,16 +112,16 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 			blocked := false
 			var ops []Op
 			if tc.Feature == "fake" {
-				if d.ipv6FakeIPManifestSet {
-					r.Extra["ipv6_fakeip_state"] = guardRaw(d.ipv6FakeIPManifest)
+				if d.IPv6FakeIPManifestSet() {
+					r.Extra["ipv6_fakeip_state"] = ros.GuardRaw(d.IPv6FakeIPManifest())
 				}
 				fakePlan = InspectIPv6FakeIP(ctx, step.Config, &r, step.Agent, step.Host, d)
 				add(fakePlan)
 				ops = fakePlan.Ops
 				blocked = len(fakePlan.Blockers) > 0
 			} else {
-				if d.ipv6RoutesManifestSet {
-					r.Extra["ipv6_routes_state"] = guardRaw(d.ipv6RoutesManifest)
+				if d.IPv6RoutesManifestSet() {
+					r.Extra["ipv6_routes_state"] = ros.GuardRaw(d.IPv6RoutesManifest())
 				}
 				routesPlan = InspectIPv6Routes(ctx, step.Config, &r, step.Desired, step.Agent, step.Host, d)
 				add(routesPlan)
@@ -181,9 +182,9 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 		out.Error = &r08Error{class, err.Error()}
 	}
 	if tc.Feature == "fake" {
-		out.Manifest = guardRaw(d.ipv6FakeIPManifest)
+		out.Manifest = ros.GuardRaw(d.IPv6FakeIPManifest())
 	} else {
-		out.Manifest = guardRaw(d.ipv6RoutesManifest)
+		out.Manifest = ros.GuardRaw(d.IPv6RoutesManifest())
 	}
 	return out
 }
@@ -258,11 +259,11 @@ func r10Cases() []r10Case {
 				if variant == "preserve_ula" {
 					row["gateway"] = "fd00:1::4%bridge"
 				}
-				tc.State.Tables[rosIPv6Routes] = []routerfake.Row{row}
+				tc.State.Tables[ros.PathIPv6Routes] = []routerfake.Row{row}
 				if variant == "foreign_duplicate" {
 					second := r09Copy(row)
 					second[".id"] = "*51"
-					tc.State.Tables[rosIPv6Routes] = append(tc.State.Tables[rosIPv6Routes], second)
+					tc.State.Tables[ros.PathIPv6Routes] = append(tc.State.Tables[ros.PathIPv6Routes], second)
 				}
 			case "local_overlap":
 				tc.State.Tables[rosIPv6Addresses] = append(tc.State.Tables[rosIPv6Addresses], routerfake.Row{".id": "*99", "address": stringsReplaceCIDRHost(cidr), "interface": "other"})
@@ -316,14 +317,14 @@ func r10Cases() []r10Case {
 			switch variant {
 			case "inactive_new":
 				if feature == "fake" {
-					tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: rosIPv6Routes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{rosIPv6Routes: {"*65": {"active": "false"}}}}}
+					tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathIPv6Routes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6Routes: {"*65": {"active": "false"}}}}}
 				} else {
 					tc.State.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, PatchCreated: map[int]routerfake.Row{0: {"active": "false"}}}}
 				}
 			case "refused_put":
-				tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: rosIPv6Routes, Count: 1, Status: 403}, {Method: "POST", Path: "/execute", Count: 1, Status: 403}}
+				tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathIPv6Routes, Count: 1, Status: 403}, {Method: "POST", Path: "/execute", Count: 1, Status: 403}}
 			case "lost_reply":
-				tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: rosIPv6Routes, Count: 1, AfterCommit: true, LoseReply: true}, {Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, LoseReply: true}}
+				tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathIPv6Routes, Count: 1, AfterCommit: true, LoseReply: true}, {Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, LoseReply: true}}
 			case "withdraw_rollback":
 				step := r10StepFor("rollback", 5)
 				step.Config = r10Config("ipv6: false")

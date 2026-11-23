@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"fmt"
 	"maps"
@@ -10,12 +11,12 @@ import (
 )
 
 func natRefsAt(path string, rows []Row) []ListRef {
-	refs := NATListRefs(rows)
+	refs := ros.NATListRefs(rows)
 	if refs == nil {
 		refs = []ListRef{}
 	}
 	for i := range refs {
-		refs[i].Path = path + strings.TrimPrefix(refs[i].Path, rosNAT)
+		refs[i].Path = path + strings.TrimPrefix(refs[i].Path, ros.PathNAT)
 	}
 	return refs
 }
@@ -30,9 +31,9 @@ func (d *RouterOS) stateNATLists(ctx context.Context, nats []Row, byName map[str
 	d.ExpectAddresses(NATSrcList, src)
 	d.ExpectAddresses(NATDstList, dst)
 	firewall := []ListRef{}
-	if len(src)+len(dst) > 0 || slices.ContainsFunc(nats, IsNATListCandidate) {
-		for _, path := range []string{rosFilter, "/ip/firewall/raw"} {
-			rows, err := d.list(ctx, path)
+	if len(src)+len(dst) > 0 || slices.ContainsFunc(nats, ros.IsNATListCandidate) {
+		for _, path := range []string{ros.PathFilter, "/ip/firewall/raw"} {
+			rows, err := d.List(ctx, path)
 			if err != nil {
 				firewall = nil
 				break
@@ -42,7 +43,7 @@ func (d *RouterOS) stateNATLists(ctx context.Context, nats []Row, byName map[str
 	}
 	var mangleRefs []ListRef
 	if mangle != nil {
-		mangleRefs = natRefsAt(rosMangle, mangle)
+		mangleRefs = natRefsAt(ros.PathMangle, mangle)
 	}
 	return &NATLists{src, dst, mangleRefs, firewall}, nil
 }
@@ -57,25 +58,25 @@ func (d *RouterOS) readNATLists(ctx context.Context) (map[string][]Row, error) {
 	return rows, nil
 }
 func (d *RouterOS) assessedNAT(rows []Row) []Row {
-	if len(d.dnsGuardManifest) == 0 {
+	if len(d.DNSGuardManifest()) == 0 {
 		return rows
 	}
-	ids := ownedHairpinIDs(d.dnsGuardManifest, rows)
-	return slices.DeleteFunc(slices.Clone(rows), func(row Row) bool { return ids[row.id()] })
+	ids := ros.OwnedHairpinIDs(d.DNSGuardManifest(), rows)
+	return slices.DeleteFunc(slices.Clone(rows), func(row Row) bool { return ids[row.ID()] })
 }
 func (d *RouterOS) foreignNATRefs(ctx context.Context, keep map[string]bool, nats []Row) ([]ListRef, error) {
 	refs := []ListRef{}
-	for _, path := range []string{rosNAT, rosMangle, rosFilter, "/ip/firewall/raw"} {
+	for _, path := range []string{ros.PathNAT, ros.PathMangle, ros.PathFilter, "/ip/firewall/raw"} {
 		rows := nats
-		if path != rosNAT || nats == nil {
+		if path != ros.PathNAT || nats == nil {
 			var err error
-			rows, err = d.list(ctx, path)
+			rows, err = d.List(ctx, path)
 			if err != nil {
 				return nil, err
 			}
 		}
 		for _, ref := range natRefsAt(path, rows) {
-			if path == rosNAT && keep[strings.TrimPrefix(ref.Path, rosNAT+"/")] {
+			if path == ros.PathNAT && keep[strings.TrimPrefix(ref.Path, ros.PathNAT+"/")] {
 				continue
 			}
 			refs = append(refs, ref)
@@ -92,11 +93,11 @@ type NATBaseline struct {
 
 // NATResources reads the baseline for auto-sync, nil when no list rule exists.
 func (d *RouterOS) NATResources(ctx context.Context) (*NATBaseline, error) {
-	rows, err := d.list(ctx, rosNAT)
+	rows, err := d.List(ctx, ros.PathNAT)
 	if err != nil {
 		return nil, err
 	}
-	found := InspectNATListRule(d.assessedNAT(rows), nil)
+	found := ros.InspectNATListRule(d.assessedNAT(rows), nil)
 	if found.Problem != "" {
 		return nil, device.Error(found.Problem)
 	}
@@ -107,10 +108,10 @@ func (d *RouterOS) NATResources(ctx context.Context) (*NATBaseline, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := &NATBaseline{Rule: resource(rosNAT, found.Rule), Src: []ROSResource{}}
+	result := &NATBaseline{Rule: ros.NewResource(ros.PathNAT, found.Rule), Src: []ROSResource{}}
 	for _, row := range lists[NATSrcList] {
-		if row.is("comment", NATListComment) {
-			result.Src = append(result.Src, resource(rosAddresses, row))
+		if row.Is("comment", NATListComment) {
+			result.Src = append(result.Src, ros.NewResource(ros.PathAddresses, row))
 		}
 	}
 	return result, nil
@@ -141,7 +142,7 @@ func NATMemberUpdate(stages []Stage, enrolled *NATBaseline) *NATListSync {
 	adds, removes := []string{}, []ROSResource{}
 	for _, value := range ops {
 		op, ok := value.(*NATListSync)
-		if !ok || op.Rule == nil || op.ReplaceRule || op.Withdraw || len(op.Legacy)+len(op.Stale)+len(op.SrcAdd)+len(op.SrcRemove) > 0 || op.Rule.ID != enrolled.Rule.ID || !sameRow(configROSRow(op.Rule.Config), configROSRow(enrolled.Rule.Config)) || op.OutInterface != enrolled.Rule.Config.text("out-interface") {
+		if !ok || op.Rule == nil || op.ReplaceRule || op.Withdraw || len(op.Legacy)+len(op.Stale)+len(op.SrcAdd)+len(op.SrcRemove) > 0 || op.Rule.ID != enrolled.Rule.ID || !ros.SameRow(ros.ConfigROSRow(op.Rule.Config), ros.ConfigROSRow(enrolled.Rule.Config)) || op.OutInterface != enrolled.Rule.Config.Text("out-interface") {
 			return nil
 		}
 		adds = append(adds, op.DstAdd...)
@@ -186,9 +187,9 @@ func VerifyNATLists(ctx context.Context, check *NATListCheck, state *RouterState
 	if state.NatContext != nil {
 		rows = state.NatContext.Rules
 	}
-	found := InspectNATListRule(rows, lists.refs())
+	found := ros.InspectNATListRule(rows, lists.refs())
 	if check.Withdraw {
-		if found.Rule != nil || slices.ContainsFunc(rows, IsNATListCandidate) {
+		if found.Rule != nil || slices.ContainsFunc(rows, ros.IsNATListCandidate) {
 			return device.Error(messageNATVerifyRulePresent)
 		}
 	} else {
@@ -204,17 +205,17 @@ func VerifyNATLists(ctx context.Context, check *NATListCheck, state *RouterState
 	}
 	removed := device.StringSet(check.Removed...)
 	for _, row := range rows {
-		if removed[row.id()] {
+		if removed[row.ID()] {
 			return device.Error(messageNATVerifyLegacy)
 		}
 	}
 	for i, name := range []string{NATSrcList, NATDstList} {
 		ours, present := map[string]bool{}, map[string]bool{}
 		for _, row := range lists.rows(name) {
-			if row.enabled() {
-				present[natKey(row.text("address"))] = true
-				if row.is("comment", NATListComment) {
-					ours[natKey(row.text("address"))] = true
+			if row.Enabled() {
+				present[natKey(row.Text("address"))] = true
+				if row.Is("comment", NATListComment) {
+					ours[natKey(row.Text("address"))] = true
 				}
 			}
 		}

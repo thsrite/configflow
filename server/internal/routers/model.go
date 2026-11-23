@@ -56,6 +56,15 @@ type Driver interface {
 	Close()
 }
 
+// BatchDriver is implemented by devices that can apply selected operation
+// runs together and restore those undo records in bounded batches.
+type BatchDriver interface {
+	BatchKinds() []string
+	ApplyMany(context.Context, []json.RawMessage, func(json.RawMessage, json.RawMessage)) error
+	BatchRestorable(json.RawMessage) bool
+	RestoreMany(context.Context, []json.RawMessage, bool) []string
+}
+
 // PolicyRoute is the first policy route carrying comment.
 func PolicyRoute(state *RouterState, comment string) *PolicyRouteEntry {
 	for _, e := range state.PolicyRoutes {

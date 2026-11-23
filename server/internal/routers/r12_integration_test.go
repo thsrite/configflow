@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -37,25 +38,25 @@ func TestR12FullInspectionStagesPython(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			s := r11State()
 			base := r08State()
-			s.Tables[rosRoutes] = base.Tables[rosRoutes][:1]
-			s.Tables[rosNAT] = base.Tables[rosNAT]
-			s.Tables[rosDHCPNetworks][0]["dns-server"] = "192.0.2.99"
+			s.Tables[ros.PathRoutes] = base.Tables[ros.PathRoutes][:1]
+			s.Tables[ros.PathNAT] = base.Tables[ros.PathNAT]
+			s.Tables[ros.PathDHCPNetworks][0]["dns-server"] = "192.0.2.99"
 			if mode == "pd_skip" {
 				s.Tables[pdClients] = []routerfake.Row{}
 			}
 			if mode == "dns6_skip" {
-				s.Tables[rosIPv6ND] = []routerfake.Row{{".id": "*E0", "interface": "all", "advertise-dns": "true", "disabled": "false"}}
+				s.Tables[ros.PathIPv6ND] = []routerfake.Row{{".id": "*E0", "interface": "all", "advertise-dns": "true", "disabled": "false"}}
 				s.Tables[rosIPv4Addresses] = append(s.Tables[rosIPv4Addresses], routerfake.Row{".id": "*B2", "address": "198.51.100.1/24", "interface": "other"})
 			}
 			switch mode {
 			case "fake_fail":
-				s.Faults = []routerfake.Fault{{Method: "PUT", Path: rosIPv6Routes, Count: 1, Status: 403}}
+				s.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathIPv6Routes, Count: 1, Status: 403}}
 			case "dhcp_fail":
-				s.Faults = []routerfake.Fault{{Method: "PATCH", Path: rosDHCPNetworks + "/*D0", Count: 1, Status: 403}}
+				s.Faults = []routerfake.Fault{{Method: "PATCH", Path: ros.PathDHCPNetworks + "/*D0", Count: 1, Status: 403}}
 			case "dns6_fail":
-				s.Faults = []routerfake.Fault{{Method: "PATCH", Path: rosIPv6ND + "/*E0", Count: 1, Status: 403}}
+				s.Faults = []routerfake.Fault{{Method: "PATCH", Path: ros.PathIPv6ND + "/*E0", Count: 1, Status: 403}}
 			case "guard_fail":
-				s.Faults = []routerfake.Fault{{Method: "PUT", Path: rosFilter, Count: 1, Status: 403}}
+				s.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathFilter, Count: 1, Status: 403}}
 			case "pd_fail":
 				s.Faults = []routerfake.Fault{{Method: "PATCH", Path: pdClients + "/*C0", Count: 1, Status: 403}}
 			}

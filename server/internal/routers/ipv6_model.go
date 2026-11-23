@@ -3,11 +3,11 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"net/netip"
 	"slices"
-	"strconv"
 	"strings"
 
 	"configflow/internal/model"
@@ -46,49 +46,18 @@ type IPv6Snapshot map[string][]Row
 // SnapshotIPv6 reads only the tables required by an IPv6 route transaction.
 func SnapshotIPv6(ctx context.Context, d *RouterOS, network bool) (IPv6Snapshot, error) {
 	out := IPv6Snapshot{}
-	paths := []struct{ key, path string }{{"routes", rosIPv6Routes}}
+	paths := []struct{ key, path string }{{"routes", ros.PathIPv6Routes}}
 	if network {
 		paths = append(paths, struct{ key, path string }{"addresses", rosIPv6Addresses}, struct{ key, path string }{"ipv4_addresses", rosIPv4Addresses})
 	}
 	for _, p := range paths {
-		rows, err := d.list(ctx, p.path)
+		rows, err := d.List(ctx, p.path)
 		if err != nil {
 			return nil, err
 		}
 		out[p.key] = rows
 	}
 	return out, nil
-}
-
-var ipv6Runtime = device.StringSet("active", "inactive", "immediate-gw", "belongs-to", "hw-offloaded", "debug.fwp-ptr", "actual-interface", "bytes", "packets", "uptime", "last-updated", "expires-after", "expires", "valid-lifetime", "preferred-lifetime", "valid", "preferred")
-
-// StableIPv6Row keeps complete configuration, host bits and resolved LAN identity.
-// Lease lifetimes are volatile; route activity is added separately by IPv6Evidence.
-func StableIPv6Row(row Row) Row {
-	out := Row{}
-	for k, v := range row {
-		if !strings.HasPrefix(k, ".") && !ipv6Runtime[k] {
-			out[k] = comparable(k, v)
-		}
-	}
-	if value, ok := row["address"]; ok {
-		address := value
-		addrText, mask, hasMask := strings.Cut(address, "/")
-		if a, err := netip.ParseAddr(addrText); err == nil {
-			networkText := a.WithZone("").String()
-			if hasMask {
-				networkText += "/" + mask
-			}
-			if n, ok := netipx.ParseNetwork(networkText, false); ok {
-				address = a.String() + "/" + strconv.Itoa(n.Bits())
-			}
-		}
-		out["address"] = address
-		if v, ok := row["actual-interface"]; ok {
-			out["actual-interface"] = comparable("actual-interface", v)
-		}
-	}
-	return out
 }
 
 // IPv6EvidenceSet is sorted stable preview evidence per table.
@@ -139,13 +108,13 @@ func IPv6Evidence(live IPv6Snapshot) IPv6EvidenceSet {
 	out := IPv6EvidenceSet{}
 	for key, rows := range live {
 		sorted := slices.Clone(rows)
-		slices.SortStableFunc(sorted, func(a, b Row) int { return strings.Compare(a.id(), b.id()) })
+		slices.SortStableFunc(sorted, func(a, b Row) int { return strings.Compare(a.ID(), b.ID()) })
 		out[key] = []IPv6EvidenceRow{}
 		for _, row := range sorted {
-			value := IPv6EvidenceRow{Fields: StableIPv6Row(row)}
-			value.Fields[".id"] = row.id()
+			value := IPv6EvidenceRow{Fields: ros.StableIPv6Row(row)}
+			value.Fields[".id"] = row.ID()
 			if key == "routes" {
-				value.Active = new(policyFlag(row["active"]))
+				value.Active = new(ros.PolicyFlag(row["active"]))
 			}
 			out[key] = append(out[key], value)
 		}
@@ -153,22 +122,22 @@ func IPv6Evidence(live IPv6Snapshot) IPv6EvidenceSet {
 	return out
 }
 
-func ipv6Enabled(row Row) bool { return !policyFlag(row["disabled"]) }
+func ipv6Enabled(row Row) bool { return !ros.PolicyFlag(row["disabled"]) }
 func ipv6Network(value string) (netip.Prefix, bool) {
 	p, ok := netipx.ParseNetwork(value, false)
 	return p, ok && p.Addr().Is6()
 }
 func ipv6Key(row Row) string {
-	if p, ok := ipv6Network(row.text("dst-address")); ok {
+	if p, ok := ipv6Network(row.Text("dst-address")); ok {
 		return p.String()
 	}
 	return ""
 }
 func ipv6SameGateway(row Row, gateway string) bool {
-	if immediate := row.text("immediate-gw"); strings.Contains(immediate, "%") {
+	if immediate := row.Text("immediate-gw"); strings.Contains(immediate, "%") {
 		return immediate == gateway
 	}
-	return row.text("gateway") == gateway
+	return row.Text("gateway") == gateway
 }
 
 // IPv6LAN returns the unique RouterOS LAN that contains the Agent's IPv4 address.
@@ -179,11 +148,11 @@ func IPv6LAN(live IPv6Snapshot, host string) string {
 	}
 	interfaces := map[string]bool{}
 	for _, row := range live["ipv4_addresses"] {
-		p, ok := policyNetwork(row.text("address"))
+		p, ok := policyNetwork(row.Text("address"))
 		if ok && p.Addr().Is4() && p.Contains(a) && ipv6Enabled(row) {
-			iface := row.text("actual-interface")
+			iface := row.Text("actual-interface")
 			if iface == "" {
-				iface = row.text("interface")
+				iface = row.Text("interface")
 			}
 			interfaces[iface] = true
 		}
@@ -204,7 +173,7 @@ func IPv6Gateway(host IPv6Host, live IPv6Snapshot, lan string, existing []Row) s
 	}
 	networks := []netip.Prefix{}
 	for _, row := range live["addresses"] {
-		if p, ok := ipv6Network(row.text("address")); ok && ipv6Enabled(row) && row.is("interface", lan) {
+		if p, ok := ipv6Network(row.Text("address")); ok && ipv6Enabled(row) && row.Is("interface", lan) {
 			networks = append(networks, p)
 		}
 	}
@@ -233,7 +202,7 @@ func IPv6Gateway(host IPv6Host, live IPv6Snapshot, lan string, existing []Row) s
 	for _, set := range []map[string]bool{link, ula} {
 		for candidate := range set {
 			for _, row := range existing {
-				if ipv6Configured(row, candidate) && policyFlag(row["active"]) {
+				if ipv6Configured(row, candidate) && ros.PolicyFlag(row["active"]) {
 					preserved[candidate] = true
 				}
 			}
@@ -257,29 +226,29 @@ func IPv6Gateway(host IPv6Host, live IPv6Snapshot, lan string, existing []Row) s
 }
 
 func ipv6Configured(row Row, gateway string) bool {
-	if row.textOr("routing-table", "main") != "main" || !ipv6Enabled(row) || !ipv6SameGateway(row, gateway) {
+	if row.TextOr("routing-table", "main") != "main" || !ipv6Enabled(row) || !ipv6SameGateway(row, gateway) {
 		return false
 	}
 	for _, key := range []string{"blackhole", "unreachable", "prohibit", "invalid", "dynamic", "connect"} {
-		if policyFlag(row[key]) {
+		if ros.PolicyFlag(row[key]) {
 			return false
 		}
 	}
 	return true
 }
 func ipv6Correct(row Row, spec IPv6RouteSpec) bool {
-	return ipv6Key(row) == spec.CIDR && ipv6Configured(row, spec.Gateway) && policyFlag(row["active"])
+	return ipv6Key(row) == spec.CIDR && ipv6Configured(row, spec.Gateway) && ros.PolicyFlag(row["active"])
 }
 
 // ipv6Routes reports whether row sends spec's destination to its gateway,
 // whatever its origin. Inspection uses it to recognise a correct dynamic or
 // connected route, which it then refuses to borrow with its own explanation.
 func ipv6Routes(row Row, spec IPv6RouteSpec) bool {
-	if ipv6Key(row) != spec.CIDR || row.textOr("routing-table", "main") != "main" || !ipv6Enabled(row) || !policyFlag(row["active"]) || !ipv6SameGateway(row, spec.Gateway) {
+	if ipv6Key(row) != spec.CIDR || row.TextOr("routing-table", "main") != "main" || !ipv6Enabled(row) || !ros.PolicyFlag(row["active"]) || !ipv6SameGateway(row, spec.Gateway) {
 		return false
 	}
 	for _, key := range []string{"blackhole", "unreachable", "prohibit", "invalid"} {
-		if policyFlag(row[key]) {
+		if ros.PolicyFlag(row[key]) {
 			return false
 		}
 	}
@@ -435,19 +404,3 @@ func IPv6RoutesRelevant(config *model.Profile, r *Router, desired *Desired) bool
 func IPv6RoutesNeedsHost(config *model.Profile, r *Router, desired *Desired) bool {
 	return IPv6RoutesRelevant(config, r, desired) && IPv6RoutesSettings(config).Enabled && desired != nil && len(desired.IPv6CIDRs) > 0
 }
-
-func (d *RouterOS) setIPv6Manifest(fake bool, raw json.RawMessage) {
-	if fake {
-		d.ipv6FakeIPManifest = guardRaw(raw)
-		d.ipv6FakeIPManifestSet = true
-	} else {
-		d.ipv6RoutesManifest = guardRaw(raw)
-		d.ipv6RoutesManifestSet = true
-	}
-}
-
-// SetIPv6FakeIPManifest supplies the stored ownership record without aliasing it.
-func (d *RouterOS) SetIPv6FakeIPManifest(raw json.RawMessage) { d.setIPv6Manifest(true, raw) }
-
-// SetIPv6RoutesManifest supplies the stored ownership record without aliasing it.
-func (d *RouterOS) SetIPv6RoutesManifest(raw json.RawMessage) { d.setIPv6Manifest(false, raw) }

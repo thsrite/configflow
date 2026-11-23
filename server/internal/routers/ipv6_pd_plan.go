@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,27 +15,27 @@ import (
 func pdChange(d *RouterOS, role, method, path string, row, values Row) IPv6PDChange {
 	c := IPv6PDChange{Role: role, ROSChange: ROSChange{Method: method, Path: path, Values: values}}
 	if values != nil {
-		c.Values = cloneRow(values)
+		c.Values = ros.CloneRow(values)
 	}
 	if row != nil {
-		c.ID = row.id()
-		c.Expected = marshalRow(d.ownershipSnapshot(path, row))
+		c.ID = row.ID()
+		c.Expected = ros.MarshalRow(d.OwnershipSnapshot(path, row))
 	}
 	return c
 }
 func pdEvidence(live pdLive, spec *IPv6PDSpec, owned map[string]Row) *IPv6PDEvidence {
 	e := &IPv6PDEvidence{Spec: spec, Owned: map[string]string{}, Scripts: []string{}, Schedulers: []string{}}
 	for role, r := range owned {
-		e.Owned[role] = r.id()
+		e.Owned[role] = r.ID()
 	}
 	for _, r := range live.scripts {
-		if r.is("name", pdWatch) || r.is("name", pdRollback) {
-			e.Scripts = append(e.Scripts, r.id())
+		if r.Is("name", pdWatch) || r.Is("name", pdRollback) {
+			e.Scripts = append(e.Scripts, r.ID())
 		}
 	}
 	for _, r := range live.schedulers {
-		if r.is("name", pdPoll) {
-			e.Schedulers = append(e.Schedulers, r.id())
+		if r.Is("name", pdPoll) {
+			e.Schedulers = append(e.Schedulers, r.ID())
 		}
 	}
 	slices.Sort(e.Scripts)
@@ -51,7 +52,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 	p := &IPv6PDGuardPlan{IPv6PDGuardReport: IPv6PDGuardReport{Enabled: pdSettings(r).Enabled, Status: "disabled", Hold: pdHold, Items: []IPv6PDItem{}, Blockers: []string{}, Warnings: []string{}}, Ops: []Op{}}
 	var previous json.RawMessage
 	if r != nil {
-		previous = guardRaw(r.Extra["ipv6_pd_guard_state"])
+		previous = ros.GuardRaw(r.Extra["ipv6_pd_guard_state"])
 	}
 	d.SetIPv6PDGuardManifest(previous)
 	p.Managed = device.HasStoredState(previous)
@@ -71,7 +72,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 		}{{live.scripts, pdWatch}, {live.schedulers, pdPoll}} {
 			count := 0
 			for _, row := range v.rows {
-				if row.is("name", v.name) {
+				if row.Is("name", v.name) {
 					count++
 				}
 			}
@@ -95,7 +96,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 		p.proofs = map[string]IPv6PDResource{}
 		for role, row := range current {
 			if row != nil {
-				p.proofs[role] = IPv6PDResource{role, pdRolePath(role), row.id(), d.ownershipSnapshot(pdRolePath(role), row)}
+				p.proofs[role] = IPv6PDResource{role, pdRolePath(role), row.ID(), d.OwnershipSnapshot(pdRolePath(role), row)}
 			}
 		}
 		written, stillOwned, updating := false, false, false
@@ -103,7 +104,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 			s := states[role]
 			written = written || s.state == "missing" || s.state == "update"
 			updating = updating || s.state == "update"
-			if row := owned[role]; row != nil && current[role] != nil && row.id() == current[role].id() {
+			if row := owned[role]; row != nil && current[role] != nil && row.ID() == current[role].ID() {
 				stillOwned = true
 			}
 		}
@@ -121,7 +122,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 			status, detail := s.state, s.detail
 			if !slices.Contains([]string{"missing", "update", "conflict"}, status) {
 				if slices.Contains(after, role) {
-					if owned[role] != nil && current[role] != nil && owned[role].id() == current[role].id() {
+					if owned[role] != nil && current[role] != nil && owned[role].ID() == current[role].ID() {
 						status = "synced"
 					} else {
 						status = "adopt"
@@ -145,10 +146,10 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 			changes = append(changes, pdChange(d, "script", "PUT", pdScripts, nil, Row{"name": pdWatch, "source": source, "policy": pdPolicy, "comment": pdScriptComment}))
 		} else if states["script"].state == "update" {
 			changes = append(changes, pdChange(d, "script", "PATCH", pdScripts, script, Row{"source": source, "policy": pdPolicy}))
-			found := pdParameters(script.text("source"))
+			found := pdParameters(script.Text("source"))
 			if found["lan"] != spec.LAN || found["pool"] != spec.Pool {
 				for _, row := range live.last {
-					changes = append(changes, pdChange(d, "state", "DELETE", pdLists, row, nil))
+					changes = append(changes, pdChange(d, "state", "DELETE", ros.PathIPv6AddressLists, row, nil))
 				}
 			}
 		}
@@ -157,7 +158,7 @@ func InspectIPv6PDGuard(ctx context.Context, r *Router, gateway string, d *Route
 		} else if states["scheduler"].state == "update" {
 			changes = append(changes, pdChange(d, "scheduler", "PATCH", pdSchedulers, scheduler, Row{"on-event": pdEvent, "interval": "30s", "start-time": "startup", "policy": pdPolicy, "disabled": "false"}))
 		}
-		if old := owned["hook"]; old != nil && old.id() != client.id() && slices.Contains([]string{"ok", "update"}, pdHookState(old).state) {
+		if old := owned["hook"]; old != nil && old.ID() != client.ID() && slices.Contains([]string{"ok", "update"}, pdHookState(old).state) {
 			changes = append(changes, pdChange(d, "hook", "PATCH", pdClients, old, Row{"script": ""}))
 		}
 		if slices.Contains([]string{"missing", "update"}, states["hook"].state) {
@@ -237,21 +238,21 @@ func pdWithdrawPlan(d *RouterOS, p *IPv6PDGuardPlan, live pdLive, owned map[stri
 		changes = append(changes, pdChange(d, "hook", "PATCH", pdClients, hook, Row{"script": ""}))
 	}
 	if scheduler := owned["scheduler"]; scheduler != nil {
-		if !strings.Contains(scheduler.text("on-event"), pdWatch) {
+		if !strings.Contains(scheduler.Text("on-event"), pdWatch) {
 			blockers = append(blockers, messagePDPollChanged)
 		}
 		changes = append(changes, pdChange(d, "scheduler", "DELETE", pdSchedulers, scheduler, nil))
 	}
 	if script := owned["script"]; script != nil {
-		if !pdIsWatch(script.text("source")) {
+		if !pdIsWatch(script.Text("source")) {
 			blockers = append(blockers, messagePDWatchChanged)
 		}
 		changes = append(changes, pdChange(d, "script", "DELETE", pdScripts, script, nil))
 		for _, row := range live.last {
-			changes = append(changes, pdChange(d, "state", "DELETE", pdLists, row, nil))
+			changes = append(changes, pdChange(d, "state", "DELETE", ros.PathIPv6AddressLists, row, nil))
 		}
 		for _, row := range live.prefixes {
-			if pdDeprecated.MatchString(row.text("comment")) && !policyFlag(row["dynamic"]) {
+			if pdDeprecated.MatchString(row.Text("comment")) && !ros.PolicyFlag(row["dynamic"]) {
 				changes = append(changes, pdChange(d, "state", "DELETE", pdPrefixes, row, nil))
 			}
 		}
@@ -277,7 +278,7 @@ func pdWithdrawPlan(d *RouterOS, p *IPv6PDGuardPlan, live pdLive, owned map[stri
 	removed := [][2]string{}
 	for _, c := range changes {
 		if c.Role == "state" {
-			if c.Path == pdLists {
+			if c.Path == ros.PathIPv6AddressLists {
 				lists++
 			} else {
 				prefixes++

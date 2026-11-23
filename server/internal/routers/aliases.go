@@ -1,6 +1,9 @@
 package routers
 
-import "configflow/internal/routers/device"
+import (
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
+)
 
 // Temporary type and constant aliases for R1–R9; removed in R10.
 type (
@@ -31,6 +34,22 @@ type (
 	DNSReport            = device.DNSReport
 	DNSCheck             = device.DNSCheck
 	SupernetIndex        = device.SupernetIndex
+
+	Row              = ros.Row
+	NatContext       = ros.NatContext
+	NatAssessment    = ros.NatAssessment
+	RouteEgressIndex = ros.RouteEgressIndex
+	BypassExpansion  = ros.BypassExpansion
+	NATListRule      = ros.NATListRule
+	ListRef          = ros.ListRef
+	ROSChange        = ros.ROSChange
+	ROSUndo          = ros.ROSUndo
+	ROSIDs           = ros.ROSIDs
+	NATStep          = ros.NATStep
+	ROSResource      = ros.Resource
+	Manifest         = ros.Manifest
+	Manifests        = ros.Manifests
+	ManifestHolder   = ros.ManifestHolder
 )
 
 const (
@@ -59,4 +78,10 @@ const (
 	StageDNSGuard      = device.StageDNSGuard
 	StageIPv6PDGuard   = device.StageIPv6PDGuard
 	StageReturnCleanup = device.StageReturnCleanup
+
+	NATListComment = ros.NATListComment
+	NATSrcList     = ros.NATSrcList
+	NATDstList     = ros.NATDstList
+	PathNAT        = ros.PathNAT
+	PathMangle     = ros.PathMangle
 )

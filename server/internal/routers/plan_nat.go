@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -102,7 +103,7 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 	retiring := []string{}
 	if state.ROSPolicyPlan != nil && state.ROSPolicyPlan.Check != nil {
 		for _, v := range state.ROSPolicyPlan.Check.Migrations {
-			if v.Path == rosNAT {
+			if v.Path == ros.PathNAT {
 				retiring = append(retiring, v.ID)
 			}
 		}
@@ -225,8 +226,8 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 	}
 	if state.ROSPolicyPlan != nil && state.ROSPolicyPlan.Check != nil {
 		for _, r := range state.ROSPolicyPlan.Check.Replacements {
-			if r.Path == rosNAT {
-				exempt = append(exempt, r.Values.text("dst-address"))
+			if r.Path == ros.PathNAT {
+				exempt = append(exempt, r.Values.Text("dst-address"))
 			}
 		}
 	}

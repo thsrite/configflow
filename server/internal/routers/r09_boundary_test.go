@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -52,8 +53,8 @@ func r09Raw(v any) json.RawMessage { data, _ := json.Marshal(v); return data }
 func r09Copy[T any](v T) T         { var out T; _ = json.Unmarshal(r09Raw(v), &out); return out }
 func r09Base(name string) r09Case {
 	return r09Case{Name: name, State: routerfake.State{Tables: map[string][]routerfake.Row{
-		rosRoutes: {{".id": "*10", "dst-address": "192.0.2.0/24", "gateway": "bridge", "immediate-gw": "bridge", "connect": "true", "active": "true", "dynamic": "true", "distance": "0", "routing-table": "main"}},
-		rosNAT:    {{".id": "*20", "chain": "dstnat", "action": "dst-nat", "protocol": "udp", "dst-port": "53", "to-addresses": "192.0.2.2", "comment": "old-dns", "disabled": "false"}, {".id": "*21", "chain": "srcnat", "action": "masquerade", "out-interface": "ether1", "disabled": "false"}},
+		ros.PathRoutes: {{".id": "*10", "dst-address": "192.0.2.0/24", "gateway": "bridge", "immediate-gw": "bridge", "connect": "true", "active": "true", "dynamic": "true", "distance": "0", "routing-table": "main"}},
+		ros.PathNAT:    {{".id": "*20", "chain": "dstnat", "action": "dst-nat", "protocol": "udp", "dst-port": "53", "to-addresses": "192.0.2.2", "comment": "old-dns", "disabled": "false"}, {".id": "*21", "chain": "srcnat", "action": "masquerade", "out-interface": "ether1", "disabled": "false"}},
 	}}, Desired: &Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: "192.0.2.4", ProxyCIDRs: []ProxyCIDR{{CIDR: "198.18.0.0/16", Sources: []string{"fake-ip"}}}, DNSSettings: &DNSSettings{Server: "192.0.2.2"}}, Settings: DNSGuard{Enabled: true, BlockDoT: true, Failover: true, Bypass: []string{"192.0.2.50/32"}}, Steps: []r09Step{{Action: "apply"}, {Action: "plan"}}}
 }
 func r09Cases() []r09Case {
@@ -91,42 +92,42 @@ func r09Cases() []r09Case {
 	tc = r09Base("incremental_reject_watch")
 	changed = r09Copy(tc.Settings)
 	changed.Bypass = []string{"192.0.2.60/32"}
-	tc.Steps = append(tc.Steps, r09Step{Action: "apply", Settings: &changed, Mutation: &routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: rosNetwatch, Count: 1, Status: 400, Body: routerfake.Row{"message": "injected refusal"}}}}})
+	tc.Steps = append(tc.Steps, r09Step{Action: "apply", Settings: &changed, Mutation: &routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: ros.PathNetwatch, Count: 1, Status: 400, Body: routerfake.Row{"message": "injected refusal"}}}}})
 	add(tc)
 	tc = r09Base("disable_reject_address")
 	off = tc.Settings
 	off.Enabled = false
-	tc.Steps = append(tc.Steps, r09Step{Action: "apply", Settings: &off, Mutation: &routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: rosAddresses + "/*66", Status: 400, Body: routerfake.Row{"message": "injected refusal"}}}}})
+	tc.Steps = append(tc.Steps, r09Step{Action: "apply", Settings: &off, Mutation: &routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: ros.PathAddresses + "/*66", Status: 400, Body: routerfake.Row{"message": "injected refusal"}}}}})
 	add(tc)
 	for _, variant := range []string{"foreign_list", "foreign_watch", "no_netwatch", "dns_error", "disconnected", "duplicate_route", "interface_mismatch", "not_main", "inactive", "proxy_overlap", "policy_overlap", "no_routes"} {
 		tc = r09Base(variant)
 		tc.Steps = []r09Step{{Action: "plan"}}
 		switch variant {
 		case "foreign_list":
-			tc.State.Tables[rosAddresses] = []routerfake.Row{{".id": "*F1", "list": DNSGuardBypassList, "address": "192.0.2.9"}}
+			tc.State.Tables[ros.PathAddresses] = []routerfake.Row{{".id": "*F1", "list": DNSGuardBypassList, "address": "192.0.2.9"}}
 		case "foreign_watch":
-			tc.State.Tables[rosNetwatch] = []routerfake.Row{{".id": "*F1", "name": dnsGuardWatch, "host": "192.0.2.9"}}
+			tc.State.Tables[ros.PathNetwatch] = []routerfake.Row{{".id": "*F1", "name": dnsGuardWatch, "host": "192.0.2.9"}}
 		case "no_netwatch":
-			tc.State.Faults = []routerfake.Fault{{Method: "GET", Path: rosNetwatch, Status: 404}}
+			tc.State.Faults = []routerfake.Fault{{Method: "GET", Path: ros.PathNetwatch, Status: 404}}
 		case "dns_error":
 			tc.Desired.Error = "synthetic DNS error"
 		case "disconnected":
 			tc.Desired.Server = "203.0.113.2"
 		case "duplicate_route":
-			tc.State.Tables[rosRoutes] = append(tc.State.Tables[rosRoutes], r09Copy(tc.State.Tables[rosRoutes][0]))
-			tc.State.Tables[rosRoutes][1][".id"] = "*11"
+			tc.State.Tables[ros.PathRoutes] = append(tc.State.Tables[ros.PathRoutes], r09Copy(tc.State.Tables[ros.PathRoutes][0]))
+			tc.State.Tables[ros.PathRoutes][1][".id"] = "*11"
 		case "interface_mismatch":
-			tc.State.Tables[rosRoutes][0]["immediate-gw"] = "other"
+			tc.State.Tables[ros.PathRoutes][0]["immediate-gw"] = "other"
 		case "not_main":
-			tc.State.Tables[rosRoutes][0]["routing-table"] = "guest"
+			tc.State.Tables[ros.PathRoutes][0]["routing-table"] = "guest"
 		case "inactive":
-			tc.State.Tables[rosRoutes][0]["active"] = "false"
+			tc.State.Tables[ros.PathRoutes][0]["active"] = "false"
 		case "proxy_overlap":
 			tc.Desired.ProxyCIDRs = append(tc.Desired.ProxyCIDRs, ProxyCIDR{CIDR: "192.0.2.2/32"})
 		case "policy_overlap":
 			tc.PolicyCIDRs = []ProxyCIDR{{CIDR: "192.0.2.2/32"}}
 		case "no_routes":
-			tc.State.Tables[rosRoutes] = []routerfake.Row{}
+			tc.State.Tables[ros.PathRoutes] = []routerfake.Row{}
 		}
 		add(tc)
 	}
@@ -135,22 +136,22 @@ func r09Cases() []r09Case {
 		mutation := &routerfake.ExternalWrite{}
 		switch variant {
 		case "paused", "paused_delta", "manual_disabled":
-			mutation.PatchRows = map[string]map[string]routerfake.Row{rosNAT: {"*6A": {"disabled": "true"}, "*6B": {"disabled": "true"}}}
+			mutation.PatchRows = map[string]map[string]routerfake.Row{ros.PathNAT: {"*6A": {"disabled": "true"}, "*6B": {"disabled": "true"}}}
 			if variant == "manual_disabled" {
 				tc.Settings.Failover = false
 			}
 		case "outside_edit", "changed_after_preview":
-			mutation.PatchRows = map[string]map[string]routerfake.Row{rosNAT: {"*68": {"src-address": "192.0.2.0/25"}}}
+			mutation.PatchRows = map[string]map[string]routerfake.Row{ros.PathNAT: {"*68": {"src-address": "192.0.2.0/25"}}}
 		case "moved_address":
-			mutation.PatchRows = map[string]map[string]routerfake.Row{rosAddresses: {"*65": {"list": "foreign"}}}
+			mutation.PatchRows = map[string]map[string]routerfake.Row{ros.PathAddresses: {"*65": {"list": "foreign"}}}
 		case "missing_address":
-			mutation.RemoveIDs = map[string][]string{rosAddresses: {"*65"}}
+			mutation.RemoveIDs = map[string][]string{ros.PathAddresses: {"*65"}}
 		case "gone_all":
-			mutation.RemoveIDs = map[string][]string{rosAddresses: {"*65", "*66", "*67"}, rosNAT: {"*68", "*69", "*6A", "*6B"}, rosFilter: {"*6C", "*6D"}, rosNetwatch: {"*6E"}}
+			mutation.RemoveIDs = map[string][]string{ros.PathAddresses: {"*65", "*66", "*67"}, ros.PathNAT: {"*68", "*69", "*6A", "*6B"}, ros.PathFilter: {"*6C", "*6D"}, ros.PathNetwatch: {"*6E"}}
 			off = r09Copy(tc.Settings)
 			off.Enabled = false
 		case "watch_unreadable_owned":
-			mutation.Faults = []routerfake.Fault{{Method: "GET", Path: rosNetwatch, Status: 404}}
+			mutation.Faults = []routerfake.Fault{{Method: "GET", Path: ros.PathNetwatch, Status: 404}}
 		}
 		step := r09Step{Action: "plan", Mutation: mutation}
 		if variant == "paused_delta" {
@@ -231,7 +232,7 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 	f.Reset(tc.State)
 	d := NewRouterOS(endpoint, "synthetic-user", "synthetic-password", false)
 	defer d.Close()
-	previous := guardRaw(tc.Previous)
+	previous := ros.GuardRaw(tc.Previous)
 	settings := tc.Settings
 	desired := tc.Desired
 	out := r09Outcome{Steps: []r09StepResult{}, Writes: []routerfake.Call{}}
@@ -260,7 +261,7 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 			request.ROSPolicy = &ROSPolicyDesired{CIDRs: tc.PolicyCIDRs}
 		}
 		plan := BuildDNSGuard(&request, state)
-		row := r09StepResult{Plan: plan, Manifest: guardRaw(previous), Undo: json.RawMessage("null")}
+		row := r09StepResult{Plan: plan, Manifest: ros.GuardRaw(previous), Undo: json.RawMessage("null")}
 		if step.AfterPreview != nil {
 			f.ApplyExternal(*step.AfterPreview)
 		}
@@ -280,7 +281,7 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 				}
 				row.Error = &r09Error{Class: class, Message: err.Error()}
 			}
-			previous = guardRaw(d.dnsGuardManifest)
+			previous = ros.GuardRaw(d.DNSGuardManifest())
 			row.Manifest = previous
 		}
 		out.Steps = append(out.Steps, row)
@@ -315,14 +316,14 @@ func TestR09PythonBoundary(t *testing.T) {
 		tc.State.Tables = r09Copy(seed.Tables)
 		switch name {
 		case "overtaken_then_replan":
-			tc.State.Tables[rosNAT] = append([]routerfake.Row{{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53", "comment": "foreign DNS"}}, tc.State.Tables[rosNAT]...)
+			tc.State.Tables[ros.PathNAT] = append([]routerfake.Row{{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53", "comment": "foreign DNS"}}, tc.State.Tables[ros.PathNAT]...)
 		case "missing_after_preview":
 			tc.Settings.Bypass = []string{"192.0.2.60/32"}
-			tc.Steps[0].AfterPreview = &routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{rosAddresses: {"*65"}}}}
+			tc.Steps[0].AfterPreview = &routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{ros.PathAddresses: {"*65"}}}}
 		case "missing_published_member":
-			tc.State.Tables[rosAddresses] = tc.State.Tables[rosAddresses][1:]
+			tc.State.Tables[ros.PathAddresses] = tc.State.Tables[ros.PathAddresses][1:]
 		case "duplicate_live_id":
-			tc.State.Tables[rosNAT] = append(tc.State.Tables[rosNAT], r09Copy(tc.State.Tables[rosNAT][0]))
+			tc.State.Tables[ros.PathNAT] = append(tc.State.Tables[ros.PathNAT], r09Copy(tc.State.Tables[ros.PathNAT][0]))
 			tc.Steps = []r09Step{{Action: "plan"}}
 		}
 		cases = append(cases, tc)
@@ -363,7 +364,7 @@ func TestR09BoundaryComparisonDetectsMutations(t *testing.T) {
 			case "request":
 				changed["writes"].([]any)[0].(map[string]any)["body"].(map[string]any)["address"] = "203.0.113.99"
 			case "table":
-				changed["tables"].(map[string]any)[rosNAT].([]any)[0].(map[string]any)["dst-port"] = "54"
+				changed["tables"].(map[string]any)[ros.PathNAT].([]any)[0].(map[string]any)["dst-port"] = "54"
 			}
 			if reflect.DeepEqual(original, changed) {
 				t.Fatal("mutation escaped comparison")

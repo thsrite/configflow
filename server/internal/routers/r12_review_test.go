@@ -97,13 +97,13 @@ func TestR12ReviewShutdownDuringFirstWriteRecords(t *testing.T) {
 	var f *routerfake.Fake
 	triggered, callsAtShutdown := false, 0
 	f, db, req, before := r12ReviewSetup(t, func(d *RouterOS) {
-		d.client = &r09AfterReadHTTP{DeviceHTTP: d.client, after: func(method, _ string) {
+		d.SetHTTP(&r09AfterReadHTTP{DeviceHTTP: d.HTTP(), after: func(method, _ string) {
 			if !triggered && method == "PUT" {
 				triggered = true
 				runtime.Shutdown(t.Context())
 				callsAtShutdown = len(f.Calls())
 			}
-		}}
+		}})
 	})
 	outcome := Publish(runtime.BindRequest(t.Context()), req)
 	if !triggered {

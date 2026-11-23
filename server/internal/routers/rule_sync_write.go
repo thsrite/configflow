@@ -4,6 +4,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,22 +15,22 @@ import (
 
 func syncStaticResources(ctx context.Context, d *RouterOS, desired *Desired) ([]ROSResource, error) {
 	wanted := syncCIDRSet(desired.ProxyCIDRs)
-	rows, err := d.list(ctx, rosRoutes)
+	rows, err := d.List(ctx, ros.PathRoutes)
 	if err != nil {
 		return nil, err
 	}
 	result := []ROSResource{}
 	found := map[string]bool{}
 	for _, row := range rows {
-		if row.textOr("routing-table", "main") != "main" || !wanted[row.text("dst-address")] || !row.is("gateway", desired.ProxyGateway) || !device.IsManaged(row.text("comment")) {
+		if row.TextOr("routing-table", "main") != "main" || !wanted[row.Text("dst-address")] || !row.Is("gateway", desired.ProxyGateway) || !device.IsManaged(row.Text("comment")) {
 			continue
 		}
 		entry := editROSEntry(row, map[string]bool{})
 		if !entry.Editable || !entry.Enabled {
 			return nil, device.Error(messageSyncStaticSpecial)
 		}
-		result = append(result, resource(rosRoutes, row))
-		found[row.text("dst-address")] = true
+		result = append(result, ros.NewResource(ros.PathRoutes, row))
+		found[row.Text("dst-address")] = true
 	}
 	if !maps.Equal(found, wanted) {
 		return nil, device.Error(messageSyncStaticMissing)
@@ -137,7 +138,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		return out, err
 	}
 	defer d.ReuseAddressReads()()
-	previous := slices.Clone(d.policyManifest)
+	previous := slices.Clone(d.PolicyManifest())
 	livePtr, err := d.snapshotPolicy(ctx, false)
 	if err != nil {
 		return out, err
@@ -155,26 +156,26 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 				return out, err
 			}
 		}
-		for _, path := range []string{rosNAT, rosMangle, rosFilter, "/ip/firewall/raw"} {
+		for _, path := range []string{ros.PathNAT, ros.PathMangle, ros.PathFilter, "/ip/firewall/raw"} {
 			for _, row := range live[path] {
-				if path == rosNAT && row.id() == enrolled.Rule.ID {
+				if path == ros.PathNAT && row.ID() == enrolled.Rule.ID {
 					continue
 				}
 				for _, key := range []string{"src-address-list", "dst-address-list"} {
-					name := strings.TrimLeft(row.text(key), "!")
+					name := strings.TrimLeft(row.Text(key), "!")
 					if name == NATSrcList || name == NATDstList {
-						return out, device.Error(fmt.Sprintf(messageSyncForeignReference, path, row.id(), name))
+						return out, device.Error(fmt.Sprintf(messageSyncForeignReference, path, row.ID(), name))
 					}
 				}
 			}
 		}
 		sources, expected := map[string]bool{}, map[string]bool{}
-		for _, row := range live[rosAddresses] {
-			if row.is("list", NATSrcList) && row.is("comment", NATListComment) {
-				sources[row.id()] = true
+		for _, row := range live[ros.PathAddresses] {
+			if row.Is("list", NATSrcList) && row.Is("comment", NATListComment) {
+				sources[row.ID()] = true
 			}
-			if row.is("list", NATDstList) {
-				retainedNAT = append(retainedNAT, resource(rosAddresses, row))
+			if row.Is("list", NATDstList) {
+				retainedNAT = append(retainedNAT, ros.NewResource(ros.PathAddresses, row))
 			}
 		}
 		for _, item := range enrolled.Src {
@@ -189,9 +190,9 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 	for _, item := range baseline.StaticResources {
 		known[item.ID] = item
 	}
-	for _, row := range live[rosRoutes] {
-		_, ok := known[row.id()]
-		if row.textOr("routing-table", "main") == "main" && wanted[row.text("dst-address")] && !ok {
+	for _, row := range live[ros.PathRoutes] {
+		_, ok := known[row.ID()]
+		if row.TextOr("routing-table", "main") == "main" && wanted[row.Text("dst-address")] && !ok {
 			return out, device.Error(messageSyncForeignRoute)
 		}
 	}
@@ -219,7 +220,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 	for _, op := range operations {
 		switch v := syncValueOp(op).(type) {
 		case RouteAddOp:
-			additions = append(additions, ROSResource{Path: rosRoutes, Config: Row{"dst-address": v.CIDR, "gateway": v.Gateway, "comment": v.Comment, "disabled": "false"}})
+			additions = append(additions, ROSResource{Path: ros.PathRoutes, Config: Row{"dst-address": v.CIDR, "gateway": v.Gateway, "comment": v.Comment, "disabled": "false"}})
 		case RouteDeleteOp:
 			removals = append(removals, known[v.ID])
 		}
@@ -234,25 +235,25 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		var entry *ROSResource
 		for i := range manifest.Resources {
 			item := &manifest.Resources[i]
-			if item.Path == rosMangle && item.Config.is("chain", "prerouting") && item.Config.is("action", "jump") {
+			if item.Path == ros.PathMangle && item.Config.Is("chain", "prerouting") && item.Config.Is("action", "jump") {
 				entry = item
 				break
 			}
 		}
-		if entry == nil || entry.Config.text("dst-address-list") == "" {
+		if entry == nil || entry.Config.Text("dst-address-list") == "" {
 			return out, device.Error(messageSyncPolicyEntry)
 		}
-		name := entry.Config.text("dst-address-list")
+		name := entry.Config.Text("dst-address-list")
 		old := map[string]ROSResource{}
 		for _, item := range manifest.Resources {
-			if item.Path == rosAddresses && item.Config.is("list", name) {
-				old[syncNetworkKey(item.Config.text("address"))] = item
+			if item.Path == ros.PathAddresses && item.Config.Is("list", name) {
+				old[syncNetworkKey(item.Config.Text("address"))] = item
 			}
 		}
 		newSet := device.StringSet(check.Spec.Destinations...)
 		for _, cidr := range sortedSyncKeys(newSet) {
 			if _, ok := old[cidr]; !ok {
-				additions = append(additions, ROSResource{Path: rosAddresses, Config: Row{"list": name, "address": cidr, "comment": entry.Config.text("comment"), "disabled": "false"}})
+				additions = append(additions, ROSResource{Path: ros.PathAddresses, Config: Row{"list": name, "address": cidr, "comment": entry.Config.Text("comment"), "disabled": "false"}})
 			}
 		}
 		for _, cidr := range sortedSyncKeys(old) {
@@ -308,19 +309,19 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		return
 	}
 	for _, item := range additions {
-		if item.Path == rosAddresses {
+		if item.Path == ros.PathAddresses {
 			continue
 		}
 		if err = checkCurrent(false); err != nil {
 			return
 		}
 		var rows []Row
-		rows, err = d.scoped(ctx, rosRoutes, item.Config)
+		rows, err = d.Scoped(ctx, ros.PathRoutes, item.Config)
 		if err != nil {
 			return
 		}
 		for _, row := range rows {
-			if row.textOr("routing-table", "main") == "main" && row.is("dst-address", item.Config.text("dst-address")) {
+			if row.TextOr("routing-table", "main") == "main" && row.Is("dst-address", item.Config.Text("dst-address")) {
 				err = device.Error(messageSyncBeforeWrite)
 				return
 			}
@@ -328,11 +329,11 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		if _, err = d.createResource(ctx, item.Path, item.Config, &journal, ids, false); err != nil {
 			return
 		}
-		out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncAdded, item.Config.text("dst-address"))})
+		out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncAdded, item.Config.Text("dst-address"))})
 	}
 	members := []Row{}
 	for _, item := range additions {
-		if item.Path == rosAddresses {
+		if item.Path == ros.PathAddresses {
 			members = append(members, item.Config)
 		}
 	}
@@ -349,14 +350,14 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 			if next != nil {
 				position := len(next.Resources)
 				for i, v := range next.Resources {
-					if v.Path != rosAddresses {
+					if v.Path != ros.PathAddresses {
 						position = i
 						break
 					}
 				}
 				next.Resources = slices.Insert(next.Resources, position, item)
 			}
-			out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncAdded, item.Config.text("address"))})
+			out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncAdded, item.Config.Text("address"))})
 		}
 	}
 	if nat != nil && len(nat.DstAdd) > 0 {
@@ -378,11 +379,11 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 			return
 		}
 		for _, item := range nat.DstRemove {
-			out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncNATRemoved, item.Config.text("address"))})
+			out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncNATRemoved, item.Config.Text("address"))})
 		}
 	}
 	for _, item := range removals {
-		if item.Path == rosAddresses {
+		if item.Path == ros.PathAddresses {
 			continue
 		}
 		if err = checkCurrent(false); err != nil {
@@ -391,11 +392,11 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		if err = d.deleteResource(ctx, item, &journal); err != nil {
 			return
 		}
-		out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncDeleted, item.Config.text("dst-address"))})
+		out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncDeleted, item.Config.Text("dst-address"))})
 	}
 	removedMembers := []ROSResource{}
 	for _, item := range removals {
-		if item.Path == rosAddresses {
+		if item.Path == ros.PathAddresses {
 			removedMembers = append(removedMembers, item)
 		}
 	}
@@ -407,7 +408,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 			return
 		}
 		for _, item := range removedMembers {
-			out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncDeleted, item.Config.text("address"))})
+			out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncDeleted, item.Config.Text("address"))})
 		}
 	}
 	var routes6 *IPv6RoutesReplace
@@ -446,7 +447,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 	checks := *plan.Checks
 	checks.RemovedRoutes = []string{}
 	for _, item := range removals {
-		if item.Path == rosRoutes {
+		if item.Path == ros.PathRoutes {
 			checks.RemovedRoutes = append(checks.RemovedRoutes, item.ID)
 		}
 	}
@@ -508,7 +509,7 @@ func syncGuardResources(live ROSPolicySnapshot, items []ROSResource) error {
 	rows := map[[2]string][]Row{}
 	for path, entries := range live {
 		for _, row := range entries {
-			key := [2]string{path, row.id()}
+			key := [2]string{path, row.ID()}
 			rows[key] = append(rows[key], row)
 		}
 	}

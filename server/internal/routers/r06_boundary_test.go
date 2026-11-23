@@ -340,7 +340,7 @@ func r06Run(tc r06Case, endpoint string) r06Outcome {
 	} else {
 		d := NewRouterOS(endpoint, "synthetic-admin", "synthetic-secret", false)
 		if tc.Timeout {
-			d.client = r06ShortHTTP{d.client}
+			d.SetHTTP(r06ShortHTTP{d.HTTP()})
 		}
 		editor, driver = d, d
 	}

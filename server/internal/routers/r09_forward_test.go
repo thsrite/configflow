@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -29,7 +30,7 @@ func r09ForwardBase() r09ForwardCase {
 	base.State.Tables["/interface"] = []routerfake.Row{{".id": "*1", "name": "bridge"}, {".id": "*2", "name": "ether1"}}
 	base.State.Tables["/interface/list"] = []routerfake.Row{{".id": "*1", "name": "LAN"}, {".id": "*2", "name": "WAN"}}
 	base.State.Tables["/interface/list/member"] = []routerfake.Row{{".id": "*1", "list": "LAN", "interface": "bridge"}, {".id": "*2", "list": "WAN", "interface": "ether1"}}
-	base.State.Tables[rosFilter] = []routerfake.Row{
+	base.State.Tables[ros.PathFilter] = []routerfake.Row{
 		{".id": "*1", "chain": "forward", "action": "passthrough", "dynamic": "true"},
 		{".id": "*2", "chain": "input", "action": "drop", "connection-state": "invalid"},
 		{".id": "*3", "chain": "forward", "action": "accept", "ipsec-policy": "in,ipsec"},
@@ -46,7 +47,7 @@ func r09ForwardCases() []r09ForwardCase {
 	for _, variant := range []string{"default", "early_accept", "late_accept", "renamed", "custom_drop", "jump", "default_deny", "empty", "disabled", "input", "wan_only", "new_only", "unknown_accept", "target_only", "address_list", "quoted_lan", "escaped_lan", "unreadable", "no_lan", "ikuai", "return_routing", "no_targets", "bad_gateway", "policy_only", "policy_blocked", "policy_disabled", "dns_snapshot", "policy_snapshot", "policy_empty_snapshot", "policy_missing_filter", "ipv6"} {
 		tc := r09ForwardBase()
 		tc.Name = variant
-		rows := tc.State.Tables[rosFilter]
+		rows := tc.State.Tables[ros.PathFilter]
 		same := routerfake.Row{".id": "*F", "chain": "forward", "action": "accept", "in-interface": "bridge", "out-interface": "bridge"}
 		switch variant {
 		case "early_accept":
@@ -81,15 +82,15 @@ func r09ForwardCases() []r09ForwardCase {
 			rows = []routerfake.Row{{".id": "*A", "chain": "forward", "action": "drop", "dst-address": "198.51.100.0/24"}}
 		case "address_list":
 			rows = []routerfake.Row{{".id": "*A", "chain": "forward", "action": "drop", "dst-address-list": "proxied"}}
-			tc.State.Tables[rosAddresses] = []routerfake.Row{{".id": "*A", "list": "proxied", "address": "198.18.0.0/15"}, {".id": "*B", "list": "other", "address": "203.0.113.1"}}
+			tc.State.Tables[ros.PathAddresses] = []routerfake.Row{{".id": "*A", "list": "proxied", "address": "198.18.0.0/15"}, {".id": "*B", "list": "other", "address": "203.0.113.1"}}
 		case "quoted_lan":
 			tc.LAN = "LAN bridge"
 		case "escaped_lan":
 			tc.LAN = `LAN "$bridge\`
 		case "unreadable":
-			tc.State.Faults = []routerfake.Fault{{Method: "GET", Path: rosFilter, Status: 403}}
+			tc.State.Faults = []routerfake.Fault{{Method: "GET", Path: ros.PathFilter, Status: 403}}
 		case "no_lan":
-			tc.State.Tables[rosRoutes] = []routerfake.Row{}
+			tc.State.Tables[ros.PathRoutes] = []routerfake.Row{}
 		case "ikuai":
 			tc.Router.Type = "ikuai"
 		case "return_routing":
@@ -109,12 +110,12 @@ func r09ForwardCases() []r09ForwardCase {
 			}
 			tc.Report = r09Raw(map[string]any{"routes": map[string]any{"items": []any{}}, "policy_routing": map[string]any{"enabled": len(tc.Desired.ROSPolicy.Selected) > 0, "blockers": tc.PolicyPlan.Blockers, "items": tc.PolicyPlan.Items}})
 		case "dns_snapshot", "policy_snapshot", "policy_empty_snapshot", "policy_missing_filter":
-			tc.GuardLive = &DNSGuardSnapshot{rosFilter: {deviceRow(same)}}
+			tc.GuardLive = &DNSGuardSnapshot{ros.PathFilter: {deviceRow(same)}}
 			switch variant {
 			case "policy_snapshot":
-				tc.PolicyLive = &ROSPolicySnapshot{rosFilter: {{".id": "*D", "chain": "forward", "action": "drop"}}}
+				tc.PolicyLive = &ROSPolicySnapshot{ros.PathFilter: {{".id": "*D", "chain": "forward", "action": "drop"}}}
 			case "policy_empty_snapshot":
-				tc.PolicyLive = &ROSPolicySnapshot{rosFilter: {}}
+				tc.PolicyLive = &ROSPolicySnapshot{ros.PathFilter: {}}
 			case "policy_missing_filter":
 				tc.PolicyLive = &ROSPolicySnapshot{}
 			}
@@ -123,7 +124,7 @@ func r09ForwardCases() []r09ForwardCase {
 			tc.Targets = []string{"2001:db8::/32"}
 			tc.State.Tables["/ipv6/firewall/filter"] = rows
 		}
-		tc.State.Tables[rosFilter] = rows
+		tc.State.Tables[ros.PathFilter] = rows
 		cases = append(cases, tc)
 	}
 	return cases
@@ -147,7 +148,7 @@ func TestR09ForwardHintPython(t *testing.T) {
 				t.Fatal(err)
 			}
 			routes := []Row{}
-			for _, row := range tc.State.Tables[rosRoutes] {
+			for _, row := range tc.State.Tables[ros.PathRoutes] {
 				routes = append(routes, deviceRow(row))
 			}
 			state := &RouterState{NatContext: &NatContext{Routes: routes}, ROSPolicyPlan: tc.PolicyPlan, ROSPolicy: tc.PolicyLive, DNSGuard: tc.GuardLive}

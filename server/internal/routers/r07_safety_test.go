@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ros"
 	"context"
 	"fmt"
 	"net/http"
@@ -16,13 +17,13 @@ import (
 
 func r07NewSync() NATListSync {
 	sources := []string{}
-	for _, p := range ClientSourceNetworks(netip.MustParseAddr("192.0.2.3")) {
+	for _, p := range ros.ClientSourceNetworks(netip.MustParseAddr("192.0.2.3")) {
 		sources = append(sources, p.String())
 	}
 	return NATListSync{OpHead: OpHead{Kind: "nat_list_sync"}, Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, Sources: sources, Destinations: []string{"198.51.100.0/24"}, SrcAdd: sources, DstAdd: []string{"198.51.100.0/24"}, SrcRemove: []ROSResource{}, DstRemove: []ROSResource{}, Legacy: []ROSResource{}, Stale: []ROSResource{}}
 }
 func r07FakeState() routerfake.State {
-	return routerfake.State{Tables: map[string][]routerfake.Row{rosNAT: {{".id": "*3", "chain": "srcnat", "action": "masquerade", "disabled": "false"}}}}
+	return routerfake.State{Tables: map[string][]routerfake.Row{ros.PathNAT: {{".id": "*3", "chain": "srcnat", "action": "masquerade", "disabled": "false"}}}}
 }
 
 func TestNATListWriteAndRollbackFinishAfterCancellation(t *testing.T) {
@@ -45,14 +46,14 @@ func TestNATListWriteAndRollbackFinishAfterCancellation(t *testing.T) {
 	if ctx.Err() == nil {
 		t.Fatal("test did not cancel during the batch")
 	}
-	if len(f.Snapshot().Tables[rosNAT]) != 2 {
+	if len(f.Snapshot().Tables[ros.PathNAT]) != 2 {
 		t.Fatal("accepted update abandoned")
 	}
 	if err = d.RestoreNATLists(ctx, *undo); err != nil {
 		t.Fatal(err)
 	}
 	state := f.Snapshot()
-	if len(state.Tables[rosNAT]) != 1 || len(state.Tables[rosAddresses]) != 0 {
+	if len(state.Tables[ros.PathNAT]) != 1 || len(state.Tables[ros.PathAddresses]) != 0 {
 		t.Fatal("cancelled rollback left device changes")
 	}
 }
@@ -60,11 +61,11 @@ func TestNATListWriteAndRollbackFinishAfterCancellation(t *testing.T) {
 func TestAddressDeleteGuardsAllMembersBeforeAnyWrite(t *testing.T) {
 	d, f := newFakeRouterOS(t, r07FakeState())
 	journal := []NATStep{}
-	created, err := d.CreateAddresses(context.Background(), NATEntries(NATDstList, []string{"198.51.100.1/32", "198.51.100.2/32", "198.51.100.3/32"}), &journal, ROSIDs{})
+	created, err := d.CreateAddresses(context.Background(), ros.NATEntries(NATDstList, []string{"198.51.100.1/32", "198.51.100.2/32", "198.51.100.3/32"}), &journal, ROSIDs{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosAddresses: {created[1].ID: {"comment": "external"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathAddresses: {created[1].ID: {"comment": "external"}}}}})
 	before := f.Snapshot()
 	journal = nil
 	err = d.DeleteAddresses(context.Background(), created, &journal)
@@ -92,13 +93,13 @@ func TestAddressBatchLimitsUseUTF8Bytes(t *testing.T) {
 			continue
 		}
 		body := deviceRow(call.Body.(routerfake.Row))
-		script := body.text("script")
+		script := body.Text("script")
 		if strings.Contains(script, "address-list/add") {
 			scripts++
-			if len(script) > AddressScriptBytes {
+			if len(script) > ros.AddressScriptBytes {
 				t.Fatalf("script has %d bytes", len(script))
 			}
-			if strings.Count(script, `";"`)+1 > AddressBatchMembers {
+			if strings.Count(script, `";"`)+1 > ros.AddressBatchMembers {
 				t.Fatal("member cap exceeded")
 			}
 		}
@@ -113,7 +114,7 @@ func TestAddressProofCacheOwnsCopies(t *testing.T) {
 	rows := []Row{{".id": "*1", "list": "L", "address": "198.51.100.1", "tags": `[{"name":"original"}]`}}
 	d.RememberAddresses("L", rows)
 	rows[0]["tags"] = `[{"name":"external"}]`
-	cached := d.knownAddresses()["L"]
+	cached := d.KnownAddresses()["L"]
 	if reflect.DeepEqual(cached, rows) {
 		t.Fatal("cache shares mutable rows with caller")
 	}
@@ -126,14 +127,14 @@ func TestNATRestoreStopsDeletingAfterOwnershipFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := f.Snapshot()
-	rule := state.Tables[rosNAT][0]
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosNAT: {fmt.Sprint(rule[".id"]): {"protocol": "tcp"}}}}})
+	rule := state.Tables[ros.PathNAT][0]
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathNAT: {fmt.Sprint(rule[".id"]): {"protocol": "tcp"}}}}})
 	err = d.RestoreNATLists(context.Background(), *undo)
 	if err == nil {
 		t.Fatal("externally changed rule was treated as owned")
 	}
 	after := f.Snapshot()
-	if len(after.Tables[rosAddresses]) != len(state.Tables[rosAddresses]) || len(after.Tables[rosNAT]) != 2 {
+	if len(after.Tables[ros.PathAddresses]) != len(state.Tables[ros.PathAddresses]) || len(after.Tables[ros.PathNAT]) != 2 {
 		t.Fatal("removed members still referenced by the externally changed rule")
 	}
 }
@@ -156,12 +157,12 @@ func TestAddressSweepRefusesAmbiguousOrDynamicIDs(t *testing.T) {
 				}
 				rows = append(rows, copy)
 			}
-			f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosAddresses: rows}}})
-			step := NATStep{Action: "sweep", Path: rosAddresses, List: NATDstList, Shared: Row{"list": NATDstList, "comment": NATListComment, "disabled": "false"}, Addresses: []string{"198.51.100.1/32"}, Before: []string{}}
-			if err := d.restoreAddressSweep(context.Background(), step); err != nil {
+			f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathAddresses: rows}}})
+			step := NATStep{Action: "sweep", Path: ros.PathAddresses, List: NATDstList, Shared: Row{"list": NATDstList, "comment": NATListComment, "disabled": "false"}, Addresses: []string{"198.51.100.1/32"}, Before: []string{}}
+			if err := d.RestoreAddressSweep(context.Background(), step); err != nil {
 				t.Fatal(err)
 			}
-			if len(f.Snapshot().Tables[rosAddresses]) != len(rows) {
+			if len(f.Snapshot().Tables[ros.PathAddresses]) != len(rows) {
 				t.Fatal("sweep guessed ownership from an ambiguous address")
 			}
 		})
@@ -173,7 +174,7 @@ func TestDeviceDiagnosticsRedactPassword(t *testing.T) {
 		t.Run(action, func(t *testing.T) {
 			state := r07FakeState()
 			if action == "http" {
-				state.Faults = []routerfake.Fault{{Method: "GET", Path: rosNAT, Status: 400, Body: routerfake.Row{"detail": "echo synthetic-password"}}}
+				state.Faults = []routerfake.Fault{{Method: "GET", Path: ros.PathNAT, Status: 400, Body: routerfake.Row{"detail": "echo synthetic-password"}}}
 			} else {
 				state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, Status: 200, Body: routerfake.Row{"ret": "error synthetic-password"}}}
 			}
@@ -182,7 +183,7 @@ func TestDeviceDiagnosticsRedactPassword(t *testing.T) {
 			if action == "http" {
 				_, err = d.ReadState(context.Background())
 			} else {
-				_, err = d.CreateAddresses(context.Background(), NATEntries(NATDstList, []string{"198.51.100.1"}), &[]NATStep{}, ROSIDs{})
+				_, err = d.CreateAddresses(context.Background(), ros.NATEntries(NATDstList, []string{"198.51.100.1"}), &[]NATStep{}, ROSIDs{})
 			}
 			if err == nil || strings.Contains(err.Error(), "synthetic-password") || !strings.Contains(err.Error(), "[REDACTED]") {
 				t.Fatalf("unsafe diagnostic: %v", err)
@@ -207,11 +208,11 @@ func TestAddressFetchFallsBackForSeparatorsAndMovingPages(t *testing.T) {
 			for i := 0; i < 2001; i++ {
 				rows = append(rows, routerfake.Row{".id": fmt.Sprintf("*%X", i+1000), "list": "L", "address": fmt.Sprintf("198.18.%d.%d", i/256, i%256), "disabled": "false"})
 			}
-			state.Tables[rosAddresses] = rows
+			state.Tables[ros.PathAddresses] = rows
 			if variant == "separator" {
 				rows[0]["comment"] = "x;y"
 			} else if variant == "shrinking" {
-				state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, RemoveIDs: map[string][]string{rosAddresses: {"*3E8"}}}}
+				state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, RemoveIDs: map[string][]string{ros.PathAddresses: {"*3E8"}}}}
 			} else {
 				state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, Status: 200, Body: routerfake.Row{"ret": "cf-digest:x"}}}
 			}
@@ -234,7 +235,7 @@ func TestAddressFetchFallsBackForSeparatorsAndMovingPages(t *testing.T) {
 			if len(result) != expected {
 				t.Fatalf("read %d, expected %d", len(result), expected)
 			}
-			if !slices.ContainsFunc(f.Calls(), func(c routerfake.Call) bool { return c.Method == "GET" && c.Path == rosAddresses }) {
+			if !slices.ContainsFunc(f.Calls(), func(c routerfake.Call) bool { return c.Method == "GET" && c.Path == ros.PathAddresses }) {
 				t.Fatal("invalid page did not trigger scoped REST fallback")
 			}
 		})
@@ -243,7 +244,7 @@ func TestAddressFetchFallsBackForSeparatorsAndMovingPages(t *testing.T) {
 
 func TestAddressRestoreRetainsPartialNewIDs(t *testing.T) {
 	d, f := newFakeRouterOS(t, r07FakeState())
-	entries := NATEntries(NATDstList, []string{"198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4"})
+	entries := ros.NATEntries(NATDstList, []string{"198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4"})
 	created, err := d.CreateAddresses(context.Background(), entries, &[]NATStep{}, ROSIDs{})
 	if err != nil {
 		t.Fatal(err)
@@ -252,9 +253,9 @@ func TestAddressRestoreRetainsPartialNewIDs(t *testing.T) {
 	if err = d.DeleteAddresses(context.Background(), created, &journal); err != nil {
 		t.Fatal(err)
 	}
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosAddresses: {{".id": "*FFFF", "list": NATDstList, "address": "198.51.100.4", "comment": NATListComment, "disabled": "false"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathAddresses: {{".id": "*FFFF", "list": NATDstList, "address": "198.51.100.4", "comment": NATListComment, "disabled": "false"}}}}})
 	remapped := map[[2]string]string{}
-	err = d.restoreAddresses(context.Background(), journal, ROSIDs{}, remapped)
+	err = d.RestoreAddresses(context.Background(), journal, ROSIDs{}, remapped)
 	if err == nil {
 		t.Fatal("conflicting member should refuse recreation")
 	}
@@ -262,7 +263,7 @@ func TestAddressRestoreRetainsPartialNewIDs(t *testing.T) {
 		t.Fatalf("partial new IDs lost: %#v", remapped)
 	}
 	for _, item := range created[:3] {
-		id := remapped[[2]string{rosAddresses, item.ID}]
+		id := remapped[[2]string{ros.PathAddresses, item.ID}]
 		if id == item.ID || id == "" {
 			t.Fatal("old ID survived partial recreate")
 		}
@@ -276,26 +277,13 @@ func TestAddressWritesInvalidateScopedProofBeforeBeforeIDs(t *testing.T) {
 	if _, err := d.ReadAddresses(context.Background(), []string{NATDstList}); err != nil {
 		t.Fatal(err)
 	}
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosAddresses: {{".id": "*FA", "list": NATDstList, "address": "198.51.100.1", "comment": NATListComment, "disabled": "false"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathAddresses: {{".id": "*FA", "list": NATDstList, "address": "198.51.100.1", "comment": NATListComment, "disabled": "false"}}}}})
 	journal := []NATStep{}
-	_, err := d.CreateAddresses(context.Background(), NATEntries(NATDstList, []string{"198.51.100.1"}), &journal, ROSIDs{})
+	_, err := d.CreateAddresses(context.Background(), ros.NATEntries(NATDstList, []string{"198.51.100.1"}), &journal, ROSIDs{})
 	if err == nil {
 		t.Fatal("duplicate unexpectedly succeeded")
 	}
 	if len(journal) != 0 {
 		t.Fatalf("external existing member became owned: %#v", journal)
-	}
-}
-
-func TestAddressDigestNeverProvesCompositeFields(t *testing.T) {
-	// Array values arrive as their JSON text (Row decoding).
-	rows := []Row{{".id": "*1", "list": "L", "tags": `["lan"]`}}
-	first := DigestAddresses(rows)
-	rows[0]["tags"] = `["guest"]`
-	if DigestAddresses(rows) == first {
-		t.Fatal("different composite values collapsed into the same proof")
-	}
-	if digestableAddresses(rows) {
-		t.Fatal("array-valued REST fields must be downloaded")
 	}
 }

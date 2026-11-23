@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/ros"
 	"context"
 	"errors"
 	"net/http/httptest"
@@ -53,8 +54,8 @@ func TestR09RuntimeShutdownAndRequestDisconnect(t *testing.T) {
 				return
 			}
 			r.Shutdown(t.Context())
-			proof := bytes.Clone(d.dnsGuardManifest)
-			set := d.dnsGuardManifestSet
+			proof := bytes.Clone(d.DNSGuardManifest())
+			set := d.DNSGuardManifestSet()
 			before := len(f.Calls())
 			var err error
 			if action == "shutdown_apply" {
@@ -62,7 +63,7 @@ func TestR09RuntimeShutdownAndRequestDisconnect(t *testing.T) {
 			} else {
 				err = d.RestoreDNSGuard(bound, *undo)
 			}
-			if !errors.Is(err, context.Canceled) || len(f.Calls()) != before || !bytes.Equal(proof, d.dnsGuardManifest) || set != d.dnsGuardManifestSet {
+			if !errors.Is(err, context.Canceled) || len(f.Calls()) != before || !bytes.Equal(proof, d.DNSGuardManifest()) || set != d.DNSGuardManifestSet() {
 				t.Fatalf("shutdown owner performed I/O or committed a manifest: %v", err)
 			}
 		})
@@ -96,16 +97,16 @@ func TestR09ShutdownAfterSnapshotCannotClearManifest(t *testing.T) {
 	defer r.Shutdown(t.Context())
 	bound := r.BindRequest(t.Context())
 	shutdown := false
-	d.client = &r09AfterReadHTTP{DeviceHTTP: d.client, after: func(method, url string) {
+	d.SetHTTP(&r09AfterReadHTTP{DeviceHTTP: d.HTTP(), after: func(method, url string) {
 		if method == "GET" && url == srv.URL+"/rest/tool/netwatch" {
 			shutdown = true
 			r.Shutdown(t.Context())
 		}
-	}}
+	}})
 	before := len(f.Calls())
 	_, err := d.ApplyDNSGuard(bound, *plan.Ops[0].(*DNSGuardReplace))
-	if !shutdown || err == nil || !strings.Contains(err.Error(), context.Canceled.Error()) || !bytes.Equal(d.dnsGuardManifest, previous) {
-		t.Fatalf("shutdown after snapshot cleared proof: shutdown=%t err=%v manifest=%s", shutdown, err, d.dnsGuardManifest)
+	if !shutdown || err == nil || !strings.Contains(err.Error(), context.Canceled.Error()) || !bytes.Equal(d.DNSGuardManifest(), previous) {
+		t.Fatalf("shutdown after snapshot cleared proof: shutdown=%t err=%v manifest=%s", shutdown, err, d.DNSGuardManifest())
 	}
 	for _, call := range f.Calls()[before:] {
 		if call.Method != "GET" && !strings.HasSuffix(call.Path, "/print") {
@@ -128,8 +129,8 @@ func TestR09ShutdownAfterDeleteProofCannotWrite(t *testing.T) {
 	bound := r.BindRequest(t.Context())
 	shutdown := false
 	watchReads := 0
-	d.client = &r09AfterReadHTTP{DeviceHTTP: d.client, after: func(method, url string) {
-		if method == "GET" && url == srv.URL+"/rest"+rosNetwatch {
+	d.SetHTTP(&r09AfterReadHTTP{DeviceHTTP: d.HTTP(), after: func(method, url string) {
+		if method == "GET" && url == srv.URL+"/rest"+ros.PathNetwatch {
 			// Netwatch has no single-row REST read in the shared driver: the
 			// first collection read is preview, the second proves the delete.
 			watchReads++
@@ -138,10 +139,10 @@ func TestR09ShutdownAfterDeleteProofCannotWrite(t *testing.T) {
 				r.Shutdown(t.Context())
 			}
 		}
-	}}
+	}})
 	before := len(f.Calls())
 	_, err := d.ApplyDNSGuard(bound, *plan.Ops[0].(*DNSGuardReplace))
-	if !shutdown || err == nil || !bytes.Equal(d.dnsGuardManifest, previous) {
+	if !shutdown || err == nil || !bytes.Equal(d.DNSGuardManifest(), previous) {
 		t.Fatalf("shutdown after ownership proof committed: shutdown=%t err=%v", shutdown, err)
 	}
 	for _, call := range f.Calls()[before:] {

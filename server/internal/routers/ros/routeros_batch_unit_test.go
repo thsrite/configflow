@@ -1,4 +1,4 @@
-package routers
+package ros
 
 import (
 	"context"
@@ -15,13 +15,13 @@ import (
 )
 
 func TestRouteBatchesRespectDuplicatesAndLimits(t *testing.T) {
-	driver := &RouterOS{routeBatch: 3}
+	driver := &Client{routeBatch: 3}
 	ops := marshalOperations(t,
 		map[string]any{"kind": "route_add", "cidr": "198.51.100.0/24", "gateway": "192.0.2.1"},
 		map[string]any{"kind": "route_add", "cidr": "203.0.113.0/24", "gateway": "192.0.2.1"},
 		map[string]any{"kind": "route_add", "cidr": "198.51.100.0/24", "gateway": "192.0.2.2"},
 	)
-	if got := driver.routeBatches(ops, 0, "route_add"); !equalInts(got, []int{0, 1}) {
+	if got := driver.RouteBatches(ops, 0, "route_add"); !equalInts(got, []int{0, 1}) {
 		t.Fatalf("duplicate destination should end batch, got %v", got)
 	}
 
@@ -29,19 +29,19 @@ func TestRouteBatchesRespectDuplicatesAndLimits(t *testing.T) {
 		map[string]any{"kind": "route_add", "cidr": "198.51.100.0/24", "gateway": "192.0.2.1", "comment": strings.Repeat("a", 15000)},
 		map[string]any{"kind": "route_add", "cidr": "203.0.113.0/24", "gateway": "192.0.2.1", "comment": strings.Repeat("b", 18000)},
 	)
-	if got := driver.routeBatches(large, 0, "route_add"); !equalInts(got, []int{0}) {
+	if got := driver.RouteBatches(large, 0, "route_add"); !equalInts(got, []int{0}) {
 		t.Fatalf("script byte limit should split batch, got %v", got)
 	}
 }
 
 func TestConsoleScriptRoundTripsUntrustedValues(t *testing.T) {
 	comment := "cf 引用 \"$;\\\n换行🙂"
-	line := consoleAddLine(7, Row{"dst-address": "198.51.100.0/24", "gateway": "192.0.2.1", "comment": comment}, rosRoutes, false)
+	line := consoleAddLine(7, Row{"dst-address": "198.51.100.0/24", "gateway": "192.0.2.1", "comment": comment}, PathRoutes, false)
 	adds, err := routerfake.ParseConsoleAdds(line)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(adds) != 1 || adds[0].Index != 7 || adds[0].Collection != rosRoutes || adds[0].Values["comment"] != comment {
+	if len(adds) != 1 || adds[0].Index != 7 || adds[0].Collection != PathRoutes || adds[0].Values["comment"] != comment {
 		t.Fatalf("script did not preserve command fields: %#v", adds)
 	}
 }
@@ -53,11 +53,11 @@ func TestRestoreManyStopsAfterFirstSingleRestoreFailure(t *testing.T) {
 		{".id": "*3", "dst-address": "192.0.2.0/24", "gateway": "192.0.2.1", "routing-table": "main", "comment": "third", "disabled": "false"},
 	}
 	client := &scriptedDeviceHTTP{rows: rows, failDelete: "*1"}
-	driver := NewRouterOSWithHTTP("http://router.invalid", client)
+	driver := NewClientWithHTTP("http://router.invalid", client)
 	driver.batchMin = 3
 	undos := make([]json.RawMessage, len(rows))
 	for i, row := range rows {
-		change := ROSChange{Method: "DELETE", Path: rosRoutes, ID: row.id(), Expected: marshalRow(driver.ownershipSnapshot(rosRoutes, row))}
+		change := ROSChange{Method: "DELETE", Path: PathRoutes, ID: row.ID(), Expected: MarshalRow(driver.OwnershipSnapshot(PathRoutes, row))}
 		undos[i], _ = json.Marshal(ROSUndo{Kind: "ros_restore", Changes: []ROSChange{change}})
 	}
 	got := driver.RestoreMany(context.Background(), undos, true)
@@ -111,9 +111,9 @@ func (f *scriptedDeviceHTTP) Do(_ context.Context, method, rawURL string, _ any,
 	case method == http.MethodPost && strings.HasSuffix(path, "/print"):
 		status, result = http.StatusOK, f.rows
 	case method == http.MethodGet:
-		id := strings.TrimPrefix(path, rosRoutes+"/")
+		id := strings.TrimPrefix(path, PathRoutes+"/")
 		for _, row := range f.rows {
-			if row.id() == id {
+			if row.ID() == id {
 				status, result = http.StatusOK, row
 				break
 			}

@@ -1,8 +1,8 @@
-package routers
+package ros
 
 import "strings"
 
-// ScriptString quotes a RouterOS console string using the escaping accepted by
+// ScriptString quotes a Client console string using the escaping accepted by
 // /execute. Dollar signs are escaped because they otherwise start variables.
 func ScriptString(value string) string {
 	var b strings.Builder
@@ -30,11 +30,11 @@ func ScriptString(value string) string {
 	return b.String()
 }
 
-// ScriptValue converts a string-valued RouterOS parameter into console syntax.
+// ScriptValue converts a string-valued Client parameter into console syntax.
 // Disabled is a yes/no flag on the console although REST accepts true/false.
 func ScriptValue(key, value string) string {
 	if key == "disabled" {
-		switch comparable(key, value) {
+		switch Comparable(key, value) {
 		case "true":
 			return "yes"
 		case "false":

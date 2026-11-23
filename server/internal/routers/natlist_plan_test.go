@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"configflow/internal/routers"
+	"configflow/internal/routers/ros"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -41,7 +42,7 @@ func r07State(variant string, count int) routerfake.State {
 		}
 		old := []routerfake.Row{}
 		for _, cidr := range targets {
-			for _, source := range routers.ClientSourceNetworks(gateway) {
+			for _, source := range ros.ClientSourceNetworks(gateway) {
 				id++
 				old = append(old, routerfake.Row{".id": fmt.Sprintf("*%X", id), "chain": "srcnat", "action": "accept", "comment": "cf-mihomo", "src-address": source.String(), "dst-address": cidr, "disabled": "false"})
 			}
@@ -54,7 +55,7 @@ func r07State(variant string, count int) routerfake.State {
 	if variant == "list" || variant == "foreign" || variant == "dynamic" || variant == "disabled" || variant == "ref" || variant == "modified" || variant == "shadowed" {
 		rule := routerfake.Row{".id": "*5", "chain": "srcnat", "action": "accept", "src-address-list": routers.NATSrcList, "dst-address-list": routers.NATDstList, "comment": routers.NATListComment, "disabled": "false"}
 		tables[nat] = append([]routerfake.Row{rule}, tables[nat]...)
-		for i, source := range routers.ClientSourceNetworks(gateway) {
+		for i, source := range ros.ClientSourceNetworks(gateway) {
 			tables[addresses] = append(tables[addresses], routerfake.Row{".id": fmt.Sprintf("*%X", 2000+i), "list": routers.NATSrcList, "address": source.String(), "comment": routers.NATListComment, "disabled": "false"})
 		}
 		for i := 0; i < count; i++ {

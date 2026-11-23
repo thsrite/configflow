@@ -1,4 +1,4 @@
-package routers
+package ros
 
 import (
 	"maps"
@@ -7,7 +7,7 @@ import (
 	"configflow/internal/netipx"
 )
 
-// ComparableValues returns a copy of a RouterOS row (decoded REST JSON)
+// ComparableValues returns a copy of a Client row (decoded REST JSON)
 // with equivalent wire forms made equal: fib/passthrough flags as
 // "true"/"false", and an /ip/route gateway "1.2.3.4@main" as "1.2.3.4".
 // Unknown fields, interface gateways and other tables stay as they are.

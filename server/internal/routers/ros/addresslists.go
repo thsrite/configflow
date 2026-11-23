@@ -1,4 +1,4 @@
-package routers
+package ros
 
 import (
 	"configflow/internal/jsondecode"
@@ -20,7 +20,7 @@ type AddressDigest struct {
 	MD5   string
 }
 
-// EncodeAddressRow is RouterOS's associative-array text, without runtime fields.
+// EncodeAddressRow is Client's associative-array text, without runtime fields.
 func EncodeAddressRow(row Row) string {
 	keys := slices.Sorted(maps.Keys(row))
 	parts := []string{}
@@ -32,10 +32,10 @@ func EncodeAddressRow(row Row) string {
 	return strconv.Itoa(len(parts)) + ":" + strings.Join(parts, ";") + "\n"
 }
 
-// DigestAddresses matches RouterOS's 500-row chunked MD5 proof, ordered by ID.
+// DigestAddresses matches Client's 500-row chunked MD5 proof, ordered by ID.
 func DigestAddresses(rows []Row) AddressDigest {
 	ordered := slices.Clone(rows)
-	slices.SortFunc(ordered, func(a, b Row) int { return strings.Compare(a.id(), b.id()) })
+	slices.SortFunc(ordered, func(a, b Row) int { return strings.Compare(a.ID(), b.ID()) })
 	hashes := ""
 	for start := 0; start < len(ordered) || start == 0; start += 500 {
 		var chunk strings.Builder
@@ -47,7 +47,7 @@ func DigestAddresses(rows []Row) AddressDigest {
 	return AddressDigest{len(rows), fmt.Sprintf("%x", md5.Sum([]byte(hashes)))}
 }
 
-// RouterOS array-valued fields have no portable :tostr wire contract. Keep
+// Client array-valued fields have no portable :tostr wire contract. Keep
 // their full REST values rather than manufacturing a digest proof for them.
 func digestableAddresses(rows []Row) bool {
 	for _, row := range rows {
@@ -55,7 +55,7 @@ func digestableAddresses(rows []Row) bool {
 			if key == "timeout" || key == "creation-time" {
 				continue
 			}
-			if structuredText(value) {
+			if StructuredText(value) {
 				return false
 			}
 		}
@@ -100,7 +100,7 @@ func AddressDigestScript(names []string) string {
 	return strings.Join(lines, "\n")
 }
 
-func executeOutput(value json.RawMessage) string { return asRow(value).text("ret") }
+func executeOutput(value json.RawMessage) string { return AsRow(value).Text("ret") }
 func shortConsoleOutput(output string) string {
 	s := strings.TrimSpace(output)
 	if s == "" {
@@ -109,8 +109,8 @@ func shortConsoleOutput(output string) string {
 	return string([]rune(s)[:min(200, len([]rune(s)))])
 }
 
-func (d *RouterOS) routerDigests(ctx context.Context, names []string) (map[string]AddressDigest, error) {
-	value, err := d.request(ctx, "POST", "/execute", Row{"script": AddressDigestScript(names), "as-string": ""}, rosTimeout)
+func (d *Client) routerDigests(ctx context.Context, names []string) (map[string]AddressDigest, error) {
+	value, err := d.Request(ctx, "POST", "/execute", Row{"script": AddressDigestScript(names), "as-string": ""}, Timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -131,27 +131,27 @@ func (d *RouterOS) routerDigests(ctx context.Context, names []string) (map[strin
 		}
 	}
 	if len(result) != len(names) {
-		return nil, device.Error(fmt.Sprintf(messageAddressDigest, d.safeDeviceText(shortConsoleOutput(output))))
+		return nil, device.Error(fmt.Sprintf(messageAddressDigest, d.SafeDeviceText(shortConsoleOutput(output))))
 	}
 	return result, nil
 }
 
-func (d *RouterOS) filteredAddresses(ctx context.Context, name string) ([]Row, error) {
-	rows, err := d.list(ctx, rosAddresses+"?"+url.Values{"list": {name}}.Encode())
+func (d *Client) FilteredAddresses(ctx context.Context, name string) ([]Row, error) {
+	rows, err := d.List(ctx, PathAddresses+"?"+url.Values{"list": {name}}.Encode())
 	if err != nil {
 		return nil, err
 	}
-	return slices.DeleteFunc(rows, func(row Row) bool { return row.text("list") != name }), nil
+	return slices.DeleteFunc(rows, func(row Row) bool { return row.Text("list") != name }), nil
 }
 
 // FetchAddresses reads pages of 2000 console rows, falling back to scoped REST
 // when separators, duplicate IDs or changing page totals invalidate the output.
-func (d *RouterOS) FetchAddresses(ctx context.Context, name string) ([]Row, error) {
+func (d *Client) FetchAddresses(ctx context.Context, name string) ([]Row, error) {
 	rows := []Row{}
 	total := -1
 	for start := 0; ; start += 2000 {
 		script := ":local i 0\n" + `:foreach r in=[/ip/firewall/address-list/print as-value where list=` + ScriptString(name) + fmt.Sprintf(`] do={:if ($i >= %d && $i < %d) do={:set ($r->"creation-time"); :set ($r->"timeout"); :put ("cf-row:" . [:len $r] . ":" . [:tostr $r])}; :set i ($i+1)}`, start, start+2000) + "\n" + `:put ("cf-rows:" . $i)`
-		value, err := d.request(ctx, "POST", "/execute", Row{"script": script, "as-string": ""}, rosTimeout)
+		value, err := d.Request(ctx, "POST", "/execute", Row{"script": script, "as-string": ""}, Timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -167,7 +167,7 @@ func (d *RouterOS) FetchAddresses(ctx context.Context, name string) ([]Row, erro
 			}
 			if strings.HasPrefix(line, "cf-row:") {
 				row := decodeAddressRow(strings.TrimPrefix(line, "cf-row:"))
-				if row == nil || row.text("list") != name {
+				if row == nil || row.Text("list") != name {
 					valid = false
 				} else {
 					rows = append(rows, row)
@@ -175,12 +175,12 @@ func (d *RouterOS) FetchAddresses(ctx context.Context, name string) ([]Row, erro
 			}
 		}
 		if !valid || n < 0 || (total >= 0 && total != n) {
-			return d.filteredAddresses(ctx, name)
+			return d.FilteredAddresses(ctx, name)
 		}
 		total = n
 		if start+2000 >= total {
-			if len(rows) != total || len(rowIDs(rows)) != len(rows) {
-				return d.filteredAddresses(ctx, name)
+			if len(rows) != total || len(RowIDs(rows)) != len(rows) {
+				return d.FilteredAddresses(ctx, name)
 			}
 			return rows, nil
 		}
@@ -192,33 +192,33 @@ type addressProof struct {
 	Rows   []Row
 }
 
-func cloneRows(rows []Row) []Row {
+func CloneRows(rows []Row) []Row {
 	out := make([]Row, len(rows))
 	for i, row := range rows {
-		out[i] = cloneRow(row)
+		out[i] = CloneRow(row)
 	}
 	return out
 }
 
 // RememberAddresses stores exact proven members for subsequent digest reads.
-func (d *RouterOS) RememberAddresses(name string, rows []Row) {
+func (d *Client) RememberAddresses(name string, rows []Row) {
 	if d.addressCache == nil {
 		d.addressCache = map[string][]Row{}
 	}
-	d.addressCache[name] = cloneRows(rows)
+	d.addressCache[name] = CloneRows(rows)
 }
 
 // ExpectAddresses proves earlier reads without widening the known-list scope.
-func (d *RouterOS) ExpectAddresses(name string, rows []Row) {
+func (d *Client) ExpectAddresses(name string, rows []Row) {
 	if d.addressExpected == nil {
 		d.addressExpected = map[string][]Row{}
 	}
-	d.addressExpected[name] = cloneRows(rows)
+	d.addressExpected[name] = CloneRows(rows)
 }
 
 // ReuseAddressReads scopes proof reuse to one preview/release. Nested scopes share
 // the outer proof cache. The returned closure must be deferred by the caller.
-func (d *RouterOS) ReuseAddressReads() func() {
+func (d *Client) ReuseAddressReads() func() {
 	if d.addressReads != nil {
 		return func() {}
 	}
@@ -227,16 +227,16 @@ func (d *RouterOS) ReuseAddressReads() func() {
 }
 
 // InvalidateAddressReads drops all proofs reused in the current scope before a write.
-func (d *RouterOS) InvalidateAddressReads() { clear(d.addressReads) }
-func (d *RouterOS) knownAddresses() map[string][]Row {
+func (d *Client) InvalidateAddressReads() { clear(d.addressReads) }
+func (d *Client) KnownAddresses() map[string][]Row {
 	known := map[string][]Row{}
 	var manifest rosManifest
 	_ = jsondecode.Unmarshal(d.policyManifest, &manifest)
 	for _, item := range manifest.Resources {
-		if item.Path == rosAddresses && item.Config.text("list") != "" {
-			row := cloneRow(item.Config)
+		if item.Path == PathAddresses && item.Config.Text("list") != "" {
+			row := CloneRow(item.Config)
 			row[".id"] = item.ID
-			name := row.text("list")
+			name := row.Text("list")
 			known[name] = append(known[name], row)
 		}
 	}
@@ -245,11 +245,11 @@ func (d *RouterOS) knownAddresses() map[string][]Row {
 }
 
 // ReadAddresses downloads only named lists, proving known contents by digest.
-func (d *RouterOS) ReadAddresses(ctx context.Context, names []string) (map[string][]Row, error) {
+func (d *Client) ReadAddresses(ctx context.Context, names []string) (map[string][]Row, error) {
 	names = slices.Clone(names)
 	slices.Sort(names)
 	names = slices.Compact(names)
-	known := d.knownAddresses()
+	known := d.KnownAddresses()
 	proof := maps.Clone(d.addressExpected)
 	if proof == nil {
 		proof = map[string][]Row{}
@@ -292,7 +292,7 @@ func (d *RouterOS) ReadAddresses(ctx context.Context, names []string) (map[strin
 		for _, name := range unproven {
 			if actual[name] == expected[name] {
 				v := expected[name]
-				reads[name] = addressProof{&v, cloneRows(proof[name])}
+				reads[name] = addressProof{&v, CloneRows(proof[name])}
 				reusable[name] = true
 			}
 		}
@@ -300,15 +300,15 @@ func (d *RouterOS) ReadAddresses(ctx context.Context, names []string) (map[strin
 	result := map[string][]Row{}
 	for _, name := range names {
 		if reusable[name] {
-			result[name] = cloneRows(reads[name].Rows)
+			result[name] = CloneRows(reads[name].Rows)
 		} else {
-			rows, err := d.filteredAddresses(ctx, name)
+			rows, err := d.FilteredAddresses(ctx, name)
 			if err != nil {
 				return nil, err
 			}
 			result[name] = rows
 			// The scope keeps its own copy: callers may modify the rows they get.
-			p := addressProof{Rows: cloneRows(rows)}
+			p := addressProof{Rows: CloneRows(rows)}
 			if _, ok := known[name]; ok {
 				d.RememberAddresses(name, rows)
 				v := DigestAddresses(rows)
@@ -323,29 +323,29 @@ func (d *RouterOS) ReadAddresses(ctx context.Context, names []string) (map[strin
 			}
 			reads[name] = p
 		}
-		slices.SortFunc(result[name], func(a, b Row) int { return strings.Compare(a.id(), b.id()) })
+		slices.SortFunc(result[name], func(a, b Row) int { return strings.Compare(a.ID(), b.ID()) })
 	}
 	return result, nil
 }
 
 // LocateAddresses finds managed IDs even when moved outside the lists read.
-func (d *RouterOS) LocateAddresses(ctx context.Context, ids []string) ([]Row, error) {
+func (d *Client) LocateAddresses(ctx context.Context, ids []string) ([]Row, error) {
 	ids = device.Unique(ids)
 	if len(ids) > 20 {
-		rows, err := d.list(ctx, rosAddresses)
+		rows, err := d.List(ctx, PathAddresses)
 		if err != nil {
 			return nil, err
 		}
 		wanted := device.StringSet(ids...)
-		return slices.DeleteFunc(rows, func(row Row) bool { return !wanted[row.id()] }), nil
+		return slices.DeleteFunc(rows, func(row Row) bool { return !wanted[row.ID()] }), nil
 	}
 	rows := []Row{}
 	for _, id := range ids {
-		row, err := d.find(ctx, rosAddresses, id)
+		row, err := d.Find(ctx, PathAddresses, id)
 		if err != nil {
 			return nil, err
 		}
-		if row != nil && row.id() == id {
+		if row != nil && row.ID() == id {
 			rows = append(rows, row)
 		}
 	}
@@ -353,7 +353,7 @@ func (d *RouterOS) LocateAddresses(ctx context.Context, ids []string) ([]Row, er
 }
 
 // OccupiedAddressNames reserves list families without downloading their members.
-func (d *RouterOS) OccupiedAddressNames(ctx context.Context, patterns, exclude []string) ([]string, error) {
+func (d *Client) OccupiedAddressNames(ctx context.Context, patterns, exclude []string) ([]string, error) {
 	exclude = slices.Clone(exclude)
 	slices.Sort(exclude)
 	excluded := ""
@@ -361,14 +361,14 @@ func (d *RouterOS) OccupiedAddressNames(ctx context.Context, patterns, exclude [
 		excluded += " && list!=" + ScriptString(name)
 	}
 	script := ":local names ({})\n" + `:foreach i in=[/ip/firewall/address-list/find where list~` + ScriptString("^("+strings.Join(patterns, "|")+")$") + excluded + `] do={:set ($names->[/ip/firewall/address-list/get $i list]) 1}` + "\n:local out \"\"\n" + `:foreach name,v in=$names do={:set out ($out . $name . "\n")}` + "\n" + `:put ("cf-names:\n" . $out)`
-	value, err := d.request(ctx, "POST", "/execute", Row{"script": script, "as-string": ""}, rosTimeout)
+	value, err := d.Request(ctx, "POST", "/execute", Row{"script": script, "as-string": ""}, Timeout)
 	if err != nil {
 		return nil, err
 	}
 	output := executeOutput(value)
 	_, body, ok := strings.Cut(output, "cf-names:")
 	if !ok {
-		return nil, device.Error(fmt.Sprintf(messageAddressNames, d.safeDeviceText(shortConsoleOutput(output))))
+		return nil, device.Error(fmt.Sprintf(messageAddressNames, d.SafeDeviceText(shortConsoleOutput(output))))
 	}
 	names := []string{}
 	for _, line := range strings.Split(strings.ReplaceAll(body, "\r", ""), "\n") {

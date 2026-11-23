@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"configflow/internal/routers"
+	"configflow/internal/routers/ros"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -262,7 +263,7 @@ func TestAddressWriteBoundary(t *testing.T) {
 				for i := 0; i < count; i++ {
 					addresses = append(addresses, fmt.Sprintf("198.18.%d.%d/32", i/256, i%256))
 				}
-				entries := routers.NATEntries(routers.NATDstList, addresses)
+				entries := ros.NATEntries(routers.NATDstList, addresses)
 				state := routerfake.State{Tables: map[string][]routerfake.Row{}}
 				switch failure {
 				case "partial":

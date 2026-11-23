@@ -1,6 +1,6 @@
-package routers
+package ros
 
-// RouterOS NAT assessment: whether a proxy path needs a source-NAT bypass.
+// Client NAT assessment: whether a proxy path needs a source-NAT bypass.
 // Deliberately not a firewall simulator: only a proven egress mismatch
 // excludes a potentially translating rule; other matchers stay possible.
 
@@ -17,7 +17,7 @@ import (
 	"configflow/internal/netipx"
 )
 
-// Row is one RouterOS REST row. RouterOS sends every value as text ("" or
+// Row is one Client REST row. Client sends every value as text ("" or
 // absent when unset, flags "true"/"false" or "yes"/"no"); UnmarshalJSON
 // decodes a reply once, so any other JSON value is held as text too.
 type Row map[string]string
@@ -79,7 +79,7 @@ type NatAssessment struct {
 }
 
 var (
-	nonTranslating = []string{"accept", "log", "passthrough", "return"}
+	NonTranslating = []string{"accept", "log", "passthrough", "return"}
 	translating    = []string{"masquerade", "src-nat", "netmap", "same", "endpoint-independent-nat"}
 	// Mangle actions that only touch packet/connection metadata, logging,
 	// headers or control flow, never gateway selection. Unknown actions are
@@ -94,10 +94,10 @@ var (
 )
 
 // text is the field's value ("" when absent).
-func (r Row) text(key string) string { return r[key] }
+func (r Row) Text(key string) string { return r[key] }
 
 // textOr is the field's value, or fallback when the field is absent.
-func (r Row) textOr(key, fallback string) string {
+func (r Row) TextOr(key, fallback string) string {
 	if v, ok := r[key]; ok {
 		return v
 	}
@@ -105,18 +105,18 @@ func (r Row) textOr(key, fallback string) string {
 }
 
 // set: the field holds a value.
-func (r Row) set(key string) bool { return r[key] != "" }
+func (r Row) Set(key string) bool { return r[key] != "" }
 
-func (r Row) is(key, value string) bool     { s, ok := r[key]; return ok && s == value }
-func (r Row) has(key string) bool           { _, ok := r[key]; return ok }
-func (r Row) str(key string) (string, bool) { s, ok := r[key]; return s, ok }
+func (r Row) Is(key, value string) bool     { s, ok := r[key]; return ok && s == value }
+func (r Row) Has(key string) bool           { _, ok := r[key]; return ok }
+func (r Row) Str(key string) (string, bool) { s, ok := r[key]; return s, ok }
 
-// flag: any of keys is a RouterOS true/yes flag.
-func (r Row) flag(keys ...string) bool {
-	return slices.ContainsFunc(keys, func(key string) bool { return rosFlag(r[key]) || r[key] == "1" })
+// flag: any of keys is a Client true/yes flag.
+func (r Row) Flag(keys ...string) bool {
+	return slices.ContainsFunc(keys, func(key string) bool { return Flag(r[key]) || r[key] == "1" })
 }
 
-func (r Row) enabled() bool { return !r.flag("disabled") }
+func (r Row) Enabled() bool { return !r.Flag("disabled") }
 
 // number is an integer field (decimal text; nil when absent or not a number).
 func (r Row) number(key string) *int64 {
@@ -127,19 +127,19 @@ func (r Row) number(key string) *int64 {
 }
 
 // id is the row's .id.
-func (r Row) id() string { return r[".id"] }
+func (r Row) ID() string { return r[".id"] }
 
-// structuredText: the value was a JSON array or object in the reply (Row
+// StructuredText: the value was a JSON array or object in the reply (Row
 // decoding keeps those as their JSON text). Text of the same form is read
-// the same way; RouterOS sends neither for the fields that check this.
-func structuredText(value string) bool {
+// the same way; Client sends neither for the fields that check this.
+func StructuredText(value string) bool {
 	return (strings.HasPrefix(value, "[") || strings.HasPrefix(value, "{")) && json.Valid([]byte(value))
 }
 
-// textList splits a list field (comma-separated text, or a JSON array of
+// TextList splits a list field (comma-separated text, or a JSON array of
 // text) into trimmed items. ok is false for any other structured value.
-func textList(value string) (items []string, ok bool) {
-	if !structuredText(value) {
+func TextList(value string) (items []string, ok bool) {
+	if !StructuredText(value) {
 		items = strings.Split(value, ",")
 	} else if json.Unmarshal([]byte(value), &items) != nil {
 		return nil, false
@@ -150,17 +150,17 @@ func textList(value string) (items []string, ok bool) {
 	return items, true
 }
 
-// rosFlag is a RouterOS true/yes flag value.
-func rosFlag(value string) bool {
+// Flag is a Client true/yes flag value.
+func Flag(value string) bool {
 	return strings.EqualFold(value, "true") || strings.EqualFold(value, "yes")
 }
 
-func rowsOK(rows []Row) bool {
+func RowsOK(rows []Row) bool {
 	return rows != nil && !slices.ContainsFunc(rows, func(r Row) bool { return r == nil })
 }
 
-// rosInterface accepts a single interface name, not an address, list or recursive gateway.
-func rosInterface(value string) string {
+// Interface accepts a single interface name, not an address, list or recursive gateway.
+func Interface(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" || strings.ContainsAny(value, ",;%/@") {
 		return ""
@@ -183,7 +183,7 @@ type RouteEgressIndex struct {
 	problem   string
 	main      []mainRoute
 	exact     map[netip.Prefix]bool
-	static    *StaticRouteIndex
+	static    *device.StaticRouteIndex
 	raw       map[string]Row
 	gateways  map[netip.Addr]egress
 	selectors map[string]*addressList // NAT address lists, parsed once per read
@@ -197,17 +197,17 @@ type RouteEgressIndex struct {
 func NewRouteEgressIndex(ctx *NatContext) *RouteEgressIndex {
 	ix := &RouteEgressIndex{exact: map[netip.Prefix]bool{}, gateways: map[netip.Addr]egress{},
 		selectors: map[string]*addressList{}}
-	if ctx == nil || !rowsOK(ctx.Routes) {
+	if ctx == nil || !RowsOK(ctx.Routes) {
 		ix.problem = "无法读取路由出口信息"
 		return ix
 	}
 	for _, row := range ctx.Routes {
-		if table := row.text("routing-table"); table != "" && table != "main" {
+		if table := row.Text("routing-table"); table != "" && table != "main" {
 			continue
 		}
-		network, ok := netipx.ParseNetwork4(row.text("dst-address"), false)
+		network, ok := netipx.ParseNetwork4(row.Text("dst-address"), false)
 		if !ok {
-			if row.enabled() {
+			if row.Enabled() {
 				ix.problem = "主路由表包含无法识别的目的地址"
 			}
 			continue
@@ -218,19 +218,19 @@ func NewRouteEgressIndex(ctx *NatContext) *RouteEgressIndex {
 	return ix
 }
 
-func (ix *RouteEgressIndex) selectRoutes(cidr, gateway string) StaticRouteSelection {
+func (ix *RouteEgressIndex) selectRoutes(cidr, gateway string) device.StaticRouteSelection {
 	if ix.static == nil {
 		ix.raw = map[string]Row{}
-		entries := make([]*RouteEntry, len(ix.main))
+		entries := make([]*device.RouteEntry, len(ix.main))
 		for i, m := range ix.main {
 			key := strconv.Itoa(i)
-			e := device.NewRoute(key, m.network.String(), m.row.text("gateway"), m.row.enabled(), "")
-			if m.row.has("active") {
-				e.Active = new(m.row.flag("active"))
-			} else if m.row.has("inactive") {
-				e.Active = new(!m.row.flag("inactive"))
+			e := device.NewRoute(key, m.network.String(), m.row.Text("gateway"), m.row.Enabled(), "")
+			if m.row.Has("active") {
+				e.Active = new(m.row.Flag("active"))
+			} else if m.row.Has("inactive") {
+				e.Active = new(!m.row.Flag("inactive"))
 			}
-			if m.row.flag("inactive", "invalid") {
+			if m.row.Flag("inactive", "invalid") {
 				e.Active = new(false)
 			}
 			e.Distance = m.row.number("distance")
@@ -261,9 +261,9 @@ func gatewayEgress(nextHop netip.Addr, main []mainRoute) egress {
 	connected := map[int]bool{}
 	prefix := -1
 	for i, m := range main {
-		if m.row.enabled() && m.network.Contains(nextHop) {
+		if m.row.Enabled() && m.network.Contains(nextHop) {
 			covering = append(covering, i)
-			if m.row.flag("connect") && m.row.flag("active") && !m.row.flag("blackhole", "invalid", "ecmp") {
+			if m.row.Flag("connect") && m.row.Flag("active") && !m.row.Flag("blackhole", "invalid", "ecmp") {
 				connected[i] = true
 				prefix = max(prefix, m.network.Bits())
 			}
@@ -277,9 +277,9 @@ func gatewayEgress(nextHop netip.Addr, main []mainRoute) egress {
 		return egress{problem: "旁路下一跳存在多条或更细的路由，无法可靠推断新增路由的出口"}
 	}
 	row := main[selected[0]].row
-	iface, immediate := rosInterface(row.text("gateway")), ""
-	if row.set("immediate-gw") {
-		immediate = rosInterface(row.text("immediate-gw"))
+	iface, immediate := Interface(row.Text("gateway")), ""
+	if row.Set("immediate-gw") {
+		immediate = Interface(row.Text("immediate-gw"))
 	} else {
 		immediate = iface
 	}
@@ -305,40 +305,40 @@ func Egress(cidr, gateway string, ctx *NatContext, policyRouting bool, ix *Route
 		rows  []Row
 		label string
 	}{{ctx.RoutingRules, "策略路由"}, {ctx.Mangle, "路由标记"}, {ctx.VRFs, "VRF"}} {
-		if !rowsOK(part.rows) {
+		if !RowsOK(part.rows) {
 			return "", "无法读取 " + part.label + "，不能确定旁路出口"
 		}
 	}
-	if slices.ContainsFunc(ctx.RoutingRules, Row.enabled) {
+	if slices.ContainsFunc(ctx.RoutingRules, Row.Enabled) {
 		return "", "存在启用的策略路由，不能仅凭主路由表确定旁路出口"
 	}
 	// The whole mangle collection is read, custom chains included. An absent or
 	// unrecognized action never proves there is no policy route.
 	chains := map[string]bool{}
 	for _, row := range ctx.Mangle {
-		if chain, ok := row.str("chain"); ok && chain != "" {
+		if chain, ok := row.Str("chain"); ok && chain != "" {
 			chains[chain] = true
 		}
 	}
 	for _, row := range ctx.Mangle {
-		if !row.enabled() {
+		if !row.Enabled() {
 			continue
 		}
-		action, ok := row.str("action")
+		action, ok := row.Str("action")
 		switch {
 		case !ok || action == "":
 			return "", "启用的 mangle 规则缺少有效动作，不能确定旁路出口"
 		case action == "mark-routing" || action == "route":
 			return "", "存在启用的路由标记或路由动作，不能确定旁路出口"
 		case action == "jump":
-			if jump, ok := row.str("jump-target"); !ok || !chains[jump] {
+			if jump, ok := row.Str("jump-target"); !ok || !chains[jump] {
 				return "", "无法确认 mangle 跳转目标链的完整规则，不能确定旁路出口"
 			}
 		case !slices.Contains(nonRoutingMangle, action):
 			return "", "存在无法识别的 mangle 动作，不能确定旁路出口"
 		}
 	}
-	if slices.ContainsFunc(ctx.VRFs, func(r Row) bool { return r.enabled() && !r.is("name", "main") }) {
+	if slices.ContainsFunc(ctx.VRFs, func(r Row) bool { return r.Enabled() && !r.Is("name", "main") }) {
 		return "", "存在非 main VRF，不能确定旁路出口"
 	}
 	if ix == nil {
@@ -358,17 +358,17 @@ func Egress(cidr, gateway string, ctx *NatContext, policyRouting bool, ix *Route
 	interfaces := map[string]bool{}
 	for _, e := range sel.Selected {
 		row := ix.raw[e.ID]
-		if !device.IsTrue(e.Active) || row.flag("blackhole", "invalid", "ecmp") {
+		if !device.IsTrue(e.Active) || row.Flag("blackhole", "invalid", "ecmp") {
 			return "", "代理路由未生效、无效、属于黑洞路由或包含多个等价出口"
 		}
-		parts := strings.Split(row.text("immediate-gw"), "%")
+		parts := strings.Split(row.Text("immediate-gw"), "%")
 		if len(parts) != 2 {
 			return "", "无法从代理路由确认唯一的实际出口"
 		}
 		if _, ok := netipx.ParseAddr4(parts[0]); !ok {
 			return "", "代理路由的实际下一跳无法识别"
 		}
-		name := rosInterface(parts[1])
+		name := Interface(parts[1])
 		if name == "" {
 			return "", "代理路由包含多个或无法识别的实际出口"
 		}
@@ -397,61 +397,61 @@ func Egress(cidr, gateway string, ctx *NatContext, policyRouting bool, ix *Route
 type match int
 
 const (
-	matchNo match = iota
-	matchYes
+	MatchNo match = iota
+	MatchYes
 	matchUnsure
 )
 
 func matchOf(b bool) match {
 	if b {
-		return matchYes
+		return MatchYes
 	}
-	return matchNo
+	return MatchNo
 }
 
 func listContains(name, iface string, ctx *NatContext) match {
 	switch name {
 	case "all":
-		return matchYes
+		return MatchYes
 	case "none":
-		return matchNo
+		return MatchNo
 	case "static", "dynamic":
 		return matchUnsure
 	}
 	lists, members := ctx.InterfaceLists, ctx.InterfaceMembers
-	if !rowsOK(lists) || !rowsOK(members) {
+	if !RowsOK(lists) || !RowsOK(members) {
 		return matchUnsure
 	}
 	if slices.ContainsFunc(members, func(r Row) bool {
-		return r.enabled() && (!r.set("list") || !r.set("interface"))
+		return r.Enabled() && (!r.Set("list") || !r.Set("interface"))
 	}) {
 		return matchUnsure
 	}
 	var matching []Row
 	for _, r := range lists {
-		if r.is("name", name) && r.enabled() {
+		if r.Is("name", name) && r.Enabled() {
 			matching = append(matching, r)
 		}
 	}
-	if len(matching) != 1 || matching[0].set("include") || matching[0].set("exclude") {
+	if len(matching) != 1 || matching[0].Set("include") || matching[0].Set("exclude") {
 		return matchUnsure
 	}
 	if slices.ContainsFunc(members, func(r Row) bool {
-		return r.enabled() && r.is("list", name) && (r.is("interface", "all") || strings.HasPrefix(r.text("interface"), "all-"))
+		return r.Enabled() && r.Is("list", name) && (r.Is("interface", "all") || strings.HasPrefix(r.Text("interface"), "all-"))
 	}) {
 		return matchUnsure
 	}
 	return matchOf(slices.ContainsFunc(members, func(r Row) bool {
-		return r.enabled() && r.is("list", name) && r.is("interface", iface)
+		return r.Enabled() && r.Is("list", name) && r.Is("interface", iface)
 	}))
 }
 
-// selectorMatches evaluates an out-interface(-list) selector against the
+// SelectorMatches evaluates an out-interface(-list) selector against the
 // egress interface ("" when unknown).
-func selectorMatches(value, iface string, ctx *NatContext, isList bool) match {
+func SelectorMatches(value, iface string, ctx *NatContext, isList bool) match {
 	text := strings.TrimSpace(value)
 	if text == "" {
-		return matchYes
+		return MatchYes
 	}
 	name, negate := strings.CutPrefix(text, "!")
 	if name == "" || strings.HasPrefix(name, "!") || iface == "" && name != "all" && name != "none" {
@@ -462,14 +462,14 @@ func selectorMatches(value, iface string, ctx *NatContext, isList bool) match {
 	case isList:
 		result = listContains(name, iface, ctx)
 	case name == "all":
-		result = matchYes
+		result = MatchYes
 	case strings.HasPrefix(name, "all-"):
 		// Legacy interface groups (all-ethernet, all-ppp…) are no literal names.
 	default:
 		result = matchOf(name == iface)
 	}
 	if negate && result != matchUnsure {
-		return matchOf(result == matchNo)
+		return matchOf(result == MatchNo)
 	}
 	return result
 }
@@ -479,17 +479,17 @@ func selectorMatches(value, iface string, ctx *NatContext, isList bool) match {
 // simulated); not_required needs no possible translation or a proven egress mismatch.
 func AssessNAT(cidr, gateway string, ctx *NatContext, policyRouting bool, ix *RouteEgressIndex) NatAssessment {
 	if ctx == nil {
-		return NatAssessment{Status: "unknown", Detail: "缺少 RouterOS NAT 判断依据，无法确认是否需要免 NAT"}
+		return NatAssessment{Status: "unknown", Detail: "缺少 Client NAT 判断依据，无法确认是否需要免 NAT"}
 	}
-	if !rowsOK(ctx.Rules) {
+	if !RowsOK(ctx.Rules) {
 		return NatAssessment{Status: "unknown", Detail: "无法读取完整 NAT 规则，无法确认是否需要免 NAT"}
 	}
-	if slices.ContainsFunc(ctx.Rules, func(r Row) bool { return r.enabled() && !r.set("chain") }) {
+	if slices.ContainsFunc(ctx.Rules, func(r Row) bool { return r.Enabled() && !r.Set("chain") }) {
 		return NatAssessment{Status: "unknown", Detail: "启用的 NAT 规则缺少链信息，无法排除源地址转换"}
 	}
 	var candidates []Row
 	for _, r := range ctx.Rules {
-		if action, ok := r.str("action"); r.enabled() && r.is("chain", "srcnat") && !(ok && slices.Contains(nonTranslating, action)) {
+		if action, ok := r.Str("action"); r.Enabled() && r.Is("chain", "srcnat") && !(ok && slices.Contains(NonTranslating, action)) {
 			candidates = append(candidates, r)
 		}
 	}
@@ -500,7 +500,7 @@ func AssessNAT(cidr, gateway string, ctx *NatContext, policyRouting bool, ix *Ro
 	var unknown []string
 	possible := false
 	for _, r := range candidates {
-		if r.set("out-interface") || r.set("out-interface-list") {
+		if r.Set("out-interface") || r.Set("out-interface-list") {
 			if !evaluated {
 				iface, problem = Egress(cidr, gateway, ctx, policyRouting, ix)
 				evaluated = true
@@ -511,9 +511,9 @@ func AssessNAT(cidr, gateway string, ctx *NatContext, policyRouting bool, ix *Ro
 			}
 			// Matchers of one rule are conjunctive: a definite mismatch
 			// excludes the rule even when the other selector is undecidable.
-			a := selectorMatches(r.text("out-interface"), iface, ctx, false)
-			b := selectorMatches(r.text("out-interface-list"), iface, ctx, true)
-			if a == matchNo || b == matchNo {
+			a := SelectorMatches(r.Text("out-interface"), iface, ctx, false)
+			b := SelectorMatches(r.Text("out-interface-list"), iface, ctx, true)
+			if a == MatchNo || b == MatchNo {
 				continue
 			}
 			if a == matchUnsure || b == matchUnsure {
@@ -521,7 +521,7 @@ func AssessNAT(cidr, gateway string, ctx *NatContext, policyRouting bool, ix *Ro
 				continue
 			}
 		}
-		if action, _ := r.str("action"); !slices.Contains(translating, action) {
+		if action, _ := r.Str("action"); !slices.Contains(translating, action) {
 			unknown = append(unknown, "存在可能匹配的 NAT 跳转或未知动作，无法确认是否发生源地址转换")
 		} else {
 			possible = true
@@ -566,22 +566,22 @@ func parseAddressList(values []string) *addressList {
 // selectors of field (both must match); ok false when undecidable.
 func addressHits(row Row, field string, target netip.Prefix, sets map[string][]string, cache map[string]*addressList) (hits []netip.Prefix, ok bool) {
 	literal := netip.MustParsePrefix("0.0.0.0/0")
-	if row.set(field) {
+	if row.Set(field) {
 		var valid bool
-		if literal, valid = netipx.ParseNetwork4(row.text(field), false); !valid {
+		if literal, valid = netipx.ParseNetwork4(row.Text(field), false); !valid {
 			return nil, false
 		}
 	}
 	if !target.Overlaps(literal) {
 		return []netip.Prefix{}, true
 	}
-	if !subnetOf(target, literal) {
+	if !SubnetOf(target, literal) {
 		target = literal
 	}
-	if !row.set(field + "-list") {
+	if !row.Set(field + "-list") {
 		return []netip.Prefix{target}, true
 	}
-	listName, isStr := row.str(field + "-list")
+	listName, isStr := row.Str(field + "-list")
 	values, known := sets[listName]
 	if !isStr || strings.HasPrefix(listName, "!") || !known {
 		return nil, false
@@ -596,7 +596,7 @@ func addressHits(row Row, field string, target netip.Prefix, sets map[string][]s
 	}
 	hits = []netip.Prefix{}
 	for _, n := range list.networks {
-		if n.Overlaps(target) && subnetOf(target, n) {
+		if n.Overlaps(target) && SubnetOf(target, n) {
 			hits = append(hits, target)
 		} else if n.Overlaps(target) {
 			hits = append(hits, n)
@@ -605,15 +605,15 @@ func addressHits(row Row, field string, target netip.Prefix, sets map[string][]s
 	return hits, true
 }
 
-func subnetOf(a, b netip.Prefix) bool { return b.Bits() <= a.Bits() && b.Contains(a.Addr()) }
+func SubnetOf(a, b netip.Prefix) bool { return b.Bits() <= a.Bits() && b.Contains(a.Addr()) }
 
-// addressExclude is a.address_exclude(b) in Python's order (b inside a).
-func addressExclude(a, b netip.Prefix) []netip.Prefix {
+// AddressExclude is a.address_exclude(b) in Python's order (b inside a).
+func AddressExclude(a, b netip.Prefix) []netip.Prefix {
 	var out []netip.Prefix
 	for a != b {
 		low := netip.PrefixFrom(a.Addr(), a.Bits()+1)
 		high := netip.PrefixFrom(netipx.Broadcast(low).Next(), a.Bits()+1)
-		if subnetOf(b, low) {
+		if SubnetOf(b, low) {
 			out, a = append(out, high), low
 		} else {
 			out, a = append(out, low), high
@@ -649,12 +649,12 @@ func PreservesSources(rows []Row, sources, destinations []netip.Prefix, iface st
 		if len(pending) == 0 {
 			return true
 		}
-		if chain, set := row["chain"]; !row.enabled() || set && chain != "srcnat" {
+		if chain, set := row["chain"]; !row.Enabled() || set && chain != "srcnat" {
 			continue
 		}
-		egressMatch := selectorMatches(row.text("out-interface"), iface, ctx, false)
-		listMatch := selectorMatches(row.text("out-interface-list"), iface, ctx, true)
-		if egressMatch == matchNo || listMatch == matchNo {
+		egressMatch := SelectorMatches(row.Text("out-interface"), iface, ctx, false)
+		listMatch := SelectorMatches(row.Text("out-interface-list"), iface, ctx, true)
+		if egressMatch == MatchNo || listMatch == MatchNo {
 			continue
 		}
 		var affected []hit
@@ -675,8 +675,8 @@ func PreservesSources(rows []Row, sources, destinations []netip.Prefix, iface st
 		if action != "accept" {
 			return false
 		}
-		if !row.set("chain") || slices.ContainsFunc(slices.Sorted(maps.Keys(row)), func(k string) bool { return !slices.Contains(exemptionFields, k) }) ||
-			row.flag("invalid", "dynamic") || egressMatch != matchYes || listMatch != matchYes {
+		if !row.Set("chain") || slices.ContainsFunc(slices.Sorted(maps.Keys(row)), func(k string) bool { return !slices.Contains(exemptionFields, k) }) ||
+			row.Flag("invalid", "dynamic") || egressMatch != MatchYes || listMatch != MatchYes {
 			continue
 		}
 		before := slices.Clone(pending)
@@ -695,16 +695,16 @@ func PreservesSources(rows []Row, sources, destinations []netip.Prefix, iface st
 							continue
 						}
 						hitA, hitB := a, b
-						if !subnetOf(a, source) {
+						if !SubnetOf(a, source) {
 							hitA = source
 						}
-						if !subnetOf(b, destination) {
+						if !SubnetOf(b, destination) {
 							hitB = destination
 						}
-						for _, part := range addressExclude(a, hitA) {
+						for _, part := range AddressExclude(a, hitA) {
 							remainder = append(remainder, flow{part, b})
 						}
-						for _, part := range addressExclude(b, hitB) {
+						for _, part := range AddressExclude(b, hitB) {
 							remainder = append(remainder, flow{hitA, part})
 						}
 					}
@@ -717,7 +717,7 @@ func PreservesSources(rows []Row, sources, destinations []netip.Prefix, iface st
 			pending = append(pending, pieces...)
 		}
 		if accepted != nil && !slices.Equal(pending, before) {
-			*accepted = append(*accepted, row.id())
+			*accepted = append(*accepted, row.ID())
 		}
 	}
 	return true
@@ -744,12 +744,12 @@ func ClientSourceNetworks(gateway netip.Addr) []netip.Prefix {
 func AssessBypass(cidr, gateway string, addressSets map[string][]string, ctx *NatContext, policyNATRetiring []string, ix *RouteEgressIndex) NatAssessment {
 	assessment := AssessNAT(cidr, gateway, ctx, false, ix)
 	assessment.RuleIDs = []string{}
-	if assessment.Status == "not_required" || ctx == nil || !rowsOK(ctx.Rules) {
+	if assessment.Status == "not_required" || ctx == nil || !RowsOK(ctx.Rules) {
 		return assessment
 	}
 	rows := ctx.Rules
 	iface := ""
-	if slices.ContainsFunc(rows, func(r Row) bool { return r.set("out-interface") || r.set("out-interface-list") }) {
+	if slices.ContainsFunc(rows, func(r Row) bool { return r.Set("out-interface") || r.Set("out-interface-list") }) {
 		iface, _ = Egress(cidr, gateway, ctx, false, ix)
 	}
 	gw, ok1 := netipx.ParseAddr4(gateway)
@@ -765,9 +765,9 @@ func AssessBypass(cidr, gateway string, addressSets map[string][]string, ctx *Na
 	if PreservesSources(rows, ClientSourceNetworks(gw), []netip.Prefix{destination}, iface, ctx, addressSets, &accepted, cache) {
 		managed, found := true, false
 		for _, r := range rows {
-			if slices.Contains(accepted, r.id()) {
+			if slices.Contains(accepted, r.ID()) {
 				found = true
-				comment, _ := r.str("comment")
+				comment, _ := r.Str("comment")
 				managed = managed && device.IsManaged(comment)
 			}
 		}
@@ -784,16 +784,16 @@ func AssessBypass(cidr, gateway string, addressSets map[string][]string, ctx *Na
 	// preserved: a stale source list or a narrower member makes it missing,
 	// and the plan rewrites the members.
 	if own := listRule(rows, ix); own != nil && (own.OutInterface == "" || own.OutInterface == iface) {
-		retiring = append(retiring, own.Rule.id())
+		retiring = append(retiring, own.Rule.ID())
 	}
 	// An existing exemption with any potentially overlapping destination is
 	// preserved: never compensate for its restrictions with a broader rule.
 	for _, r := range rows {
-		if !r.enabled() || !r.is("chain", "srcnat") || !r.is("action", "accept") || slices.Contains(retiring, r.id()) {
+		if !r.Enabled() || !r.Is("chain", "srcnat") || !r.Is("action", "accept") || slices.Contains(retiring, r.ID()) {
 			continue
 		}
 		selectors := r
-		if r.set("dst-address") {
+		if r.Set("dst-address") {
 			// A literal target with a narrower list still restricts this target.
 			selectors = Row{}
 			for k, v := range r {
@@ -842,7 +842,7 @@ func PlannedBypassConflicts(expansions []BypassExpansion, addressSets map[string
 	ctx.Rules = slices.Clone(ctx.Rules)
 	targets := map[string]bool{}
 	for _, op := range expansions {
-		at := slices.IndexFunc(ctx.Rules, func(r Row) bool { return r.id() == op.ID })
+		at := slices.IndexFunc(ctx.Rules, func(r Row) bool { return r.ID() == op.ID })
 		if at < 0 {
 			continue
 		}

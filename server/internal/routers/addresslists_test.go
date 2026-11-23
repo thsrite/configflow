@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"configflow/internal/routers"
+	"configflow/internal/routers/ros"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -51,7 +52,7 @@ func TestAddressListBoundary(t *testing.T) {
 						_ = json.Unmarshal(data, &decoded)
 						converted = append(converted, decoded)
 					}
-					v := routers.DigestAddresses(converted)
+					v := ros.DigestAddresses(converted)
 					result = []any{v.Count, v.MD5}
 				case "fetch":
 					result, err = d.FetchAddresses(context.Background(), name)
@@ -81,9 +82,9 @@ func TestAddressListBoundary(t *testing.T) {
 
 func TestAddressDigestMutationIsDetected(t *testing.T) {
 	rows := []routers.Row{{".id": "*1", "list": "L", "comment": "中文;x=1"}}
-	digest := routers.DigestAddresses(rows)
+	digest := ros.DigestAddresses(rows)
 	rows[0]["comment"] = "changed"
-	if routers.DigestAddresses(rows) == digest {
+	if ros.DigestAddresses(rows) == digest {
 		t.Fatal("content mutation escaped proof")
 	}
 }

@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,7 +55,7 @@ func r08Publish(t *testing.T, d *RouterOS, desired *Desired) (*ROSPolicyPlan, *R
 func TestR08RequestsKeepProductionTimeoutAndRawBodies(t *testing.T) {
 	fake := routerfake.New(nil)
 	state := r08State()
-	delete(state.Tables[rosNAT][0], "out-interface")
+	delete(state.Tables[ros.PathNAT][0], "out-interface")
 	fake.Reset(state)
 	type wire struct{ method, path, body, contentType string }
 	var mu sync.Mutex
@@ -102,17 +103,17 @@ func TestR08RequestsKeepProductionTimeoutAndRawBodies(t *testing.T) {
 		}
 		if call.method == "PUT" {
 			switch call.path {
-			case rosTables:
+			case ros.PathTables:
 				table = true
 				if call.body != `{"fib":"true","name":"CF_Proxy_Routing_01"}` {
 					t.Errorf("table bytes=%s", call.body)
 				}
-			case rosRoutes:
+			case ros.PathRoutes:
 				route = true
 				if call.body != `{"comment":"cf-ros-policy-test","disabled":"false","dst-address":"0.0.0.0/0","gateway":"192.0.2.3@main","routing-table":"CF_Proxy_Routing_01"}` {
 					t.Errorf("route bytes=%s", call.body)
 				}
-			case rosNAT:
+			case ros.PathNAT:
 				nat = true
 				if call.body != `{"action":"accept","chain":"srcnat","comment":"cf-ros-policy-test","disabled":"false","dst-address-list":"CF_Destination_Proxy_IP_01","out-interface":"bridge","place-before":"*3","src-address-list":"CF_Source_Proxy_IP_01"}` {
 					t.Errorf("NAT bytes=%s", call.body)
@@ -184,7 +185,7 @@ func TestR08PreviewAndOwnershipGuards(t *testing.T) {
 		name     string
 		mutation routerfake.ExternalWrite
 	}{
-		{"foreign config after preview", routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosFilter: {{".id": "*F", "action": "drop", "chain": "input"}}}}}},
+		{"foreign config after preview", routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathFilter: {{".id": "*F", "action": "drop", "chain": "input"}}}}}},
 		{"lookup order after preview", routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosSettings: {{"policy-rules": "main,mangle"}}}}}},
 	}
 	for _, tt := range tests {
@@ -211,7 +212,7 @@ func TestR08PreviewAndOwnershipGuards(t *testing.T) {
 	var parsed ROSPolicyManifest
 	_ = json.Unmarshal(manifest, &parsed)
 	source := parsed.Resources[0]
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosAddresses: {source.ID: {"list": "moved", "address": "192.0.2.99"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathAddresses: {source.ID: {"list": "moved", "address": "192.0.2.99"}}}}})
 	live, err := SnapshotROSPolicy(context.Background(), d)
 	if err != nil {
 		t.Fatal(err)
@@ -223,13 +224,13 @@ func TestR08PreviewAndOwnershipGuards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if objects[0].Editor != "source" || objects[0].Status != "changed" || objects[0].ConfiguredAddress != source.Config.text("address") {
+	if objects[0].Editor != "source" || objects[0].Status != "changed" || objects[0].ConfiguredAddress != source.Config.Text("address") {
 		t.Fatal("editor role followed external name")
 	}
 	if err = d.RestoreROSPolicy(context.Background(), *undo); err == nil {
 		t.Fatal("rollback deleted external edit")
 	}
-	if row := findRowFake(f.Snapshot().Tables[rosAddresses], source.ID); row == nil || row["address"] != "192.0.2.99" {
+	if row := findRowFake(f.Snapshot().Tables[ros.PathAddresses], source.ID); row == nil || row["address"] != "192.0.2.99" {
 		t.Fatal("external member lost")
 	}
 }
@@ -251,13 +252,13 @@ func TestR08OwnershipProofShapesAndCopies(t *testing.T) {
 		t.Fatal("stable baseline aliases caller")
 	}
 	for _, manifest := range []json.RawMessage{json.RawMessage(`{"resources":[{"path":"/routing/table","id":"","config":{}}]}`), json.RawMessage(`{"resources":[{"path":"/routing/table","id":"*1"}]}`), json.RawMessage(`[]`)} {
-		snap := ROSPolicySnapshot{rosTables: []Row{row}}
+		snap := ROSPolicySnapshot{ros.PathTables: []Row{row}}
 		if _, err := OwnedROSPolicyRows(manifest, &snap); err == nil {
 			t.Fatalf("missing proof accepted: %s", manifest)
 		}
 	}
-	manifest := device.JSON(ROSPolicyManifest{Resources: []ROSResource{{rosTables, "*1", configROSRow(row)}}})
-	snap := ROSPolicySnapshot{rosTables: []Row{row, row}}
+	manifest := device.JSON(ROSPolicyManifest{Resources: []ROSResource{{Path: ros.PathTables, ID: "*1", Config: ros.ConfigROSRow(row)}}})
+	snap := ROSPolicySnapshot{ros.PathTables: []Row{row, row}}
 	if _, err := OwnedROSPolicyRows(manifest, &snap); err == nil {
 		t.Fatal("duplicate ID accepted")
 	}
@@ -266,16 +267,16 @@ func TestR08OwnershipProofShapesAndCopies(t *testing.T) {
 func TestR08TableFlagsAndNetworkSubtraction(t *testing.T) {
 	// A JSON true arrives as "true"; null as "" (Row decoding).
 	for _, value := range []string{"", "true", "yes"} {
-		if !valuesMatch(rosTables, Row{"name": "x", "fib": value}, Row{"name": "x", "fib": "true"}) {
+		if !ros.ValuesMatch(ros.PathTables, Row{"name": "x", "fib": value}, Row{"name": "x", "fib": "true"}) {
 			t.Fatalf("enabled fib=%v", value)
 		}
 	}
 	for _, value := range []string{"false", "no", "unknown"} {
-		if valuesMatch(rosTables, Row{"name": "x", "fib": value}, Row{"name": "x", "fib": "true"}) {
+		if ros.ValuesMatch(ros.PathTables, Row{"name": "x", "fib": value}, Row{"name": "x", "fib": "true"}) {
 			t.Fatalf("unset fib=%v", value)
 		}
 	}
-	if valuesMatch(rosMangle, Row{"fib": ""}, Row{"fib": "true"}) {
+	if ros.ValuesMatch(ros.PathMangle, Row{"fib": ""}, Row{"fib": "true"}) {
 		t.Fatal("FIB normalization escaped table")
 	}
 	got := SubtractNetworks([]netip.Prefix{netip.MustParsePrefix("198.51.100.0/24")}, []netip.Prefix{netip.MustParsePrefix("198.51.100.0/25")})
@@ -286,17 +287,17 @@ func TestR08TableFlagsAndNetworkSubtraction(t *testing.T) {
 		t.Fatal("range identity normalized")
 	}
 	for _, value := range []string{r08Gateway, r08Gateway + "@main"} {
-		if !valuesMatch(rosRoutes, Row{"gateway": value}, Row{"gateway": r08Gateway + "@main"}) {
+		if !ros.ValuesMatch(ros.PathRoutes, Row{"gateway": value}, Row{"gateway": r08Gateway + "@main"}) {
 			t.Fatal("default gateway alias rejected")
 		}
 	}
 	for _, value := range []string{"", r08Gateway + "@other", r08Gateway + "%wan", r08Gateway + ",192.0.2.4"} {
-		if valuesMatch(rosRoutes, Row{"gateway": value}, Row{"gateway": r08Gateway + "@main"}) {
+		if ros.ValuesMatch(ros.PathRoutes, Row{"gateway": value}, Row{"gateway": r08Gateway + "@main"}) {
 			t.Fatal("different gateway alias accepted")
 		}
 	}
 	for _, value := range []string{"", "unknown", "true", "yes"} {
-		if valuesMatch(rosMangle, Row{"passthrough": value}, Row{"passthrough": "false"}) {
+		if ros.ValuesMatch(ros.PathMangle, Row{"passthrough": value}, Row{"passthrough": "false"}) {
 			t.Fatal("invalid passthrough accepted")
 		}
 	}
@@ -307,7 +308,7 @@ func TestR08ActivationWaitsOnlyForRuntimeFlags(t *testing.T) {
 		t.Run(condition, func(t *testing.T) {
 			state := r08State()
 			for i := range 3 {
-				state.Mutations = append(state.Mutations, routerfake.Mutation{Method: "PUT", Path: rosMangle, Count: i + 1, Table: rosMangle, ID: fmt.Sprintf("*%X", 0x6A+i), Set: routerfake.Row{"invalid": "true"}})
+				state.Mutations = append(state.Mutations, routerfake.Mutation{Method: "PUT", Path: ros.PathMangle, Count: i + 1, Table: ros.PathMangle, ID: fmt.Sprintf("*%X", 0x6A+i), Set: routerfake.Row{"invalid": "true"}})
 			}
 			if condition != "stuck" {
 				for i := range 3 {
@@ -315,7 +316,7 @@ func TestR08ActivationWaitsOnlyForRuntimeFlags(t *testing.T) {
 					if condition == "edit" && i == 2 {
 						fields["src-address-list"] = "foreign-edit"
 					}
-					state.Mutations = append(state.Mutations, routerfake.Mutation{Method: "GET", Path: rosMangle, Count: 7, Table: rosMangle, ID: fmt.Sprintf("*%X", 0x6A+i), Set: fields})
+					state.Mutations = append(state.Mutations, routerfake.Mutation{Method: "GET", Path: ros.PathMangle, Count: 7, Table: ros.PathMangle, ID: fmt.Sprintf("*%X", 0x6A+i), Set: fields})
 				}
 			}
 			f := routerfake.New(nil)
@@ -353,7 +354,7 @@ func TestR08ActivationWaitsOnlyForRuntimeFlags(t *testing.T) {
 					if restore == nil {
 						t.Fatal("external edit overwritten")
 					}
-					if row := findRowFake(f.Snapshot().Tables[rosMangle], "*6C"); row == nil || row["src-address-list"] != "foreign-edit" {
+					if row := findRowFake(f.Snapshot().Tables[ros.PathMangle], "*6C"); row == nil || row["src-address-list"] != "foreign-edit" {
 						t.Fatal("external edit lost")
 					}
 				}
@@ -369,7 +370,7 @@ func TestR08NamesGatewayAndReportIntegration(t *testing.T) {
 	d, f := r08Driver(t)
 	state := r08State()
 	for i := 1; i <= 256; i++ {
-		state.Tables[rosTables] = append(state.Tables[rosTables], routerfake.Row{".id": fmt.Sprintf("*%X", 1000+i), "name": fmt.Sprintf("CF_Proxy_Routing_%02d", i), "fib": "true"})
+		state.Tables[ros.PathTables] = append(state.Tables[ros.PathTables], routerfake.Row{".id": fmt.Sprintf("*%X", 1000+i), "name": fmt.Sprintf("CF_Proxy_Routing_%02d", i), "fib": "true"})
 	}
 	f.Reset(state)
 	plan, err := r08Plan(context.Background(), d, r08Desired(true))
@@ -383,13 +384,13 @@ func TestR08NamesGatewayAndReportIntegration(t *testing.T) {
 		state := r08State()
 		switch condition {
 		case "missing":
-			state.Tables[rosRoutes] = state.Tables[rosRoutes][1:]
+			state.Tables[ros.PathRoutes] = state.Tables[ros.PathRoutes][1:]
 		case "inactive":
-			state.Tables[rosRoutes][0]["active"] = "false"
+			state.Tables[ros.PathRoutes][0]["active"] = "false"
 		case "exception":
-			state.Tables[rosRoutes] = append(state.Tables[rosRoutes], routerfake.Row{".id": "*F", "dst-address": r08Gateway + "/32", "gateway": "192.0.2.9"})
+			state.Tables[ros.PathRoutes] = append(state.Tables[ros.PathRoutes], routerfake.Row{".id": "*F", "dst-address": r08Gateway + "/32", "gateway": "192.0.2.9"})
 		case "ambiguous":
-			state.Tables[rosRoutes] = append(state.Tables[rosRoutes], routerfake.Row{".id": "*F", "dst-address": "192.0.2.0/24", "gateway": "wan", "routing-table": "main", "active": "true", "connect": "true", "dynamic": "true", "immediate-gw": "wan"})
+			state.Tables[ros.PathRoutes] = append(state.Tables[ros.PathRoutes], routerfake.Row{".id": "*F", "dst-address": "192.0.2.0/24", "gateway": "wan", "routing-table": "main", "active": "true", "connect": "true", "dynamic": "true", "immediate-gw": "wan"})
 		}
 		f.Reset(state)
 		plan, err = r08Plan(context.Background(), d, r08Desired(true))
@@ -443,7 +444,7 @@ func FuzzR08PolicyInput(f *testing.F) {
 		if manifest != nil {
 			snap := ROSPolicySnapshot{}
 			for _, item := range manifest.Resources {
-				row := configROSRow(item.Config)
+				row := ros.ConfigROSRow(item.Config)
 				row[".id"] = item.ID
 				snap[item.Path] = append(snap[item.Path], row)
 			}
@@ -453,7 +454,7 @@ func FuzzR08PolicyInput(f *testing.F) {
 		var row Row
 		if json.Unmarshal(data, &row) == nil {
 			_ = checkPolicyOrder(ROSPolicySnapshot{rosSettings: []Row{row}})
-			_ = ComparableValues(rosTables, row)
+			_ = ros.ComparableValues(ros.PathTables, row)
 		}
 	})
 }
@@ -462,7 +463,7 @@ func TestR08ReadbackBeforeActivation(t *testing.T) {
 	for _, condition := range []string{"inactive", "next-hop", "external-comment", "fib-unset"} {
 		t.Run(condition, func(t *testing.T) {
 			state := r08State()
-			path, id := rosRoutes, "*69"
+			path, id := ros.PathRoutes, "*69"
 			fields := routerfake.Row{}
 			switch condition {
 			case "inactive":
@@ -472,7 +473,7 @@ func TestR08ReadbackBeforeActivation(t *testing.T) {
 			case "external-comment":
 				fields["comment"] = "keep operator edit"
 			case "fib-unset":
-				path, id = rosTables, "*68"
+				path, id = ros.PathTables, "*68"
 				fields["fib"] = nil
 			}
 			state.Mutations = []routerfake.Mutation{{Method: "PUT", Path: path, Count: 1, Table: path, ID: id, Set: fields}}
@@ -491,12 +492,12 @@ func TestR08ReadbackBeforeActivation(t *testing.T) {
 				t.Fatal("bad readback activated")
 			}
 			for _, call := range f.Calls() {
-				if call.Method == "PUT" && call.Path == rosMangle {
+				if call.Method == "PUT" && call.Path == ros.PathMangle {
 					t.Fatal("Mangle enabled before proof")
 				}
 			}
 			if condition == "external-comment" {
-				if row := findRowFake(f.Snapshot().Tables[rosRoutes], id); row == nil || row["comment"] != "keep operator edit" {
+				if row := findRowFake(f.Snapshot().Tables[ros.PathRoutes], id); row == nil || row["comment"] != "keep operator edit" {
 					t.Fatal("operator edit deleted")
 				}
 			}

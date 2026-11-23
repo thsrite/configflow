@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -19,7 +20,6 @@ const (
 	pdScripts       = "/system/script"
 	pdSchedulers    = "/system/scheduler"
 	pdClients       = "/ipv6/dhcp-client"
-	pdLists         = "/ipv6/firewall/address-list"
 	pdPrefixes      = "/ipv6/nd/prefix"
 	pdWatch         = "cf-pd-watch"
 	pdPoll          = "cf-pd-poll"
@@ -209,16 +209,16 @@ type IPv6PDGuardPlan struct {
 type pdLive struct{ clients, addresses, scripts, schedulers, ipv4, last, prefixes []Row }
 
 func pdRows(ctx context.Context, d *RouterOS, path string) ([]Row, error) {
-	rows, e := d.list(ctx, path)
+	rows, e := d.List(ctx, path)
 	if e != nil {
 		return nil, e
 	}
 	seen := map[string]bool{}
 	for _, r := range rows {
-		if id, ok := r.str(".id"); !ok || !rosIDPattern.MatchString(id) || seen[id] {
+		if id, ok := r.Str(".id"); !ok || !ros.IDPattern.MatchString(id) || seen[id] {
 			return nil, device.Error(fmt.Sprintf(messagePDRowID, path))
 		}
-		seen[r.id()] = true
+		seen[r.ID()] = true
 	}
 	return rows, nil
 }
@@ -227,7 +227,7 @@ func pdSnapshot(ctx context.Context, d *RouterOS, withdraw bool) (pdLive, error)
 	for _, p := range []struct {
 		path string
 		to   *[]Row
-	}{{pdClients, &live.clients}, {rosIPv6Addresses, &live.addresses}, {pdScripts, &live.scripts}, {pdSchedulers, &live.schedulers}, {pdLists + "?list=" + pdLast, &live.last}} {
+	}{{pdClients, &live.clients}, {rosIPv6Addresses, &live.addresses}, {pdScripts, &live.scripts}, {pdSchedulers, &live.schedulers}, {ros.PathIPv6AddressLists + "?list=" + pdLast, &live.last}} {
 		rows, e := pdRows(ctx, d, p.path)
 		if e != nil {
 			return live, e
@@ -247,7 +247,7 @@ func pdDerive(ctx context.Context, d *RouterOS, live *pdLive, gateway string) (*
 	fail := func(s string) (*IPv6PDSpec, Row, []string, error) { return nil, nil, nil, device.Error(s) }
 	clients := []Row{}
 	for _, r := range live.clients {
-		if ipv6Enabled(r) && slices.Contains(pdPolicies(r.text("request")), "prefix") {
+		if ipv6Enabled(r) && slices.Contains(pdPolicies(r.Text("request")), "prefix") {
 			clients = append(clients, r)
 		}
 	}
@@ -257,14 +257,14 @@ func pdDerive(ctx context.Context, d *RouterOS, live *pdLive, gateway string) (*
 	if len(clients) > 1 {
 		names := []string{}
 		for _, r := range clients {
-			names = append(names, r.textOr("interface", r.id()))
+			names = append(names, r.TextOr("interface", r.ID()))
 		}
 		return fail(fmt.Sprintf(messagePDManyClients, strings.Join(names, "、")))
 	}
 	client := clients[0]
-	pool := client.text("pool-name")
+	pool := client.Text("pool-name")
 	if pool == "" {
-		return fail(fmt.Sprintf(messagePDNoPool, client.text("interface")))
+		return fail(fmt.Sprintf(messagePDNoPool, client.Text("interface")))
 	}
 	if !pdName(pool) {
 		return fail(fmt.Sprintf(messagePDPoolUnsafe, pool))
@@ -272,9 +272,9 @@ func pdDerive(ctx context.Context, d *RouterOS, live *pdLive, gateway string) (*
 	rows := []Row{}
 	names := []string{}
 	for _, r := range live.addresses {
-		if r.is("from-pool", pool) && ipv6Enabled(r) {
+		if r.Is("from-pool", pool) && ipv6Enabled(r) {
 			rows = append(rows, r)
-			names = append(names, r.text("interface"))
+			names = append(names, r.Text("interface"))
 		}
 	}
 	names = device.Unique(names)
@@ -307,7 +307,7 @@ func pdDerive(ctx context.Context, d *RouterOS, live *pdLive, gateway string) (*
 	}
 	selected := []Row{}
 	for _, r := range rows {
-		if r.is("interface", lan) {
+		if r.Is("interface", lan) {
 			selected = append(selected, r)
 		}
 	}
@@ -315,21 +315,21 @@ func pdDerive(ctx context.Context, d *RouterOS, live *pdLive, gateway string) (*
 		return fail(fmt.Sprintf(messagePDManyAddresses, lan, pool))
 	}
 	// ParsePrefix retains host bits and rejects scoped addresses, which cannot be a delegated LAN prefix.
-	address, e := netip.ParsePrefix(selected[0].text("address"))
+	address, e := netip.ParsePrefix(selected[0].Text("address"))
 	if e != nil || !address.Addr().Is6() {
 		return fail(fmt.Sprintf(messagePDAddress, lan))
 	}
 	if address.Bits() != 64 {
 		return fail(fmt.Sprintf(messagePDLength, lan, address.Bits()))
 	}
-	if !policyFlag(selected[0]["advertise"]) {
+	if !ros.PolicyFlag(selected[0]["advertise"]) {
 		return fail(fmt.Sprintf(messagePDAdvertise, lan))
 	}
-	return &IPv6PDSpec{lan, pool, client.id(), client.text("interface"), pdHold}, client, warnings, nil
+	return &IPv6PDSpec{lan, pool, client.ID(), client.Text("interface"), pdHold}, client, warnings, nil
 }
 func pdNamed(rows []Row, name string) Row {
 	for _, r := range rows {
-		if r.is("name", name) {
+		if r.Is("name", name) {
 			return r
 		}
 	}
@@ -342,13 +342,13 @@ func pdScriptState(row Row, spec *IPv6PDSpec) pdState {
 	if row == nil {
 		return pdState{"missing", messagePDNew}
 	}
-	source := row.text("source")
+	source := row.Text("source")
 	if !pdIsWatch(source) {
 		return pdState{"conflict", messagePDWatchConflict}
 	}
 	template, _ := IPv6PDWatchSource(spec.LAN, spec.Pool)
 	same := pdNormalize(source) == pdNormalize(template)
-	policy := slices.Equal(pdPolicies(row.text("policy")), pdPolicies(pdPolicy))
+	policy := slices.Equal(pdPolicies(row.Text("policy")), pdPolicies(pdPolicy))
 	if same && policy {
 		return pdState{"ok", fmt.Sprintf(messagePDWatchOK, spec.LAN, spec.Pool, pdHold)}
 	}
@@ -374,7 +374,7 @@ func pdScriptState(row Row, spec *IPv6PDSpec) pdState {
 		diffs = append(diffs, messagePDTemplateDiff)
 	}
 	if !policy {
-		v := row.text("policy")
+		v := row.Text("policy")
 		if v == "" {
 			v = messagePDEmpty
 		}
@@ -386,31 +386,31 @@ func pdSchedulerState(row Row) pdState {
 	if row == nil {
 		return pdState{"missing", messagePDPollNew}
 	}
-	if !strings.Contains(row.text("on-event"), pdWatch) {
+	if !strings.Contains(row.Text("on-event"), pdWatch) {
 		return pdState{"conflict", messagePDPollConflict}
 	}
 	diffs := []string{}
-	if pdNormalize(row.text("on-event")) != pdEvent {
+	if pdNormalize(row.Text("on-event")) != pdEvent {
 		diffs = append(diffs, messagePDEventDiff)
 	}
-	if !slices.Contains([]string{"30s", "00:00:30"}, row.text("interval")) {
-		x := row.text("interval")
+	if !slices.Contains([]string{"30s", "00:00:30"}, row.Text("interval")) {
+		x := row.Text("interval")
 		if x == "" {
 			x = messagePDEmpty
 		}
 		diffs = append(diffs, fmt.Sprintf(messagePDIntervalDiff, x))
 	}
-	if !row.is("start-time", "startup") {
+	if !row.Is("start-time", "startup") {
 		diffs = append(diffs, messagePDStartupDiff)
 	}
-	if !slices.Equal(pdPolicies(row.text("policy")), pdPolicies(pdPolicy)) {
-		x := row.text("policy")
+	if !slices.Equal(pdPolicies(row.Text("policy")), pdPolicies(pdPolicy)) {
+		x := row.Text("policy")
 		if x == "" {
 			x = messagePDEmpty
 		}
 		diffs = append(diffs, fmt.Sprintf(messagePDPolicyDiff, x, pdPolicy))
 	}
-	if policyFlag(row["disabled"]) {
+	if ros.PolicyFlag(row["disabled"]) {
 		diffs = append(diffs, messagePDDisabled)
 	}
 	if len(diffs) > 0 {
@@ -419,7 +419,7 @@ func pdSchedulerState(row Row) pdState {
 	return pdState{"ok", messagePDPollOK}
 }
 func pdHookState(row Row) pdState {
-	s := pdNormalize(row.text("script"))
+	s := pdNormalize(row.Text("script"))
 	switch s {
 	case "":
 		return pdState{"missing", messagePDHookNew}
@@ -431,7 +431,7 @@ func pdHookState(row Row) pdState {
 	if slices.Contains(strings.Split(s, "\n"), pdNormalize(pdHook)) {
 		return pdState{"shared", messagePDHookShared}
 	}
-	return pdState{"conflict", fmt.Sprintf(messagePDHookConflict, row.text("interface"), pdHook)}
+	return pdState{"conflict", fmt.Sprintf(messagePDHookConflict, row.Text("interface"), pdHook)}
 }
 func pdRolePath(role string) string {
 	switch role {
@@ -465,7 +465,7 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 	if jsondecode.Unmarshal(raw, &m) != nil || m.Version != 1 || m.Resources == nil {
 		return nil, device.Error(messagePDManifest)
 	}
-	if m.Spec == nil || !pdName(m.Spec.LAN) || !pdName(m.Spec.Pool) || !rosIDPattern.MatchString(m.Spec.Client) || m.Spec.Hold != pdHold {
+	if m.Spec == nil || !pdName(m.Spec.LAN) || !pdName(m.Spec.Pool) || !ros.IDPattern.MatchString(m.Spec.Client) || m.Spec.Hold != pdHold {
 		return nil, device.Error(messagePDManifest)
 	}
 	// Presence matters: null/empty config is damaged proof, not a legacy ID-only
@@ -484,7 +484,7 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 			return nil, device.Error(messagePDManifestObject)
 		}
 		path := pdRolePath(entry.Role)
-		if path == "" || entry.Path != path || !rosIDPattern.MatchString(entry.ID) || seen[entry.Role] {
+		if path == "" || entry.Path != path || !ros.IDPattern.MatchString(entry.ID) || seen[entry.Role] {
 			return nil, device.Error(messagePDManifestObject)
 		}
 		seen[entry.Role] = true
@@ -494,7 +494,7 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 		} else if entry.Role == "scheduler" {
 			rows = live.schedulers
 		}
-		row := findRow(rows, entry.ID)
+		row := ros.FindRow(rows, entry.ID)
 		if row == nil {
 			continue
 		}
@@ -504,8 +504,8 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 			// still proves the preview snapshot. A recorded client config is no
 			// ownership proof: use-peer-dns, a pool rename or disabling the client
 			// when the prefix moves must not block both update and withdrawal.
-			if payload(path, row) == nil {
-				return nil, payloadError(path, row)
+			if ros.Payload(path, row) == nil {
+				return nil, ros.PayloadError(path, row)
 			}
 			out[entry.Role] = row
 			continue
@@ -524,14 +524,14 @@ func pdOwned(d *RouterOS, raw json.RawMessage, live pdLive) (map[string]Row, err
 				return nil, device.Error(messagePDOwnership)
 			}
 		}
-		if entry.Config != nil && !sameRow(d.ownershipSnapshot(path, row), entry.Config) {
+		if entry.Config != nil && !ros.SameRow(d.OwnershipSnapshot(path, row), entry.Config) {
 			return nil, device.Error(messagePDOwnership)
 		}
-		if entry.Role == "script" && !row.is("name", pdWatch) || entry.Role == "scheduler" && !row.is("name", pdPoll) {
+		if entry.Role == "script" && !row.Is("name", pdWatch) || entry.Role == "scheduler" && !row.Is("name", pdPoll) {
 			return nil, device.Error(messagePDOwnership)
 		}
-		if payload(path, row) == nil {
-			return nil, payloadError(path, row)
+		if ros.Payload(path, row) == nil {
+			return nil, ros.PayloadError(path, row)
 		}
 		out[entry.Role] = row
 	}

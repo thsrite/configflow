@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"net/url"
 	"strconv"
@@ -46,7 +47,7 @@ func (d *RouterOS) ReadConnections(ctx context.Context, q ConnectionQuery, timeo
 		values.Set("src-address", address)
 	}
 	if timeout <= 0 {
-		timeout = rosTimeout
+		timeout = ros.Timeout
 	}
 	rows, complete, err := d.clientList(ctx, path+"?"+values.Encode(), timeout)
 	if len(rows) > 256 {

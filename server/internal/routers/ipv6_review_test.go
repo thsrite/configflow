@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"net/http/httptest"
 	"reflect"
 	"testing"
@@ -40,15 +41,15 @@ func r10ReviewCases() []r10Case {
 					row["disabled"] = "true"
 				}
 			}
-			tc.State.Tables[rosIPv6Routes] = []routerfake.Row{row}
+			tc.State.Tables[ros.PathIPv6Routes] = []routerfake.Row{row}
 			out = append(out, tc)
 		}
 		// Owned routes edited or deleted outside ConfigFlow after a publication.
 		edit := r10StepFor("publish", 5)
-		edit.Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosIPv6Routes: {"*65": {"distance": "5"}}}}}
+		edit.Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6Routes: {"*65": {"distance": "5"}}}}}
 		out = append(out, base("owned_edited", r10StepFor("publish", 5), edit))
 		gone := r10StepFor("publish", 5)
-		gone.Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{rosIPv6Routes: {"*65"}}}}
+		gone.Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{ros.PathIPv6Routes: {"*65"}}}}
 		out = append(out, base("owned_deleted", r10StepFor("publish", 5), gone, r10StepFor("plan", 5)))
 		if feature == "routes" {
 			out = append(out, base("shrink", r10StepFor("publish", 5), r10StepFor("publish", 2), r10StepFor("plan", 2)))
@@ -64,12 +65,12 @@ func r10ReviewCases() []r10Case {
 			out = append(out, base("replace_rollback_101", r10StepFor("publish", 101), back, r10StepFor("plan", 101)))
 			out = append(out, base("rollback_101", r10StepFor("rollback", 101), r10StepFor("plan", 101)))
 			partial := r10StepFor("publish", 3)
-			partial.Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{rosIPv6Routes: {"*66"}}}}
+			partial.Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{ros.PathIPv6Routes: {"*66"}}}}
 			out = append(out, base("shrink_after_external_delete", r10StepFor("publish", 5), partial, r10StepFor("plan", 3)))
 		}
 		// A disabled foreign route at the destination, enabled after the preview.
 		late := base("late_foreign", r10StepFor("plan", 5), r10StepFor("apply", 5))
-		late.Steps[1].Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{rosIPv6Routes: {r10Route("*50", cidr, "fe80::9%bridge")}}}}
+		late.Steps[1].Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathIPv6Routes: {r10Route("*50", cidr, "fe80::9%bridge")}}}}
 		out = append(out, late)
 	}
 	return out
@@ -111,13 +112,13 @@ func TestR10ReviewFakeRollbackRestoresAfterLostDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{
-		{Method: "PUT", Path: rosIPv6Routes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{rosIPv6Routes: {"*66": {"active": "false"}}}},
-		{Method: "DELETE", Path: rosIPv6Routes + "/*66", Count: 1, AfterCommit: true, LoseReply: true},
+		{Method: "PUT", Path: ros.PathIPv6Routes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6Routes: {"*66": {"active": "false"}}}},
+		{Method: "DELETE", Path: ros.PathIPv6Routes + "/*66", Count: 1, AfterCommit: true, LoseReply: true},
 	}})
 	host := r10Host()
 	host.Addresses = []IPv6HostAddress{{Address: "fe80::5"}}
 	r := r10Router()
-	r.Extra["ipv6_fakeip_state"] = guardRaw(d.ipv6FakeIPManifest)
+	r.Extra["ipv6_fakeip_state"] = ros.GuardRaw(d.IPv6FakeIPManifest())
 	p = InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), host, d)
 	if len(p.Ops) != 1 {
 		t.Fatalf("no replacement planned: %s", device.JSON(p))
@@ -129,12 +130,12 @@ func TestR10ReviewFakeRollbackRestoresAfterLostDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(live["routes"]) != 1 || live["routes"][0].text("gateway") != "fe80::4%bridge" {
+	if len(live["routes"]) != 1 || live["routes"][0].Text("gateway") != "fe80::4%bridge" {
 		t.Fatalf("previous Fake-IP route not restored: %v", live["routes"])
 	}
-	owned, err := ipv6Owned(d.ipv6FakeIPManifest, live, true)
-	if err != nil || len(owned) != 1 || owned[0].ID != live["routes"][0].id() {
-		t.Fatalf("restored route not owned: %s %v", d.ipv6FakeIPManifest, err)
+	owned, err := ipv6Owned(d.IPv6FakeIPManifest(), live, true)
+	if err != nil || len(owned) != 1 || owned[0].ID != live["routes"][0].ID() {
+		t.Fatalf("restored route not owned: %s %v", d.IPv6FakeIPManifest(), err)
 	}
 }
 
@@ -147,8 +148,8 @@ func TestR10ReviewLostDeleteDeviceMatchesPython(t *testing.T) {
 	replace := r10StepFor("publish", 5)
 	replace.Host.Addresses = []IPv6HostAddress{{Address: "fe80::5"}}
 	replace.Mutation = &routerfake.ExternalWrite{Faults: []routerfake.Fault{
-		{Method: "PUT", Path: rosIPv6Routes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{rosIPv6Routes: {"*66": {"active": "false"}}}},
-		{Method: "DELETE", Path: rosIPv6Routes + "/*66", Count: 1, AfterCommit: true, LoseReply: true},
+		{Method: "PUT", Path: ros.PathIPv6Routes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6Routes: {"*66": {"active": "false"}}}},
+		{Method: "DELETE", Path: ros.PathIPv6Routes + "/*66", Count: 1, AfterCommit: true, LoseReply: true},
 	}}
 	tc := r10Case{"fake/review_lost_delete", "fake", r10State(), r10Router(), []r10Step{r10StepFor("publish", 5), replace}}
 	py := r10Python(t, srv.URL, tc)

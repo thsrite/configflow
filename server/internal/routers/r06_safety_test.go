@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"errors"
 	"net/http/httptest"
@@ -220,7 +221,7 @@ func TestR06PreviewBindsFullSnapshotAndConnection(t *testing.T) {
 		t.Fatal("unrelated route changed fingerprint")
 	}
 	changedRow := *row
-	changedRow.Snapshot = RouteSnapshot{ros: cloneRow(row.Snapshot.ros)}
+	changedRow.Snapshot = RouteSnapshot{ros: ros.CloneRow(row.Snapshot.ros)}
 	changedRow.Snapshot.ros["distance"] = "99"
 	if _, err := BuildRoutePlan(tc.Router, []*EditableRoute{&changedRow}, payload); device.RouterErrorKind(err) != KindConflict {
 		t.Fatal("advanced drift not rejected")

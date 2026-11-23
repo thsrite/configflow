@@ -73,8 +73,8 @@ func TestR17RawWireAndProductionTimeouts(t *testing.T) {
 			var spy *r17Timeouts
 			if vendor == "routeros" {
 				driver := NewRouterOS(server.URL, "synthetic-user", "synthetic-pass", false)
-				spy = &r17Timeouts{DeviceHTTP: driver.client}
-				driver.client = spy
+				spy = &r17Timeouts{DeviceHTTP: driver.HTTP()}
+				driver.SetHTTP(spy)
 				d = driver
 			} else {
 				driver := NewIkuai(server.URL, routerfake.IkuaiUser, routerfake.IkuaiPassword, false)

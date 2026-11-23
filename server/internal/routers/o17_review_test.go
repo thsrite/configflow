@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,13 +20,13 @@ import (
 // write path (payload) that takes over or restores an object.
 func TestO17NullFieldsStayRefused(t *testing.T) {
 	f := routerfake.New(map[string][]routerfake.Row{
-		rosIPv6ND: {
+		ros.PathIPv6ND: {
 			{".id": "*1", "interface": "bridge", "disabled": nil, "dynamic": "false", "invalid": "false"},
 			{".id": "*2", "interface": "bridge", "disabled": "false", "dynamic": nil, "invalid": "false"},
 			{".id": "*3", "interface": "bridge", "disabled": "false", "dynamic": "false", "invalid": nil},
 			{".id": "*4", "interface": "bridge", "disabled": "false", "dynamic": "false", "invalid": "false"},
 		},
-		rosDHCPNetworks: {
+		ros.PathDHCPNetworks: {
 			{".id": "*5", "address": "192.0.2.0/24", "dns-none": nil},
 			{".id": "*6", "address": "198.51.100.0/24", "dns-none": "false"},
 		},
@@ -37,34 +38,34 @@ func TestO17NullFieldsStayRefused(t *testing.T) {
 	defer d.Close()
 	ctx := context.Background()
 
-	nd, err := d.list(ctx, rosIPv6ND)
+	nd, err := d.List(ctx, ros.PathIPv6ND)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i, key := range []string{"disabled", "dynamic", "invalid"} {
-		if payload(rosIPv6ND, nd[i]) != nil {
+		if ros.Payload(ros.PathIPv6ND, nd[i]) != nil {
 			t.Errorf("ND row with null %s was writable", key)
 		}
-		if got, want := payloadError(rosIPv6ND, nd[i]).Error(), fmt.Sprintf(messageIPv6DNSFlag, key); !strings.Contains(got, want) {
+		if got, want := ros.PayloadError(ros.PathIPv6ND, nd[i]).Error(), fmt.Sprintf(ros.MessageIPv6DNSFlag, key); !strings.Contains(got, want) {
 			t.Errorf("ND null %s: %q, want %q", key, got, want)
 		}
 	}
-	if payload(rosIPv6ND, nd[3]) == nil {
+	if ros.Payload(ros.PathIPv6ND, nd[3]) == nil {
 		t.Error("plain ND row refused")
 	}
 
-	networks, err := d.list(ctx, rosDHCPNetworks)
+	networks, err := d.List(ctx, ros.PathDHCPNetworks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if payload(rosDHCPNetworks, networks[0]) != nil {
+	if ros.Payload(ros.PathDHCPNetworks, networks[0]) != nil {
 		t.Error("DHCP network with null dns-none was writable")
 	}
-	if payload(rosDHCPNetworks, networks[1]) == nil {
+	if ros.Payload(ros.PathDHCPNetworks, networks[1]) == nil {
 		t.Error("plain DHCP network refused")
 	}
 
-	lists, err := d.list(ctx, "/interface/list")
+	lists, err := d.List(ctx, "/interface/list")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/netipx"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -227,18 +228,18 @@ func returnUpstreamProblem(upstream, gateway string, ctx *NatContext) string {
 		return ""
 	}
 	next, ok := netipx.ParseAddr4(gateway)
-	if !ok || ctx == nil || !rowsOK(ctx.Routes) {
+	if !ok || ctx == nil || !ros.RowsOK(ctx.Routes) {
 		return ""
 	}
 	var network netip.Prefix
 	for _, row := range ctx.Routes {
-		if table := row.text("routing-table"); table != "" && table != "main" {
+		if table := row.Text("routing-table"); table != "" && table != "main" {
 			continue
 		}
-		if !row.enabled() || !row.flag("connect") || !row.flag("active") {
+		if !row.Enabled() || !row.Flag("connect") || !row.Flag("active") {
 			continue
 		}
-		n, ok := netipx.ParseNetwork4(row.text("dst-address"), false)
+		n, ok := netipx.ParseNetwork4(row.Text("dst-address"), false)
 		if ok && n.Contains(next) && (!network.IsValid() || n.Bits() > network.Bits()) {
 			network = n
 		}

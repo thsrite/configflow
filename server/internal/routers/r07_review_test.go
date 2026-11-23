@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,7 +44,7 @@ func TestR07RedactionHidesOnlyPassword(t *testing.T) {
 			if tt.console {
 				state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, Status: 200, Body: routerfake.Row{"ret": tt.echo}}}
 			} else {
-				state.Faults = []routerfake.Fault{{Method: "GET", Path: rosNAT, Count: 1, Status: 400, Body: routerfake.Row{"message": "Bad Request", "detail": tt.echo}}}
+				state.Faults = []routerfake.Fault{{Method: "GET", Path: ros.PathNAT, Count: 1, Status: 400, Body: routerfake.Row{"message": "Bad Request", "detail": tt.echo}}}
 			}
 			fake := routerfake.New(nil)
 			fake.Reset(state)
@@ -111,14 +112,14 @@ func TestR07RequestsKeepTimeoutAndRawBodies(t *testing.T) {
 	if err = d.RestoreNATLists(ctx, *undo); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := d.list(ctx, nat)
+	rows, err := d.List(ctx, nat)
 	if err != nil {
 		t.Fatal(err)
 	}
 	legacy := []ROSResource{}
 	for _, row := range rows {
-		if row.is("comment", "cf-mihomo") {
-			legacy = append(legacy, resource(nat, row))
+		if row.Is("comment", "cf-mihomo") {
+			legacy = append(legacy, ros.NewResource(nat, row))
 		}
 	}
 	journal := []NATStep{}
@@ -138,8 +139,8 @@ func TestR07RequestsKeepTimeoutAndRawBodies(t *testing.T) {
 	}
 
 	for i, timeout := range recorder.timeouts {
-		if timeout != rosTimeout {
-			t.Errorf("%s used timeout %s, want %s", recorder.requests[i], timeout, rosTimeout)
+		if timeout != ros.Timeout {
+			t.Errorf("%s used timeout %s, want %s", recorder.requests[i], timeout, ros.Timeout)
 		}
 	}
 	counts := map[string]int{}
@@ -196,7 +197,7 @@ func TestR07RequestsKeepTimeoutAndRawBodies(t *testing.T) {
 // later read in the same scope returns.
 func TestR07ReuseScopeOwnsDownloadedRows(t *testing.T) {
 	state := r07FakeState()
-	state.Tables[rosAddresses] = []routerfake.Row{{".id": "*10", "list": "L", "address": "198.51.100.1", "comment": "external", "disabled": "false"}}
+	state.Tables[ros.PathAddresses] = []routerfake.Row{{".id": "*10", "list": "L", "address": "198.51.100.1", "comment": "external", "disabled": "false"}}
 	d, _ := newFakeRouterOS(t, state)
 	defer d.ReuseAddressReads()()
 	first, err := d.ReadAddresses(context.Background(), []string{"L"})
@@ -208,7 +209,7 @@ func TestR07ReuseScopeOwnsDownloadedRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := second["L"][0].text("comment"); got != "external" {
+	if got := second["L"][0].Text("comment"); got != "external" {
 		t.Fatalf("reused rows were modified through an earlier result: comment %q", got)
 	}
 }
@@ -279,28 +280,4 @@ func TestR07PrefixOverlapMatchesPairwise(t *testing.T) {
 			}
 		}
 	}
-}
-
-// FuzzR07DecodeAddressRow drives the console row decoder with arbitrary device
-// output: it never panics, and a decoded row survives the encoder that the
-// digest proof uses (runtime keys excluded) unchanged.
-func FuzzR07DecodeAddressRow(f *testing.F) {
-	for _, seed := range []string{
-		"5:.id=*1;address=198.51.100.1;comment=cf-mihomo-nat;disabled=false;list=cf-mihomo-nat-dst",
-		"0:", "1:", "1:=", "2:a=b;c", "2:a=1;a=2", "-1:", "+1:a=b", "3:comment=中文=x;list=L;.id=*FFFF",
-	} {
-		f.Add(seed)
-	}
-	f.Fuzz(func(t *testing.T, text string) {
-		row := decodeAddressRow(text)
-		if row == nil {
-			return
-		}
-		delete(row, "creation-time")
-		delete(row, "timeout")
-		again := decodeAddressRow(strings.TrimSuffix(EncodeAddressRow(row), "\n"))
-		if !reflect.DeepEqual(again, row) {
-			t.Fatalf("%q decoded to %#v, re-encoded to %#v", text, row, again)
-		}
-	})
 }

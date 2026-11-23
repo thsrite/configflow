@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -72,7 +73,7 @@ func r09Seed(t *testing.T) (*routerfake.Fake, *httptest.Server, *RouterOS, json.
 	d := NewRouterOS(srv.URL, "synthetic-user", "synthetic-password", false)
 	t.Cleanup(d.Close)
 	r09ApplyPlan(t, d, r09Plan(t, d, tc.Settings, nil))
-	return f, srv, d, guardRaw(d.dnsGuardManifest)
+	return f, srv, d, ros.GuardRaw(d.DNSGuardManifest())
 }
 
 func TestR09ProductionTimeoutAndRawWire(t *testing.T) {
@@ -156,7 +157,7 @@ func TestR09WritesAndRollbackFinishAfterCancellation(t *testing.T) {
 		t.Run(map[bool]string{false: "success", true: "compensation"}[failing], func(t *testing.T) {
 			tc := r09Base("cancel")
 			if failing {
-				tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: rosNetwatch, Status: 400, Body: routerfake.Row{"message": "refused"}}}
+				tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathNetwatch, Status: 400, Body: routerfake.Row{"message": "refused"}}}
 			}
 			f := routerfake.New(nil)
 			f.Reset(tc.State)
@@ -196,26 +197,26 @@ func TestR09WritesAndRollbackFinishAfterCancellation(t *testing.T) {
 func TestR09IncrementalKeepsPausedIDs(t *testing.T) {
 	f, _, d, previous := r09Seed(t)
 	before := f.Snapshot()
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosNAT: {"*6A": {"disabled": "true"}, "*6B": {"disabled": "true"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathNAT: {"*6A": {"disabled": "true"}, "*6B": {"disabled": "true"}}}}})
 	settings := r09Base("delta").Settings
 	settings.Bypass = []string{"192.0.2.60/32"}
 	p := r09Plan(t, d, settings, previous)
 	count := len(f.Calls())
 	r09ApplyPlan(t, d, p)
 	for _, call := range f.Calls()[count:] {
-		if call.Method != "GET" && (call.Path == rosNAT || strings.HasPrefix(call.Path, rosNAT+"/") || call.Path == rosFilter || strings.HasPrefix(call.Path, rosFilter+"/")) {
+		if call.Method != "GET" && (call.Path == ros.PathNAT || strings.HasPrefix(call.Path, ros.PathNAT+"/") || call.Path == ros.PathFilter || strings.HasPrefix(call.Path, ros.PathFilter+"/")) {
 			t.Fatalf("unchanged object written %s %s", call.Method, call.Path)
 		}
 	}
 	after := f.Snapshot()
-	for _, path := range []string{rosNAT, rosFilter} {
+	for _, path := range []string{ros.PathNAT, ros.PathFilter} {
 		for i, row := range after.Tables[path] {
 			if row[".id"] != before.Tables[path][i][".id"] {
 				t.Fatal("stable ID changed")
 			}
 		}
 	}
-	for _, row := range after.Tables[rosNAT] {
+	for _, row := range after.Tables[ros.PathNAT] {
 		if row["comment"] == dnsGuardHijack && row["disabled"] != "true" {
 			t.Fatal("paused hijack resumed")
 		}
@@ -232,7 +233,7 @@ func TestR09ForeignHijackCommentBlocksPublish(t *testing.T) {
 				tc := r09Base("foreign_hijack_comment")
 				tc.Settings.Failover = failover
 				tc.Steps = []r09Step{{Action: "plan"}}
-				foreign := tc.State.Tables[rosNAT][0]
+				foreign := tc.State.Tables[ros.PathNAT][0]
 				foreign["comment"] = dnsGuardHijack
 				foreign["disabled"] = disabled
 				// The runtime selector has no chain, action or port predicate.
@@ -258,7 +259,7 @@ func TestR09ForeignHijackCommentBlocksPublish(t *testing.T) {
 				if plan.Status != "unknown" || !reflect.DeepEqual(plan.Blockers, []string{messageGuardHijackCollision}) || len(plan.Ops) != 0 || len(result.Writes) != 0 {
 					t.Fatalf("foreign comment did not block without writes: %s", r09Raw(result))
 				}
-				if !reflect.DeepEqual(result.Tables[rosNAT], tc.State.Tables[rosNAT]) {
+				if !reflect.DeepEqual(result.Tables[ros.PathNAT], tc.State.Tables[ros.PathNAT]) {
 					t.Fatal("foreign NAT changed")
 				}
 				// Withdrawal must remain available; the foreign rule is never claimed.
@@ -284,21 +285,21 @@ func TestR09LateForeignObjectsAreNeverClaimed(t *testing.T) {
 			snapshot := f.Snapshot()
 			switch variant {
 			case "name_collision":
-				snapshot.Tables[rosAddresses] = append(snapshot.Tables[rosAddresses], routerfake.Row{".id": "*F1", "list": DNSGuardBypassList, "address": "192.0.2.99"})
+				snapshot.Tables[ros.PathAddresses] = append(snapshot.Tables[ros.PathAddresses], routerfake.Row{".id": "*F1", "list": DNSGuardBypassList, "address": "192.0.2.99"})
 			case "hijack_comment_collision":
-				snapshot.Tables[rosNAT] = append(snapshot.Tables[rosNAT], routerfake.Row{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53", "disabled": "true", "comment": dnsGuardHijack})
+				snapshot.Tables[ros.PathNAT] = append(snapshot.Tables[ros.PathNAT], routerfake.Row{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53", "disabled": "true", "comment": dnsGuardHijack})
 			case "hijack_overtaken":
-				snapshot.Tables[rosNAT] = append([]routerfake.Row{{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53"}}, snapshot.Tables[rosNAT]...)
+				snapshot.Tables[ros.PathNAT] = append([]routerfake.Row{{".id": "*F1", "chain": "dstnat", "action": "redirect", "dst-port": "53"}}, snapshot.Tables[ros.PathNAT]...)
 			case "removed_owned":
-				snapshot.Tables[rosAddresses] = snapshot.Tables[rosAddresses][1:]
+				snapshot.Tables[ros.PathAddresses] = snapshot.Tables[ros.PathAddresses][1:]
 			case "moved_owned":
-				snapshot.Tables[rosAddresses][0]["list"] = "foreign"
+				snapshot.Tables[ros.PathAddresses][0]["list"] = "foreign"
 			case "duplicate_owned":
-				snapshot.Tables[rosNAT] = append(snapshot.Tables[rosNAT], r09Copy(snapshot.Tables[rosNAT][0]))
+				snapshot.Tables[ros.PathNAT] = append(snapshot.Tables[ros.PathNAT], r09Copy(snapshot.Tables[ros.PathNAT][0]))
 			case "delete_read_drift":
-				snapshot.Faults = []routerfake.Fault{{Method: "GET", Path: rosFilter, Count: 2, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{rosFilter: {"*6D": {"dst-port": "854"}}}}}
+				snapshot.Faults = []routerfake.Fault{{Method: "GET", Path: ros.PathFilter, Count: 2, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{ros.PathFilter: {"*6D": {"dst-port": "854"}}}}}
 			case "final_read_drift":
-				snapshot.Faults = []routerfake.Fault{{Method: "GET", Path: rosNAT, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{rosNAT: {"*68": {"dst-port": "54"}}}}}
+				snapshot.Faults = []routerfake.Fault{{Method: "GET", Path: ros.PathNAT, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{ros.PathNAT: {"*68": {"dst-port": "54"}}}}}
 			}
 			f.ReplaceTables(snapshot.Tables)
 			f.ApplyExternal(routerfake.ExternalWrite{Faults: snapshot.Faults})
@@ -319,7 +320,7 @@ func TestR09LateForeignObjectsAreNeverClaimed(t *testing.T) {
 			}
 			if variant == "name_collision" {
 				found := false
-				for _, row := range f.Snapshot().Tables[rosAddresses] {
+				for _, row := range f.Snapshot().Tables[ros.PathAddresses] {
 					if row[".id"] == "*F1" {
 						found = true
 					}
@@ -337,7 +338,7 @@ func TestR09RejectedVersusUncertain(t *testing.T) {
 		t.Run(variant, func(t *testing.T) {
 			tc := r09Base(variant)
 			f := routerfake.New(nil)
-			fault := routerfake.Fault{Method: "PUT", Path: rosAddresses, Count: 1}
+			fault := routerfake.Fault{Method: "PUT", Path: ros.PathAddresses, Count: 1}
 			switch variant {
 			case "rejected":
 				fault.Status = 400
@@ -349,7 +350,7 @@ func TestR09RejectedVersusUncertain(t *testing.T) {
 				fault.AfterCommit = true
 				fault.Status = 500
 			case "reused_id":
-				tc.State.Tables[rosAddresses] = []routerfake.Row{{".id": "*F1", "list": "foreign", "address": "203.0.113.1"}}
+				tc.State.Tables[ros.PathAddresses] = []routerfake.Row{{".id": "*F1", "list": "foreign", "address": "203.0.113.1"}}
 				fault.Status = 201
 				fault.Body = routerfake.Row{".id": "*F1", "list": "foreign", "address": "203.0.113.1"}
 			case "lost_delete", "bad_undo":
@@ -369,7 +370,7 @@ func TestR09RejectedVersusUncertain(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosAddresses: {"*65": {"address": "203.0.113.99"}}}}})
+				f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathAddresses: {"*65": {"address": "203.0.113.99"}}}}})
 				err = d.RestoreDNSGuard(context.Background(), *undo)
 				if err == nil || device.RouterErrorKind(err) != KindRollback {
 					t.Fatal("changed undo not refused", err)
@@ -380,16 +381,16 @@ func TestR09RejectedVersusUncertain(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				previous := guardRaw(d.dnsGuardManifest)
+				previous := ros.GuardRaw(d.DNSGuardManifest())
 				off := tc.Settings
 				off.Enabled = false
 				p = r09Plan(t, d, off, previous)
-				f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: rosNetwatch + "/*6E", Count: 1, AfterCommit: true, LoseReply: true}}})
+				f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: ros.PathNetwatch + "/*6E", Count: 1, AfterCommit: true, LoseReply: true}}})
 				_, err = d.ApplyDNSGuard(context.Background(), *p.Ops[0].(*DNSGuardReplace))
 				if err == nil {
 					t.Fatal("lost reply accepted")
 				}
-				if len(f.Snapshot().Tables[rosNetwatch]) != 1 {
+				if len(f.Snapshot().Tables[ros.PathNetwatch]) != 1 {
 					t.Fatal("delete not compensated")
 				}
 				return
@@ -401,14 +402,14 @@ func TestR09RejectedVersusUncertain(t *testing.T) {
 				if device.RouterErrorKind(err) == KindUncertainWrite || device.RouterErrorKind(err) == KindRollback {
 					t.Fatalf("refusal marked uncertain %v", err)
 				}
-				if len(f.Snapshot().Tables[rosAddresses]) != 0 {
+				if len(f.Snapshot().Tables[ros.PathAddresses]) != 0 {
 					t.Fatal("refusal changed table")
 				}
 			} else if device.RouterErrorKind(err) != KindRollback {
 				t.Fatalf("unproven create did not preserve scene %v", err)
 			}
 			if variant == "lost_put" || variant == "server_put" {
-				if len(f.Snapshot().Tables[rosAddresses]) != 1 {
+				if len(f.Snapshot().Tables[ros.PathAddresses]) != 1 {
 					t.Fatal("unknown create was deleted or retried")
 				}
 			}
@@ -418,7 +419,7 @@ func TestR09RejectedVersusUncertain(t *testing.T) {
 
 func TestR09RealDeviceTimeout(t *testing.T) {
 	tc := r09Base("timeout")
-	tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: rosAddresses, Count: 1, AfterCommit: true, DelayMS: 11000}}
+	tc.State.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathAddresses, Count: 1, AfterCommit: true, DelayMS: 11000}}
 	f := routerfake.New(nil)
 	f.Reset(tc.State)
 	srv := httptest.NewServer(f)
@@ -432,7 +433,7 @@ func TestR09RealDeviceTimeout(t *testing.T) {
 	if err == nil || elapsed < 9*time.Second || elapsed > 15*time.Second {
 		t.Fatalf("production timeout %s %v", elapsed, err)
 	}
-	if len(f.Snapshot().Tables[rosAddresses]) != 1 {
+	if len(f.Snapshot().Tables[ros.PathAddresses]) != 1 {
 		t.Fatal("uncertain write not preserved")
 	}
 }
@@ -455,7 +456,7 @@ func TestR09HintDoesNotEnterPlan(t *testing.T) {
 
 func TestR09FinalReadCannotWidenOwnership(t *testing.T) {
 	tc := r09Base("late_new_edit")
-	tc.State.Faults = []routerfake.Fault{{Method: "GET", Path: rosAddresses + "/*65", Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{rosAddresses: {"*65": {"address": "203.0.113.99/32"}}}}}
+	tc.State.Faults = []routerfake.Fault{{Method: "GET", Path: ros.PathAddresses + "/*65", Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{ros.PathAddresses: {"*65": {"address": "203.0.113.99/32"}}}}}
 	f := routerfake.New(nil)
 	f.Reset(tc.State)
 	srv := httptest.NewServer(f)
@@ -467,7 +468,7 @@ func TestR09FinalReadCannotWidenOwnership(t *testing.T) {
 	if err == nil || device.RouterErrorKind(err) != KindRollback {
 		t.Fatal("late edit absorbed into manifest", err)
 	}
-	for _, row := range f.Snapshot().Tables[rosAddresses] {
+	for _, row := range f.Snapshot().Tables[ros.PathAddresses] {
 		if row[".id"] == "*65" && row["address"] == "203.0.113.99/32" {
 			return
 		}
@@ -488,7 +489,7 @@ func TestR09RemapPreservesUnknownStoredFields(t *testing.T) {
 	if err := d.remapDNSGuard(context.Background(), original, map[[2]string]string{}); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(r09JSON(t, original), r09JSON(t, d.dnsGuardManifest)) {
+	if !reflect.DeepEqual(r09JSON(t, original), r09JSON(t, d.DNSGuardManifest())) {
 		t.Fatal("unknown manifest members lost")
 	}
 }
@@ -534,7 +535,7 @@ func TestR09TableLocalIDsSurviveRestore(t *testing.T) {
 	if err = json.Unmarshal(r09Python(t, "r09_reference.py", tc, srv.URL), &python); err != nil {
 		t.Fatal(err)
 	}
-	if len(python.Steps) != 1 || python.Steps[0].Error == nil || python.Steps[0].Error.Class != "RouterError" || !strings.Contains(python.Steps[0].Error.Message, rosAddresses) {
+	if len(python.Steps) != 1 || python.Steps[0].Error == nil || python.Steps[0].Error.Class != "RouterError" || !strings.Contains(python.Steps[0].Error.Message, ros.PathAddresses) {
 		t.Fatalf("expected the real Python cross-table remap defect, got %s", r09Raw(python))
 	}
 	got := r09Go(t, tc, f, srv.URL)
@@ -549,7 +550,7 @@ func TestR09TableLocalIDsSurviveRestore(t *testing.T) {
 	}
 	for _, id := range []string{"*20", "*21"} {
 		present := false
-		for _, row := range got.Tables[rosNAT] {
+		for _, row := range got.Tables[ros.PathNAT] {
 			if row[".id"] == id {
 				present = true
 			}

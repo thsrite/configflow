@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"errors"
 	"io"
@@ -74,8 +75,8 @@ func TestR06RouterOSRequestsKeepDeviceTimeout(t *testing.T) {
 				if !strings.HasPrefix(recorder.requests[i], "GET ") {
 					writes++
 				}
-				if timeout != rosTimeout {
-					t.Errorf("%s used timeout %v, want %v", recorder.requests[i], timeout, rosTimeout)
+				if timeout != ros.Timeout {
+					t.Errorf("%s used timeout %v, want %v", recorder.requests[i], timeout, ros.Timeout)
 				}
 			}
 			if writes == 0 {
@@ -122,7 +123,7 @@ func TestR06RouterOSUnansweredWriteTimesOut(t *testing.T) {
 		if device.RouterErrorKind(err) != KindUncertainWrite {
 			t.Fatalf("unanswered write error = %v, want an uncertain write after reconciliation", err)
 		}
-	case <-time.After(3 * rosTimeout):
+	case <-time.After(3 * ros.Timeout):
 		t.Fatal("manual RouterOS write without a device answer did not time out")
 	}
 	if got := fake.Snapshot().Tables["/ip/route"][0]["comment"]; got != "office" {
@@ -177,7 +178,7 @@ func TestR06RedactionHidesOnlySecrets(t *testing.T) {
 		status               int
 		want                 string // exact message; empty: must contain echo and not be hidden
 	}{
-		{"username in permission help", "api", "", 403, messageROSForbidden + permissionHelp},
+		{"username in permission help", "api", "", 403, ros.MessageROSForbidden + ros.PermissionHelp},
 		{"username echoed by device", "synthetic-admin", "synthetic-admin", 400, ""},
 		{"password echoed by device", "api", "synthetic-secret", 400, messageEditSecret},
 	}

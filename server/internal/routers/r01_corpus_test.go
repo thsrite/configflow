@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -245,7 +246,7 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 			Path string
 			Row  Row
 		}](t, in)
-		return ComparableValues(args.Path, args.Row), nil
+		return ros.ComparableValues(args.Path, args.Row), nil
 	case "normalize_mac":
 		return routerdoc.NormalizeMAC(decode[string](t, in)), nil
 	case "ipv4":

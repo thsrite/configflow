@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -227,8 +228,8 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		replacements := SubtractNetworks(device.Networks(old), device.Networks(next))
 		if rosPolicy.Check != nil {
 			for _, v := range rosPolicy.Check.Migrations {
-				if v.Path == rosRoutes {
-					replacements = append(replacements, device.Networks([]string{v.Config.text("dst-address")})...)
+				if v.Path == ros.PathRoutes {
+					replacements = append(replacements, device.Networks([]string{v.Config.Text("dst-address")})...)
 				}
 			}
 		}
@@ -320,17 +321,17 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		expansions := []BypassExpansion{}
 		for _, op := range natOps {
 			if v, ok := op.(NATUpdateOp); ok {
-				expansions = append(expansions, BypassExpansion{v.ID, v.AddDst, v.Comment})
+				expansions = append(expansions, BypassExpansion{ID: v.ID, AddDst: v.AddDst, Comment: v.Comment})
 			}
 		}
-		*blockers = append(*blockers, PlannedBypassConflicts(expansions, state.AddressSets, state.NatContext, gateway)...)
+		*blockers = append(*blockers, ros.PlannedBypassConflicts(expansions, state.AddressSets, state.NatContext, gateway)...)
 	}
 	for _, op := range policyOps {
 		if len(op.StaticChecks) == 0 {
 			continue
 		}
 		if len(natOps) > 0 {
-			iface, reason := Egress(op.StaticChecks[0].CIDR, gateway, state.NatContext, true, nil)
+			iface, reason := ros.Egress(op.StaticChecks[0].CIDR, gateway, state.NatContext, true, nil)
 			if iface == "" {
 				*blockers = append(*blockers, fmt.Sprintf(messagePrepareNAT, reason))
 			} else {
@@ -398,7 +399,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 					}
 				}
 			}
-			collapsed, err := collapseRouterNetworks(values)
+			collapsed, err := ros.CollapseRouterNetworks(values)
 			if err != nil {
 				return nil, err
 			}

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"fmt"
 	"net/netip"
@@ -11,17 +12,6 @@ import (
 
 	"configflow/internal/netipx"
 )
-
-// ROSResource identifies one previewed object with its complete stable config.
-type ROSResource struct {
-	Path   string `json:"path"`
-	ID     string `json:"id"`
-	Config Row    `json:"config"`
-}
-
-func resource(path string, row Row) ROSResource {
-	return ROSResource{path, row.id(), configROSRow(row)}
-}
 
 // NATLists is the two NAT lists and outside firewall references. Nil reference
 // slices mean that the corresponding table could not be read.
@@ -123,11 +113,11 @@ func natMembers(name string, rows []Row) (ours, foreign []Row, problems []string
 	ours, foreign, problems = []Row{}, []Row{}, []string{}
 	for _, row := range rows {
 		switch {
-		case row.flag("dynamic") || row.set("timeout"):
+		case row.Flag("dynamic") || row.Set("timeout"):
 			problems = append(problems, fmt.Sprintf(messageNATListDynamic, name))
-		case !row.enabled():
-			problems = append(problems, fmt.Sprintf(messageNATListDisabled, name, row.text("address")))
-		case row.is("comment", NATListComment):
+		case !row.Enabled():
+			problems = append(problems, fmt.Sprintf(messageNATListDisabled, name, row.Text("address")))
+		case row.Is("comment", NATListComment):
 			ours = append(ours, row)
 		default:
 			foreign = append(foreign, row)
@@ -181,13 +171,13 @@ func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.
 	policy := state.natPolicyEvidence()
 	everything := netip.MustParsePrefix("0.0.0.0/0")
 	for _, row := range state.NatContext.Routes {
-		if !row.enabled() || !viaGateway(gateway, row.text("gateway")) || deleting[row.id()] {
+		if !row.Enabled() || !viaGateway(gateway, row.Text("gateway")) || deleting[row.ID()] {
 			continue
 		}
 		owned := false
 		if policy != nil {
 			for _, item := range policy.PreviousResources {
-				if item.Path == rosRoutes && item.ID == row.id() {
+				if item.Path == ros.PathRoutes && item.ID == row.ID() {
 					owned = true
 					break
 				}
@@ -197,8 +187,8 @@ func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.
 			out = append(out, device.Networks(append(slices.Clone(policy.Destinations), policy.PreviousDestinations...))...)
 			continue
 		}
-		networks := device.Networks([]string{row.text("dst-address")})
-		if len(networks) == 0 && !strings.Contains(row.text("dst-address"), ":") {
+		networks := device.Networks([]string{row.Text("dst-address")})
+		if len(networks) == 0 && !strings.Contains(row.Text("dst-address"), ":") {
 			networks = []netip.Prefix{everything}
 		}
 		out = append(out, networks...)
@@ -213,7 +203,7 @@ func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.
 		}
 	}
 	for _, row := range state.NatContext.Mangle {
-		if row.enabled() && row.is("action", "route") && viaGateway(gateway, row.text("route-dst")) {
+		if row.Enabled() && row.Is("action", "route") && viaGateway(gateway, row.Text("route-dst")) {
 			out = append(out, everything)
 		}
 	}
@@ -237,11 +227,11 @@ func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped [
 	order := []string{}
 	fields := device.StringSet("chain", "action", "disabled", "comment", "log", "log-prefix", "dynamic", "src-address", "dst-address", "out-interface")
 	for _, row := range rows {
-		if !row.is("comment", PolicyAutoComment) || excluded[row.id()] || !row.is("chain", "srcnat") || !row.is("action", "accept") || !row.enabled() || row.flag("dynamic", "invalid", "log") || row.set("log-prefix") || !row.set("src-address") || !row.set("dst-address") || row.text("out-interface") != "" && row.text("out-interface") != egress || !sourceKeys[natKey(row.text("src-address"))] {
+		if !row.Is("comment", PolicyAutoComment) || excluded[row.ID()] || !row.Is("chain", "srcnat") || !row.Is("action", "accept") || !row.Enabled() || row.Flag("dynamic", "invalid", "log") || row.Set("log-prefix") || !row.Set("src-address") || !row.Set("dst-address") || row.Text("out-interface") != "" && row.Text("out-interface") != egress || !sourceKeys[natKey(row.Text("src-address"))] {
 			continue
 		}
 		extra := false
-		for key := range configROSRow(row) {
+		for key := range ros.ConfigROSRow(row) {
 			if !fields[key] {
 				extra = true
 			}
@@ -249,7 +239,7 @@ func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped [
 		if extra {
 			continue
 		}
-		key := natKey(row.text("dst-address"))
+		key := natKey(row.Text("dst-address"))
 		if _, ok := groups[key]; !ok {
 			order = append(order, key)
 		}
@@ -260,8 +250,8 @@ func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped [
 		group := groups[key]
 		found, interfaces := map[string]bool{}, map[string]bool{}
 		for _, row := range group {
-			found[natKey(row.text("src-address"))] = true
-			interfaces[row.text("out-interface")] = true
+			found[natKey(row.Text("src-address"))] = true
+			interfaces[row.Text("out-interface")] = true
 		}
 		if len(found) != len(sourceKeys) || len(interfaces) != 1 {
 			continue
@@ -273,7 +263,7 @@ func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped [
 		if cidr, ok := wanted[key]; ok {
 			if !overlapsAny(network, blocked) {
 				for _, row := range group {
-					selected[row.id()] = true
+					selected[row.ID()] = true
 				}
 				destinations = append(destinations, cidr)
 			}
@@ -283,19 +273,19 @@ func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped [
 				target = old
 			}
 			for _, row := range group {
-				target[row.id()] = true
+				target[row.ID()] = true
 			}
 		}
 	}
 	for _, row := range rows {
-		if selected[row.id()] {
-			merged = append(merged, resource(rosNAT, row))
+		if selected[row.ID()] {
+			merged = append(merged, ros.NewResource(ros.PathNAT, row))
 		}
-		if old[row.id()] {
-			stale = append(stale, resource(rosNAT, row))
+		if old[row.ID()] {
+			stale = append(stale, ros.NewResource(ros.PathNAT, row))
 		}
-		if kept[row.id()] {
-			retained = append(retained, resource(rosNAT, row))
+		if kept[row.ID()] {
+			retained = append(retained, ros.NewResource(ros.PathNAT, row))
 		}
 	}
 	return
@@ -333,22 +323,22 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	if state.NATLists != nil {
 		refs = state.NATLists.refs()
 	}
-	found := InspectNATListRule(rows, refs)
+	found := ros.InspectNATListRule(rows, refs)
 	moving := map[string]bool{}
 	movingAddress := map[string]bool{}
 	if p := state.natPolicyEvidence(); p != nil {
 		for _, item := range p.Migrations {
-			if item.Path == rosNAT {
+			if item.Path == ros.PathNAT {
 				moving[item.ID] = true
 			}
-			if item.Path == rosAddresses {
+			if item.Path == ros.PathAddresses {
 				movingAddress[item.ID] = true
 			}
 		}
 	}
 	sources := []string{}
 	gatewayAddr, _ := netip.ParseAddr(gateway)
-	for _, network := range ClientSourceNetworks(gatewayAddr) {
+	for _, network := range ros.ClientSourceNetworks(gatewayAddr) {
 		sources = append(sources, network.String())
 	}
 	legacy, legacyDest, stale, retained := legacyNAT(rows, sources, items, desired, skipped, moving, found.OutInterface, StillRoutedNAT(report, state, gateway))
@@ -361,11 +351,11 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 		result.Blockers = append(result.Blockers, messageNATListsUnreadable)
 		return result
 	}
-	found = InspectNATListRule(rows, lists.refs())
+	found = ros.InspectNATListRule(rows, lists.refs())
 	evidence := func(rows []Row) []Row {
 		out := []Row{}
 		for _, row := range rows {
-			v := configROSRow(row)
+			v := ros.ConfigROSRow(row)
 			v[".id"] = row[".id"]
 			out = append(out, v)
 		}
@@ -400,14 +390,14 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	if len(retained) > 0 {
 		values := []string{}
 		for _, item := range retained {
-			values = append(values, item.Config.text("dst-address"))
+			values = append(values, item.Config.Text("dst-address"))
 		}
 		result.Warnings = append(result.Warnings, fmt.Sprintf(messageNATLegacyKept, len(retained), natSample(device.Unique(values))))
 	}
 	ruleID := ""
 	var rule *ROSResource
 	if found.Rule != nil {
-		v := resource(rosNAT, found.Rule)
+		v := ros.NewResource(ros.PathNAT, found.Rule)
 		rule = &v
 		ruleID = v.ID
 	}
@@ -429,7 +419,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	held := device.Networks(skipped)
 	holds := false
 	for _, row := range dstOwn {
-		for _, network := range device.Networks([]string{row.text("address")}) {
+		for _, network := range device.Networks([]string{row.Text("address")}) {
 			holds = holds || overlapsAny(network, held)
 		}
 	}
@@ -440,7 +430,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	split := func(ours, foreign []Row, keep []string) ([]ROSResource, map[string]bool, []string) {
 		present, kept := map[string]bool{}, []string{}
 		for _, row := range foreign {
-			present[natKey(row.text("address"))] = true
+			present[natKey(row.Text("address"))] = true
 		}
 		removing := []ROSResource{}
 		keepKeys := map[string]bool{}
@@ -448,12 +438,12 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 			keepKeys[natKey(value)] = true
 		}
 		for _, row := range ours {
-			if movingAddress[row.id()] {
+			if movingAddress[row.ID()] {
 				continue
 			}
-			key := natKey(row.text("address"))
+			key := natKey(row.Text("address"))
 			if withdraw || !keepKeys[key] || present[key] {
-				removing = append(removing, resource(rosAddresses, row))
+				removing = append(removing, ros.NewResource(ros.PathAddresses, row))
 			} else {
 				present[key] = true
 				kept = append(kept, key)
@@ -533,7 +523,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	gone := device.StringSet(removed...)
 	removedKeys := map[string]bool{}
 	for _, item := range dstRemove {
-		removedKeys[natKey(item.Config.text("address"))] = true
+		removedKeys[natKey(item.Config.Text("address"))] = true
 	}
 	for _, entry := range state.NatBypass {
 		if !entry.Enabled || moving[entry.ID] || gone[entry.ID] || entry.ID == ruleID && withdraw {
@@ -548,8 +538,8 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	result.Exempt = append(result.Exempt, targets...)
 	if p := state.natPolicyEvidence(); p != nil {
 		for _, item := range p.Replacements {
-			if item.Path == rosNAT {
-				result.Exempt = append(result.Exempt, item.Values.text("dst-address"))
+			if item.Path == ros.PathNAT {
+				result.Exempt = append(result.Exempt, item.Values.Text("dst-address"))
 			}
 		}
 	}
@@ -590,7 +580,7 @@ func NATListSummary(op NATListSync, gateway string, create bool, fresh []string)
 		if len(op.DstRemove) > 0 {
 			values := []string{}
 			for _, item := range op.DstRemove {
-				values = append(values, item.Config.text("address"))
+				values = append(values, item.Config.Text("address"))
 			}
 			changes = append(changes, fmt.Sprintf(messageNATRemove, len(op.DstRemove), natSample(values)))
 		}
@@ -610,7 +600,7 @@ func NATListSummary(op NATListSync, gateway string, create bool, fresh []string)
 	if len(op.Stale) > 0 {
 		values := []string{}
 		for _, item := range op.Stale {
-			values = append(values, item.Config.text("dst-address"))
+			values = append(values, item.Config.Text("dst-address"))
 		}
 		parts = append(parts, fmt.Sprintf(messageNATStale, len(op.Stale), natSample(device.Unique(values))))
 	}
@@ -654,7 +644,7 @@ func NATRemovalsFirst(natOps, routeOps []Op, gateway string) ([]Op, []Op) {
 		if op.Rule == nil || len(op.SrcAdd)+len(op.SrcRemove)+len(op.DstAdd)+len(op.DstRemove)+len(op.Legacy) > 0 {
 			merged := map[string]bool{}
 			for _, item := range op.Legacy {
-				merged[natKey(item.Config.text("dst-address"))] = true
+				merged[natKey(item.Config.Text("dst-address"))] = true
 			}
 			fresh := []string{}
 			for _, cidr := range op.Destinations {
@@ -691,20 +681,20 @@ func NATPolicyMigrations(rule Row, addresses []Row, exclusions []string) ([]ROSR
 	result := []ROSResource{}
 	overlaps := prefixOverlap(device.Networks(exclusions))
 	for _, item := range addresses {
-		if item.text("list") != rule.text("dst-address-list") || !item.enabled() {
+		if item.Text("list") != rule.Text("dst-address-list") || !item.Enabled() {
 			continue
 		}
-		networks := device.Networks([]string{item.text("address")})
+		networks := device.Networks([]string{item.Text("address")})
 		if len(networks) == 0 {
-			return nil, device.Error(fmt.Sprintf(messageNATSplitInvalid, item.id()))
+			return nil, device.Error(fmt.Sprintf(messageNATSplitInvalid, item.ID()))
 		}
 		if !slices.ContainsFunc(networks, overlaps) {
 			continue
 		}
-		if !item.is("comment", NATListComment) || item.flag("dynamic") {
-			return nil, device.Error(fmt.Sprintf(messageNATSplitForeign, item.id()))
+		if !item.Is("comment", NATListComment) || item.Flag("dynamic") {
+			return nil, device.Error(fmt.Sprintf(messageNATSplitForeign, item.ID()))
 		}
-		result = append(result, resource(rosAddresses, item))
+		result = append(result, ros.NewResource(ros.PathAddresses, item))
 	}
 	return result, nil
 }

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,8 +15,6 @@ import (
 	"configflow/internal/ctxx"
 	"configflow/internal/netipx"
 )
-
-const rosIPv6ND = "/ipv6/nd"
 
 // IPv6DNSItem describes one LAN or shared RA advertisement.
 type IPv6DNSItem struct {
@@ -81,24 +80,10 @@ type IPv6DNSPlan struct {
 	Evidence *IPv6DNSEvidence `json:"evidence"`
 }
 
-func ipv6DNSFlag(row Row, key string) (bool, error) {
-	text := "false"
-	if v, ok := row[key]; ok {
-		text = v
-	}
-	switch strings.ToLower(text) {
-	case "false", "no", "0":
-		return false, nil
-	case "true", "yes", "1":
-		return true, nil
-	default:
-		return false, device.Error(fmt.Sprintf(messageIPv6DNSFlag, key))
-	}
-}
 func ipv6DNSServers(row Row) ([]string, error) {
 	out := []string{}
 	for _, key := range []string{"dns", "dns-servers"} {
-		parts, ok := textList(row[key])
+		parts, ok := ros.TextList(row[key])
 		if !ok {
 			return nil, device.Error(messageIPv6DNSServerList)
 		}
@@ -134,34 +119,34 @@ func ipv6DNSScope(desired *Desired, scope DNSCheck) (DNSCheck, error) {
 }
 func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Row, error) {
 	// A null flag or DNS list is unreadable, never "unset".
-	addresses, err := d.strictList(ctx, rosIPv4Addresses, "disabled", "invalid")
+	addresses, err := d.StrictList(ctx, rosIPv4Addresses, "disabled", "invalid")
 	if err != nil {
 		return "", nil, err
 	}
 	a, _ := netip.ParseAddr(gateway)
 	for _, r := range addresses {
-		disabled, e := ipv6DNSFlag(r, "disabled")
+		disabled, e := ros.IPv6DNSFlag(r, "disabled")
 		if e != nil {
 			return "", nil, e
 		}
 		if disabled {
 			continue
 		}
-		p, ok := netipx.ParseNetwork4(r.text("address"), false)
+		p, ok := netipx.ParseNetwork4(r.Text("address"), false)
 		if !ok {
 			return "", nil, device.Error(messageIPv6DNSLANAddress)
 		}
 		if !p.Contains(a) {
 			continue
 		}
-		invalid, e := ipv6DNSFlag(r, "invalid")
+		invalid, e := ros.IPv6DNSFlag(r, "invalid")
 		if e != nil {
 			return "", nil, e
 		}
 		if invalid {
 			return "", nil, device.Error(messageIPv6DNSLANInvalid)
 		}
-		iface, valid := r.str("interface")
+		iface, valid := r.Str("interface")
 		if actual := r["actual-interface"]; actual != "" {
 			iface = actual
 		}
@@ -173,25 +158,25 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 	if iface == "" || iface == "all" {
 		return "", nil, device.Error(messageIPv6DNSLANUnique)
 	}
-	rows, err := d.strictList(ctx, rosIPv6ND, "disabled", "invalid", "dynamic", "dns", "dns-servers")
+	rows, err := d.StrictList(ctx, ros.PathIPv6ND, "disabled", "invalid", "dynamic", "dns", "dns-servers")
 	if err != nil {
 		return "", nil, err
 	}
 	selected := []Row{}
 	seen := map[string]bool{}
 	for _, r := range rows {
-		if iface, ok := r.str("interface"); !ok || iface == "" {
+		if iface, ok := r.Str("interface"); !ok || iface == "" {
 			return "", nil, device.Error(messageIPv6DNSNDInterface)
 		}
-		if r.text("interface") != iface && !r.is("interface", "all") {
+		if r.Text("interface") != iface && !r.Is("interface", "all") {
 			continue
 		}
-		if id, ok := r.str(".id"); !ok || !rosIDPattern.MatchString(id) || seen[id] {
+		if id, ok := r.Str(".id"); !ok || !ros.IDPattern.MatchString(id) || seen[id] {
 			return "", nil, device.Error(messageIPv6DNSNDID)
 		}
-		seen[r.id()] = true
+		seen[r.ID()] = true
 		for _, key := range []string{"dynamic", "invalid", "disabled"} {
-			flag, e := ipv6DNSFlag(r, key)
+			flag, e := ros.IPv6DNSFlag(r, key)
 			if e != nil {
 				return "", nil, e
 			}
@@ -199,7 +184,7 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 				return "", nil, device.Error(messageIPv6DNSNDDynamic)
 			}
 		}
-		if !slices.Contains([]string{"yes", "self", "no"}, r.text("advertise-dns")) {
+		if !slices.Contains([]string{"yes", "self", "no"}, r.Text("advertise-dns")) {
 			return "", nil, device.Error(messageIPv6DNSNDMode)
 		}
 		if _, e := ipv6DNSServers(r); e != nil {
@@ -207,26 +192,26 @@ func readIPv6DNS(ctx context.Context, d *RouterOS, gateway string) (string, []Ro
 		}
 		selected = append(selected, r)
 	}
-	slices.SortFunc(selected, func(a, b Row) int { return strings.Compare(a.id(), b.id()) })
+	slices.SortFunc(selected, func(a, b Row) int { return strings.Compare(a.ID(), b.ID()) })
 	return iface, selected, nil
 }
 func ipv6DNSEntries(d *RouterOS, rows []Row) []IPv6DNSEntry {
 	out := []IPv6DNSEntry{}
 	for _, r := range rows {
-		out = append(out, IPv6DNSEntry{r.id(), d.ownershipSnapshot(rosIPv6ND, r)})
+		out = append(out, IPv6DNSEntry{r.ID(), d.OwnershipSnapshot(ros.PathIPv6ND, r)})
 	}
 	return out
 }
 func ipv6DNSEffective(rows []Row, iface string) []Row {
 	out := []Row{}
 	for _, r := range rows {
-		if r.is("interface", iface) && ipv6Enabled(r) {
+		if r.Is("interface", iface) && ipv6Enabled(r) {
 			out = append(out, r)
 		}
 	}
 	if len(out) == 0 {
 		for _, r := range rows {
-			if r.is("interface", "all") && ipv6Enabled(r) {
+			if r.Is("interface", "all") && ipv6Enabled(r) {
 				out = append(out, r)
 			}
 		}
@@ -237,7 +222,7 @@ func ipv6DNSConstraints(rows []Row, iface string) error {
 	for _, scope := range []string{iface, "all"} {
 		n := 0
 		for _, r := range rows {
-			if r.is("interface", scope) {
+			if r.Is("interface", scope) {
 				n++
 			}
 		}
@@ -249,7 +234,7 @@ func ipv6DNSConstraints(rows []Row, iface string) error {
 		}
 	}
 	for _, r := range ipv6DNSEffective(rows, iface) {
-		if r.is("interface", "all") && !r.is("advertise-dns", "no") {
+		if r.Is("interface", "all") && !r.Is("advertise-dns", "no") {
 			return device.Error(messageIPv6DNSShared)
 		}
 	}
@@ -273,19 +258,19 @@ func ipv6DNSCLI(text string) string {
 	if ipv6DNSBare.MatchString(text) {
 		return text
 	}
-	return ScriptString(text)
+	return ros.ScriptString(text)
 }
 func ipv6DNSOverride(rows []Row, iface string) string {
 	shared := []Row{}
 	for _, r := range rows {
-		if r.is("interface", iface) {
+		if r.Is("interface", iface) {
 			return ""
 		}
-		if r.is("interface", "all") {
+		if r.Is("interface", "all") {
 			shared = append(shared, r)
 		}
 	}
-	if len(shared) != 1 || !ipv6Enabled(shared[0]) || shared[0].is("advertise-dns", "no") {
+	if len(shared) != 1 || !ipv6Enabled(shared[0]) || shared[0].Is("advertise-dns", "no") {
 		return ""
 	}
 	skip := device.StringSet("interface", "advertise-dns", "disabled", "comment", "dynamic", "invalid", "default", "running")
@@ -335,26 +320,26 @@ func InspectIPv6DNS(ctx context.Context, desired *Desired, scope DNSCheck, d *Ro
 		p.Interface = iface
 		entries := ipv6DNSEntries(d, rows)
 		p.Evidence = &IPv6DNSEvidence{scope.Gateway, iface, scope, entries}
-		effective := rowIDs(ipv6DNSEffective(rows, iface))
+		effective := ros.RowIDs(ipv6DNSEffective(rows, iface))
 		for _, r := range rows {
-			pending := effective[r.id()] && !r.is("advertise-dns", "no")
+			pending := effective[r.ID()] && !r.Is("advertise-dns", "no")
 			detail, status := messageIPv6DNSNoChange, "synced"
 			if pending {
 				detail, status = messageIPv6DNSPendingItem, "pending"
-			} else if r.is("interface", "all") && !effective[r.id()] && ipv6Enabled(r) {
+			} else if r.Is("interface", "all") && !effective[r.ID()] && ipv6Enabled(r) {
 				detail = messageIPv6DNSOverridden
 			}
 			servers, _ := ipv6DNSServers(r)
-			p.Items = append(p.Items, IPv6DNSItem{r.id(), iface, r.text("interface"), r.text("advertise-dns"), servers, status, detail})
+			p.Items = append(p.Items, IPv6DNSItem{r.ID(), iface, r.Text("interface"), r.Text("advertise-dns"), servers, status, detail})
 		}
 		p.FixCommand = ipv6DNSOverride(rows, iface)
 		if e := ipv6DNSConstraints(rows, iface); e != nil {
 			return e
 		}
-		after := cloneRows(rows)
+		after := ros.CloneRows(rows)
 		pending := []Row{}
 		for i, r := range rows {
-			if r.is("interface", iface) && ipv6Enabled(r) && !r.is("advertise-dns", "no") {
+			if r.Is("interface", iface) && ipv6Enabled(r) && !r.Is("advertise-dns", "no") {
 				pending = append(pending, r)
 				after[i]["advertise-dns"] = "no"
 			}
@@ -365,7 +350,7 @@ func InspectIPv6DNS(ctx context.Context, desired *Desired, scope DNSCheck, d *Ro
 			p.Status, p.Message = "pending", fmt.Sprintf(messageIPv6DNSPending, iface)
 		}
 		for _, r := range pending {
-			p.Ops = append(p.Ops, &IPv6DNSUpdate{OpHead: OpHead{Kind: "ipv6_dns_update", Summary: fmt.Sprintf(messageIPv6DNSSummary, iface)}, ID: r.id(), Interface: iface, SourceInterface: r.text("interface"), TargetDNS: desired.Server, Gateway: scope.Gateway, Scope: scope, Values: Row{"advertise-dns": "no"}, ExpectedRows: entries, Expected: d.ownershipSnapshot(rosIPv6ND, r), Check: p.Check})
+			p.Ops = append(p.Ops, &IPv6DNSUpdate{OpHead: OpHead{Kind: "ipv6_dns_update", Summary: fmt.Sprintf(messageIPv6DNSSummary, iface)}, ID: r.ID(), Interface: iface, SourceInterface: r.Text("interface"), TargetDNS: desired.Server, Gateway: scope.Gateway, Scope: scope, Values: Row{"advertise-dns": "no"}, ExpectedRows: entries, Expected: d.OwnershipSnapshot(ros.PathIPv6ND, r), Check: p.Check})
 		}
 		return nil
 	}()
@@ -408,14 +393,14 @@ func (d *RouterOS) ApplyIPv6DNS(ctx context.Context, op IPv6DNSUpdate) (ROSUndo,
 	if iface != op.Interface || !reflect.DeepEqual(ipv6DNSEntries(d, rows), op.ExpectedRows) {
 		return ROSUndo{}, device.Error(messageIPv6DNSPreviewChanged)
 	}
-	r := findRow(rows, op.ID)
-	if r == nil || !r.is("interface", iface) || !ipv6Enabled(r) || !slices.Contains([]string{"yes", "self"}, r.text("advertise-dns")) || !reflect.DeepEqual(op.Values, Row{"advertise-dns": "no"}) || !reflect.DeepEqual(d.ownershipSnapshot(rosIPv6ND, r), op.Expected) {
+	r := ros.FindRow(rows, op.ID)
+	if r == nil || !r.Is("interface", iface) || !ipv6Enabled(r) || !slices.Contains([]string{"yes", "self"}, r.Text("advertise-dns")) || !reflect.DeepEqual(op.Values, Row{"advertise-dns": "no"}) || !reflect.DeepEqual(d.OwnershipSnapshot(ros.PathIPv6ND, r), op.Expected) {
 		return ROSUndo{}, device.Error(messageIPv6DNSTargetChanged)
 	}
 	if e := ctx.Err(); e != nil {
 		return ROSUndo{}, e
 	}
-	undo, err := d.transaction(ctx, []ROSChange{{Method: "PATCH", Path: rosIPv6ND, ID: op.ID, Values: Row{"advertise-dns": "no"}, Expected: marshalRow(op.Expected)}})
+	undo, err := d.Transaction(ctx, []ROSChange{{Method: "PATCH", Path: ros.PathIPv6ND, ID: op.ID, Values: Row{"advertise-dns": "no"}, Expected: ros.MarshalRow(op.Expected)}})
 	if err == nil {
 		err = ctx.Err()
 	}
@@ -445,7 +430,7 @@ func VerifyIPv6DNS(ctx context.Context, d *RouterOS, check *IPv6DNSCheck) error 
 		return device.Error(messageIPv6DNSReadback)
 	}
 	for _, r := range ipv6DNSEffective(rows, iface) {
-		if !r.is("advertise-dns", "no") {
+		if !r.Is("advertise-dns", "no") {
 			return device.Error(messageIPv6DNSStillOn)
 		}
 	}

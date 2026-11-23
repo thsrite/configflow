@@ -28,14 +28,6 @@ func TestR12TypedNATContract(t *testing.T) {
 	if len(decoded[0]) != 4 || string(decoded[0]["manual"]) != "false" {
 		t.Fatalf("Stage JSON presence differs: %s", raw)
 	}
-	d := NewRouterOSWithHTTP("", nil)
-	done := d.ReuseAddressReads()
-	defer done()
-	d.addressReads["L"] = addressProof{Rows: []Row{{".id": "*1"}}}
-	d.InvalidateAddressReads()
-	if len(d.addressReads) != 0 {
-		t.Fatal("exported invalidation kept a proof")
-	}
 	if !reflect.DeepEqual(sync.DstRemove, []ROSResource{}) {
 		t.Fatal("typed operation changed required empty arrays")
 	}

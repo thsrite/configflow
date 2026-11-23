@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ros"
 	"encoding/hex"
 	"encoding/json"
 	"reflect"
@@ -80,7 +81,7 @@ func FuzzR10IPv6Input(f *testing.F) {
 		}
 		var row Row
 		if json.Unmarshal(data, &row) == nil {
-			_ = StableIPv6Row(row)
+			_ = ros.StableIPv6Row(row)
 		}
 	})
 }
@@ -96,8 +97,8 @@ func TestR10IPv6AddressMathPython(t *testing.T) {
 		t.Fatal(err, string(raw))
 	}
 	for i, row := range rows {
-		if got := StableIPv6Row(row); !reflect.DeepEqual(got, expected[i]) {
-			t.Errorf("%s: got=%v Python=%v", row.text("address"), got, expected[i])
+		if got := ros.StableIPv6Row(row); !reflect.DeepEqual(got, expected[i]) {
+			t.Errorf("%s: got=%v Python=%v", row.Text("address"), got, expected[i])
 		}
 	}
 	for _, text := range []string{"fe80::4%eth0", "fe80::4%eth0/64", "fe80::4%eth0/128"} {

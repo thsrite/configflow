@@ -55,8 +55,8 @@ func TestO36bNATAndEmptyOwnerRuntimeBoundary(t *testing.T) {
 				}
 				after, _ := json.Marshal(fake.Snapshot().Tables)
 				if shutdown {
-					if !errors.Is(err, context.Canceled) || len(fake.Calls()) != 0 || !bytes.Equal(before, after) || d.natListTouched || len(journal) != 0 {
-						t.Fatalf("stopped owner changed device/journal/evidence: err=%v touched=%t", err, d.natListTouched)
+					if !errors.Is(err, context.Canceled) || len(fake.Calls()) != 0 || !bytes.Equal(before, after) || d.NATListTouched() || len(journal) != 0 {
+						t.Fatalf("stopped owner changed device/journal/evidence: err=%v touched=%t", err, d.NATListTouched())
 					}
 				} else if err != nil || !bytes.Equal(before, after) {
 					t.Fatalf("disconnected write/restore failed: %v", err)

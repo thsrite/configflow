@@ -1,4 +1,4 @@
-package routers
+package ros
 
 import (
 	"bytes"
@@ -22,59 +22,48 @@ import (
 )
 
 const (
-	rosTimeout        = 10 * time.Second
-	rosPingTimeout    = 4 * time.Second
-	rosRoutes         = "/ip/route"
-	rosIPv6Routes     = "/ipv6/route"
-	rosNAT            = "/ip/firewall/nat"
-	rosMangle         = "/ip/firewall/mangle"
-	rosFilter         = "/ip/firewall/filter"
-	rosNetwatch       = "/tool/netwatch"
-	rosDHCPNetworks   = "/ip/dhcp-server/network"
-	rosAddresses      = "/ip/firewall/address-list"
-	rosDHCPServers    = "/ip/dhcp-server"
-	rosDHCPLeases     = "/ip/dhcp-server/lease"
-	rosDHCPOptions    = "/ip/dhcp-server/option"
-	rosDHCPOptionSets = "/ip/dhcp-server/option/sets"
-	rosDHCPMatchers   = "/ip/dhcp-server/matcher"
+	Timeout            = 10 * time.Second
+	rosPingTimeout     = 4 * time.Second
+	PathRoutes         = "/ip/route"
+	PathIPv6Routes     = "/ipv6/route"
+	PathFilter         = "/ip/firewall/filter"
+	PathNetwatch       = "/tool/netwatch"
+	PathDHCPNetworks   = "/ip/dhcp-server/network"
+	PathAddresses      = "/ip/firewall/address-list"
+	PathDHCPServers    = "/ip/dhcp-server"
+	PathDHCPLeases     = "/ip/dhcp-server/lease"
+	PathDHCPOptions    = "/ip/dhcp-server/option"
+	PathDHCPOptionSets = "/ip/dhcp-server/option/sets"
+	PathDHCPMatchers   = "/ip/dhcp-server/matcher"
 )
 
 var (
-	rosRoutePaths     = []string{rosRoutes, rosIPv6Routes}
-	rosSingleRowPaths = []string{rosAddresses, pdLists, rosRoutes, rosIPv6Routes}
-	rosRouteFields    = map[string]bool{
+	rosRoutePaths     = []string{PathRoutes, PathIPv6Routes}
+	rosSingleRowPaths = []string{PathAddresses, PathIPv6AddressLists, PathRoutes, PathIPv6Routes}
+	RouteFields       = map[string]bool{
 		"dst-address": true, "gateway": true, "routing-table": true, "pref-src": true,
 		"blackhole": true, "check-gateway": true, "distance": true, "scope": true,
 		"target-scope": true, "vrf-interface": true, "suppress-hw-offload": true,
 		"disabled": true, "comment": true,
 	}
-	rosReadOnly = map[string]bool{".id": true, "dynamic": true, "invalid": true, "bytes": true,
+	ReadOnlyFields = map[string]bool{".id": true, "dynamic": true, "invalid": true, "bytes": true,
 		"packets": true, "creation-time": true}
-	rosRouteEvidence = map[string]bool{
+	RouteEvidence = map[string]bool{
 		"dst-address": true, "gateway": true, "routing-table": true, "pref-src": true,
 		"blackhole": true, "check-gateway": true, "distance": true, "scope": true,
 		"target-scope": true, "vrf-interface": true, "suppress-hw-offload": true,
 		"disabled": true, "comment": true, ".id": true, "immediate-gw": true,
 		"active": true, "inactive": true, "connect": true, "ecmp": true, "invalid": true,
 	}
-	rosIDPattern = regexp.MustCompile(`^\*[0-9a-fA-F]+$`)
+	IDPattern = regexp.MustCompile(`^\*[0-9a-fA-F]+$`)
 )
 
-// BatchDriver is implemented by devices that can apply selected operation
-// runs together and restore those undo records in bounded batches.
-type BatchDriver interface {
-	BatchKinds() []string
-	ApplyMany(context.Context, []json.RawMessage, func(json.RawMessage, json.RawMessage)) error
-	BatchRestorable(json.RawMessage) bool
-	RestoreMany(context.Context, []json.RawMessage, bool) []string
-}
-
-// RouterOS is a RouterOS 7 REST device driver. One release or read uses a
-// driver from one goroutine at a time (ReadState and the policy/DNS guard
-// manifests are per-driver state); only Ping may run concurrently.
-type RouterOS struct {
+// Client is a Client 7 REST device client. One release or read uses a
+// client from one goroutine at a time (the policy/DNS guard/IPv6 manifests
+// are per-client state); only Ping may run concurrently.
+type Client struct {
 	endpoint string
-	client   DeviceHTTP
+	client   device.DeviceHTTP
 	// password is only used to hide device echoes of it in manual route errors.
 	password string
 
@@ -99,56 +88,56 @@ type RouterOS struct {
 	ipv6PDGuardManifestSet bool
 }
 
-// NewRouterOS constructs a REST driver with requests-compatible device HTTP.
-func NewRouterOS(endpoint, username, password string, verifyTLS bool) *RouterOS {
-	driver := NewRouterOSWithHTTP(endpoint, devhttp.New(devhttp.Config{
+// NewClient constructs a REST driver with requests-compatible device HTTP.
+func NewClient(endpoint, username, password string, verifyTLS bool) *Client {
+	driver := NewClientWithHTTP(endpoint, devhttp.New(devhttp.Config{
 		VerifyTLS: verifyTLS, BasicAuth: true, Username: username, Password: password,
 	}))
 	driver.password = password
 	return driver
 }
 
-// NewRouterOSWithHTTP creates a driver with an injected device client.
-func NewRouterOSWithHTTP(endpoint string, client DeviceHTTP) *RouterOS {
-	return &RouterOS{endpoint: strings.TrimRight(endpoint, "/"), client: client,
+// NewClientWithHTTP creates a driver with an injected device client.
+func NewClientWithHTTP(endpoint string, client device.DeviceHTTP) *Client {
+	return &Client{endpoint: strings.TrimRight(endpoint, "/"), client: client,
 		routeBatch: 100, batchMin: 4}
 }
 
 // Vendor returns the stored vendor name.
-func (*RouterOS) Vendor() string { return "routeros" }
+func (*Client) Vendor() string { return "routeros" }
 
-// SupportsWrite reports that RouterOS REST can apply release operations.
-func (*RouterOS) SupportsWrite() bool { return true }
+// SupportsWrite reports that Client REST can apply release operations.
+func (*Client) SupportsWrite() bool { return true }
 
 // Close releases idle device connections.
-func (d *RouterOS) Close() {
+func (d *Client) Close() {
 	if d.client != nil {
 		d.client.Close()
 	}
 }
 
-// RenderScript is empty because RouterOS supports direct writes.
-func (*RouterOS) RenderScript([]json.RawMessage) (string, error) { return "", nil }
+// RenderScript is empty because Client supports direct writes.
+func (*Client) RenderScript([]json.RawMessage) (string, error) { return "", nil }
 
 // request sends one REST call; nil values means no body. The reply is
 // valid JSON ("{}" for an empty success).
-func (d *RouterOS) request(ctx context.Context, method, path string, values Row, timeout time.Duration) (json.RawMessage, error) {
+func (d *Client) Request(ctx context.Context, method, path string, values Row, timeout time.Duration) (json.RawMessage, error) {
 	// A nil Row would be the body "null".
 	if values == nil {
-		return d.send(ctx, method, path, nil, timeout)
+		return d.Send(ctx, method, path, nil, timeout)
 	}
-	return d.send(ctx, method, path, values, timeout)
+	return d.Send(ctx, method, path, values, timeout)
 }
 
-func (d *RouterOS) send(ctx context.Context, method, path string, body any, timeout time.Duration) (json.RawMessage, error) {
+func (d *Client) Send(ctx context.Context, method, path string, body any, timeout time.Duration) (json.RawMessage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	response, err := d.client.Do(ctx, method, d.endpoint+"/rest"+path, body, timeout)
 	if err != nil {
-		kind := KindRouter
+		kind := device.KindRouter
 		if method != "GET" {
-			kind = KindUncertainWrite
+			kind = device.KindUncertainWrite
 		}
 		return nil, device.KindError(kind, fmt.Sprintf(messageROSConnectError, devhttp.ClassOf(err)))
 	}
@@ -156,27 +145,27 @@ func (d *RouterOS) send(ctx context.Context, method, path string, body any, time
 		return nil, device.Error(messageROSAuthentication)
 	}
 	if response.Status == 403 {
-		return nil, device.Error(messageROSForbidden + permissionHelp)
+		return nil, device.Error(MessageROSForbidden + PermissionHelp)
 	}
 	if response.Status == 404 && method == "GET" {
-		return nil, device.KindError(KindMissingResource, messageROSRESTUnavailable)
+		return nil, device.KindError(device.KindMissingResource, messageROSRESTUnavailable)
 	}
 	if response.Status == 404 && method == "DELETE" {
 		return emptyReply, nil
 	}
 	if response.Status < 200 || response.Status >= 300 {
-		body := asRow(response.Body)
-		detail := d.safeDeviceText(strings.Join(device.NonEmpty([]string{body["message"], body["detail"]}), ": "))
-		kind := KindRouter
+		body := AsRow(response.Body)
+		detail := d.SafeDeviceText(strings.Join(device.NonEmpty([]string{body["message"], body["detail"]}), ": "))
+		kind := device.KindRouter
 		if method != "GET" && response.Status >= 500 {
-			kind = KindUncertainWrite
+			kind = device.KindUncertainWrite
 		}
 		message := fmt.Sprintf(messageROSHTTPStatus, method, path, response.Status)
 		if detail != "" {
 			message += "（" + detail + "）"
 		}
 		if permissionError.MatchString(detail) {
-			message = fmt.Sprintf(messageROSPermissionFailure, permissionHelp, message)
+			message = fmt.Sprintf(messageROSPermissionFailure, PermissionHelp, message)
 		}
 		return nil, device.KindError(kind, message)
 	}
@@ -184,9 +173,9 @@ func (d *RouterOS) send(ctx context.Context, method, path string, body any, time
 		return emptyReply, nil
 	}
 	if !json.Valid(response.Body) {
-		kind := KindRouter
+		kind := device.KindRouter
 		if method != "GET" {
-			kind = KindUncertainWrite
+			kind = device.KindUncertainWrite
 		}
 		return nil, device.KindError(kind, messageROSNotJSON)
 	}
@@ -195,10 +184,10 @@ func (d *RouterOS) send(ctx context.Context, method, path string, body any, time
 
 var emptyReply = json.RawMessage("{}")
 
-// asRow is an object reply as a row; nil when the reply is not an object.
-func asRow(raw json.RawMessage) Row {
+// AsRow is an object reply as a row; nil when the reply is not an object.
+func AsRow(raw json.RawMessage) Row {
 	var row Row
-	if replyKind(raw) != '{' || jsondecode.Decode(raw, &row) != nil {
+	if ReplyKind(raw) != '{' || jsondecode.Decode(raw, &row) != nil {
 		return nil
 	}
 	return row
@@ -207,7 +196,7 @@ func asRow(raw json.RawMessage) Row {
 // asRows is a list reply of objects; ok is false for any other shape.
 func asRows(raw json.RawMessage) ([]Row, bool) {
 	var rows []Row
-	if replyKind(raw) != '[' || jsondecode.Decode(raw, &rows) != nil || !rowsOK(rows) {
+	if ReplyKind(raw) != '[' || jsondecode.Decode(raw, &rows) != nil || !RowsOK(rows) {
 		return nil, false
 	}
 	return rows, true
@@ -218,9 +207,9 @@ func asRows(raw json.RawMessage) ([]Row, bool) {
 // no flag, list or name reader accepts, so the reader's own message stays.
 const nullMarker = "{}"
 
-// markNulls sets nullMarker for each of fields that is null in raw, the
+// MarkNulls sets nullMarker for each of fields that is null in raw, the
 // JSON object row was decoded from.
-func markNulls(row Row, raw json.RawMessage, fields []string) {
+func MarkNulls(row Row, raw json.RawMessage, fields []string) {
 	var members map[string]json.RawMessage
 	if row == nil || jsondecode.Unmarshal(raw, &members) != nil {
 		return
@@ -236,18 +225,18 @@ func markNulls(row Row, raw json.RawMessage, fields []string) {
 // nullMarker: a reader of the table refused that null before rows were text,
 // including the write paths (payload) that read rows through list.
 var rosNullFields = map[string][]string{
-	rosIPv6ND:         {"disabled", "dynamic", "invalid"},
-	rosDHCPNetworks:   {"dns-none"},
+	PathIPv6ND:        {"disabled", "dynamic", "invalid"},
+	PathDHCPNetworks:  {"dns-none"},
 	"/interface/list": {"include", "exclude"},
 }
 
 // strictList is list for a table whose readers refuse a null in fields.
-func (d *RouterOS) strictList(ctx context.Context, path string, fields ...string) ([]Row, error) {
+func (d *Client) StrictList(ctx context.Context, path string, fields ...string) ([]Row, error) {
 	return d.listMarked(ctx, path, fields)
 }
 
-// replyKind is the first byte of a JSON value.
-func replyKind(raw json.RawMessage) byte {
+// ReplyKind is the first byte of a JSON value.
+func ReplyKind(raw json.RawMessage) byte {
 	raw = bytes.TrimLeft(raw, " \t\r\n")
 	if len(raw) == 0 {
 		return 0
@@ -257,18 +246,18 @@ func replyKind(raw json.RawMessage) byte {
 
 var permissionError = regexp.MustCompile(`(?i)\bnot enough permissions\b`)
 
-func (d *RouterOS) get(ctx context.Context, path string, timeout time.Duration) (json.RawMessage, error) {
-	return d.request(ctx, "GET", path, nil, timeout)
+func (d *Client) Get(ctx context.Context, path string, timeout time.Duration) (json.RawMessage, error) {
+	return d.Request(ctx, "GET", path, nil, timeout)
 }
 
-func (d *RouterOS) list(ctx context.Context, path string) ([]Row, error) {
+func (d *Client) List(ctx context.Context, path string) ([]Row, error) {
 	return d.listMarked(ctx, path, nil)
 }
 
 // listMarked reads a table, keeping a null in fields (and in the table's
 // rosNullFields) as nullMarker.
-func (d *RouterOS) listMarked(ctx context.Context, path string, fields []string) ([]Row, error) {
-	value, err := d.get(ctx, path, rosTimeout)
+func (d *Client) listMarked(ctx context.Context, path string, fields []string) ([]Row, error) {
+	value, err := d.Get(ctx, path, Timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -283,17 +272,17 @@ func (d *RouterOS) listMarked(ctx context.Context, path string, fields []string)
 			return nil, device.Error(fmt.Sprintf(device.MessageROSListFormat, path))
 		}
 		for i, item := range items {
-			markNulls(rows[i], item, fields)
+			MarkNulls(rows[i], item, fields)
 		}
 	}
-	if path == rosFilter {
+	if path == PathFilter {
 		d.forwardFilterRows = rows
 	}
 	return rows, nil
 }
 
-// Ping reports whether one address answers two RouterOS probes.
-func (d *RouterOS) Ping(ctx context.Context, address, iface string, timeout time.Duration) (bool, error) {
+// Ping reports whether one address answers two Client probes.
+func (d *Client) Ping(ctx context.Context, address, iface string, timeout time.Duration) (bool, error) {
 	if timeout <= 0 {
 		timeout = rosPingTimeout
 	}
@@ -305,11 +294,11 @@ func (d *RouterOS) Ping(ctx context.Context, address, iface string, timeout time
 	if err != nil {
 		return false, device.Error(fmt.Sprintf(messageROSPingIncomplete, devhttp.ClassOf(err)))
 	}
-	if response.Status == 200 && replyKind(response.Body) == '[' {
+	if response.Status == 200 && ReplyKind(response.Body) == '[' {
 		var items []json.RawMessage
 		if jsondecode.Decode(response.Body, &items) == nil {
 			for _, item := range items {
-				if n, err := strconv.Atoi(asRow(item)["received"]); err == nil && n > 0 {
+				if n, err := strconv.Atoi(AsRow(item)["received"]); err == nil && n > 0 {
 					return true, nil
 				}
 			}
@@ -317,11 +306,11 @@ func (d *RouterOS) Ping(ctx context.Context, address, iface string, timeout time
 		}
 	}
 	var detail string
-	if row := asRow(response.Body); row != nil {
+	if row := AsRow(response.Body); row != nil {
 		detail = device.FirstNonEmpty(row["detail"], row["message"])
 	}
 	if permissionError.MatchString(detail) {
-		return false, device.KindError(KindPingNotPermitted, fmt.Sprintf(messageROSPingPermission, detail))
+		return false, device.KindError(device.KindPingNotPermitted, fmt.Sprintf(messageROSPingPermission, detail))
 	}
 	message := fmt.Sprintf(messageROSPingHTTPStatus, response.Status)
 	if detail != "" {
@@ -330,13 +319,13 @@ func (d *RouterOS) Ping(ctx context.Context, address, iface string, timeout time
 	return false, device.Error(message)
 }
 
-// Probe checks RouterOS version and which of its read-only surfaces are exposed.
-func (d *RouterOS) Probe(ctx context.Context) (*RouterInfo, error) {
-	value, err := d.get(ctx, "/system/resource", rosTimeout)
+// Probe checks Client version and which of its read-only surfaces are exposed.
+func (d *Client) Probe(ctx context.Context) (*device.RouterInfo, error) {
+	value, err := d.Get(ctx, "/system/resource", Timeout)
 	if err != nil {
 		return nil, err
 	}
-	resource := asRow(value)
+	resource := AsRow(value)
 	if resource == nil {
 		return nil, device.Error(messageROSSystemInfoFormat)
 	}
@@ -352,28 +341,28 @@ func (d *RouterOS) Probe(ctx context.Context) (*RouterInfo, error) {
 	}
 	capabilities := []string{}
 	for _, item := range []struct{ path, capability string }{
-		{rosRoutes, "routes"}, {rosNAT, "nat_bypass"}, {rosAddresses + "?list=cf-probe", "address_sets"},
+		{PathRoutes, "routes"}, {PathNAT, "nat_bypass"}, {PathAddresses + "?list=cf-probe", "address_sets"},
 	} {
-		if _, err := d.list(ctx, item.path); err == nil {
+		if _, err := d.List(ctx, item.path); err == nil {
 			capabilities = append(capabilities, item.capability)
 		} else if !device.IsRouterError(err) {
 			return nil, err
 		}
 	}
-	return &RouterInfo{Vendor: "routeros", Version: version, Model: resource["board-name"],
+	return &device.RouterInfo{Vendor: "routeros", Version: version, Model: resource["board-name"],
 		Capabilities: capabilities}, nil
 }
 
 var versionPattern = regexp.MustCompile(`^(\d+)\.(\d+)`)
 
-// ReadDHCPDNS reads DHCP networks and every RouterOS option layer that can
+// ReadDHCPDNS reads DHCP networks and every Client option layer that can
 // replace network option 6. Dynamic leases without custom options are ignored.
-func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
-	paths := []string{rosDHCPNetworks, rosDHCPServers, rosDHCPLeases, rosDHCPOptions, rosDHCPOptionSets, rosDHCPMatchers}
+func (d *Client) ReadDHCPDNS(ctx context.Context) (*device.DhcpDnsState, error) {
+	paths := []string{PathDHCPNetworks, PathDHCPServers, PathDHCPLeases, PathDHCPOptions, PathDHCPOptionSets, PathDHCPMatchers}
 	read := make([][]Row, len(paths))
 	for i, path := range paths {
 		// Python refused a null option or DNS list.
-		rows, err := d.strictList(ctx, path, "dhcp-option", "dhcp-option-set", "options", "dns-server", "dns-none")
+		rows, err := d.StrictList(ctx, path, "dhcp-option", "dhcp-option-set", "options", "dns-server", "dns-none")
 		if err != nil {
 			return nil, err
 		}
@@ -384,7 +373,7 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	activeServers := []Row{}
 	globals := []string{}
 	for _, server := range servers {
-		if !rosFlag(server["disabled"]) {
+		if !Flag(server["disabled"]) {
 			activeServers = append(activeServers, server)
 		}
 	}
@@ -393,10 +382,10 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	}
 	for _, server := range activeServers {
 		label := fmt.Sprintf(messageROSDHCPServiceLabel, device.FirstNonEmpty(device.FirstNonEmpty(server["name"], server[".id"]), device.MessageUnknown))
-		if !server.set("name") || rosFlag(server["invalid"]) {
+		if !server.Set("name") || Flag(server["invalid"]) {
 			globals = append(globals, fmt.Sprintf(messageROSDHCPIncomplete, label))
 		}
-		radius := strings.ToLower(server.textOr("use-radius", "no"))
+		radius := strings.ToLower(server.TextOr("use-radius", "no"))
 		if radius != "no" && radius != "false" && radius != "accounting" {
 			globals = append(globals, fmt.Sprintf(messageROSDHCPRadiusServer, label))
 		}
@@ -408,12 +397,12 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	}
 	disabledServers := map[string]bool{}
 	for _, server := range servers {
-		if rosFlag(server["disabled"]) {
-			disabledServers[server.text("name")] = true
+		if Flag(server["disabled"]) {
+			disabledServers[server.Text("name")] = true
 		}
 	}
 	for _, matcher := range matchers {
-		if rosFlag(matcher["disabled"]) || disabledServers[matcher.text("server")] {
+		if Flag(matcher["disabled"]) || disabledServers[matcher.Text("server")] {
 			continue
 		}
 		label := fmt.Sprintf(messageROSDHCPMatcherLabel, device.FirstNonEmpty(device.FirstNonEmpty(matcher["name"], matcher[".id"]), device.MessageUnknown))
@@ -429,7 +418,7 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	}
 	overrideLeases := []Row{}
 	for _, lease := range leases {
-		if rosFlag(lease["disabled"]) {
+		if Flag(lease["disabled"]) {
 			continue
 		}
 		optionNames, err := dhcpNamesField(lease, "dhcp-option")
@@ -440,20 +429,20 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(optionNames) > 0 || len(setNames) > 0 || rosFlag(lease["radius"]) {
+		if len(optionNames) > 0 || len(setNames) > 0 || Flag(lease["radius"]) {
 			overrideLeases = append(overrideLeases, lease)
 		}
 	}
 
-	entries := make([]*DhcpDnsEntry, 0, len(networks))
+	entries := make([]*device.DhcpDnsEntry, 0, len(networks))
 	seenIDs := map[string]bool{}
 	for _, row := range networks {
-		id := row.id()
+		id := row.ID()
 		if id == "" || seenIDs[id] {
 			return nil, device.Error(messageROSDHCPInvalidNetwork)
 		}
 		seenIDs[id] = true
-		network, ok := netipx.ParseNetwork4(row.text("address"), false)
+		network, ok := netipx.ParseNetwork4(row.Text("address"), false)
 		if !ok {
 			return nil, device.Error(messageROSDHCPNetworkAddress)
 		}
@@ -462,7 +451,7 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 			return nil, err
 		}
 		blockers := slices.Clone(globals)
-		if rosFlag(row["dynamic"]) || rosFlag(row["invalid"]) {
+		if Flag(row["dynamic"]) || Flag(row["invalid"]) {
 			blockers = append(blockers, messageROSDHCPNetworkBlocked)
 		}
 		networkLabel := fmt.Sprintf(messageROSDHCPNetworkLabel, network.String())
@@ -472,15 +461,15 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 		}
 		blockers = append(blockers, networkBlockers...)
 		for _, lease := range overrideLeases {
-			if disabledServers[lease.text("server")] {
+			if disabledServers[lease.Text("server")] {
 				continue
 			}
-			address, valid := netipx.ParseAddr4(lease.text("address"))
+			address, valid := netipx.ParseAddr4(lease.Text("address"))
 			if valid && !address.IsUnspecified() && !network.Contains(address) {
 				continue
 			}
 			label := fmt.Sprintf(messageROSDHCPLeaseLabel, device.FirstNonEmpty(device.FirstNonEmpty(lease["address"], lease[".id"]), device.MessageUnknown))
-			if rosFlag(lease["radius"]) {
+			if Flag(lease["radius"]) {
 				blockers = append(blockers, fmt.Sprintf(messageROSDHCPRadiusLease, label))
 			}
 			leaseBlockers, err := dhcpOverrides(lease, label, options, optionSets)
@@ -501,15 +490,15 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 			}
 			dns = append(dns, address.String())
 		}
-		if rosFlag(attributes["dns-none"]) {
+		if Flag(attributes["dns-none"]) {
 			dns = []string{}
 		}
 		attrs, err := json.Marshal(attributes)
 		if err != nil {
 			return nil, err
 		}
-		entries = append(entries, &DhcpDnsEntry{ID: id, Network: network.String(), DNS: dns,
-			Enabled: !rosFlag(row["disabled"]), Attributes: attrs, Blockers: device.Unique(blockers), DNSExplicit: true})
+		entries = append(entries, &device.DhcpDnsEntry{ID: id, Network: network.String(), DNS: dns,
+			Enabled: !Flag(row["disabled"]), Attributes: attrs, Blockers: device.Unique(blockers), DNSExplicit: true})
 	}
 	evidence := map[string][]Row{
 		"networks": dhcpEvidenceNetworks(networks),
@@ -524,7 +513,7 @@ func (d *RouterOS) ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DhcpDnsState{Entries: entries, Evidence: evidenceJSON}, nil
+	return &device.DhcpDnsState{Entries: entries, Evidence: evidenceJSON}, nil
 }
 
 func dhcpNetworkAttributes(row Row) (Row, error) {
@@ -547,7 +536,7 @@ func dhcpNetworkAttributes(row Row) (Row, error) {
 }
 
 func dhcpNames(value string) ([]string, error) {
-	items, ok := textList(value)
+	items, ok := TextList(value)
 	if !ok {
 		return nil, device.Error(messageROSDHCPNameList)
 	}
@@ -581,7 +570,7 @@ func dhcpOverrides(row Row, label string, options, optionSets []Row) ([]string, 
 	}
 	for _, name := range setNames {
 		matches := matchingRows(optionSets, name)
-		if len(matches) != 1 || !matches[0].has("options") {
+		if len(matches) != 1 || !matches[0].Has("options") {
 			blockers = append(blockers, fmt.Sprintf(messageROSDHCPOptionSet, label, name))
 			continue
 		}
@@ -615,7 +604,7 @@ func dhcpOverrides(row Row, label string, options, optionSets []Row) ([]string, 
 func matchingRows(rows []Row, name string) []Row {
 	matches := []Row{}
 	for _, row := range rows {
-		if row.text("name") == name || row.text(".id") == name {
+		if row.Text("name") == name || row.Text(".id") == name {
 			matches = append(matches, row)
 		}
 	}
@@ -664,7 +653,7 @@ func dhcpEvidence(rows []Row, fields []string) []Row {
 // comparable is the normalized form of one field value: flags as
 // "true"/"false", networks canonical. Row decoding already turned non-text
 // JSON into its compact form, so such values still compare by value.
-func comparable(key, text string) string {
+func Comparable(key, text string) string {
 	if key == "dns-none" && text == "" {
 		return "false"
 	}
@@ -686,14 +675,14 @@ func comparable(key, text string) string {
 
 func matches(row, values Row) bool {
 	for key, value := range values {
-		if key != "place-before" && comparable(key, row[key]) != comparable(key, value) {
+		if key != "place-before" && Comparable(key, row[key]) != Comparable(key, value) {
 			return false
 		}
 	}
 	return true
 }
 
-func referencedAddressLists(rows []Row) []string {
+func ReferencedAddressLists(rows []Row) []string {
 	names := map[string]bool{}
 	for _, row := range rows {
 		for _, key := range []string{"src-address-list", "dst-address-list"} {
@@ -711,7 +700,7 @@ func referencedAddressLists(rows []Row) []string {
 	return out
 }
 
-func selectFields(rows []Row, fields map[string]bool) []Row {
+func SelectFields(rows []Row, fields map[string]bool) []Row {
 	out := make([]Row, 0, len(rows))
 	for _, row := range rows {
 		selected := make(Row)
@@ -725,7 +714,7 @@ func selectFields(rows []Row, fields map[string]bool) []Row {
 	return out
 }
 
-func withoutCounters(rows []Row) []Row {
+func WithoutCounters(rows []Row) []Row {
 	out := make([]Row, 0, len(rows))
 	for _, row := range rows {
 		selected := make(Row, len(row))
@@ -739,21 +728,21 @@ func withoutCounters(rows []Row) []Row {
 	return out
 }
 
-// SetPolicyManifest installs the last RouterOS policy manifest for readback
+// SetPolicyManifest installs the last Client policy manifest for readback
 // filtering. The policy-routing module owns the contents of this value.
-func (d *RouterOS) SetPolicyManifest(raw json.RawMessage) {
+func (d *Client) SetPolicyManifest(raw json.RawMessage) {
 	d.policyManifest = slices.Clone(raw)
 	d.policyManifestSet = true
 }
 
 // SetDNSGuardManifest installs the DNS guard ownership snapshot for NAT
 // assessment. The DNS guard module owns the contents of this value.
-func (d *RouterOS) SetDNSGuardManifest(raw json.RawMessage) {
+func (d *Client) SetDNSGuardManifest(raw json.RawMessage) {
 	d.dnsGuardManifest = slices.Clone(raw)
 	d.dnsGuardManifestSet = true
 }
 
-type rosResourceManifest struct {
+type ResourceManifest struct {
 	ID     string `json:"id"`
 	Path   string `json:"path"`
 	Role   string `json:"role"`
@@ -761,10 +750,10 @@ type rosResourceManifest struct {
 }
 
 type rosManifest struct {
-	Resources []rosResourceManifest `json:"resources"`
+	Resources []ResourceManifest `json:"resources"`
 }
 
-func ownedHairpinIDs(raw json.RawMessage, rules []Row) map[string]bool {
+func OwnedHairpinIDs(raw json.RawMessage, rules []Row) map[string]bool {
 	var manifest rosManifest
 	if jsondecode.Unmarshal(raw, &manifest) != nil {
 		return nil
@@ -775,7 +764,7 @@ func ownedHairpinIDs(raw json.RawMessage, rules []Row) map[string]bool {
 			continue
 		}
 		for _, row := range rules {
-			if row.id() == entry.ID && maps.Equal(stableROSRow(rosNAT, row), entry.Config) {
+			if row.ID() == entry.ID && maps.Equal(StableRow(PathNAT, row), entry.Config) {
 				ids[entry.ID] = true
 				break
 			}
@@ -791,9 +780,9 @@ var rosPolicyRuntime = map[string]bool{
 	"uptime": true, "last-updated": true, "invalid": true, "timeout": true,
 }
 
-func configROSRow(row Row) Row {
+func ConfigROSRow(row Row) Row {
 	config := make(Row)
-	for key, value := range cloneRow(row) {
+	for key, value := range CloneRow(row) {
 		if !rosPolicyRuntime[key] {
 			config[key] = value
 		}
@@ -801,9 +790,9 @@ func configROSRow(row Row) Row {
 	return config
 }
 
-func stableROSRow(path string, row Row) Row {
+func StableRow(path string, row Row) Row {
 	fields := map[string]bool{}
-	if path == rosNetwatch {
+	if path == PathNetwatch {
 		for _, key := range []string{"name", "host", "port", "type", "interval", "timeout", "startup-delay",
 			"up-script", "down-script", "comment", "disabled"} {
 			fields[key] = true
@@ -811,36 +800,36 @@ func stableROSRow(path string, row Row) Row {
 	}
 	stable := make(Row)
 	for key, value := range row {
-		if path == rosNetwatch {
+		if path == PathNetwatch {
 			if !fields[key] {
 				continue
 			}
 		} else if strings.HasPrefix(key, ".") || slices.Contains([]string{"dynamic", "invalid", "bytes", "packets", "creation-time"}, key) {
 			continue
 		}
-		stable[key] = comparable(key, value)
+		stable[key] = Comparable(key, value)
 	}
 	return stable
 }
 
-func (d *RouterOS) filterPolicyMangle(state *NatContext) error {
+func (d *Client) FilterPolicyMangle(state *NatContext) error {
 	var manifest rosManifest
 	if err := devhttp.DecodeJSON(d.policyManifest, &manifest); err != nil {
 		return device.ErrNotPorted
 	}
 	proven := map[string]bool{}
 	for _, entry := range manifest.Resources {
-		if entry.Path != rosMangle {
+		if entry.Path != PathMangle {
 			continue
 		}
 		for _, row := range state.Mangle {
-			if row.id() == entry.ID && sameRow(configROSRow(row), configROSRow(entry.Config)) {
+			if row.ID() == entry.ID && SameRow(ConfigROSRow(row), ConfigROSRow(entry.Config)) {
 				proven[entry.ID] = true
 				break
 			}
 		}
 	}
-	state.Mangle = slices.DeleteFunc(state.Mangle, func(row Row) bool { return proven[row.id()] })
+	state.Mangle = slices.DeleteFunc(state.Mangle, func(row Row) bool { return proven[row.ID()] })
 	return nil
 }
 
@@ -855,14 +844,15 @@ type ROSChange struct {
 	KnownIDs  []string        `json:"known_ids,omitempty"`
 }
 
-// ROSUndo is the undo value returned from an applied RouterOS operation.
+// ROSUndo is the undo value returned from an applied Client operation.
 type ROSUndo struct {
 	Kind    string      `json:"kind"`
 	Changes []ROSChange `json:"changes"`
 }
 
-type rosCheck struct {
-	created Row    // response-proven configuration; private, never part of an undo wire record
+// Check describes a post-write readback verification against RouterOS.
+type Check struct {
+	Created Row    // response-proven configuration; private, never part of an undo wire record
 	Path    string `json:"path"`
 	ID      string `json:"id"`
 	Values  Row    `json:"values,omitempty"`
@@ -875,38 +865,38 @@ type rosScope struct {
 	Gateway string `json:"gateway"`
 }
 
-type rosOperation struct {
-	Kind           string          `json:"kind"`
-	ID             string          `json:"id"`
-	CIDR           string          `json:"cidr"`
-	Gateway        string          `json:"gateway"`
-	Comment        string          `json:"comment"`
-	Src            []string        `json:"src"`
-	Dst            []string        `json:"dst"`
-	AddDst         []string        `json:"add_dst"`
-	OutInterface   string          `json:"out_interface"`
-	DNS            []string        `json:"dns"`
-	Scope          *rosScope       `json:"scope"`
-	Expected       json.RawMessage `json:"expected"`
-	CheckedDHCPDNS *DhcpDnsState   `json:"checked_dhcp_dns"`
-	Changes        []ROSChange     `json:"changes"`
+type Operation struct {
+	Kind           string               `json:"kind"`
+	ID             string               `json:"id"`
+	CIDR           string               `json:"cidr"`
+	Gateway        string               `json:"gateway"`
+	Comment        string               `json:"comment"`
+	Src            []string             `json:"src"`
+	Dst            []string             `json:"dst"`
+	AddDst         []string             `json:"add_dst"`
+	OutInterface   string               `json:"out_interface"`
+	DNS            []string             `json:"dns"`
+	Scope          *rosScope            `json:"scope"`
+	Expected       json.RawMessage      `json:"expected"`
+	CheckedDHCPDNS *device.DhcpDnsState `json:"checked_dhcp_dns"`
+	Changes        []ROSChange          `json:"changes"`
 }
 
-// applyBase applies one base RouterOS release operation (routes, NAT, DHCP,
+// applyBase applies one base Client release operation (routes, NAT, DHCP,
 // ros_restore) and returns its compensation.
-func (d *RouterOS) applyBase(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+func (d *Client) ApplyBase(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	var op rosOperation
+	var op Operation
 	if err := jsondecode.Unmarshal(raw, &op); err != nil {
 		return nil, device.Error(device.MessageOperationFormat)
 	}
 	var result any
 	switch op.Kind {
 	case "ros_restore":
-		undo, err := d.restore(ctx, op.Changes)
+		undo, err := d.Restore(ctx, op.Changes)
 		if err != nil {
 			return nil, err
 		}
@@ -919,7 +909,7 @@ func (d *RouterOS) applyBase(ctx context.Context, raw json.RawMessage) (json.Raw
 		result = undo
 	case "route_add":
 		var err error
-		result, err = d.transaction(ctx, []ROSChange{{Method: "PUT", Path: rosRoutes, Values: Row{
+		result, err = d.Transaction(ctx, []ROSChange{{Method: "PUT", Path: PathRoutes, Values: Row{
 			"dst-address": op.CIDR, "gateway": op.Gateway, "comment": op.Comment, "disabled": "false",
 		}}})
 		if err != nil {
@@ -927,13 +917,13 @@ func (d *RouterOS) applyBase(ctx context.Context, raw json.RawMessage) (json.Raw
 		}
 	case "route_delete":
 		var err error
-		result, err = d.transaction(ctx, []ROSChange{{Method: "DELETE", Path: rosRoutes, ID: op.ID}})
+		result, err = d.Transaction(ctx, []ROSChange{{Method: "DELETE", Path: PathRoutes, ID: op.ID}})
 		if err != nil {
 			return nil, err
 		}
 	case "route_comment":
 		var err error
-		result, err = d.transaction(ctx, []ROSChange{{Method: "PATCH", Path: rosRoutes, ID: op.ID,
+		result, err = d.Transaction(ctx, []ROSChange{{Method: "PATCH", Path: PathRoutes, ID: op.ID,
 			Values: Row{"comment": op.Comment}}})
 		if err != nil {
 			return nil, err
@@ -960,7 +950,7 @@ func (d *RouterOS) applyBase(ctx context.Context, raw json.RawMessage) (json.Raw
 	return encoded, nil
 }
 
-func (d *RouterOS) applyDHCPDNSUpdate(ctx context.Context, op rosOperation) (ROSUndo, error) {
+func (d *Client) applyDHCPDNSUpdate(ctx context.Context, op Operation) (ROSUndo, error) {
 	if len(op.DNS) < 1 || len(op.DNS) > 2 {
 		return ROSUndo{}, device.Error(messageDHCPDNSCount)
 	}
@@ -983,63 +973,63 @@ func (d *RouterOS) applyDHCPDNSUpdate(ctx context.Context, op rosOperation) (ROS
 			return ROSUndo{}, err
 		}
 	}
-	entry, err := device.CheckedDNSTarget(DNSCheck{ID: op.Scope.ID, Network: op.Scope.Network, Gateway: op.Scope.Gateway}, checked)
+	entry, err := device.CheckedDNSTarget(device.DNSCheck{ID: op.Scope.ID, Network: op.Scope.Network, Gateway: op.Scope.Gateway}, checked)
 	if err != nil {
 		return ROSUndo{}, err
 	}
 	// The plan always records the previewed attributes; without them there is
 	// nothing to prove the network unchanged, so the write is refused.
 	expected, present := decodeRow(op.Expected)
-	if !present || !sameRow(dhcpAttributesRow(entry), expected) {
+	if !present || !SameRow(dhcpAttributesRow(entry), expected) {
 		return ROSUndo{}, device.Error(messageDHCPDNSDrift)
 	}
-	return d.transaction(ctx, []ROSChange{{Method: "PATCH", Path: rosDHCPNetworks, ID: entry.ID,
+	return d.Transaction(ctx, []ROSChange{{Method: "PATCH", Path: PathDHCPNetworks, ID: entry.ID,
 		Values: Row{"dns-server": strings.Join(dns, ","), "dns-none": "false"}}})
 }
 
-func (d *RouterOS) applyNATUpdate(ctx context.Context, op rosOperation) (ROSUndo, error) {
-	row, err := d.row(ctx, rosNAT, op.ID)
+func (d *Client) applyNATUpdate(ctx context.Context, op Operation) (ROSUndo, error) {
+	row, err := d.Row(ctx, PathNAT, op.ID)
 	if err != nil {
 		return ROSUndo{}, err
 	}
-	original := payload(rosNAT, row)
+	original := Payload(PathNAT, row)
 	if original == nil {
-		return ROSUndo{}, payloadError(rosNAT, row)
+		return ROSUndo{}, PayloadError(PathNAT, row)
 	}
 	expected, present := decodeRow(op.Expected)
-	if present && !sameRow(original, expected) {
+	if present && !SameRow(original, expected) {
 		return ROSUndo{}, device.Error(messageNATRuleDrift)
 	}
-	if !row.is("chain", "srcnat") || !row.is("action", "accept") {
+	if !row.Is("chain", "srcnat") || !row.Is("action", "accept") {
 		return ROSUndo{}, device.Error(messageNATTargetInvalid)
 	}
-	changes := []ROSChange{{Method: "PATCH", Path: rosNAT, ID: op.ID, Values: Row{"comment": op.Comment}}}
+	changes := []ROSChange{{Method: "PATCH", Path: PathNAT, ID: op.ID, Values: Row{"comment": op.Comment}}}
 	seen := map[string]bool{}
 	for _, cidr := range op.AddDst {
 		if seen[cidr] {
 			continue
 		}
 		seen[cidr] = true
-		values := cloneRow(original)
-		values["dst-address"], values["comment"], values["place-before"] = cidr, op.Comment, row.id()
+		values := CloneRow(original)
+		values["dst-address"], values["comment"], values["place-before"] = cidr, op.Comment, row.ID()
 		if op.OutInterface != "" {
 			values["out-interface"] = op.OutInterface
 		}
-		changes = append(changes, ROSChange{Method: "PUT", Path: rosNAT, Values: values})
+		changes = append(changes, ROSChange{Method: "PUT", Path: PathNAT, Values: values})
 	}
-	return d.transaction(ctx, changes)
+	return d.Transaction(ctx, changes)
 }
 
-func (d *RouterOS) applyNATAdd(ctx context.Context, op rosOperation) (ROSUndo, error) {
-	rows, err := d.list(ctx, rosNAT)
+func (d *Client) applyNATAdd(ctx context.Context, op Operation) (ROSUndo, error) {
+	rows, err := d.List(ctx, PathNAT)
 	if err != nil {
 		return ROSUndo{}, err
 	}
 	position := Row{}
 	if len(rows) > 0 {
-		position["place-before"] = rows[0].id()
+		position["place-before"] = rows[0].ID()
 	}
-	sources, err := collapseRouterNetworks(op.Src)
+	sources, err := CollapseRouterNetworks(op.Src)
 	if err != nil {
 		return ROSUndo{}, err
 	}
@@ -1064,13 +1054,13 @@ func (d *RouterOS) applyNATAdd(ctx context.Context, op rosOperation) (ROSUndo, e
 			if op.OutInterface != "" {
 				values["out-interface"] = op.OutInterface
 			}
-			changes = append(changes, ROSChange{Method: "PUT", Path: rosNAT, Values: values})
+			changes = append(changes, ROSChange{Method: "PUT", Path: PathNAT, Values: values})
 		}
 	}
-	return d.transaction(ctx, changes)
+	return d.Transaction(ctx, changes)
 }
 
-func collapseRouterNetworks(values []string) ([]string, error) {
+func CollapseRouterNetworks(values []string) ([]string, error) {
 	collapsed, err := netipx.Collapse(device.Networks(values))
 	if err != nil {
 		return nil, err
@@ -1082,7 +1072,7 @@ func collapseRouterNetworks(values []string) ([]string, error) {
 	return out, nil
 }
 
-func dhcpAttributesRow(entry *DhcpDnsEntry) Row {
+func dhcpAttributesRow(entry *device.DhcpDnsEntry) Row {
 	if entry == nil || len(entry.Attributes) == 0 {
 		return nil
 	}
@@ -1105,8 +1095,8 @@ func decodeRow(raw json.RawMessage) (Row, bool) {
 	return row, true
 }
 
-// cloneRow copies a row; the copy is never nil.
-func cloneRow(row Row) Row {
+// CloneRow copies a row; the copy is never nil.
+func CloneRow(row Row) Row {
 	if row == nil {
 		return Row{}
 	}
@@ -1116,40 +1106,40 @@ func cloneRow(row Row) Row {
 func isSingleRowPath(path string) bool { return slices.Contains(rosSingleRowPaths, path) }
 func isRoutePath(path string) bool     { return slices.Contains(rosRoutePaths, path) }
 
-func (d *RouterOS) find(ctx context.Context, path, id string) (Row, error) {
+func (d *Client) Find(ctx context.Context, path, id string) (Row, error) {
 	if !isSingleRowPath(path) {
-		rows, err := d.list(ctx, path)
+		rows, err := d.List(ctx, path)
 		if err != nil {
 			return nil, err
 		}
 		for _, row := range rows {
-			if row.id() == id {
+			if row.ID() == id {
 				return row, nil
 			}
 		}
 		return nil, nil
 	}
-	value, err := d.get(ctx, path+"/"+escapeROSPathID(id), rosTimeout)
+	value, err := d.Get(ctx, path+"/"+EscapePathID(id), Timeout)
 	if err != nil {
-		var rosErr *RouterError
-		if errors.As(err, &rosErr) && rosErr.Kind == KindMissingResource {
+		var rosErr *device.RouterError
+		if errors.As(err, &rosErr) && rosErr.Kind == device.KindMissingResource {
 			return nil, nil
 		}
 		return nil, err
 	}
-	row := asRow(value)
-	if !row.is(".id", id) {
+	row := AsRow(value)
+	if !row.Is(".id", id) {
 		return nil, device.Error(fmt.Sprintf(messageROSObjectFormat, path))
 	}
 	return row, nil
 }
 
-func escapeROSPathID(id string) string {
+func EscapePathID(id string) string {
 	return strings.ReplaceAll(url.PathEscape(id), "%2A", "*")
 }
 
-func (d *RouterOS) row(ctx context.Context, path, id string) (Row, error) {
-	row, err := d.find(ctx, path, id)
+func (d *Client) Row(ctx context.Context, path, id string) (Row, error) {
+	row, err := d.Find(ctx, path, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1159,29 +1149,29 @@ func (d *RouterOS) row(ctx context.Context, path, id string) (Row, error) {
 	return row, nil
 }
 
-func payload(path string, row Row) Row {
-	if rosFlag(row["dynamic"]) {
+func Payload(path string, row Row) Row {
+	if Flag(row["dynamic"]) {
 		return nil
 	}
 	if path == "/ipv6/nd" {
 		for _, key := range []string{"disabled", "dynamic", "invalid"} {
-			if flag, err := ipv6DNSFlag(row, key); err != nil || flag && key != "disabled" {
+			if flag, err := IPv6DNSFlag(row, key); err != nil || flag && key != "disabled" {
 				return nil
 			}
 		}
-		if rosFlag(row["invalid"]) {
+		if Flag(row["invalid"]) {
 			return nil
 		}
 		_ = row["disabled"] // retained in the returned payload below
 	}
 	if isRoutePath(path) {
-		return selectFields([]Row{row}, rosRouteFields)[0]
+		return SelectFields([]Row{row}, RouteFields)[0]
 	}
 	if path == "/system/script" {
-		return selectFields([]Row{row}, device.StringSet("name", "source", "policy", "comment", "dont-require-permissions"))[0]
+		return SelectFields([]Row{row}, device.StringSet("name", "source", "policy", "comment", "dont-require-permissions"))[0]
 	}
 	if path == "/system/scheduler" {
-		return selectFields([]Row{row}, device.StringSet("name", "on-event", "interval", "start-time", "start-date", "policy", "comment", "disabled"))[0]
+		return SelectFields([]Row{row}, device.StringSet("name", "on-event", "interval", "start-time", "start-date", "policy", "comment", "disabled"))[0]
 	}
 	if path == "/ipv6/dhcp-client" {
 		out := make(Row)
@@ -1195,35 +1185,35 @@ func payload(path string, row Row) Row {
 		}
 		return out
 	}
-	if path == rosDHCPNetworks {
+	if path == PathDHCPNetworks {
 		attrs, _ := dhcpNetworkAttributes(row)
 		return attrs
 	}
-	if path == rosNetwatch {
-		return selectFields([]Row{row}, device.StringSet("name", "host", "port", "type", "interval", "timeout", "startup-delay", "up-script", "down-script", "comment", "disabled"))[0]
+	if path == PathNetwatch {
+		return SelectFields([]Row{row}, device.StringSet("name", "host", "port", "type", "interval", "timeout", "startup-delay", "up-script", "down-script", "comment", "disabled"))[0]
 	}
 	out := make(Row)
 	for key, value := range row {
-		if !rosReadOnly[key] && !strings.HasPrefix(key, ".") {
+		if !ReadOnlyFields[key] && !strings.HasPrefix(key, ".") {
 			out[key] = value
 		}
 	}
 	return out
 }
 
-// payloadError is why payload refused row: RouterOS-generated rows (and
+// PayloadError is why payload refused row: Client-generated rows (and
 // invalid IPv6 ND entries) are never taken over, changed or removed.
-func payloadError(path string, row Row) error {
-	if path == rosIPv6ND {
+func PayloadError(path string, row Row) error {
+	if path == PathIPv6ND {
 		for _, key := range []string{"disabled", "dynamic", "invalid"} {
-			if _, err := ipv6DNSFlag(row, key); err != nil {
+			if _, err := IPv6DNSFlag(row, key); err != nil {
 				return err
 			}
 		}
 	}
-	if path == rosIPv6ND && !rosFlag(row["dynamic"]) {
-		dynamic, _ := ipv6DNSFlag(row, "dynamic")
-		invalid, _ := ipv6DNSFlag(row, "invalid")
+	if path == PathIPv6ND && !Flag(row["dynamic"]) {
+		dynamic, _ := IPv6DNSFlag(row, "dynamic")
+		invalid, _ := IPv6DNSFlag(row, "invalid")
 		if dynamic || invalid {
 			return device.Error(messageInvalidIPv6ND)
 		}
@@ -1231,8 +1221,8 @@ func payloadError(path string, row Row) error {
 	return device.Error(messageROSDynamicObject)
 }
 
-func (d *RouterOS) ownershipSnapshot(path string, row Row) Row {
-	values := payload(path, row)
+func (d *Client) OwnershipSnapshot(path string, row Row) Row {
+	values := Payload(path, row)
 	if values == nil {
 		return nil
 	}
@@ -1249,15 +1239,15 @@ func (d *RouterOS) ownershipSnapshot(path string, row Row) Row {
 	out := make(Row, len(defaults))
 	for key, value := range defaults {
 		if key != "place-before" {
-			out[key] = comparable(key, value)
+			out[key] = Comparable(key, value)
 		}
 	}
 	return out
 }
 
-func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSChange, restoring bool, beforeCreate ...func([]Row) error) (rosCheck, error) {
+func (d *Client) Perform(ctx context.Context, change ROSChange, undo *[]ROSChange, restoring bool, beforeCreate ...func([]Row) error) (Check, error) {
 	method, path := change.Method, change.Path
-	values := cloneRow(change.Values)
+	values := CloneRow(change.Values)
 	if values == nil {
 		values = Row{}
 	}
@@ -1266,148 +1256,148 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 		var rows []Row
 		if isSingleRowPath(path) {
 			var err error
-			current, err = d.find(ctx, path, change.ID)
+			current, err = d.Find(ctx, path, change.ID)
 			if err != nil {
-				return rosCheck{}, err
+				return Check{}, err
 			}
 			if isRoutePath(path) && current == nil {
-				rows, err = d.scoped(ctx, path, values)
+				rows, err = d.Scoped(ctx, path, values)
 				if err != nil {
-					return rosCheck{}, err
+					return Check{}, err
 				}
 			}
 		} else {
 			var err error
-			rows, err = d.list(ctx, path)
+			rows, err = d.List(ctx, path)
 			if err != nil {
-				return rosCheck{}, err
+				return Check{}, err
 			}
-			current = findRow(rows, change.ID)
+			current = FindRow(rows, change.ID)
 		}
 		if current != nil {
-			if payload(path, current) == nil {
-				return rosCheck{}, payloadError(path, current)
+			if Payload(path, current) == nil {
+				return Check{}, PayloadError(path, current)
 			}
-			if !rowsEqual(d.ownershipSnapshot(path, current), change.Expected) {
-				return rosCheck{}, device.Error(messageRollbackChanged)
+			if !RowsEqual(d.OwnershipSnapshot(path, current), change.Expected) {
+				return Check{}, device.Error(messageRollbackChanged)
 			}
 			delete(values, "place-before")
-			return rosCheck{Path: path, ID: change.ID, Values: values}, nil
+			return Check{Path: path, ID: change.ID, Values: values}, nil
 		}
 		if isRoutePath(path) && hasUnexpectedRoute(rows, values, change.KnownIDs) {
-			return rosCheck{}, device.Error(messageRollbackRouteConflict)
+			return Check{}, device.Error(messageRollbackRouteConflict)
 		}
-		if values.has("place-before") && findRow(rows, values["place-before"]) == nil {
-			return rosCheck{}, device.Error(messageRollbackNATOrder)
+		if values.Has("place-before") && FindRow(rows, values["place-before"]) == nil {
+			return Check{}, device.Error(messageRollbackNATOrder)
 		}
-		return d.perform(ctx, ROSChange{Method: "PUT", Path: path, Values: values}, undo, restoring, beforeCreate...)
+		return d.Perform(ctx, ROSChange{Method: "PUT", Path: path, Values: values}, undo, restoring, beforeCreate...)
 	}
 
 	if method == "PUT" {
 		beforeRows := []Row{}
 		var err error
 		if isSingleRowPath(path) {
-			beforeRows, err = d.scoped(ctx, path, values)
+			beforeRows, err = d.Scoped(ctx, path, values)
 		} else {
-			beforeRows, err = d.list(ctx, path)
+			beforeRows, err = d.List(ctx, path)
 		}
 		if err != nil {
-			return rosCheck{}, err
+			return Check{}, err
 		}
 		for _, guard := range beforeCreate {
 			if err := guard(beforeRows); err != nil {
-				return rosCheck{}, err
+				return Check{}, err
 			}
 		}
-		before := rowIDs(beforeRows)
-		result, err := d.request(ctx, method, path, values, rosTimeout)
+		before := RowIDs(beforeRows)
+		result, err := d.Request(ctx, method, path, values, Timeout)
 		if err != nil {
-			if device.RouterErrorKind(err) == KindUncertainWrite {
-				return rosCheck{}, device.RollbackError(fmt.Sprintf(messageUncertainWrite, err))
+			if device.RouterErrorKind(err) == device.KindUncertainWrite {
+				return Check{}, device.RollbackError(fmt.Sprintf(messageUncertainWrite, err))
 			}
-			return rosCheck{}, err
+			return Check{}, err
 		}
-		newRow := asRow(result)
-		rowID, idOK := newRow.str(".id")
-		if !idOK || !rosIDPattern.MatchString(rowID) || before[rowID] || isSingleRowPath(path) && !inScope(path, newRow, values) {
-			return rosCheck{}, device.RollbackError(fmt.Sprintf(device.MessageUncertainRouteWrite, path))
+		newRow := AsRow(result)
+		rowID, idOK := newRow.Str(".id")
+		if !idOK || !IDPattern.MatchString(rowID) || before[rowID] || isSingleRowPath(path) && !inScope(path, newRow, values) {
+			return Check{}, device.RollbackError(fmt.Sprintf(device.MessageUncertainRouteWrite, path))
 		}
-		expected := d.ownershipSnapshot(path, mergeRows(values, newRow))
-		*undo = append(*undo, ROSChange{Method: "DELETE", Path: path, ID: rowID, Expected: marshalRow(expected)})
-		return rosCheck{Path: path, ID: rowID, Values: values, created: cloneRow(newRow)}, nil
+		expected := d.OwnershipSnapshot(path, MergeRows(values, newRow))
+		*undo = append(*undo, ROSChange{Method: "DELETE", Path: path, ID: rowID, Expected: MarshalRow(expected)})
+		return Check{Path: path, ID: rowID, Values: values, Created: CloneRow(newRow)}, nil
 	}
 
 	id := change.ID
-	resource := path + "/" + escapeROSPathID(id)
+	resource := path + "/" + EscapePathID(id)
 	var row Row
 	var rows []Row
 	if isSingleRowPath(path) {
 		var err error
-		row, err = d.find(ctx, path, id)
+		row, err = d.Find(ctx, path, id)
 		if err != nil {
-			return rosCheck{}, err
+			return Check{}, err
 		}
 		if row != nil {
 			rows = []Row{row}
 		}
 		if isRoutePath(path) && row != nil && method == "DELETE" {
-			neighbors, err := d.scoped(ctx, path, row)
+			neighbors, err := d.Scoped(ctx, path, row)
 			if err != nil {
-				return rosCheck{}, err
+				return Check{}, err
 			}
 			for _, neighbor := range neighbors {
-				if neighbor.id() != id {
+				if neighbor.ID() != id {
 					rows = append(rows, neighbor)
 				}
 			}
 		}
 	} else {
 		var err error
-		rows, err = d.list(ctx, path)
+		rows, err = d.List(ctx, path)
 		if err != nil {
-			return rosCheck{}, err
+			return Check{}, err
 		}
-		row = findRow(rows, id)
+		row = FindRow(rows, id)
 	}
 	if row == nil && method == "DELETE" {
 		if restoring {
-			current, err := d.get(ctx, resource, rosTimeout)
+			current, err := d.Get(ctx, resource, Timeout)
 			if err != nil {
-				if device.RouterErrorKind(err) == KindMissingResource {
-					return rosCheck{Path: path, ID: id, Absent: true}, nil
+				if device.RouterErrorKind(err) == device.KindMissingResource {
+					return Check{Path: path, ID: id, Absent: true}, nil
 				}
-				return rosCheck{}, err
+				return Check{}, err
 			}
-			row = asRow(current)
-			if !row.is(".id", id) {
-				return rosCheck{}, device.Error(messageRollbackUnreadable)
+			row = AsRow(current)
+			if !row.Is(".id", id) {
+				return Check{}, device.Error(messageRollbackUnreadable)
 			}
 		} else {
-			return rosCheck{}, device.Error(fmt.Sprintf(messageROSNotFound, path, id))
+			return Check{}, device.Error(fmt.Sprintf(messageROSNotFound, path, id))
 		}
 	}
 	if row == nil {
-		return rosCheck{}, device.Error(fmt.Sprintf(messageROSNotFound, path, id))
+		return Check{}, device.Error(fmt.Sprintf(messageROSNotFound, path, id))
 	}
-	original := payload(path, row)
+	original := Payload(path, row)
 	if original == nil {
-		return rosCheck{}, payloadError(path, row)
+		return Check{}, PayloadError(path, row)
 	}
-	snapshot := d.ownershipSnapshot(path, row)
+	snapshot := d.OwnershipSnapshot(path, row)
 	unchanged, unchangedSet := decodeRow(change.Unchanged)
 	if restoring && unchangedSet && maps.Equal(snapshot, unchanged) {
-		return rosCheck{Path: path, ID: id, Values: values}, nil
+		return Check{Path: path, ID: id, Values: values}, nil
 	}
 	expected, expectedSet := decodeRow(change.Expected)
 	if expectedSet && !maps.Equal(snapshot, expected) {
-		return rosCheck{}, device.Error(messageChangedDuringWrite)
+		return Check{}, device.Error(messageChangedDuringWrite)
 	}
 	if restoring && !expectedSet {
-		return rosCheck{}, device.Error(messageRollbackSnapshot)
+		return Check{}, device.Error(messageRollbackSnapshot)
 	}
 	if method == "PATCH" {
 		if matches(row, values) {
-			return rosCheck{Path: path, ID: id, Values: values}, nil
+			return Check{Path: path, ID: id, Values: values}, nil
 		}
 		previous := make(Row, len(values))
 		for key := range values {
@@ -1417,46 +1407,46 @@ func (d *RouterOS) perform(ctx context.Context, change ROSChange, undo *[]ROSCha
 				previous[key] = ""
 			}
 		}
-		next := mergeRows(row, values)
+		next := MergeRows(row, values)
 		*undo = append(*undo, ROSChange{Method: "PATCH", Path: path, ID: id, Values: previous,
-			Expected: marshalRow(d.ownershipSnapshot(path, next)), Unchanged: marshalRow(snapshot)})
-		if _, err := d.request(ctx, method, resource, values, rosTimeout); err != nil {
-			return rosCheck{}, err
+			Expected: MarshalRow(d.OwnershipSnapshot(path, next)), Unchanged: MarshalRow(snapshot)})
+		if _, err := d.Request(ctx, method, resource, values, Timeout); err != nil {
+			return Check{}, err
 		}
-		return rosCheck{Path: path, ID: id, Values: values}, nil
+		return Check{Path: path, ID: id, Values: values}, nil
 	}
 	if method == "DELETE" {
-		if path == rosNAT || path == rosFilter {
-			index := indexOfRow(rows, id)
+		if path == PathNAT || path == PathFilter {
+			index := IndexOfRow(rows, id)
 			if index >= 0 && index+1 < len(rows) {
-				original["place-before"] = rows[index+1].id()
+				original["place-before"] = rows[index+1].ID()
 			}
 		}
 		*undo = append(*undo, ROSChange{Method: "RESTORE", Path: path, ID: id, Values: original,
-			Expected: marshalRow(snapshot), KnownIDs: rowIDList(rows)})
-		if _, err := d.request(ctx, method, resource, nil, rosTimeout); err != nil {
-			return rosCheck{}, err
+			Expected: MarshalRow(snapshot), KnownIDs: rowIDList(rows)})
+		if _, err := d.Request(ctx, method, resource, nil, Timeout); err != nil {
+			return Check{}, err
 		}
-		return rosCheck{Path: path, ID: id, Absent: true}, nil
+		return Check{Path: path, ID: id, Absent: true}, nil
 	}
-	return rosCheck{}, device.Error(fmt.Sprintf(messageUnsupportedWrite, method))
+	return Check{}, device.Error(fmt.Sprintf(messageUnsupportedWrite, method))
 }
 
-func (d *RouterOS) scoped(ctx context.Context, path string, values Row) ([]Row, error) {
+func (d *Client) Scoped(ctx context.Context, path string, values Row) ([]Row, error) {
 	field := "dst-address"
-	if path == rosAddresses || path == pdLists {
+	if path == PathAddresses || path == PathIPv6AddressLists {
 		field = "list"
 	}
 	query := url.Values{field: []string{values[field]}}.Encode()
-	return d.list(ctx, path+"?"+query)
+	return d.List(ctx, path+"?"+query)
 }
 
 func inScope(path string, row, values Row) bool {
-	if path == rosAddresses || path == pdLists {
-		return row.text("list") == values["list"]
+	if path == PathAddresses || path == PathIPv6AddressLists {
+		return row.Text("list") == values["list"]
 	}
-	return comparable("dst-address", row["dst-address"]) == comparable("dst-address", values["dst-address"]) &&
-		device.FirstNonEmpty(row.text("routing-table"), "main") == device.FirstNonEmpty(values["routing-table"], "main")
+	return Comparable("dst-address", row["dst-address"]) == Comparable("dst-address", values["dst-address"]) &&
+		device.FirstNonEmpty(row.Text("routing-table"), "main") == device.FirstNonEmpty(values["routing-table"], "main")
 }
 
 func hasUnexpectedRoute(rows []Row, values Row, known []string) bool {
@@ -1465,36 +1455,36 @@ func hasUnexpectedRoute(rows []Row, values Row, known []string) bool {
 		knownSet[id] = true
 	}
 	for _, row := range rows {
-		if !knownSet[row.id()] && row.text("dst-address") == values["dst-address"] &&
-			device.FirstNonEmpty(row.text("routing-table"), "main") == device.FirstNonEmpty(values["routing-table"], "main") {
+		if !knownSet[row.ID()] && row.Text("dst-address") == values["dst-address"] &&
+			device.FirstNonEmpty(row.Text("routing-table"), "main") == device.FirstNonEmpty(values["routing-table"], "main") {
 			return true
 		}
 	}
 	return false
 }
 
-func findRow(rows []Row, id string) Row {
+func FindRow(rows []Row, id string) Row {
 	for _, row := range rows {
-		if row.id() == id {
+		if row.ID() == id {
 			return row
 		}
 	}
 	return nil
 }
 
-func indexOfRow(rows []Row, id string) int {
+func IndexOfRow(rows []Row, id string) int {
 	for i, row := range rows {
-		if row.id() == id {
+		if row.ID() == id {
 			return i
 		}
 	}
 	return -1
 }
 
-func rowIDs(rows []Row) map[string]bool {
+func RowIDs(rows []Row) map[string]bool {
 	ids := make(map[string]bool, len(rows))
 	for _, row := range rows {
-		ids[row.id()] = true
+		ids[row.ID()] = true
 	}
 	return ids
 }
@@ -1502,13 +1492,13 @@ func rowIDs(rows []Row) map[string]bool {
 func rowIDList(rows []Row) []string {
 	ids := make([]string, 0, len(rows))
 	for _, row := range rows {
-		ids = append(ids, row.id())
+		ids = append(ids, row.ID())
 	}
 	return ids
 }
 
-func mergeRows(left, right Row) Row {
-	out := cloneRow(left)
+func MergeRows(left, right Row) Row {
+	out := CloneRow(left)
 	if out == nil {
 		out = Row{}
 	}
@@ -1518,7 +1508,7 @@ func mergeRows(left, right Row) Row {
 	return out
 }
 
-func marshalRow(row Row) json.RawMessage {
+func MarshalRow(row Row) json.RawMessage {
 	if row == nil {
 		return nil
 	}
@@ -1526,20 +1516,20 @@ func marshalRow(row Row) json.RawMessage {
 	return data
 }
 
-// sameRow compares two rows; a nil row equals only a nil row.
-func sameRow(left, right Row) bool { return (left == nil) == (right == nil) && maps.Equal(left, right) }
+// SameRow compares two rows; a nil row equals only a nil row.
+func SameRow(left, right Row) bool { return (left == nil) == (right == nil) && maps.Equal(left, right) }
 
-func rowsEqual(left Row, raw json.RawMessage) bool {
+func RowsEqual(left Row, raw json.RawMessage) bool {
 	right, present := decodeRow(raw)
 	return present && maps.Equal(left, right)
 }
 
-func (d *RouterOS) verifyChange(ctx context.Context, check rosCheck) error {
+func (d *Client) VerifyChange(ctx context.Context, check Check) error {
 	var row Row
 	var rows []Row
 	if isSingleRowPath(check.Path) {
 		var err error
-		row, err = d.find(ctx, check.Path, check.ID)
+		row, err = d.Find(ctx, check.Path, check.ID)
 		if err != nil {
 			return err
 		}
@@ -1548,22 +1538,22 @@ func (d *RouterOS) verifyChange(ctx context.Context, check rosCheck) error {
 		}
 	} else {
 		var err error
-		rows, err = d.list(ctx, check.Path)
+		rows, err = d.List(ctx, check.Path)
 		if err != nil {
 			return err
 		}
-		row = findRow(rows, check.ID)
+		row = FindRow(rows, check.ID)
 	}
 	return checkWritten(check, row, rows)
 }
 
-func (d *RouterOS) restore(ctx context.Context, changes []ROSChange) (ROSUndo, error) {
+func (d *Client) Restore(ctx context.Context, changes []ROSChange) (ROSUndo, error) {
 	failures := []string{}
 	undo := []ROSChange{}
 	for _, change := range changes {
-		check, err := d.perform(ctx, change, &undo, true)
+		check, err := d.Perform(ctx, change, &undo, true)
 		if err == nil {
-			err = d.verifyChange(ctx, check)
+			err = d.VerifyChange(ctx, check)
 		}
 		if err != nil {
 			if device.IsRouterError(err) {
@@ -1580,11 +1570,11 @@ func (d *RouterOS) restore(ctx context.Context, changes []ROSChange) (ROSUndo, e
 	return ROSUndo{Kind: "ros_restore", Changes: undo}, nil
 }
 
-func (d *RouterOS) transaction(ctx context.Context, changes []ROSChange) (ROSUndo, error) {
+func (d *Client) Transaction(ctx context.Context, changes []ROSChange) (ROSUndo, error) {
 	undo := []ROSChange{}
 	for index := 0; index < len(changes); {
 		end := index
-		for end < len(changes) && changes[end].Method == "PUT" && changes[end].Path == rosNAT {
+		for end < len(changes) && changes[end].Method == "PUT" && changes[end].Path == PathNAT {
 			end++
 		}
 		if end-index >= d.batchMin {
@@ -1595,9 +1585,9 @@ func (d *RouterOS) transaction(ctx context.Context, changes []ROSChange) (ROSUnd
 			index += handled
 		}
 		for stop := max(end, index+1); index < stop && index < len(changes); index++ {
-			check, err := d.perform(ctx, changes[index], &undo, false)
+			check, err := d.Perform(ctx, changes[index], &undo, false)
 			if err == nil {
-				err = d.verifyChange(ctx, check)
+				err = d.VerifyChange(ctx, check)
 			}
 			if err != nil {
 				return ROSUndo{}, d.compensate(ctx, err, undo)
@@ -1608,13 +1598,13 @@ func (d *RouterOS) transaction(ctx context.Context, changes []ROSChange) (ROSUnd
 	return ROSUndo{Kind: "ros_restore", Changes: undo}, nil
 }
 
-func (d *RouterOS) compensate(ctx context.Context, cause error, undo []ROSChange) error {
+func (d *Client) compensate(ctx context.Context, cause error, undo []ROSChange) error {
 	if len(undo) == 0 {
 		return cause
 	}
 	changes := slices.Clone(undo)
 	slices.Reverse(changes)
-	_, rollback := d.restore(lifecycle.Detach(ctx), changes)
+	_, rollback := d.Restore(lifecycle.Detach(ctx), changes)
 	if rollback != nil {
 		return device.RollbackError(cause.Error() + "；" + rollback.Error())
 	}

@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -127,11 +128,11 @@ func ipv6Owned(raw json.RawMessage, live IPv6Snapshot, fake bool) ([]IPv6Resourc
 	}
 	rows := map[string][]Row{}
 	for _, row := range live["routes"] {
-		rows[row.id()] = append(rows[row.id()], row)
+		rows[row.ID()] = append(rows[row.ID()], row)
 	}
 	seen := map[string]bool{}
 	for _, entry := range entries {
-		if entry.Path != rosIPv6Routes || !rosIDPattern.MatchString(entry.ID) || entry.Config == nil || (!fake && ipv6Key(entry.Config) == "") {
+		if entry.Path != ros.PathIPv6Routes || !ros.IDPattern.MatchString(entry.ID) || entry.Config == nil || (!fake && ipv6Key(entry.Config) == "") {
 			return nil, device.Error(entryError)
 		}
 		if seen[entry.ID] || len(rows[entry.ID]) > 1 {
@@ -139,20 +140,20 @@ func ipv6Owned(raw json.RawMessage, live IPv6Snapshot, fake bool) ([]IPv6Resourc
 		}
 		seen[entry.ID] = true
 		// Check manifest self-consistency even if the recorded object disappeared.
-		if fake && (ipv6Key(entry.Config) != spec.CIDR || entry.Config.text("gateway") != spec.Gateway) {
+		if fake && (ipv6Key(entry.Config) != spec.CIDR || entry.Config.Text("gateway") != spec.Gateway) {
 			return nil, device.Error(messageIPv6FakeSpec)
 		}
 		if len(rows[entry.ID]) == 0 {
 			continue
 		}
 		row := rows[entry.ID][0]
-		if !sameRow(StableIPv6Row(row), entry.Config) {
+		if !ros.SameRow(ros.StableIPv6Row(row), entry.Config) {
 			if fake {
 				return nil, device.Error(messageIPv6FakeExternal)
 			}
-			return nil, device.Error(fmt.Sprintf(messageIPv6RoutesExternal, entry.Config.text("dst-address")))
+			return nil, device.Error(fmt.Sprintf(messageIPv6RoutesExternal, entry.Config.Text("dst-address")))
 		}
-		if policyFlag(row["dynamic"]) || policyFlag(row["connect"]) {
+		if ros.PolicyFlag(row["dynamic"]) || ros.PolicyFlag(row["connect"]) {
 			return nil, device.Error(dynamic)
 		}
 		out = append(out, entry)
@@ -167,10 +168,10 @@ func ipv6Targets(live IPv6Snapshot, cidr string, ignore map[string]bool) []Row {
 	}
 	out := []Row{}
 	for _, row := range live["routes"] {
-		if ignore[row.id()] || row.textOr("routing-table", "main") != "main" {
+		if ignore[row.ID()] || row.TextOr("routing-table", "main") != "main" {
 			continue
 		}
-		p, ok := ipv6Network(row.text("dst-address"))
+		p, ok := ipv6Network(row.Text("dst-address"))
 		if ok && (p == target || ipv6Enabled(row) && p.Bits() > target.Bits() && p.Overlaps(target)) {
 			out = append(out, row)
 		}
@@ -202,7 +203,7 @@ func ipv6LocalOverlap(live IPv6Snapshot, cidr string) bool {
 		return true
 	}
 	for _, row := range live["addresses"] {
-		if p, ok := ipv6Network(row.text("address")); ok && p.Overlaps(target) {
+		if p, ok := ipv6Network(row.Text("address")); ok && p.Overlaps(target) {
 			return true
 		}
 	}
@@ -219,7 +220,7 @@ func ipv6FakeValues(r *Router, spec *IPv6RouteSpec) Row {
 // This only reads devices and assigns a private copy of the stored driver manifest.
 func InspectIPv6FakeIP(ctx context.Context, config *model.Profile, r *Router, agent *model.Agent, host IPv6Host, d *RouterOS) *IPv6FakeIPPlan {
 	s := IPv6FakeIPSettings(config)
-	previous := guardRaw(r.Extra["ipv6_fakeip_state"])
+	previous := ros.GuardRaw(r.Extra["ipv6_fakeip_state"])
 	d.SetIPv6FakeIPManifest(previous)
 	plan := &IPv6FakeIPPlan{IPv6FakeIPReport: IPv6FakeIPReport{Enabled: s.Enabled, Status: "disabled", Items: []IPv6RouteItem{}, Blockers: []string{}, Warnings: []string{}}, Ops: []Op{}, Evidence: IPv6EvidenceSet{}}
 	if s.Error != "" {
@@ -278,15 +279,15 @@ func InspectIPv6FakeIP(ctx context.Context, config *model.Profile, r *Router, ag
 		if len(candidates) > 0 {
 			if len(candidates) == 1 && gateway != "" && ipv6Routes(candidates[0], *spec) {
 				row := candidates[0]
-				borrowed = &IPv6Borrowed{row.id(), StableIPv6Row(row)}
-				if !rosIDPattern.MatchString(row.id()) || policyFlag(row["dynamic"]) || policyFlag(row["connect"]) {
+				borrowed = &IPv6Borrowed{row.ID(), ros.StableIPv6Row(row)}
+				if !ros.IDPattern.MatchString(row.ID()) || ros.PolicyFlag(row["dynamic"]) || ros.PolicyFlag(row["connect"]) {
 					plan.Blockers = append(plan.Blockers, messageIPv6FakeStatic)
 				}
 			} else {
 				plan.Blockers = append(plan.Blockers, messageIPv6FakeConflict)
 			}
 		}
-		good = len(owned) == 1 && ipv6Correct(findRow(live["routes"], owned[0].ID), *spec)
+		good = len(owned) == 1 && ipv6Correct(ros.FindRow(live["routes"], owned[0].ID), *spec)
 		if len(owned) > 0 && borrowed != nil {
 			plan.Blockers = append(plan.Blockers, messageIPv6FakeBoth)
 		}
@@ -406,7 +407,7 @@ type IPv6RoutesUndo struct {
 func ipv6Scoped(live IPv6Snapshot, cidrs, ids map[string]bool) IPv6Snapshot {
 	out := IPv6Snapshot{"routes": {}, "addresses": append([]Row{}, live["addresses"]...), "ipv4_addresses": append([]Row{}, live["ipv4_addresses"]...)}
 	for _, row := range live["routes"] {
-		if cidrs[ipv6Key(row)] || ids[row.id()] {
+		if cidrs[ipv6Key(row)] || ids[row.ID()] {
 			out["routes"] = append(out["routes"], row)
 		}
 	}
@@ -418,7 +419,7 @@ func ipv6ResourcesEqual(a, b []IPv6Resource) bool { return reflect.DeepEqual(a, 
 // information skips this stage and preserves its ownership instead of blocking IPv4.
 func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, desired *Desired, agent *model.Agent, host IPv6Host, d *RouterOS) *IPv6RoutesPlan {
 	s := IPv6RoutesSettings(config)
-	previous := guardRaw(r.Extra["ipv6_routes_state"])
+	previous := ros.GuardRaw(r.Extra["ipv6_routes_state"])
 	d.SetIPv6RoutesManifest(previous)
 	plan := &IPv6RoutesPlan{IPv6RoutesReport: IPv6RoutesReport{Enabled: s.Enabled, Status: "disabled", Items: []IPv6RouteItem{}, Skip: []string{}, Warnings: []string{}}, Ops: []Op{}, Evidence: IPv6EvidenceSet{}}
 	wanted := []ProxyCIDR{}
@@ -470,7 +471,7 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 	}
 	rowsByID := map[string]Row{}
 	for _, row := range live["routes"] {
-		rowsByID[row.id()] = row
+		rowsByID[row.ID()] = row
 	}
 	mine := map[string][]IPv6Resource{}
 	mineOrder := []string{}
@@ -508,7 +509,7 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 	replaced, yielded := false, false
 	foreignByCIDR := map[string][]Row{}
 	for _, row := range live["routes"] {
-		if !ids[row.id()] && row.textOr("routing-table", "main") == "main" {
+		if !ids[row.ID()] && row.TextOr("routing-table", "main") == "main" {
 			key := ipv6Key(row)
 			foreignByCIDR[key] = append(foreignByCIDR[key], row)
 		}
@@ -523,10 +524,10 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 				retained = append(retained, ours...)
 				item(v.CIDR, v.Sources, gateway, "conflict", messageIPv6RoutesOverlap)
 			case len(foreign) > 0:
-				if len(foreign) == 1 && rosIDPattern.MatchString(foreign[0].id()) && ipv6Correct(foreign[0], IPv6RouteSpec{v.CIDR, gateway}) {
+				if len(foreign) == 1 && ros.IDPattern.MatchString(foreign[0].ID()) && ipv6Correct(foreign[0], IPv6RouteSpec{v.CIDR, gateway}) {
 					deletes = append(deletes, ours...)
 					yielded = yielded || len(ours) > 0
-					borrowed = append(borrowed, IPv6Borrowed{foreign[0].id(), StableIPv6Row(foreign[0])})
+					borrowed = append(borrowed, IPv6Borrowed{foreign[0].ID(), ros.StableIPv6Row(foreign[0])})
 					item(v.CIDR, v.Sources, gateway, "borrowed", messageIPv6RoutesBorrowed)
 				} else {
 					retained = append(retained, ours...)
@@ -534,7 +535,7 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 				}
 			case len(ours) == 1 && ipv6Configured(rowsByID[ours[0].ID], gateway):
 				retained = append(retained, ours...)
-				if policyFlag(rowsByID[ours[0].ID]["active"]) {
+				if ros.PolicyFlag(rowsByID[ours[0].ID]["active"]) {
 					active = append(active, v.CIDR)
 					item(v.CIDR, v.Sources, gateway, "synced", messageIPv6RoutesSynced)
 				} else {
@@ -570,7 +571,7 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 		} else {
 			deletes = append(deletes, entries...)
 		}
-		item(cidr, nil, entries[0].Config.text("gateway"), status, detail)
+		item(cidr, nil, entries[0].Config.Text("gateway"), status, detail)
 	}
 	if incomplete && len(mine) > 0 {
 		plan.Warnings = append(plan.Warnings, messageIPv6RoutesIncompleteWarning)
@@ -641,7 +642,7 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 		}
 		del := []IPv6RouteDelete{}
 		for _, e := range deletes {
-			del = append(del, IPv6RouteDelete{"route_delete", e.ID, e.Config.text("dst-address")})
+			del = append(del, IPv6RouteDelete{"route_delete", e.ID, e.Config.Text("dst-address")})
 		}
 		scoped := []string{}
 		for cidr := range scope {
@@ -654,7 +655,7 @@ func InspectIPv6Routes(ctx context.Context, config *model.Profile, r *Router, de
 }
 
 func ipv6HostError(d *RouterOS, agent *model.Agent, text string) string {
-	secrets := []any{d.password}
+	secrets := []any{d.Password()}
 	if agent != nil {
 		secrets = append(secrets, agent.Token)
 	}

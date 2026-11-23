@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/devhttp"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -18,14 +19,13 @@ import (
 )
 
 const (
-	rosTables    = "/routing/table"
 	rosSettings  = "/routing/settings"
-	rosListNames = rosAddresses + "#names"
+	rosListNames = ros.PathAddresses + "#names"
 	// ROSPolicyPrefix identifies the owner comment, never an ownership proof.
 	ROSPolicyPrefix = "cf-ros-policy-"
 )
 
-var policyPaths = []string{rosAddresses, rosTables, rosMangle, rosRoutes, rosNAT, "/routing/rule", rosFilter, "/ip/firewall/raw", "/ip/vrf"}
+var policyPaths = []string{ros.PathAddresses, ros.PathTables, ros.PathMangle, ros.PathRoutes, ros.PathNAT, "/routing/rule", ros.PathFilter, "/ip/firewall/raw", "/ip/vrf"}
 var policyNamePatterns = []string{"CF_Source_Proxy_IP_[0-9]+", "CF_Destination_Proxy_IP_[0-9]+", "CF_Bypass_IP_[0-9]+"}
 
 // ROSPolicySnapshot contains complete raw configuration and runtime evidence.
@@ -71,25 +71,6 @@ type ROSPolicySpec struct {
 type ROSPolicyManifest struct {
 	Spec      *ROSPolicySpec `json:"spec"`
 	Resources []ROSResource  `json:"resources"`
-}
-
-// Manifest distinguishes an untouched driver attribute from an explicit null.
-type Manifest struct {
-	Set   bool
-	Value json.RawMessage
-}
-
-// Manifests carries feature-owned resource proofs to release persistence.
-type Manifests struct {
-	Policy, DNSGuard, IPv6FakeIP, IPv6Routes, IPv6PDGuard Manifest
-}
-
-// ManifestHolder exposes the per-release manifest updates (RouterOS only).
-type ManifestHolder interface{ Manifests() Manifests }
-
-// Manifests returns independent copies so callers cannot mutate driver proofs.
-func (d *RouterOS) Manifests() Manifests {
-	return Manifests{IPv6PDGuard: Manifest{d.ipv6PDGuardManifestSet, slices.Clone(d.ipv6PDGuardManifest)}, IPv6FakeIP: Manifest{d.ipv6FakeIPManifestSet, slices.Clone(d.ipv6FakeIPManifest)}, IPv6Routes: Manifest{d.ipv6RoutesManifestSet, slices.Clone(d.ipv6RoutesManifest)}, Policy: Manifest{d.policyManifestSet, slices.Clone(d.policyManifest)}, DNSGuard: Manifest{d.dnsGuardManifestSet, slices.Clone(d.dnsGuardManifest)}}
 }
 
 // ROSPolicyCheck is the post-release proof, including migrated old objects.
@@ -166,7 +147,7 @@ func ROSPolicyDigest(value json.RawMessage) (string, error) {
 }
 
 // ROSPolicyConfigRow copies configuration fields, preserving unknown matchers.
-func ROSPolicyConfigRow(row Row) Row { return configROSRow(row) }
+func ROSPolicyConfigRow(row Row) Row { return ros.ConfigROSRow(row) }
 
 // ROSPolicyNetworkOverlap reuses the shared collapsed, binary-search index.
 func ROSPolicyNetworkOverlap(networks []netip.Prefix) func(netip.Prefix) bool {
@@ -213,8 +194,8 @@ func subtractFamily(from, minus []netip.Prefix) []netip.Prefix {
 			for _, piece := range pieces {
 				if !piece.Overlaps(minus[i]) {
 					parts = append(parts, piece)
-				} else if !subnetOf(piece, minus[i]) {
-					parts = append(parts, addressExclude(piece, minus[i])...)
+				} else if !ros.SubnetOf(piece, minus[i]) {
+					parts = append(parts, ros.AddressExclude(piece, minus[i])...)
 				}
 			}
 			pieces = parts

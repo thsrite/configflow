@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -18,10 +19,10 @@ func guardConnected(ctx *NatContext, address netip.Addr) (string, string, error)
 	selected := []Row{}
 	var network netip.Prefix
 	for _, row := range ctx.Routes {
-		if device.FirstNonEmpty(row.text("routing-table"), "main") != "main" || !row.flag("connect") || !row.flag("active") || row.flag("disabled") {
+		if device.FirstNonEmpty(row.Text("routing-table"), "main") != "main" || !row.Flag("connect") || !row.Flag("active") || row.Flag("disabled") {
 			continue
 		}
-		n, ok := netipx.ParseNetwork4(row.text("dst-address"), false)
+		n, ok := netipx.ParseNetwork4(row.Text("dst-address"), false)
 		if !ok || !n.Contains(address) {
 			continue
 		}
@@ -41,10 +42,10 @@ func guardConnected(ctx *NatContext, address netip.Addr) (string, string, error)
 		return "", "", device.Error(messageGuardMultiple)
 	}
 	row := selected[0]
-	iface := rosInterface(row.text("gateway"))
+	iface := ros.Interface(row.Text("gateway"))
 	immediate := iface
-	if row.set("immediate-gw") {
-		immediate = rosInterface(row.text("immediate-gw"))
+	if row.Set("immediate-gw") {
+		immediate = ros.Interface(row.Text("immediate-gw"))
 	}
 	if iface == "" || iface != immediate {
 		return "", "", device.Error(messageGuardInterface)
@@ -185,13 +186,13 @@ func DNSGuardResources(spec *DNSGuardSpec) []DNSGuardCreate {
 		return items
 	}
 	for _, cidr := range spec.Bypass {
-		items = append(items, DNSGuardCreate{Role: "bypass:" + cidr, Path: rosAddresses, Values: Row{"list": DNSGuardBypassList, "address": cidr, "comment": dnsGuardPrefix + "bypass", "disabled": "false"}})
+		items = append(items, DNSGuardCreate{Role: "bypass:" + cidr, Path: ros.PathAddresses, Values: Row{"list": DNSGuardBypassList, "address": cidr, "comment": dnsGuardPrefix + "bypass", "disabled": "false"}})
 	}
 	for _, protocol := range []string{"udp", "tcp"} {
-		items = append(items, DNSGuardCreate{Role: "hairpin-" + protocol, Path: rosNAT, Values: Row{"chain": "srcnat", "action": "masquerade", "out-interface": spec.Interface, "src-address": spec.Network, "dst-address": spec.Agent, "protocol": protocol, "dst-port": "53", "comment": dnsGuardPrefix + "hairpin", "disabled": "false"}})
+		items = append(items, DNSGuardCreate{Role: "hairpin-" + protocol, Path: ros.PathNAT, Values: Row{"chain": "srcnat", "action": "masquerade", "out-interface": spec.Interface, "src-address": spec.Network, "dst-address": spec.Agent, "protocol": protocol, "dst-port": "53", "comment": dnsGuardPrefix + "hairpin", "disabled": "false"}})
 	}
 	for _, protocol := range []string{"udp", "tcp"} {
-		items = append(items, DNSGuardCreate{Role: "hijack-" + protocol, Path: rosNAT, Top: true, Values: Row{"chain": "dstnat", "action": "dst-nat", "in-interface": spec.Interface, "src-address-list": "!" + DNSGuardBypassList, "dst-address": "!" + spec.Agent, "dst-address-type": "!local", "protocol": protocol, "dst-port": "53", "to-addresses": spec.Agent, "to-ports": "53", "comment": dnsGuardHijack, "disabled": "false"}})
+		items = append(items, DNSGuardCreate{Role: "hijack-" + protocol, Path: ros.PathNAT, Top: true, Values: Row{"chain": "dstnat", "action": "dst-nat", "in-interface": spec.Interface, "src-address-list": "!" + DNSGuardBypassList, "dst-address": "!" + spec.Agent, "dst-address-type": "!local", "protocol": protocol, "dst-port": "53", "to-addresses": spec.Agent, "to-ports": "53", "comment": dnsGuardHijack, "disabled": "false"}})
 	}
 	if spec.BlockDoT {
 		for _, protocol := range []string{"tcp", "udp"} {
@@ -200,22 +201,22 @@ func DNSGuardResources(spec *DNSGuardSpec) []DNSGuardCreate {
 				values["action"] = "reject"
 				values["reject-with"] = "tcp-reset"
 			}
-			items = append(items, DNSGuardCreate{Role: "dot-" + protocol, Path: rosFilter, Top: true, Values: values})
+			items = append(items, DNSGuardCreate{Role: "dot-" + protocol, Path: ros.PathFilter, Top: true, Values: values})
 		}
 	}
 	if spec.Failover {
-		items = append(items, DNSGuardCreate{Role: "netwatch", Path: rosNetwatch, Values: Row{"name": dnsGuardWatch, "host": spec.Agent, "port": "53", "type": "tcp-conn", "interval": "10s", "timeout": "2s", "startup-delay": "30s", "up-script": guardWatchScript(spec, false), "down-script": guardWatchScript(spec, true), "comment": dnsGuardPrefix + "netwatch", "disabled": "false"}})
+		items = append(items, DNSGuardCreate{Role: "netwatch", Path: ros.PathNetwatch, Values: Row{"name": dnsGuardWatch, "host": spec.Agent, "port": "53", "type": "tcp-conn", "interval": "10s", "timeout": "2s", "startup-delay": "30s", "up-script": guardWatchScript(spec, false), "down-script": guardWatchScript(spec, true), "comment": dnsGuardPrefix + "netwatch", "disabled": "false"}})
 	}
 	return items
 }
 
 func guardObjectName(path string) string {
 	switch path {
-	case rosAddresses:
+	case ros.PathAddresses:
 		return messageGuardObjectAddress
-	case rosFilter:
+	case ros.PathFilter:
 		return messageGuardObjectFilter
-	case rosNAT:
+	case ros.PathNAT:
 		return "NAT"
 	default:
 		return "Netwatch"
@@ -224,19 +225,19 @@ func guardObjectName(path string) string {
 func guardDescribe(role string, v Row) string {
 	switch {
 	case strings.HasPrefix(role, "bypass"):
-		return fmt.Sprintf(messageGuardBypassDetail, v.text("address"))
+		return fmt.Sprintf(messageGuardBypassDetail, v.Text("address"))
 	case strings.HasPrefix(role, "hairpin"):
-		return fmt.Sprintf(messageGuardHairpinDetail, strings.ToUpper(v.text("protocol")), v.text("src-address"), v.text("dst-address"))
+		return fmt.Sprintf(messageGuardHairpinDetail, strings.ToUpper(v.Text("protocol")), v.Text("src-address"), v.Text("dst-address"))
 	case strings.HasPrefix(role, "hijack"):
-		return fmt.Sprintf(messageGuardHijackDetail, strings.ToUpper(v.text("protocol")), v.text("to-addresses"), v.text("in-interface"))
+		return fmt.Sprintf(messageGuardHijackDetail, strings.ToUpper(v.Text("protocol")), v.Text("to-addresses"), v.Text("in-interface"))
 	case strings.HasPrefix(role, "dot"):
 		action := messageGuardDrop
-		if v.is("action", "reject") {
+		if v.Is("action", "reject") {
 			action = messageGuardReject
 		}
-		return fmt.Sprintf(messageGuardDotDetail, strings.ToUpper(v.text("protocol")), action)
+		return fmt.Sprintf(messageGuardDotDetail, strings.ToUpper(v.Text("protocol")), action)
 	default:
-		return fmt.Sprintf(messageGuardWatchDetail, v.text("host"))
+		return fmt.Sprintf(messageGuardWatchDetail, v.Text("host"))
 	}
 }
 func guardSummary(spec *DNSGuardSpec, previous *DNSGuardManifest) string {

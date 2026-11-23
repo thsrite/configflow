@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"net/http/httptest"
 	"slices"
 	"testing"
@@ -28,7 +29,7 @@ func TestR12PolicyReplacementPython(t *testing.T) {
 				if _, e = seed.Apply(t.Context(), device.JSON(plan.Ops[0])); e != nil {
 					t.Fatal(e)
 				}
-				r.Extra["ros_policy_state"] = slices.Clone(seed.policyManifest)
+				r.Extra["ros_policy_state"] = slices.Clone(seed.PolicyManifest())
 				seed.Close()
 				desired = r08Desired(false)
 				desired.ROSPolicy.Previous = r.Extra["ros_policy_state"]
@@ -36,14 +37,14 @@ func TestR12PolicyReplacementPython(t *testing.T) {
 			s := f.Snapshot()
 			s.Calls = nil
 			if mode == "withdraw_nat_failure" {
-				s.Faults = []routerfake.Fault{{Method: "PUT", Path: rosNAT, Count: 1, Status: 403}}
-				s.Tables[rosNAT][0]["out-interface"] = "bridge"
+				s.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathNAT, Count: 1, Status: 403}}
+				s.Tables[ros.PathNAT][0]["out-interface"] = "bridge"
 			}
 			if mode == "withdraw_route_failure" {
-				s.Faults = []routerfake.Fault{{Method: "PUT", Path: rosRoutes, Count: 1, Status: 403}}
+				s.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathRoutes, Count: 1, Status: 403}}
 			}
 			if mode == "blocked" {
-				s.Tables[rosFilter] = []routerfake.Row{{".id": "*F0", "chain": "forward", "action": "fasttrack-connection"}}
+				s.Tables[ros.PathFilter] = []routerfake.Row{{".id": "*F0", "chain": "forward", "action": "fasttrack-connection"}}
 			}
 			tc := struct {
 				r12BoundaryCase
@@ -65,14 +66,14 @@ func TestR12PolicyReplacementPython(t *testing.T) {
 			}
 			ids := map[string]bool{}
 			for _, v := range owned {
-				if v.Path == rosMangle {
+				if v.Path == ros.PathMangle {
 					ids[v.ID] = true
 				}
 			}
 			state.NatContext.Mangle = []Row{}
-			for _, row := range (*state.ROSPolicy)[rosMangle] {
-				if !ids[row.id()] {
-					copy := cloneRow(row)
+			for _, row := range (*state.ROSPolicy)[ros.PathMangle] {
+				if !ids[row.ID()] {
+					copy := ros.CloneRow(row)
 					delete(copy, "bytes")
 					delete(copy, "packets")
 					state.NatContext.Mangle = append(state.NatContext.Mangle, copy)

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,7 +32,7 @@ func TestR08ReviewNATListRollbackKeepsMovedMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	moved := ""
-	for _, row := range f.Snapshot().Tables[rosAddresses] {
+	for _, row := range f.Snapshot().Tables[ros.PathAddresses] {
 		if row["list"] == NATDstList {
 			moved, _ = row[".id"].(string)
 		}
@@ -39,15 +40,15 @@ func TestR08ReviewNATListRollbackKeepsMovedMember(t *testing.T) {
 	if moved == "" {
 		t.Fatal("no fresh destination member")
 	}
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{rosAddresses: {moved: {"list": "user-list"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathAddresses: {moved: {"list": "user-list"}}}}})
 	err = d.RestoreNATLists(ctx, *undo)
 	if err == nil {
 		t.Fatal("rollback reported success while a fresh member survived in another list")
 	}
-	if want := fmt.Sprintf(device.MessagePolicyChanged, rosAddresses, moved); !strings.Contains(err.Error(), want) {
+	if want := fmt.Sprintf(device.MessagePolicyChanged, ros.PathAddresses, moved); !strings.Contains(err.Error(), want) {
 		t.Fatalf("error %q does not name the moved member (%q)", err, want)
 	}
-	if row := findRowFake(f.Snapshot().Tables[rosAddresses], moved); row == nil || row["list"] != "user-list" {
+	if row := findRowFake(f.Snapshot().Tables[ros.PathAddresses], moved); row == nil || row["list"] != "user-list" {
 		t.Fatalf("moved member was not kept: %v", row)
 	}
 }
@@ -146,23 +147,23 @@ func TestR08ReviewRestoredRouteVanished(t *testing.T) {
 	steps := []NATStep{}
 	for i := range 4 {
 		values := Row{"dst-address": fmt.Sprintf("203.0.113.%d/32", i), "gateway": r08Gateway, "comment": "cf", "disabled": "false"}
-		config := cloneRow(values)
+		config := ros.CloneRow(values)
 		config["routing-table"] = "main"
-		steps = append(steps, NATStep{Action: "restore", Path: rosRoutes, ID: fmt.Sprintf("*B%d", i), Config: config, Values: values})
+		steps = append(steps, NATStep{Action: "restore", Path: ros.PathRoutes, ID: fmt.Sprintf("*B%d", i), Config: config, Values: values})
 	}
 	// The fake numbers new rows from *65: the second restored route vanishes
 	// right after the console batch reported it.
-	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "POST", Path: "/execute", AfterCommit: true, RemoveIDs: map[string][]string{rosRoutes: {"*66"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "POST", Path: "/execute", AfterCommit: true, RemoveIDs: map[string][]string{ros.PathRoutes: {"*66"}}}}})
 	err := d.RestoreROSPolicy(context.Background(), ROSPolicyUndo{Kind: "ros_policy_restore", Steps: steps, Previous: json.RawMessage(`null`)})
 	if err == nil {
 		t.Fatal("vanished route accepted")
 	}
-	want := messagePolicyRollbackPrefix + fmt.Sprintf(messagePolicyConfirm, rosRoutes, messagePolicyMissingDetail)
+	want := messagePolicyRollbackPrefix + fmt.Sprintf(messagePolicyConfirm, ros.PathRoutes, messagePolicyMissingDetail)
 	if err.Error() != want {
 		t.Fatalf("error %q, want %q", err, want)
 	}
 	routes := 0
-	for _, row := range f.Snapshot().Tables[rosRoutes] {
+	for _, row := range f.Snapshot().Tables[ros.PathRoutes] {
 		if row["comment"] == "cf" && strings.HasPrefix(fmt.Sprint(row["dst-address"]), "203.0.113.") {
 			routes++
 		}

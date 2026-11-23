@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"fmt"
 	"net/url"
@@ -43,7 +44,7 @@ func forwardQuote(value string) string {
 	if forwardBareValue.MatchString(value) {
 		return value
 	}
-	return ScriptString(value)
+	return ros.ScriptString(value)
 }
 
 func samePortPacket(lan, target string) PolicyPacket {
@@ -55,7 +56,7 @@ func forwardSnapshot(ctx context.Context, d *RouterOS, family int, rows []Row) (
 		path string
 		to   *[]Row
 	}{{"/interface/list", &s.InterfaceLists}, {"/interface/list/member", &s.InterfaceMembers}, {"/interface", &s.Interfaces}} {
-		value, err := d.list(ctx, item.path)
+		value, err := d.List(ctx, item.path)
 		if err != nil {
 			return nil, err
 		}
@@ -63,12 +64,12 @@ func forwardSnapshot(ctx context.Context, d *RouterOS, family int, rows []Row) (
 	}
 	names := []string{}
 	for _, row := range rows {
-		if row.is("chain", "input") || row.is("chain", "output") {
+		if row.Is("chain", "input") || row.Is("chain", "output") {
 			continue
 		}
 		for _, field := range []string{"src-address-list", "dst-address-list"} {
-			if row.set(field) {
-				names = append(names, strings.TrimLeft(row.text(field), "!"))
+			if row.Set(field) {
+				names = append(names, strings.TrimLeft(row.Text(field), "!"))
 			}
 		}
 	}
@@ -84,7 +85,7 @@ func forwardSnapshot(ctx context.Context, d *RouterOS, family int, rows []Row) (
 		}
 	} else {
 		for _, name := range names {
-			rows, err := d.list(ctx, "/ipv6/firewall/address-list?list="+strings.ReplaceAll(url.QueryEscape(name), "+", "%20"))
+			rows, err := d.List(ctx, "/ipv6/firewall/address-list?list="+strings.ReplaceAll(url.QueryEscape(name), "+", "%20"))
 			if err != nil {
 				return nil, err
 			}
@@ -108,7 +109,7 @@ func CheckForwardHint(ctx context.Context, d *RouterOS, family int, lan string, 
 	}
 	if rows == nil {
 		var err error
-		rows, err = d.list(ctx, path)
+		rows, err = d.List(ctx, path)
 		if err != nil {
 			return unknown
 		}
@@ -132,7 +133,7 @@ func checkForwardSnapshot(snapshot *PolicySnapshot, family int, lan string, targ
 		command = "/ipv6 firewall filter"
 	}
 	destinationSpecific := slices.ContainsFunc(rows, func(row Row) bool {
-		return policyEnabled(row) && (row.set("dst-address") || row.set("dst-address-list"))
+		return policyEnabled(row) && (row.Set("dst-address") || row.Set("dst-address-list"))
 	})
 	if !destinationSpecific {
 		targets = targets[:1]
@@ -144,7 +145,7 @@ func checkForwardSnapshot(snapshot *PolicySnapshot, family int, lan string, targ
 		}
 		var taker Row
 		for _, row := range rows {
-			if !row.is("chain", "forward") || !policyEnabled(row) || row.is("action", "log") || row.is("action", "passthrough") || MatchPolicyRule(snapshot, row, packet) == PolicyNoMatch || rosFlag(row["dynamic"]) || row.id() == "" {
+			if !row.Is("chain", "forward") || !policyEnabled(row) || row.Is("action", "log") || row.Is("action", "passthrough") || MatchPolicyRule(snapshot, row, packet) == PolicyNoMatch || ros.Flag(row["dynamic"]) || row.ID() == "" {
 				continue
 			}
 			taker = row
@@ -152,7 +153,7 @@ func checkForwardSnapshot(snapshot *PolicySnapshot, family int, lan string, targ
 		}
 		fix := fmt.Sprintf(`%s add chain=forward action=accept in-interface=%s out-interface=%s comment="LAN to Mihomo via router"`, command, forwardQuote(lan), forwardQuote(lan))
 		if taker != nil {
-			fix += " place-before=" + taker.id()
+			fix += " place-before=" + taker.ID()
 		}
 		return ForwardHintCheck{Status: "drop", Command: fix, Rule: taker}
 	}
@@ -196,15 +197,15 @@ func ForwardHint(ctx context.Context, r *Router, desired *Desired, state *Router
 	if !ok {
 		return nil, nil
 	}
-	lan, _ := NewRouteEgressIndex(state.NatContext).GatewayEgress(gateway)
+	lan, _ := ros.NewRouteEgressIndex(state.NatContext).GatewayEgress(gateway)
 	if lan == "" {
 		return &ForwardHintResult{Status: "unknown", Warning: messageForwardUnknownLAN}, nil
 	}
 	var rows []Row
 	if state.ROSPolicy != nil {
-		rows = (*state.ROSPolicy)[rosFilter]
+		rows = (*state.ROSPolicy)[ros.PathFilter]
 	} else if state.DNSGuard != nil {
-		rows = (*state.DNSGuard)[rosFilter]
+		rows = (*state.DNSGuard)[ros.PathFilter]
 	}
 	result := CheckForwardHint(ctx, d, 4, lan, targets, rows)
 	switch result.Status {

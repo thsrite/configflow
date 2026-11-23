@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -36,17 +37,17 @@ type r11Case struct {
 func r11State() routerfake.State {
 	s := r10State()
 	s.Tables["/ip/dns"] = []routerfake.Row{{"servers": "192.0.2.2", "dynamic-servers": ""}}
-	for _, path := range []string{pdScripts, pdSchedulers, pdClients, pdLists, pdPrefixes, rosIPv6ND, "/ipv6/firewall/nat", "/ipv6/firewall/raw", "/ipv6/firewall/mangle"} {
+	for _, path := range []string{pdScripts, pdSchedulers, pdClients, ros.PathIPv6AddressLists, pdPrefixes, ros.PathIPv6ND, "/ipv6/firewall/nat", "/ipv6/firewall/raw", "/ipv6/firewall/mangle"} {
 		s.Tables[path] = []routerfake.Row{}
 	}
 	s.Tables[pdClients] = []routerfake.Row{{".id": "*C0", "interface": "wan", "pool-name": "pool-example", "request": "prefix", "disabled": "false", "status": "bound", "prefix": "2001:db8:1::/60, 1d"}, {".id": "*C1", "interface": "wan", "request": "prefix", "disabled": "true"}}
 	s.Tables[rosIPv6Addresses] = append(s.Tables[rosIPv6Addresses], routerfake.Row{".id": "*A2", "address": "2001:db8:1::1/64", "interface": "bridge", "from-pool": "pool-example", "advertise": "true", "disabled": "false"})
-	s.Tables[rosDHCPNetworks] = []routerfake.Row{{".id": "*D0", "address": "192.0.2.0/24", "gateway": "192.0.2.1", "dns-server": "192.0.2.2", "dns-none": "false"}}
-	s.Tables[rosDHCPServers] = []routerfake.Row{{".id": "*D1", "name": "lan", "interface": "bridge", "disabled": "false"}}
-	for _, p := range []string{rosDHCPLeases, rosDHCPOptions, rosDHCPOptionSets, rosDHCPMatchers} {
+	s.Tables[ros.PathDHCPNetworks] = []routerfake.Row{{".id": "*D0", "address": "192.0.2.0/24", "gateway": "192.0.2.1", "dns-server": "192.0.2.2", "dns-none": "false"}}
+	s.Tables[ros.PathDHCPServers] = []routerfake.Row{{".id": "*D1", "name": "lan", "interface": "bridge", "disabled": "false"}}
+	for _, p := range []string{ros.PathDHCPLeases, ros.PathDHCPOptions, ros.PathDHCPOptionSets, ros.PathDHCPMatchers} {
 		s.Tables[p] = []routerfake.Row{}
 	}
-	s.Tables[rosIPv6ND] = []routerfake.Row{{".id": "*E0", "interface": "bridge", "advertise-dns": "yes", "dns-servers": "2001:db8::53", "disabled": "false", "dynamic": "false", "invalid": "false", "ra-lifetime": "30m", "mtu": "1500", "comment": "synthetic LAN"}}
+	s.Tables[ros.PathIPv6ND] = []routerfake.Row{{".id": "*E0", "interface": "bridge", "advertise-dns": "yes", "dns-servers": "2001:db8::53", "disabled": "false", "dynamic": "false", "invalid": "false", "ra-lifetime": "30m", "mtu": "1500", "comment": "synthetic LAN"}}
 	return s
 }
 func r11StepFor(action string) r11Step {
@@ -106,8 +107,8 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 					r.Extra[k] = v
 				}
 				r.IPv6PDGuard = &PDGuard{Enabled: s.Enabled}
-				if d.ipv6PDGuardManifestSet {
-					r.Extra["ipv6_pd_guard_state"] = d.ipv6PDGuardManifest
+				if d.IPv6PDGuardManifestSet() {
+					r.Extra["ipv6_pd_guard_state"] = d.IPv6PDGuardManifest()
 				}
 				plan, err = InspectIPv6PDGuard(t.Context(), &r, "192.0.2.4", d)
 				if err == nil {
@@ -182,7 +183,7 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 		}
 		out.Error = &r08Error{class, err.Error()}
 	}
-	out.Manifest = guardRaw(d.ipv6PDGuardManifest)
+	out.Manifest = ros.GuardRaw(d.IPv6PDGuardManifest())
 	return out
 }
 
@@ -223,7 +224,7 @@ func r11Comparable(t *testing.T, v any) any {
 			}
 			// IPv6 address-list KnownIDs is now list-scoped. RESTORE only uses
 			// KnownIDs for route conflict checks, so foreign list IDs have no effect.
-			if a["path"] == pdLists && a["method"] == "RESTORE" {
+			if a["path"] == ros.PathIPv6AddressLists && a["method"] == "RESTORE" {
 				a["known_ids"] = []any{a["id"]}
 			}
 			// Native JSON text replaces Python repr only inside stable snapshots.
@@ -282,7 +283,7 @@ func r11Cases() []r11Case {
 		out = append(out, base(feature, "publish_idempotent", r11StepFor("publish"), r11StepFor("publish")), base(feature, "rollback", r11StepFor("rollback")), base(feature, "report", r11StepFor("report")))
 		for _, which := range []string{"lan", "lifetime", "new_all", "client_hook"} {
 			tc := base(feature, "preview_"+which, r11StepFor("plan"), r11StepFor("apply"))
-			path, id := rosIPv6ND, "*E0"
+			path, id := ros.PathIPv6ND, "*E0"
 			patch := routerfake.Row{"ra-lifetime": "1h"}
 			switch which {
 			case "lan":
@@ -305,8 +306,8 @@ func r11Cases() []r11Case {
 		step := r11StepFor(action)
 		step.Enabled = false
 		step.Mutation = &routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{
-			pdLists:    {{".id": "*F1", "list": pdLast, "address": "2001:db8:1::/64", "dynamic": "false"}, {".id": "*F2", "list": "geo6", "address": "2001:db8:9::/48", "dynamic": "false"}},
-			pdPrefixes: {{".id": "*F3", "prefix": "2001:db8:2::/64", "interface": "bridge", "comment": "cf-pd: deprecated until 12345", "dynamic": "false"}, {".id": "*F4", "prefix": "2001:db8:3::/64", "interface": "bridge", "comment": "manual", "dynamic": "false"}, {".id": "*65", "prefix": "2001:db8:1::/64", "interface": "bridge", "dynamic": "true"}},
+			ros.PathIPv6AddressLists: {{".id": "*F1", "list": pdLast, "address": "2001:db8:1::/64", "dynamic": "false"}, {".id": "*F2", "list": "geo6", "address": "2001:db8:9::/48", "dynamic": "false"}},
+			pdPrefixes:               {{".id": "*F3", "prefix": "2001:db8:2::/64", "interface": "bridge", "comment": "cf-pd: deprecated until 12345", "dynamic": "false"}, {".id": "*F4", "prefix": "2001:db8:3::/64", "interface": "bridge", "comment": "manual", "dynamic": "false"}, {".id": "*65", "prefix": "2001:db8:1::/64", "interface": "bridge", "dynamic": "true"}},
 		}}}
 		out = append(out, base("pd", "runtime_"+action, r11StepFor("publish"), step))
 	}
@@ -384,7 +385,7 @@ func r11Cases() []r11Case {
 	}
 	for _, which := range []string{"quoted_all", "self", "no", "empty", "disabled", "all", "all_off", "all_disabled", "override", "dns_list", "dns_legacy", "bad_dns", "dynamic", "invalid", "bad_disabled", "duplicate", "no_selected_dns", "dhcp_pending", "dhcp_ambiguous", "invalid_gateway"} {
 		tc := base("dns", which, r11StepFor("publish"))
-		r := tc.State.Tables[rosIPv6ND][0]
+		r := tc.State.Tables[ros.PathIPv6ND][0]
 		switch which {
 		case "quoted_all":
 			r["interface"] = "all"
@@ -394,7 +395,7 @@ func r11Cases() []r11Case {
 		case "self", "no":
 			r["advertise-dns"] = which
 		case "empty":
-			tc.State.Tables[rosIPv6ND] = []routerfake.Row{}
+			tc.State.Tables[ros.PathIPv6ND] = []routerfake.Row{}
 		case "disabled":
 			r["disabled"] = "true"
 		case "all", "all_off", "all_disabled":
@@ -408,7 +409,7 @@ func r11Cases() []r11Case {
 		case "override":
 			other := r09Copy(r)
 			other[".id"], other["interface"] = "*E1", "all"
-			tc.State.Tables[rosIPv6ND] = append(tc.State.Tables[rosIPv6ND], other)
+			tc.State.Tables[ros.PathIPv6ND] = append(tc.State.Tables[ros.PathIPv6ND], other)
 		case "dns_list":
 			r["dns-servers"] = []any{"2001:db8::53", "2001:db8::54"}
 		case "dns_legacy":
@@ -423,22 +424,22 @@ func r11Cases() []r11Case {
 		case "duplicate":
 			other := r09Copy(r)
 			other[".id"] = "*E1"
-			tc.State.Tables[rosIPv6ND] = append(tc.State.Tables[rosIPv6ND], other)
+			tc.State.Tables[ros.PathIPv6ND] = append(tc.State.Tables[ros.PathIPv6ND], other)
 		case "no_selected_dns":
 			tc.Steps[0].Desired.AgentID = ""
 		case "dhcp_pending":
-			tc.State.Tables[rosDHCPNetworks][0]["dns-server"] = "192.0.2.1"
+			tc.State.Tables[ros.PathDHCPNetworks][0]["dns-server"] = "192.0.2.1"
 		case "dhcp_ambiguous":
-			other := r09Copy(tc.State.Tables[rosDHCPNetworks][0])
+			other := r09Copy(tc.State.Tables[ros.PathDHCPNetworks][0])
 			other[".id"], other["address"] = "*D2", "192.0.2.0/25"
-			tc.State.Tables[rosDHCPNetworks] = append(tc.State.Tables[rosDHCPNetworks], other)
+			tc.State.Tables[ros.PathDHCPNetworks] = append(tc.State.Tables[ros.PathDHCPNetworks], other)
 		case "invalid_gateway":
 			tc.Steps[0].Desired.ProxyGateway = "198.51.100.4"
 		}
 		out = append(out, tc)
 	}
 	for _, feature := range []string{"pd", "dns"} {
-		for _, path := range []string{pdScripts, pdSchedulers, pdClients, rosIPv6ND} {
+		for _, path := range []string{pdScripts, pdSchedulers, pdClients, ros.PathIPv6ND} {
 			tc := base(feature, "refuse_"+path, r11StepFor("publish"))
 			method := "PATCH"
 			if path == pdScripts || path == pdSchedulers {
@@ -471,7 +472,7 @@ func r11Cases() []r11Case {
 			if which == "foreign_wrong" {
 				gateway = "fe80::9%bridge"
 			}
-			tc.State.Tables[rosIPv6Routes] = []routerfake.Row{r10Route("*50", "fd00:face::/64", gateway)}
+			tc.State.Tables[ros.PathIPv6Routes] = []routerfake.Row{r10Route("*50", "fd00:face::/64", gateway)}
 		case "overlap":
 			tc.State.Tables[rosIPv6Addresses][0]["address"] = "fd00:face::1/64"
 		case "drop":

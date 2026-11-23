@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"encoding/json"
 	"net/netip"
 	"os"
@@ -163,7 +164,7 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 		var s string
 		decodeInto(t, in, &s)
 		if fn == "client_sources" {
-			return texts(ClientSourceNetworks(netip.MustParseAddr(s)))
+			return texts(ros.ClientSourceNetworks(netip.MustParseAddr(s)))
 		}
 		return CanonAddress(s)
 	}
@@ -171,11 +172,11 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 	state := &RouterState{NatContext: v.State.NatContext, AddressSets: v.State.AddressSets}
 	switch fn {
 	case "assess_nat":
-		a := AssessNAT(v.CIDR, v.Gateway, state.NatContext, v.PolicyRouting, nil)
+		a := ros.AssessNAT(v.CIDR, v.Gateway, state.NatContext, v.PolicyRouting, nil)
 		return map[string]string{"status": a.Status, "detail": a.Detail}
 	case "assess_bypass":
 		state.PolicyNATRetiring = v.Retiring
-		return AssessBypass(v.CIDR, v.Gateway, state.AddressSets, state.NatContext, state.PolicyNATRetiring, nil)
+		return ros.AssessBypass(v.CIDR, v.Gateway, state.AddressSets, state.NatContext, state.PolicyNATRetiring, nil)
 	case "planned":
 		var expansions []BypassExpansion
 		for _, op := range v.Ops {
@@ -185,25 +186,25 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 			}
 			expansions = append(expansions, e)
 		}
-		return PlannedBypassConflicts(expansions, state.AddressSets, state.NatContext, v.Gateway)
+		return ros.PlannedBypassConflicts(expansions, state.AddressSets, state.NatContext, v.Gateway)
 	case "preserves":
 		accepted := []string{}
 		iface := ""
 		if v.Interface != nil {
 			iface = *v.Interface
 		}
-		ok := PreservesSources(v.Rows, prefixes(t, v.Sources), prefixes(t, v.Destinations), iface, v.Context,
+		ok := ros.PreservesSources(v.Rows, prefixes(t, v.Sources), prefixes(t, v.Destinations), iface, v.Context,
 			v.AddressSets, &accepted, nil)
 		return map[string]any{"result": ok, "accepted": accepted}
 	case "inspect_rule":
 		var others []ListRef
 		for _, m := range v.Mangle {
-			others = append(others, ListRef{PathMangle + "/" + m[0], m[1]})
+			others = append(others, ListRef{Path: PathMangle + "/" + m[0], Name: m[1]})
 		}
 		for _, f := range v.Firewall {
-			others = append(others, ListRef{f[0] + "/" + f[1], f[2]})
+			others = append(others, ListRef{Path: f[0] + "/" + f[1], Name: f[2]})
 		}
-		found := InspectNATListRule(v.Rows, others)
+		found := ros.InspectNATListRule(v.Rows, others)
 		return map[string]any{"rule": found.Rule, "problem": found.Problem, "out_interface": found.OutInterface}
 	case "report":
 		state = &RouterState{Routes: v.State.Routes, NatBypass: v.State.NatBypass, AddressSets: v.State.AddressSets,

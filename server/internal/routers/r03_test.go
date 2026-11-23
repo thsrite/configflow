@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"encoding/json"
 	"net/netip"
 	"strings"
@@ -57,13 +58,13 @@ func TestIkuaiEncode(t *testing.T) {
 
 func TestAddressExcludeCoversTheRest(t *testing.T) {
 	a, b := netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("10.1.2.0/24")
-	parts := addressExclude(a, b)
+	parts := ros.AddressExclude(a, b)
 	if len(parts) != 16 {
 		t.Fatalf("%d parts", len(parts))
 	}
 	size := uint64(1) << (32 - b.Bits())
 	for i, p := range parts {
-		if p.Overlaps(b) || !subnetOf(p, a) {
+		if p.Overlaps(b) || !ros.SubnetOf(p, a) {
 			t.Fatalf("part %s", p)
 		}
 		for _, q := range parts[i+1:] {
@@ -76,26 +77,8 @@ func TestAddressExcludeCoversTheRest(t *testing.T) {
 	if size != 1<<24 {
 		t.Fatalf("parts cover %d addresses", size)
 	}
-	if addressExclude(a, a) != nil {
+	if ros.AddressExclude(a, a) != nil {
 		t.Fatal("a without a is empty")
-	}
-}
-
-// The list rule is inspected once per index and read, never across reads.
-func TestListRuleIsCachedPerRead(t *testing.T) {
-	rule := Row{".id": "*1", "chain": "srcnat", "action": "accept", "comment": NATListComment,
-		"src-address-list": NATSrcList, "dst-address-list": NATDstList}
-	rows := []Row{rule}
-	ix := NewRouteEgressIndex(nil)
-	if own := listRule(rows, ix); own == nil || own.Rule.id() != "*1" {
-		t.Fatalf("own %+v", own)
-	}
-	rule["action"] = "masquerade" // same read: cached
-	if listRule(rows, ix) == nil {
-		t.Fatal("cache not used for the same rows")
-	}
-	if listRule([]Row{rule}, ix) != nil {
-		t.Fatal("another read must be inspected again")
 	}
 }
 

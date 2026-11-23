@@ -3,13 +3,13 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"encoding/json"
 	"fmt"
 	"net/netip"
 	"slices"
 	"strings"
 
-	"configflow/internal/devhttp"
 	"configflow/internal/netipx"
 )
 
@@ -22,12 +22,12 @@ func policyNATMigrations(live ROSPolicySnapshot, exclusions []netip.Prefix, owne
 	for _, p := range exclusions {
 		exclude = append(exclude, p.String())
 	}
-	for _, row := range live[rosNAT] {
-		if !row.enabled() || !row.is("chain", "srcnat") || !row.is("action", "accept") || !device.IsManaged(row.text("comment")) || strings.HasPrefix(row.text("comment"), ROSPolicyPrefix) || owned[[2]string{rosNAT, row.id()}] {
+	for _, row := range live[ros.PathNAT] {
+		if !row.Enabled() || !row.Is("chain", "srcnat") || !row.Is("action", "accept") || !device.IsManaged(row.Text("comment")) || strings.HasPrefix(row.Text("comment"), ROSPolicyPrefix) || owned[[2]string{ros.PathNAT, row.ID()}] {
 			continue
 		}
-		if row.is("comment", NATListComment) && row.is("src-address-list", NATSrcList) && row.is("dst-address-list", NATDstList) {
-			entries, err := NATPolicyMigrations(row, live[rosAddresses], exclude)
+		if row.Is("comment", NATListComment) && row.Is("src-address-list", NATSrcList) && row.Is("dst-address-list", NATDstList) {
+			entries, err := NATPolicyMigrations(row, live[ros.PathAddresses], exclude)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -36,19 +36,19 @@ func policyNATMigrations(live ROSPolicySnapshot, exclusions []netip.Prefix, owne
 		}
 		selectors := [][]netip.Prefix{}
 		for _, key := range []string{"dst-address", "dst-address-list"} {
-			value := row.text(key)
+			value := row.Text(key)
 			if value == "" {
 				continue
 			}
 			if strings.HasPrefix(value, "!") {
-				return nil, nil, device.Error(messagePolicyNATInverse + row.id())
+				return nil, nil, device.Error(messagePolicyNATInverse + row.ID())
 			}
 			values := []string{value}
 			if key == "dst-address-list" {
 				values = []string{}
-				for _, entry := range live[rosAddresses] {
-					if entry.enabled() && entry.is("list", value) {
-						values = append(values, entry.text("address"))
+				for _, entry := range live[ros.PathAddresses] {
+					if entry.Enabled() && entry.Is("list", value) {
+						values = append(values, entry.Text("address"))
 					}
 				}
 			}
@@ -56,7 +56,7 @@ func policyNATMigrations(live ROSPolicySnapshot, exclusions []netip.Prefix, owne
 			for _, value := range values {
 				parsed := device.Networks([]string{value})
 				if len(parsed) == 0 {
-					return nil, nil, device.Error(messagePolicyNATInvalid + row.id())
+					return nil, nil, device.Error(messagePolicyNATInvalid + row.ID())
 				}
 				networks = append(networks, parsed...)
 			}
@@ -71,7 +71,7 @@ func policyNATMigrations(live ROSPolicySnapshot, exclusions []netip.Prefix, owne
 			for _, a := range selectors[0] {
 				for _, b := range selectors[1] {
 					if a.Overlaps(b) {
-						if subnetOf(a, b) {
+						if ros.SubnetOf(a, b) {
 							destinations = append(destinations, a)
 						} else {
 							destinations = append(destinations, b)
@@ -85,23 +85,23 @@ func policyNATMigrations(live ROSPolicySnapshot, exclusions []netip.Prefix, owne
 		if slices.Equal(remaining, collapsed) {
 			continue
 		}
-		if row.set("dst-address-list") {
-			return nil, nil, device.Error(messagePolicyNATListSplit + row.id())
+		if row.Set("dst-address-list") {
+			return nil, nil, device.Error(messagePolicyNATListSplit + row.ID())
 		}
-		if row.flag("dynamic") {
-			return nil, nil, device.Error(messagePolicyNATDynamic + row.id())
+		if row.Flag("dynamic") {
+			return nil, nil, device.Error(messagePolicyNATDynamic + row.ID())
 		}
-		if row.id() == "" {
+		if row.ID() == "" {
 			return nil, nil, device.Error(messagePolicyDuplicateID)
 		}
-		migrations = append(migrations, resource(rosNAT, row))
-		values := configROSRow(row)
+		migrations = append(migrations, ros.NewResource(ros.PathNAT, row))
+		values := ros.ConfigROSRow(row)
 		delete(values, "dynamic")
 		for _, prefix := range remaining {
-			replacement := cloneRow(values)
+			replacement := ros.CloneRow(values)
 			replacement["dst-address"] = prefix.String()
-			replacement["place-before"] = row.id()
-			replacements = append(replacements, ROSReplacement{rosNAT, replacement})
+			replacement["place-before"] = row.ID()
+			replacements = append(replacements, ROSReplacement{ros.PathNAT, replacement})
 		}
 	}
 	return migrations, replacements, nil
@@ -137,19 +137,19 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 	}
 	ownedKeys := policyKeys(owned)
 	otherMangle := []Row{}
-	for _, row := range live[rosMangle] {
-		if !ownedKeys[[2]string{rosMangle, row.id()}] {
+	for _, row := range live[ros.PathMangle] {
+		if !ownedKeys[[2]string{ros.PathMangle, row.ID()}] {
 			otherMangle = append(otherMangle, row)
 		}
 	}
 	if selected {
-		if slices.ContainsFunc(live[rosFilter], func(row Row) bool { return row.enabled() && row.is("action", "fasttrack-connection") }) {
+		if slices.ContainsFunc(live[ros.PathFilter], func(row Row) bool { return row.Enabled() && row.Is("action", "fasttrack-connection") }) {
 			result.Blockers = append(result.Blockers, messagePolicyFastTrack)
 		}
 		if slices.ContainsFunc(otherMangle, conflictingPolicyMangle) {
 			result.Blockers = append(result.Blockers, messagePolicyMangleConflict)
 		}
-		if slices.ContainsFunc(live["/ip/vrf"], func(row Row) bool { return row.enabled() && !row.is("name", "main") }) {
+		if slices.ContainsFunc(live["/ip/vrf"], func(row Row) bool { return row.Enabled() && !row.Is("name", "main") }) {
 			result.Blockers = append(result.Blockers, messagePolicyVRF)
 		}
 	}
@@ -174,20 +174,20 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 	}
 	migrations := []ROSResource{}
 	preserved := 0
-	for _, row := range live[rosRoutes] {
-		if device.FirstNonEmpty(row.text("routing-table"), "main") != "main" || !row.enabled() {
+	for _, row := range live[ros.PathRoutes] {
+		if device.FirstNonEmpty(row.Text("routing-table"), "main") != "main" || !row.Enabled() {
 			continue
 		}
-		prefix, ok := netipx.ParseNetwork4(row.text("dst-address"), true)
+		prefix, ok := netipx.ParseNetwork4(row.Text("dst-address"), true)
 		if !ok || !policyOverlap(prefix) {
 			continue
 		}
-		if device.IsManaged(row.text("comment")) && !strings.HasPrefix(row.text("comment"), ROSPolicyPrefix) && row.is("gateway", desired.ProxyGateway) && policyOnlyOverlap(prefix) && !row.flag("dynamic") {
+		if device.IsManaged(row.Text("comment")) && !strings.HasPrefix(row.Text("comment"), ROSPolicyPrefix) && row.Is("gateway", desired.ProxyGateway) && policyOnlyOverlap(prefix) && !row.Flag("dynamic") {
 			if editROSEntry(row, nil).Editable {
-				migrations = append(migrations, resource(rosRoutes, row))
+				migrations = append(migrations, ros.NewResource(ros.PathRoutes, row))
 				continue
 			}
-			result.Blockers = append(result.Blockers, messagePolicyRouteMigration+row.id())
+			result.Blockers = append(result.Blockers, messagePolicyRouteMigration+row.ID())
 		}
 		if prefix.Bits() > 0 {
 			preserved++
@@ -215,24 +215,24 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 		context.Mangle = append([]Row{}, otherMangle...)
 		moving := map[string]bool{}
 		for _, item := range migrations {
-			if item.Path == rosRoutes {
+			if item.Path == ros.PathRoutes {
 				moving[item.ID] = true
 			}
 		}
-		context.Routes = slices.DeleteFunc(slices.Clone(context.Routes), func(row Row) bool { return moving[row.id()] })
+		context.Routes = slices.DeleteFunc(slices.Clone(context.Routes), func(row Row) bool { return moving[row.ID()] })
 		proxyState.NatContext = &context
 	}
-	index := NewRouteEgressIndex(proxyState.NatContext)
+	index := ros.NewRouteEgressIndex(proxyState.NatContext)
 	needNAT := false
 	iface := ""
 	if selected && len(spec.Destinations) > 0 {
 		var reason string
-		iface, reason = Egress(spec.Destinations[0], spec.Gateway, proxyState.NatContext, true, index)
+		iface, reason = ros.Egress(spec.Destinations[0], spec.Gateway, proxyState.NatContext, true, index)
 		if iface == "" {
 			result.Blockers = append(result.Blockers, messagePolicyLANUnknown+reason)
 		}
 		for _, cidr := range spec.Destinations {
-			assessment := AssessNAT(cidr, spec.Gateway, proxyState.NatContext, true, index)
+			assessment := ros.AssessNAT(cidr, spec.Gateway, proxyState.NatContext, true, index)
 			if assessment.Status == "unknown" {
 				result.Blockers = append(result.Blockers, cidr+"："+assessment.Detail)
 				break
@@ -256,7 +256,7 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 			Spec json.RawMessage `json:"spec"`
 		}
 		_ = jsondecode.Unmarshal(request.Previous, &raw)
-		current = jsonValuesEqual(raw.Spec, device.JSON(spec)) && len(owned) == len(previous.Resources)
+		current = ros.JSONValuesEqual(raw.Spec, device.JSON(spec)) && len(owned) == len(previous.Resources)
 	}
 	unchanged := previous == nil
 	if selected {
@@ -325,19 +325,19 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 				addresses = []string{spec.Gateway}
 			}
 			for _, address := range addresses {
-				add(rosAddresses, Row{"list": names[kind], "address": address, "comment": request.Owner, "disabled": "false"})
+				add(ros.PathAddresses, Row{"list": names[kind], "address": address, "comment": request.Owner, "disabled": "false"})
 			}
 		}
 		name := names["routing"]
 		common := func(row Row) Row { row["comment"] = request.Owner; row["disabled"] = "false"; return row }
-		add(rosTables, Row{"name": name, "fib": "true"})
-		add(rosRoutes, common(Row{"dst-address": "0.0.0.0/0", "gateway": spec.Gateway + "@main", "routing-table": name}))
+		add(ros.PathTables, Row{"name": name, "fib": "true"})
+		add(ros.PathRoutes, common(Row{"dst-address": "0.0.0.0/0", "gateway": spec.Gateway + "@main", "routing-table": name}))
 		if needNAT {
-			add(rosNAT, common(Row{"chain": "srcnat", "action": "accept", "src-address-list": names["src"], "dst-address-list": names["dst"], "out-interface": iface}))
+			add(ros.PathNAT, common(Row{"chain": "srcnat", "action": "accept", "src-address-list": names["src"], "dst-address-list": names["dst"], "out-interface": iface}))
 		}
-		add(rosMangle, common(Row{"chain": name, "action": "return", "src-address-list": names["bypass"]}))
-		add(rosMangle, common(Row{"chain": name, "action": "mark-routing", "new-routing-mark": name, "passthrough": "false"}))
-		add(rosMangle, common(Row{"chain": "prerouting", "action": "jump", "src-address-list": names["src"], "dst-address-list": names["dst"], "dst-address-type": "!local", "jump-target": name}))
+		add(ros.PathMangle, common(Row{"chain": name, "action": "return", "src-address-list": names["bypass"]}))
+		add(ros.PathMangle, common(Row{"chain": name, "action": "mark-routing", "new-routing-mark": name, "passthrough": "false"}))
+		add(ros.PathMangle, common(Row{"chain": "prerouting", "action": "jump", "src-address-list": names["src"], "dst-address-list": names["dst"], "dst-address-type": "!local", "jump-target": name}))
 	}
 	summary := messagePolicyWithdraw
 	if len(bundle) > 0 {
@@ -351,9 +351,9 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 		for _, item := range migrations {
 			counts[item.Path]++
 		}
-		summary += fmt.Sprintf(messagePolicyMigrationSummary, counts[rosRoutes], counts[rosNAT])
-		if counts[rosAddresses] > 0 {
-			summary += fmt.Sprintf(messagePolicyMemberSummary, counts[rosAddresses])
+		summary += fmt.Sprintf(messagePolicyMigrationSummary, counts[ros.PathRoutes], counts[ros.PathNAT])
+		if counts[ros.PathAddresses] > 0 {
+			summary += fmt.Sprintf(messagePolicyMemberSummary, counts[ros.PathAddresses])
 		}
 	}
 	op := &ROSPolicyReplace{OpHead: OpHead{Kind: "ros_policy_replace", Summary: summary}, Bundle: bundle, Previous: slices.Clone(request.Previous), Owned: owned, Migrations: migrations, Replacements: replacements, Evidence: stablePolicy(live), StaticChecks: []CIDRGateway{}}
@@ -365,11 +365,7 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 }
 
 func conflictingPolicyMangle(row Row) bool {
-	return row.enabled() && row.is("chain", "prerouting") && slices.Contains([]string{"mark-routing", "route", "jump", "accept", "return"}, row.text("action"))
-}
-func jsonValuesEqual(a, b json.RawMessage) bool {
-	var x, y Row
-	return devhttp.DecodeJSON(a, &x) == nil && devhttp.DecodeJSON(b, &y) == nil && sameRow(x, y)
+	return row.Enabled() && row.Is("chain", "prerouting") && slices.Contains([]string{"mark-routing", "route", "jump", "accept", "return"}, row.Text("action"))
 }
 
 // natPolicyEvidence derives shared migration proofs from the policy plan;
@@ -428,7 +424,7 @@ func policyReportPart(desired *Desired, state *RouterState) ReportPart {
 	state.PolicyNATRetiring = nil
 	if plan.Check != nil {
 		for _, item := range plan.Check.Migrations {
-			if item.Path == rosRoutes {
+			if item.Path == ros.PathRoutes {
 				retiring = append(retiring, item.ID)
 			}
 		}
@@ -436,7 +432,7 @@ func policyReportPart(desired *Desired, state *RouterState) ReportPart {
 	for _, operation := range plan.Ops {
 		if op, ok := operation.(*ROSPolicyReplace); ok {
 			for _, item := range op.Owned {
-				if item.Path == rosNAT {
+				if item.Path == ros.PathNAT {
 					state.PolicyNATRetiring = append(state.PolicyNATRetiring, item.ID)
 				}
 			}

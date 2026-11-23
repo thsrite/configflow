@@ -7,6 +7,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -66,13 +67,13 @@ func TestRouteBatchExtraReportedIDFailsClosed(t *testing.T) {
 	if device.RouterErrorKind(err) != KindRollback || !device.IsRouterError(err) {
 		t.Fatalf("ApplyMany error = %v, want an uncertain-write rollback error", err)
 	}
-	if want := fmt.Sprintf(device.MessageUncertainRouteWrite, rosRoutes); err.Error() != want {
+	if want := fmt.Sprintf(device.MessageUncertainRouteWrite, ros.PathRoutes); err.Error() != want {
 		t.Fatalf("message = %q, want %q", err.Error(), want)
 	}
 	if len(records) != 5 {
 		t.Fatalf("recorded %d proven routes, want all 5 so the release can remove them", len(records))
 	}
-	table := fake.Snapshot().Tables[rosRoutes]
+	table := fake.Snapshot().Tables[ros.PathRoutes]
 	if len(table) != 6 || findFakeRow(table, "*FA") == nil {
 		t.Fatalf("device routes = %d (foreign kept: %v), want 5 written + the unknown reported row untouched",
 			len(table), findFakeRow(table, "*FA") != nil)
@@ -139,7 +140,7 @@ func TestApplyFinishesNATBatchAfterCancellation(t *testing.T) {
 	if err := json.Unmarshal(raw, &undo); err != nil || len(undo.Changes) != 4 {
 		t.Fatalf("undo = %s, want four DELETE records", raw)
 	}
-	if got := len(fake.Snapshot().Tables[rosNAT]); got != 4 {
+	if got := len(fake.Snapshot().Tables[ros.PathNAT]); got != 4 {
 		t.Fatalf("NAT rules on the device = %d, want 4", got)
 	}
 }
@@ -154,7 +155,7 @@ func TestApplyManyFinishesAfterRequestCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApplyMany interrupted by client disconnect: %v", err)
 	}
-	written := len(fake.Snapshot().Tables[rosRoutes])
+	written := len(fake.Snapshot().Tables[ros.PathRoutes])
 	if written != 150 || recorded != written {
 		t.Fatalf("written %d routes, recorded %d: every written route must be recorded (want 150/150)", written, recorded)
 	}
@@ -168,18 +169,18 @@ func TestRestoreManyIgnoresCancellation(t *testing.T) {
 	for i := range rows {
 		rows[i] = routerfake.Row{".id": fmt.Sprintf("*%X", 0x70+i), "dst-address": fmt.Sprintf("45.42.%d.0/24", i),
 			"gateway": "192.0.2.1", "routing-table": "main", "comment": "cf-sync", "disabled": "false"}
-		change := ROSChange{Method: "DELETE", Path: rosRoutes, ID: rows[i][".id"].(string),
-			Expected: marshalRow(driver.ownershipSnapshot(rosRoutes, deviceRow(rows[i])))}
+		change := ROSChange{Method: "DELETE", Path: ros.PathRoutes, ID: rows[i][".id"].(string),
+			Expected: ros.MarshalRow(driver.OwnershipSnapshot(ros.PathRoutes, deviceRow(rows[i])))}
 		undos[i], _ = json.Marshal(ROSUndo{Kind: "ros_restore", Changes: []ROSChange{change}})
 	}
-	fake.Reset(routerfake.State{Tables: map[string][]routerfake.Row{rosRoutes: rows}})
+	fake.Reset(routerfake.State{Tables: map[string][]routerfake.Row{ros.PathRoutes: rows}})
 	results := driver.RestoreMany(ctx, undos, false)
 	for i, result := range results {
 		if result != "" {
 			t.Fatalf("restore %d = %q, want success", i, result)
 		}
 	}
-	if left := len(fake.Snapshot().Tables[rosRoutes]); left != 0 {
+	if left := len(fake.Snapshot().Tables[ros.PathRoutes]); left != 0 {
 		t.Fatalf("%d routes left after rollback, want 0", left)
 	}
 }
@@ -204,7 +205,7 @@ func (d *removeOrderDevice) Do(_ context.Context, method, rawURL string, body an
 	present := func() []Row {
 		out := []Row{}
 		for _, row := range d.rows {
-			if !d.removed[row.id()] {
+			if !d.removed[row.ID()] {
 				out = append(out, row)
 			}
 		}
@@ -221,10 +222,10 @@ func (d *removeOrderDevice) Do(_ context.Context, method, rawURL string, body an
 			}
 		}
 		status, result = http.StatusInternalServerError, Row{"message": "failure: item busy"}
-	case method == http.MethodGet && path == rosRoutes:
+	case method == http.MethodGet && path == ros.PathRoutes:
 		rows := []Row{}
 		for _, row := range present() {
-			if row.text("dst-address") == parsed.Query().Get("dst-address") {
+			if row.Text("dst-address") == parsed.Query().Get("dst-address") {
 				rows = append(rows, row)
 			}
 		}
@@ -232,7 +233,7 @@ func (d *removeOrderDevice) Do(_ context.Context, method, rawURL string, body an
 	case method == http.MethodGet:
 		status, result = http.StatusNotFound, Row{"message": "Not Found"}
 		for _, row := range present() {
-			if path == rosRoutes+"/"+row.id() {
+			if path == ros.PathRoutes+"/"+row.ID() {
 				status, result = http.StatusOK, row
 			}
 		}
@@ -259,11 +260,11 @@ func TestRestoreDeletedReportsRemovedRowsAfterFailure(t *testing.T) {
 	driver := NewRouterOSWithHTTP("http://router.invalid", device)
 	undos := make([]json.RawMessage, len(rows))
 	for i, row := range rows {
-		change := ROSChange{Method: "DELETE", Path: rosRoutes, ID: row.id(), Expected: marshalRow(driver.ownershipSnapshot(rosRoutes, row))}
+		change := ROSChange{Method: "DELETE", Path: ros.PathRoutes, ID: row.ID(), Expected: ros.MarshalRow(driver.OwnershipSnapshot(ros.PathRoutes, row))}
 		undos[i], _ = json.Marshal(ROSUndo{Kind: "ros_restore", Changes: []ROSChange{change}})
 	}
 	got := driver.RestoreMany(context.Background(), undos, true)
-	if len(got) != 4 || got[0] == "" || got[0] == BatchSkipped || got[1] != "" || got[2] != "" || got[3] != "" {
+	if len(got) != 4 || got[0] == "" || got[0] == ros.BatchSkipped || got[1] != "" || got[2] != "" || got[3] != "" {
 		t.Fatalf("restore results = %#v, want [error, \"\", \"\", \"\"]\n%s", got, strings.Join(device.log, "\n"))
 	}
 }
@@ -273,7 +274,7 @@ func TestRestoreDeletedReportsRemovedRowsAfterFailure(t *testing.T) {
 func TestNATUpdateWithArrayValuesDoesNotPanic(t *testing.T) {
 	rule := routerfake.Row{".id": "*A", "chain": "srcnat", "action": "accept", "comment": "manual",
 		"disabled": "false", "src-address-list": []any{"lan", "guest"}}
-	driver, _ := newFakeRouterOS(t, routerfake.State{Tables: map[string][]routerfake.Row{rosNAT: {rule}}})
+	driver, _ := newFakeRouterOS(t, routerfake.State{Tables: map[string][]routerfake.Row{ros.PathNAT: {rule}}})
 	op, _ := json.Marshal(map[string]any{"kind": "nat_update", "id": "*A", "comment": "cf-policy",
 		"add_dst": []string{"45.44.0.0/24"},
 		"expected": map[string]any{"chain": "srcnat", "action": "accept", "comment": "manual", "disabled": "false",
@@ -294,10 +295,10 @@ func TestNATUpdateWithArrayValuesDoesNotPanic(t *testing.T) {
 // F7: ownership snapshots must tell different composite values apart.
 func TestComparableDistinguishesCompositeValues(t *testing.T) {
 	value := func(raw string) string { return decodedRow(t, `{"v":`+raw+`}`)["v"] }
-	if comparable("src-address-list", value(`["lan"]`)) == comparable("src-address-list", value(`["guest"]`)) {
+	if ros.Comparable("src-address-list", value(`["lan"]`)) == ros.Comparable("src-address-list", value(`["guest"]`)) {
 		t.Fatal("different array values compare equal")
 	}
-	if comparable("comment", value(`{"a":"1"}`)) == comparable("comment", "") {
+	if ros.Comparable("comment", value(`{"a":"1"}`)) == ros.Comparable("comment", "") {
 		t.Fatal("an object value compares equal to an empty string")
 	}
 }
@@ -310,9 +311,9 @@ func TestRestoreRemovedRespectsScriptByteLimit(t *testing.T) {
 	for i := range undos {
 		values := Row{"dst-address": fmt.Sprintf("45.45.%d.0/24", i), "gateway": "192.0.2.1", "routing-table": "main",
 			"comment": strings.Repeat("路", 1000), "disabled": "false"}
-		row := mergeRows(values, Row{".id": fmt.Sprintf("*%X", 0x90+i)})
-		change := ROSChange{Method: "RESTORE", Path: rosRoutes, ID: row.id(), Values: values,
-			Expected: marshalRow(driver.ownershipSnapshot(rosRoutes, row)), KnownIDs: []string{row.id()}}
+		row := ros.MergeRows(values, Row{".id": fmt.Sprintf("*%X", 0x90+i)})
+		change := ROSChange{Method: "RESTORE", Path: ros.PathRoutes, ID: row.ID(), Values: values,
+			Expected: ros.MarshalRow(driver.OwnershipSnapshot(ros.PathRoutes, row)), KnownIDs: []string{row.ID()}}
 		undos[i], _ = json.Marshal(ROSUndo{Kind: "ros_restore", Changes: []ROSChange{change}})
 	}
 	for i, result := range driver.RestoreMany(context.Background(), undos, false) {
@@ -321,7 +322,7 @@ func TestRestoreRemovedRespectsScriptByteLimit(t *testing.T) {
 		}
 	}
 	state := fake.Snapshot()
-	if got := len(state.Tables[rosRoutes]); got != 20 {
+	if got := len(state.Tables[ros.PathRoutes]); got != 20 {
 		t.Fatalf("recreated %d routes, want 20", got)
 	}
 	scripts := 0
@@ -331,8 +332,8 @@ func TestRestoreRemovedRespectsScriptByteLimit(t *testing.T) {
 		}
 		scripts++
 		script, _ := call.Body.(routerfake.Row)["script"].(string)
-		if len(script) > routeScriptBytes {
-			t.Fatalf("console script of %d bytes exceeds %d", len(script), routeScriptBytes)
+		if len(script) > ros.RouteScriptBytes {
+			t.Fatalf("console script of %d bytes exceeds %d", len(script), ros.RouteScriptBytes)
 		}
 	}
 	if scripts == 0 {

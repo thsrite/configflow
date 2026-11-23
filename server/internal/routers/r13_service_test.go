@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,7 +33,7 @@ func r13Fixture(t *testing.T) *r13Lab {
 	makeFake := func(pending bool) (*routerfake.Fake, *httptest.Server) {
 		s := r08State()
 		if pending {
-			s.Tables[rosRoutes] = s.Tables[rosRoutes][:1]
+			s.Tables[ros.PathRoutes] = s.Tables[ros.PathRoutes][:1]
 		}
 		f := routerfake.New(nil)
 		f.Reset(s)

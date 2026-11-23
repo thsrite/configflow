@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ros"
 	"fmt"
 	"net/http/httptest"
 	"slices"
@@ -23,10 +24,10 @@ func TestReturnUpstreamOutsideGatewayNetworkBlocksPlan(t *testing.T) {
 		{"lan-address", "http://192.0.2.1", nil, false},
 		{"wan-address", "http://203.0.113.1", nil, true},
 		{"no-connected-route", "http://203.0.113.1", func(s *routerfake.State) {
-			s.Tables[rosRoutes] = s.Tables[rosRoutes][1:]
+			s.Tables[ros.PathRoutes] = s.Tables[ros.PathRoutes][1:]
 		}, false},
 		{"inactive-connected-route", "http://203.0.113.1", func(s *routerfake.State) {
-			s.Tables[rosRoutes][0]["active"] = "false"
+			s.Tables[ros.PathRoutes][0]["active"] = "false"
 		}, false},
 	}
 	for _, tt := range tests {

@@ -5,6 +5,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -98,8 +99,9 @@ func policyOr(values ...PolicyMatch) PolicyMatch {
 	}
 	return out
 }
-func policyFlag(value string) bool { return rosFlag(value) || value == "1" }
-func policyEnabled(row Row) bool   { return !policyFlag(row["disabled"]) && !policyFlag(row["invalid"]) }
+func policyEnabled(row Row) bool {
+	return !ros.PolicyFlag(row["disabled"]) && !ros.PolicyFlag(row["invalid"])
+}
 func policyNetwork(text string) (netip.Prefix, bool) {
 	n, ok := netipx.ParseNetwork(strings.SplitN(text, "%", 2)[0], false)
 	return n, ok
@@ -242,8 +244,8 @@ func policyInterfaceBounded(s *PolicySnapshot, iface *string, name string, visit
 			return PolicyUnknown
 		}
 		for _, row := range s.Interfaces {
-			if row.is("name", *iface) {
-				return policyBool(policyFlag(row["dynamic"]) == (name == "dynamic"))
+			if row.Is("name", *iface) {
+				return policyBool(ros.PolicyFlag(row["dynamic"]) == (name == "dynamic"))
 			}
 		}
 		return PolicyUnknown
@@ -254,7 +256,7 @@ func policyInterfaceBounded(s *PolicySnapshot, iface *string, name string, visit
 	var definition Row
 	count := 0
 	for _, row := range s.InterfaceLists {
-		if row.is("name", name) {
+		if row.Is("name", name) {
 			definition = row
 			count++
 		}
@@ -263,7 +265,7 @@ func policyInterfaceBounded(s *PolicySnapshot, iface *string, name string, visit
 		return PolicyUnknown
 	}
 	for _, row := range s.InterfaceMembers {
-		if policyEnabled(row) && row.is("list", name) && row.is("interface", *iface) {
+		if policyEnabled(row) && row.Is("list", name) && row.Is("interface", *iface) {
 			return PolicyMatches
 		}
 	}
@@ -271,11 +273,11 @@ func policyInterfaceBounded(s *PolicySnapshot, iface *string, name string, visit
 	defer delete(visited, name)
 	listMatch := func(key string) PolicyMatch {
 		// A null (nullMarker) or non-text list is unknown, never empty.
-		if structuredText(definition[key]) {
+		if ros.StructuredText(definition[key]) {
 			return PolicyUnknown
 		}
 		out := PolicyNoMatch
-		for _, nested := range strings.Split(definition.text(key), ",") {
+		for _, nested := range strings.Split(definition.Text(key), ",") {
 			if nested != "" {
 				out = policyOr(out, policyInterfaceBounded(s, iface, nested, visited, budget))
 			}
@@ -292,8 +294,8 @@ func policyList(s *PolicySnapshot, actual *string, name string) PolicyMatch {
 	name = strings.TrimLeft(name, "!")
 	out := PolicyNoMatch
 	for _, row := range s.AddressLists {
-		if policyEnabled(row) && row.is("list", name) {
-			out = policyOr(out, policyAddress(actual, row.text("address")))
+		if policyEnabled(row) && row.Is("list", name) {
+			out = policyOr(out, policyAddress(actual, row.Text("address")))
 		}
 	}
 	if negate {
@@ -315,7 +317,7 @@ func MatchPolicyRule(s *PolicySnapshot, row Row, p PolicyPacket) PolicyMatch {
 		if policyMeta[key] || value == "" {
 			continue
 		}
-		if structuredText(value) {
+		if ros.StructuredText(value) {
 			// A non-text selector (JSON array or object) is unknown.
 			out = policyAnd(out, PolicyUnknown)
 			continue
@@ -428,18 +430,18 @@ func (s *PolicySnapshot) table(name string) []Row {
 }
 
 func policyEvidence(row Row, index int, table, chain string) string {
-	identity := row.id()
+	identity := row.ID()
 	if identity == "" {
 		identity = fmt.Sprintf(messagePolicyPosition, index+1)
 	}
-	comment := []rune(strings.ReplaceAll(row.text("comment"), "\n", " "))
+	comment := []rune(strings.ReplaceAll(row.Text("comment"), "\n", " "))
 	suffix := ""
 	if len(comment) > 0 {
 		suffix = fmt.Sprintf(messagePolicyComment, string(comment[:min(180, len(comment))]))
 	}
 	action := "accept"
-	if row.has("action") {
-		action = row.text("action")
+	if row.Has("action") {
+		action = row.Text("action")
 	}
 	return fmt.Sprintf(messagePolicyEvidence, table, chain, index+1, identity, suffix, action)
 }
@@ -458,7 +460,7 @@ func EvaluatePolicyChain(s *PolicySnapshot, table, chain string, p PolicyPacket)
 	chains := map[string][]int{}
 	for i, row := range rows {
 		if policyEnabled(row) {
-			chains[row.text("chain")] = append(chains[row.text("chain")], i)
+			chains[row.Text("chain")] = append(chains[row.Text("chain")], i)
 		}
 	}
 	type frame struct {
@@ -496,8 +498,8 @@ func EvaluatePolicyChain(s *PolicySnapshot, table, chain string, p PolicyPacket)
 		row := rows[index]
 		match := MatchPolicyRule(s, row, p)
 		action := "accept"
-		if row.has("action") {
-			action, _ = row.str("action")
+		if row.Has("action") {
+			action, _ = row.Str("action")
 		}
 		if match == PolicyNoMatch || action == "log" || action == "passthrough" {
 			return walk(current, index+1, stack, trail)
@@ -517,7 +519,7 @@ func EvaluatePolicyChain(s *PolicySnapshot, table, chain string, p PolicyPacket)
 				}
 				return result("allow", evidence, messagePolicyReturn)
 			case "jump":
-				target := row.text("jump-target")
+				target := row.Text("jump-target")
 				cycle := target == "" || target == current || len(chains[target]) == 0
 				for _, f := range stack {
 					cycle = cycle || f.chain == target

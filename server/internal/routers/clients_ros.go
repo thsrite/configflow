@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -55,11 +56,11 @@ func ClientDuration(text string) *int64 {
 	}
 	return &n
 }
-func clientEnabled(row Row) bool { return !rosFlag(row["disabled"]) && !rosFlag(row["invalid"]) }
+func clientEnabled(row Row) bool { return !ros.Flag(row["disabled"]) && !ros.Flag(row["invalid"]) }
 func clientLAN(servers, addresses []Row, wan map[string]bool) map[string]bool {
 	lan := map[string]bool{}
 	for _, s := range servers {
-		if name := s["interface"]; name != "" && !rosFlag(s["disabled"]) {
+		if name := s["interface"]; name != "" && !ros.Flag(s["disabled"]) {
 			lan[name] = true
 		}
 	}
@@ -69,7 +70,7 @@ func clientLAN(servers, addresses []Row, wan map[string]bool) map[string]bool {
 	for _, s := range addresses {
 		name := s["interface"]
 		a, err := netip.ParseAddr(strings.Split(s["address"], "/")[0])
-		if name != "" && clientEnabled(s) && !rosFlag(s["dynamic"]) && !wan[name] && err == nil && a.Is4() && a.IsPrivate() {
+		if name != "" && clientEnabled(s) && !ros.Flag(s["dynamic"]) && !wan[name] && err == nil && a.Is4() && a.IsPrivate() {
 			lan[name] = true
 		}
 	}
@@ -110,7 +111,7 @@ func classifyClients(arp, leases, servers []Row, lan map[string]bool) (map[strin
 	}
 	for _, row := range leases {
 		ip := routerdoc.IPv4(device.FirstNonEmpty(row["active-address"], row["address"]))
-		if ip == "" || rosFlag(row["disabled"]) {
+		if ip == "" || ros.Flag(row["disabled"]) {
 			continue
 		}
 		name := row["server"]
@@ -128,7 +129,7 @@ func classifyClients(arp, leases, servers []Row, lan map[string]bool) (map[strin
 				}
 			}
 		}
-		l := clientLease{strings.ToLower(row["status"]), routerdoc.NormalizeMAC(device.FirstNonEmpty(row["active-mac-address"], row["mac-address"])), ifaces[name], device.FirstNonEmpty(strings.TrimSpace(row["comment"]), strings.TrimSpace(row["host-name"])), ClientDuration(row["last-seen"]), period, rosFlag(row["dynamic"])}
+		l := clientLease{strings.ToLower(row["status"]), routerdoc.NormalizeMAC(device.FirstNonEmpty(row["active-mac-address"], row["mac-address"])), ifaces[name], device.FirstNonEmpty(strings.TrimSpace(row["comment"]), strings.TrimSpace(row["host-name"])), ClientDuration(row["last-seen"]), period, ros.Flag(row["dynamic"])}
 		old, exists := byIP[ip]
 		if !exists || l.last != nil && (old.last == nil || *l.last < *old.last) {
 			byIP[ip] = l
@@ -201,18 +202,18 @@ func clientBudget(deadline time.Time) time.Duration {
 	return min(4*time.Second, left)
 }
 func (d *RouterOS) clientList(ctx context.Context, path string, timeout time.Duration) ([]Row, bool, error) {
-	v, err := d.get(ctx, path, timeout)
+	v, err := d.Get(ctx, path, timeout)
 	if err != nil {
 		return nil, false, err
 	}
 	var items []json.RawMessage
-	if replyKind(v) != '[' || jsondecode.Decode(v, &items) != nil {
+	if ros.ReplyKind(v) != '[' || jsondecode.Decode(v, &items) != nil {
 		return nil, false, device.Error(fmt.Sprintf(device.MessageROSListFormat, path))
 	}
 	rows := make([]Row, 0, len(items))
 	complete := true
 	for _, item := range items {
-		r := asRow(item)
+		r := ros.AsRow(item)
 		if r == nil {
 			// A corrupt row has no trustworthy identity. Keep healthy peers but
 			// do not use this partial scan as evidence that a host is absent.
@@ -347,7 +348,7 @@ func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*ro
 		if left < time.Second {
 			return nil, device.Error(messageClientsSlow)
 		}
-		rows, complete, err := d.clientList(ctx, path, min(rosTimeout, left))
+		rows, complete, err := d.clientList(ctx, path, min(ros.Timeout, left))
 		if !complete {
 			r.Complete = false
 		}

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -124,7 +125,7 @@ func TestO36bApplyManyRuntimeBoundary(t *testing.T) {
 			runtime, request, disconnect := o36bRuntime(t)
 			ops := make([]json.RawMessage, 150)
 			for i := range ops {
-				ops[i], _ = json.Marshal(rosOperation{Kind: "route_add", CIDR: fmt.Sprintf("198.51.100.%d/32", i), Gateway: "192.0.2.1", Comment: "cf-o36b"})
+				ops[i], _ = json.Marshal(ros.Operation{Kind: "route_add", CIDR: fmt.Sprintf("198.51.100.%d/32", i), Gateway: "192.0.2.1", Comment: "cf-o36b"})
 			}
 			recorded := 0
 			err := d.ApplyMany(request, ops, func(_, _ json.RawMessage) {
@@ -146,7 +147,7 @@ func TestO36bApplyManyRuntimeBoundary(t *testing.T) {
 			} else if err != nil {
 				t.Fatal("disconnect stopped the next batch", err)
 			}
-			written := len(fake.Snapshot().Tables[rosRoutes])
+			written := len(fake.Snapshot().Tables[ros.PathRoutes])
 			if written != want || recorded != written {
 				t.Fatalf("written=%d recorded=%d want=%d; every write must be proven and recorded", written, recorded, want)
 			}
@@ -166,8 +167,8 @@ func TestO36bPolicyRestoreCommitRuntimeBoundary(t *testing.T) {
 			d.SetPolicyManifest(previous)
 			runtime, request, disconnect := o36bRuntime(t)
 			stopped := false
-			d.client = &r09AfterReadHTTP{DeviceHTTP: d.client, after: func(method, target string) {
-				if method == "GET" && target == d.endpoint+"/rest"+rosSettings {
+			d.SetHTTP(&r09AfterReadHTTP{DeviceHTTP: d.HTTP(), after: func(method, target string) {
+				if method == "GET" && target == d.Endpoint()+"/rest"+rosSettings {
 					stopped = true
 					if shutdown {
 						runtime.Shutdown(context.Background())
@@ -175,7 +176,7 @@ func TestO36bPolicyRestoreCommitRuntimeBoundary(t *testing.T) {
 						disconnect()
 					}
 				}
-			}}
+			}})
 			before, _ := json.Marshal(fake.Snapshot().Tables)
 			err := d.RestoreROSPolicy(request, ROSPolicyUndo{Kind: "ros_policy_restore", Previous: json.RawMessage(`null`)})
 			after, _ := json.Marshal(fake.Snapshot().Tables)
@@ -183,11 +184,11 @@ func TestO36bPolicyRestoreCommitRuntimeBoundary(t *testing.T) {
 				t.Fatal("fixture did not hit manifest-only restore", stopped)
 			}
 			if shutdown {
-				if !errors.Is(err, context.Canceled) || !bytes.Equal(d.policyManifest, previous) {
-					t.Fatalf("shutdown committed policy proof: err=%v manifest=%s", err, d.policyManifest)
+				if !errors.Is(err, context.Canceled) || !bytes.Equal(d.PolicyManifest(), previous) {
+					t.Fatalf("shutdown committed policy proof: err=%v manifest=%s", err, d.PolicyManifest())
 				}
-			} else if err != nil || string(d.policyManifest) != "null" {
-				t.Fatalf("disconnect interrupted policy proof: err=%v manifest=%s", err, d.policyManifest)
+			} else if err != nil || string(d.PolicyManifest()) != "null" {
+				t.Fatalf("disconnect interrupted policy proof: err=%v manifest=%s", err, d.PolicyManifest())
 			}
 		})
 	}

@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -92,25 +93,25 @@ func TestR14ClassifyPython(t *testing.T) {
 }
 func r14Plan(t *testing.T, ctx context.Context, d *RouterOS, r *Router, desired *Desired) *Plan {
 	t.Helper()
-	desired.ROSPolicy.Previous = slices.Clone(d.policyManifest)
+	desired.ROSPolicy.Previous = slices.Clone(d.PolicyManifest())
 	state, err := r08InspectState(ctx, d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	owned, err := OwnedROSPolicyRows(d.policyManifest, state.ROSPolicy)
+	owned, err := OwnedROSPolicyRows(d.PolicyManifest(), state.ROSPolicy)
 	if err != nil {
 		owned = nil
 	}
 	ids := map[string]bool{}
 	for _, v := range owned {
-		if v.Path == rosMangle {
+		if v.Path == ros.PathMangle {
 			ids[v.ID] = true
 		}
 	}
 	state.NatContext.Mangle = []Row{}
-	for _, row := range (*state.ROSPolicy)[rosMangle] {
-		if !ids[row.id()] {
-			copy := cloneRow(row)
+	for _, row := range (*state.ROSPolicy)[ros.PathMangle] {
+		if !ids[row.ID()] {
+			copy := ros.CloneRow(row)
 			delete(copy, "bytes")
 			delete(copy, "packets")
 			state.NatContext.Mangle = append(state.NatContext.Mangle, copy)
@@ -133,7 +134,7 @@ func TestR14DeltaPython(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			state := r08State()
 			if mode == "nat" || mode == "nat_reference" || mode == "delete_failure" {
-				delete(state.Tables[rosNAT][0], "out-interface")
+				delete(state.Tables[ros.PathNAT][0], "out-interface")
 			}
 			f := routerfake.New(nil)
 			f.Reset(state)
@@ -163,7 +164,7 @@ func TestR14DeltaPython(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			baseline := &RuleSyncBaseline{Control: "synthetic", Rules: map[string]*RuleSyncRecord{}, Desired: old, StaticResources: static, Policy: syncNull(slices.Clone(d.policyManifest)), NATList: nat}
+			baseline := &RuleSyncBaseline{Control: "synthetic", Rules: map[string]*RuleSyncRecord{}, Desired: old, StaticResources: static, Policy: syncNull(slices.Clone(d.PolicyManifest())), NATList: nat}
 			next := r08Desired(policy)
 			next.IPv6CIDRs = []ProxyCIDR{}
 			next.BlockingWarnings = []string{}
@@ -172,35 +173,35 @@ func TestR14DeltaPython(t *testing.T) {
 			} else if mode != "unchanged" {
 				next.ProxyCIDRs[1].CIDR = "203.0.113.0/24"
 			}
-			next.ROSPolicy.Previous = slices.Clone(d.policyManifest)
+			next.ROSPolicy.Previous = slices.Clone(d.PolicyManifest())
 			seed := f.Snapshot()
 			seed.Calls = nil
 			switch mode {
 			case "foreign_cf":
-				seed.Tables[rosRoutes] = append(seed.Tables[rosRoutes], routerfake.Row{".id": "*E0", "dst-address": "198.51.100.128/25", "gateway": r08Gateway, "comment": "cf-manual", "disabled": "false", "routing-table": "main"})
+				seed.Tables[ros.PathRoutes] = append(seed.Tables[ros.PathRoutes], routerfake.Row{".id": "*E0", "dst-address": "198.51.100.128/25", "gateway": r08Gateway, "comment": "cf-manual", "disabled": "false", "routing-table": "main"})
 			case "foreign_target":
-				seed.Tables[rosRoutes] = append(seed.Tables[rosRoutes], routerfake.Row{".id": "*E0", "dst-address": "203.0.113.0/24", "gateway": r08Gateway, "comment": "manual", "disabled": "false", "routing-table": "main", "active": "true", "immediate-gw": r08Gateway + "%bridge"})
+				seed.Tables[ros.PathRoutes] = append(seed.Tables[ros.PathRoutes], routerfake.Row{".id": "*E0", "dst-address": "203.0.113.0/24", "gateway": r08Gateway, "comment": "manual", "disabled": "false", "routing-table": "main", "active": "true", "immediate-gw": r08Gateway + "%bridge"})
 			case "static_drift":
-				for _, row := range seed.Tables[rosRoutes] {
+				for _, row := range seed.Tables[ros.PathRoutes] {
 					if row["dst-address"] == r08Target {
 						row["comment"] = "outside-edit"
 					}
 				}
 			case "nat_reference":
-				seed.Tables[rosFilter] = append(seed.Tables[rosFilter], routerfake.Row{".id": "*E0", "chain": "forward", "action": "drop", "dst-address-list": NATDstList, "disabled": "false"})
+				seed.Tables[ros.PathFilter] = append(seed.Tables[ros.PathFilter], routerfake.Row{".id": "*E0", "chain": "forward", "action": "drop", "dst-address-list": NATDstList, "disabled": "false"})
 			case "policy_reference":
 				var manifest ROSPolicyManifest
-				_ = json.Unmarshal(d.policyManifest, &manifest)
+				_ = json.Unmarshal(d.PolicyManifest(), &manifest)
 				for _, item := range manifest.Resources {
-					if item.Path == rosAddresses {
-						seed.Tables[rosFilter] = append(seed.Tables[rosFilter], routerfake.Row{".id": "*E0", "chain": "forward", "action": "drop", "dst-address-list": item.Config.text("list"), "disabled": "false"})
+					if item.Path == ros.PathAddresses {
+						seed.Tables[ros.PathFilter] = append(seed.Tables[ros.PathFilter], routerfake.Row{".id": "*E0", "chain": "forward", "action": "drop", "dst-address-list": item.Config.Text("list"), "disabled": "false"})
 						break
 					}
 				}
 			case "delete_failure":
-				seed.Faults = []routerfake.Fault{{Method: "DELETE", Path: rosRoutes + "/" + static[len(static)-1].ID, Count: 1, Status: 403}}
+				seed.Faults = []routerfake.Fault{{Method: "DELETE", Path: ros.PathRoutes + "/" + static[len(static)-1].ID, Count: 1, Status: 403}}
 			case "verify_failure":
-				seed.Faults = []routerfake.Fault{{Method: "PUT", Path: rosRoutes, Count: 1, PatchCreated: nil, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{rosRoutes: {static[0].ID: {"comment": "outside-edit"}}}}}
+				seed.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathRoutes, Count: 1, PatchCreated: nil, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{ros.PathRoutes: {static[0].ID: {"comment": "outside-edit"}}}}}
 			}
 			input := map[string]any{"action": "delta", "state": seed, "router": r, "desired": next, "baseline": baseline}
 			var expected struct {
@@ -235,7 +236,7 @@ func TestR14DeltaPython(t *testing.T) {
 				if expected.Class != "ReleaseError" {
 					t.Fatalf("negative control missed final verifier: %+v", expected)
 				}
-				after := f.Snapshot().Tables[rosRoutes]
+				after := f.Snapshot().Tables[ros.PathRoutes]
 				foundOld, foundNew := false, false
 				for _, row := range after {
 					if row["dst-address"] == r08Target {
@@ -253,7 +254,7 @@ func TestR14DeltaPython(t *testing.T) {
 				}
 			} else {
 				r12Compare(t, "device state", f.Snapshot().Tables, python.Tables)
-				r12Compare(t, "policy ownership", syncNull(d.policyManifest), syncNull(expected.Policy))
+				r12Compare(t, "policy ownership", syncNull(d.PolicyManifest()), syncNull(expected.Policy))
 				r12Compare(t, "raw operation effects", r08Writes(t, f.Calls()), r08Writes(t, python.Calls))
 			}
 

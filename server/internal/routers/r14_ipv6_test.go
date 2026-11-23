@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"encoding/json"
 	"net/http/httptest"
 	"slices"
@@ -46,7 +47,7 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 				if _, err := d.Apply(t.Context(), device.JSON(v.Ops[0])); err != nil {
 					t.Fatal(err)
 				}
-				r.Extra["ipv6_routes_state"] = slices.Clone(d.ipv6RoutesManifest)
+				r.Extra["ipv6_routes_state"] = slices.Clone(d.IPv6RoutesManifest())
 			}
 			static, err := syncStaticResources(t.Context(), d, old)
 			if err != nil {
@@ -65,7 +66,7 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 			seed = f.Snapshot()
 			seed.Calls = nil
 			if mode == "failed_write" {
-				seed.Faults = []routerfake.Fault{{Method: "PUT", Path: rosIPv6Routes, Count: 1, Status: 403}}
+				seed.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathIPv6Routes, Count: 1, Status: 403}}
 			}
 			input := map[string]any{"action": "delta", "ipv6": true, "config": config, "router": r, "desired": next, "agent": agent, "host": host, "baseline": base, "state": seed}
 			var expected struct {
@@ -100,7 +101,7 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 				r12Compare(t, "IPv6 delta", result, expected.Value)
 			}
 			r12Compare(t, "IPv6 and IPv4 state", f.Snapshot().Tables, python.Tables)
-			r12Compare(t, "IPv6 ownership", syncNull(d.ipv6RoutesManifest), syncNull(expected.Manifest))
+			r12Compare(t, "IPv6 ownership", syncNull(d.IPv6RoutesManifest()), syncNull(expected.Manifest))
 			r12Compare(t, "IPv6 request effects", r08Writes(t, f.Calls()), r08Writes(t, python.Calls))
 		})
 	}

@@ -71,7 +71,6 @@ const (
 	messageIPv6RoutesSummaryDelete     = "撤回 %d 条"
 	messageIPv6RoutesSummaryUpdate     = "更新管理记录"
 	messageIPv6RoutesSummaryGateway    = "（下一跳 %s）"
-	messageIPv6RoutesOwnership         = "IPv6 规则集路由的归属已变化，请重新预览"
 	messageIPv6RoutesNewInactive       = "新建 IPv6 路由 %s 尚未生效，已停止发布"
 	messageIPv6RoutesCount             = "RouterOS 回读校验失败：新建的 IPv6 路由数量与计划不一致"
 	messageIPv6RoutesRollback          = "IPv6 规则集路由回滚未完成："

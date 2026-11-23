@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ros"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -91,7 +92,7 @@ func r09EvalCases() []r09EvalCase {
 		flags := []string{"syn"}
 		p.TCPFlags = &flags
 		p.DstAddress = new("2001:db8:1::/64")
-		s.Filter = []Row{mergeRows(row, Row{"chain": "forward", "action": "drop"})}
+		s.Filter = []Row{ros.MergeRows(row, Row{"chain": "forward", "action": "drop"})}
 		cases = append(cases, r09EvalCase{Name: fmt.Sprint(row), Snapshot: &s, Packet: p, Row: row, Family: 6})
 	}
 	// Non-text device values arrive as their text (Row decoding).

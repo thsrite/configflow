@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"context"
 	"fmt"
 	"slices"
@@ -14,7 +15,7 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 	for _, step := range steps {
 		requested = append(requested, step.ID)
 	}
-	rows, err := d.query(ctx, ".id", requested, rosRoutes)
+	rows, err := d.Query(ctx, ".id", requested, ros.PathRoutes)
 	if err != nil {
 		for _, step := range steps {
 			if err := d.restoreResource(ctx, step, ids, remapped, true); err != nil {
@@ -23,8 +24,8 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 		}
 		return
 	}
-	live := ROSPolicySnapshot{rosRoutes: rows}
-	present := rowIDs(rows)
+	live := ROSPolicySnapshot{ros.PathRoutes: rows}
+	present := ros.RowIDs(rows)
 	errors := make([]string, len(steps))
 	pending := []int{}
 	bytes := 0
@@ -39,10 +40,10 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 		for _, i := range chunk {
 			values = append(values, steps[i].Values)
 		}
-		var added *consoleAddResult
+		var added *ros.ConsoleAddResult
 		var err error
-		if len(chunk) >= d.batchMin {
-			added, err = d.consoleAdd(ctx, values, nil, false, rosRoutes)
+		if len(chunk) >= d.BatchMin() {
+			added, err = d.ConsoleAdd(ctx, values, nil, false, ros.PathRoutes)
 		}
 		if err != nil {
 			for _, i := range chunk {
@@ -56,7 +57,7 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 			for position, i := range chunk[:count] {
 				pointer, exists := added.Rows[position]
 				if !exists {
-					errors[i] = fmt.Sprintf(device.MessageUncertainRouteWrite, rosRoutes)
+					errors[i] = fmt.Sprintf(device.MessageUncertainRouteWrite, ros.PathRoutes)
 					if added.Failure != nil && added.Failure.Index == position && added.Failure.Err != nil {
 						errors[i] = added.Failure.Err.Error()
 					}
@@ -65,23 +66,23 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 				if pointer == nil {
 					// Written under a proven fresh ID, then gone: the read-back
 					// mismatch is reported like any other missing object.
-					_, err := d.confirmResource(ctx, rosRoutes, steps[i].Values, "", &NATStep{}, nil)
+					_, err := d.confirmResource(ctx, ros.PathRoutes, steps[i].Values, "", &NATStep{}, nil)
 					errors[i] = err.Error()
 					continue
 				}
 				row := *pointer
-				id := row.id()
-				ids.table(rosRoutes)[id] = true
-				undo := stepResource("delete", resource(rosRoutes, row))
-				if _, err := d.confirmResource(ctx, rosRoutes, steps[i].Values, id, &undo, row); err != nil {
+				id := row.ID()
+				ids.Table(ros.PathRoutes)[id] = true
+				undo := ros.StepResource("delete", ros.NewResource(ros.PathRoutes, row))
+				if _, err := d.confirmResource(ctx, ros.PathRoutes, steps[i].Values, id, &undo, row); err != nil {
 					errors[i] = err.Error()
 				} else {
-					remapped[[2]string{rosRoutes, steps[i].ID}] = id
+					remapped[[2]string{ros.PathRoutes, steps[i].ID}] = id
 				}
 			}
 			if added.Unexplained {
 				for _, i := range chunk[count:] {
-					errors[i] = fmt.Sprintf(device.MessageUncertainRouteWrite, rosRoutes)
+					errors[i] = fmt.Sprintf(device.MessageUncertainRouteWrite, ros.PathRoutes)
 				}
 				return
 			}
@@ -94,20 +95,20 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 	}
 	for i, step := range steps {
 		if present[step.ID] {
-			if err := guardPolicyIn(live, ROSResource{step.Path, step.ID, step.Config}); err != nil {
+			if err := guardPolicyIn(live, ROSResource{Path: step.Path, ID: step.ID, Config: step.Config}); err != nil {
 				errors[i] = err.Error()
 			}
 			continue
 		}
-		if !consoleSafe(step.Values) || step.Values.set("place-before") {
+		if !ros.ConsoleSafe(step.Values) || step.Values.Set("place-before") {
 			flush()
 			if err := d.restoreResource(ctx, step, ids, remapped, true); err != nil {
 				errors[i] = err.Error()
 			}
 			continue
 		}
-		size := len(routeAddLine(len(pending), step.Values, rosRoutes)) + 1
-		if len(pending) > 0 && (len(pending) >= d.routeBatch || bytes+size > routeScriptBytes-64) {
+		size := len(ros.RouteAddLine(len(pending), step.Values, ros.PathRoutes)) + 1
+		if len(pending) > 0 && (len(pending) >= d.RouteBatch() || bytes+size > ros.RouteScriptBytes-64) {
 			flush()
 		}
 		pending = append(pending, i)

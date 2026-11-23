@@ -1,7 +1,6 @@
 package routers
 
 const (
-	messageIPv6DNSFlag           = "IPv6 DNS 下发的 %s 状态无法识别，请检查路由器"
 	messageIPv6DNSServerList     = "IPv6 DNS 下发的服务器列表无法识别，请检查路由器"
 	messageIPv6DNSServerAddress  = "IPv6 DNS 下发包含无法识别的服务器地址，请检查路由器"
 	messageIPv6DNSSelection      = "请先选择可用的 OxiDNS 和 Mihomo 网关，再检查 IPv6 DNS 下发"

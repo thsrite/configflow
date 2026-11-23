@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/ros"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,9 +17,9 @@ import (
 
 func TestR12RouterOSRawStageRequests(t *testing.T) {
 	state := r08State()
-	state.Tables[rosRoutes] = state.Tables[rosRoutes][:1]
-	state.Tables[rosNAT][0]["out-interface"] = "bridge"
-	state.Faults = []routerfake.Fault{{Method: "PUT", Path: rosNAT, Count: 1, Status: 403}}
+	state.Tables[ros.PathRoutes] = state.Tables[ros.PathRoutes][:1]
+	state.Tables[ros.PathNAT][0]["out-interface"] = "bridge"
+	state.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathNAT, Count: 1, Status: 403}}
 	f := routerfake.New(nil)
 	f.Reset(state)
 	var mu sync.Mutex

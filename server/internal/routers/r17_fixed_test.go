@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/ros"
 	"net/http/httptest"
 	"testing"
 
@@ -15,7 +16,7 @@ func r17ROSState(dynamic bool) routerfake.State {
 	if dynamic {
 		rows = append(rows, routerfake.Row{".id": "*10", "address": "192.0.2.21", "mac-address": "02:00:00:00:00:21", "server": "dhcp-example", "dynamic": "true", "disabled": "false", "comment": "", "client-id": "synthetic-client"})
 	}
-	return routerfake.State{Tables: map[string][]routerfake.Row{rosDHCPServers: {{".id": "*1", "name": "dhcp-example", "interface": "bridge", "disabled": "false"}}, rosDHCPNetworks: {{".id": "*2", "address": "192.0.2.0/24", "gateway": "192.0.2.1"}}, "/ip/address": {{".id": "*3", "address": "192.0.2.1/24", "interface": "bridge"}}, fixedROSLeases: rows, "/ip/arp": {{".id": "*11", "address": "192.0.2.21", "mac-address": "02:00:00:00:00:21", "interface": "bridge"}}}}
+	return routerfake.State{Tables: map[string][]routerfake.Row{ros.PathDHCPServers: {{".id": "*1", "name": "dhcp-example", "interface": "bridge", "disabled": "false"}}, ros.PathDHCPNetworks: {{".id": "*2", "address": "192.0.2.0/24", "gateway": "192.0.2.1"}}, "/ip/address": {{".id": "*3", "address": "192.0.2.1/24", "interface": "bridge"}}, fixedROSLeases: rows, "/ip/arp": {{".id": "*11", "address": "192.0.2.21", "mac-address": "02:00:00:00:00:21", "interface": "bridge"}}}}
 }
 func TestR17ROSReservationLifecycle(t *testing.T) {
 	for _, dynamic := range []bool{false, true} {
