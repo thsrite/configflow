@@ -1,6 +1,7 @@
 package installation
 
 import (
+	"configflow/internal/fsx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -94,25 +95,10 @@ func (s *Service) write(ctx context.Context, r *Record) error {
 	if err = os.MkdirAll(s.root(), 0700); err != nil {
 		return fmt.Errorf("create installation directory: %w", err)
 	}
-	f, err := os.CreateTemp(s.root(), ".gateway-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err = f.Write(b); err == nil {
-		err = f.Sync()
-	}
-	closed := f.Close()
-	if err != nil {
-		return err
-	}
-	if closed != nil {
-		return closed
-	}
-	if err = ctx.Err(); err != nil {
-		return err
-	}
-	if err = os.Rename(f.Name(), path); err != nil {
+	if err = fsx.WriteFile(ctx, path, b, fsx.Options{Pattern: ".gateway-*"}); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("replace installation: %w", err)
 	}
 	return nil

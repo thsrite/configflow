@@ -9,6 +9,7 @@
 package taskstatus
 
 import (
+	"configflow/internal/fsx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -162,31 +163,13 @@ func writeSnapshot(ctx context.Context, path string, value Snapshot) error {
 	if err != nil {
 		return err
 	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".task-status-*")
-	if err != nil {
-		return err
-	}
-	name := temp.Name()
-	defer func() {
-		if _, statErr := os.Stat(name); statErr == nil {
-			os.Remove(name)
+	if err := fsx.WriteFile(ctx, path, encoded, fsx.Options{Pattern: ".task-status-*"}); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
-	}()
-	if _, err := temp.Write(encoded); err != nil {
-		temp.Close()
 		return err
 	}
-	if err := temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return os.Rename(name, path)
+	return nil
 }
 
 // Read returns a private snapshot under the leaf lock.

@@ -2,6 +2,7 @@ package installer
 
 import (
 	"bytes"
+	"configflow/internal/fsx"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -264,15 +265,10 @@ func IssueCapability(ctx context.Context, dataDir string, request json.RawMessag
 			return nil, err
 		}
 		path := filepath.Join(root, session.id+".json")
-		temp := filepath.Join(root, session.id+".tmp")
-		if err := os.WriteFile(temp, data, 0600); err != nil {
-			return nil, err
-		}
-		if err := ctx.Err(); err != nil {
-			_ = os.Remove(temp)
-			return nil, err
-		}
-		if err := os.Rename(temp, path); err != nil {
+		if err := fsx.WriteFile(ctx, path, data, fsx.Options{Pattern: session.id + ".*.tmp"}); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, err
 		}
 	}

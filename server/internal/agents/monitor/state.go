@@ -6,6 +6,7 @@ package monitor
 
 import (
 	"bytes"
+	"configflow/internal/fsx"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -427,38 +428,9 @@ func writeStateAtomic(ctx context.Context, directory, path string, data []byte) 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	handle, err := os.CreateTemp(directory, "."+filepath.Base(path)+".*.tmp")
+	temp, err := fsx.Stage(ctx, filepath.Join(directory, filepath.Base(path)), data, fsx.Options{})
 	if err != nil {
 		return err
 	}
-	temporary := handle.Name()
-	defer func() {
-		if temporary != "" {
-			os.Remove(temporary)
-		}
-	}()
-	if _, err := handle.Write(data); err != nil {
-		handle.Close()
-		return err
-	}
-	if err := handle.Sync(); err != nil {
-		handle.Close()
-		return err
-	}
-	if err := handle.Close(); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := replaceFile(temporary, path); err != nil {
-		return err
-	}
-	temporary = ""
-	dir, err := os.Open(directory)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return temp.CommitWith(ctx, path, replaceFile)
 }

@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"configflow/internal/fsx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -100,26 +101,11 @@ func (s recordStore) write(ctx context.Context, record *Record) error {
 	if err := os.MkdirAll(s.root, 0700); err != nil {
 		return fmt.Errorf("create setup session directory: %w", err)
 	}
-	file, err := os.CreateTemp(s.root, ".setup-")
-	if err != nil {
-		return fmt.Errorf("create setup session temporary file: %w", err)
-	}
-	defer os.Remove(file.Name())
-	if _, err = file.Write(raw); err == nil {
-		err = file.Sync()
-	}
-	closeErr := file.Close()
-	if err != nil {
+	if err := fsx.WriteFile(ctx, path, raw, fsx.Options{Pattern: ".setup-*"}); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("write setup session: %w", err)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close setup session: %w", closeErr)
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := os.Rename(file.Name(), path); err != nil {
-		return fmt.Errorf("replace setup session: %w", err)
 	}
 	return nil
 }

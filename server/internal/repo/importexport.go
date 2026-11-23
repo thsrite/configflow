@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"configflow/internal/fsx"
 	"context"
 	"encoding/json"
 	"io/fs"
@@ -99,7 +100,7 @@ func (r *Repository) snapshot(reason string) (string, error) {
 		return strings.Count(directories[i], "/") > strings.Count(directories[j], "/")
 	})
 	for _, directory := range append(directories, destination, parent, r.migrationsDir, r.dataDir) {
-		if err := fsyncDir(directory); err != nil {
+		if err := fsx.SyncDir(directory); err != nil {
 			return "", err
 		}
 	}

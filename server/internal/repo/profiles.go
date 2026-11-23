@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"configflow/internal/fsx"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -259,7 +260,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 				os.Remove(temporary)
 				return err
 			}
-			if err := fsyncDir(tombstone); err != nil {
+			if err := fsx.SyncDir(tombstone); err != nil {
 				return err
 			}
 			document.Profiles = slices.DeleteFunc(document.Profiles, func(p *model.Profile) bool { return p.Key() == profileID })

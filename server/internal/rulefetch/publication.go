@@ -2,6 +2,7 @@ package rulefetch
 
 import (
 	"bytes"
+	"configflow/internal/fsx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -348,42 +349,15 @@ func (s *CachePublication) publish(ctx context.Context) error {
 // refreshBackup retains the previous primary after a successful publication.
 // A failed refresh leaves the old backup intact and cannot fail the main write.
 func (s *CachePublication) refreshBackup(ctx context.Context, previous []byte) {
-	file, err := os.CreateTemp(filepath.Dir(s.path), ".rule-edit-"+filepath.Base(s.path)+"-backup-*.tmp")
-	if err != nil {
-		return
-	}
-	defer os.Remove(file.Name())
-	_, err = file.Write(previous)
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return
-	}
-	if err = os.Rename(file.Name(), s.path+".bak"); err == nil {
-		_ = syncDirectory(ctx, filepath.Dir(s.path))
-	}
+	pattern := ".rule-edit-" + filepath.Base(s.path) + "-backup-*.tmp"
+	_ = fsx.WriteFile(ctx, s.path+".bak", previous, fsx.Options{Pattern: pattern})
 }
 
 func syncDirectory(ctx context.Context, path string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	err = ctx.Err()
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	return err
+	return fsx.SyncDir(path)
 }
 
 func replaceFile(ctx context.Context, from, to string) error {

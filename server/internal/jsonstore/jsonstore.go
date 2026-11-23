@@ -8,6 +8,7 @@ package jsonstore
 
 import (
 	"bytes"
+	"configflow/internal/fsx"
 	"context"
 	"crypto/sha256"
 
@@ -131,6 +132,11 @@ func (s *Store) WriteContext(ctx context.Context, id string, data any, verifySig
 	if _, err := handle.Write(encoded); err != nil {
 		return nil, err
 	}
+	// The temporary file is replaced by rename (not fsx.WriteFile) because
+	// the signature check below reads the still open handle afterwards.
+	if err := handle.Sync(); err != nil {
+		return nil, err
+	}
 	if s.afterTempWrite != nil {
 		s.afterTempWrite()
 	}
@@ -148,7 +154,7 @@ func (s *Store) WriteContext(ctx context.Context, id string, data any, verifySig
 			return nil, err
 		}
 		committed = true
-		return nil, nil
+		return nil, fsx.SyncDir(s.DataDir)
 	}
 	before, err := signature(handle)
 	if err != nil {
@@ -173,6 +179,9 @@ func (s *Store) WriteContext(ctx context.Context, id string, data any, verifySig
 		return nil, err
 	}
 	committed = true
+	if err := fsx.SyncDir(s.DataDir); err != nil {
+		return nil, err
+	}
 	if s.afterReplace != nil {
 		s.afterReplace(path)
 	}

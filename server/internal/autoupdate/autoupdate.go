@@ -16,6 +16,7 @@ package autoupdate
 
 import (
 	"bytes"
+	"configflow/internal/fsx"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -294,10 +295,7 @@ func (u *Updater) saveManifest(m *Manifest) error {
 		return fmt.Errorf("save manifest: %w", err)
 	}
 	path := filepath.Join(u.cfg.State, "manifest.json")
-	if err := os.WriteFile(path+".tmp", data, 0o644); err != nil {
-		return fmt.Errorf("save manifest: %w", err)
-	}
-	if err := os.Rename(path+".tmp", path); err != nil {
+	if err := fsx.WriteFile(context.Background(), path, data, fsx.Options{Perm: 0o644}); err != nil {
 		return fmt.Errorf("save manifest: %w", err)
 	}
 	return nil

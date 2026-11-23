@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/fsx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -171,27 +172,11 @@ func (s RuleSyncStore) Write(ctx context.Context, profile, id string, value Rule
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("create rule sync directory: %w", err)
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".receipt-*")
-	if err != nil {
-		return err
-	}
-	name := file.Name()
-	defer os.Remove(name)
-	if _, err = file.Write(data); err == nil {
-		err = file.Sync()
-	}
-	closeErr := file.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	if err := fsx.WriteFile(ctx, path, data, fsx.Options{Pattern: ".receipt-*"}); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("write rule sync receipt: %w", err)
-	}
-	if err = ctx.Err(); err != nil {
-		return err
-	}
-	if err = os.Rename(name, path); err != nil {
-		return fmt.Errorf("replace rule sync receipt: %w", err)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/fsx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"context"
@@ -83,23 +84,11 @@ func (s *Service) remember(ctx context.Context, a Document, profile string, conf
 	if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
 		return "", fmt.Errorf("create IPv6 check directory: %w", e)
 	}
-	file, e := os.CreateTemp(filepath.Dir(path), ".write-")
-	if e != nil {
-		return "", fmt.Errorf("create IPv6 check: %w", e)
-	}
-	defer os.Remove(file.Name())
-	defer file.Close()
-	if _, e = file.Write(jsonresp.Value(record)); e != nil {
+	if e := fsx.WriteFile(ctx, path, jsonresp.Value(record), fsx.Options{Pattern: ".write-*"}); e != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		return "", fmt.Errorf("write IPv6 check: %w", e)
-	}
-	if e = file.Close(); e != nil {
-		return "", e
-	}
-	if e = ctx.Err(); e != nil {
-		return "", e
-	}
-	if e = os.Rename(file.Name(), path); e != nil {
-		return "", fmt.Errorf("replace IPv6 check: %w", e)
 	}
 	return record.CheckedAt, nil
 }

@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"configflow/internal/fsx"
 	"configflow/internal/lifecycle"
 	"context"
 	"fmt"
@@ -16,31 +17,11 @@ import (
 // L4 files are leaf stores: these functions never enter the repository while
 // holding a store mutex. Atomic writes retain old bytes until rename succeeds.
 func atomicWrite(ctx context.Context, path string, data []byte) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".write-")
-	if err != nil {
-		return fmt.Errorf("create deployment temporary: %w", err)
-	}
-	name := temp.Name()
-	defer os.Remove(name)
-	if _, err = temp.Write(data); err != nil {
-		temp.Close()
-		return fmt.Errorf("write deployment temporary: %w", err)
-	}
-	if err = temp.Sync(); err != nil {
-		temp.Close()
-		return fmt.Errorf("flush deployment temporary: %w", err)
-	}
-	if err = temp.Close(); err != nil {
-		return fmt.Errorf("close deployment temporary: %w", err)
-	}
-	if err = ctx.Err(); err != nil {
-		return err
-	}
-	if err = os.Rename(name, path); err != nil {
-		return fmt.Errorf("replace deployment file: %w", err)
+	if err := fsx.WriteFile(ctx, path, data, fsx.Options{Pattern: ".write-*"}); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("write deployment file: %w", err)
 	}
 	return nil
 }

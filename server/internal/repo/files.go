@@ -2,6 +2,7 @@ package repo
 
 import (
 	"bytes"
+	"configflow/internal/fsx"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -25,47 +26,22 @@ func ValidateProfileID(profileID string) error {
 	return nil
 }
 
-func fsyncDir(directory string) error {
-	handle, err := os.Open(directory)
-	if err != nil {
-		return err
-	}
-	defer handle.Close()
-	return handle.Sync()
-}
-
 // writeTemp is _write_temp: a complete, fsynced sibling of path (mode 0600).
 func writeTemp(path string, content []byte) (string, error) {
-	handle, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	temp, err := fsx.Stage(context.Background(), path, content, fsx.Options{})
 	if err != nil {
 		return "", err
 	}
-	temporary := handle.Name()
-	fail := func(err error) (string, error) {
-		handle.Close()
-		os.Remove(temporary)
-		return "", err
-	}
-	if _, err := handle.Write(content); err != nil {
-		return fail(err)
-	}
-	if err := handle.Sync(); err != nil {
-		return fail(err)
-	}
-	if err := handle.Close(); err != nil {
-		os.Remove(temporary)
-		return "", err
-	}
-	info, err := os.Stat(temporary)
+	info, err := os.Stat(temp.Name())
 	if err != nil {
-		os.Remove(temporary)
+		temp.Discard()
 		return "", err
 	}
 	if info.Size() != int64(len(content)) {
-		os.Remove(temporary)
+		temp.Discard()
 		return "", repositoryError(fmt.Sprintf("Incomplete write for %s: %d of %d bytes", path, info.Size(), len(content)))
 	}
-	return temporary, nil
+	return temp.Name(), nil
 }
 
 // writeAtomic is _write_atomic: replace path through a temporary file, then
@@ -106,7 +82,7 @@ func writeAtomicUsing(ctx context.Context, path string, content []byte,
 		os.Remove(temporary)
 		return err
 	}
-	if err := fsyncDir(filepath.Dir(path)); err != nil {
+	if err := fsx.SyncDir(filepath.Dir(path)); err != nil {
 		return err
 	}
 	if !hasPrevious {
@@ -121,7 +97,7 @@ func writeAtomicUsing(ctx context.Context, path string, content []byte,
 		os.Remove(backupTemporary)
 		return nil
 	}
-	fsyncDir(filepath.Dir(backup))
+	fsx.SyncDir(filepath.Dir(backup))
 	return nil
 }
 

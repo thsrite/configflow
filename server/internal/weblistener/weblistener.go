@@ -13,6 +13,7 @@
 package weblistener
 
 import (
+	"configflow/internal/fsx"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -588,29 +589,9 @@ func atomicWrite(ctx context.Context, path string, content []byte, mode os.FileM
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".")
-	if err != nil {
-		return err
+	err := fsx.WriteFile(ctx, path, content, fsx.Options{Perm: mode, ExactPerm: true, Pattern: "." + filepath.Base(path) + ".*"})
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
 	}
-	temporary := f.Name()
-	defer os.Remove(temporary)
-	if err := f.Chmod(mode); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.Write(content); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return os.Rename(temporary, path)
+	return err
 }

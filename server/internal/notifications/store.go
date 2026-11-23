@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"bytes"
+	"configflow/internal/fsx"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -174,27 +175,10 @@ func transaction(ctx context.Context, dataDir string, ticket uint64, persist boo
 		}
 		return nil
 	}
-	temporary, err := os.CreateTemp(dataDir, ".notifications-")
-	if err != nil {
-		return err
-	}
-	name := temporary.Name()
-	defer os.Remove(name)
-	if _, err := temporary.Write(encoded); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := os.Rename(name, path); err != nil {
+	if err := fsx.WriteFile(ctx, path, encoded, fsx.Options{Pattern: ".notifications-*"}); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return err
 	}
 	if ticket != 0 && apply {

@@ -25,6 +25,7 @@ package metrics
 
 import (
 	"bytes"
+	"configflow/internal/fsx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -790,34 +791,11 @@ func (h *History) replaceContext(ctx context.Context, agentID, path string, line
 		h.remove(path, false)
 		return nil
 	}
-	handle, err := os.CreateTemp(h.DataDir, "."+agentID+"*.tmp")
+	temp, err := fsx.Stage(ctx, path, joinLines(lines), fsx.Options{Perm: 0o600, Pattern: "." + agentID + "*.tmp"})
 	if err != nil {
 		return err
 	}
-	temporary := handle.Name()
-	defer func() {
-		if _, err := os.Lstat(temporary); err == nil {
-			os.Remove(temporary)
-		}
-	}()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if _, err := handle.Write(joinLines(lines)); err != nil {
-		handle.Close()
-		return err
-	}
-	if err := handle.Sync(); err != nil {
-		handle.Close()
-		return err
-	}
-	if err := handle.Close(); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return replaceFile(temporary, path)
+	return temp.CommitWith(ctx, path, replaceFile)
 }
 
 type agentError struct{ agentID, reason string }

@@ -2,6 +2,7 @@ package substore
 
 import (
 	"bytes"
+	"configflow/internal/fsx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/model"
@@ -146,30 +147,18 @@ func (r *Runtime) writeStateUsing(ctx context.Context, patch runtimePatch, befor
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return fmt.Errorf("create Sub-Store runtime directory: %w", err)
 	}
-	file, err := os.CreateTemp(root, ".state.*.tmp")
+	path := filepath.Join(root, "state.json")
+	temp, err := fsx.Stage(ctx, path, data, fsx.Options{Pattern: ".state.*.tmp"})
 	if err != nil {
 		return fmt.Errorf("stage Sub-Store runtime state: %w", err)
-	}
-	name := file.Name()
-	defer os.Remove(name)
-	if _, err := file.Write(data); err != nil {
-		file.Close()
-		return fmt.Errorf("write Sub-Store runtime state: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		file.Close()
-		return fmt.Errorf("sync Sub-Store runtime state: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close Sub-Store runtime state: %w", err)
 	}
 	if beforeReplace != nil {
 		beforeReplace()
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := os.Rename(name, filepath.Join(root, "state.json")); err != nil {
+	if err := temp.Commit(ctx, path); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return fmt.Errorf("commit Sub-Store runtime state: %w", err)
 	}
 	return nil
