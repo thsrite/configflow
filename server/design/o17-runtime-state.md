@@ -1,4 +1,4 @@
-# O17 ② Agent 运行状态移出配置文档 + ① 后台循环改变化通知 — 设计（待裁定）
+# O17 ② Agent 运行状态移出配置文档 + ① 后台循环改变化通知 — 设计（已裁定）
 
 分支 `go-o17-runtime-state`（= `go@ce10c8375`），2026-11-23。对应 `parity/o17-idiomatic-go.md` 1.1、1.4 与 2.0 表。
 O18 T1d（batch-42）合入后 rebase 再实现；本文只依赖 T1b 之后的 `model.Agent` 普通结构体形状，不依赖 `model` 旧机制。
@@ -68,7 +68,12 @@ O18 T1d（batch-42）合入后 rebase 再实现；本文只依赖 T1b 之后的 
 | `rule_sync.settings`、`dns_follow`（绑定）、`oxidns_ha`（设置）、`ipv6_verification_settings` | 配置 | 用户 | 低 | 全部 |
 | `node_test_dns_endpoints` | 配置（遗留，只读） | 无（功能已退役） | 0 | 旧数据保留 |
 
-**边界项（需裁定 D2）**：
+**归类准则（D2 裁定，硬要求）**：用户在页面设置的意图/开关一律留在配置——`enabled`、`oxidns_ha`（启用与配对设置）、
+`rule_sync.settings`、`dns_follow` 绑定、`ipv6_verification_settings`、域名发现/流量历史开关等；只有设备回报或后台任务产生的
+过程与结果进状态表。上表「谁写」列即依据：凡是写入方是用户请求、且值表达用户选择的，归配置。`force_refresh` 虽由用户点击写入，
+但它是一次性的操作请求、被 worker 消费，不是持续的设置，所以归状态。新增的 `restored` 标记（2.5.1）由导入写入、由发布清除，归状态。
+
+**边界项（D2 已按下列建议裁定）**：
 
 - `dns_follow.upstream_signature`、`dns_follow.after_deployment_id`：后台联动成功后写回绑定（「上次已应用的上游签名」），语义偏状态，
   但嵌在绑定对象里且只在上游 DNS 真变化时写（很少）。**建议留在配置**：拆嵌套对象的复杂度不值得；代价是联动成功时多一次配置提交
@@ -139,7 +144,8 @@ type Migration struct {
 var AgentStateMembers = []string{"deployments", "latest_deployment", "applied_content", "config_version",
 	"config_revision", "pushed_at", "version", "latest_upgrade", "rule_sync.state", "dns_follow_state",
 	"dns_follow_job", "oxidns_ha_state", "oxidns_ha_publication", "ipv6_verifications",
-	"status", "last_heartbeat", "service_status", "system_metrics", "cpu", "memory", "disk", "network"}
+	"status", "last_heartbeat", "service_status", "system_metrics", "cpu", "memory", "disk", "network",
+	"restored"} // restored：恢复标记（2.5.1），只存在于状态表
 ```
 
 ```go
@@ -203,10 +209,29 @@ WebDAV 自动备份：现在靠 `webdav/changes.go` 的 `agentRuntimeFields` 清
   - 旧 Go 二进制：看到 v2 拒绝打开（现有 `StoreUnsupported` 文案），不会把状态当成「没有」再写回。生产上还没有 Go，影响只在测试/实验室。
   - 旧 Agent：协议不变，无影响。遗留 `runtime.sqlite3` 导入走 `EditAgents`，自动落到新位置。
 - **导入（ImportAllJSON / 首次向导导入 / WebDAV 恢复）**：文档里的 agents 若带状态成员（旧备份、Python 导出），按同一 `splitAgents`
-  搬进状态表并**替换**这些 Agent 的状态行；不带则这些 Agent 没有状态（= 从没发布过）。导入前的快照（`snapshot`）用 `BackupTo`，已含两张表。
-- **导出**（D3）：完整导出（下载、WebDAV）只含配置，不含状态成员；脱敏导出本来就把 agents 清空。后果：用新导出恢复后，
-  Agent 页显示需要推送、规则同步没有基线、HA 无进行中日志——推送一次即收敛。「诊断导出」本批不做（现在没有读者，需要时再加，
-  格式可直接是 `agent_state` 行的 JSON）。
+  搬进状态表并**替换**这些 Agent 的状态行；不带（新格式导出）则按 2.5.1 处理。导入前的快照（`snapshot`）用 `BackupTo`，已含两张表。
+- **导出**（D3，已裁定）：完整导出（下载、WebDAV）只含配置，不含状态成员；脱敏导出本来就把 agents 清空。「诊断导出」本批不做。
+
+#### 2.5.1 用不含状态的备份恢复之后（D3 条件，fail closed）
+
+问题：备份里没有部署历史、`applied_content`、HA 发布日志/`oxidns_ha_state`、联动状态。设备上实际跑的可能是任何时刻的配置，
+尤其是备份恰好在「HA 启用进行中」或「HA 停用进行中」时生成：配置里的 `oxidns_ha` 还没落成（或还没撤掉），而设备上 keepalived
+已经配好（或还在）。如果把「没有日志」读成「没有进行中的发布」，配对锁会解开，可能对一台仍持有 VIP 的成员单独发布或改地址。
+
+规则：
+1. **恢复标记**：导入一个不含状态成员的文档（新格式备份）时，在同一事务里给每个导入的、有可证明 id 的 Agent 写一行状态
+   `restored`（`{"at": <ISO 时间>}`）。导入旧格式（带状态成员）不写标记——那是现在的行为，状态随备份恢复。
+2. **标记存在时 = 运行状态未知，按 fail closed**：
+   - `HAActiveModel` 对带标记且 `oxidns_ha` 已启用、或服务类型为 `oxidns` 的 Agent 返回「进行中」，于是现有配对锁全部生效：
+     编辑受保护字段、换绑、启用/停用 HA、单独部署 HA 成员、规则同步写入都被拒绝（409，沿用现有 HA 忙文案）。
+   - 所有带标记的 Agent：受保护字段编辑与换绑返回 409 `运行记录未包含在备份里，请先重新发布此 Agent`；规则同步、DNS 联动
+     不以它为源或目标自动推送（没有基线，不自动写设备），状态显示 `blocked` + 同一提示。
+   - **唯一出口是重新发布**：一次成功的部署（普通 Agent）或成功的成对发布（HA 成员，按 `oxidns_ha` 当前配置走成对流程，
+     未启用 HA 的 OxiDNS 走普通发布）在同一事务里删除标记。删除 Agent 同时删除标记。不提供「忽略」按钮（本批）。
+3. **界面提示**：Agent 列表/详情响应新增只读成员 `state_restored`（有标记时为 `true` + `state_restored_at`，否则不出现——
+   不带标记时响应与现在逐字节相同）；Agent 页顶部横幅与卡片徽标显示「运行记录未包含在备份里，各 Agent 需要重新发布一次」。
+   导入接口成功消息追加同一句（仅在写了标记时）。`doc/` 的备份恢复说明与截图同步。
+4. 已登记为有意变化：新格式导出不含状态；恢复后需重新发布；恢复标记的锁定行为。
 
 ### 2.6 ① 后台循环：变化通知
 
@@ -250,14 +275,15 @@ WebDAV 自动备份：现在靠 `webdav/changes.go` 的 `agentRuntimeFields` 清
 
 ### 2.8 对外不变 / 有意变化
 
-不变：所有路由的响应字段与值（Agent 列表/详情、部署轮询、HA/联动/IPv6/规则同步/升级状态）、状态码、中文消息、Agent 协议、写设备语义、前端。
+不变：所有路由的响应字段与值（唯一新增：带恢复标记的 Agent 多出只读 `state_restored`/`state_restored_at`，见 2.5.1）（Agent 列表/详情、部署轮询、HA/联动/IPv6/规则同步/升级状态）、状态码、中文消息、Agent 协议、写设备语义、前端。
 
 有意变化（登记 `behaviour-changes.md`）：
 1. 存储布局 v2（Python 与旧 Go 不能打开）。
 2. 完整导出/WebDAV 备份不含 Agent 状态成员（D3）。
 3. 状态变化不再触发 WebDAV 自动备份。
 4. 规则同步状态变化不再改变路由器签名（不再触发对应的重算）。
-5. 后台循环有通知时立即反应（原来最多 2–5 s），空闲时不再每 2–5 s 读库。
+5. 用不含状态的备份恢复后，Agent 带恢复标记、按 fail closed 锁定，重新发布后解除（2.5.1）。
+6. 后台循环有通知时立即反应（原来最多 2–5 s），空闲时不再每 2–5 s 读库。
 
 ---
 
@@ -307,7 +333,7 @@ WebDAV 自动备份：现在靠 `webdav/changes.go` 的 `agentRuntimeFields` 清
 |---|---|---|
 | S1 | `store`：迁移框架（`Migration`、在线备份、版本检查）、`agent_state` 表、`Head.State`、`Commit` 同事务写两部分、`Change` | M |
 | S2 | `model.AgentStateMembers` + 覆盖测试；repo `splitAgents`/`mergeAgents`、读写路径、v1→v2 迁移、故障注入与 fuzz | M |
-| S3 | repo 导出/导入、提交钩子按种类、WebDAV 判定简化、`ConfigWithOxiDNSAgents` 投影只带 `rule_sync.settings` | S–M |
+| S3 | repo 导出/导入、恢复标记与 fail closed 锁（2.5.1）+ 界面横幅/`doc/`、提交钩子按种类、WebDAV 判定简化、`ConfigWithOxiDNSAgents` 投影只带 `rule_sync.settings` | M |
 | S4 | 缓存逐个归类（`SameConfig`）+ 测试 | S |
 | S5 | 测试适配：CrossCheck/Interchange 合并视图与降级副本、proddiff 基线迁移工具、受影响语料重录（只允许 metadata/存储布局变化） | M（不确定，见 D5） |
 | S6 | ①：`repo.OnCommit`、`agents.OnPresence`、`refresh.OnRefreshed`；P7/P8/P9 改造并删除 `IdleRounds`；P10；P1/P2 | M |
@@ -317,16 +343,18 @@ WebDAV 自动备份：现在靠 `webdav/changes.go` 的 `agentRuntimeFields` 清
 
 ---
 
-## 6. 需要裁定
+## 6. 裁定（协调，2026-11-23）
 
-- **D1 存储**：同库 `agent_state` 表 + `Head.State`（建议），还是按 Agent 的 JSON 文件。
-- **D2 归类边界**：`version`/`config_version` 归状态；遗留 `status`/`last_heartbeat`/指标搬进状态表冻结保存；
-  `dns_follow.upstream_signature`/`after_deployment_id` 留在配置；`force_refresh` 归状态。（建议全部照此）
-- **D3 导出**：完整导出/WebDAV 备份不含状态（建议；恢复后推送一次），还是继续包含；「诊断导出」本批不做（建议）。
-- **D4 迁移**：升 `storage_version` 到 2；迁移前强制备份，备份失败拒绝启动（建议），还是告警后继续。
-- **D5 顺序**：O18 T8 的「切换提交」会删掉 Python 对照侧。若它很快落地，本批排在它之后，S5 基本消失（建议先确认它的时间）；
-  否则本批自带测试侧的合并视图/降级副本。
-- **D6 ① 范围**：P7/P8/P9 必做；P10、P1/P2 同批（建议）；P6 Sub-Store 空闲计时器单独小任务（建议）。空闲兜底 600 s（P10 取 60 s）。
+- **D1** 同意：同库新表 `agent_state`，与配置同事务同锁。
+- **D2** 同意归类；硬要求：用户意图/开关留在配置，只有设备/后台产生的过程与结果进状态表（见 2.1 归类准则）。
+- **D3** 同意：完整导出与 WebDAV 备份不含状态。条件：恢复后界面明确提示需要重新发布；HA 配对恢复后按 fail closed（2.5.1）；
+  behaviour-changes 与 `doc/` 同步。
+- **D4** 同意：迁移前强制备份，失败拒绝启动，中文提示说明原因与处理办法。
+- **D5** 切换提交在所有清理之后才发生，本批必须保持现有门禁全绿。S5 用最省办法：比较整份存储文档的 Python 对照改为经合并视图
+  （配置 + 状态）比较；不为将被删除的测试做深度重构。
+- **D6** 同意：P10、P1/P2 同批（P10 兜底 60 s）；P6 单独小任务。
+- 实现顺序：batch-42（T1d）合入后 rebase，按 S1–S7 频繁提交，每个提交可编译可测；迁移故障注入（中途断电、重复迁移、部分损坏、
+  无 id/重复 id 条目）必须有。
 
 ### 6.3 后续（不在本批）
 
