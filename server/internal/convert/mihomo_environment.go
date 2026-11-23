@@ -3,6 +3,7 @@ package convert
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"sync"
 
@@ -63,18 +64,63 @@ type MihomoEnvironment struct {
 	ValidateListeners func(*yamlx.Node) error
 }
 
+// ErrMihomoEnvironmentAlreadySet rejects a second SetMihomoEnvironment call
+// (O17 D2: the process generation environment is configured once at startup).
+var ErrMihomoEnvironmentAlreadySet = errors.New("convert: mihomo environment already set")
+
 var environmentState = struct {
 	sync.RWMutex
 	value MihomoEnvironment
+	set   bool
 }{value: MihomoEnvironment{Clients: defaultClientCollaborators()}}
 
-// SetMihomoEnvironment installs a typed environment and returns a restoration.
-func SetMihomoEnvironment(env MihomoEnvironment) func() {
+// SetMihomoEnvironment installs the process MihomoEnvironment once at startup.
+// A second call returns ErrMihomoEnvironmentAlreadySet without modifying state.
+func SetMihomoEnvironment(env MihomoEnvironment) error {
+	environmentState.Lock()
+	defer environmentState.Unlock()
+	if environmentState.set {
+		return ErrMihomoEnvironmentAlreadySet
+	}
+	environmentState.value = env
+	environmentState.set = true
+	return nil
+}
+
+// OverrideMihomoEnvironmentForTest replaces the package MihomoEnvironment in
+// tests and returns a restore function that resets both value and set state.
+func OverrideMihomoEnvironmentForTest(tb interface{ Helper() }, env MihomoEnvironment) func() {
+	tb.Helper()
 	environmentState.Lock()
 	old := environmentState.value
+	oldSet := environmentState.set
 	environmentState.value = env
+	environmentState.set = true
 	environmentState.Unlock()
-	return func() { environmentState.Lock(); environmentState.value = old; environmentState.Unlock() }
+	return func() {
+		environmentState.Lock()
+		environmentState.value = old
+		environmentState.set = oldSet
+		environmentState.Unlock()
+	}
+}
+
+// ResetMihomoEnvironmentForTest clears the set-once latch and environment for
+// tests that exercise SetMihomoEnvironment directly, returning a restore func.
+func ResetMihomoEnvironmentForTest(tb interface{ Helper() }) func() {
+	tb.Helper()
+	environmentState.Lock()
+	old := environmentState.value
+	oldSet := environmentState.set
+	environmentState.value = MihomoEnvironment{Clients: defaultClientCollaborators()}
+	environmentState.set = false
+	environmentState.Unlock()
+	return func() {
+		environmentState.Lock()
+		environmentState.value = old
+		environmentState.set = oldSet
+		environmentState.Unlock()
+	}
 }
 
 // CurrentMihomoEnvironment returns a snapshot of the registered collaborators.

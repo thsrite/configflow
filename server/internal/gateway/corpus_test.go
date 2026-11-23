@@ -216,9 +216,9 @@ func generationEnv(t *testing.T) {
 	env.LoadSubscriptionCache = func(context.Context, string) (json.RawMessage, error) { return nil, nil }
 	env.DownloadedText = func(context.Context, string) (string, bool) { return "", false }
 	env.Preflight = nil
-	t.Cleanup(convert.SetMihomoEnvironment(env))
+	t.Cleanup(convert.OverrideMihomoEnvironmentForTest(t, env))
 	hooks := gateway.Hooks()
-	t.Cleanup(convert.SetMihomoIntegrations(hooks))
+	t.Cleanup(convert.OverrideMihomoIntegrationsForTest(t, hooks))
 }
 
 func TestPythonCorpus(t *testing.T) {

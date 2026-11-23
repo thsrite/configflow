@@ -2,7 +2,15 @@
 // subscription, rule, provider or delivery business logic.
 package mihomoenv
 
-import "configflow/internal/convert"
+import (
+	"errors"
 
-// Wire registers every production callback used by typed generation.
-func Wire() { convert.SetMihomoEnvironment(NativeEnv()) }
+	"configflow/internal/convert"
+)
+
+// Wire registers every production callback used by typed generation once.
+func Wire() {
+	if err := convert.SetMihomoEnvironment(NativeEnv()); err != nil && !errors.Is(err, convert.ErrMihomoEnvironmentAlreadySet) {
+		panic(err)
+	}
+}

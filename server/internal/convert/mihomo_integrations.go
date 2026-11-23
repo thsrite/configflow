@@ -2,6 +2,7 @@ package convert
 
 import (
 	"bytes"
+	"errors"
 	"net/netip"
 	"sync"
 
@@ -19,32 +20,81 @@ type MihomoIntegrations struct {
 	FullTun            func(*model.Config) (bool, error)
 }
 
+// ErrMihomoIntegrationsAlreadySet rejects a second SetMihomoIntegrations call
+// (O17 D2: gateway integrations are configured once at startup).
+var ErrMihomoIntegrationsAlreadySet = errors.New("convert: mihomo integrations already set")
+
 var integrationState struct {
 	sync.RWMutex
 	value MihomoIntegrations
+	set   bool
 }
 
-// SetMihomoIntegrations installs nonnil collaborators and returns a restoration.
-func SetMihomoIntegrations(hooks MihomoIntegrations) func() {
+// SetMihomoIntegrations installs the process MihomoIntegrations once at startup.
+// A second call returns ErrMihomoIntegrationsAlreadySet without modifying state.
+func SetMihomoIntegrations(hooks MihomoIntegrations) error {
+	integrationState.Lock()
+	defer integrationState.Unlock()
+	if integrationState.set {
+		return ErrMihomoIntegrationsAlreadySet
+	}
+	applyMihomoIntegrations(&integrationState.value, hooks)
+	integrationState.set = true
+	return nil
+}
+
+// OverrideMihomoIntegrationsForTest replaces non-nil MihomoIntegrations fields
+// in tests and returns a restore function that resets both value and set state.
+func OverrideMihomoIntegrationsForTest(tb interface{ Helper() }, hooks MihomoIntegrations) func() {
+	tb.Helper()
 	integrationState.Lock()
 	previous := integrationState.value
+	previousSet := integrationState.set
+	applyMihomoIntegrations(&integrationState.value, hooks)
+	integrationState.set = true
+	integrationState.Unlock()
+	return func() {
+		integrationState.Lock()
+		integrationState.value = previous
+		integrationState.set = previousSet
+		integrationState.Unlock()
+	}
+}
+
+// ResetMihomoIntegrationsForTest clears the set-once latch and integrations for
+// tests that exercise SetMihomoIntegrations directly, returning a restore func.
+func ResetMihomoIntegrationsForTest(tb interface{ Helper() }) func() {
+	tb.Helper()
+	integrationState.Lock()
+	previous := integrationState.value
+	previousSet := integrationState.set
+	integrationState.value = MihomoIntegrations{}
+	integrationState.set = false
+	integrationState.Unlock()
+	return func() {
+		integrationState.Lock()
+		integrationState.value = previous
+		integrationState.set = previousSet
+		integrationState.Unlock()
+	}
+}
+
+func applyMihomoIntegrations(dst *MihomoIntegrations, hooks MihomoIntegrations) {
 	if hooks.ApplyGateway != nil {
-		integrationState.value.ApplyGateway = hooks.ApplyGateway
+		dst.ApplyGateway = hooks.ApplyGateway
 	}
 	if hooks.GatewayEnabled != nil {
-		integrationState.value.GatewayEnabled = hooks.GatewayEnabled
+		dst.GatewayEnabled = hooks.GatewayEnabled
 	}
 	if hooks.FakeIPNetworkError != nil {
-		integrationState.value.FakeIPNetworkError = hooks.FakeIPNetworkError
+		dst.FakeIPNetworkError = hooks.FakeIPNetworkError
 	}
 	if hooks.DNSLoop != nil {
-		integrationState.value.DNSLoop = hooks.DNSLoop
+		dst.DNSLoop = hooks.DNSLoop
 	}
 	if hooks.FullTun != nil {
-		integrationState.value.FullTun = hooks.FullTun
+		dst.FullTun = hooks.FullTun
 	}
-	integrationState.Unlock()
-	return func() { integrationState.Lock(); integrationState.value = previous; integrationState.Unlock() }
 }
 func currentIntegrations() MihomoIntegrations {
 	integrationState.RLock()

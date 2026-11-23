@@ -158,7 +158,7 @@ const NativeMihomoRulesMessage = msgMihomoRules
 
 func TestSharedScalarMihomoOutputBoundaries(t *testing.T) {
 	env := nativeGenerationEnv(t)
-	t.Cleanup(SetMihomoEnvironment(env))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, env))
 	config, err := DecodeConfigJ(mustJSON(t, `{"mihomo":{"provider_update_interval":"3600"},"proxy_groups":[{"id":"g","name":"G","type":"url-test","interval":"300","manual_nodes":["DIRECT"]}],"subscriptions":[{"id":"s","name":"S","health_check_url":5}]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +191,7 @@ func TestSharedScalarMihomoOutputBoundaries(t *testing.T) {
 }
 
 func TestMihomoFollowKeepsLocalQuotedInterval(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, nativeGenerationEnv(t)))
 	config, err := DecodeConfigJ(mustJSON(t, `{"proxy_groups":[{"id":"f","name":"Follower","type":"url-test","follow_group":"s","interval":"300"},{"id":"s","name":"Source","type":"url-test","manual_nodes":["DIRECT"]}]}`))
 	if err != nil {
 		t.Fatal(err)

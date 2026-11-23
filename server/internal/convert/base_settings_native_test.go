@@ -12,7 +12,7 @@ import (
 )
 
 func TestNativeBaseSettingsChangedFields(t *testing.T) {
-	t.Cleanup(SetMihomoIntegrations(MihomoIntegrations{
+	t.Cleanup(OverrideMihomoIntegrationsForTest(t, MihomoIntegrations{
 		FakeIPNetworkError: func(value string) error { _, err := netip.ParsePrefix(value); return err },
 		DNSLoop:            func(*yamlx.Node, []netip.Addr) (string, string, bool, error) { return "", "", false, nil },
 	}))

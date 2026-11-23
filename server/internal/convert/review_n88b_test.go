@@ -18,7 +18,7 @@ import (
 func TestN88bReviewWrongTypedOutputIdentities(t *testing.T) {
 	env := nativeGenerationEnv(t)
 	env.LoadSubscriptionCache = func(context.Context, string) (json.RawMessage, error) { return nil, nil }
-	t.Cleanup(SetMihomoEnvironment(env))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, env))
 	const base = `{"profile_id":"p",
 "nodes":[{"id":"n","name":"N","type":"http","server":"n.example.test","port":80}],
 "subscriptions":[{"id":"s1","name":%s,"url":"https://sub.example.com/a"}],
@@ -76,7 +76,7 @@ func TestN88bReviewWrongTypedOutputIdentities(t *testing.T) {
 // A numeric stored rule value reads as its text (plain records, O18 T1c) and
 // generates the rule (R5 kept the number and refused generation).
 func TestN88bReviewNumericRuleValueGenerates(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, nativeGenerationEnv(t)))
 	var profile model.Profile
 	if err := json.Unmarshal([]byte(`{"rule_configs":[{"id":"port","itemType":"rule","rule_type":"DST-PORT","value":443,"policy":"DIRECT"}]}`), &profile); err != nil {
 		t.Fatal(err)

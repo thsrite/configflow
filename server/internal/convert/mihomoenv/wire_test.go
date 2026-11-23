@@ -8,7 +8,7 @@ import (
 )
 
 func TestProductionWireRegistersEveryCallback(t *testing.T) {
-	t.Cleanup(convert.SetMihomoEnvironment(convert.MihomoEnvironment{}))
+	t.Cleanup(convert.ResetMihomoEnvironmentForTest(t))
 	Wire()
 	env := convert.CurrentMihomoEnvironment()
 	if err := env.Clients.Check(); err != nil {

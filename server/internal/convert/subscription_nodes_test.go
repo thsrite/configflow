@@ -9,7 +9,7 @@ import (
 )
 
 func TestN89ParsedVMessWrongServerKeepsOwnerAndValidation(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Clients: defaultClientCollaborators()}))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, MihomoEnvironment{Clients: defaultClientCollaborators()}))
 	text := "vmess://" + base64.StdEncoding.EncodeToString([]byte(`{"add":[],"port":443,"id":"synthetic-uuid"}`))
 	node := model.Node{ID: "owner", Name: "Outer", ProxyString: &text}
 	line, section, err := SurgeNode(node)

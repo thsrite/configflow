@@ -31,7 +31,7 @@ func subscriptionGenerationProfile(count, unrelated int) *model.Config {
 }
 
 func BenchmarkN89MihomoSubscriptionPipeline(b *testing.B) {
-	b.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(b)))
+	b.Cleanup(OverrideMihomoEnvironmentForTest(b, nativeGenerationEnv(b)))
 	for _, count := range []int{32, 128} {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {
 			config := subscriptionGenerationProfile(count, 1<<20)
@@ -51,7 +51,7 @@ func BenchmarkN89MihomoSubscriptionPipeline(b *testing.B) {
 }
 
 func TestN89MihomoPipelineDoesNotDecodeUnrelatedConfigPerNode(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, nativeGenerationEnv(t)))
 	measure := func(size int) int64 {
 		config := subscriptionGenerationProfile(16, size)
 		result := testing.Benchmark(func(b *testing.B) {

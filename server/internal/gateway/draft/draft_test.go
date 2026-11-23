@@ -300,7 +300,7 @@ func TestShutdownBeforeRepositoryCommitRefusesDraft(t *testing.T) {
 		runtime.Shutdown(context.Background())
 		return err
 	}
-	t.Cleanup(convert.SetMihomoIntegrations(hooks))
+	t.Cleanup(convert.OverrideMihomoIntegrationsForTest(t, hooks))
 	if _, err = s.Execute(ctx, op); !errors.Is(err, context.Canceled) || before != state(t, s) {
 		t.Fatal("shutdown during transaction committed", err)
 	}

@@ -144,7 +144,7 @@ func runMihomoReviewBoundary(t *testing.T, row mihomoRow, oracle writerOracle) s
 	e := row.entry
 	if row.fn == "takeover" {
 		args := e.GetList("args")
-		restore := convert.SetMihomoIntegrations(convert.MihomoIntegrations{
+		restore := convert.OverrideMihomoIntegrationsForTest(t, convert.MihomoIntegrations{
 			GatewayEnabled: func(*model.Config) (bool, error) {
 				if args[1] == true {
 					return false, errors.New("synthetic gateway failure")
@@ -161,7 +161,7 @@ func runMihomoReviewBoundary(t *testing.T, row mihomoRow, oracle writerOracle) s
 		return compareOut(row, noneString(mode))
 	}
 	if e.GetBool("gateway_fixture") {
-		restore := convert.SetMihomoIntegrations(convert.MihomoIntegrations{
+		restore := convert.OverrideMihomoIntegrationsForTest(t, convert.MihomoIntegrations{
 			GatewayEnabled: func(*model.Config) (bool, error) { return true, nil },
 			ApplyGateway: func(main *yamlx.Node, _ *model.Config, _ string) error {
 				providers := yamlx.Get(main, "rule-providers")
@@ -192,7 +192,7 @@ func runMihomoReviewBoundary(t *testing.T, row mihomoRow, oracle writerOracle) s
 		defer restore()
 	}
 	if row.fn == "generate" {
-		restore := convert.SetMihomoEnvironment(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
+		restore := convert.OverrideMihomoEnvironmentForTest(t, corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
 		defer restore()
 		args := e.GetObject("args")
 		profile := args.GetObject("profile").DeepCopy()

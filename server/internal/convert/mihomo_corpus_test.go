@@ -326,7 +326,7 @@ func runMihomoRow(t *testing.T, row mihomoRow, oracle writerOracle) string {
 	case "generate":
 		args := e.GetObject("args")
 		profile := args.GetObject("profile").DeepCopy()
-		restore := convert.SetMihomoEnvironment(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
+		restore := convert.OverrideMihomoEnvironmentForTest(t, corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
 		defer restore()
 		cfg, err := convert.DecodeConfigJ(profile)
 		var out string
@@ -360,7 +360,7 @@ func runMihomoRow(t *testing.T, row mihomoRow, oracle writerOracle) string {
 	case "ruleset_downloads", "provider_downloads":
 		args := e.GetList("args")
 		profile := args[0].(*convert.JObj).DeepCopy()
-		restore := convert.SetMihomoEnvironment(corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
+		restore := convert.OverrideMihomoEnvironmentForTest(t, corpusEnv(e.GetObject("caches"), e.GetObject("downloads")))
 		defer restore()
 		cfg, err := convert.DecodeConfigJ(profile)
 		var list []convert.ResourceDownload
@@ -461,7 +461,7 @@ func runHelperRow(t *testing.T, row mihomoRow) string {
 			}
 		}
 	case "validate_base_settings":
-		restore := convert.SetMihomoIntegrations(corpusIntegrations())
+		restore := convert.OverrideMihomoIntegrationsForTest(t, corpusIntegrations())
 		defer restore()
 		var reserved map[int]string
 		if r, ok := args[2].(*convert.JObj); ok {
@@ -732,7 +732,7 @@ func TestNativeMihomoOriginalInputsUnchanged(t *testing.T) {
 			t.Fatal(err)
 		}
 		version, _ := coreVersionRaw(args.Value("core_version"))
-		restore := convert.SetMihomoEnvironment(corpusEnv(row.entry.GetObject("caches"), row.entry.GetObject("downloads")))
+		restore := convert.OverrideMihomoEnvironmentForTest(t, corpusEnv(row.entry.GetObject("caches"), row.entry.GetObject("downloads")))
 		_, _ = convert.MihomoConfig(context.Background(), cfg, convert.MihomoOptions{
 			BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"),
 			SkipProviderPreflight: true, RegionProbe: args.GetBool("region_probe"),

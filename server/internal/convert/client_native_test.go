@@ -99,7 +99,7 @@ func FuzzTypedClientNodes(f *testing.F) {
 func FuzzTypedClientGeneration(f *testing.F) {
 	env := MihomoEnvironment{ValidateRules: func(*model.Config, []string, string) error { return nil }}
 	env.Clients = ClientCollaborators{ParseNodes: func(string) ([]ClientSource, error) { return nil, nil }, FilterNodes: func(nodes []model.Node, _ *string, _ *string) ([]model.Node, error) { return nodes, nil }}
-	f.Cleanup(SetMihomoEnvironment(env))
+	f.Cleanup(OverrideMihomoEnvironmentForTest(f, env))
 	f.Add(`{"proxy_groups":[{"id":"g","name":"G","type":"select","manual_nodes":["DIRECT"]}],"nodes":[]}`)
 	f.Add(`{"proxy_groups":[{"id":"g","name":"G","type":"url-test","url":null,"interval":null,"manual_nodes":["n"]}],"nodes":[{"id":"n","name":"N","type":"http","server":"example.com","port":80}]}`)
 	f.Fuzz(func(t *testing.T, text string) {
@@ -231,7 +231,7 @@ func TestTypedClientSharedNumericText(t *testing.T) {
 }
 
 func TestTypedClientJSONKeepsNativeDuplicateKeys(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Clients: defaultClientCollaborators()}))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, MihomoEnvironment{Clients: defaultClientCollaborators()}))
 	for _, source := range []string{
 		`{"name":"ignored","type":"ss","server":"example.com","port":443,"password":"first","password":"last"}`,
 	} {
@@ -250,7 +250,7 @@ func TestTypedClientJSONKeepsNativeDuplicateKeys(t *testing.T) {
 }
 
 func TestTypedClientChecksOnlyConsumedText(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Clients: defaultClientCollaborators()}))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, MihomoEnvironment{Clients: defaultClientCollaborators()}))
 	var node model.Node
 	if err := json.Unmarshal([]byte(`{"id":"n","name":"Outer","type":false,"server":[],"params":[],"proxy_string":"{\"name\":false,\"type\":\"http\",\"server\":\"example.com\",\"port\":80}"}`), &node); err != nil {
 		t.Fatal(err)
@@ -268,7 +268,7 @@ func TestTypedClientChecksOnlyConsumedText(t *testing.T) {
 }
 
 func TestTypedClientParsedTextErrorKeepsOwnerID(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Clients: defaultClientCollaborators()}))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, MihomoEnvironment{Clients: defaultClientCollaborators()}))
 	source := `{"type":"http","server":[],"port":80}`
 	node := model.Node{ID: "owner", Name: "Outer", ProxyString: &source}
 	line, _, err := SurgeNode(node)
@@ -278,7 +278,7 @@ func TestTypedClientParsedTextErrorKeepsOwnerID(t *testing.T) {
 }
 
 func TestTypedClientSurgeBuiltinsAreNotManualNodes(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{ValidateRules: func(*model.Config, []string, string) error { return nil }}))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, MihomoEnvironment{ValidateRules: func(*model.Config, []string, string) error { return nil }}))
 	for _, id := range []string{"DIRECT", "REJECT"} {
 		t.Run(id, func(t *testing.T) {
 			config := &model.Config{Profile: &model.Profile{ProxyGroups: []model.ProxyGroup{{ID: "g", Name: "G", Type: "select", ManualNodes: &[]string{id}, ProxiesOrder: &[]model.ResourceRef{{Type: "node", ID: id}}}}}, Nodes: []model.Node{{ID: id, Name: "N", Type: "http", Server: "example.com", Port: model.IntPtr(80)}}}

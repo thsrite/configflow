@@ -45,7 +45,7 @@ func generateByteCase(t *testing.T, entry *convert.JObj) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		restore := convert.SetMihomoEnvironment(corpusEnv(entry.GetObject("caches"), entry.GetObject("downloads")))
+		restore := convert.OverrideMihomoEnvironmentForTest(t, corpusEnv(entry.GetObject("caches"), entry.GetObject("downloads")))
 		defer restore()
 		return convert.MihomoConfig(context.Background(), cfg, convert.MihomoOptions{
 			BaseURL: args.GetString("base_url"), SyncLANHosts: args.GetBool("sync_lan_hosts"), SkipProviderPreflight: true,
@@ -82,7 +82,7 @@ func TestN88GenerationBytes(t *testing.T) {
 		fixture.Sources[name] = generationDigest(data)
 		rows[name] = loadJSONLines(t, "testdata/"+name)
 	}
-	restore := convert.SetMihomoEnvironment(corpusEnv(nil, nil))
+	restore := convert.OverrideMihomoEnvironmentForTest(t, corpusEnv(nil, nil))
 	defer restore()
 	if os.Getenv("CONFIGFLOW_RECORD_N88") == "1" {
 		for _, name := range []string{"mihomo_corpus.jsonl.gz", "surge_loon_corpus.jsonl.gz"} {

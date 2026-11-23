@@ -9,7 +9,7 @@ import (
 )
 
 func TestN811MissingGenerationCollaboratorFailsClosed(t *testing.T) {
-	restore := convert.SetMihomoEnvironment(convert.MihomoEnvironment{})
+	restore := convert.OverrideMihomoEnvironmentForTest(t, convert.MihomoEnvironment{})
 	defer restore()
 	Wire()
 	source, err := SourceFromJSON([]byte(`{"mihomo":{"custom_config":"mode: rule"}}`), nil)

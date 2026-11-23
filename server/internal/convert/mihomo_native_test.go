@@ -35,7 +35,7 @@ func TestNativeMihomoMissingCollaborators(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			broken := env
 			reflect.ValueOf(&broken).Elem().Field(i).SetZero()
-			t.Cleanup(SetMihomoEnvironment(broken))
+			t.Cleanup(OverrideMihomoEnvironmentForTest(t, broken))
 			doc, err := MihomoDocument(context.Background(), &model.Config{Profile: &model.Profile{}}, MihomoOptions{SkipProviderPreflight: true})
 			var missing *HookMissingError
 			if !errors.As(err, &missing) || doc != nil {
@@ -81,8 +81,8 @@ func TestNativeMihomoGraphPresentation(t *testing.T) {
 }
 
 func TestNativeMihomoAliasEntrances(t *testing.T) {
-	t.Cleanup(SetMihomoIntegrations(MihomoIntegrations{GatewayEnabled: func(*model.Config) (bool, error) { return true, nil }}))
-	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
+	t.Cleanup(OverrideMihomoIntegrationsForTest(t, MihomoIntegrations{GatewayEnabled: func(*model.Config) (bool, error) { return true, nil }}))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, nativeGenerationEnv(t)))
 	texts := []struct {
 		name, text string
 		want       error
@@ -230,7 +230,7 @@ func FuzzNativeMihomoGeneration(f *testing.F) {
 		if err != nil {
 			return
 		}
-		restore := SetMihomoEnvironment(nativeGenerationEnv(t))
+		restore := OverrideMihomoEnvironmentForTest(t, nativeGenerationEnv(t))
 		defer restore()
 		output, err := MihomoConfig(context.Background(), config, MihomoOptions{SkipProviderPreflight: true})
 		if err == nil {
@@ -253,7 +253,7 @@ func (c *wireNativeConverter) ConvertProxy(context.Context, string) (*yamlx.Node
 }
 func TestNativeMihomoClientsShareRegistration(t *testing.T) {
 	converter := &wireNativeConverter{}
-	t.Cleanup(SetMihomoEnvironment(MihomoEnvironment{Converter: converter}))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, MihomoEnvironment{Converter: converter}))
 	result, err := CurrentMihomoEnvironment().Converter.ConvertProxy(context.Background(), "http://example.com")
 	if err != nil || yamlx.Get(result, "name").Value != "test" || converter.calls != 1 {
 		t.Fatal("client did not use typed registration")

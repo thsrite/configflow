@@ -63,7 +63,7 @@ func withEnv(t *testing.T, converter convert.NodeConverter) {
 	t.Helper()
 	env := corpusEnv(nil, nil)
 	env.Converter = converter
-	t.Cleanup(convert.SetMihomoEnvironment(env))
+	t.Cleanup(convert.OverrideMihomoEnvironmentForTest(t, env))
 }
 
 func mustDecodeConfig(t *testing.T, obj *convert.JObj) *model.Config {
@@ -202,7 +202,7 @@ func TestTakeoverMode(t *testing.T) {
 	}
 	for _, c := range cases {
 		full := c.full
-		restore := convert.SetMihomoIntegrations(convert.MihomoIntegrations{
+		restore := convert.OverrideMihomoIntegrationsForTest(t, convert.MihomoIntegrations{
 			GatewayEnabled: c.gateway,
 			FullTun:        func(*model.Config) (bool, error) { return full, nil },
 		})
@@ -224,7 +224,7 @@ func TestProviderPreflightGetsLogicalProfileAndFinishedDocument(t *testing.T) {
 		gotConfig, gotMain = config, main
 		return nil
 	}
-	defer convert.SetMihomoEnvironment(env)()
+	defer convert.OverrideMihomoEnvironmentForTest(t, env)()
 	config := chainProfile()
 	config.Set("nodes", []any{
 		convert.JObjKV("id", "a", "name", "A", "type", "http", "server", "a.test", "port", convert.JInt(80)),
@@ -244,13 +244,13 @@ func TestProviderPreflightGetsLogicalProfileAndFinishedDocument(t *testing.T) {
 	env.Preflight = func(context.Context, *model.Config, *yamlx.Node) error {
 		return errors.New("订阅 Feed 无法交付")
 	}
-	defer convert.SetMihomoEnvironment(env)()
+	defer convert.OverrideMihomoEnvironmentForTest(t, env)()
 	if _, err := convert.MihomoConfig(context.Background(), cfg, convert.MihomoOptions{}); err == nil || err.Error() != "订阅 Feed 无法交付" {
 		t.Fatalf("preflight error not returned: %v", err)
 	}
 	// Without the provider wired, preflight fails closed; skipping it needs nothing.
 	env.Preflight = nil
-	defer convert.SetMihomoEnvironment(env)()
+	defer convert.OverrideMihomoEnvironmentForTest(t, env)()
 	var missing *convert.HookMissingError
 	if _, err := convert.MihomoConfig(context.Background(), cfg, convert.MihomoOptions{}); !errors.As(err, &missing) {
 		t.Fatalf("want HookMissingError, got %v", err)

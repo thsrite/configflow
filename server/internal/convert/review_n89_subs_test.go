@@ -12,7 +12,7 @@ import (
 // Sample full outputs from the frozen pre-migration manifest. Selecting sources
 // with subscriptions exercises the changed parser/environment wiring in each engine.
 func TestReviewN89SubscriptionGenerationSamples(t *testing.T) {
-	t.Cleanup(convert.SetMihomoEnvironment(corpusEnv(nil, nil)))
+	t.Cleanup(convert.OverrideMihomoEnvironmentForTest(t, corpusEnv(nil, nil)))
 	data, err := os.ReadFile("testdata/n88_generation_bytes.json")
 	if err != nil {
 		t.Fatal(err)

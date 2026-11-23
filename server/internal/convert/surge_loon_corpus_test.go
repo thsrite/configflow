@@ -265,7 +265,7 @@ func classed(err error) error {
 // Mihomo proxy lists, groups, Loon rules and names.
 func TestSurgeLoonCorpus(t *testing.T) {
 	nativeSubs := nativeSubsCallers(t, "surge_loon_corpus")
-	restore := convert.SetMihomoEnvironment(corpusEnv(nil, nil))
+	restore := convert.OverrideMihomoEnvironmentForTest(t, corpusEnv(nil, nil))
 	defer restore()
 	rows := loadJSONLines(t, "testdata/surge_loon_corpus.jsonl.gz")
 	native := loadGzipJObj(t, "../subs/testdata/n7_reader_expected.json.gz").GetObject("cases")

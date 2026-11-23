@@ -201,9 +201,9 @@ func replayRow(t *testing.T, entry *convert.JObj, oracle writerOracle) string {
 	t.Helper()
 	ctx := context.Background()
 	rec := &recordedEnv{env: entry.GetObject("env")}
-	restoreEnv := convert.SetMihomoEnvironment(rec.mihomoEnv(corpusEnv(nil, nil)))
+	restoreEnv := convert.OverrideMihomoEnvironmentForTest(t, rec.mihomoEnv(corpusEnv(nil, nil)))
 	defer restoreEnv()
-	restoreHooks := convert.SetMihomoIntegrations(rec.integrations())
+	restoreHooks := convert.OverrideMihomoIntegrationsForTest(t, rec.integrations())
 	defer restoreHooks()
 	row := mihomoRow{entry: entry, fn: entry.GetString("fn")}
 	if e := entry.GetList("err"); e != nil {

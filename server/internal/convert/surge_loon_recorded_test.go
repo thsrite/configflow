@@ -31,7 +31,7 @@ func TestSurgeLoonRecordedPythonTests(t *testing.T) {
 			continue
 		}
 		rec := &recordedEnv{env: entry.GetObject("env")}
-		restore := convert.SetMihomoEnvironment(rec.mihomoEnv(corpusEnv(nil, nil)))
+		restore := convert.OverrideMihomoEnvironmentForTest(t, rec.mihomoEnv(corpusEnv(nil, nil)))
 		msg := runSurgeLoonRow(t, rowOf(entry))
 		restore()
 		if msg != "" {

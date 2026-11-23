@@ -39,7 +39,7 @@ func batch6GenerationProfile(tb testing.TB, count int) *model.Config {
 // BenchmarkMihomoGenerationProfile keeps a provider-sized render independent of
 // wall-clock pass/fail thresholds. The entire public generation path is timed.
 func BenchmarkMihomoGenerationProfile(b *testing.B) {
-	b.Cleanup(convert.SetMihomoEnvironment(corpusEnv(nil, nil)))
+	b.Cleanup(convert.OverrideMihomoEnvironmentForTest(b, corpusEnv(nil, nil)))
 	for _, count := range []int{32, 128} {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {
 			cfg := batch6GenerationProfile(b, count)
@@ -59,7 +59,7 @@ func BenchmarkMihomoGenerationProfile(b *testing.B) {
 }
 
 func TestGenerationRetainsAllNodesAndSource(t *testing.T) {
-	t.Cleanup(convert.SetMihomoEnvironment(corpusEnv(nil, nil)))
+	t.Cleanup(convert.OverrideMihomoEnvironmentForTest(t, corpusEnv(nil, nil)))
 	cfg := batch6GenerationProfile(t, 128)
 	before, err := model.Marshal(cfg.Profile)
 	if err != nil {

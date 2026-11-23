@@ -12,7 +12,7 @@ import (
 )
 
 func TestN73CustomReaderAliasBoundaries(t *testing.T) {
-	t.Cleanup(SetMihomoEnvironment(nativeGenerationEnv(t)))
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, nativeGenerationEnv(t)))
 	var diamond, linear strings.Builder
 	diamond.WriteString("mixed-port: 7890\na0: &a0 [leaf]\n")
 	linear.WriteString("mixed-port: 7890\na0: &a0 {v: leaf}\n")
