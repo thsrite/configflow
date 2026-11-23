@@ -98,6 +98,13 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+batch-40 MERGED (O18 T8 metrics/rankings: database/sql transactions, sentinels; review: failed rollbacks logged,
+connection closed on open panic). R13 MERGED (shared PSL trie + o10perf memory breakdown). batch-41 MERGED 2026-11-23
+(O18 T2 provider flight key, T3 jsondecode on encoding/json/v2 (old/new differential fuzz equal), T4 repo sentinels,
+installer/agents ValueError → ValidationError). Remaining Python-style type names (health.ValueError,
+health/check.ValueError, agents/metrics RetentionValueError, agents.PermissionError, installer valueError()/typeError())
+→ O17. In flight: T1d (76a14452). Next: cache budget, O17, final PVE, L6, release.
+
 R13+R12 DONE (Opus 1ac3f712, go-perf-r13, report server/parity/o10-r13-r12.md): the "57 MB non-heap" is mostly binary
 file pages (25 MB text/rodata) + 18 MB heap (6.4 MB live) + 8.4 MB SQLite allocator + 4.6 MB runtime; only change = PSL
 tries merged (1581→586 KB). R12 ruling: keep GOGC=100, no fixed GOMEMLIMIT (container limit ×0.8 soft limit stays).
