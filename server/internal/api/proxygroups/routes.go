@@ -24,7 +24,7 @@ func Register(r *httpx.Router) {
 				out, err := s.List(c.Context(), c.Param("profile_id"))
 				return respond(out, err)
 			}
-			body, ok, err := c.BindObject(false)
+			body, ok, err := httpx.BindObject[json.RawMessage](c, false)
 			if err != nil {
 				return nil, err
 			}
@@ -40,7 +40,7 @@ func Register(r *httpx.Router) {
 		if c.Method() == "PUT" {
 			var ok bool
 			var err error
-			body, ok, err = c.BindObject(false)
+			body, ok, err = httpx.BindObject[json.RawMessage](c, false)
 			if err != nil {
 				return nil, err
 			}
@@ -52,7 +52,7 @@ func Register(r *httpx.Router) {
 		return respond(out, err)
 	}))
 	r.PUT("/api/proxy-groups/batch-health-url", "proxy_groups.update_batch_health_url", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, ok, err := httpx.DecodeObject[HealthURLRequest](c, true)
+		body, ok, err := decodeObject[HealthURLRequest](c, true)
 		if err != nil {
 			return nil, err
 		}
@@ -67,7 +67,7 @@ func Register(r *httpx.Router) {
 	}))
 	r.GET("/api/proxy-groups/health-defaults", "proxy_groups.health_defaults", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) { out, err := defaults(); return respond(out, err) }))
 	r.POST("/api/proxy-groups/reorder", "proxy_groups.reorder_proxy_groups", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, ok, err := c.BindObject(false)
+		body, ok, err := httpx.BindObject[json.RawMessage](c, false)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +81,7 @@ func Register(r *httpx.Router) {
 		}{true, out}, err)
 	}))
 	r.POST("/api/proxy-groups/preview-regex", "proxy_groups.preview_proxy_group_regex", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, ok, err := httpx.DecodeObject[previewRequest](c, false)
+		body, ok, err := decodeObject[previewRequest](c, false)
 		if err != nil {
 			return nil, &fault{500, "invalid JSON request"}
 		}

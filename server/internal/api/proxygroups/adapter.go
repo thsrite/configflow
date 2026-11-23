@@ -12,6 +12,7 @@ import (
 	"configflow/internal/ctxx"
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
@@ -19,6 +20,18 @@ import (
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 )
+
+func decodeObject[T any](c *httpx.Ctx, silent bool) (*T, bool, error) {
+	raw, ok, err := httpx.BindObject[json.RawMessage](c, silent)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	out := new(T)
+	if err := jsondecode.Unmarshal(raw, out); err != nil {
+		return nil, true, err
+	}
+	return out, true, nil
+}
 
 func load(ctx context.Context, id string) (*model.Config, error) {
 	r, err := repo.GetRepository(ctx)
