@@ -42,9 +42,11 @@ type agentServices struct {
 // agenttasks, and registers the Agent-domain loops on rt.
 func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *notifications.Service, gen *generateServices) (*agentServices, error) {
 	apiagents.WireContentSyncWith(rt, gen.substore)
-	health.Wire()
 
 	if opts.Repo == nil {
+		// health's global OnAgentDeleted stores serve only Managers without
+		// DeletedStores; the server Manager below gets them as Options.
+		health.Wire()
 		// NewApp() test path: no Manager instance, so the deploy Service and
 		// the Manager receipt check use the package-level fallbacks.
 		gen.deploy = newDeployService(deploy.Options{})

@@ -53,6 +53,17 @@ func (s *Signal) Clear() {
 	}
 }
 
+// Take consumes a pending notification without waiting and reports whether
+// there was one (tests and diagnostics checking which events wake a loop).
+func (s *Signal) Take() bool {
+	select {
+	case <-s.channel():
+		return true
+	default:
+		return false
+	}
+}
+
 // StartMode selects when a periodic loop becomes eligible to start.
 type StartMode int
 
