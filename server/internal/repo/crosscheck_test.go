@@ -12,6 +12,7 @@ package repo
 import (
 	"bytes"
 	"configflow/internal/model/modeltest"
+	"configflow/internal/pathx"
 	"configflow/internal/testjson"
 	"context"
 	"database/sql"
@@ -60,7 +61,7 @@ func xcPython(t *testing.T, command, directory, mode string, extra ...string) an
 func xcPythonLayout(t testing.TB, directory string) {
 	t.Helper()
 	path := filepath.Join(directory, DatabaseFilename)
-	if !pathExists(path) {
+	if !pathx.Accessible(path) {
 		return
 	}
 	if o17Version(t, path) >= 2 {

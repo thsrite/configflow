@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"configflow/internal/pathx"
 	"context"
 	"errors"
 	"fmt"
@@ -87,7 +88,7 @@ func (r *Repository) upgradeBackup(directory string, version int) (string, error
 	}
 	stamp := time.Now().UTC().Format("20060102T150405Z")
 	path := filepath.Join(directory, fmt.Sprintf("configflow-v%d-%s.sqlite3", version, stamp))
-	for i := 1; pathExists(path); i++ {
+	for i := 1; pathx.Accessible(path); i++ {
 		path = filepath.Join(directory, fmt.Sprintf("configflow-v%d-%s-%d.sqlite3", version, stamp, i))
 	}
 	if err := r.store.BackupTo(path); err != nil {
