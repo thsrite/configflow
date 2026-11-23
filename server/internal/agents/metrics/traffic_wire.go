@@ -38,7 +38,7 @@ func deleteTrafficHistoryContext(ctx context.Context, m *agents.Manager, id stri
 }
 
 func retentionDaysJSON(raw json.RawMessage) (int64, error) {
-	present, err := model.JSONHasContent(raw)
+	present, err := model.Truthy(raw)
 	if err != nil {
 		return 0, err
 	}

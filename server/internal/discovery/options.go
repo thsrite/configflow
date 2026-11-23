@@ -8,5 +8,5 @@ import (
 
 // JSONOptionEnabled evaluates a stored JSON option flag with default false.
 func JSONOptionEnabled(raw json.RawMessage) bool {
-	return model.JSONSwitchEnabled(raw, false)
+	return model.Switch(raw, false)
 }

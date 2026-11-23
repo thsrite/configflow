@@ -404,7 +404,7 @@ func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	// Python stored the value as sent and read it by truthiness; the
 	// settings record stores its truth value (O18 T1c).
-	enabled := model.JSONSwitchEnabled(raw, false)
+	enabled := model.Switch(raw, false)
 	config.SystemConfig.SubscriptionAggregationEnabled = &enabled
 	if err = saveSystemConfig(c.Context(), config); err != nil {
 		return failure(500, err.Error()), nil

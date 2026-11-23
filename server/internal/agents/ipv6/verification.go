@@ -70,8 +70,8 @@ func (s *Service) findings(ctx context.Context, a, report Document, all []Docume
 	}
 	return out
 }
-func runs(a Document) model.Map[json.RawMessage] {
-	var m model.Map[json.RawMessage]
+func runs(a Document) model.OrderedMap[json.RawMessage] {
+	var m model.OrderedMap[json.RawMessage]
 	_ = json.Unmarshal(a["ipv6_verifications"], &m)
 	return m
 }

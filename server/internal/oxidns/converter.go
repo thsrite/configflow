@@ -80,7 +80,7 @@ func enabledOrDefault(item *Node, key string) bool {
 	if err != nil {
 		return false
 	}
-	return model.JSONSwitchEnabled(raw, true)
+	return model.Switch(raw, true)
 }
 
 func suffixOf(item *Node) string {

@@ -237,7 +237,7 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 		if !json.Valid(data) {
 			return nil, valueError(msgCannotConnect)
 		}
-		nonempty, err := model.JSONHasContent(data)
+		nonempty, err := model.Truthy(data)
 		if err != nil {
 			return nil, valueError(msgCannotConnect)
 		}

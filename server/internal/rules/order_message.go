@@ -31,5 +31,5 @@ func InvalidValueText(raw json.RawMessage) string {
 
 // EnabledField reads a stored enable flag using the shared JSON switch rule.
 func EnabledField(raw json.RawMessage, fallback bool) bool {
-	return model.JSONSwitchEnabled(raw, fallback)
+	return model.Switch(raw, fallback)
 }

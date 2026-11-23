@@ -103,7 +103,7 @@ func enabled(item record) bool {
 	if !present {
 		return true
 	}
-	return model.JSONSwitchEnabled(raw, true)
+	return model.Switch(raw, true)
 }
 func resourceConfig(ctx context.Context, id string) (record, record, error) {
 	ctx = lifecycle.Detach(ctx)
@@ -173,7 +173,7 @@ func aggregationEnabled(agg *model.Aggregation) (bool, error) {
 	if err != nil || !present {
 		return true, err
 	}
-	return model.JSONSwitchEnabled(raw, true), nil
+	return model.Switch(raw, true), nil
 }
 
 func resourceUsage(ctx context.Context, id string) (*httpx.Response, error) {

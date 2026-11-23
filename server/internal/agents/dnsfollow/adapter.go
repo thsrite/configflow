@@ -254,7 +254,7 @@ func (r *deviceReply) UnmarshalJSON(data []byte) error {
 	}
 	str := func(key string) string { var text string; _ = json.Unmarshal(members[key], &text); return text }
 	hasContent := func(key string) bool {
-		present, err := model.JSONHasContent(members[key])
+		present, err := model.Truthy(members[key])
 		return err == nil && present
 	}
 	var status int
@@ -446,7 +446,7 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 	if err != nil {
 		return nil, err
 	}
-	enabled, err := model.JSONHasContent(raw)
+	enabled, err := model.Truthy(raw)
 	if err != nil {
 		return nil, err
 	}

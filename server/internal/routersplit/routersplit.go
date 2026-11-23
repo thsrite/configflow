@@ -109,17 +109,16 @@ func ReadMarkerProfile(p *model.Profile) (string, *Marker) {
 	return StateValid, &marker
 }
 
-// GatewayEnabled reads the shared gateway model, using R5 for bad switches.
+// GatewayEnabled reads the shared gateway switch; a switch of another type
+// than a boolean reads as off.
 func GatewayEnabled(p *model.Profile) bool {
 	if p == nil {
 		return false
 	}
-	raw := p.Mihomo.LinuxGateway.JSON()
 	var settings struct {
-		Enabled bool `json:"enabled"`
-		Raw     model.Raw
+		Enabled bool `json:"enabled" stored:"gate"`
 	}
-	_ = model.DecodeRecord(raw, &settings, &settings.Raw)
+	_, _ = model.DecodeStored(p.Mihomo.LinuxGateway.JSON(), &settings, "")
 	return settings.Enabled
 }
 
@@ -192,13 +191,15 @@ type Context struct {
 	SessionCompleted  bool          `json:"session_completed"`
 	HasGatewaySession bool          `json:"has_gateway_session"`
 	MihomoAgentIDs    []string      `json:"mihomo_agent_ids"`
-	Raw               model.Raw
 	invalidIdentity   bool
 }
 
-// UnmarshalJSON applies shared stored-field rules to a legacy context.
+type contextWire Context
+
+// UnmarshalJSON reads a legacy context leniently; an identity of the wrong
+// type marks it invalid.
 func (c *Context) UnmarshalJSON(b []byte) error {
-	if err := model.DecodeRecord(b, c, &c.Raw); err != nil {
+	if err := model.DecodeLenient(b, (*contextWire)(c)); err != nil {
 		return err
 	}
 	var fields map[string]json.RawMessage
@@ -235,13 +236,15 @@ type Session struct {
 	Goal      *string       `json:"goal"`
 	Abandoned bool          `json:"abandoned"`
 	Completed bool          `json:"completed"`
-	Raw       model.Raw
 	invalidID bool
 }
 
-// UnmarshalJSON uses shared stored rules for the setup-session view.
+type sessionWire Session
+
+// UnmarshalJSON reads the setup-session view leniently; an ID of the wrong
+// type marks it invalid.
 func (s *Session) UnmarshalJSON(b []byte) error {
-	if err := model.DecodeRecord(b, s, &s.Raw); err != nil {
+	if err := model.DecodeLenient(b, (*sessionWire)(s)); err != nil {
 		return err
 	}
 	var fields map[string]json.RawMessage

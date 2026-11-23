@@ -487,7 +487,7 @@ func (m *Manager) RegionTargetsModel(ctx context.Context, a *model.Agent) (json.
 		return nil, err
 	}
 	raw, _ := fields.Get("targets")
-	present, err := model.JSONHasContent(raw)
+	present, err := model.Truthy(raw)
 	if err != nil {
 		return nil, err
 	}

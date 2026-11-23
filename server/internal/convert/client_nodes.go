@@ -576,7 +576,7 @@ func LoonNode(input model.Node) (string, error) {
 			if flow != "" && flow != "xtls-rprx-vision" {
 				return "", nil
 			}
-			tls = tls || slices.Contains([]string{"tls", "reality"}, clientOption(o.Security, "")) || (o.Reality != nil && (clientOption(o.Reality.PublicKey, "") != "" || clientOption(o.Reality.ShortID, "") != "" || o.Reality.Fields.Len() > 0))
+			tls = tls || slices.Contains([]string{"tls", "reality"}, clientOption(o.Security, "")) || (o.Reality != nil && (clientOption(o.Reality.PublicKey, "") != "" || clientOption(o.Reality.ShortID, "") != "" || o.RealityMembers))
 			parts = []string{name + " = VLESS", n.server, n.port, clientQuote(clientOption(o.UUID, ""))}
 			parts = append(parts, transport...)
 			if flow != "" {

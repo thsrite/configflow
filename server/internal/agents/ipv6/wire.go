@@ -34,7 +34,7 @@ func (s *Service) Enroll(ctx context.Context, id, did string, config Document) e
 		}
 		// The history map is trimmed by insertion order (A14 keeps the newest
 		// 30); an ordered map keeps that order and unknown tasks unchanged.
-		var tasks model.Map[json.RawMessage]
+		var tasks model.OrderedMap[json.RawMessage]
 		if json.Unmarshal(a["deployments"], &tasks) != nil {
 			return nil
 		}

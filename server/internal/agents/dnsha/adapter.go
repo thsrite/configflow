@@ -381,7 +381,7 @@ func rulesResult(id, status, phase string, j *model.HAJournal) *RuleResult {
 }
 
 func truthyJSON(raw json.RawMessage) bool {
-	present, err := model.JSONHasContent(raw)
+	present, err := model.Truthy(raw)
 	return err == nil && present
 }
 

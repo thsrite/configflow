@@ -81,7 +81,7 @@ func resultResponse(result json.RawMessage) (*httpx.Response, error) {
 		return nil, fmt.Errorf("invalid Agent operation response: %w", err)
 	}
 	status := 500
-	if success, err := model.JSONHasContent(fields["success"]); err == nil && success {
+	if success, err := model.Truthy(fields["success"]); err == nil && success {
 		status = 200
 	}
 	return httpx.JSONStatus(status, result), nil
@@ -92,7 +92,7 @@ func requestData(c *httpx.Ctx) (model.Fields, error) {
 	if err := c.Bind(&raw); err != nil {
 		return fields, err
 	}
-	nonempty, err := model.JSONHasContent(raw)
+	nonempty, err := model.Truthy(raw)
 	if err != nil {
 		return fields, err
 	}
@@ -109,7 +109,7 @@ func requestMember(fields model.Fields, name string, fallback json.RawMessage) j
 	return fallback
 }
 func hasJSONContent(raw json.RawMessage) bool {
-	present, err := model.JSONHasContent(raw)
+	present, err := model.Truthy(raw)
 	return err == nil && present
 }
 func deviceJSON(payload any) (http.Header, []byte, error) {

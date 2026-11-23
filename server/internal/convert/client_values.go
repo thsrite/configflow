@@ -83,7 +83,9 @@ func (r clientReserved) MarshalJSON() ([]byte, error) {
 // clientOptions is the protocol schema shared by Surge and Loon. Bool options
 // follow R5; a null pointer is absent. The source remains read-only in Node.Params.
 type clientOptions struct {
-	ALPNRaw             json.RawMessage         `json:"-"`
+	ALPNRaw json.RawMessage `json:"-"`
+	// RealityMembers: reality-opts is an object with any member, read or not.
+	RealityMembers      bool                    `json:"-"`
 	Cipher              *clientText             `json:"cipher"`
 	Password            *clientText             `json:"password"`
 	UUID                *clientText             `json:"uuid"`
@@ -136,13 +138,13 @@ type clientOptions struct {
 	HopInterval         *clientText             `json:"hop-interval"`
 	Down                *clientText             `json:"down"`
 	IdleSessionTimeout  *clientText             `json:"idle-session-timeout"`
-	UDP                 *bool                   `json:"udp"`
-	UDPRelay            *bool                   `json:"udp-relay"`
-	TLS                 *bool                   `json:"tls"`
-	SkipCertVerify      *bool                   `json:"skip-cert-verify"`
-	Reuse               *bool                   `json:"reuse"`
-	TFO                 *bool                   `json:"tfo"`
-	UDPOverTCP          *bool                   `json:"udp-over-tcp"`
+	UDP                 *bool                   `json:"udp" stored:"gate"`
+	UDPRelay            *bool                   `json:"udp-relay" stored:"gate"`
+	TLS                 *bool                   `json:"tls" stored:"gate"`
+	SkipCertVerify      *bool                   `json:"skip-cert-verify" stored:"gate"`
+	Reuse               *bool                   `json:"reuse" stored:"gate"`
+	TFO                 *bool                   `json:"tfo" stored:"gate"`
+	UDPOverTCP          *bool                   `json:"udp-over-tcp" stored:"gate"`
 	WS                  *clientTransportOptions `json:"ws-opts"`
 	WSConfig            *clientTransportOptions `json:"ws-config"`
 	HTTP                *clientTransportOptions `json:"http-opts"`
@@ -150,58 +152,29 @@ type clientOptions struct {
 	PluginOptions       *clientPluginOptions    `json:"plugin-opts"`
 	ObfsOptions         *clientPluginOptions    `json:"obfs-opts"`
 	Reality             *clientReality          `json:"reality-opts"`
-	Fields              model.Fields
-	Raw                 model.Raw
 }
-
-func (o *clientOptions) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, o, &o.Raw) }
-func (o clientOptions) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&o, &o.Raw) }
 
 type clientTransportOptions struct {
 	Path        clientTextList `json:"path"`
 	Headers     clientHeaders  `json:"headers"`
 	ServiceName *clientText    `json:"grpc-service-name"`
-	Fields      model.Fields
-	Raw         model.Raw
 }
-
-func (o *clientTransportOptions) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, o, &o.Raw)
-}
-func (o clientTransportOptions) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&o, &o.Raw) }
 
 type clientHeaders struct {
-	Host   clientTextList `json:"Host"`
-	Fields model.Fields
-	Raw    model.Raw
+	Host clientTextList `json:"Host"`
 }
-
-func (o *clientHeaders) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, o, &o.Raw) }
-func (o clientHeaders) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&o, &o.Raw) }
 
 type clientPluginOptions struct {
 	Mode     *clientText `json:"mode"`
 	Host     *clientText `json:"host"`
 	Password *clientText `json:"password"`
 	Version  *clientText `json:"version"`
-	Fields   model.Fields
-	Raw      model.Raw
 }
-
-func (o *clientPluginOptions) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, o, &o.Raw)
-}
-func (o clientPluginOptions) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&o, &o.Raw) }
 
 type clientReality struct {
 	PublicKey *clientText `json:"public-key"`
 	ShortID   *clientText `json:"short-id"`
-	Fields    model.Fields
-	Raw       model.Raw
 }
-
-func (o *clientReality) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, o, &o.Raw) }
-func (o clientReality) MarshalJSON() ([]byte, error)     { return model.EncodeRecord(&o, &o.Raw) }
 
 func decodeClientOptions(node *yamlx.Node) (clientOptions, error) {
 	var result clientOptions
@@ -212,15 +185,21 @@ func decodeClientOptions(node *yamlx.Node) (clientOptions, error) {
 	if err != nil {
 		return result, err
 	}
-	if err := json.Unmarshal(data, &result); err != nil {
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(data, &members); err != nil || members == nil {
+		return result, fmt.Errorf("%s: %w", msgClientOptions, model.ErrType)
+	}
+	// Options of the wrong type read as absent; a switch of another type
+	// than a boolean is off (stored:"gate") and reported.
+	issues, err := model.DecodeStored(data, &result, "")
+	if err != nil {
 		return result, fmt.Errorf("%s: %w", msgClientOptions, err)
 	}
-	var members map[string]json.RawMessage
-	if err := json.Unmarshal(data, &members); err != nil {
-		return result, err
-	}
 	result.ALPNRaw = bytes.Clone(members["alpn"])
-	for _, issue := range model.Issues(result) {
+	if raw := bytes.TrimSpace(members["reality-opts"]); len(raw) > 0 && raw[0] == '{' {
+		result.RealityMembers = model.Switch(raw, false)
+	}
+	for _, issue := range issues {
 		switch issue.Path {
 		case "udp", "udp-relay", "tls", "skip-cert-verify", "reuse", "tfo", "udp-over-tcp":
 			logx.Get("backend.converters.clients").Warningf(msgClientBoolean, issue.Path)

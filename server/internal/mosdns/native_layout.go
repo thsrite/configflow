@@ -28,14 +28,19 @@ type RuleBatch struct {
 	Lines []string
 }
 
+// ruleLists are the historical rules/rule_sets members of a profile.
 type ruleLists struct {
 	Rules    []model.RuleConfig `json:"rules"`
 	RuleSets []model.RuleConfig `json:"rule_sets"`
-	Fields   model.Fields
-	raw      model.Raw
 }
 
-func (r *ruleLists) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, r, &r.raw) }
+type ruleListsWire ruleLists
+
+// UnmarshalJSON reads the lists leniently: an element that is not a rule
+// object is left out.
+func (r *ruleLists) UnmarshalJSON(data []byte) error {
+	return model.DecodeLenient(data, (*ruleListsWire)(r))
+}
 
 func flag(value *bool) bool {
 	return model.Flag(value, true)
@@ -368,13 +373,13 @@ type PublishGuard struct {
 var ErrRuleProxyToken = errors.New(msgProxyTokenRequired)
 
 type profileIdentity struct {
-	ID     string `json:"profile_id"`
-	Fields model.Fields
-	raw    model.Raw
+	ID string `json:"profile_id"`
 }
 
+type profileIdentityWire profileIdentity
+
 func (v *profileIdentity) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, v, &v.raw)
+	return model.DecodeLenient(data, (*profileIdentityWire)(v))
 }
 
 // ConfigFromJSON decodes the MosDNS projection without decoding unrelated resources.

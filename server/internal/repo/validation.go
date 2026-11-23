@@ -74,7 +74,7 @@ func jsonString(raw json.RawMessage) (string, bool) {
 
 // jsonTruthy evaluates a stored JSON value's truthiness with default false.
 func jsonTruthy(raw json.RawMessage) bool {
-	return model.JSONSwitchEnabled(raw, false)
+	return model.Switch(raw, false)
 }
 
 // displayJSON is a stored scalar as message text: a string as itself,

@@ -46,16 +46,18 @@ type Counts struct {
 	Rules         int `json:"rules"`
 }
 
+// historyDocument is the overview history file: {"samples": [...]}.
 type historyDocument struct {
 	Samples []json.RawMessage `json:"samples"`
-	Extra   model.Fields
-	Raw     model.Raw
 }
 
+type historyWire historyDocument
+
+// UnmarshalJSON reads the file leniently: samples that are not a list read
+// as no samples (the next sample starts a new history).
 func (d *historyDocument) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, d, &d.Raw)
+	return model.DecodeLenient(data, (*historyWire)(d))
 }
-func (d historyDocument) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&d, &d.Raw) }
 
 type sample struct {
 	At            string          `json:"at"`

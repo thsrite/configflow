@@ -26,7 +26,7 @@ type Profile struct {
 	issues          []model.FieldIssue
 }
 
-// NewTypedProfile projects the consumed members without encoding model.Raw or
+// NewTypedProfile projects the consumed members without encoding
 // unrelated settings, subscriptions and Agent deployment histories.
 func NewTypedProfile(source *model.Config) (*Profile, error) {
 	if source == nil || source.Profile == nil {
@@ -444,11 +444,11 @@ func emptyProfile() *Profile {
 }
 
 type profileIdentity struct {
-	ID     string `json:"profile_id"`
-	Fields model.Fields
-	raw    model.Raw
+	ID string `json:"profile_id"`
 }
 
+type profileIdentityWire profileIdentity
+
 func (v *profileIdentity) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, v, &v.raw)
+	return model.DecodeLenient(data, (*profileIdentityWire)(v))
 }

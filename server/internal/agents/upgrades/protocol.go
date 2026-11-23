@@ -189,7 +189,7 @@ func displayVersion(text string) string {
 }
 
 func hasContent(raw json.RawMessage) bool {
-	content, err := model.JSONHasContent(raw)
+	content, err := model.Truthy(raw)
 	return err == nil && content
 }
 

@@ -423,7 +423,7 @@ func heartbeatFeature(agent *model.Agent, field string) bool {
 	if err != nil || !present {
 		return false
 	}
-	enabled, err := model.JSONHasContent(raw)
+	enabled, err := model.Truthy(raw)
 	return err == nil && enabled
 }
 

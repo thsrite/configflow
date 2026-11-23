@@ -100,7 +100,7 @@ func enabledGuardIssue(enabled *bool, issues []FieldIssue, raw []byte) bool {
 			if json.Unmarshal(raw, &guard) != nil {
 				return true
 			}
-			return JSONSwitchEnabled(guard.Enabled, false)
+			return Switch(guard.Enabled, false)
 		}
 	}
 	if enabled == nil || !*enabled {

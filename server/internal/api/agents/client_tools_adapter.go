@@ -402,7 +402,7 @@ func clientPolicyPayload(ctx context.Context, id string, agent *clientDevice) (a
 		}
 		if bound == id {
 			raw := rawAgentMember(&record, "name")
-			hasContent, err := model.JSONHasContent(raw)
+			hasContent, err := model.Truthy(raw)
 			if err != nil {
 				return nil, err
 			}

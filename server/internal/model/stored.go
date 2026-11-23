@@ -238,7 +238,7 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 			if err != nil {
 				return err
 			}
-			*v = storedTag(sink, dec.StackPointer()) != gateTag && JSONSwitchEnabled(value, false)
+			*v = storedTag(sink, dec.StackPointer()) != gateTag && Switch(value, false)
 			if tagged, ok := sink.switchDefault(dec); ok {
 				*v = tagged
 			}
