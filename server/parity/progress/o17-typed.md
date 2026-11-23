@@ -35,6 +35,22 @@
 - [ ] 1.8 iKuai 结构体
 - [ ] 1.7 OxiDNS Settings 等类型化
 
+## 做法要点（供续作）
+
+- 验证命令（.64/.32 均可）：`rt -- bash -lc 'cd server && go build ./... && go vet ./internal/<pkg>/ && CONFIGFLOW_DIFF=1 CONFIGFLOW_DIFF_PYTHON=$HOME/cf-test/.venv/bin/python go test -count=1 ./internal/<pkg>/... '`
+- 「原样成员」边界（`groupFields`/`aggregationFields`，以后 `subscriptionFields`）：仅用于新增/替换的那一条记录，
+  其他记录一律类型化；写入时用 `SetJSON(列表)` 让 repo 给出与导入相同的文案。
+- 部分更新：解码到「存储记录副本」（先 `detach` 指针成员，避免写穿）；要按原样校验或可能被丢弃的成员在外层用
+  `jsondecode.Member` 遮蔽（见 `api/rules/model.go` 的 `ruleInput`）。
+- oxidns 过渡接口（1.7 时改为类型化）：`RuleConvertible`、`RuleFollowRoute`、`WithoutRuleReferences`、`SettingsText`、`SettingsStrings`。
+- `rules.OrderIDs` 是过渡包装，subscriptions/rulelibrary 改完后删除。
+
+## 剩余
+
+- 1.6：subscriptions（订阅列表类型化；请求体 `subscriptionFields`；代理 proxy 是开放协议成员，保留 JSON 对象并改名注明）、
+  rulelibrary、mcp/invoker；最后删 `rules.OrderIDs`。
+- 1.8、1.7：未开始。
+
 ## 功能差异（对外）
 
 - `api/rules` 创建/修改规则、批量添加的响应 `data`/`rules`：不再回显未声明的成员（它们本来就不会被保存）；
