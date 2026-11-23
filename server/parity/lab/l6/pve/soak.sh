@@ -2,6 +2,7 @@
 # soak.sh start <run> [proxy-port]   start the collectors (background, survive this shell) into $WORK/soak/<run>/
 # soak.sh stop <run>                 stop them
 # soak.sh summary <run>              min / median / max / last per metric, error and probe counts
+# soak.sh sample <run>               take one sample of everything now (spot checks during the rehearsal)
 #
 # Collected (C.4 of o14-switch-plan.md + the O10 24 h soak):
 #   panel.tsv    every 60 s: panel container CPU% and memory (docker stats), main process RSS kB,
@@ -69,6 +70,7 @@ logs_sample() { # logs_sample <since-epoch>
 
 agents_sample() {
   local user pass
+  [ -f "$ENVFILE" ] || return 0
   user=$(sed -n 's/^ADMIN_USERNAME=//p' "$ENVFILE"); pass=$(sed -n 's/^ADMIN_PASSWORD=//p' "$ENVFILE")
   python3 - "$PANEL_IP" "$user" "$pass" >> "$dir/agents.tsv" <<'P' || true
 import json, sys, time, urllib.request
@@ -92,32 +94,40 @@ P
 
 probes_start() { # dig loops on both VIPs, curl through the pilot gateway's proxy port
   local port=$1
-  gexec 257 bash -c "mkdir -p /root/soak && cat > /root/soak/probe.sh <<'S'
+  cat > "$dir/probe.sh" <<'S'
 #!/bin/bash
 # probe.sh dns <server> <name> | http <proxy host:port> <url> <name>
-mode=\$1
-if [ \"\$mode\" = dns ]; then server=\$2 name=\$3 interval=0.1
-else proxy=\$2 url=\$3 name=\$4 interval=1; fi
-log=/root/soak/probe-\$name.log
-min=\$(date +%Y-%m-%dT%H:%M); ok=0; bad=0
+mode=$1
+if [ "$mode" = dns ]; then server=$2 name=$3 interval=0.1
+else proxy=$2 url=$3 name=$4 interval=1; fi
+log=/root/soak/probe-$name.log
+min=$(date +%Y-%m-%dT%H:%M); ok=0; bad=0
 while :; do
-  if [ \"\$mode\" = dns ]; then dig +time=1 +tries=1 +short @\$server example.com A >/dev/null 2>&1 && r=0 || r=1
-  else curl -s -m 3 -o /dev/null -x http://\$proxy \$url && r=0 || r=1; fi
-  if [ \$r = 0 ]; then ok=\$((ok+1)); else bad=\$((bad+1)); echo \"\$(date +%Y-%m-%dT%H:%M:%S.%3N) FAIL\" >> \$log; fi
-  m=\$(date +%Y-%m-%dT%H:%M)
-  if [ \"\$m\" != \"\$min\" ]; then echo \"\$min ok=\$ok fail=\$bad\" >> \$log; min=\$m; ok=0; bad=0; fi
-  sleep \$interval
+  if [ "$mode" = dns ]; then dig +time=1 +tries=1 +short @"$server" example.com A >/dev/null 2>&1 && r=0 || r=1
+  else curl -s -m 3 -o /dev/null -x "http://$proxy" "$url" && r=0 || r=1; fi
+  if [ $r = 0 ]; then ok=$((ok+1)); else bad=$((bad+1)); echo "$(date +%Y-%m-%dT%H:%M:%S.%3N) FAIL" >> "$log"; fi
+  m=$(date +%Y-%m-%dT%H:%M)
+  if [ "$m" != "$min" ]; then echo "$min ok=$ok fail=$bad" >> "$log"; min=$m; ok=0; bad=0; fi
+  sleep $interval
 done
 S
-chmod 755 /root/soak/probe.sh
-pkill -f /root/soak/probe[.]sh || true
-nohup /root/soak/probe.sh dns $VIP_NATIVE dns-native >/dev/null 2>&1 &
-nohup /root/soak/probe.sh dns $VIP_DOCKER dns-docker >/dev/null 2>&1 &
-nohup /root/soak/probe.sh http $(guest_ip 252):$port $HTTP/ok.txt http >/dev/null 2>&1 &
-echo probes started"
+  probes_stop
+  gexec 257 mkdir -p /root/soak
+  pct push 257 "$dir/probe.sh" /root/soak/probe.sh --perms 755
+  # pid files, never pkill -f: a pattern also matches the shell that runs it
+  gexec 257 bash -c "cd /root/soak && rm -f probe-*.log
+    nohup ./probe.sh dns $VIP_NATIVE dns-native >/dev/null 2>&1 & echo \$! > dns-native.pid
+    nohup ./probe.sh dns $VIP_DOCKER dns-docker >/dev/null 2>&1 & echo \$! > dns-docker.pid
+    nohup ./probe.sh http $(guest_ip 252):$port $HTTP/ok.txt http >/dev/null 2>&1 & echo \$! > http.pid
+    echo probes started"
 }
 
-collector() { # the loop itself (run under nohup)
+probes_stop() {
+  gexec 257 bash -c 'for f in /root/soak/*.pid; do [ -f "$f" ] && kill "$(cat "$f")" 2>/dev/null; rm -f "$f"; done; true'
+}
+
+collector() { # the loop itself (run under nohup); one failed sample must not end the soak
+  set +e +o pipefail
   local t=0 last
   last=$(date +%s)
   while [ -f "$dir/.running" ]; do
@@ -132,7 +142,7 @@ summary() {
   python3 - "$dir" <<'P'
 import os, statistics, sys
 d = sys.argv[1]
-rows = [l.rstrip("\n").split("\t") for l in open(os.path.join(d, "panel.tsv")) if l.strip()]
+rows = [r for r in (l.rstrip("\n").split("\t") for l in open(os.path.join(d, "panel.tsv"))) if r[0].isdigit()]
 def col(i, conv=float):
     out = []
     for r in rows:
@@ -148,7 +158,7 @@ t = col(7)
 if len(t) > 1 and span: print(f"cpu avg  {(t[-1]-t[0]) / os.sysconf('SC_CLK_TCK') / (span*3600) * 100:.2f}% of one core")
 lp = os.path.join(d, "logs.tsv")
 if os.path.exists(lp):
-    L = [l.split("\t") for l in open(lp) if l.strip()]
+    L = [l.split("\t") for l in open(lp) if l[:1].isdigit()]
     print(f"log lines: error {sum(int(x[1]) for x in L)}  warn {sum(int(x[2]) for x in L)}  total {sum(int(x[3]) for x in L)}")
 P
   for f in "$dir"/probe-*.log; do
@@ -168,9 +178,10 @@ case ${1:-} in
     echo "soak $run started: $dir"
     ;;
   _collect) collector ;;
+  sample) mkdir -p "$dir"; set +e; panel_sample; devices_sample; logs_sample $(( $(date +%s) - 600 )); agents_sample; tail -n 3 "$dir"/panel.tsv "$dir"/agents.tsv "$dir"/logs.tsv ;;
   stop)
     rm -f "$dir/.running"
-    gexec 257 bash -c 'pkill -f /root/soak/probe[.]sh; true'
+    probes_stop
     pct pull 257 /root/soak/probe-dns-native.log "$dir/probe-dns-native.log" 2>/dev/null || true
     pct pull 257 /root/soak/probe-dns-docker.log "$dir/probe-dns-docker.log" 2>/dev/null || true
     pct pull 257 /root/soak/probe-http.log "$dir/probe-http.log" 2>/dev/null || true

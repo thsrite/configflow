@@ -56,7 +56,7 @@ create_ct() { # create_ct <id>
   sleep 4
   pin_mirror "$id"   # package mirror reachable before the lab resolver exists (CT 251 is built first)
   if [ "$os" = alpine ]; then
-    gexec "$id" sh -c "sed -i 's#https\\?://dl-cdn.alpinelinux.org#$MIRROR#' /etc/apk/repositories
+    gexec "$id" sh -c "sed -i 's#https\\?://dl-cdn.alpinelinux.org#$ALPINE_REPO#' /etc/apk/repositories
       echo nameserver $INFRA_IP > /etc/resolv.conf
 "
     apk_add "$id" bash curl ca-certificates nftables iproute2 bind-tools tzdata openssh

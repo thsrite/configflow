@@ -18,7 +18,7 @@
 
 | ID | 名称 | 系统 | 地址 | 内存 | 角色 |
 |---|---|---|---|---|---|
-| CT 250 | cf-l6-panel | Alpine 3.24 + Docker 29 + Compose | 10.97.0.150 | 2048 MB | 面板容器 `cf-panel`（host 网络，:80）。先跑最后一个 Python 镜像，再换 Go 镜像；数据在 `/srv/cf/data`（700） |
+| CT 250 | cf-l6-panel | Alpine 3.24 + Docker 29.9.3 + Compose 5.7.2 | 10.97.0.150 | 2048 MB | 面板容器 `cf-panel`（host 网络，:80）。先跑最后一个 Python 镜像，再换 Go 镜像；数据在 `/srv/cf/data`（700） |
 | CT 251 | cf-l6-infra | Alpine 3.24 | 10.97.0.151 | 768 MB | 实验解析器 labdns（mosdns 5.3.3，上游 DoH-by-IP，查询日志 `/var/log/labdns-queries.log`）；镜像仓库 `:5000`（registry:3，HTTP）；静态 HTTP `:8090`（GitHub release 镜像 `gh/`、合成订阅 `sub/lab.yaml`、探测目标 `ok.txt`）；WebDAV `:8091`（rclone，账号 `l6dav`） |
 | CT 252 | cf-l6-gw-deb | Debian 12，systemd | 10.97.0.152 | 512 MB | 旁路网关 Mihomo Agent（试点），`/dev/net/tun` |
 | CT 253 | cf-l6-gw-alp | Alpine 3.24，OpenRC | 10.97.0.153 | 512 MB | 旁路网关 Mihomo Agent，`/dev/net/tun` |
@@ -26,14 +26,16 @@
 | CT 255 | cf-l6-dns-b | Alpine 3.24，OpenRC | 10.97.0.155 | 384 MB | DNS HA 成员 B：OxiDNS + keepalived |
 | VM 256 | cf-l6-chr | RouterOS CHR 7.25.1 | 10.97.0.156 | 512 MB | 主路由角色：REST over TLS（自签证书 `l6-srv`），用户 `cf`/`L6Cf-2611`，admin/`L6Chr-2611`，`www` 关闭 |
 | CT 257 | cf-l6-client | Debian 12 | 10.97.0.157 | 256 MB | 客户端探测：`dig` 循环查两个 VIP，`curl` 经试点网关代理 |
-| VM 258 | cf-l6-dock-a | Debian 12 云镜像 + Docker CE + Compose | 10.97.0.158 | 1024 MB | Docker 主备成员 A（s6 Agent 镜像） |
+| VM 258 | cf-l6-dock-a | Debian 12 云镜像 + Docker CE 29.10.0 + Compose 5.8.0 | 10.97.0.158 | 1024 MB | Docker 主备成员 A（s6 Agent 镜像） |
 | VM 259 | cf-l6-dock-b | 同上 | 10.97.0.159 | 1024 MB | Docker 主备成员 B |
 
 - VIP：原生 DNS HA 对 `10.97.0.249`（CT 254/255），Docker HA 对 `10.97.0.248`（VM 258/259）。两个 Docker 成员用 VM 而不是 LXC：同一 PVE 上的 LXC 共用内核 boot ID，会被「相同宿主」检查拒绝。
 - 所有 guest `onboot=0`，搜索域 `lab.invalid`（PVE 默认会把宿主的真实搜索域写进 guest 的 hosts，已覆盖）。CT 的实验 SSH 钥匙在 PVE `/root/cf-gwip-lab/l6/id_l6`；VM 用 cloud-init 注入同一把钥匙（`root@`）。
-- 软件源：`mirrors.aliyun.com`（TUNA、USTC 当天返回 403）。镜像站地址在 PVE 上解析后写进 guest 的 `/etc/hosts`，所以实验解析器起来前也能装包。安装命令都有超时与重试（apk 在连接卡死时不会自己超时）。
+- 软件源：`mirrors.aliyun.com`（TUNA、USTC 当天返回 403）；Alpine 用 HTTP（见 L6P-2）。镜像站地址在 PVE 上解析后写进 guest 的 `/etc/hosts`，所以实验解析器起来前也能装包。安装命令都有超时与重试（apk 在连接卡死时不会自己超时）。
 - GitHub release 文件：Agent/安装脚本的核心下载经 `l6-ghshim`（`/usr/local/bin/curl`、`wget` 的包装）改到 `http://10.97.0.151:8090/gh/…`，安装脚本仍校验自己写死的 SHA256。当前镜像：Mihomo v1.19.32（amd64-compatible）、OxiDNS v1.6.1（x86_64 musl）、mosdns v5.3.3。安装器要了没镜像的文件时（404），在测试服务器上 `fetch-assets.sh <URL>` 后重新 `push-to-lab.sh` 和 `setup-infra.sh base`。
-- PVE 资源：建完 10 台后可用内存约 4–5 GB；Docker VM 设了 balloon 512 MB。只做原生部分时可先 `qm shutdown 258 259`。
+- PVE 资源：建完 10 台后 PVE 可用内存约 4.3 GB；Docker VM 设了 balloon 512 MB。只做原生部分时可先 `qm shutdown 258 259`。
+- 已做的冒烟（空数据，做完即删）：CT 250 里 Go 镜像 2 s 健康、`/api/version` = `2.0.0-rc.l6+fe126f1ca`，Python 镜像 3 s 健康、v2.2.0；`soak.sh` 采到 Go 面板空载 RSS ≈ 37 MB、8 线程、18 fd；252/253 经 shim 从实验镜像下载 Mihomo/OxiDNS 成功（SHA256 与 release 一致）；`labnet.sh check` 全 PASS；`setup-guests.sh check` 每台都能到 infra、DNS 经实验解析器。
+- 已知采集限制：LXC 里 `docker stats` 的内存列是 0B（嵌套 cgroup 读不到），以 `/proc/<pid>` 的 RSS 为准。
 
 ## 2. 镜像（当前构建，供环境验证；浸泡前要用最终代码重建）
 
@@ -176,7 +178,7 @@ bash soak.sh start go-switch <Mihomo 代理端口>
 
 ### 5.6 Docker 主备（s6 Agent 镜像，L6 实机核对）
 
-VM 258/259 已装 Docker CE 29 + Compose，信任实验仓库，已预拉 `config-flow-agent:1.9.3-go-<sha>` 和 `python-final`（另打标签 `thsrite/config-flow-agent:latest`）。
+VM 258/259 已装 Docker CE 29.10.0 + Compose 5.8.0，信任实验仓库，已预拉 `config-flow-agent:1.9.3-go-<sha>` 和 `python-final`（另打标签 `thsrite/config-flow-agent:latest`）。
 
 1. **Python 起点**：在 Python 面板的「Docker 主备安装引导」生成两台的命令（host 或 macvlan；macvlan 的父接口是 `eth0`，网段 10.97.0.0/24，给容器留 10.97.0.200–239），在 258/259 上执行（`ssh -i /root/cf-gwip-lab/l6/id_l6 root@10.97.0.158`）。镜像是 Python 时代的 Supervisor 镜像。配对，VIP 10.97.0.248，完整发布一次。
 2. **切换后**，按「Docker Agent 更新步骤」把两台换成 Go 面板配套的 s6 镜像（`10.97.0.151:5000/config-flow-agent:1.9.3-go-<sha>`），沿用原数据卷重建容器。核对：
@@ -252,6 +254,6 @@ bash labnet.sh down                        # 或保留（常设基础设施，�
 | ID | 严重程度 | 摘要 | 处理 |
 |---|---|---|---|
 | L6P-1 | **高（发布阻断）** | `go@595972901` 面板镜像构建失败：`svc/exec.go` 的 `syscall.Dup2` 在 linux/arm64 不存在；Agent 镜像的 arm64 变体同样失败。门禁 Agent 阶段只在 amd64 上 vet/test，没覆盖 | 已修（`fe126f1ca`，`unix.Dup2`）；linux amd64/arm64/arm/386 build + vet、`go test ./svc` 通过。建议门禁加交叉编译 |
-| L6P-2 | 观察 | 实验网内的 HTTPS 大文件下载偶尔在中途卡死（apk 不超时）；宿主本身同一镜像站很快。没有在 `inet cfgt` 里看到 new/invalid/untracked 被丢的包。原因未查清 | 安装命令加超时与重试；需要大文件时优先在测试服务器下载后推入 |
+| L6P-2 | 观察 | Alpine guest 里 busybox `wget`（`ssl_client`）和 apk 自带的下载器对镜像站的 HTTPS 大文件会中途卡死，且 apk 不会自己超时；同一 CT 里 curl 走 HTTPS 正常（~6 MB/s），Debian CT 里 curl ~20 MB/s；`inet cfgt` 没有丢包（new/invalid/untracked 计数为 0）。这也可能是以往「实验网下载 GitHub 很慢」的原因之一 | Alpine 软件源改用 HTTP（apk 包有签名校验）；安装命令加超时与重试；大文件优先在测试服务器下载后推入 |
 | L6P-3 | 观察 | PVE 会把宿主的真实搜索域写进 CT 的 `/etc/hosts` | 所有 L6 guest 设 `--searchdomain lab.invalid` |
 | L6P-4 | 观察 | TUNA、USTC 镜像站当天对实验出口返回 403 | 改用 aliyun |
