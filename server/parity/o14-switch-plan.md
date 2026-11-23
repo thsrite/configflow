@@ -1,6 +1,7 @@
-# O14：切换与发布计划（草稿）
+# O14：切换与发布计划
 
 - 起草：fresh Opus，2026-11-22（会话日期 2026-11-21），分支 `go-audit-o14`，基于 `go` = `2f47d56bb`。
+- 2026-11-23 同步修订（分支 `go-o14-checklist`，基于 `go@595972901`）：对齐 batch-20..44（面板与 Agent 双镜像无 Python：面板 `tini` + Go 自管 Sub-Store + `cmd/configflow-autoupdate`，Agent `1.9.3-go` + s6-overlay）、维护者裁定 D1–D14（含 D5 保持自动同步开启）、测试去 Python 化裁定 C 与 O17 `runtime-state`（v1→v2 迁移前强制备份与恢复标记 fail closed）。完整前置条件与切换提交删除清单统一收口在 [O14-CHECKLIST.md](O14-CHECKLIST.md)。
 - 只写文档，没有运行任何测试，也没有连接生产或实验网。
 - 依据：[O14-CHECKLIST](O14-CHECKLIST.md)、[progress/o14-switch.md](progress/o14-switch.md)、
   [o13-completeness](o13-completeness.md)、[o12-release-notes](o12-release-notes.md)（下文用 O12-Axx/Bxx/Mxx 引用其条目）、
@@ -21,22 +22,24 @@
 
 ### A.0 前置条件（全部满足才定切换窗口）
 
-| # | 条件 | 当前状态（2026-11-22） | 判定方式 |
+> 2026-11-23 更新：完整前置条件总表（含 O18、O17、无 Python 面板/Agent 镜像、裁定 C 门禁预演、CI 切换、负责人与精确判定命令）已统一收口到 [O14-CHECKLIST.md 第 1 节](O14-CHECKLIST.md#1切换前置条件总表全部满足方可定切换窗口)。下表保留原 P1–P13 编号并同步最新状态。
+
+| # | 条件 | 当前状态（2026-11-23） | 判定方式 |
 |---|---|---|---|
-| P1 | O13 完整性终审：0 缺口（#40 除外） | 已合并（65d03d17c） | — |
-| P2 | **#40 发布镜像/entrypoint**：Go server 取代 Flask + nginx；保留 supervisord 管 Sub-Store；静态资源（前端 dist + `.gz`、Agent 制品、node-probe）放在 Go 读取的路径；`ca-certificates`、`tzdata`；`DATA_DIR=/data`；SIGTERM 排空；版本号注入 `internal/version.Version`（O12-M11）；autoupdate 目标改为重建 Go server（维护者已决定保留） | 进行中（go-image-40，尚无提交） | 镜像在测试服务器构建 amd64 + arm64，见 A.2 影子启动 |
-| P3 | O9 第二轮安全复核（全树）：无未关闭的 high/medium | 进行中（go-audit-o9r2） | review 文件结论 |
-| P4 | O10 性能/内存：空闲 RSS/CPU 不劣于 Python（基线：生产 Python 146 MB RSS），无 goroutine/fd 泄漏 | 未开始 | O10 报告 + L6 24 h soak |
-| P5 | O12 台账定稿：M01–M19 每条由维护者确认（接受 / 补 A 类操作 / 修复）；其中 M04（CA/tzdata）、M11（版本注入）、M16（EasyTier 对 alpha 内核版本拒绝生成）发布前必须关闭 | 终稿草案已提交（17e877158），待维护者确认 | o12 最终版 |
-| P5b | M16：在实验网核对 Mihomo alpha 内核实际上报的 coreVersion；若为 `alpha-*`，生产里用 alpha 内核且启用 EasyTier 出站的旁路网关在切换后会**拒绝生成** | 未核对 | L2/L6 中记录各内核上报值；必要时先修 Go |
-| P6 | O15 ARCHITECTURE.md、O17 体积审计 | 未开始 | 不阻塞切换，但阻塞公开发布 |
-| P7 | 实验网 L2（发布/激活/回滚/恢复）、L3（规则同步、DNS 跟随、DNS HA）、L4（Linux 网关、IPv6）、L5（RouterOS/iKuai）全部通过，缺陷已修 | L1 已做；L2–L5 未做 | `lab/L<n>.md`，无未关闭的缺陷 |
-| P8 | **L6**：24 h soak + 本文 C 节的切换演练通过 | 未做 | `lab/L6.md` |
-| P9 | 切换前一周内刷新测试服务器上的生产快照，用发布树重跑 proddiff，new = 0（或每条都有基线理由） | — | proddiff 摘要 |
-| P10 | 「最后一个 Python 版本」已打标签发布（含所有迁移代码），公开用户有升级路径（见 B.1） | 待维护者决定 | git tag + 镜像标签存在 |
-| P11 | 小修复：缺失 Agent 的 logs/logs-sources/config-logging 由 500 改 404（协调者已裁定） | 未派发 | 合并进 go |
-| P12 | 切换用的镜像 = 公开发布候选镜像（同一 digest），版本号不是 `dev` | — | 启动横幅版本号 |
-| P13 | **配套 Docker Agent 镜像先于（或同时于）Go 面板镜像发布**：同一 `v*` 标签触发的 `docker-agent.yml` 已推出 `config-flow-agent:<版本>`（amd64 + arm64），且 Go 面板镜像构建时注入的 Agent 镜像就是它。Go 面板生成的 Docker 安装命令/Compose/HA 使用这个标签；标签不存在时新装 `docker pull` 失败，若误用旧 `latest`（旧入口脚本）则开启登录后首次注册 403「安装命令已失效…」（L2 发现） | CI 已改（`go(image): pair Docker Agent image with panel version`） | `docker buildx imagetools inspect thsrite/config-flow-agent:<版本>` 有两种架构；面板「添加 Agent → Docker」生成的命令镜像为 `:<版本>`；实验网新装一台 Docker Agent 注册成功 |
+| P1 | O13 完整性终审：0 缺口（#40 除外） | **已满足**（`65d03d17c`） | — |
+| P2 | **#40 面板与 Agent 发布镜像（双镜像无 Python）**：面板用 `tini` 作 PID 1、Go 自管 Sub-Store、`cmd/configflow-autoupdate` 取代 `auto_update.py`（已移除 supervisord 与 nginx）；Agent 镜像（`1.9.3-go`）用 s6-overlay v3.2.3.2 取代 supervisord、`service_manager` 新写 `"s6"` 且 `"supervisor"` 读为同义词；`ca-certificates`、`tzdata`、`DATA_DIR=/data`、SIGTERM 排空、版本号注入 | **已满足**（batch-20/35/36/37 已合并） | `panel-image-smoke.sh`、`autoupdate-image-smoke.sh`、`nopy-agent-image-lab.sh` 全通过，见 A.2 影子启动 |
+| P3 | O9 第二轮安全复核（全树）：无未关闭的 high/medium | **已满足**（batch-20 已合并） | `review-o9-round2.md` |
+| P4 | O10 性能/内存：正式测量机（PVE 实验宿主独立性能 CT）同机同快照 Go ≤ Python（空闲 CPU 平均/10s 中位/p10、RSS、全部测量路由延迟），无 goroutine/fd 泄漏 | **进行中**（R1–R13 已合并；缓存预算 `go-perf-cache-budget` 进行中；O17 全合入后重跑最终 PVE 验收） | `o10-pve-baseline.md` + 最终 PVE 复测 + L6 24 h soak |
+| P5 | O12 台账定稿：M01–M19 维护者逐条确认；M04/M11/M15/M16/M18 切换前关闭 | **基本满足**（M01–M19 已裁定，M15/M16/M18 已合入；O17 合入后同步终稿） | `o12-release-notes.md` |
+| P5b | M16：Mihomo alpha 内核（实验网实测 `alpha-100ff73`）上报值按未知处理，不拒绝生成 | **已满足**（batch-22 已合并） | L2 实测 + 回归测试 |
+| P6 | O15 `ARCHITECTURE.md`、O18 遗留清理、O17 地道 Go 清理（维护者 2026-11-23 裁定 O17 结构项全部在切换前完成） | O15/O18 **已满足**；O17 **进行中**（1.6 已合并；`runtime-state`、OxiDNS/ROS 类型化、小清理进行中；死代码待做） | 见 [O14-CHECKLIST.md](O14-CHECKLIST.md) P6/P6b/P6c |
+| P7 | 实验网 L1–L5 全部通过，缺陷已修 | **已满足**（L1–L5 已通过，缺陷修复 batch-24/25/31 已合并） | `lab/L1.md`–`L5.md` |
+| P8 | **L6**：最终候选代码上的 24 h soak + 本文 C 节切换演练（含 runtime-state v1→v2 迁移、s6 双宿 HA、HA 自动补完）通过 | **进行中**（准备分支 `go-l6-prep`，待 O17 合入后执行） | `lab/L6.md` |
+| P9 | 切换前一周内刷新生产快照，在最终候选树跑完最后一次完整 Python 对比门禁（Python vs Go proddiff `new=0`）；裁定 C 删除清单、WP9 `proddiff` Go-vs-Go、两次无 Python 门禁预演（`GATE_NOPY=1`）、`skipaudit` 清零就绪 | WP9 **已满足**；最后一次 Python 对比门禁与无 Python 预演 **未满足** | 见 [O14-CHECKLIST.md](O14-CHECKLIST.md) P9–P9d |
+| P10 | 「最后一个 Python 版本」标签确认与长期保留（裁定 D2：以合入 `main` 前最后一次 Python 发布 `v2.2.0` 为准） | **已满足（发版前复核）** | git tag + 镜像标签存在 |
+| P11 | 小修复：缺失 Agent 的 logs/logs-sources/config-logging 由 500 改 404 | **已满足**（batch-20 已合并） | 已合并进 `go` |
+| P12 | 切换用的镜像 = 公开发布候选镜像（同一 digest），版本号不是 `dev`，观察期内 `PUBLISH_LATEST != true` | **未满足（发版时核验）** | 启动横幅版本号 |
+| P13 | **配套 Docker Agent 镜像（≥ `1.9.3-go`）先于或同时于 Go 面板镜像发布**：同一 `v*` 标签下 `docker-agent.yml` 已推出 `thsrite/config-flow-agent:<版本>`（amd64 + arm64），且 Go 面板镜像构建注入同一标签 | CI 已就绪（发版打 tag 时核验） | `docker buildx imagetools inspect thsrite/config-flow-agent:<版本>` 有两种架构；面板生成命令为 `:<版本>` |
 
 ### A.1 切换前一天：检查与准备（不停服务）
 
@@ -56,8 +59,7 @@
    - 每台路由器的规则同步状态（`GET /api/routers/<id>/rule-sync`）和自动同步开关。
    - DNS 跟随绑定、IPv6 验收结论、已忽略通知列表（截图即可）。
    - 每台 Agent 设备上当前核心配置文件的 sha256（从设备上读，用于对照切换后是否真的换了配置）。
-5. **自动任务**：决定切换首启时是否先关掉各 Agent 的规则自动同步（`PUT /api/agents/<id>/rule-sync`）和路由器的自动规则同步，
-   全量推送确认后再打开（见「需要维护者决定」D5）。建议关掉：这样首启后在维护者确认之前，Go 不会自动向任何设备写入。
+5. **自动任务（已裁定 D5）**：维护者决定切换首启**保持 Agent 与路由器的自动同步开启**（不在切换前手动关闭）。因此切换前必须通过影子启动（A.2）与 L6 演练确认生成结果与当前设备一致；首启后立即观察第一轮自动同步行为，出现异常按 A.5 停损。
 6. **WebDAV 保留策略**：Go 首次写库后 1 s 会触发自动备份，并按 keep_latest/keep_daily 轮转。先把最近一份 Python 时期的
    WebDAV 备份复制到轮转目录之外（或临时调大 keep_latest），避免被 Go 的新备份挤掉。
 7. 在测试服务器上用发布镜像对**刚刷新的快照副本**做一次影子启动（A.2），把首启日志作为对照。
@@ -103,11 +105,11 @@
 | S3 | WARNING/ERROR 日志 | 与 A.2 影子启动的分类一致，没有新类别 |
 | S4 | `/health`、首页、登录 | 200；登录后会话正常 |
 | S5 | 各页面能打开：概览、Agent、路由器、规则库、订阅、设置、通知、定时任务 | 无 500、无空白 |
-| S6 | Sub-Store | 订阅页能列出订阅；需要时能按需启动（supervisord） |
+| S6 | Sub-Store | 订阅页能列出订阅；需要时能由 Go 服务按需启动（日志来源 `sub-store`） |
 | S7 | Agent 心跳 | 5 分钟内所有在线 Agent 重新上报，状态与基线一致（离线的保持离线） |
-| S8 | 设备写入 | 在维护者手动推送前，没有任何 Agent 部署或路由器 apply 记录（若 A.1-5 关了自动同步） |
+| S8 | 设备写入与自动同步（D5） | 观察第一轮自动同步结果：按 D5 保持开启，确认没有意外错误写入；若有异常立即按 F12 停止发布 |
 | S9 | 资源 | RSS、CPU 与 A.2 / O10 同量级 |
-| S10 | 设置导出 `/api/config/export` | 能导出；与切换前的 Python 导出结构一致（随机 ID/时间除外） |
+| S10 | 设置导出 `/api/config/export` 与 v1→v2 迁移 | 能导出；确认 `DATA_DIR/backups/configflow-v1-<UTC>.sqlite3` 迁移前强制备份已生成（O17 `runtime-state`）；新格式导出不再含 Agent 运行状态（仅配置部分与切换前一致） |
 
 **第 4 步：规则缓存预热（约 5 分钟，O12-A03）**
 1. 保留旧缓存文件，不手动改名或删除。
@@ -142,7 +144,7 @@
    规则内容不变）→ 发布，建立新基准。
 2. 强制 DNS 检查：若提示未登记的 `cf-dnsguard:hijack`，按 A16 人工处理，不按注释批量删。
 3. IPv6：重新检查 readiness，需要时 prepare，再做一次验收（A06）。
-4. 打开第 1 步之前关掉的自动同步（Agent、路由器）。观察一个自动同步周期（路由器 30 s、Agent 5 s），确认不再产生写入。
+4. 确认自动同步（Agent、路由器）处于开启状态，观察一个自动同步周期（路由器 30 s、Agent 变化驱动/兜底周期），确认空闲时不再产生意外写入。
 
 **第 8 步：其他一次性事项**
 - 固定 IP：重新载入来源设备并预览（A07）。
@@ -193,9 +195,9 @@
 | F6 | DNS HA 推送中断或 VIP 异常 | `dig` 丢包、VIP 双持或无人持有 | 立即停止 HA 发布；若某成员永久离线导致 journal 卡在 unknown（O12-P08 / M07：离线 10 分钟强制停用**尚未实现**），按停用提示强制清除记录，再到该设备上手动删除 keepalived 里的 ConfigFlow 配置；确认至少一台持有 VIP 并能解析（必要时在该成员上手动启动 keepalived 恢复 VIP）；主路由上 DNS 兜底按现有 netwatch 策略生效。按 L3 第 6/12 项的恢复路径处理：失败方回滚旧 spec，未更新主机保留。修复后按配对流程重新发布 |
 | F7 | 路由器发布结果不对 | 规则/NAT/路由与预期不符 | 关闭该路由器自动同步；用 Go 的预览查看差异；Go 有补偿/回滚的先用它，否则用第 1 步导出的路由器配置手动恢复受影响的 ConfigFlow 管理项（只恢复带 ConfigFlow 注释/归属的条目） |
 | F8 | content sync 长时间不是 `synced` | Agent 页显示待同步 | 先看 Agent 是否在线、规则缓存是否预热（A.3 第 4 步）；重推一次；仍不行则记录并暂停该 Agent 的规则自动同步，设备继续运行已部署配置 |
-| F9 | Go 写坏了数据 | 导出与预期不符、配置丢失 | 停容器 → 复制当前 `DATA_DIR` 留证 → 恢复冷备份 → 用 Go 启动 → 重做切换后的手动操作 → 在测试服务器上用留证数据复现并修复 |
+| F9 | Go 写坏了数据 / v1→v2 迁移异常 | 导出与预期不符、配置丢失，或迁移前备份失败拒绝启动 | 停容器 → 复制当前 `DATA_DIR` 留证 → 恢复 A.3 冷备份（或仅回退数据库时恢复 `DATA_DIR/backups/configflow-v1-<UTC>.sqlite3`）→ 用 Go 启动 → 重做切换后的手动操作 → 在测试服务器上用留证数据复现并修复。若使用**不含状态的新格式 JSON/WebDAV 备份**恢复，每台 Agent 会进入 `restored` fail closed 锁定，逐台成功发布（HA 走成对发布）后自动解除（见 [O14-CHECKLIST.md §4.3](O14-CHECKLIST.md)） |
 | F10 | 内存/CPU 异常 | RSS 持续增长、CPU 高 | 采 pprof（heap/goroutine），需要时设 `GOMEMLIMIT` 临时限制并重启；作为 O10 回归处理 |
-| F11 | Sub-Store 起不来 | 订阅页报错 | 订阅生成使用已有缓存；检查 supervisord 和 Sub-Store 日志；属于镜像问题，修 #40 后换镜像 |
+| F11 | Sub-Store 起不来 | 订阅页报错 | 订阅生成使用已有缓存；检查 `app.log` / 系统日志中来源为 `sub-store` 的日志（由 Go 直接托管，已无 supervisord）；属于镜像或托管问题，修 Go 后换镜像 |
 | F12 | 自动同步在首启后意外写设备 | 首启后、手动推送前出现部署/apply 记录 | 立即关闭对应自动同步；对照 A.1-4 基线判断写入是否正确；不正确按 F5/F7 处理 |
 | F13 | WebDAV 自动备份失败 | 备份任务报错 | 不影响运行；按 A17 修正路径；本地冷备份已在，修好后手动备份一次 |
 | F14 | Agent 离线或无法重新注册 | 心跳中断 | 已有 Agent 用自身 token，不应受影响；检查面板地址/端口是否变化、登录 allowlist；新装 Agent 必须用 Go 面板生成的命令（A14/A15） |
@@ -232,12 +234,12 @@
 | 仓库 | `thsrite/config-flow` | 不变 | |
 | 标签 | `latest`、语义化版本、`autoupdate` | 语义化版本（建议主版本 +1，见 D3）、`latest`、`autoupdate` | 建议 Go 首发先只推版本号标签 + 一个预发布标签，观察期后再移动 `latest`（D3） |
 | 架构 | `linux/amd64`、`linux/arm64`（docker.yml） | 同上；Go 静态编译（CGO_ENABLED=0）便于加 `linux/arm/v7` | 是否加 armv7 由维护者决定（D4）；Sub-Store（Node）在 armv7 的可用性需先确认 |
-| 基础镜像 | python:3.11-slim + nginx + supervisord | 去掉 Python 运行时和 nginx；Sub-Store 仍需 Node 与 supervisord | #40 决定具体基础镜像 |
+| 基础镜像 | python:3.11-slim + nginx + supervisord | `alpine:3.24` + `tini`（PID 1）+ Go 单二进制 + Node.js（供内置 Sub-Store）；已彻底移除 Python、nginx、supervisord | batch-36 已落地 |
 | 端口 | 容器内 80（nginx） | 不变（Go 内置 Edge 取代 nginx）；`CONFIGFLOW_WEB_PORT`/`BACKEND_*` 保持含义 | Host 网络模式用户核对端口 |
 | 时区 | `TZ=Asia/Shanghai`，镜像有 tzdata | 保持默认 `TZ=Asia/Shanghai`；镜像必须带 tzdata（或 Go 编译时 `-tags timetzdata`），否则 `TZ` 无效、定时任务和日志时间变成 UTC | 影子启动检查日志时间 |
 | CA | Python requests 用 certifi，部分读 `REQUESTS_CA_BUNDLE` | Go 用系统 CA（`ca-certificates`）；私有 CA 用 `SSL_CERT_FILE`/`SSL_CERT_DIR` 或挂载到系统证书目录 | **`REQUESTS_CA_BUNDLE` 不再生效**，release notes 必须写明（O12-M04） |
 | 内存调优 | `MALLOC_ARENA_MAX` 等 | 不再读取；改为 `GOMEMLIMIT`、`CONFIGFLOW_MEMORY_LIMIT_RATIO` | 写入 release notes |
-| 关停 | supervisord 停 Flask | SIGTERM 排空默认 8 s（`CONFIGFLOW_SHUTDOWN_GRACE_SECONDS`），compose 的 `stop_grace_period` 不能小于 10 s | |
+| 关停 | supervisord 停 Flask | `tini -g` 转发 SIGTERM，Go 排空默认 8 s（`CONFIGFLOW_SHUTDOWN_GRACE_SECONDS`）并在排空后停止 Sub-Store，compose 的 `stop_grace_period` 不能小于 10 s | |
 | 版本号 | `VERSION` build-arg | 通过 ldflags 注入 `internal/version.Version`；`dev` 不得出现在发布镜像（O12-M11，A11 RulesFingerprint 依赖它） | |
 | Agent 制品 | 镜像内 `/opt/configflow/static/agents` | 同一路径；必须是本次源码重建的 Agent 二进制，Agent 镜像同时发布（O12-A14） | docker-agent.yml 在同一 `v*` 标签上推 `config-flow-agent:<版本>` |
 | Docker Agent 镜像标签 | 面板命令写死 `config-flow-agent:latest`；Agent 镜像只推 `latest`（main 推送、定时、手动） | `v*` 标签（含预发布）推 `config-flow-agent:<semver>`，不动 `latest`；`latest` 仍按原规则随 main 移动。Go 面板镜像构建时注入同一标签（`version.AgentImage`），生成的 Docker 命令/Compose/HA 用它；分支/本地/autoupdate 重建仍用 `latest` | **发布顺序：Agent 镜像必须先于或同时于面板镜像可拉取**（P13）。新 Agent 镜像配旧 Python 面板向后兼容，main 上 Agent `latest` 先变成新入口不影响 Python 用户 |
@@ -255,9 +257,7 @@
 > 来源冲突：O12 终稿草案 M14 / D06 仍**建议下线** autoupdate；但 HANDOFF 2026-11-22 记录的维护者决定是「保留，并让它也重建 Go server」。
 > 本文按维护者决定写，O12 的 M14/D06 需要改成「保留」（见 D12）。
 
-- 现在的 `autoupdate` 在容器启动时拉取分支最新源码，按需重建前端和 Agent（`docker/auto_update.py`，Python 脚本）。
-  Go 版本需要：去掉对 Python 的依赖（auto_update 改为 shell 或 Go 小程序），并在源码变化时**重建 Go server**、前端和 Agent，
-  记录镜像树指纹；工具链（Go、npm）继续放在 autoupdate 层。
+- Go 版 `autoupdate` 已由独立的 Go 程序 `cmd/configflow-autoupdate` 取代原 `docker/auto_update.py`（batch-36），容器内不含 Python，源码变化时按指纹只重建 Go server、前端、Agent 与 `node-probe`，工具链（Go、npm）保留在 autoupdate 层。
 - **风险**：autoupdate 用户跟随分支。Go 合入 `main` 的那一刻，仍在旧 Python 版本、甚至仍是 legacy 目录的 autoupdate 用户会
   在下一次重启时直接跳到 Go，跳过「先用最后一个 Python 版本」。建议（D6）：
   1. Go 合入前，最后一个 Python 版本的 autoupdate 构建已经发布足够久（例如 2 周），让 autoupdate 用户先完成迁移；
@@ -276,7 +276,7 @@
    旧脚本随后安装 `backend/` 或 `backend/requirements.txt` 时失败，按原逻辑记录 `update failed` 并退回它最后一次 Python 构建，
    不会出现半新半旧的组合，容器继续运行。
 2. 这些用户需要**重新拉取 Go 版 autoupdate 镜像**才会进入 Go。CI（`docker.yml`）现在构建并发布 autoupdate（amd64 + arm64）：
-   - 每个版本标签（含预发布）推 `<版本>-autoupdate`，例如 `2.0.0-rc.1-autoupdate`；
+   - 每个版本标签（含预发布）推 `<版本>-autoupdate`，例如 `3.0.0-rc.1-autoupdate`；
    - 浮动标签 `autoupdate`（旧用户正在跟的那个）与 `latest` 同一开关：`PUBLISH_LATEST=true` 且不是预发布才移动。
      观察期（D3）结束前它保持指向最后一次 Python 构建，旧用户不会在重启时被换成 Go；观察期后与 `latest` 一起移动。
 3. 拉取 Go 版 autoupdate 镜像后，若数据目录仍是 legacy-only，Go 版脚本跳过更新、`-check` 拒绝启动并打印 B.1 提示；

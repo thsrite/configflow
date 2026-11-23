@@ -35,7 +35,7 @@
 | 编号 | 事项（一句话） | 依据 | 建议 |
 |---|---|---|---|
 | M14 | autoupdate 镜像 tag（容器启动时拉源码重建）在 Go 版本保留还是下线 | [o13-completeness.md 需要维护者决定 1](o13-completeness.md) | **已裁定保留并由 #40 实现**：在 `autoupdate` 镜像内继续按 `/data/.auto-update` 与源码指纹重建前端、Agent、node-probe，并新增 Go server 二进制重建（注入新提交号）；任何失败均回退，遇到仅有旧版 pre-SQLite 数据的目录时跳过切换并给出中文提示（O14 D6） |
-| M15 | `GET /api/agents/<id>/logs` 等对不存在的 Agent 返回 500「Agent not found」（Python 原样保留） | [o13-completeness.md 需要维护者决定 2](o13-completeness.md) | 按"Python bug 在 Go 修正"改 404（前端不依赖 500，规模 S），切换后小任务，不阻塞发布 |
+| M15 | `GET /api/agents/<id>/logs` 等对不存在的 Agent 返回 500「Agent not found」（Python 原样保留） | [o13-completeness.md 需要维护者决定 2](o13-completeness.md) | **已解决（batch-20）**：按"Python bug 在 Go 修正"已改为 404 |
 | M16 | EasyTier 生成对 Agent 上报的**非空但无法识别**的内核版本直接拒绝（「Agent 上报的内核版本无法识别：…，请升级或重启 Agent」）。`subs.CoreVersion` 只认 `vX.Y.Z` 形式，Mihomo alpha 内核若上报 `alpha-<hash>` 会被拒 | [behaviour-changes：N8-9 subs 跨包调用边界收口、Agent 未知版本生成边界](behaviour-changes.md) | **发布前确认**：在实验网核对 alpha 内核实际上报的 coreVersion。若是 `alpha-*`，建议把无法识别的版本当"未知"处理（与空版本同路径并告警），而不是拒绝生成；否则在说明中写明 EasyTier 出站需正式版内核 |
 | M17 | 不回退 Python：原 A20（退回 Python 前清理 null 历史点）是否整体删除 | 本次简报"Python 已退休，不回滚 Python"；[O14 补充](progress/o14-switch.md) | 删除常规文档中的回退步骤，A20 只留在附录作历史记录；停损按第 4.4 节"修复前进 + 用切换时备份重启 Go" |
 | M18 | domain-discovery 流量文件整份损坏（空文件、截断、NaN、顶层非对象）时，该 Agent 上报一直 500 且不覆盖（Python 会当空文件覆盖） | [behaviour-changes：N8-10 HR L2 协调裁定](behaviour-changes.md) | 接受（已裁定）；公开说明在"损坏记录恢复"里给出 `POST /api/agents/<id>/domain-discovery/clear`。确认是否需要在 UI 上给入口（目前只有 API） |
@@ -204,7 +204,7 @@
 | D03 | Python 运行调优环境变量 `CONFIGFLOW_HTTP_THREADS`、`CONFIGFLOW_MEMORY_TUNING`、`MALLOC_ARENA_MAX`、`MALLOC_TRIM_THRESHOLD_` | 设置了也不再生效 | 可选：删除这些变量；内存上限改用 `GOMEMLIMIT` 或 `CONFIGFLOW_MEMORY_LIMIT_RATIO` | [O13 §5](o13-completeness.md)、[packages.md Not ported](packages.md) |
 | D04 | 容器内 Nginx 及其配置文件 | Go 直接服务前端和 API；改过容器内 `nginx.conf` 的定制不再生效 | **是**（仅做过定制的部署）：把定制移到容器外的反向代理 | 附录 C 第 1 项；[差异表 Web 监听](behaviour-changes.md)、[PROGRESS-config 决定 16](PROGRESS-config.md) |
 | D05 | 退回 Python 后端 | 不提供回退路径和回退工具；Go 写过的文件（null 历史点等）Python 未必能读 | 否（停损按第 4.4 节）；附录 A20 仅作历史记录（M17） | 本次简报；[O14 补充](progress/o14-switch.md) |
-| D06 | ~~autoupdate 镜像 tag~~（已撤销，M14 决定保留） | 保留并升级：`autoupdate` 镜像改为同时按源码指纹重建 Go server、前端、Agent 与 node-probe；失败时回退到上次可用构建或镜像自带版本；遇到仅有旧版 pre-SQLite 配置文件的目录时跳过自动更新并保持镜像自带版本（O14 D6） | 否（旧版目录仍须先按 D01 经最后一个 Python 版本迁移） | 维护者裁定 M14、O14 D6、`docker/auto_update.py` |
+| D06 | ~~autoupdate 镜像 tag~~（已撤销，M14 决定保留） | 保留并升级：`autoupdate` 镜像改为由 Go 程序 `cmd/configflow-autoupdate` 按源码指纹重建 Go server、前端、Agent 与 node-probe（已无 Python）；失败时回退到上次可用构建或镜像自带版本；遇到仅有旧版 pre-SQLite 配置文件的目录时跳过自动更新并保持镜像自带版本（O14 D6） | 否（旧版目录仍须先按 D01 经最后一个 Python 版本迁移） | 维护者裁定 M14、O14 D6、batch-36 `cmd/configflow-autoupdate` |
 | D07 | requests/certifi 自带 CA 包和 `REQUESTS_CA_BUNDLE` | Go 使用系统 CA；只信任 certifi 而不在系统信任库里的私有/自签 CA 会校验失败 | **是**（使用私有 CA 时）：改用 Go 原生 `SSL_CERT_FILE`/`SSL_CERT_DIR` 或把 CA 装进系统信任库（M04 已定稿） | M04；[R04 复核 TLS](review-r04.md)、`doc/guide/install.md` |
 | D08 | CPython 特有的数字/空白写法：全角/阿拉伯数字、`1_000` 下划线、U+001C–U+001F 当空白、超过 Python 4300 位限制的特殊处理 | 机器数字、端口、版本、查询参数中这些写法按非法值处理（400、回默认或 unknown） | 否（前端和 Agent 只产生 ASCII） | B25、B72、B77、B79、B83；[n8-11-plan §3.3 裁定 2](../design/n8-11-plan.md) |
 
@@ -247,7 +247,7 @@
 
 ### 4.5 公开发布额外事项
 
-- 镜像：确认镜像架构不少于当前发布的镜像、`tzdata`、`ca-certificates`、Sub-Store 仍由 supervisord 按需启停、`DATA_DIR=/data`、SIGTERM 关停（O13 #40）。
+- 镜像：确认镜像架构不少于当前发布的镜像、`tzdata`、`ca-certificates`、`tini` 作 PID 1 且 Go 自管 Sub-Store（无 Python/supervisord）、`DATA_DIR=/data`、SIGTERM 关停（O13 #40 + batch-36）。
 - 版本：Go 服务、Agent 二进制、node-probe 同一提交构建并注入同一版本号（M11），否则 U03/P02 的证明和首次注册无部署保证。
 - Agent 镜像：同一 `v*` 标签的 `config-flow-agent:<版本>` 必须先于或同时于面板镜像可拉取（U16、O14 P13）；面板生成的 Docker 命令自动使用该标签。
 - 说明：发布页附第 5 节的公开升级说明；D01 的拒绝提示要能让旧版本用户找到"先升级到最后一个 Python 版本"的具体版本号。
@@ -278,7 +278,7 @@
 **新版本还修复了：** HEAD 请求误写数据、缓存并发覆盖、安装失败不能恢复原 Agent、设备归属核验不严、凭据在日志和公开接口中泄露、损坏数据被当作空值静默放行等问题。非法输入通常得到更明确的 400/409/415/502 和中文说明；损坏记录不再被静默覆盖，会提示用现有入口（如"重置统计"、域名发现清空、停用 HA）恢复。订阅、Sub-Store 和规则下载的内容（含解压后）上限为 64 MiB，后端请求体也有统一上限。
 
 **发行镜像与自动更新变化（#40）：**
-- 运行镜像（`runtime`）切换为 `alpine:3.24` + Go 单二进制主服务（直接提供 API/MCP 与预压缩前端 SPA），移除 Flask/gunicorn/waitress、Nginx 与 `backend/` Python 运行依赖；保留 `supervisord` 仅管理 `configflow` 主服务与按需启停的内置 Sub-Store（Node.js 24 LTS，支持 `node:sqlite`），内置 `ca-certificates`、`tzdata`（默认 `TZ=Asia/Shanghai`）、多架构 Agent 制品（`amd64`/`arm64`/`armv7`）及 `node-probe`。
+- 运行镜像（`runtime`）切换为 `alpine:3.24` + `tini`（PID 1）+ Go 单二进制主服务（直接提供 API/MCP 与预压缩前端 SPA），彻底移除 Flask/gunicorn/waitress、Nginx、`supervisord` 与全部 Python 运行依赖；内置 Sub-Store（Node.js 24 LTS，支持 `node:sqlite`）由 Go 主服务直接托管并按需启停，日志写入系统日志（来源 `sub-store`）；内置 `ca-certificates`、`tzdata`（默认 `TZ=Asia/Shanghai`）、多架构 Agent 制品（`amd64`/`arm64`/`armv7`，≥ `1.9.3-go`）及 `node-probe`。配套 Docker Agent 镜像（`1.9.3-go` 起）亦已移除 Python 与 `supervisord`，改用 s6-overlay v3.2.3.2。
 - 面板镜像发布 `linux/amd64` 与 `linux/arm64`（D4），Go 首发使用新主版本号与预发布标签、默认不覆盖 `latest`（D3）。以 `amd64` 实测为准，`runtime` 镜像由约 640 MB 降至约 355 MB（约 -44.5%），`autoupdate` 镜像由约 1.02 GB 降至约 748 MB（约 -26.8%）。
 - 镜像构建时通过 `-ldflags` 注入含提交号的唯一版本（`<version>+<commit>`），内置 Agent 与 Go 服务来自同一提交（M11）；内置 `HEALTHCHECK` 自动探测当前生效 Web 端口的 `/health`；`docker stop` 默认 10 秒内由 Go 优雅排空退出；启动前执行只读预检，拒绝仅有旧版 pre-SQLite 配置文件的目录并输出中文提示。
 - `autoupdate` 镜像保留并升级：按 `/data/.auto-update` 缓存和源码指纹仅重建有变动的组件（新增 Go server 重建并注入新提交号，同时支持前端、Agent、`node-probe`）；无网络或构建失败自动回退且不阻塞启动；检测到仅有旧版 pre-SQLite 配置文件的目录时跳过自动更新并保持镜像自带版本，提示先经最后一个 Python 版本迁移（O14 D6）。
@@ -482,8 +482,8 @@
 - M08：生产切换与公开发布都在 L2–L6 全部跑完之后。
 - M11 接受：#40 构建注入唯一版本（提交号），Agent 二进制与镜像同一提交构建。
 - M14 推翻建议：autoupdate 镜像**保留**，并改为也重建 Go server（维护者 2026-11-22）。
-- M15：缺失 Agent 的日志相关接口改 404，切换前修（进行中）。
+- M15：缺失 Agent 的日志相关接口改 404，切换前修（已合入 batch-20）。
 - M16（实验网 L2 实测 `alpha-100ff73`）：非空但无法识别的 Mihomo 内核版本按"未知"处理，与空版本走同一路径，按 Agent 限流记告警日志，不拒绝生成/发布；删除误导提示「请升级或重启 Agent」（已修）。
 - M17 接受：删除"退回 Python 前清理"步骤；停损 = 停止发布、修复前进，或用切换前冷备份重启 Go。
-- M18：切换**前**在界面加入域名发现流量文件损坏的恢复入口。
+- M18：切换**前**在界面加入域名发现流量文件损坏的恢复入口（已合入 batch-20）。
 - M19 接受：≥1e6 非整数浮点的指数写法不单列。
