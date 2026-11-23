@@ -1,6 +1,8 @@
-package routers
+package clientlist
 
 import (
+	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -35,12 +37,12 @@ func TestClientLeaseEvidence(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			arp := []Row{}
+			arp := []ros.Row{}
 			if tc.arp != "" {
-				arp = append(arp, Row{"address": "192.0.2.10", "interface": "lan", "status": tc.arp, "mac-address": "a:b:c:d:e:f"})
+				arp = append(arp, ros.Row{"address": "192.0.2.10", "interface": "lan", "status": tc.arp, "mac-address": "a:b:c:d:e:f"})
 			}
-			leases := []Row{{"address": "192.0.2.10", "status": tc.status, "last-seen": tc.age, "lease-time": tc.period, "dynamic": strconv.FormatBool(tc.dynamic), "server": "dhcp", "host-name": "host"}}
-			s, c := classifyClients(arp, leases, []Row{{"name": "dhcp", "interface": "lan"}}, map[string]bool{"lan": true})
+			leases := []ros.Row{{"address": "192.0.2.10", "status": tc.status, "last-seen": tc.age, "lease-time": tc.period, "dynamic": strconv.FormatBool(tc.dynamic), "server": "dhcp", "host-name": "host"}}
+			s, c := classifyClients(arp, leases, []ros.Row{{"name": "dhcp", "interface": "lan"}}, map[string]bool{"lan": true})
 			v := s["192.0.2.10"]
 			if v.Presence != tc.presence || v.Basis != tc.basis || (len(c) > 0) != tc.probe {
 				t.Fatalf("%+v %v", v, c)
@@ -88,7 +90,7 @@ func TestClientProbeCapPriorityAndRawWire(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	d := NewRouterOS(server.URL, "synthetic-user", "synthetic-password", false)
+	d := rosDevice{ros.NewClient(server.URL, "synthetic-user", "synthetic-password", false)}
 	defer d.Close()
 	r := routerdoc.NewReading()
 	candidates := []clientProbe{}
@@ -99,7 +101,7 @@ func TestClientProbeCapPriorityAndRawWire(t *testing.T) {
 	}
 	r.Sightings["192.0.2.99"] = routerdoc.NewSighting("192.0.2.99")
 	candidates = append(candidates, clientProbe{"192.0.2.99", "lan"})
-	notes := d.confirmClients(context.Background(), r, candidates, map[string]bool{"lan": true}, ClientReadOptions{Priority: map[string]bool{"192.0.2.99": true}, Deadline: time.Now().Add(15 * time.Second)})
+	notes := d.confirmClients(context.Background(), r, candidates, map[string]bool{"lan": true}, ReadOptions{Priority: map[string]bool{"192.0.2.99": true}, Deadline: time.Now().Add(15 * time.Second)})
 	if len(seen) != 32 || !slices.Contains(seen, "192.0.2.99") || slices.Contains(seen, "192.0.2.32") || !reflect.DeepEqual(notes, []string{fmt.Sprintf(messageClientsCap, 32, 9)}) {
 		t.Fatalf("cap/priority: %v %v", seen, notes)
 	}
@@ -117,9 +119,9 @@ func TestClientProbeCapPriorityAndRawWire(t *testing.T) {
 	}
 }
 func TestClientDeadlineDoesNotSend(t *testing.T) {
-	d := NewRouterOS("http://127.0.0.1:1", "", "", false)
+	d := NewROS(ros.NewClient("http://127.0.0.1:1", "", "", false))
 	defer d.Close()
-	_, err := d.ReadClients(context.Background(), ClientReadOptions{Deadline: time.Now().Add(-time.Second)})
+	_, err := d.ReadClients(context.Background(), ReadOptions{Deadline: time.Now().Add(-time.Second)})
 	if err == nil || err.Error() != messageClientsSlow {
 		t.Fatalf("deadline: %v", err)
 	}
@@ -149,18 +151,18 @@ func TestClientIkuaiPagingAndWire(t *testing.T) {
 		if c.Param.Type != "data,total" {
 			t.Error("TYPE")
 		}
-		rows := []Row{}
+		rows := []ros.Row{}
 		count := 1000
 		if len(pages) == 2 {
 			count = 1
 		}
 		for range count {
-			rows = append(rows, Row{"ip_addr": "192.0.2.10"})
+			rows = append(rows, ros.Row{"ip_addr": "192.0.2.10"})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "results": map[string]any{"data": rows, "total": 1001}})
 	}))
 	defer server.Close()
-	d := NewIkuai(server.URL, "synthetic-user", "synthetic-password", false)
+	d := ikuaiDevice{ikuai.NewClient(server.URL, "synthetic-user", "synthetic-password", false)}
 	defer d.Close()
 	rows, err := d.clientRows(context.Background(), "monitor_lanip")
 	if err != nil || len(rows) != 1001 || !reflect.DeepEqual(pages, []string{"0,1000", "1000,1000"}) {
@@ -189,7 +191,7 @@ func TestClientICMPFallbackAndReread(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.Method == "GET" {
-					_ = json.NewEncoder(w).Encode([]Row{{"address": "192.0.2.10", "interface": "lan", "status": tc.status}})
+					_ = json.NewEncoder(w).Encode([]ros.Row{{"address": "192.0.2.10", "interface": "lan", "status": tc.status}})
 					return
 				}
 				var body map[string]string
@@ -208,14 +210,14 @@ func TestClientICMPFallbackAndReread(t *testing.T) {
 				_, _ = w.Write([]byte(`[{"received":"0"}]`))
 			}))
 			defer server.Close()
-			d := NewRouterOS(server.URL, "synthetic-user", "synthetic-password", false)
+			d := rosDevice{ros.NewClient(server.URL, "synthetic-user", "synthetic-password", false)}
 			defer d.Close()
 			r := routerdoc.NewReading()
 			s := routerdoc.NewSighting("192.0.2.10")
 			s.Presence = "recent"
 			s.Basis = "stale"
 			r.Sightings[s.IP] = s
-			notes := d.confirmClients(context.Background(), r, []clientProbe{{s.IP, "lan"}}, map[string]bool{"lan": true}, ClientReadOptions{Deadline: time.Now().Add(15 * time.Second)})
+			notes := d.confirmClients(context.Background(), r, []clientProbe{{s.IP, "lan"}}, map[string]bool{"lan": true}, ReadOptions{Deadline: time.Now().Add(15 * time.Second)})
 			if pings != 2 || s.Presence != tc.presence || s.Basis != tc.basis || len(notes) != 0 {
 				t.Fatalf("fallback/re-read: %d %+v %v", pings, s, notes)
 			}

@@ -2,6 +2,8 @@ package clients
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/clientlist"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -79,22 +81,21 @@ type DiscoveryOptions struct {
 // GatewayHost resolves a proxy Agent ID to its current host for policy sources.
 type DiscoveryService struct {
 	Spawner     lockx.Spawner
-	Open        func(*routers.Router) routers.ClientReader
-	Enrich      func(context.Context, routers.ClientReader, *routerdoc.Reading, string)
+	Open        func(*routers.Router) clientlist.Reader
+	Enrich      func(context.Context, clientlist.Reader, *routerdoc.Reading, string)
 	GatewayHost func(context.Context, string) string
 }
 
 // NewDiscoveryService constructs a service using the standard device drivers.
 func NewDiscoveryService() *DiscoveryService {
-	return &DiscoveryService{Open: func(r *routers.Router) routers.ClientReader {
-		d, _ := routers.NewDriver(r).(routers.ClientReader)
-		return d
+	return &DiscoveryService{Open: func(r *routers.Router) clientlist.Reader {
+		return clientlist.Open(r)
 	}}
 }
 
 var discoveryLogger = logx.Get("backend.common.client_discovery")
 
-func (s *DiscoveryService) readOne(ctx context.Context, r *routers.Router, opts routers.ClientReadOptions) (out RouterReading) {
+func (s *DiscoveryService) readOne(ctx context.Context, r *routers.Router, opts clientlist.ReadOptions) (out RouterReading) {
 	defer func() {
 		if recover() != nil {
 			discoveryLogger.Error(messageReadFailed)
@@ -122,7 +123,7 @@ func (s *DiscoveryService) readOne(ctx context.Context, r *routers.Router, opts 
 }
 func (s *DiscoveryService) readAll(ctx context.Context, rs []*routers.Router, priority map[string]bool, timeout time.Duration) []RouterReading {
 	deadline := time.Now().Add(timeout)
-	opts := routers.ClientReadOptions{Priority: priority, Deadline: deadline.Add(-2 * time.Second)}
+	opts := clientlist.ReadOptions{Priority: priority, Deadline: deadline.Add(-2 * time.Second)}
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	channels := make([]chan RouterReading, len(rs))
@@ -244,7 +245,7 @@ func (s *DiscoveryService) Discover(ctx context.Context, config json.RawMessage,
 		return Discovery{}, err
 	}
 	rs := []*routers.Router{}
-	for _, r := range routers.FromConfig(config) {
+	for _, r := range spec.RoutersOf(config) {
 		if r.Type == "routeros" || r.Type == "ikuai" {
 			rs = append(rs, r)
 		}

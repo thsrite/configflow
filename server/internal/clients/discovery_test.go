@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"configflow/internal/routers/clientlist"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,11 +19,11 @@ import (
 )
 
 type reader struct {
-	read   func(context.Context, routers.ClientReadOptions) (*routerdoc.Reading, error)
+	read   func(context.Context, clientlist.ReadOptions) (*routerdoc.Reading, error)
 	closed *atomic.Int32
 }
 
-func (r reader) ReadClients(ctx context.Context, o routers.ClientReadOptions) (*routerdoc.Reading, error) {
+func (r reader) ReadClients(ctx context.Context, o clientlist.ReadOptions) (*routerdoc.Reading, error) {
 	return r.read(ctx, o)
 }
 func (r reader) Close() {
@@ -41,8 +42,8 @@ func TestDiscoveryMergesAndRejoinsCurrentState(t *testing.T) {
 	rt := testRuntime(t)
 	var calls, closed atomic.Int32
 	service := &DiscoveryService{Spawner: rt, GatewayHost: func(context.Context, string) string { return "192.0.2.254" }}
-	service.Open = func(r *routers.Router) routers.ClientReader {
-		return reader{closed: &closed, read: func(ctx context.Context, o routers.ClientReadOptions) (*routerdoc.Reading, error) {
+	service.Open = func(r *routers.Router) clientlist.Reader {
+		return reader{closed: &closed, read: func(ctx context.Context, o clientlist.ReadOptions) (*routerdoc.Reading, error) {
 			calls.Add(1)
 			if !o.Priority["192.0.2.10"] {
 				t.Error("saved priority missing")
@@ -108,8 +109,8 @@ func TestDiscoveryTimeoutAndPanicIsolation(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			rt := testRuntime(t)
 			var closed atomic.Int32
-			service := &DiscoveryService{Spawner: rt, Open: func(r *routers.Router) routers.ClientReader {
-				return reader{closed: &closed, read: func(ctx context.Context, _ routers.ClientReadOptions) (*routerdoc.Reading, error) {
+			service := &DiscoveryService{Spawner: rt, Open: func(r *routers.Router) clientlist.Reader {
+				return reader{closed: &closed, read: func(ctx context.Context, _ clientlist.ReadOptions) (*routerdoc.Reading, error) {
 					if r.ID == "slow" {
 						switch mode {
 						case "panic":

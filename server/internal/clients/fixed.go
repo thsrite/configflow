@@ -2,8 +2,12 @@ package clients
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/clientlist"
 	"configflow/internal/routers/fixedip"
+	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -172,7 +176,7 @@ func fixedConfig(ctx context.Context, r *repo.Repository, profile string) (json.
 	return json.Marshal(doc)
 }
 func fixedRouter(config json.RawMessage, id string) (*routers.Router, error) {
-	for _, r := range routers.FromConfig(config) {
+	for _, r := range spec.RoutersOf(config) {
 		if r.ID == id && (r.Type == "routeros" || r.Type == "ikuai") {
 			return r, nil
 		}
@@ -639,11 +643,19 @@ func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err 
 
 // EnrichFixedIP reads controls with the same reader as discovery. Failed evidence
 // disables reservation actions without hiding healthy client sightings.
-func EnrichFixedIP(ctx context.Context, reader routers.ClientReader, reading *routerdoc.Reading, routerID string) {
-	d, ok := reader.(fixedip.Device)
+func EnrichFixedIP(ctx context.Context, reader clientlist.Reader, reading *routerdoc.Reading, routerID string) {
+	var d fixedip.Device
+	switch v := reader.(type) {
+	case fixedip.Device:
+		d = v
+	case interface{ ROSClient() *ros.Client }:
+		d = fixedip.NewROS(v.ROSClient())
+	case interface{ IkuaiClient() *ikuai.Client }:
+		d = fixedip.NewIkuai(v.IkuaiClient())
+	}
 	var err error
 	var snapshot *fixedip.Snapshot
-	if !ok || !d.SupportsWrite() {
+	if d == nil || !d.SupportsWrite() {
 		err = fixedError(routers.KindRouter, messageFixedEnrichWrite)
 	} else {
 		snapshot, err = d.ReadFixedIP(ctx)

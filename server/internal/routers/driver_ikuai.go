@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"configflow/internal/routerdoc"
+	"configflow/internal/routers/clientlist"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/ikuai"
@@ -138,4 +140,9 @@ func (d *Ikuai) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*
 // SeenFixedIP implements fixedip.Device for iKuai.
 func (d *Ikuai) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error) {
 	return fixedip.NewIkuai(d.Client).SeenFixedIP(ctx, ip, mac)
+}
+
+// ReadClients implements clientlist.Reader for iKuai.
+func (d *Ikuai) ReadClients(ctx context.Context, opts ClientReadOptions) (*routerdoc.Reading, error) {
+	return clientlist.NewIkuai(d.Client).ReadClients(ctx, opts)
 }

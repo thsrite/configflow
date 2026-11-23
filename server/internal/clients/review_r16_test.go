@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"configflow/internal/routers/clientlist"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,8 +33,8 @@ func TestReviewR16DiscoveryCredentialReferences(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			rt := testRuntime(t)
 			var failed atomic.Bool
-			s := &DiscoveryService{Spawner: rt, Open: func(r *routers.Router) routers.ClientReader {
-				return reader{read: func(context.Context, routers.ClientReadOptions) (*routerdoc.Reading, error) {
+			s := &DiscoveryService{Spawner: rt, Open: func(r *routers.Router) clientlist.Reader {
+				return reader{read: func(context.Context, clientlist.ReadOptions) (*routerdoc.Reading, error) {
 					if failed.Load() {
 						return nil, &routers.RouterError{Message: "peer diagnostic " + secondSecret}
 					}

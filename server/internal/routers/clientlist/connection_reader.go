@@ -1,12 +1,13 @@
-package routers
+package clientlist
 
 import (
-	"configflow/internal/routers/device"
-	"configflow/internal/routers/ros"
 	"context"
 	"net/url"
 	"strconv"
 	"time"
+
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 )
 
 // ConnectionQuery restricts evidence reads to TCP tuples and necessary counters.
@@ -22,7 +23,8 @@ type ConnectionQuery struct {
 // ReadConnections reads only firewall connection evidence, isolating bad rows.
 // A false complete flag must never be interpreted as an empty baseline. Results
 // are bounded; caller-owned evidence never exposes unrelated connection rows.
-func (d *RouterOS) ReadConnections(ctx context.Context, q ConnectionQuery, timeout time.Duration) ([]Row, bool, error) {
+func ReadConnections(ctx context.Context, c *ros.Client, q ConnectionQuery, timeout time.Duration) ([]ros.Row, bool, error) {
+	d := rosDevice{c}
 	if q.DestinationPort < 0 || q.DestinationPort > 65535 || q.SourcePort < 0 || q.SourcePort > 65535 {
 		return nil, false, device.Invalid(device.MessageEditFormat)
 	}

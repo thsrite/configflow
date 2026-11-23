@@ -12,11 +12,14 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/netipx"
+	"configflow/internal/routerdoc"
+	"configflow/internal/routers/clientlist"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/routeedit"
+	"time"
 )
 
 // RouterOS is the composed RouterOS 7 driver: it embeds the low-level REST
@@ -427,4 +430,14 @@ func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding)
 // SeenFixedIP implements fixedip.Device for RouterOS.
 func (d *RouterOS) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error) {
 	return fixedip.NewROS(d.Client).SeenFixedIP(ctx, ip, mac)
+}
+
+// ReadClients implements clientlist.Reader for RouterOS.
+func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*routerdoc.Reading, error) {
+	return clientlist.NewROS(d.Client).ReadClients(ctx, opts)
+}
+
+// ReadConnections delegates RouterOS firewall connection reads to clientlist.
+func (d *RouterOS) ReadConnections(ctx context.Context, q ConnectionQuery, timeout time.Duration) ([]Row, bool, error) {
+	return clientlist.ReadConnections(ctx, d.Client, q, timeout)
 }

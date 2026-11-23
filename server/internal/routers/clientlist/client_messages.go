@@ -1,4 +1,6 @@
-package routers
+// Package clientlist reads LAN client discovery and firewall connection evidence
+// from RouterOS and iKuai devices without mutating router configuration.
+package clientlist
 
 const (
 	messageClientsTraffic     = "按 2 分钟内经过路由器的流量判断在线"

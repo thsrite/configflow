@@ -1,4 +1,4 @@
-package routers
+package clientlist
 
 import (
 	"configflow/internal/routers/device"
@@ -32,7 +32,7 @@ func clientName(row ikuai.Row) string {
 	}
 	return ""
 }
-func (d *Ikuai) clientRows(ctx context.Context, name string) ([]ikuai.Row, error) {
+func (d ikuaiDevice) clientRows(ctx context.Context, name string) ([]ikuai.Row, error) {
 	result := []ikuai.Row{}
 	for page := 0; page < 10; page++ {
 		reply, err := d.Call(ctx, name, map[string]any{"TYPE": "data,total", "limit": fmt.Sprintf("%d,1000", page*1000)})
@@ -82,7 +82,7 @@ func ikuaiClient(row ikuai.Row, online bool) *routerdoc.Sighting {
 }
 
 // ReadClients joins the traffic monitor, DHCP leases and LAN interface subnets.
-func (d *Ikuai) ReadClients(ctx context.Context, opts ClientReadOptions) (*routerdoc.Reading, error) {
+func (d ikuaiDevice) ReadClients(ctx context.Context, opts ReadOptions) (*routerdoc.Reading, error) {
 	// iKuai has no active probe phase; its budget is the overall read context,
 	// rather than RouterOS's two-second reserved probe/collection margin.
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)

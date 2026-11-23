@@ -1,4 +1,4 @@
-package routers
+package clientlist
 
 import (
 	"configflow/internal/jsondecode"
@@ -56,8 +56,8 @@ func ClientDuration(text string) *int64 {
 	}
 	return &n
 }
-func clientEnabled(row Row) bool { return !ros.Flag(row["disabled"]) && !ros.Flag(row["invalid"]) }
-func clientLAN(servers, addresses []Row, wan map[string]bool) map[string]bool {
+func clientEnabled(row ros.Row) bool { return !ros.Flag(row["disabled"]) && !ros.Flag(row["invalid"]) }
+func clientLAN(servers, addresses []ros.Row, wan map[string]bool) map[string]bool {
 	lan := map[string]bool{}
 	for _, s := range servers {
 		if name := s["interface"]; name != "" && !ros.Flag(s["disabled"]) {
@@ -85,7 +85,7 @@ type clientLease struct {
 }
 type clientProbe struct{ ip, iface string }
 
-func classifyClients(arp, leases, servers []Row, lan map[string]bool) (map[string]*routerdoc.Sighting, []clientProbe) {
+func classifyClients(arp, leases, servers []ros.Row, lan map[string]bool) (map[string]*routerdoc.Sighting, []clientProbe) {
 	entries := map[string]clientARP{}
 	byIP := map[string]clientLease{}
 	periods := map[string]*int64{}
@@ -201,7 +201,7 @@ func clientBudget(deadline time.Time) time.Duration {
 	}
 	return min(4*time.Second, left)
 }
-func (d *RouterOS) clientList(ctx context.Context, path string, timeout time.Duration) ([]Row, bool, error) {
+func (d rosDevice) clientList(ctx context.Context, path string, timeout time.Duration) ([]ros.Row, bool, error) {
 	v, err := d.Get(ctx, path, timeout)
 	if err != nil {
 		return nil, false, err
@@ -210,7 +210,7 @@ func (d *RouterOS) clientList(ctx context.Context, path string, timeout time.Dur
 	if ros.ReplyKind(v) != '[' || jsondecode.Decode(v, &items) != nil {
 		return nil, false, device.Error(fmt.Sprintf(device.MessageROSListFormat, path))
 	}
-	rows := make([]Row, 0, len(items))
+	rows := make([]ros.Row, 0, len(items))
 	complete := true
 	for _, item := range items {
 		r := ros.AsRow(item)
@@ -224,7 +224,7 @@ func (d *RouterOS) clientList(ctx context.Context, path string, timeout time.Dur
 	}
 	return rows, complete, nil
 }
-func (d *RouterOS) confirmClients(ctx context.Context, r *routerdoc.Reading, candidates []clientProbe, lan map[string]bool, opts ClientReadOptions) []string {
+func (d rosDevice) confirmClients(ctx context.Context, r *routerdoc.Reading, candidates []clientProbe, lan map[string]bool, opts ReadOptions) []string {
 	if len(candidates) == 0 {
 		return []string{}
 	}
@@ -264,7 +264,7 @@ func (d *RouterOS) confirmClients(ctx context.Context, r *routerdoc.Reading, can
 						if err == nil {
 							a.answered = &v
 							a.kind = "arp"
-						} else if device.RouterErrorKind(err) == KindPingNotPermitted {
+						} else if device.RouterErrorKind(err) == device.KindPingNotPermitted {
 							denied.Store(true)
 						}
 					}
@@ -273,7 +273,7 @@ func (d *RouterOS) confirmClients(ctx context.Context, r *routerdoc.Reading, can
 						if err == nil {
 							a.answered = &v
 							a.kind = "icmp"
-						} else if device.RouterErrorKind(err) == KindPingNotPermitted {
+						} else if device.RouterErrorKind(err) == device.KindPingNotPermitted {
 							denied.Store(true)
 						}
 					}
@@ -335,7 +335,7 @@ func (d *RouterOS) confirmClients(ctx context.Context, r *routerdoc.Reading, can
 }
 
 // ReadClients reads required ARP evidence, optional LAN/DHCP tables and bounded probes.
-func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*routerdoc.Reading, error) {
+func (d rosDevice) ReadClients(ctx context.Context, opts ReadOptions) (*routerdoc.Reading, error) {
 	if opts.Deadline.IsZero() {
 		opts.Deadline = time.Now().Add(15 * time.Second)
 	}
@@ -343,7 +343,7 @@ func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*ro
 	defer cancel()
 	r := routerdoc.NewReading()
 	r.Notes = []string{}
-	listing := func(path string) ([]Row, error) {
+	listing := func(path string) ([]ros.Row, error) {
 		left := time.Until(opts.Deadline)
 		if left < time.Second {
 			return nil, device.Error(messageClientsSlow)
@@ -358,7 +358,7 @@ func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*ro
 	if err != nil {
 		return nil, err
 	}
-	optional := func(path, label string) ([]Row, bool) {
+	optional := func(path, label string) ([]ros.Row, bool) {
 		rows, err := listing(path)
 		if err != nil {
 			r.Notes = append(r.Notes, fmt.Sprintf(messageClientsOptional, label, err))

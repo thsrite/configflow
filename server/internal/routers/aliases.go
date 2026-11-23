@@ -1,6 +1,9 @@
 package routers
 
 import (
+	"encoding/json"
+
+	"configflow/internal/routers/clientlist"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/fixedip"
@@ -122,7 +125,14 @@ type (
 	FixedIPSnapshot  = fixedip.Snapshot
 	FixedIPState     = fixedip.State
 	FixedIPDriver    = fixedip.Device
+
+	ClientReadOptions = clientlist.ReadOptions
+	ClientReader      = clientlist.Reader
+	ConnectionQuery   = clientlist.ConnectionQuery
 )
+
+// FromConfig returns owned router records; temporary alias removed in R10.
+func FromConfig(config json.RawMessage) []*Router { return spec.RoutersOf(config) }
 
 const (
 	KindRouter           = device.KindRouter
