@@ -16,6 +16,7 @@ package agents
 import (
 	"bytes"
 	"configflow/internal/model"
+	"configflow/internal/timefmt"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -221,7 +222,7 @@ func (s *RuntimeState) recordFields(ctx context.Context, agent heartbeatSource, 
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	s.entries[agent.id] = heartbeatEntry{HeartbeatAt: now, LastHeartbeat: isoformat(fromTimestamp(now), false), Fields: fields}
+	s.entries[agent.id] = heartbeatEntry{HeartbeatAt: now, LastHeartbeat: timefmt.Naive(fromTimestamp(now)), Fields: fields}
 	return true, nil
 }
 

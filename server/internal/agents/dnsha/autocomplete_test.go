@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -262,7 +263,7 @@ func TestAutoCompleteBlockedContent(t *testing.T) {
 				if strings.Contains(r.URL, secondaryHost) && strings.HasSuffix(r.URL, "/api/capabilities") {
 					o := parseObject(reply.Body)
 					delete(o, "oxidns_ha_protocols")
-					reply.Body = rawObject(o)
+					reply.Body = jsonresp.Value(o)
 				}
 				return nil
 			})
@@ -301,7 +302,7 @@ func TestAutoCompleteFailureIsNotRetried(t *testing.T) {
 			o := parseObject(reply.Body)
 			o["status"] = []byte(`"failed"`)
 			o["success"] = []byte("false")
-			reply.Body = rawObject(o)
+			reply.Body = jsonresp.Value(o)
 		}
 		return nil
 	})

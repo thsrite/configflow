@@ -490,7 +490,7 @@ func summarize(reports []struct {
 		return a.Conns > b.Conns
 	})
 	if total := hostConns + ipOnly; total > 0 {
-		out.Coverage = ptr(math.RoundToEven(float64(hostConns)/float64(total)*10000) / 10000)
+		out.Coverage = new(math.RoundToEven(float64(hostConns)/float64(total)*10000) / 10000)
 	}
 	return out
 }

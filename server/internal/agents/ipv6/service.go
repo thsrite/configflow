@@ -3,6 +3,7 @@ package ipv6
 import (
 	"configflow/internal/deploy"
 	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,17 +45,17 @@ func selectFields(d Document, keys ...string) Document {
 		if v, ok := d[k]; ok {
 			out[k] = v
 		} else {
-			out[k] = raw(nil)
+			out[k] = jsonresp.Value(nil)
 		}
 	}
 	return out
 }
 func identity(a Document) Document { return selectFields(a, identityFields...) }
-func digest(v any) string          { return deploy.CanonicalDigest(raw(v)) }
+func digest(v any) string          { return deploy.CanonicalDigest(jsonresp.Value(v)) }
 
 func linked(config Document, id string) []*routers.Router {
 	out := []*routers.Router{}
-	for _, r := range routers.FromConfig(raw(config)) {
+	for _, r := range routers.FromConfig(jsonresp.Value(config)) {
 		if id != "" && r.LinkID("proxy_gateway_agent_id") == id {
 			out = append(out, r)
 		}
@@ -69,7 +70,7 @@ func (s *Service) policy(ctx context.Context, config, a Document) routers.Policy
 			p.NodeTargets = append(p.NodeTargets, routers.PolicyNodeTarget{Address: v.Host, Port: v.Port})
 		}
 	}
-	if devices, e := clients.ListDevices(raw(config)); e == nil {
+	if devices, e := clients.ListDevices(jsonresp.Value(config)); e == nil {
 		for _, d := range devices.Devices {
 			if d.IP != "" && d.IP != text(a["host"]) && len(p.Clients) < 32 {
 				p.Clients = append(p.Clients, routers.PolicyClient{Address: d.IP})
@@ -110,7 +111,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 		if resultError != nil {
 			var boundary *Error
 			if errors.As(resultError, &boundary) {
-				b, e := s.capturedPublic(ctx, config, a, Document{"message": raw(boundary.Message)})
+				b, e := s.capturedPublic(ctx, config, a, Document{"message": jsonresp.Value(boundary.Message)})
 				if e != nil {
 					resultError = e
 					return
@@ -145,7 +146,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 	if json.Unmarshal(host["checks"], &hostChecks) != nil || hostChecks == nil || object(host["persistence"]) == nil {
 		return nil, failure("INVALID_RESPONSE", 502, msgHostFields)
 	}
-	report := &Report{Success: true, AgentID: text(a["id"]), ProfileID: profile, Configuration: settings, Host: raw(host), Checks: []Check{}, Routers: []*RouterReport{}, PrepareInterface: text(host["interface"]), Connectivity: Connectivity{Status: "not_checked", Message: msgConnectivity}}
+	report := &Report{Success: true, AgentID: text(a["id"]), ProfileID: profile, Configuration: settings, Host: jsonresp.Value(host), Checks: []Check{}, Routers: []*RouterReport{}, PrepareInterface: text(host["interface"]), Connectivity: Connectivity{Status: "not_checked", Message: msgConnectivity}}
 	status, message := "ok", fmt.Sprintf(msgSummary, onOff(settings.IPv6), onOff(settings.DNSIPv6))
 	if len(settings.Errors) > 0 {
 		status = "error"
@@ -156,7 +157,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 	report.Checks = append(report.Checks, check("configuration", msgSaved, status, message))
 	core := object(host["core"])
 	if core != nil && text(core["error"]) == "" {
-		defaults := Document{"ipv6": raw(true), "dns.ipv6": raw(false), "tun.enable": raw(false), "dns.fake-ip-range6": raw(nil)}
+		defaults := Document{"ipv6": jsonresp.Value(true), "dns.ipv6": jsonresp.Value(false), "tun.enable": jsonresp.Value(false), "dns.fake-ip-range6": jsonresp.Value(nil)}
 		for k, v := range core {
 			defaults[k] = v
 		}
@@ -166,14 +167,14 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 	for _, item := range []struct {
 		key   string
 		value json.RawMessage
-	}{{"ipv6", settings.IPv6}, {"dns.ipv6", settings.DNSIPv6}, {"tun.enable", raw(settings.TUNEnabled)}, {"dns.fake-ip-range6", settings.FakeIPv6Range}} {
+	}{{"ipv6", settings.IPv6}, {"dns.ipv6", settings.DNSIPv6}, {"tun.enable", jsonresp.Value(settings.TUNEnabled)}, {"dns.fake-ip-range6", settings.FakeIPv6Range}} {
 		v, ok := core[item.key]
 		if item.key == "dns.fake-ip-range6" && ok {
 			value := text(v)
 			if p, e := netip.ParsePrefix(value); e == nil {
-				v = raw(p.Masked().String())
+				v = jsonresp.Value(p.Masked().String())
 			} else {
-				v = raw(nil)
+				v = jsonresp.Value(nil)
 			}
 		}
 		if ok && string(normalRaw(v)) != string(normalRaw(item.value)) {
@@ -233,7 +234,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 	blocked := len(settings.Errors) > 0
 	policy := s.policy(ctx, config, a)
 	var agent model.Agent
-	_ = json.Unmarshal(raw(a), &agent)
+	_ = json.Unmarshal(jsonresp.Value(a), &agent)
 	for _, r := range rs {
 		if err := r.ValidateForDevice(); err != nil {
 			return nil, failure("ROUTER_SETTINGS_INVALID", 409, err.Error())
@@ -244,7 +245,7 @@ func (s *Service) inspect(ctx context.Context, a Document, profile string, confi
 		}
 		d := routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
 		var h routers.IPv6Host
-		_ = jsondecode.Unmarshal(raw(host), &h)
+		_ = jsondecode.Unmarshal(jsonresp.Value(host), &h)
 		dns := s.lookup(ctx, r.DNSAgentID)
 		result, err := routers.InspectIPv6Readiness(ctx, d, r, &agent, h, routers.IPv6ReadinessConfiguration{PolicyConfiguration: routers.PolicyConfiguration{FakeIPv6Enabled: settings.FakeIPv6Enabled, FakeIPv6Range: text(settings.FakeIPv6Range)}, IPv6: yes(settings.IPv6), FakeIPv6Route: &settings.FakeIPv6Route, TUNEnabled: settings.TUNEnabled}, text(dns["host"]), policy)
 		d.Close()
@@ -306,12 +307,12 @@ func (s *Service) Host(ctx context.Context, agent *model.Agent) (routers.IPv6Hos
 	if e != nil {
 		return routers.IPv6Host{}, e
 	}
-	a := object(raw(agent))
+	a := object(jsonresp.Value(agent))
 	data, e := s.request(ctx, a, "", nil)
 	if e != nil {
 		var boundary *Error
 		if errors.As(e, &boundary) {
-			b, err := s.capturedPublic(ctx, config, a, Document{"message": raw(boundary.Message)})
+			b, err := s.capturedPublic(ctx, config, a, Document{"message": jsonresp.Value(boundary.Message)})
 			if err != nil {
 				return routers.IPv6Host{}, err
 			}
@@ -334,7 +335,7 @@ func (s *Service) Host(ctx context.Context, agent *model.Agent) (routers.IPv6Hos
 
 func normalRaw(b json.RawMessage) json.RawMessage {
 	if len(b) == 0 {
-		return raw(nil)
+		return jsonresp.Value(nil)
 	}
 	return b
 }

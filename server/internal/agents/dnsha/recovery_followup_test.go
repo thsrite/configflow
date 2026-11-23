@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"errors"
 	"strings"
@@ -37,7 +38,7 @@ func failedRollbackReplies(_ context.Context, r agents.Request, reply *agents.Re
 		o := parseObject(reply.Body)
 		o["status"] = []byte(`"rollback_failed"`)
 		o["success"] = []byte("false")
-		reply.Body = rawObject(o)
+		reply.Body = jsonresp.Value(o)
 	}
 	return nil
 }

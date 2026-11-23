@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"slices"
@@ -79,18 +80,18 @@ func TestPrepareFailureUsesCapturedCredentials(t *testing.T) {
 			return response(hostStatus()), nil
 		}
 		if e := s.update(ctx, "peer", func(_ context.Context, a Document, _ []Document) error {
-			a["token"] = raw("synthetic-peer-new-token")
-			a["password"] = raw("synthetic-peer-new-password")
+			a["token"] = jsonresp.Value("synthetic-peer-new-token")
+			a["password"] = jsonresp.Value("synthetic-peer-new-password")
 			return nil
 		}); e != nil {
 			t.Error(e)
 		}
 		return &agents.Response{StatusCode: 422, Body: []byte(`{"success":false,"message":"synthetic-peer-old-token synthetic-peer-old-password"}`)}, nil
 	}))
-	_, e = s.Prepare(ctx, "source", "default", raw(Document{"interface": raw(first.PrepareInterface), "check_token": raw(first.CheckToken)}))
+	_, e = s.Prepare(ctx, "source", "default", jsonresp.Value(Document{"interface": jsonresp.Value(first.PrepareInterface), "check_token": jsonresp.Value(first.CheckToken)}))
 	requireCode(t, e, "PREPARE_FAILED", 502)
 	// The HTTP owner projects the boundary error with the live seeds afterwards.
-	public, err := s.Public(ctx, "default", Document{"message": raw(e.Error())})
+	public, err := s.Public(ctx, "default", Document{"message": jsonresp.Value(e.Error())})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,9 +108,9 @@ func TestPolicyCandidateExcludesGatewayAddressSpelling(t *testing.T) {
 	addClient(t, s, ctx)
 	for id, host := range map[string]string{"source": "2001:db8::1", "client": "2001:db8:0::1"} {
 		if e := s.update(ctx, id, func(_ context.Context, a Document, _ []Document) error {
-			a["host"] = raw(host)
+			a["host"] = jsonresp.Value(host)
 			if id == "source" {
-				a["ipv6_verification_settings"] = raw(Settings{ClientAgentID: "client"})
+				a["ipv6_verification_settings"] = jsonresp.Value(Settings{ClientAgentID: "client"})
 			}
 			return nil
 		}); e != nil {

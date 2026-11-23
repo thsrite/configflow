@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"configflow/internal/timefmt"
 	"encoding/json"
 	"math/big"
 	"os"
@@ -18,7 +19,7 @@ func TestNativeFilesRetainPointsAndSkipMissingSamples(t *testing.T) {
 	c := useClock(t)
 	dir := t.TempDir()
 	h := NewHistory(dir, MaxPointsPerAgent)
-	stamp := isoformat(naiveNow())
+	stamp := timefmt.Naive(naiveNow())
 	raw := `{"timestamp":"` + stamp + `","cpu":{"usage_percent":NaN},"network":{"bytes_sent":Infinity,"bytes_recv":7}}`
 	if err := os.WriteFile(h.agentFile("a"), []byte(raw+"\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -144,7 +145,7 @@ func TestMemoryCacheDoesNotApplyStoredJSONRepair(t *testing.T) {
 	useClock(t)
 	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
 	at := naiveNow()
-	h.points["a"] = []point{{at, `{"timestamp":"` + isoformat(at) + `","cpu":{"usage_percent":NaN}}`}}
+	h.points["a"] = []point{{at, `{"timestamp":"` + timefmt.Naive(at) + `","cpu":{"usage_percent":NaN}}`}}
 	samples, err := h.Samples("a", nil)
 	if err == nil {
 		for _, raw := range samples {

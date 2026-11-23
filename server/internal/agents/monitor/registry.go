@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"configflow/internal/version"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -42,16 +43,16 @@ func originalText(raw json.RawMessage, present bool, err error) string {
 }
 
 func modelVersionAtLeast(agent *model.Agent, minimum string) bool {
-	version, valid := agent.Version, true
+	text, valid := agent.Version, true
 	if !valid {
 		return false
 	}
-	for _, r := range version {
+	for _, r := range text {
 		if r > 127 {
 			return false
 		}
 	}
-	return agents.CompareVersions(version, minimum) >= 0
+	return version.CompareAgent(text, minimum) >= 0
 }
 
 // Origin validates the original registered endpoint. R5 string projections and

@@ -1,10 +1,9 @@
 package gateway
 
 import (
+	"configflow/internal/version"
 	"fmt"
 	"regexp"
-
-	"configflow/internal/agents"
 )
 
 // Agent version gates used by publication and the gateway controller.
@@ -26,11 +25,11 @@ func SupportsForwarding(version string) bool { return agentAtLeast(version, Forw
 func SupportsStandaloneForwarding(version string) bool {
 	return agentAtLeast(version, StandaloneForwardingMinAgentVersion)
 }
-func agentAtLeast(version, minimum string) bool {
-	if !agentVersionPattern.MatchString(version) {
+func agentAtLeast(text, minimum string) bool {
+	if !agentVersionPattern.MatchString(text) {
 		return false
 	}
-	return agents.CompareVersions(version, minimum) >= 0
+	return version.CompareAgent(text, minimum) >= 0
 }
 
 // RequireGatewayAgent refuses an Agent that cannot apply the generated gateway settings.

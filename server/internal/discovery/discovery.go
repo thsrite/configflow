@@ -26,7 +26,7 @@ func providerRevisions(ctx context.Context, profileID string) (map[string]string
 	}
 	ids := []*string{c.Settings.DirectRuleset, c.Settings.ProxyRuleset}
 	for _, id := range c.Settings.RegionalRulesets {
-		ids = append(ids, ptr(id))
+		ids = append(ids, new(id))
 	}
 	out := map[string]string{}
 	for _, id := range ids {

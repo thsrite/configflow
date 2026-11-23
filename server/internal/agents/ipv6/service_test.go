@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,9 +29,11 @@ type clientFunc func(context.Context, agents.Request) (*agents.Response, error)
 func (f clientFunc) Do(ctx context.Context, r agents.Request) (*agents.Response, error) {
 	return f(ctx, r)
 }
-func response(data any) *agents.Response { return &agents.Response{StatusCode: 200, Body: raw(data)} }
+func response(data any) *agents.Response {
+	return &agents.Response{StatusCode: 200, Body: jsonresp.Value(data)}
+}
 func hostStatus() Document {
-	return Document{"success": raw(true), "interface": raw("eth0"), "interface_index": raw(2), "can_prepare": raw(true), "checks": raw([]any{map[string]string{"id": "interface", "status": "pass", "message": "synthetic evidence"}}), "persistence": raw(Document{}), "core": raw(Document{"ipv6": raw(true), "dns.ipv6": raw(false)})}
+	return Document{"success": jsonresp.Value(true), "interface": jsonresp.Value("eth0"), "interface_index": jsonresp.Value(2), "can_prepare": jsonresp.Value(true), "checks": jsonresp.Value([]any{map[string]string{"id": "interface", "status": "pass", "message": "synthetic evidence"}}), "persistence": jsonresp.Value(Document{}), "core": jsonresp.Value(Document{"ipv6": jsonresp.Value(true), "dns.ipv6": jsonresp.Value(false)})}
 }
 func fixture(t *testing.T) (*Service, context.Context) {
 	t.Helper()
@@ -46,7 +49,7 @@ func fixture(t *testing.T) (*Service, context.Context) {
 	t.Cleanup(m.Close)
 	e = r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
 		var src model.Agent
-		data := raw(map[string]any{
+		data := jsonresp.Value(map[string]any{
 			"id": "source", "host": "192.0.2.2", "port": 8080, "token": "synthetic-source-token",
 			"profile_id": "default", "service_type": "mihomo", "deployment_method": "shell",
 			"enabled": true, "status": "online", "last_heartbeat": time.Now().Format(time.RFC3339),
@@ -103,7 +106,7 @@ func TestReadinessCachePrepareAndStale(t *testing.T) {
 		calls = append(calls, u.Path)
 		h := hostStatus()
 		if strings.HasSuffix(u.Path, "/prepare") {
-			h["checks"] = raw([]map[string]string{{"id": "tun_recovery", "message": "synthetic recovery"}})
+			h["checks"] = jsonresp.Value([]map[string]string{{"id": "tun_recovery", "message": "synthetic recovery"}})
 		}
 		return response(h), nil
 	}))
@@ -115,11 +118,11 @@ func TestReadinessCachePrepareAndStale(t *testing.T) {
 	if e != nil || cached.Cached == nil || !*cached.Cached || len(calls) != 1 {
 		t.Fatalf("cache=%+v err=%v calls=%v", cached, e, calls)
 	}
-	result, e := s.Prepare(ctx, "source", "default", raw(Document{"interface": raw(first.PrepareInterface), "check_token": raw(first.CheckToken)}))
+	result, e := s.Prepare(ctx, "source", "default", jsonresp.Value(Document{"interface": jsonresp.Value(first.PrepareInterface), "check_token": jsonresp.Value(first.CheckToken)}))
 	if e != nil || result.ChangedRoutes == nil || *result.ChangedRoutes != 0 {
 		t.Fatalf("prepare=%+v err=%v", result, e)
 	}
-	if !strings.Contains(string(raw(result)), "prepare_tun_recovery") {
+	if !strings.Contains(string(jsonresp.Value(result)), "prepare_tun_recovery") {
 		t.Fatal("recovery warning lost")
 	}
 	if got := strings.Join(calls, ","); got != "/api/ipv6-readiness,/api/ipv6-readiness,/api/ipv6-readiness/prepare,/api/ipv6-readiness" {
@@ -127,13 +130,13 @@ func TestReadinessCachePrepareAndStale(t *testing.T) {
 	}
 	// A target mutation must fail before host prepare, and not leak its new token.
 	e = s.update(ctx, "source", func(_ context.Context, a Document, _ []Document) error {
-		a["token"] = raw("synthetic-reinstalled-token")
+		a["token"] = jsonresp.Value("synthetic-reinstalled-token")
 		return nil
 	})
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = s.Prepare(ctx, "source", "default", raw(Document{"interface": raw("eth0"), "check_token": raw(first.CheckToken)}))
+	_, e = s.Prepare(ctx, "source", "default", jsonresp.Value(Document{"interface": jsonresp.Value("eth0"), "check_token": jsonresp.Value(first.CheckToken)}))
 	requireCode(t, e, "CHECK_CHANGED", 409)
 	mu.Lock()
 	fail = true
@@ -163,7 +166,7 @@ func TestTransportRawRequestsAndClasses(t *testing.T) {
 	defer server.Close()
 	u, _ := url.Parse(server.URL)
 	p, _ := strconv.Atoi(u.Port())
-	a := Document{"host": raw(u.Hostname()), "port": raw(p), "token": raw("synthetic-source-token")}
+	a := Document{"host": jsonresp.Value(u.Hostname()), "port": jsonresp.Value(p), "token": jsonresp.Value("synthetic-source-token")}
 	s.Manager.SetClient(clientFunc(func(ctx context.Context, r agents.Request) (*agents.Response, error) {
 		if !r.NoProxy || !r.NoRedirects || r.MaxBody != 512*1024 || r.Timeout != agents.Pair(3, 45) {
 			t.Errorf("production transport bounds missing: %+v", r)
@@ -176,7 +179,7 @@ func TestTransportRawRequestsAndClasses(t *testing.T) {
 	if method != "GET" || path != "/api/ipv6-readiness" || authorization != "Bearer synthetic-source-token" || contentType != "" || body != "" {
 		t.Fatalf("raw GET %q %q %q %q %q", method, path, authorization, contentType, body)
 	}
-	if _, e := s.request(ctx, a, "probe", Document{"host": raw("2001:db8::2"), "port": raw(443)}); e != nil {
+	if _, e := s.request(ctx, a, "probe", Document{"host": jsonresp.Value("2001:db8::2"), "port": jsonresp.Value(443)}); e != nil {
 		t.Fatal(e)
 	}
 	if method != "POST" || path != "/api/ipv6-readiness/probe" || contentType != "application/json" || body != `{"host":"2001:db8::2","port":443}` {
@@ -236,7 +239,7 @@ func TestReadinessRuntimeDisconnectAndShutdown(t *testing.T) {
 				if e == nil || !os.IsNotExist(fileError) {
 					t.Fatalf("shutdown wrote cache err=%v stat=%v", e, fileError)
 				}
-				_, e = s.Prepare(request, "source", "default", raw(Document{"interface": raw("eth0"), "check_token": raw(strings.Repeat("a", 64))}))
+				_, e = s.Prepare(request, "source", "default", jsonresp.Value(Document{"interface": jsonresp.Value("eth0"), "check_token": jsonresp.Value(strings.Repeat("a", 64))}))
 				if e == nil {
 					t.Fatal("post-shutdown prepare accepted")
 				}
@@ -277,7 +280,7 @@ func TestPrepareDeviceWriteDisconnectAndShutdown(t *testing.T) {
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				_, e := s.Prepare(request, "source", "default", raw(Document{"interface": raw("eth0"), "check_token": raw(first.CheckToken)}))
+				_, e := s.Prepare(request, "source", "default", jsonresp.Value(Document{"interface": jsonresp.Value("eth0"), "check_token": jsonresp.Value(first.CheckToken)}))
 				done <- e
 			}()
 			select {
@@ -339,7 +342,7 @@ func TestReadinessReusesRouterOwnerAndSetupSuborder(t *testing.T) {
 	}
 	defer release()
 	before := lockx.Violations()
-	_, e = s.Prepare(held, "source", "default", raw(Document{"interface": raw("eth0"), "check_token": raw(first.CheckToken)}))
+	_, e = s.Prepare(held, "source", "default", jsonresp.Value(Document{"interface": jsonresp.Value("eth0"), "check_token": jsonresp.Value(first.CheckToken)}))
 	if e != nil {
 		var boundary *Error
 		if !errors.As(e, &boundary) || boundary.Code != "PREPARE_UNAVAILABLE" {
@@ -376,8 +379,8 @@ func TestCapturedCredentialsSurviveConcurrentCredentialReplacement(t *testing.T)
 			}
 			s.Manager.SetClient(clientFunc(func(ctx context.Context, _ agents.Request) (*agents.Response, error) {
 				if e := s.update(ctx, "peer", func(_ context.Context, a Document, _ []Document) error {
-					a["token"] = raw("synthetic-peer-new-token")
-					a["password"] = raw("synthetic-peer-new-password")
+					a["token"] = jsonresp.Value("synthetic-peer-new-token")
+					a["password"] = jsonresp.Value("synthetic-peer-new-password")
 					return nil
 				}); e != nil {
 					t.Error(e)
@@ -386,7 +389,7 @@ func TestCapturedCredentialsSurviveConcurrentCredentialReplacement(t *testing.T)
 					return &agents.Response{StatusCode: 422, Body: []byte(`{"success":false,"message":"synthetic-peer-old-token synthetic-peer-old-password"}`)}, nil
 				}
 				h := hostStatus()
-				h["checks"] = raw([]Check{check("source", "source", "pass", "synthetic-peer-old-token synthetic-peer-old-password")})
+				h["checks"] = jsonresp.Value([]Check{check("source", "source", "pass", "synthetic-peer-old-token synthetic-peer-old-password")})
 				return response(h), nil
 			}))
 			result, e := s.Status(ctx, "source", "default", true)
@@ -399,7 +402,7 @@ func TestCapturedCredentialsSurviveConcurrentCredentialReplacement(t *testing.T)
 				if e != nil {
 					t.Fatal(e)
 				}
-				if strings.Contains(string(raw(result)), "synthetic-peer-old") {
+				if strings.Contains(string(jsonresp.Value(result)), "synthetic-peer-old") {
 					t.Fatal("captured report leaked old peer credentials")
 				}
 			}

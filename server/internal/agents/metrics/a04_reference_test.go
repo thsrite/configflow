@@ -6,6 +6,7 @@ package metrics
 // statistics / traffic trend arithmetic on points held in memory.
 
 import (
+	"configflow/internal/timefmt"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -92,7 +93,7 @@ func naiveOf(t *testing.T, text string) time.Time {
 func pointsText(points []point) [][]string {
 	out := [][]string{}
 	for _, p := range points {
-		out = append(out, []string{isoformat(p.at), p.line})
+		out = append(out, []string{timefmt.Naive(p.at), p.line})
 	}
 	return out
 }
@@ -316,7 +317,7 @@ func equalPointRecords(t *testing.T, points []point, want [][]string) bool {
 	}
 	for i, p := range points {
 		row := want[i]
-		if isoformat(p.at) != row[0] {
+		if timefmt.Naive(p.at) != row[0] {
 			return false
 		}
 		var gotValue, wantValue any

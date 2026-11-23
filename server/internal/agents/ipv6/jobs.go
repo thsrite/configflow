@@ -2,6 +2,7 @@ package ipv6
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -81,7 +82,7 @@ func (s *Service) newRun(ctx context.Context, a Document, revision *int64, did s
 	if did != "" {
 		deployment = &did
 	}
-	return Document{"status": raw("running"), "scope": raw(scope), "checks": raw([]Check{}), "started_at": raw(now(ctx)), "started_epoch": raw(float64(lifecycle.ClockFrom(ctx).Now().UnixNano()) / 1e9), "run_id": raw(newID()), "profile_id": a["profile_id"], "config_revision": raw(revision), "deployment_id": raw(deployment), "settings_fingerprint": raw(digest(saved)), "target_fingerprint": raw(digest(verificationIdentity(a))), "applied_fingerprint": raw(digest(applied(a))), "client_fingerprint": clientFingerprint(a, all), "message": raw(message)}
+	return Document{"status": jsonresp.Value("running"), "scope": jsonresp.Value(scope), "checks": jsonresp.Value([]Check{}), "started_at": jsonresp.Value(now(ctx)), "started_epoch": jsonresp.Value(float64(lifecycle.ClockFrom(ctx).Now().UnixNano()) / 1e9), "run_id": jsonresp.Value(newID()), "profile_id": a["profile_id"], "config_revision": jsonresp.Value(revision), "deployment_id": jsonresp.Value(deployment), "settings_fingerprint": jsonresp.Value(digest(saved)), "target_fingerprint": jsonresp.Value(digest(verificationIdentity(a))), "applied_fingerprint": jsonresp.Value(digest(applied(a))), "client_fingerprint": clientFingerprint(a, all), "message": jsonresp.Value(message)}
 }
 
 // Start reserves a bounded verification and spawns a Runtime-owned worker. It
@@ -168,12 +169,12 @@ func (s *Service) Start(ctx context.Context, id, profile string, body json.RawMe
 				r := object(b)
 				if expired(ctx, r) {
 					interrupt(ctx, r, msgInterrupted)
-					m.Set(k, raw(r))
+					m.Set(k, jsonresp.Value(r))
 				}
 			}
 			b, _ := m.Get(key)
 			if s.reusable(ctx, current, object(b), automatic, did, all) {
-				current["ipv6_verifications"] = raw(m)
+				current["ipv6_verifications"] = jsonresp.Value(m)
 				return nil
 			}
 			for _, b := range m.All() {
@@ -181,14 +182,14 @@ func (s *Service) Start(ctx context.Context, id, profile string, body json.RawMe
 					return failure("BUSY", 409, msgVerifyBusy)
 				}
 			}
-			m.Set(key, raw(report))
+			m.Set(key, jsonresp.Value(report))
 			keys := m.Keys()
 			for _, k := range keys[:max(0, len(keys)-7)] {
 				if k != key {
 					m.Delete(k)
 				}
 			}
-			current["ipv6_verifications"] = raw(m)
+			current["ipv6_verifications"] = jsonresp.Value(m)
 			reserved = true
 			return nil
 		})
@@ -242,8 +243,8 @@ func (s *Service) failRun(ctx context.Context, id, key, runID string) error {
 		r := object(b)
 		if text(r["run_id"]) == runID && text(r["status"]) == "running" {
 			interrupt(ctx, r, msgTaskInterrupted)
-			m.Set(key, raw(r))
-			a["ipv6_verifications"] = raw(m)
+			m.Set(key, jsonresp.Value(r))
+			a["ipv6_verifications"] = jsonresp.Value(m)
 		}
 		return nil
 	})
@@ -286,8 +287,8 @@ func (s *Service) execute(ctx context.Context, a, config Document, saved Setting
 	if seedError != nil {
 		return
 	}
-	seeds = redact.CollectCredentials(raw(a), seeds)
-	_ = jsondecode.Unmarshal(diagnosticProjection(raw(checks), seeds), &checks)
+	seeds = redact.CollectCredentials(jsonresp.Value(a), seeds)
+	_ = jsondecode.Unmarshal(diagnosticProjection(jsonresp.Value(checks), seeds), &checks)
 	_ = s.update(ctx, text(a["id"]), func(ctx context.Context, current Document, all []Document) error {
 		if current == nil {
 			return nil
@@ -321,12 +322,12 @@ func (s *Service) execute(ctx context.Context, a, config Document, saved Setting
 		if saved.ClientAgentID != "" {
 			message = msgClientDone
 		}
-		stored["status"] = raw(status)
-		stored["checks"] = raw(checks)
-		stored["checked_at"] = raw(now(ctx))
-		stored["message"] = raw(message)
-		m.Set(key, raw(stored))
-		current["ipv6_verifications"] = raw(m)
+		stored["status"] = jsonresp.Value(status)
+		stored["checks"] = jsonresp.Value(checks)
+		stored["checked_at"] = jsonresp.Value(now(ctx))
+		stored["message"] = jsonresp.Value(message)
+		m.Set(key, jsonresp.Value(stored))
+		current["ipv6_verifications"] = jsonresp.Value(m)
 		return nil
 	})
 }

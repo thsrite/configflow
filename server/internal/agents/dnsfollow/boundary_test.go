@@ -348,7 +348,7 @@ func TestRetryNullSourceAndPrivateProjection(t *testing.T) {
 func TestStateDedupeIncludesFieldsButIgnoresTime(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
-	_, written, err := f.s.saveState(f.ctx, "target", "waiting", "synthetic state", statePatch{address: ptr("udp://192.0.2.1:53")}, nil)
+	_, written, err := f.s.saveState(f.ctx, "target", "waiting", "synthetic state", statePatch{address: new("udp://192.0.2.1:53")}, nil)
 	if err != nil || !written {
 		t.Fatal(written, err)
 	}
@@ -357,7 +357,7 @@ func TestStateDedupeIncludesFieldsButIgnoresTime(t *testing.T) {
 	if err != nil || written || before != f.r.CommitCount() {
 		t.Fatal(written, err)
 	}
-	_, written, err = f.s.saveState(f.ctx, "target", "waiting", "synthetic state", statePatch{attempt: ptr(model.Int(2))}, nil)
+	_, written, err = f.s.saveState(f.ctx, "target", "waiting", "synthetic state", statePatch{attempt: new(model.Int(2))}, nil)
 	if err != nil || !written {
 		t.Fatal(written, err)
 	}

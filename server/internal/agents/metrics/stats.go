@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"bytes"
+	"configflow/internal/timefmt"
 	"encoding/json"
 	"math"
 	"math/big"
@@ -326,7 +327,7 @@ func (h *History) TrafficStatistics(id, period string) (*TrafficStats, error) {
 	first, last := samples[0], samples[len(samples)-1]
 	sent, recv := delta(last.sent, first.sent), delta(last.recv, first.recv)
 	duration := secondsBetween(last.at, first.at)
-	startText, endText, count := isoformat(first.at), isoformat(last.at), len(samples)
+	startText, endText, count := timefmt.Naive(first.at), timefmt.Naive(last.at), len(samples)
 	out.BytesSent = last.sent.raw
 	out.BytesRecv = last.recv.raw
 	out.BytesSentDelta = sent.raw
@@ -356,11 +357,11 @@ func (h *History) TrafficTrend(id string, hours, intervalMinutes *big.Int) ([]Tr
 		if secondsBetween(sample.at, groupStart) >= interval {
 			sent, recv := delta(sample.sent, previous.sent), delta(sample.recv, previous.recv)
 			duration := secondsBetween(sample.at, previous.at)
-			out = append(out, TrafficTrendPoint{isoformat(sample.at), sample.sent.raw, sample.recv.raw, sent.raw, recv.raw, speedDelta(sent, duration), speedDelta(recv, duration)})
+			out = append(out, TrafficTrendPoint{timefmt.Naive(sample.at), sample.sent.raw, sample.recv.raw, sent.raw, recv.raw, speedDelta(sent, duration), speedDelta(recv, duration)})
 			groupStart = sample.at
 		}
 		previous = sample
 	}
-	out = append(out, TrafficTrendPoint{Timestamp: isoformat(previous.at), BytesSent: previous.sent.raw, BytesRecv: previous.recv.raw, SpeedSent: previous.speedSent, SpeedRecv: previous.speedRecv})
+	out = append(out, TrafficTrendPoint{Timestamp: timefmt.Naive(previous.at), BytesSent: previous.sent.raw, BytesRecv: previous.recv.raw, SpeedSent: previous.speedSent, SpeedRecv: previous.speedRecv})
 	return out, nil
 }

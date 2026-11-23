@@ -8,6 +8,7 @@ package substore
 
 import (
 	"bytes"
+	"configflow/internal/version"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -81,6 +82,31 @@ func yamlNodesToJSON(nodes []*yamlx.Node) ([]any, error) {
 	return out, nil
 }
 
+// intOnlyVersionRow reports a parse_version/is_newer input with a component
+// that only Python's int() reads as a number (a sign, an underscore,
+// surrounding spaces or more than 19 digits).
+func intOnlyVersionRow(input any) bool {
+	var texts []string
+	switch v := input.(type) {
+	case string:
+		texts = []string{v}
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				texts = append(texts, s)
+			}
+		}
+	}
+	for _, text := range texts {
+		for _, part := range strings.Split(strings.TrimLeft(strings.TrimSpace(text), "vV"), ".") {
+			if strings.ContainsAny(part, "+-_") || strings.TrimSpace(part) != part || len(part) > 19 && strings.Trim(part, "0123456789") == "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestPythonCorpus(t *testing.T) {
 	rows := loadCorpus(t)
 	oracle := nativeReaderCases(t)
@@ -88,6 +114,9 @@ func TestPythonCorpus(t *testing.T) {
 	counts := map[string]int{}
 	for i, row := range rows {
 		counts[row.fn]++
+		if (row.fn == "parse_version" || row.fn == "is_newer") && intOnlyVersionRow(row.input) {
+			continue // O17: only Python int() read these components; see version.TestNonDecimalComponents
+		}
 		var got any
 		var err error
 		switch row.fn {
@@ -99,10 +128,10 @@ func TestPythonCorpus(t *testing.T) {
 			}
 		case "parse_version":
 			if s, ok := row.input.(string); ok {
-				if parts := VersionParts(s); parts != nil {
+				if parts := version.ParseRelease(s); parts != nil {
 					list := make([]json.Number, 0, len(parts))
 					for _, p := range parts {
-						list = append(list, json.Number(p.String()))
+						list = append(list, json.Number(strconv.FormatUint(p, 10)))
 					}
 					got = list
 				}
@@ -111,7 +140,7 @@ func TestPythonCorpus(t *testing.T) {
 			pair := row.input.([]any)
 			a, okA := pair[0].(string)
 			b, _ := pair[1].(string)
-			got = okA && VersionNewer(a, b)
+			got = okA && version.NewerRelease(a, b)
 		case "builtin_sub_store_url":
 			value := row.input.(string)
 			env := &Env{LookupEnv: func(key string) (string, bool) { return value, key == "SUB_STORE_BACKEND_API_PORT" }}
@@ -171,10 +200,10 @@ func TestPythonCorpus(t *testing.T) {
 		}
 		if expected := native[fmt.Sprintf("corpus/%d", i)]; expected != nil {
 			if _, hasVC := expected["version_components"]; hasVC {
-				parts := VersionParts(row.input.(string))
+				parts := version.ParseRelease(row.input.(string))
 				actual := make([]string, 0, len(parts))
 				for _, part := range parts {
-					actual = append(actual, part.String())
+					actual = append(actual, strconv.FormatUint(part, 10))
 				}
 				if !testjson.Equal(expected["version_components"], actual) {
 					t.Fatalf("native version components mismatch at %d", i)

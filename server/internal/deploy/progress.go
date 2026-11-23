@@ -19,7 +19,7 @@ func publishProgress(ctx context.Context, m *agents.Manager, id, did, token stri
 	write := func(message string) {
 		if ctx.Err() == nil {
 			message = diag.FailureText(message, []any{token}, 0)
-			_, _ = recordUpdate(ctx, m, id, did, Update{Status: ptr("preparing"), Message: &message}, agents.RecordOptions{})
+			_, _ = recordUpdate(ctx, m, id, did, Update{Status: new("preparing"), Message: &message}, agents.RecordOptions{})
 		}
 	}
 	detail := func(message string, force bool) {

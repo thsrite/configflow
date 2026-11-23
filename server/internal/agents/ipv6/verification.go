@@ -2,6 +2,7 @@ package ipv6
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -29,21 +30,21 @@ func settings(a Document) Settings {
 }
 func verificationIdentity(a Document) Document {
 	out := identity(a)
-	out["enabled"] = raw(string(a["enabled"]) != "false")
+	out["enabled"] = jsonresp.Value(string(a["enabled"]) != "false")
 	return out
 }
 
 func applied(a Document) Document {
-	return Document{"latest": raw(selectFields(object(a["latest_deployment"]), "deployment_id", "status", "manual_rollback", "config_version", "config_revision")), "config_revision": a["config_revision"], "config_version": a["config_version"], "applied_content": raw(nonNilObject(a["applied_content"]))}
+	return Document{"latest": jsonresp.Value(selectFields(object(a["latest_deployment"]), "deployment_id", "status", "manual_rollback", "config_version", "config_revision")), "config_revision": a["config_revision"], "config_version": a["config_version"], "applied_content": jsonresp.Value(nonNilObject(a["applied_content"]))}
 }
 func clientFingerprint(a Document, all []Document) json.RawMessage {
 	id := settings(a).ClientAgentID
 	for _, c := range all {
 		if text(c["id"]) == id && id != "" {
-			return raw(digest(struct{ Identity, Applied Document }{verificationIdentity(c), applied(c)}))
+			return jsonresp.Value(digest(struct{ Identity, Applied Document }{verificationIdentity(c), applied(c)}))
 		}
 	}
-	return raw(nil)
+	return jsonresp.Value(nil)
 }
 func (s *Service) findings(ctx context.Context, a, report Document, all []Document) []string {
 	out := []string{}
@@ -55,7 +56,7 @@ func (s *Service) findings(ctx context.Context, a, report Document, all []Docume
 	// A stored null fingerprint (no client) is a missing member (O18 T1b).
 	stored := report["client_fingerprint"]
 	if len(stored) == 0 {
-		stored = raw(nil)
+		stored = jsonresp.Value(nil)
 	}
 	if string(stored) != string(clientFingerprint(a, all)) {
 		out = append(out, msgChangedClient)
@@ -64,7 +65,7 @@ func (s *Service) findings(ctx context.Context, a, report Document, all []Docume
 		revision, e := s.Manager.Repository().ConfigRevision(ctx, text(report["profile_id"]))
 		if e != nil {
 			out = append(out, msgChangedProfile)
-		} else if string(report["config_revision"]) != string(raw(revision)) {
+		} else if string(report["config_revision"]) != string(jsonresp.Value(revision)) {
 			out = append(out, msgChangedSaved)
 		}
 	}
@@ -85,10 +86,10 @@ func expired(ctx context.Context, r Document) bool {
 	return e != nil || math.IsInf(start, 0) || math.IsNaN(start) || now-start > 300 || start > now+30
 }
 func interrupt(ctx context.Context, r Document, message string) {
-	r["status"] = raw("error")
-	r["checked_at"] = raw(now(ctx))
-	r["message"] = raw(message)
-	r["checks"] = raw([]Check{check("interrupted", msgVerifyIncomplete, "error", msgIncomplete)})
+	r["status"] = jsonresp.Value("error")
+	r["checked_at"] = jsonresp.Value(now(ctx))
+	r["message"] = jsonresp.Value(message)
+	r["checks"] = jsonresp.Value([]Check{check("interrupted", msgVerifyIncomplete, "error", msgIncomplete)})
 }
 func newID() string { var id [16]byte; _, _ = rand.Read(id[:]); return hex.EncodeToString(id[:]) }
 
@@ -103,7 +104,7 @@ type VerificationResult struct {
 }
 
 func notApplicable(id, profile string) *VerificationResult {
-	return &VerificationResult{Success: true, AgentID: id, ProfileID: profile, Verification: raw(nil), Applicable: ptr(false), Message: msgNotApplicable}
+	return &VerificationResult{Success: true, AgentID: id, ProfileID: profile, Verification: jsonresp.Value(nil), Applicable: new(false), Message: msgNotApplicable}
 }
 
 // Result reads a report without persisting expiry/staleness overlays.
@@ -149,15 +150,15 @@ func (s *Service) Result(ctx context.Context, id, profile, did string) (*Verific
 		}
 		changed := s.findings(ctx, a, report, all)
 		if len(changed) > 0 {
-			report["status"] = raw("warning")
-			report["stale"] = raw(true)
-			report["message"] = raw(strings.Join(changed, "、") + msgRetry)
-			report["checks"] = raw([]Check{check("result_stale", msgOld, "unknown", msgStale, changed...)})
+			report["status"] = jsonresp.Value("warning")
+			report["stale"] = jsonresp.Value(true)
+			report["message"] = jsonresp.Value(strings.Join(changed, "、") + msgRetry)
+			report["checks"] = jsonresp.Value([]Check{check("result_stale", msgOld, "unknown", msgStale, changed...)})
 		} else if expired(ctx, report) {
 			interrupt(ctx, report, msgInterrupted)
 		}
 	}
-	return &VerificationResult{Success: true, AgentID: id, ProfileID: profile, Verification: raw(report)}, nil
+	return &VerificationResult{Success: true, AgentID: id, ProfileID: profile, Verification: jsonresp.Value(report)}, nil
 }
 func supported(cap Document) bool {
 	if text(cap["platform"]) != "linux" {
@@ -259,7 +260,7 @@ func (s *Service) verificationSettings(ctx context.Context, id, profile string, 
 					return failure("BUSY", 409, msgSettingsBusy)
 				}
 			}
-			current["ipv6_verification_settings"] = raw(saved)
+			current["ipv6_verification_settings"] = jsonresp.Value(saved)
 			return nil
 		})
 		if e != nil {

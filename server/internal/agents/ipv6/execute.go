@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"strings"
@@ -108,9 +109,9 @@ func (s *Service) executeChecks(ctx context.Context, a, config Document, saved S
 	if e != nil {
 		return nil, e
 	}
-	checks := safeChecks(object(raw(inspection)), "")
+	checks := safeChecks(object(jsonresp.Value(inspection)), "")
 	for _, r := range inspection.Routers {
-		for _, c := range safeChecks(object(raw(r)), "router_"+r.ID+"_") {
+		for _, c := range safeChecks(object(jsonresp.Value(r)), "router_"+r.ID+"_") {
 			name := r.Name
 			if name == "" {
 				name = "ROS"
@@ -129,9 +130,9 @@ func (s *Service) executeChecks(ctx context.Context, a, config Document, saved S
 		_ = json.Unmarshal(report["config_revision"], &revision)
 		publication, hash = s.published(ctx, a, config, revision)
 	}
-	payload := Document{"test_url": raw(testURL)}
+	payload := Document{"test_url": jsonresp.Value(testURL)}
 	if hash != "" {
-		payload["expected_config_sha256"] = raw(hash)
+		payload["expected_config_sha256"] = jsonresp.Value(hash)
 	}
 	runtime, e := s.request(ctx, a, "verify", payload)
 	if e != nil {
@@ -150,7 +151,7 @@ func (s *Service) clientChecks(ctx context.Context, a, config Document, saved Se
 		return nil, e
 	}
 	settings, doc := ReadConfiguration(config)
-	payload := Document{"test_url": raw(testURL), "request_id": raw(runID)}
+	payload := Document{"test_url": jsonresp.Value(testURL), "request_id": jsonresp.Value(runID)}
 	dns := field(doc, "dns")
 	if scalar(field(dns, "enhanced-mode")) == "fake-ip" && field(dns, "fake-ip-range") != nil {
 		payload["fake_ipv4_range"] = jsonNode(field(dns, "fake-ip-range"))
@@ -192,7 +193,7 @@ func (s *Service) clientChecks(ctx context.Context, a, config Document, saved Se
 				traces <- nil
 			}
 		}()
-		trace, _ := s.request(job, a, "verify-connections", Document{"host": raw(host), "request_id": raw(runID)})
+		trace, _ := s.request(job, a, "verify-connections", Document{"host": jsonresp.Value(host), "request_id": jsonresp.Value(runID)})
 		traces <- trace
 	})
 	if e != nil {

@@ -4,6 +4,7 @@ package rulesync
 // Reconciliation consumes immutable deploy.Source values and yamlx nodes.
 import (
 	"configflow/internal/agents/monitor"
+	"configflow/internal/jsonresp"
 	"configflow/internal/logx"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
@@ -145,11 +146,11 @@ func configurePair(ctx context.Context, m *agents.Manager, members []*model.Agen
 			if current == nil {
 				return refuse(msgPairChanged)
 			}
-			left, err := yamlx.FromJSON(rawJSON(current.OxiDNSHA))
+			left, err := yamlx.FromJSON(jsonresp.Value(current.OxiDNSHA))
 			if err != nil {
 				return err
 			}
-			right, err := yamlx.FromJSON(rawJSON(member.OxiDNSHA))
+			right, err := yamlx.FromJSON(jsonresp.Value(member.OxiDNSHA))
 			if err != nil {
 				return err
 			}
@@ -175,7 +176,6 @@ func configurePair(ctx context.Context, m *agents.Manager, members []*model.Agen
 		return tx.Err()
 	})
 }
-func rawJSON(v any) json.RawMessage { raw, _ := json.Marshal(v); return raw }
 
 func systemSecrets(ctx context.Context, m *agents.Manager) (redact.Secrets, error) {
 	return agents.SystemSecrets(ctx, m.Repository())
@@ -372,7 +372,7 @@ func workerAgent(ctx context.Context, m *agents.Manager, id string) (*model.Agen
 	if !agents.FreshHeartbeat(a.LastHeartbeat, nil) {
 		a.Status = "offline"
 	}
-	a.Enabled = ptr(agents.AgentEnabledModel(a))
+	a.Enabled = new(agents.AgentEnabledModel(a))
 	a.ProfileID = profile
 	return a, nil
 }

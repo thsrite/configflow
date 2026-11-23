@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -105,7 +106,7 @@ func TestRawClientRequestsAndMalformedReplies(t *testing.T) {
 	if e != nil || rt == nil {
 		t.Fatal("empty runtime object is valid", e)
 	}
-	m := f.s.member(f.ctx, a, ptr("primary"), "")
+	m := f.s.member(f.ctx, a, new("primary"), "")
 	if m.Error != msgPendingManaged || m.Runtime == nil {
 		t.Fatal(m.Error)
 	}
@@ -119,7 +120,7 @@ func TestRawClientRequestsAndMalformedReplies(t *testing.T) {
 		res.Body = []byte(`{"error":"synthetic-primary-token/synthetic-secondary-token"}`)
 		return nil
 	})
-	_, e = f.s.call(f.ctx, a, "PUT", "", rawObject(spec(vip, 53, "primary", a, a)), 90)
+	_, e = f.s.call(f.ctx, a, "PUT", "", jsonresp.Value(spec(vip, 53, "primary", a, a)), 90)
 	if e == nil || strings.Contains(e.Error(), "synthetic-") {
 		t.Fatal("device error exposed credentials", e)
 	}
@@ -136,13 +137,13 @@ func TestUpstreamAndLoopbackBlockBeforeDeviceCalls(t *testing.T) {
 		if o == nil {
 			o = object{}
 		}
-		o["native_config"] = rawObject(`plugins:
+		o["native_config"] = jsonresp.Value(`plugins:
   - tag: forward_remote
     type: forward
     args:
       upstreams: [{addr: udp://127.0.0.1:1053}]
 `)
-		return p.SetJSON("oxidns", rawObject(o))
+		return p.SetJSON("oxidns", jsonresp.Value(o))
 	})
 	if e != nil {
 		t.Fatal(e)
@@ -191,7 +192,7 @@ func TestFinalGenerationRequiresMatchingPeerAndPinsBothIdentities(t *testing.T) 
 	if response.Err != nil || response.Status != 200 {
 		t.Fatal(response.Status, response.Err, response.Body)
 	}
-	raw := parseObject(rawObject(response.Body))
+	raw := parseObject(jsonresp.Value(response.Body))
 	ids := raw.strings("target_ids")
 	if !reflect.DeepEqual(ids, []string{"primary", "secondary"}) {
 		t.Fatal(ids)
@@ -210,7 +211,7 @@ func TestFinalGenerationRequiresMatchingPeerAndPinsBothIdentities(t *testing.T) 
 		if strings.Contains(r.URL, secondaryHost) && strings.HasSuffix(r.URL, "/api/capabilities") {
 			o := parseObject(res.Body)
 			o["config_path"] = json.RawMessage(`"other.yaml"`)
-			res.Body = rawObject(o)
+			res.Body = jsonresp.Value(o)
 		}
 		return nil
 	})

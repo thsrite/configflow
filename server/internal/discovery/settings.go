@@ -230,9 +230,9 @@ func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy 
 			policy := "DIRECT"
 			if t == "proxy" {
 				policy = proxyPolicy
-				c.Settings.ProxyRuleset = ptr(item.ID)
+				c.Settings.ProxyRuleset = new(item.ID)
 			} else {
-				c.Settings.DirectRuleset = ptr(item.ID)
+				c.Settings.DirectRuleset = new(item.ID)
 			}
 			ref, err := newReference(item.ID, policy)
 			if err != nil {

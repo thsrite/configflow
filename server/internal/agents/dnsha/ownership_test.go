@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"strings"
@@ -22,8 +23,8 @@ func TestNoOrSplitVIPRefusesBeforeCoreMutation(t *testing.T) {
 						o := parseObject(reply.Body)
 						runtime := o.obj("runtime")
 						runtime["vip_present"] = []byte("true")
-						o["runtime"] = rawObject(runtime)
-						reply.Body = rawObject(o)
+						o["runtime"] = jsonresp.Value(runtime)
+						reply.Body = jsonresp.Value(o)
 					}
 					return nil
 				})
@@ -73,7 +74,7 @@ func TestRollbackRecoverySettlesFailedPair(t *testing.T) {
 			o := parseObject(reply.Body)
 			o["status"] = []byte(`"rollback_failed"`)
 			o["success"] = []byte("false")
-			reply.Body = rawObject(o)
+			reply.Body = jsonresp.Value(o)
 		}
 		return nil
 	})

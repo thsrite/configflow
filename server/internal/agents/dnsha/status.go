@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"strings"
@@ -18,8 +19,8 @@ func (v StatusView) MarshalJSON() ([]byte, error) {
 	}
 	o := parseObject(b)
 	if v.Config != nil {
-		o["state"] = rawObject(v.State)
-		o["publication"] = rawObject(v.Publication)
+		o["state"] = jsonresp.Value(v.State)
+		o["publication"] = jsonresp.Value(v.Publication)
 	}
 	if v.Config != nil || v.Publication != nil {
 		w := v.Warnings
@@ -30,8 +31,8 @@ func (v StatusView) MarshalJSON() ([]byte, error) {
 		if r == nil {
 			r = []model.HARouter{}
 		}
-		o["warnings"] = rawObject(w)
-		o["routers"] = rawObject(r)
+		o["warnings"] = jsonresp.Value(w)
+		o["routers"] = jsonresp.Value(r)
 	}
 	return json.Marshal(o)
 }
@@ -54,7 +55,7 @@ func (v EnvironmentView) MarshalJSON() ([]byte, error) {
 		if list == nil {
 			list = []int{}
 		}
-		o[k] = rawObject(list)
+		o[k] = jsonresp.Value(list)
 	}
 	return json.Marshal(o)
 }
@@ -148,14 +149,14 @@ func (s *Service) status(ctx context.Context, id string) (StatusView, error) {
 	}
 	v.Config = a.OxiDNSHA
 	v.State = a.OxiDNSHAState
-	v.Members = []MemberView{s.member(ctx, a, ptr(a.OxiDNSHA.Role), "")}
+	v.Members = []MemberView{s.member(ctx, a, new(a.OxiDNSHA.Role), "")}
 	b := selected(list, a.OxiDNSHA.PeerID)
 	if b == nil {
 		v.Members = append(v.Members, MemberView{AgentID: a.OxiDNSHA.PeerID, Error: msgPeerGone})
 	} else if !paired(a, b) {
 		v.Members = append(v.Members, s.member(ctx, b, nil, msgPeerDifferent))
 	} else {
-		v.Members = append(v.Members, s.member(ctx, b, ptr(b.OxiDNSHA.Role), ""))
+		v.Members = append(v.Members, s.member(ctx, b, new(b.OxiDNSHA.Role), ""))
 	}
 	if ctx.Err() != nil {
 		return StatusView{}, ctx.Err()

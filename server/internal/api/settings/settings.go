@@ -23,7 +23,6 @@ import (
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/store"
-	"configflow/internal/utilx"
 	"configflow/internal/version"
 	"configflow/internal/webdav"
 	"configflow/internal/weblistener"
@@ -223,7 +222,9 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(500, err.Error()), nil
 	}
 	if enabledInput(data.Generate) {
-		token = utilx.GenerateRandomToken(32)
+		if token, err = randomToken(32); err != nil {
+			return nil, err
+		}
 	}
 	if token == "" {
 		return failure(400, "Token is required or set generate=true"), nil

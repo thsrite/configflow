@@ -135,7 +135,7 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 			}
 			check := Recheck{At: at, Reason: msgRecheckEmpty}
 			if found {
-				check.Verdict = ptr(p.Verdict)
+				check.Verdict = new(p.Verdict)
 				check.Reason = ""
 				switch {
 				case p.Verdict == "unreachable":
@@ -154,7 +154,7 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 		err = editSettings(ctx, id, func(s *Settings) error {
 			for i, h := range s.History {
 				if v, ok := checks[[2]string{h.Value, h.Target}]; ok {
-					s.History[i].Recheck = ptr(v)
+					s.History[i].Recheck = new(v)
 				}
 			}
 			return nil

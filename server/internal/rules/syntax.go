@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"configflow/internal/textx"
 	"errors"
 	"fmt"
 	"regexp"
@@ -42,18 +43,6 @@ func commaPayload(kind string) bool {
 	return false
 }
 
-func asciiDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return true
-}
-
 // LooksLikeIP keeps a malformed address or network from being read as a
 // host name.
 func LooksLikeIP(value string) bool {
@@ -81,7 +70,7 @@ func DomainValueError(value string) string {
 		return "不是有效域名；IP 地址或网段请使用 IP-CIDR。"
 	}
 	ascii, ok := IDNAEncode(value)
-	if !ok || len(ascii) > 253 || asciiDigits(ascii[strings.LastIndex(ascii, ".")+1:]) {
+	if !ok || len(ascii) > 253 || textx.ASCIIDigits(ascii[strings.LastIndex(ascii, ".")+1:]) {
 		return "不是有效域名。"
 	}
 	for _, label := range strings.Split(ascii, ".") {
@@ -107,7 +96,7 @@ func CIDRError(value string) string {
 		return fmt.Sprintf("单个 IP 也需要前缀长度，请填写 %s/%d。", value, addr.BitLen())
 	}
 	address, prefix := value[:cut], value[cut+1:]
-	if !asciiDigits(prefix) || prefix != "0" && prefix[0] == '0' || strings.Contains(address, "%") {
+	if !textx.ASCIIDigits(prefix) || prefix != "0" && prefix[0] == '0' || strings.Contains(address, "%") {
 		return "不是有效 IP 网段；请使用数字前缀长度。"
 	}
 	if _, ok := parseNetwork(value); !ok {
@@ -339,7 +328,7 @@ func ruleValueError(kind, value string, depth int) string {
 	case "UID":
 		return rangesError(value, 1<<32-1, "UID", false)
 	case "IP-ASN", "SRC-IP-ASN":
-		if !asciiDigits(value) {
+		if !textx.ASCIIDigits(value) {
 			return "ASN 应为非负整数。"
 		}
 	case "NETWORK":

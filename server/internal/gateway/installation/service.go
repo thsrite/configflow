@@ -1,6 +1,7 @@
 package installation
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -354,14 +355,14 @@ func (s *Service) Latest(ctx context.Context, profile string) (json.RawMessage, 
 	if err != nil {
 		return nil, err
 	}
-	var view json.RawMessage = raw(nil)
+	var view json.RawMessage = jsonresp.Value(nil)
 	if len(records) > 0 {
 		view, err = s.public(ctx, records[0])
 	}
 	if err != nil {
 		return nil, err
 	}
-	return raw(struct {
+	return jsonresp.Value(struct {
 		Success bool            `json:"success"`
 		Session json.RawMessage `json:"session"`
 	}{true, view}), nil
@@ -390,12 +391,12 @@ func (s *Service) public(ctx context.Context, r *Record) (json.RawMessage, error
 		}
 	}
 	expired := float64(s.now(ctx).UnixNano())/1e9 >= r.Expires
-	v := map[string]json.RawMessage{"success": raw(true), "id": raw(r.ID), "profile_id": raw(r.ProfileID), "config_revision": raw(r.ConfigRevision), "name": raw(r.Name), "network": raw(r.Network), "phase": raw(r.Phase), "created_at": raw(r.CreatedAt), "deployments": raw(r.Deployments), "message": raw(r.Message), "remedy": r.Remedy, "server_url": raw(r.ServerURL), "auto_network": raw(r.AutoNetwork), "takeover": raw(r.Takeover), "expires_at": raw(isoTimestamp(r.Expires)), "expired": raw(expired), "agents": raw(agentsView), "config_changed": raw(revision != r.ConfigRevision), "target_changed": raw(changed)}
+	v := map[string]json.RawMessage{"success": jsonresp.Value(true), "id": jsonresp.Value(r.ID), "profile_id": jsonresp.Value(r.ProfileID), "config_revision": jsonresp.Value(r.ConfigRevision), "name": jsonresp.Value(r.Name), "network": jsonresp.Value(r.Network), "phase": jsonresp.Value(r.Phase), "created_at": jsonresp.Value(r.CreatedAt), "deployments": jsonresp.Value(r.Deployments), "message": jsonresp.Value(r.Message), "remedy": r.Remedy, "server_url": jsonresp.Value(r.ServerURL), "auto_network": jsonresp.Value(r.AutoNetwork), "takeover": jsonresp.Value(r.Takeover), "expires_at": jsonresp.Value(isoTimestamp(r.Expires)), "expired": jsonresp.Value(expired), "agents": jsonresp.Value(agentsView), "config_changed": jsonresp.Value(revision != r.ConfigRevision), "target_changed": jsonresp.Value(changed)}
 	if len(v["remedy"]) == 0 {
-		v["remedy"] = raw(nil)
+		v["remedy"] = jsonresp.Value(nil)
 	}
 	if r.Takeover == "" {
-		v["takeover"] = raw("selective")
+		v["takeover"] = jsonresp.Value("selective")
 	}
 	// Metadata receives credential-aware redaction, while the explicitly scoped
 	// download command keeps its own installation capability usable.
@@ -415,16 +416,16 @@ func (s *Service) public(ctx context.Context, r *Record) (json.RawMessage, error
 			return nil, err
 		}
 	}
-	safe["deployments"] = raw(publicTasks)
+	safe["deployments"] = jsonresp.Value(publicTasks)
 	if !expired {
 		scriptURL := r.ServerURL + "/api/agents/gateway-installations/" + r.ID + "/script?" + url.Values{"token": {r.Token}}.Encode()
 		download := scriptURL
 		if r.DownloadPath != "" {
 			download = r.ServerURL + r.DownloadPath
 		}
-		safe["download_url"] = raw(download)
+		safe["download_url"] = jsonresp.Value(download)
 		cmd := `set -eu; f=$(mktemp); trap 'rm -f "$f"' EXIT; if command -v curl >/dev/null 2>&1; then curl -fSL ` + installer.ShlexQuote(scriptURL) + ` -o "$f"; else wget -O "$f" ` + installer.ShlexQuote(scriptURL) + `; fi; if [ "$(id -u)" -eq 0 ]; then sh "$f"; else sudo sh "$f"; fi`
-		safe["command"] = raw("sh -c " + installer.ShlexQuote(cmd))
+		safe["command"] = jsonresp.Value("sh -c " + installer.ShlexQuote(cmd))
 	}
 	return json.Marshal(redact.SanitizeWithSecrets(safe, secrets, true))
 }

@@ -18,7 +18,6 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
-	"configflow/internal/utilx"
 )
 
 // Installer routes of backend/routes/agents.py (A08): install script and
@@ -487,13 +486,13 @@ func dockerOptions(c *httpx.Ctx) installer.DockerInstallOptions {
 		AgentIP:      paramDefault(q, "agent_ip", ""),
 		DataDir:      paramDefault(q, "data_dir", "./agent_data"),
 		NetworkMode:  paramDefault(q, "network_mode", "host"),
-		EnableMihomo: utilx.StrToBool(paramDefault(q, "enable_mihomo", "true")),
-		EnableMosdns: utilx.StrToBool(paramDefault(q, "enable_mosdns", "false")),
+		EnableMihomo: strings.EqualFold(paramDefault(q, "enable_mihomo", "true"), "true"),
+		EnableMosdns: strings.EqualFold(paramDefault(q, "enable_mosdns", "false"), "true"),
 		MihomoPort:   paramInt(q, "mihomo_port", 8080).String(),
 		MosdnsPort:   paramInt(q, "mosdns_port", 8081).String(),
-		EnableOxidns: utilx.StrToBool(paramDefault(q, "enable_oxidns", "false")),
+		EnableOxidns: strings.EqualFold(paramDefault(q, "enable_oxidns", "false"), "true"),
 		OxidnsPort:   paramInt(q, "oxidns_port", 8082).String(),
-		EnableDNSHA:  utilx.StrToBool(paramDefault(q, "enable_dns_ha", "false")),
+		EnableDNSHA:  strings.EqualFold(paramDefault(q, "enable_dns_ha", "false"), "true"),
 		HAParent:     strings.TrimSpace(paramDefault(q, "ha_parent", "")),
 		HASubnet:     strings.TrimSpace(paramDefault(q, "ha_subnet", "")),
 		HAGateway:    strings.TrimSpace(paramDefault(q, "ha_gateway", "")),

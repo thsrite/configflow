@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"bytes"
+	"configflow/internal/timefmt"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,7 +30,7 @@ func (h *History) AddSample(ctx context.Context, id string, sample json.RawMessa
 		Memory    json.RawMessage `json:"memory"`
 		Disk      json.RawMessage `json:"disk"`
 		Network   json.RawMessage `json:"network"`
-	}{Timestamp: isoformat(at)}
+	}{Timestamp: timefmt.Naive(at)}
 	get := func(name string) json.RawMessage {
 		if raw, ok := components[name]; ok {
 			return raw

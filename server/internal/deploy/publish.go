@@ -144,12 +144,12 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 			if submitted {
 				status, message = "unknown", msgUploadUnknown
 			}
-			answer, err = recordUpdate(ctx, m, id, did, Update{Success: &submitted, Status: &status, Message: &message, ErrorDetails: ptr(safeFailure(err, t.Token))}, agents.RecordOptions{UploadReceipt: true})
+			answer, err = recordUpdate(ctx, m, id, did, Update{Success: &submitted, Status: &status, Message: &message, ErrorDetails: new(safeFailure(err, t.Token))}, agents.RecordOptions{UploadReceipt: true})
 			return
 		}
 		if IsPreparationFailure(err) {
 			details := safeFailure(err, t.Token)
-			answer, err = recordUpdate(ctx, m, id, did, Update{Success: ptr(false), Status: ptr("failed"), FailedStage: ptr("preparing"), Message: ptr(firstLine(details, 300)), ErrorDetails: &details}, agents.RecordOptions{})
+			answer, err = recordUpdate(ctx, m, id, did, Update{Success: new(false), Status: new("failed"), FailedStage: new("preparing"), Message: new(firstLine(details, 300)), ErrorDetails: &details}, agents.RecordOptions{})
 		}
 	}()
 	if t.ProfileID != manifest.ProfileID {
@@ -178,10 +178,10 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 		return nil, err
 	}
 	if !hasProtocol(caps.DeploymentProtocols) || caps.ServiceType != t.ServiceType {
-		return recordUpdate(ctx, m, id, did, Update{Success: ptr(false), Status: ptr("failed"), HTTPStatus: 409, Message: ptr(msgTransactionalUnsupported)}, agents.RecordOptions{})
+		return recordUpdate(ctx, m, id, did, Update{Success: new(false), Status: new("failed"), HTTPStatus: 409, Message: new(msgTransactionalUnsupported)}, agents.RecordOptions{})
 	}
 	if manifest.ReloadOnly && !hasProtocol(caps.ReloadOnlyProtocols) {
-		return recordUpdate(ctx, m, id, did, Update{Success: ptr(false), Status: ptr("failed"), HTTPStatus: 409, Message: ptr(msgReloadUpgrade)}, agents.RecordOptions{})
+		return recordUpdate(ctx, m, id, did, Update{Success: new(false), Status: new("failed"), HTTPStatus: 409, Message: new(msgReloadUpgrade)}, agents.RecordOptions{})
 	}
 	path := caps.ConfigPath
 	if path == "" {
@@ -227,7 +227,7 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 		return m.GetDeploymentModel(ctx, id, did)
 	}
 	if !manifest.FinalConfig && t.ServiceType == "mihomo" {
-		if _, err = recordUpdate(ctx, m, id, did, Update{Status: ptr("preparing"), Message: ptr(msgCheckingGeo)}, agents.RecordOptions{}); err != nil {
+		if _, err = recordUpdate(ctx, m, id, did, Update{Status: new("preparing"), Message: new(msgCheckingGeo)}, agents.RecordOptions{}); err != nil {
 			return nil, err
 		}
 		source := o.ResourceConfig
@@ -249,7 +249,7 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 			}
 		}
 		b, err = PrepareMihomoResources(ctx, b, caps, source, Progress{Phase: func(message string) {
-			_, _ = recordUpdate(ctx, m, id, did, Update{Status: ptr("preparing"), Message: &message}, agents.RecordOptions{})
+			_, _ = recordUpdate(ctx, m, id, did, Update{Status: new("preparing"), Message: &message}, agents.RecordOptions{})
 		}})
 		if err != nil {
 			return nil, err
@@ -257,7 +257,7 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 	}
 	var proof []byte
 	if t.ServiceType == "oxidns" {
-		if _, err = recordUpdate(ctx, m, id, did, Update{Status: ptr("preparing"), Message: ptr(msgCheckingOxiDNS)}, agents.RecordOptions{}); err != nil {
+		if _, err = recordUpdate(ctx, m, id, did, Update{Status: new("preparing"), Message: new(msgCheckingOxiDNS)}, agents.RecordOptions{}); err != nil {
 			return nil, err
 		}
 		v, e := ValidateBundle(id, b)
@@ -332,7 +332,7 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 	if revision == nil {
 		revision = &Revision{Null: true}
 	}
-	answer, err = recordUpdate(ctx, m, id, did, Update{Success: ptr(true), Status: ptr("uploading"), Submitted: ptr(true), Message: ptr(fmt.Sprintf(msgUploading, len(b.Manifest().Files), commaNumber(len(archive)))), SHA256: &sha, SourceSHA256: &sourceSHA, ConfigVersion: ptr(b.ConfigVersion()), ConfigRevision: revision}, agents.RecordOptions{})
+	answer, err = recordUpdate(ctx, m, id, did, Update{Success: new(true), Status: new("uploading"), Submitted: new(true), Message: new(fmt.Sprintf(msgUploading, len(b.Manifest().Files), commaNumber(len(archive)))), SHA256: &sha, SourceSHA256: &sourceSHA, ConfigVersion: new(b.ConfigVersion()), ConfigRevision: revision}, agents.RecordOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +359,6 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 	}
 	return uploadRecord(ctx, m, id, did, normalizeUpload(reply))
 }
-func ptr[T any](value T) *T { return &value }
 func withoutResources(b *Bundle) (*Bundle, error) {
 	m := b.Manifest()
 	fs, err := b.Contents()

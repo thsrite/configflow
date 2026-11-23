@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -239,7 +240,7 @@ func (s *Service) deployment(ctx context.Context, id, did string, reconcile bool
 	}
 	d, ok := a.Deployments.Get(did)
 	if !ok {
-		_ = json.Unmarshal(rawObject(struct {
+		_ = json.Unmarshal(jsonresp.Value(struct {
 			ID string `json:"deployment_id"`
 		}{did}), &d)
 	}
@@ -317,7 +318,7 @@ func (s *Service) ActivatePair(ctx context.Context, id, did string) (out *model.
 				}
 				return e
 			}
-			j.Activate = ptr(true)
+			j.Activate = new(true)
 			j.Status = "applying"
 			j.Message = msgActivating
 			return s.save(held, j)
@@ -408,7 +409,7 @@ func (s *Service) PairRules(ctx context.Context, id, method string) (out *RuleRe
 				if e != nil {
 					return e
 				}
-				j.Kind = ptr("rules")
+				j.Kind = new("rules")
 				p := &payload{Source: receipt.Source, Resource: receipt.Source, BaseURL: receipt.BaseURL, BaselineID: receipt.Manifest.DeploymentID}
 				e = s.writePayload(held, j, p, nil)
 				if e == nil {

@@ -3,6 +3,7 @@ package installation
 import (
 	"configflow/internal/gateway/host"
 	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -190,7 +191,7 @@ func matchesDetection(d map[string]json.RawMessage, spec host.Spec) bool {
 			Gateway   string `json:"gateway"`
 		} `json:"default_routes"`
 	}
-	if jsondecode.Unmarshal(raw(d), &observed) != nil || len(observed.Routes) != 1 || observed.Routes[0].Interface != spec.Interface || observed.Routes[0].Gateway != spec.UpstreamGateway {
+	if jsondecode.Unmarshal(jsonresp.Value(d), &observed) != nil || len(observed.Routes) != 1 || observed.Routes[0].Interface != spec.Interface || observed.Routes[0].Gateway != spec.UpstreamGateway {
 		return false
 	}
 	for _, i := range observed.Interfaces {

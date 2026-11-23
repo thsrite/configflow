@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -217,7 +218,7 @@ func (s *Service) reserve(ctx context.Context, members []*agent, owner, did stri
 	j.Status = "preparing"
 	j.Phase = "preparing"
 	j.Message = msgPreparing
-	j.Activate = ptr(activate)
+	j.Activate = new(activate)
 	j.Enable = enable
 	j.UpdatedAt = model.Int(s.now().Unix())
 	for _, a := range members {
@@ -289,7 +290,7 @@ func revisionRaw(r *deploy.Revision) json.RawMessage {
 	if r == nil || r.Null {
 		return json.RawMessage("null")
 	}
-	return rawObject(r.Value)
+	return jsonresp.Value(r.Value)
 }
 func publicationOptions(p *payload) (deploy.PublishOptions, error) {
 	o := deploy.PublishOptions{BaseURL: p.BaseURL}
@@ -321,7 +322,7 @@ func publicationOptions(p *payload) (deploy.PublishOptions, error) {
 // journalBytes makes explicit nulls and zero counters durable without changing
 // the stored-type codec's ordinary omission rules.
 func journalBytes(j *model.HAJournal) []byte {
-	o := parseObject(rawObject(j))
+	o := parseObject(jsonresp.Value(j))
 	if j.ActiveAgentID == nil {
 		o["active_agent_id"] = []byte("null")
 	}
@@ -329,9 +330,9 @@ func journalBytes(j *model.HAJournal) []byte {
 		o["enable"] = []byte("null")
 	}
 	if j.Handoff != nil {
-		h := parseObject(rawObject(j.Handoff))
-		h["confirmations"] = rawObject(j.Handoff.Confirmations)
-		o["handoff"] = rawObject(h)
+		h := parseObject(jsonresp.Value(j.Handoff))
+		h["confirmations"] = jsonresp.Value(j.Handoff.Confirmations)
+		o["handoff"] = jsonresp.Value(h)
 	}
-	return rawObject(o)
+	return jsonresp.Value(o)
 }

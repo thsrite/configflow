@@ -200,7 +200,7 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 			return refuse(msgInFlightIdentity)
 		}
 		st, _ := a.Deployments.Get(did)
-		j.ActiveAgentID = ptr(id)
+		j.ActiveAgentID = new(id)
 		j.Phase = "standby"
 		label := "备机"
 		if index == 1 {
@@ -243,7 +243,7 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 					return e
 				}
 			}
-			j.ActiveAgentID = ptr(id)
+			j.ActiveAgentID = new(id)
 			j.Phase = "standby"
 			if index == 1 {
 				j.Phase = "primary"
@@ -314,7 +314,7 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 					return e
 				}
 			}
-			j.ActiveAgentID = ptr(id)
+			j.ActiveAgentID = new(id)
 			j.Phase = "standby"
 			if index == 1 {
 				j.Phase = "primary"

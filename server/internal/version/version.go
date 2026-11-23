@@ -1,6 +1,7 @@
-// Package version is the port of backend/version.py: the build metadata the
-// image build injects (release version and the paired Docker Agent image). It
-// does not read the environment or contact any registry.
+// Package version holds the build metadata the image build injects (release
+// version and the paired Docker Agent image) and compares version strings:
+// Agent versions such as "1.8.61-go" and release versions such as "v2.43.1".
+// It does not read the environment or contact any registry.
 package version
 
 import "regexp"

@@ -2,6 +2,7 @@ package substore
 
 import (
 	"bytes"
+	"configflow/internal/version"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -264,7 +265,7 @@ func (d *Dependencies) Snapshot(ctx context.Context, forceCheck bool) (*Dependen
 		Running: runningVersion != "", Lifecycle: lifecycle, CurrentVersion: current, BuiltinVersion: builtinVersion,
 		OnlineUpdated: bundleDir != "" && bundleDir != d.env.BuiltinDir(), Runtime: runtimeVersion, LatestVersion: latestVersion,
 		LatestPublishedAt: published, ReleaseURL: releaseURL, ReleaseNotes: notes, CheckError: latestError,
-		HasUpdate: current != "" && VersionNewer(latestVersion, current), Updatable: builtin, Update: d.UpdateSnapshot()}, nil
+		HasUpdate: current != "" && version.NewerRelease(latestVersion, current), Updatable: builtin, Update: d.UpdateSnapshot()}, nil
 }
 
 // List returns the supported dependency statuses in UI order.
@@ -298,7 +299,7 @@ func (d *Dependencies) restartSubStore(ctx context.Context) error {
 // expected is empty); the last version seen otherwise.
 func (d *Dependencies) waitForVersion(ctx context.Context, expected string, timeout float64) (string, error) {
 	deadline := d.now() + timeout
-	version := ""
+	seen := ""
 	for d.now() < deadline {
 		if err := ctx.Err(); err != nil {
 			return "", err
@@ -307,13 +308,13 @@ func (d *Dependencies) waitForVersion(ctx context.Context, expected string, time
 		if err != nil {
 			return "", err
 		}
-		version = d.env.FetchRunningVersion(ctx, base, 3)
-		if version != "" && (expected == "" || sameVersion(VersionParts(version), VersionParts(expected))) {
-			return version, nil
+		seen = d.env.FetchRunningVersion(ctx, base, 3)
+		if seen != "" && (expected == "" || version.SameRelease(seen, expected)) {
+			return seen, nil
 		}
 		d.env.Clock.Sleep(time.Second)
 	}
-	return version, nil
+	return seen, nil
 }
 
 // downloadBundle is _download_bundle.
@@ -544,7 +545,7 @@ func (d *Dependencies) installRelease(ctx context.Context, release *Release) err
 		if err != nil {
 			return err
 		}
-		if running != "" && sameVersion(VersionParts(running), VersionParts(target)) {
+		if running != "" && version.SameRelease(running, target) {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -596,7 +597,7 @@ func (d *Dependencies) installRelease(ctx context.Context, release *Release) err
 			if err != nil {
 				return "", err
 			}
-			if restored == "" || (previousVersion != "" && !sameVersion(VersionParts(restored), VersionParts(previousVersion))) {
+			if restored == "" || (previousVersion != "" && !version.SameRelease(restored, previousVersion)) {
 				return "", &DependencyUpdateError{"原版本仍未就绪"}
 			}
 			return restored, nil
@@ -654,7 +655,7 @@ func (d *Dependencies) StartUpdate(ctx context.Context) (string, error) {
 				return nil, err
 			}
 		}
-		if current != "" && !VersionNewer(release.Version, current) {
+		if current != "" && !version.NewerRelease(release.Version, current) {
 			return nil, fmt.Errorf(msgAlreadyLatest, current)
 		}
 		return release, nil

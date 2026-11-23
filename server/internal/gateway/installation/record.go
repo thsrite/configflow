@@ -115,7 +115,6 @@ func terminal(status string) bool {
 
 var services = [...]string{"mihomo", "oxidns"}
 
-func raw(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
 func object(b json.RawMessage) map[string]json.RawMessage {
 	var v map[string]json.RawMessage
 	_ = json.Unmarshal(b, &v)

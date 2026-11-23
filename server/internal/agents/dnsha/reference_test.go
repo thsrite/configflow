@@ -2,6 +2,7 @@ package dnsha
 
 import (
 	"bytes"
+	"configflow/internal/jsonresp"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -116,7 +117,7 @@ func TestValidationAgainstPython(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !equal(json.RawMessage(row.Want), got) {
-				t.Fatalf("got %s want %s", rawObject(got), row.Want)
+				t.Fatalf("got %s want %s", jsonresp.Value(got), row.Want)
 			}
 		})
 	}

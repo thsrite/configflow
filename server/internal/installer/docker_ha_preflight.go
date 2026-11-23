@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"configflow/internal/textx"
 	"encoding/base64"
 	"encoding/json"
 	"math/big"
@@ -510,7 +511,7 @@ func preflightPortCheck(values map[string]preflightValue, proto, mode string) Pr
 			if len(columns) > 0 && (columns[0] == "udp" || columns[0] == "tcp") {
 				columns = columns[1:]
 			}
-			if len(columns) != 5 || columns[0] != state || !asciiDigits(columns[1]) || !asciiDigits(columns[2]) || !strings.HasSuffix(columns[3], ":53") {
+			if len(columns) != 5 || columns[0] != state || !textx.ASCIIDigits(columns[1]) || !textx.ASCIIDigits(columns[2]) || !strings.HasSuffix(columns[3], ":53") {
 				return preflightCheck(ident, label, "unknown", "无法识别 ss 的监听输出，尚未确认端口状态。", "重新运行页面提供的命令，不要手工改写检查项。")
 			}
 		}

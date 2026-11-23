@@ -1,6 +1,7 @@
 package installation
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -70,12 +71,12 @@ func (s *Service) Publish(ctx context.Context, id string, body json.RawMessage) 
 					if e != nil {
 						return e
 					}
-					r.Deployments[service] = raw(map[string]string{"deployment_id": did, "status": "preparing"})
+					r.Deployments[service] = jsonresp.Value(map[string]string{"deployment_id": did, "status": "preparing"})
 				}
 			}
 		}
 		r.Phase = "publishing"
-		r.Remedy = raw(nil)
+		r.Remedy = jsonresp.Value(nil)
 		r.Message = msgStart
 		return s.write(ctx, r)
 	})
@@ -125,7 +126,7 @@ func (s *Service) progress(ctx context.Context, id, service string, result json.
 				fields[key] = value
 			}
 		}
-		r.Deployments[service] = raw(fields)
+		r.Deployments[service] = jsonresp.Value(fields)
 		t := taskOf(result)
 		message := t.Message
 		if message == "" {
@@ -242,9 +243,9 @@ func (s *Service) RunPublication(ctx context.Context, id string) (err error) {
 			}
 			r.Phase = "publish_failed"
 			r.Message = truncate(message, 1200)
-			r.Remedy = raw(nil)
+			r.Remedy = jsonresp.Value(nil)
 			if prep != nil && prep.Remedy != nil {
-				r.Remedy = raw(prep.Remedy)
+				r.Remedy = jsonresp.Value(prep.Remedy)
 			}
 			return s.write(ctx, r)
 		})

@@ -3,6 +3,7 @@ package installation
 import (
 	"bytes"
 	agentcore "configflow/internal/agents"
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -70,7 +71,7 @@ func newFixture(t *testing.T) *fixture {
 	})
 	must(t, err)
 	on := onboarding.Service{Repository: r}
-	_, err = on.Execute(ctx, onboarding.Operation{ProfileID: "default", BaseURL: testOrigin, Write: true, Body: raw(map[string]any{"rule_set_ids": []string{}, "direct_rule_set_ids": []string{}, "proxy_rule_set_ids": []string{}, "local_dns": "https://192.0.2.53/dns-query"})})
+	_, err = on.Execute(ctx, onboarding.Operation{ProfileID: "default", BaseURL: testOrigin, Write: true, Body: jsonresp.Value(map[string]any{"rule_set_ids": []string{}, "direct_rule_set_ids": []string{}, "proxy_rule_set_ids": []string{}, "local_dns": "https://192.0.2.53/dns-query"})})
 	must(t, err)
 	m, err := agents.New(ctx, r)
 	must(t, err)
@@ -81,8 +82,8 @@ func newFixture(t *testing.T) *fixture {
 	}}
 	revision, err := r.ConfigRevision(ctx, "default")
 	must(t, err)
-	body := map[string]json.RawMessage{"profile_id": raw("default"), "name": raw("synthetic-linux"), "server_url": raw(testOrigin), "network": raw(testNetwork), "config_revision": raw(revision)}
-	out, err := s.Create(ctx, raw(body))
+	body := map[string]json.RawMessage{"profile_id": jsonresp.Value("default"), "name": jsonresp.Value("synthetic-linux"), "server_url": jsonresp.Value(testOrigin), "network": jsonresp.Value(testNetwork), "config_revision": jsonresp.Value(revision)}
+	out, err := s.Create(ctx, jsonresp.Value(body))
 	must(t, err)
 	id := text(object(out)["id"])
 	record, err := s.read(ctx, id)
@@ -104,7 +105,7 @@ func refusal(t *testing.T, err error, status int, message string) {
 }
 func (f *fixture) register(t *testing.T, service string) json.RawMessage {
 	t.Helper()
-	data := raw(map[string]any{"name": f.r.Name + "-" + service, "host": f.r.Network.Address, "port": f.r.Ports[service], "service_type": service, "deployment_method": "shell", "version": "1.8.60-go"})
+	data := jsonresp.Value(map[string]any{"name": f.r.Name + "-" + service, "host": f.r.Network.Address, "port": f.r.Ports[service], "service_type": service, "deployment_method": "shell", "version": "1.8.60-go"})
 	_, data, err := f.s.RegistrationProfile(f.ctx, f.r.ID, f.r.Token, data, "")
 	must(t, err)
 	out, err := f.s.Register(f.ctx, f.r.ID, f.r.Token, data, "")
@@ -117,9 +118,9 @@ func (f *fixture) enroll(t *testing.T) map[string]json.RawMessage {
 	for _, service := range services {
 		proofs[service] = f.register(t, service)
 		o := object(proofs[service])
-		proofs[service] = raw(map[string]json.RawMessage{"id": o["id"], "token": o["token"]})
+		proofs[service] = jsonresp.Value(map[string]json.RawMessage{"id": o["id"], "token": o["token"]})
 	}
-	_, err := f.s.Enroll(f.ctx, f.r.ID, f.r.Token, raw(map[string]any{"agents": proofs}))
+	_, err := f.s.Enroll(f.ctx, f.r.ID, f.r.Token, jsonresp.Value(map[string]any{"agents": proofs}))
 	must(t, err)
 	f.r, err = f.s.read(f.ctx, f.r.ID)
 	must(t, err)
@@ -159,7 +160,7 @@ func TestCreationPrivacyReuseAndValidation(t *testing.T) {
 	if st.Mode().Perm() != 0600 {
 		t.Fatal("session mode")
 	}
-	again, err := f.s.Create(f.ctx, raw(f.body))
+	again, err := f.s.Create(f.ctx, jsonresp.Value(f.body))
 	must(t, err)
 	if text(object(again)["id"]) != f.r.ID || text(object(again)["command"]) != text(object(first)["command"]) {
 		t.Fatal("lost response created a second capability")
@@ -184,10 +185,10 @@ func TestCreationPrivacyReuseAndValidation(t *testing.T) {
 		{"unknown", "unexpected", true, msgParams}, {"revision", "config_revision", 1.5, msgRevision}, {"name", "name", "bad;name", msgName}, {"auto-type", "auto_network", 1, msgAuto}, {"auto-network", "auto_network", true, msgAutoFields}, {"port", "mihomo_agent_port", 1053, msgPorts}, {"same-port", "mihomo_agent_port", 8082, msgPorts}, {"base-port", "mihomo_agent_port", 7890, ""}, {"server", "server_url", "http://localhost", msgServerLocal}, {"server-credentials", "server_url", "https://user:secret@panel.example", msgServerShape}, {"domain-type", "use_as_server_domain", nil, msgUseDomain},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			o := object(raw(f.body))
-			o[tc.key] = raw(tc.value)
+			o := object(jsonresp.Value(f.body))
+			o[tc.key] = jsonresp.Value(tc.value)
 			snapshot := recordBytes(t, f)
-			_, e := f.s.Create(f.ctx, raw(o))
+			_, e := f.s.Create(f.ctx, jsonresp.Value(o))
 			refusal(t, e, 400, tc.message)
 			if !bytes.Equal(before, document(t, f)) || !bytes.Equal(snapshot, recordBytes(t, f)) {
 				t.Fatal("invalid creation changed state")
@@ -197,8 +198,8 @@ func TestCreationPrivacyReuseAndValidation(t *testing.T) {
 	// A raw unknown member, including opaque credentials, survives an update.
 	r := object(recordBytes(t, f))
 	r["future"] = json.RawMessage(`{"private_token":"synthetic-future","unknown":false}`)
-	must(t, os.WriteFile(p, raw(r), 0600))
-	_, err = f.s.Create(f.ctx, raw(f.body))
+	must(t, os.WriteFile(p, jsonresp.Value(r), 0600))
+	_, err = f.s.Create(f.ctx, jsonresp.Value(f.body))
 	must(t, err)
 	if !bytes.Equal(object(recordBytes(t, f))["future"], r["future"]) {
 		t.Fatal("unknown session field lost")
@@ -231,7 +232,7 @@ func TestRegistrationCapabilitiesAndAtomicEnrollment(t *testing.T) {
 	foreign.ID = strings.Repeat("b", 32)
 	foreign.Token = "synthetic-foreign-capability"
 	must(t, f.s.write(f.ctx, &foreign))
-	data := raw(map[string]any{"name": r.Name + "-mihomo", "host": r.Network.Address, "port": r.Ports["mihomo"], "service_type": "mihomo", "profile_id": r.ProfileID, "deployment_method": "shell"})
+	data := jsonresp.Value(map[string]any{"name": r.Name + "-mihomo", "host": r.Network.Address, "port": r.Ports["mihomo"], "service_type": "mihomo", "profile_id": r.ProfileID, "deployment_method": "shell"})
 	_, err := f.s.Register(f.ctx, foreign.ID, foreign.Token, data, "")
 	if !errors.Is(err, agents.ErrUnauthorized) {
 		t.Fatalf("foreign capability recovered another credential: %v", err)
@@ -244,20 +245,20 @@ func TestRegistrationCapabilitiesAndAtomicEnrollment(t *testing.T) {
 	enrollment := map[string]json.RawMessage{}
 	for _, service := range services {
 		o := object(proofs[service])
-		enrollment[service] = raw(map[string]any{"id": text(o["id"]), "token": text(o["token"])})
+		enrollment[service] = jsonresp.Value(map[string]any{"id": text(o["id"]), "token": text(o["token"])})
 	}
 	bad := object(enrollment["oxidns"])
-	bad["token"] = raw("synthetic-wrong")
-	enrollment["oxidns"] = raw(bad)
+	bad["token"] = jsonresp.Value("synthetic-wrong")
+	enrollment["oxidns"] = jsonresp.Value(bad)
 	before := document(t, f)
-	_, err = f.s.Enroll(f.ctx, r.ID, r.Token, raw(map[string]any{"agents": enrollment}))
+	_, err = f.s.Enroll(f.ctx, r.ID, r.Token, jsonresp.Value(map[string]any{"agents": enrollment}))
 	refusal(t, err, 401, msgProofFailed)
 	if !bytes.Equal(before, document(t, f)) {
 		t.Fatal("invalid second proof partially rebound the first")
 	}
 	bad["token"] = object(proofs["oxidns"])["token"]
-	enrollment["oxidns"] = raw(bad)
-	_, err = f.s.Enroll(f.ctx, r.ID, r.Token, raw(map[string]any{"agents": enrollment}))
+	enrollment["oxidns"] = jsonresp.Value(bad)
+	_, err = f.s.Enroll(f.ctx, r.ID, r.Token, jsonresp.Value(map[string]any{"agents": enrollment}))
 	must(t, err)
 	a, err := f.s.agent(f.ctx, mihomoID)
 	must(t, err)
@@ -273,20 +274,20 @@ func TestRegistrationCapabilitiesAndAtomicEnrollment(t *testing.T) {
 	must(t, f.s.write(f.ctx, r))
 	_, err = f.s.Script(f.ctx, r.ID, r.Token)
 	refusal(t, err, 401, msgAuth)
-	_, err = f.s.Enroll(f.ctx, r.ID, r.Token, raw(map[string]any{"agents": enrollment}))
+	_, err = f.s.Enroll(f.ctx, r.ID, r.Token, jsonresp.Value(map[string]any{"agents": enrollment}))
 	refusal(t, err, 401, msgAuth)
 }
 func TestAutoHostPinSurvivesMissingReceipt(t *testing.T) {
 	f := newFixture(t)
-	o := object(raw(f.body))
+	o := object(jsonresp.Value(f.body))
 	delete(o, "network")
-	o["auto_network"] = raw(true)
-	o["name"] = raw("auto-linux")
-	out, err := f.s.Create(f.ctx, raw(o))
+	o["auto_network"] = jsonresp.Value(true)
+	o["name"] = jsonresp.Value("auto-linux")
+	out, err := f.s.Create(f.ctx, jsonresp.Value(o))
 	must(t, err)
 	f.r, err = f.s.read(f.ctx, text(object(out)["id"]))
 	must(t, err)
-	data := raw(map[string]any{"name": f.r.Name + "-mihomo", "host": "", "port": 8080, "service_type": "mihomo", "deployment_method": "shell"})
+	data := jsonresp.Value(map[string]any{"name": f.r.Name + "-mihomo", "host": "", "port": 8080, "service_type": "mihomo", "deployment_method": "shell"})
 	_, data, err = f.s.RegistrationProfile(f.ctx, f.r.ID, f.r.Token, data, testNetwork.Address)
 	must(t, err)
 	_, err = f.s.Register(f.ctx, f.r.ID, f.r.Token, data, "")
@@ -300,11 +301,11 @@ func TestAutoHostPinSurvivesMissingReceipt(t *testing.T) {
 	r.Registered = map[string]string{}
 	must(t, f.s.write(f.ctx, r))
 	second := object(data)
-	second["name"] = raw(f.r.Name + "-oxidns")
-	second["service_type"] = raw("oxidns")
-	second["port"] = raw(8082)
-	second["host"] = raw("192.0.2.11")
-	_, err = f.s.Register(f.ctx, f.r.ID, f.r.Token, raw(second), "")
+	second["name"] = jsonresp.Value(f.r.Name + "-oxidns")
+	second["service_type"] = jsonresp.Value("oxidns")
+	second["port"] = jsonresp.Value(8082)
+	second["host"] = jsonresp.Value("192.0.2.11")
+	_, err = f.s.Register(f.ctx, f.r.ID, f.r.Token, jsonresp.Value(second), "")
 	refusal(t, err, 409, msgHostPinned)
 }
 
@@ -348,7 +349,7 @@ func TestNetworkUsesRealOwnerAndNeverApplies(t *testing.T) {
 			t.Error("wrong raw host request")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(raw(map[string]any{"success": true, "supported": true, "managed": map[string]bool{"active": false}, "detection": detection(testNetwork)}))
+		_, _ = w.Write(jsonresp.Value(map[string]any{"success": true, "supported": true, "managed": map[string]bool{"active": false}, "detection": detection(testNetwork)}))
 	}))
 	defer srv.Close()
 	f.s.Manager.SetClient(&routeClient{dest: map[string]string{testNetwork.Address + ":8080": srv.URL}, inspect: func(r agents.Request) {
@@ -356,7 +357,7 @@ func TestNetworkUsesRealOwnerAndNeverApplies(t *testing.T) {
 			t.Error("production timeout/transport options changed", r.Timeout)
 		}
 	}})
-	out, err := f.s.UpdateNetwork(f.ctx, f.r.ID, raw(map[string]bool{"auto_network": true}))
+	out, err := f.s.UpdateNetwork(f.ctx, f.r.ID, jsonresp.Value(map[string]bool{"auto_network": true}))
 	must(t, err)
 	if !flag(object(out)["auto_network"]) || calls != 1 || !bytes.Equal(before, document(t, f)) {
 		t.Fatal("network confirmation changed config or used extra probe")
@@ -364,7 +365,7 @@ func TestNetworkUsesRealOwnerAndNeverApplies(t *testing.T) {
 	changed := testNetwork
 	changed.Interface = "eth1"
 	recordBefore := recordBytes(t, f)
-	_, err = f.s.UpdateNetwork(f.ctx, f.r.ID, raw(map[string]any{"network": changed}))
+	_, err = f.s.UpdateNetwork(f.ctx, f.r.ID, jsonresp.Value(map[string]any{"network": changed}))
 	refusal(t, err, 409, msgNetworkActual)
 	if !bytes.Equal(recordBefore, recordBytes(t, f)) {
 		t.Fatal("failed detection wrote")
@@ -383,7 +384,7 @@ func TestCrossAgentCredentialsRemovedBeforeSessionProjection(t *testing.T) {
 		return nil
 	})
 	must(t, err)
-	must(t, f.s.progress(f.ctx, f.r.ID, "mihomo", raw(map[string]any{"deployment_id": "synthetic-deployment", "status": "failed", "message": "failure synthetic-hidden-credential", "error": "encoded synthetic%2Dhidden%2Dcredential"})))
+	must(t, f.s.progress(f.ctx, f.r.ID, "mihomo", jsonresp.Value(map[string]any{"deployment_id": "synthetic-deployment", "status": "failed", "message": "failure synthetic-hidden-credential", "error": "encoded synthetic%2Dhidden%2Dcredential"})))
 	b := recordBytes(t, f)
 	view, err := f.s.Get(f.ctx, f.r.ID)
 	must(t, err)
@@ -406,18 +407,21 @@ func TestRuntimeWriteOwnersShutdownAndDisconnect(t *testing.T) {
 			request, cancel := context.WithCancel(f.ctx)
 			defer cancel()
 			bound := runtime.BindRequest(request)
-			body := object(raw(f.body))
-			body["name"] = raw("runtime-linux")
+			body := object(jsonresp.Value(f.body))
+			body["name"] = jsonresp.Value("runtime-linux")
 			before := document(t, f)
 			recordsBefore, err := os.ReadDir(f.s.root())
 			must(t, err)
 			if stage == "shutdown-before" {
 				runtime.Shutdown(context.Background())
-				_, err = f.s.Create(bound, raw(body))
+				_, err = f.s.Create(bound, jsonresp.Value(body))
 				if !errors.Is(err, context.Canceled) {
 					t.Fatal("shutdown creation", err)
 				}
-				for _, write := range []func() error{func() error { _, e := f.s.Register(bound, f.r.ID, f.r.Token, raw(map[string]any{}), ""); return e }, func() error { _, e := f.s.Enroll(bound, f.r.ID, f.r.Token, raw(map[string]any{})); return e }, func() error { _, e := f.s.UpdateNetwork(bound, f.r.ID, raw(map[string]any{})); return e }, func() error { _, e := f.s.Publish(bound, f.r.ID, raw(map[string]any{})); return e }, func() error { return f.s.RunPublication(bound, f.r.ID) }} {
+				for _, write := range []func() error{func() error {
+					_, e := f.s.Register(bound, f.r.ID, f.r.Token, jsonresp.Value(map[string]any{}), "")
+					return e
+				}, func() error { _, e := f.s.Enroll(bound, f.r.ID, f.r.Token, jsonresp.Value(map[string]any{})); return e }, func() error { _, e := f.s.UpdateNetwork(bound, f.r.ID, jsonresp.Value(map[string]any{})); return e }, func() error { _, e := f.s.Publish(bound, f.r.ID, jsonresp.Value(map[string]any{})); return e }, func() error { return f.s.RunPublication(bound, f.r.ID) }} {
 					if e := write(); !errors.Is(e, context.Canceled) {
 						t.Fatal("shutdown owner", e)
 					}
@@ -432,7 +436,7 @@ func TestRuntimeWriteOwnersShutdownAndDisconnect(t *testing.T) {
 					}
 					return original(o)
 				}
-				_, err = f.s.Create(bound, raw(body))
+				_, err = f.s.Create(bound, jsonresp.Value(body))
 				if strings.HasPrefix(stage, "shutdown") {
 					if !errors.Is(err, context.Canceled) {
 						t.Fatal("shutdown render", err)
@@ -463,7 +467,7 @@ func TestSessionWaitRechecksShutdown(t *testing.T) {
 	must(t, err)
 	done := make(chan error, 1)
 	go func() {
-		_, e := f.s.Enroll(bound, f.r.ID, f.r.Token, raw(map[string]any{"agents": map[string]any{"mihomo": map[string]string{}, "oxidns": map[string]string{}}}))
+		_, e := f.s.Enroll(bound, f.r.ID, f.r.Token, jsonresp.Value(map[string]any{"agents": map[string]any{"mihomo": map[string]string{}, "oxidns": map[string]string{}}}))
 		done <- e
 	}()
 	rt.Shutdown(context.Background())
@@ -488,7 +492,7 @@ func TestRecordUnknownFieldsAndMalformedOwnership(t *testing.T) {
 			o[k] = v
 		}
 		p, _ := f.s.path(f.r.ID)
-		must(t, os.WriteFile(p, raw(o), 0600))
+		must(t, os.WriteFile(p, jsonresp.Value(o), 0600))
 		_, err := f.s.Get(f.ctx, f.r.ID)
 		refusal(t, err, 409, msgCorrupt)
 	}
@@ -525,7 +529,7 @@ func (f *fixture) prepareRun(t *testing.T) {
 	t.Helper()
 	f.r.Phase = "publishing"
 	for _, service := range services {
-		f.r.Deployments[service] = raw(map[string]string{"deployment_id": "job-" + service, "status": "preparing"})
+		f.r.Deployments[service] = jsonresp.Value(map[string]string{"deployment_id": "job-" + service, "status": "preparing"})
 	}
 	must(t, f.s.write(f.ctx, f.r))
 }
@@ -594,7 +598,7 @@ func TestRealOrderedPublicationFailureAndResume(t *testing.T) {
 				if r.Phase != "publish_failed" || !terminal(taskOf(r.Deployments[map[bool]string{true: "mihomo", false: "oxidns"}[scenario == "mihomo-failed"]]).Status) {
 					t.Fatal("failure checkpoint missing")
 				}
-				_, e = f.s.Publish(f.ctx, r.ID, raw(map[string]any{}))
+				_, e = f.s.Publish(f.ctx, r.ID, jsonresp.Value(map[string]any{}))
 				refusal(t, e, 409, msgRetry)
 			} else {
 				if r.Phase != "published" || r.Message != msgPublished {
@@ -622,7 +626,7 @@ func TestRealOrderedPublicationFailureAndResume(t *testing.T) {
 				runtime.Start(context.Background())
 				defer runtime.Shutdown(context.Background())
 				f.s.Spawner = runtime
-				_, e = f.s.Publish(runtime.BindRequest(f.ctx), r.ID, raw(map[string]bool{"retry_failed": true}))
+				_, e = f.s.Publish(runtime.BindRequest(f.ctx), r.ID, jsonresp.Value(map[string]bool{"retry_failed": true}))
 				must(t, e)
 				waitCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
@@ -650,7 +654,7 @@ func TestPublishLeaseAndRevisionGuard(t *testing.T) {
 		t.Fatal("lease busy")
 	}
 	before := recordBytes(t, f)
-	_, err := f.s.Publish(f.ctx, f.r.ID, raw(map[string]any{}))
+	_, err := f.s.Publish(f.ctx, f.r.ID, jsonresp.Value(map[string]any{}))
 	release()
 	must(t, err)
 	if !bytes.Equal(before, recordBytes(t, f)) {
@@ -661,7 +665,7 @@ func TestPublishLeaseAndRevisionGuard(t *testing.T) {
 		return nil
 	})
 	must(t, err)
-	_, err = f.s.Publish(f.ctx, f.r.ID, raw(map[string]any{}))
+	_, err = f.s.Publish(f.ctx, f.r.ID, jsonresp.Value(map[string]any{}))
 	refusal(t, err, 409, msgConfigChanged)
 }
 func TestReprepareReusesInstalledPairAndKeepsScript(t *testing.T) {
@@ -675,8 +679,8 @@ func TestReprepareReusesInstalledPairAndKeepsScript(t *testing.T) {
 	must(t, err)
 	revision, err := f.s.Repository.ConfigRevision(f.ctx, "default")
 	must(t, err)
-	f.body["config_revision"] = raw(revision)
-	out, err := f.s.Create(f.ctx, raw(f.body))
+	f.body["config_revision"] = jsonresp.Value(revision)
+	out, err := f.s.Create(f.ctx, jsonresp.Value(f.body))
 	must(t, err)
 	if text(object(out)["id"]) != old.ID {
 		t.Fatal("new revision required reinstall")
@@ -718,12 +722,12 @@ func TestReviewedA21ValidationClassAndTwoLevelRedaction(t *testing.T) {
 			f := newFixture(t)
 			_, err := f.s.Repository.UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {
 				if kind == "oxidns" {
-					o := object(raw(p.OxiDNS))
+					o := object(jsonresp.Value(p.OxiDNS))
 					if o == nil {
 						o = map[string]json.RawMessage{}
 					}
-					o["remote_dns"] = raw("[")
-					return p.SetJSON("oxidns", raw(o))
+					o["remote_dns"] = jsonresp.Value("[")
+					return p.SetJSON("oxidns", jsonresp.Value(o))
 				}
 				p.Mihomo.CustomConfig = "dns: ["
 				return nil
@@ -731,10 +735,10 @@ func TestReviewedA21ValidationClassAndTwoLevelRedaction(t *testing.T) {
 			must(t, err)
 			revision, err := f.s.Repository.ConfigRevision(f.ctx, "default")
 			must(t, err)
-			f.body["config_revision"] = raw(revision)
+			f.body["config_revision"] = jsonresp.Value(revision)
 			before := document(t, f)
 			checkpoint := recordBytes(t, f)
-			_, err = f.s.Create(f.ctx, raw(f.body))
+			_, err = f.s.Create(f.ctx, jsonresp.Value(f.body))
 			refusal(t, err, 400, "")
 			if !bytes.Equal(before, document(t, f)) || !bytes.Equal(checkpoint, recordBytes(t, f)) {
 				t.Fatal("invalid saved draft wrote")
@@ -790,7 +794,7 @@ func TestPublicationWorkerKeepsRuntimeAfterDisconnectAndShutdown(t *testing.T) {
 					})
 				}
 			}
-			_, err := f.s.Publish(bound, f.r.ID, raw(map[string]any{}))
+			_, err := f.s.Publish(bound, f.r.ID, jsonresp.Value(map[string]any{}))
 			must(t, err)
 			select {
 			case <-entered:
@@ -827,8 +831,8 @@ func TestFullTUNTakeoverNeedsDistinctCapability(t *testing.T) {
 	snapshot, _, err := f.s.Repository.PublishConfig(f.ctx, "default", true)
 	must(t, err)
 	var doc onboarding.Document
-	must(t, json.Unmarshal(raw(snapshot), &doc))
-	form, err := onboarding.ParseRequest(raw(map[string]any{"rule_set_ids": []string{}, "direct_rule_set_ids": []string{}, "proxy_rule_set_ids": []string{}, "local_dns": "https://192.0.2.53/dns-query"}))
+	must(t, json.Unmarshal(jsonresp.Value(snapshot), &doc))
+	form, err := onboarding.ParseRequest(jsonresp.Value(map[string]any{"rule_set_ids": []string{}, "direct_rule_set_ids": []string{}, "proxy_rule_set_ids": []string{}, "local_dns": "https://192.0.2.53/dns-query"}))
 	must(t, err)
 	candidate, report, err := onboarding.Prepare(f.ctx, doc, form, onboarding.Options{BaseURL: testOrigin, Takeover: "full_tun"})
 	must(t, err)
@@ -842,8 +846,8 @@ func TestFullTUNTakeoverNeedsDistinctCapability(t *testing.T) {
 		return p.SetJSON("oxidns", candidate["oxidns"])
 	})
 	must(t, err)
-	f.body["config_revision"] = raw(revision)
-	out, err := f.s.Create(f.ctx, raw(f.body))
+	f.body["config_revision"] = jsonresp.Value(revision)
+	out, err := f.s.Create(f.ctx, jsonresp.Value(f.body))
 	must(t, err)
 	id := text(object(out)["id"])
 	if id == f.r.ID || text(object(out)["takeover"]) != "full_tun" {

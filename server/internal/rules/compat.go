@@ -5,6 +5,7 @@ package rules
 // OxiDNS and this package all use one implementation.
 
 import (
+	"configflow/internal/textx"
 	"errors"
 	"strconv"
 	"strings"
@@ -61,7 +62,7 @@ func ValidPattern(value string) bool {
 }
 
 func validClassicalDomain(value string) bool {
-	if len(value) > 253 || !ValidPattern(value) || asciiDigits(value[strings.LastIndex(value, ".")+1:]) {
+	if len(value) > 253 || !ValidPattern(value) || textx.ASCIIDigits(value[strings.LastIndex(value, ".")+1:]) {
 		return false
 	}
 	for _, label := range strings.Split(value, ".") {

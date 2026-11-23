@@ -5,6 +5,8 @@ package agents
 // test_idle_rounds.py and the pure cases of test_agent_failure_details.py.
 
 import (
+	"configflow/internal/timefmt"
+	"configflow/internal/version"
 	"context"
 	"encoding/json"
 	"os"
@@ -25,7 +27,7 @@ func TestEventHistoryIsBoundedAndAdjacentUnchangedProgressDoesNotDuplicate(t *te
 	var events []model.OperationEvent
 	start := time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC)
 	for index := 0; index < 120; index++ {
-		at := isoformat(start.Add(time.Duration(index)*time.Second), true)
+		at := timefmt.Offset(start.Add(time.Duration(index) * time.Second))
 		message := "规则文件 " + strconv.Itoa(index) + "/120"
 		events = AppendOperationEvent(events, "preparing", message, at, nil)
 		events = AppendOperationEvent(events, "preparing", message, at, nil)
@@ -308,9 +310,9 @@ func TestCompareVersions(t *testing.T) {
 		want int
 	}{
 		{"1.0", "1.0.0", 0}, {"1.10.0", "1.9.9", 1}, {"1.1.0-go", "1.1.0", 0}, {"1.a", "1.b", -1},
-		{"1.8.61-go", "1.8.7-go", 1}, {" 2", "1", 1}, {"1_0", "9", 1}, {"", "0", -1},
+		{"1.8.61-go", "1.8.7-go", 1}, {" 2", "1", -1}, {"1_0", "9", -1}, {"", "0", -1},
 	} {
-		if got := CompareVersions(c.a, c.b); got != c.want {
+		if got := version.CompareAgent(c.a, c.b); got != c.want {
 			t.Fatalf("%q vs %q = %d", c.a, c.b, got)
 		}
 	}

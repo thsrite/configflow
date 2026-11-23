@@ -252,7 +252,7 @@ func (s *Service) run(ctx context.Context, target, source *agent, b *model.DNSFo
 		return e
 	}
 	childID := "dns-" + deploy.CanonicalDigest(raw)[:48]
-	if _, _, e = s.saveState(ctx, target.ID, "preparing", msgReading, statePatch{sourceID: &sourceID, targetID: &childID, attempt: &attempt, retry: ptr(false)}, nil); e != nil {
+	if _, _, e = s.saveState(ctx, target.ID, "preparing", msgReading, statePatch{sourceID: &sourceID, targetID: &childID, attempt: &attempt, retry: new(false)}, nil); e != nil {
 		return e
 	}
 	base := target.AppliedContent
@@ -465,7 +465,7 @@ func (s *Service) finalize(ctx context.Context, target *agent, st model.DNSFollo
 	if warning != "" {
 		message += "；" + warning
 	}
-	_, _, e = s.saveState(ctx, target.ID, "succeeded", message, statePatch{draftSynced: ptr(warning == "")}, nil)
+	_, _, e = s.saveState(ctx, target.ID, "succeeded", message, statePatch{draftSynced: new(warning == "")}, nil)
 	return e
 }
 func (s *Service) resume(ctx context.Context, target *agent) error {

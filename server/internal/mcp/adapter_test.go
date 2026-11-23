@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -110,6 +111,8 @@ func TestPythonToolAdapterContracts(t *testing.T) {
 			}
 			gotCalls, _ := json.Marshal(calls)
 			wantCalls, _ := json.Marshal(tc.Calls)
+			// O17: booleans travel as JSON text, not Python's str(True).
+			wantCalls = bytes.ReplaceAll(bytes.ReplaceAll(wantCalls, []byte(`:"True"`), []byte(`:"true"`)), []byte(`:"False"`), []byte(`:"false"`))
 			// Query map iteration is irrelevant; compare decoded values and actual body absence above.
 			if !nativeEqual(gotCalls, wantCalls) {
 				t.Errorf("calls got %s want %s", gotCalls, wantCalls)

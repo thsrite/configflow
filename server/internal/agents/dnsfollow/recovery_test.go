@@ -124,7 +124,7 @@ func TestInterruptedPreparationWithoutJobFailsSafely(t *testing.T) {
 	err := f.s.update(f.ctx, func(_ context.Context, rows []*agent) error {
 		a := selected(rows, "target")
 		a.DNSFollowState.Status = "preparing"
-		a.DNSFollowState.TargetDeploymentID = ptr("orphan-child")
+		a.DNSFollowState.TargetDeploymentID = new("orphan-child")
 		return nil
 	})
 	if err != nil {

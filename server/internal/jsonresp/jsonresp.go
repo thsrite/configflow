@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
+	"configflow/internal/logx"
 )
 
 // Encode writes JSON without HTML escaping or a trailing newline. Legacy
@@ -44,4 +46,20 @@ func EncodeUTF8(value any) ([]byte, error) {
 		out = append(out, data[i])
 	}
 	return out, nil
+}
+
+var logger = logx.Get("jsonresp")
+
+// Value returns the encoding/json encoding of v, for in-memory values whose
+// encoding cannot fail: typed structs, maps and slices of strings, integers,
+// booleans and valid json.RawMessage. A failure is a programming error: it is
+// logged (with the error, never the value) and Value returns nil, which every
+// caller reads as an absent member.
+func Value(v any) json.RawMessage {
+	data, err := json.Marshal(v)
+	if err != nil {
+		logger.Errorf("JSON 编码失败（%T）：%v", v, err)
+		return nil
+	}
+	return data
 }

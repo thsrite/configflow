@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -222,7 +223,7 @@ func (s *Service) preview(ctx context.Context, a, b *agent, n normalized) error 
 		if i == 1 {
 			other, role = a, "secondary"
 		}
-		o, e := s.call(ctx, m, "POST", "/preview", rawObject(spec(n.intent.VIP, int(n.intent.VRID), role, m, other)), 30)
+		o, e := s.call(ctx, m, "POST", "/preview", jsonresp.Value(spec(n.intent.VIP, int(n.intent.VRID), role, m, other)), 30)
 		if e != nil {
 			return e
 		}

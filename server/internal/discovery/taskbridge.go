@@ -64,7 +64,7 @@ func domainRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Tas
 		var due *time.Time
 		if e.LastRunAt != nil {
 			if last, ok := taskstatus.ParseTimestamp(*e.LastRunAt); ok && p.autoProbe {
-				due = ptr(last.Add(600 * time.Second))
+				due = new(last.Add(600 * time.Second))
 			}
 		}
 		hint := ""
@@ -79,7 +79,7 @@ func domainRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Tas
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, &tasks.Task{Key: key, Category: tasks.SlotDomains, Name: msgAutoName, ResourceID: p.id, ProfileID: ptr(p.id), ProfileName: ptr(name), Enabled: p.autoProbe, IntervalSeconds: json.RawMessage("600"), CanRun: p.autoProbe, RunHint: hint, Running: tasks.IsBackground(key), NextRunAt: tasks.Timestamp(due), Link: ptr("/domain-discovery"), HistoryData: history})
+		out = append(out, &tasks.Task{Key: key, Category: tasks.SlotDomains, Name: msgAutoName, ResourceID: p.id, ProfileID: new(p.id), ProfileName: new(name), Enabled: p.autoProbe, IntervalSeconds: json.RawMessage("600"), CanRun: p.autoProbe, RunHint: hint, Running: tasks.IsBackground(key), NextRunAt: tasks.Timestamp(due), Link: new("/domain-discovery"), HistoryData: history})
 	}
 	return out, nil
 }

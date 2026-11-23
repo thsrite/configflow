@@ -14,6 +14,7 @@
 package netipx
 
 import (
+	"configflow/internal/textx"
 	"errors"
 	"math/bits"
 	"net/netip"
@@ -29,18 +30,6 @@ func ParseAddr4(text string) (netip.Addr, bool) {
 		return netip.Addr{}, false
 	}
 	return addr, true
-}
-
-func asciiDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 // maskBits is the prefix length of an IPv4 netmask (255.255.0.0) or hostmask
@@ -74,7 +63,7 @@ func ParseNetwork(text string, strict bool) (netip.Prefix, bool) {
 	}
 	n := addr.BitLen()
 	if hasMask {
-		if asciiDigits(maskText) {
+		if textx.ASCIIDigits(maskText) {
 			v, err := strconv.Atoi(maskText)
 			if err != nil || v > addr.BitLen() {
 				return netip.Prefix{}, false

@@ -1,6 +1,7 @@
 package substore
 
 import (
+	"configflow/internal/timefmt"
 	"context"
 	"errors"
 	"fmt"
@@ -47,7 +48,7 @@ type FetchResult struct {
 
 func newFetchResult(text, source string, traffic *Traffic, fetchedAt string, clock Clock) *FetchResult {
 	if fetchedAt == "" {
-		fetchedAt = isoFormat(clock.Now())
+		fetchedAt = timefmt.UTC(clock.Now())
 	}
 	return &FetchResult{Text: text, Source: source, Traffic: traffic, FetchedAt: fetchedAt}
 }

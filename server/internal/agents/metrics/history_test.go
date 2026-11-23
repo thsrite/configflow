@@ -6,6 +6,7 @@ package metrics
 
 import (
 	"bytes"
+	"configflow/internal/timefmt"
 	"context"
 	"encoding/json"
 	"errors"
@@ -332,7 +333,7 @@ func TestFailedAppendKeepsPointsAndRewritesNextTime(t *testing.T) {
 
 func pointAt(at time.Time, cpu any) map[string]any {
 	return map[string]any{
-		"timestamp": isoformat(at),
+		"timestamp": timefmt.Naive(at),
 		"cpu":       map[string]any{"usage_percent": cpu},
 		"memory":    map[string]any{},
 		"disk":      map[string]any{},
@@ -391,7 +392,7 @@ func TestOldJSONFilesMigrateOnceAndDeletedAgentsAreRemoved(t *testing.T) {
 	var recent []any
 	for _, m := range []int{3, 2, 1} {
 		recent = append(recent, map[string]any{
-			"timestamp": isoformat(start.Add(-time.Duration(m) * time.Minute)),
+			"timestamp": timefmt.Naive(start.Add(-time.Duration(m) * time.Minute)),
 			"cpu":       map[string]any{"usage_percent": 1.5, "cores": 4},
 			"memory":    map[string]any{"used_percent": 33.3},
 			"disk":      map[string]any{},
@@ -399,7 +400,7 @@ func TestOldJSONFilesMigrateOnceAndDeletedAgentsAreRemoved(t *testing.T) {
 		})
 	}
 	expired := map[string]any{
-		"timestamp": isoformat(start.Add(-25 * time.Hour)),
+		"timestamp": timefmt.Naive(start.Add(-25 * time.Hour)),
 		"cpu":       map[string]any{"usage_percent": 1.5, "cores": 4},
 		"memory":    map[string]any{"used_percent": 33.3},
 		"disk":      map[string]any{},
@@ -408,7 +409,7 @@ func TestOldJSONFilesMigrateOnceAndDeletedAgentsAreRemoved(t *testing.T) {
 	for _, agent := range []string{"a1", "gone"} {
 		text, _ := json.MarshalIndent(map[string]any{
 			"agent_id":   agent,
-			"updated_at": isoformat(start),
+			"updated_at": timefmt.Naive(start),
 			"metrics":    append([]any{expired}, recent...),
 		}, "", "  ")
 		os.WriteFile(filepath.Join(dir, agent+"_metrics.json"), text, 0o644)

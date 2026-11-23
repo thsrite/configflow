@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"net/url"
 	"testing"
 )
@@ -16,7 +17,7 @@ func TestRawKeepalivedSpecProtocol(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := `{"safety_version":1,"vip":"192.0.2.53","vrid":53,"priority":150,"self_ip":"192.0.2.20","peer_ip":"192.0.2.21"}`
-	payload := rawObject(spec(vip, 53, "primary", primary, secondary))
+	payload := jsonresp.Value(spec(vip, 53, "primary", primary, secondary))
 	if _, err = f.s.call(f.ctx, primary, "POST", "/preview", payload, 30); err != nil {
 		t.Fatal(err)
 	}

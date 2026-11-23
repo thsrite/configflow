@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsonresp"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -27,11 +28,11 @@ func scalar(n *yamlx.Node) string {
 func boolean(n *yamlx.Node) bool { return n != nil && n.ShortTag() == "!!bool" && n.Value == "true" }
 func jsonNode(n *yamlx.Node) json.RawMessage {
 	if n == nil {
-		return raw(nil)
+		return jsonresp.Value(nil)
 	}
 	b, e := yamlx.ToJSON(n)
 	if e != nil {
-		return raw(nil)
+		return jsonresp.Value(nil)
 	}
 	return b
 }
@@ -40,9 +41,9 @@ func jsonNode(n *yamlx.Node) json.RawMessage {
 // are masked before passing the range to the R11 router inspector.
 func ReadConfiguration(config Document) (Configuration, *yamlx.Node) {
 	fallback := func() (Configuration, *yamlx.Node) {
-		return Configuration{IPv6: raw(nil), DNSIPv6: raw(nil), Errors: []string{msgParse}, Source: "saved_draft"}, yamlx.Map()
+		return Configuration{IPv6: jsonresp.Value(nil), DNSIPv6: jsonresp.Value(nil), Errors: []string{msgParse}, Source: "saved_draft"}, yamlx.Map()
 	}
-	c := Configuration{IPv6: raw(true), DNSIPv6: raw(false), Errors: []string{}, Source: "saved_draft"}
+	c := Configuration{IPv6: jsonresp.Value(true), DNSIPv6: jsonresp.Value(false), Errors: []string{}, Source: "saved_draft"}
 	var source string
 	value := object(config["mihomo"])["custom_config"]
 	if len(value) > 0 && string(value) != "null" {
@@ -66,8 +67,8 @@ func ReadConfiguration(config Document) (Configuration, *yamlx.Node) {
 	}
 	top := field(doc, "ipv6")
 	v6 := field(dns, "ipv6")
-	c.IPv6Explicit = ptr(top != nil)
-	c.DNSIPv6Explicit = ptr(v6 != nil)
+	c.IPv6Explicit = new(top != nil)
+	c.DNSIPv6Explicit = new(v6 != nil)
 	if top != nil {
 		c.IPv6 = jsonNode(top)
 		if top.ShortTag() != "!!bool" {
@@ -92,7 +93,7 @@ func ReadConfiguration(config Document) (Configuration, *yamlx.Node) {
 		if prefix.Bits() < 7 || !prefix.Addr().IsPrivate() {
 			c.Errors = append(c.Errors, msgULA)
 		}
-		c.FakeIPv6Range = raw(prefix.String())
+		c.FakeIPv6Range = jsonresp.Value(prefix.String())
 	}
 	c.TUNEnabled = boolean(field(doc, "tun", "enable"))
 	c.FakeIPv6Route = yes(c.IPv6) && boolean(field(dns, "enable")) && scalar(field(dns, "enhanced-mode")) == "fake-ip" && hasFake
@@ -124,7 +125,7 @@ func ProbeTargets(config Document, doc *yamlx.Node) []ProbeTarget {
 				candidates = append(candidates, object(jsonNode(n)))
 			}
 		} else {
-			combined := object(raw(node))
+			combined := object(jsonresp.Value(node))
 			for k, v := range object(node["params"]) {
 				combined[k] = v
 			}
@@ -167,7 +168,7 @@ func ProbeTargets(config Document, doc *yamlx.Node) []ProbeTarget {
 	return out
 }
 func prepareConfig(config Document) Document {
-	next := object(raw(config))
+	next := object(jsonresp.Value(config))
 	for _, key := range []string{"agents", "backup", "system_config", "created_at", "updated_at", "_revision"} {
 		delete(next, key)
 	}

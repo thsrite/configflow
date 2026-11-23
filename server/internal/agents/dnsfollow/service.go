@@ -142,7 +142,7 @@ func (s *Service) Configure(ctx context.Context, id string, body json.RawMessage
 				return err
 			}
 			if source.LatestDeployment != nil && source.LatestDeployment.DeploymentID != "" {
-				binding.AfterDeploymentID = ptr(source.LatestDeployment.DeploymentID)
+				binding.AfterDeploymentID = new(source.LatestDeployment.DeploymentID)
 			}
 			return s.update(ctx, func(_ context.Context, list []*agent) error {
 				current := selected(list, id)
@@ -243,8 +243,8 @@ func (s *Service) Retry(ctx context.Context, id string) (out RetryView, err erro
 				}
 				a.DNSFollowState.Status = "waiting"
 				a.DNSFollowState.SourceDeploymentID = previous.SourceDeploymentID
-				a.DNSFollowState.RetryRequested = ptr(true)
-				a.DNSFollowState.Attempt = ptr(value(previous.Attempt) + 1)
+				a.DNSFollowState.RetryRequested = new(true)
+				a.DNSFollowState.Attempt = new(value(previous.Attempt) + 1)
 				a.DNSFollowState.UpdatedAt = timestamp(s.now())
 				return nil
 			})

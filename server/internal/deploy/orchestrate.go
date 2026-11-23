@@ -8,6 +8,7 @@ import (
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
 	"configflow/internal/repo"
+	"configflow/internal/version"
 	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
@@ -94,7 +95,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 		var changed *PreviewChanged
 		if errors.As(err, &changed) {
 			if owns {
-				_, e := recordUpdate(ctx, m, id, did, Update{Success: ptr(false), Status: ptr("failed"), Message: ptr(err.Error())}, agents.RecordOptions{})
+				_, e := recordUpdate(ctx, m, id, did, Update{Success: new(false), Status: new("failed"), Message: new(err.Error())}, agents.RecordOptions{})
 				if e != nil {
 					return Response{Err: e}
 				}
@@ -123,7 +124,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 			}
 		}
 		if did != "" {
-			record, e := recordUpdate(ctx, m, id, did, Update{Success: ptr(false), Status: ptr("failed"), FailedStage: ptr("preparing"), Message: &message, ErrorDetails: &details}, agents.RecordOptions{})
+			record, e := recordUpdate(ctx, m, id, did, Update{Success: new(false), Status: new("failed"), FailedStage: new("preparing"), Message: &message, ErrorDetails: &details}, agents.RecordOptions{})
 			if e != nil {
 				return Response{Err: e}
 			}
@@ -250,7 +251,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 				return fail(preparation(msgRestartInvalid))
 			}
 		}
-		self := t.Version != "" && agents.CompareVersions(t.Version, "1.1.0-go") >= 0
+		self := t.Version != "" && version.CompareAgent(t.Version, "1.1.0-go") >= 0
 		in := PushInput{ConfigContent: content, Publish: PublishOptions{ConfigRevision: revision}, RestartAfterUpdate: restart && self}
 		if guarded {
 			in.ExpectedProfileID = &t.ProfileID
@@ -332,13 +333,13 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 	owns = true
 	defer m.FinishDeploymentPreparation(id, did)
 	if guarded && (reserved.ProfileID != t.ProfileID || reserved.ServiceType != t.ServiceType) {
-		answer, e := recordUpdate(ctx, m, id, did, Update{Success: ptr(false), Status: ptr("failed"), HTTPStatus: 409, Message: ptr(msgBindingChanged)}, agents.RecordOptions{})
+		answer, e := recordUpdate(ctx, m, id, did, Update{Success: new(false), Status: new("failed"), HTTPStatus: 409, Message: new(msgBindingChanged)}, agents.RecordOptions{})
 		if e != nil {
 			return fail(e)
 		}
 		return Response{Status: 409, Body: PublicDeployment(answer)}
 	}
-	if _, err = recordUpdate(ctx, m, id, did, Update{Status: ptr("preparing"), Message: ptr(msgPreparing)}, agents.RecordOptions{}); err != nil {
+	if _, err = recordUpdate(ctx, m, id, did, Update{Status: new("preparing"), Message: new(msgPreparing)}, agents.RecordOptions{}); err != nil {
 		return fail(err)
 	}
 	var prepared *Prepared
@@ -365,7 +366,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 			return fail(err)
 		}
 	}
-	if _, err = recordUpdate(ctx, m, id, did, Update{Status: ptr("preparing"), Message: ptr(msgFilesReady)}, agents.RecordOptions{}); err != nil {
+	if _, err = recordUpdate(ctx, m, id, did, Update{Status: new("preparing"), Message: new(msgFilesReady)}, agents.RecordOptions{}); err != nil {
 		return fail(err)
 	}
 	answer, err := Push(ctx, m, id, PushInput{ConfigContent: prepared.ConfigContent, Bundle: prepared.Bundle, Publish: PublishOptions{Activate: activate, ConfigRevision: revision, BaseURL: base, ResourceConfig: source, SourceSnapshot: source}})

@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"errors"
 	"strings"
@@ -40,8 +41,8 @@ func TestStopSignalDuringElectionDoesNotFailAppliedPair(t *testing.T) {
 			body := parseObject(reply.Body)
 			runtime := body.obj("runtime")
 			runtime["vip_present"] = []byte("false")
-			body["runtime"] = rawObject(runtime)
-			reply.Body = rawObject(body)
+			body["runtime"] = jsonresp.Value(runtime)
+			reply.Body = jsonresp.Value(body)
 			once.Do(func() { close(arrived) })
 		}
 		return nil

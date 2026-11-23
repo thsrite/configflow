@@ -226,7 +226,7 @@ func TestNativeRegistryRetainsHeartbeatOverlay(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = repository.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
-		system.Agents = []model.Agent{{ID: "runtime-agent", Name: "Synthetic", ProfileID: "default", ServiceType: "mihomo", DomainDiscoveryEnabled: ptr(true), LastHeartbeat: "2000-01-01T00:00:00Z", Version: "1.0.0"}}
+		system.Agents = []model.Agent{{ID: "runtime-agent", Name: "Synthetic", ProfileID: "default", ServiceType: "mihomo", DomainDiscoveryEnabled: new(true), LastHeartbeat: "2000-01-01T00:00:00Z", Version: "1.0.0"}}
 		return nil
 	})
 	if err != nil {

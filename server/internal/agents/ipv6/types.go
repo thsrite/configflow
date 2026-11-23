@@ -76,11 +76,9 @@ type RefreshError struct {
 	At      string `json:"at"`
 }
 
-func raw(v any) json.RawMessage         { b, _ := json.Marshal(v); return b }
 func object(b json.RawMessage) Document { var v Document; _ = json.Unmarshal(b, &v); return v }
 func text(b json.RawMessage) string     { var s string; _ = json.Unmarshal(b, &s); return s }
 func yes(b json.RawMessage) bool        { return string(b) == "true" }
-func ptr[T any](v T) *T                 { return &v }
 func check(id, label, status, message string, details ...string) Check {
 	return Check{ID: id, Label: label, Status: status, Message: message, Details: details}
 }

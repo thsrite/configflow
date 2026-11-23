@@ -2,6 +2,7 @@ package ipv6
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -31,9 +32,9 @@ func now(ctx context.Context) string {
 }
 func (s *Service) key(ctx context.Context, a Document, profile string, config Document) string {
 	agent := identity(a)
-	agent["status"] = raw("offline")
+	agent["status"] = jsonresp.Value("offline")
 	if online(a) {
-		agent["status"] = raw("online")
+		agent["status"] = jsonresp.Value("online")
 	}
 	agent["version"] = a["version"]
 	agent["verification"] = a["ipv6_verification_settings"]
@@ -88,7 +89,7 @@ func (s *Service) remember(ctx context.Context, a Document, profile string, conf
 	}
 	defer os.Remove(file.Name())
 	defer file.Close()
-	if _, e = file.Write(raw(record)); e != nil {
+	if _, e = file.Write(jsonresp.Value(record)); e != nil {
 		return "", fmt.Errorf("write IPv6 check: %w", e)
 	}
 	if e = file.Close(); e != nil {
@@ -132,7 +133,7 @@ func (s *Service) Status(ctx context.Context, id, profile string, refresh bool) 
 			result = last.Result
 			result.ConfigRevision = &revision
 			result.CheckedAt = last.CheckedAt
-			result.Cached = ptr(true)
+			result.Cached = new(true)
 			result.Publication = published
 			return nil
 		}
@@ -148,15 +149,15 @@ func (s *Service) Status(ctx context.Context, id, profile string, refresh bool) 
 			}
 			result = last.Result
 			result.CheckedAt = last.CheckedAt
-			result.Cached = ptr(true)
-			result.Stale = ptr(last.Key != key)
+			result.Cached = new(true)
+			result.Stale = new(last.Key != key)
 			result.RefreshError = &RefreshError{boundary.Code, boundary.Message, now(ctx)}
 			result.Publication = published
 			return nil
 		}
 		result.ConfigRevision = &revision
 		result.CheckedAt, e = s.remember(ctx, a, profile, config, result)
-		result.Cached = ptr(false)
+		result.Cached = new(false)
 		result.Publication = published
 		return e
 	})
@@ -235,7 +236,7 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 		if e != nil {
 			return e
 		}
-		if token != report.CheckToken || string(input["interface"]) != string(raw(report.PrepareInterface)) {
+		if token != report.CheckToken || string(input["interface"]) != string(jsonresp.Value(report.PrepareInterface)) {
 			return failure("CHECK_CHANGED", 409, msgCheckChanged)
 		}
 		if !report.CanPrepare {
@@ -268,7 +269,7 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 			return e
 		}
 		result.Message = msgPrepared
-		result.ChangedRoutes = ptr(0)
+		result.ChangedRoutes = new(0)
 		var checks []json.RawMessage
 		_ = json.Unmarshal(prepared["checks"], &checks)
 		for _, b := range checks {
@@ -282,7 +283,7 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 			}
 		}
 		result.CheckedAt, e = s.remember(ctx, a, profile, config, result)
-		result.Cached = ptr(false)
+		result.Cached = new(false)
 		return e
 	})
 	return result, e
@@ -343,15 +344,15 @@ func (s *Service) Probe(ctx context.Context, id, profile string) (out *ProbeResu
 	passed := false
 	details := []string{}
 	for i, target := range targets {
-		response, e := s.request(ctx, a, "probe", Document{"host": raw(target.Host), "port": raw(target.Port)})
+		response, e := s.request(ctx, a, "probe", Document{"host": jsonresp.Value(target.Host), "port": jsonresp.Value(target.Port)})
 		if e != nil {
 			return nil, e
 		}
 		connection := object(response["connectivity"])
 		if connection == nil {
-			connection = Document{"status": raw("error"), "message": raw(msgNoProbeResult)}
+			connection = Document{"status": jsonresp.Value("error"), "message": jsonresp.Value(msgNoProbeResult)}
 		}
-		result.Results = append(result.Results, raw(connection))
+		result.Results = append(result.Results, jsonresp.Value(connection))
 		passed = passed || text(connection["status"]) == "ok"
 		message := text(connection["message"])
 		if message == "" {

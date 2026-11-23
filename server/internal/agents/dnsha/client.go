@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -123,7 +124,7 @@ func (s *Service) runtime(ctx context.Context, a *agent) (*Runtime, error) {
 func (s *Service) handoffRequest(ctx context.Context, a *agent, method, id string) (object, error) {
 	var b []byte
 	if method != "GET" {
-		b = rawObject(struct {
+		b = jsonresp.Value(struct {
 			ID string `json:"operation_id"`
 		}{id})
 	}

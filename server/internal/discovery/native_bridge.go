@@ -4,6 +4,7 @@ package discovery
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
+	"configflow/internal/version"
 	"context"
 	"encoding/json"
 
@@ -21,8 +22,8 @@ func project[A, B any](v A, out *B) error {
 	}
 	return jsondecode.Unmarshal([]byte(b), out)
 }
-func legacySupported(version, minimum string) bool {
-	return version != "" && agents.CompareVersions(version, minimum) >= 0
+func legacySupported(text, minimum string) bool {
+	return text != "" && version.CompareAgent(text, minimum) >= 0
 }
 func legacyLoadTraffic(ctx context.Context, a Agent, full bool) (traffic, error) {
 	s, err := trafficstore.GetNative(ctx)

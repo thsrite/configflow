@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"fmt"
 
@@ -9,7 +10,7 @@ import (
 )
 
 func (s *Service) prepareHandoff(ctx context.Context, j *model.HAJournal, members []*agent, b *deploy.Bundle) error {
-	if raw, present := parseObject(rawObject(j))["handoff_required"]; present {
+	if raw, present := parseObject(jsonresp.Value(j))["handoff_required"]; present {
 		if !booleanProof(raw) {
 			return refuse(msgJournalChanged)
 		}
@@ -19,7 +20,7 @@ func (s *Service) prepareHandoff(ctx context.Context, j *model.HAJournal, member
 		return nil
 	}
 	if j.HandoffProtocol == nil || *j.HandoffProtocol != 1 {
-		j.HandoffRequired = ptr(false)
+		j.HandoffRequired = new(false)
 		return s.save(ctx, j)
 	}
 	required := !b.Manifest().ReloadOnly
@@ -57,7 +58,7 @@ func (s *Service) prepareHandoff(ctx context.Context, j *model.HAJournal, member
 			return e
 		}
 	}
-	j.HandoffRequired = ptr(required && isPair)
+	j.HandoffRequired = new(required && isPair)
 	return s.save(ctx, j)
 }
 func (s *Service) handoffViews(ctx context.Context, members []*agent) (map[string]*Runtime, error) {
@@ -103,7 +104,7 @@ func (s *Service) ensureHandoff(ctx context.Context, j *model.HAJournal, members
 	}
 	source, target := j.Order[1], j.Order[0]
 	if j.Handoff == nil {
-		j.Handoff = &model.HAHandoff{OperationID: j.ID, SourceAgentID: source, TargetAgentID: target, RequestedAt: float64(s.now().UnixNano()) / 1e9, Confirmed: ptr(false), Released: ptr(false)}
+		j.Handoff = &model.HAHandoff{OperationID: j.ID, SourceAgentID: source, TargetAgentID: target, RequestedAt: float64(s.now().UnixNano()) / 1e9, Confirmed: new(false), Released: new(false)}
 	}
 	h := j.Handoff
 	if !handoffFlags(h) {
@@ -117,7 +118,7 @@ func (s *Service) ensureHandoff(ctx context.Context, j *model.HAJournal, members
 	}
 	j.Phase = "handoff"
 	j.Status = "checking"
-	j.ActiveAgentID = ptr(target)
+	j.ActiveAgentID = new(target)
 	j.Message = msgHandoffChecking
 	if e := s.save(ctx, j); e != nil {
 		return e
@@ -149,7 +150,7 @@ func (s *Service) ensureHandoff(ctx context.Context, j *model.HAJournal, members
 		return e
 	}
 	if !healthyHolder(views, target) {
-		h.Confirmed = ptr(false)
+		h.Confirmed = new(false)
 		h.Confirmations = 0
 		if e = s.save(ctx, j); e != nil {
 			return e
@@ -157,7 +158,7 @@ func (s *Service) ensureHandoff(ctx context.Context, j *model.HAJournal, members
 		return &HandoffPending{Message: msgHandoffWait}
 	}
 	h.Confirmations++
-	h.Confirmed = ptr(h.Confirmations >= 2)
+	h.Confirmed = new(h.Confirmations >= 2)
 	if e = s.save(ctx, j); e != nil {
 		return e
 	}
@@ -213,8 +214,8 @@ func (s *Service) releaseHandoff(ctx context.Context, j *model.HAJournal) error 
 			return &HandoffPending{msgHandoffCleanup, true}
 		}
 	}
-	h.Released = ptr(true)
-	h.ReleasedAt = ptr(float64(s.now().UnixNano()) / 1e9)
+	h.Released = new(true)
+	h.ReleasedAt = new(float64(s.now().UnixNano()) / 1e9)
 	return s.save(ctx, j)
 }
 func preferred(members []*agent) string {
@@ -286,7 +287,7 @@ func booleanProof(raw []byte) bool {
 	return v == "true" || v == "false" || v == "null"
 }
 func handoffFlags(h *model.HAHandoff) bool {
-	o := parseObject(rawObject(h))
+	o := parseObject(jsonresp.Value(h))
 	for _, key := range []string{"confirmed", "released"} {
 		if raw, ok := o[key]; ok && !booleanProof(raw) {
 			return false

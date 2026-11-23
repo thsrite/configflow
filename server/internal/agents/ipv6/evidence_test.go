@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"configflow/internal/agents"
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,25 +26,25 @@ import (
 )
 
 func TestTupleEvidenceAgainstPython(t *testing.T) {
-	request := Document{"source_ip": raw("192.0.2.8"), "source_port": raw(34567), "address": raw("198.51.100.9"), "status": raw("ok"), "family": raw("ipv4")}
-	match := Document{"source_ip": raw("192.0.2.8"), "source_port": raw(34567), "host": raw("site.example"), "network": raw("tcp"), "destination_port": raw(443), "proxy_name": raw("node"), "proxy_type": raw("ss"), "chains": raw([]string{"node"}), "ipv6_transport_verified": raw(true)}
+	request := Document{"source_ip": jsonresp.Value("192.0.2.8"), "source_port": jsonresp.Value(34567), "address": jsonresp.Value("198.51.100.9"), "status": jsonresp.Value("ok"), "family": jsonresp.Value("ipv4")}
+	match := Document{"source_ip": jsonresp.Value("192.0.2.8"), "source_port": jsonresp.Value(34567), "host": jsonresp.Value("site.example"), "network": jsonresp.Value("tcp"), "destination_port": jsonresp.Value(443), "proxy_name": jsonresp.Value("node"), "proxy_type": jsonresp.Value("ss"), "chains": jsonresp.Value([]string{"node"}), "ipv6_transport_verified": jsonresp.Value(true)}
 	fixtures := []Document{}
-	for _, change := range []Document{nil, {"source_port": raw(1)}, {"host": raw("other.example")}, {"chains": raw([]string{"DIRECT"})}, {"ipv6_transport_verified": raw(false)}} {
-		m := object(raw(match))
+	for _, change := range []Document{nil, {"source_port": jsonresp.Value(1)}, {"host": jsonresp.Value("other.example")}, {"chains": jsonresp.Value([]string{"DIRECT"})}, {"ipv6_transport_verified": jsonresp.Value(false)}} {
+		m := object(jsonresp.Value(match))
 		for k, v := range change {
 			m[k] = v
 		}
-		report := Document{"target_host": raw("site.example"), "requests": raw([]Document{request})}
-		trace := Document{"target_host": raw("site.example"), "matches": raw([]Document{m})}
-		fixtures = append(fixtures, Document{"report": raw(report), "trace": raw(trace), "url": raw("https://site.example/")})
+		report := Document{"target_host": jsonresp.Value("site.example"), "requests": jsonresp.Value([]Document{request})}
+		trace := Document{"target_host": jsonresp.Value("site.example"), "matches": jsonresp.Value([]Document{m})}
+		fixtures = append(fixtures, Document{"report": jsonresp.Value(report), "trace": jsonresp.Value(trace), "url": jsonresp.Value("https://site.example/")})
 	}
-	fixtures = append(fixtures, Document{"report": raw(Document{"requests": raw([]any{request, nil})}), "trace": raw(Document{}), "url": raw("https://site.example/")})
+	fixtures = append(fixtures, Document{"report": jsonresp.Value(Document{"requests": jsonresp.Value([]any{request, nil})}), "trace": jsonresp.Value(Document{}), "url": jsonresp.Value("https://site.example/")})
 	var input bytes.Buffer
 	actual := []json.RawMessage{}
 	for _, f := range fixtures {
 		checks := evaluate(context.Background(), nil, nil, object(f["report"]), object(f["trace"]), text(f["url"]), nil)
-		actual = append(actual, raw(checks))
-		input.Write(raw(f))
+		actual = append(actual, jsonresp.Value(checks))
+		input.Write(jsonresp.Value(f))
 		input.WriteByte('\n')
 	}
 	for i, b := range actual {
@@ -133,11 +134,13 @@ func TestObserveIncompleteBaselineNeverCreatesFreshEvidence(t *testing.T) {
 				_, _ = w.Write([]byte(`[{".id":"fresh","protocol":"tcp","src-address":"192.0.2.8","src-port":"34567","dst-address":"198.51.100.9","dst-port":"443","orig-packets":"1"}]`))
 			}))
 			defer server.Close()
-			config := Document{"routers": raw(map[string]any{"items": []any{map[string]any{"id": "r1", "type": "routeros", "endpoint": server.URL, "username": "api", "password": "synthetic-router-pass", "proxy_gateway_agent_id": "source"}}})}
+			config := Document{"routers": jsonresp.Value(map[string]any{"items": []any{map[string]any{"id": "r1", "type": "routeros", "endpoint": server.URL, "username": "api", "password": "synthetic-router-pass", "proxy_gateway_agent_id": "source"}}})}
 			ctx, cancel := context.WithCancel(context.Background())
 			ready := make(chan struct{}, 1)
 			done := make(chan observed, 1)
-			go func() { done <- observe(ctx, config, Document{"id": raw("source")}, "https://site.example", ready) }()
+			go func() {
+				done <- observe(ctx, config, Document{"id": jsonresp.Value("source")}, "https://site.example", ready)
+			}()
 			<-ready
 			if !incomplete {
 				deadline := time.Now().Add(3 * time.Second)
@@ -203,18 +206,18 @@ func TestAgentTransportAgainstPython(t *testing.T) {
 	var input bytes.Buffer
 	want := []json.RawMessage{}
 	for i := range cases {
-		a := Document{"host": raw(u.Hostname()), "port": raw(p), "token": raw("synthetic-case-" + strconv.Itoa(i))}
+		a := Document{"host": jsonresp.Value(u.Hostname()), "port": jsonresp.Value(p), "token": jsonresp.Value("synthetic-case-" + strconv.Itoa(i))}
 		answer, e := s.request(ctx, a, "", nil)
 		if e != nil {
 			var boundary *Error
 			if !errors.As(e, &boundary) {
 				t.Fatal(e)
 			}
-			want = append(want, raw(map[string]any{"code": boundary.Code, "status": boundary.Status, "message": boundary.Message}))
+			want = append(want, jsonresp.Value(map[string]any{"code": boundary.Code, "status": boundary.Status, "message": boundary.Message}))
 		} else {
-			want = append(want, raw(map[string]any{"result": answer}))
+			want = append(want, jsonresp.Value(map[string]any{"result": answer}))
 		}
-		input.Write(raw(a))
+		input.Write(jsonresp.Value(a))
 		input.WriteByte('\n')
 	}
 	comparePython(t, "request_reference.py", input.Bytes(), want)

@@ -10,6 +10,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/store"
 	"configflow/internal/subs"
+	"configflow/internal/timefmt"
 	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
@@ -208,7 +209,7 @@ func saveCache(ctx context.Context, id string, payload *Cache) (*Cache, error) {
 		metadata = nil
 	}
 	payload.SubscriptionID = id
-	payload.UpdatedAt = strings.Replace(isoFormat(cacheClock.Now()), "+00:00", "Z", 1)
+	payload.UpdatedAt = timefmt.UTCZ(cacheClock.Now())
 	payload.Metadata = metadata
 	if payload.Count == nil {
 		count := model.Int(len(payload.Nodes))

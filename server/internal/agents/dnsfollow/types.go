@@ -104,7 +104,6 @@ func value[T any](p *T) (z T) {
 	}
 	return
 }
-func ptr[T any](v T) *T { return &v }
 func latest(a *agent) model.Deployment {
 	if a.LatestDeployment != nil {
 		return *a.LatestDeployment

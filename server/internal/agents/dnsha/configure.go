@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"fmt"
 	"slices"
@@ -97,7 +98,7 @@ func (s *Service) startEnable(ctx context.Context, a, b *agent, intent model.HAE
 		return nil, e
 	}
 	settings := rulesync.AgentSettings(a.Agent)
-	j.RuleSyncSettings = &model.RuleSyncSettings{Library: ptr(settings.Library), Rules: ptr(settings.Rules)}
+	j.RuleSyncSettings = &model.RuleSyncSettings{Library: new(settings.Library), Rules: new(settings.Rules)}
 	j.Warnings = warnings
 	j.Routers = routers
 	raw, e := src.Raw()
@@ -135,7 +136,7 @@ func (s *Service) recordError(ctx context.Context, ids []string, msg string, fai
 			if failed || st.Status == "" {
 				st.Status = "failed"
 			}
-			st.Error = ptr(msg)
+			st.Error = new(msg)
 			st.UpdatedAt = model.Int(s.now().Unix())
 			a.OxiDNSHAState = st
 		}
@@ -146,7 +147,7 @@ func (s *Service) recordLeftover(ctx context.Context, ids []string, msg string) 
 	return s.update(ctx, func(list []*agent) error {
 		for _, a := range list {
 			if slices.Contains(ids, a.ID) && !haEnabled(a) {
-				a.OxiDNSHAState = &model.HAState{Status: "failed", Error: ptr(msg), UpdatedAt: model.Int(s.now().Unix()), Members: slices.Clone(ids)}
+				a.OxiDNSHAState = &model.HAState{Status: "failed", Error: new(msg), UpdatedAt: model.Int(s.now().Unix()), Members: slices.Clone(ids)}
 			}
 		}
 		return nil
@@ -166,7 +167,7 @@ func (s *Service) undo(ctx context.Context, attempted []*agent, previous map[str
 				out = append(out, msgInFlightIdentity)
 				continue
 			}
-			_, e = s.call(ctx, a, "PUT", "", rawObject(spec(old.VIP, int(old.VRID), old.Role, a, selected(members, old.PeerID))), 90)
+			_, e = s.call(ctx, a, "PUT", "", jsonresp.Value(spec(old.VIP, int(old.VRID), old.Role, a, selected(members, old.PeerID))), 90)
 		} else {
 			_, e = s.call(ctx, a, "DELETE", "", nil, 90)
 		}
@@ -216,7 +217,7 @@ func (s *Service) configureKeepalived(ctx context.Context, id string, intent *mo
 		return errHALockBusy
 	}
 	defer release()
-	a, b, n, _, e := s.validated(held, id, rawObject(intent))
+	a, b, n, _, e := s.validated(held, id, jsonresp.Value(intent))
 	if e != nil {
 		return e
 	}
@@ -231,7 +232,7 @@ func (s *Service) configureKeepalived(ctx context.Context, id string, intent *mo
 			other, role = b, "primary"
 		}
 		attempted = append(attempted, m)
-		if _, e = s.call(held, m, "PUT", "", rawObject(spec(n.intent.VIP, int(n.intent.VRID), role, m, other)), 90); e != nil {
+		if _, e = s.call(held, m, "PUT", "", jsonresp.Value(spec(n.intent.VIP, int(n.intent.VRID), role, m, other)), 90); e != nil {
 			if held.Err() != nil {
 				return held.Err()
 			}
@@ -267,8 +268,8 @@ func (s *Service) configureKeepalived(ctx context.Context, id string, intent *mo
 			if i == 1 {
 				peer, role = a, "secondary"
 			}
-			cur.OxiDNSHA = &model.HASettings{Enabled: ptr(true), GroupID: group, PeerID: peer.ID, VIP: n.intent.VIP, VRID: n.intent.VRID, Role: role}
-			cur.OxiDNSHAState = &model.HAState{Status: "succeeded", Error: ptr(""), UpdatedAt: model.Int(s.now().Unix())}
+			cur.OxiDNSHA = &model.HASettings{Enabled: new(true), GroupID: group, PeerID: peer.ID, VIP: n.intent.VIP, VRID: n.intent.VRID, Role: role}
+			cur.OxiDNSHAState = &model.HAState{Status: "succeeded", Error: new(""), UpdatedAt: model.Int(s.now().Unix())}
 			if settings != nil {
 				if cur.RuleSync == nil {
 					cur.RuleSync = &model.AgentRuleSync{}

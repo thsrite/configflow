@@ -7,6 +7,7 @@ package substore
 // the fake Sub-Store.
 
 import (
+	"configflow/internal/version"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -99,7 +100,7 @@ func TestVersionCompare(t *testing.T) {
 		want bool
 	}{{"2.42.3", "2.42.2", true}, {"v2.43.0", "2.42.10", true}, {"2.42.3", "2.42.3", false}, {"bad", "2.42.3", false},
 		{"2.42.3", "", true}} {
-		if VersionNewer(c.a, c.b) != c.want {
+		if version.NewerRelease(c.a, c.b) != c.want {
 			t.Errorf("is_newer(%q, %q) != %v", c.a, c.b, c.want)
 		}
 	}

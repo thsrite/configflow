@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"configflow/internal/textx"
 	"iter"
 	"net/netip"
 	"regexp"
@@ -45,7 +46,7 @@ func IsValidDomain(query string, allowDNSLabels bool) bool {
 	}
 	// A malformed dotted IP must not re-enter discovery as a host name;
 	// numeric labels such as 3com stay valid.
-	if strings.Contains(query, ".") && !slices.ContainsFunc(strings.Split(query, "."), func(p string) bool { return !asciiDigits(p) }) {
+	if strings.Contains(query, ".") && !slices.ContainsFunc(strings.Split(query, "."), func(p string) bool { return !textx.ASCIIDigits(p) }) {
 		return false
 	}
 	if allowDNSLabels {

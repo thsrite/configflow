@@ -26,6 +26,7 @@ package metrics
 // monitoring history.
 
 import (
+	"configflow/internal/version"
 	"context"
 	"database/sql"
 	"errors"
@@ -147,7 +148,7 @@ var legacyMigrations = []struct{ table, statement string }{
 // SupportedTrafficVersion reports whether version is a "-go" version at
 // least minimum.
 func SupportedTrafficVersion(text, minimum string) bool {
-	return strings.HasSuffix(text, "-go") && agents.CompareVersions(text, minimum) >= 0
+	return strings.HasSuffix(text, "-go") && version.CompareAgent(text, minimum) >= 0
 }
 
 // ChainLayers is chain_layers(chain).

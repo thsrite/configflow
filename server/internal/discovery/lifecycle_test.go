@@ -299,7 +299,7 @@ func TestAutomaticProbeAdoptionRecheckAndNoRepeatedWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
-		system.Agents = []model.Agent{{ID: "a1", Name: "Synthetic", ProfileID: "default", ServiceType: "mihomo", DomainDiscoveryEnabled: ptr(true), Version: minRegionVersion}}
+		system.Agents = []model.Agent{{ID: "a1", Name: "Synthetic", ProfileID: "default", ServiceType: "mihomo", DomainDiscoveryEnabled: new(true), Version: minRegionVersion}}
 		return nil
 	}); err != nil {
 		t.Fatal(err)

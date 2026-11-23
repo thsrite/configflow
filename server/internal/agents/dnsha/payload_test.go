@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,7 +26,7 @@ func TestMaterializationPreservesFuturePayloadMembers(t *testing.T) {
 	}
 	original := parseObject(data)
 	original["future_payload"] = []byte(`{"opaque":[null,false,7],"version":"next"}`)
-	if err = deploy.WriteFileAtomic(f.ctx, path, rawObject(original)); err != nil {
+	if err = deploy.WriteFileAtomic(f.ctx, path, jsonresp.Value(original)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = f.s.Advance(f.ctx, "primary"); err != nil {

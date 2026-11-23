@@ -3,6 +3,7 @@ package ipv6
 // Legacy repo, converter and registry types stop at this adapter. The IPv6
 // owners only operate on native snapshots and independently owned Agent records.
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -26,7 +27,7 @@ func defaultMihomo() (*yamlx.Node, error) { return convert.MihomoTemplate(), nil
 // agentRecord reads the native record used by registry and deployment owners.
 func agentRecord(d Document) (*model.Agent, error) {
 	var a model.Agent
-	if err := json.Unmarshal(raw(d), &a); err != nil {
+	if err := json.Unmarshal(jsonresp.Value(d), &a); err != nil {
 		return nil, err
 	}
 	return &a, nil
@@ -114,7 +115,7 @@ func (s *Service) publication(ctx context.Context, a, config Document, revision 
 	if e != nil {
 		return "unknown"
 	}
-	src, e := deploy.SourceFromJSON(raw(config), &revision)
+	src, e := deploy.SourceFromJSON(jsonresp.Value(config), &revision)
 	if e != nil {
 		return "unknown"
 	}
@@ -146,7 +147,7 @@ func (s *Service) request(ctx context.Context, a Document, operation string, pay
 	if operation != "" {
 		method = http.MethodPost
 		path += "/" + operation
-		body = raw(payload)
+		body = jsonresp.Value(payload)
 	}
 	header := http.Header{"Authorization": {"Bearer " + text(a["token"])}}
 	if operation != "" {
@@ -248,7 +249,7 @@ func (s *Service) update(ctx context.Context, id string, fn func(context.Context
 			return nil
 		}
 		var next model.Agent
-		if err := json.Unmarshal(raw(current), &next); err != nil {
+		if err := json.Unmarshal(jsonresp.Value(current), &next); err != nil {
 			return err
 		}
 		(*records)[index] = next
@@ -257,7 +258,7 @@ func (s *Service) update(ctx context.Context, id string, fn func(context.Context
 }
 
 func validURL(value string) error {
-	return healthcheck.ValidateHealthJSON(raw(struct {
+	return healthcheck.ValidateHealthJSON(jsonresp.Value(struct {
 		URL string `json:"url"`
 	}{value}), false)
 }

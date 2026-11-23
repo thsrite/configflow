@@ -64,14 +64,6 @@ func decodeUTF8Replace(b []byte) string {
 	out, _ := utf8codec.UTF8.NewDecoder().Bytes(b)
 	return string(out)
 }
-func isoFormat(t time.Time) string {
-	t = t.UTC()
-	base := t.Format("2006-01-02T15:04:05")
-	if us := t.Nanosecond() / 1000; us != 0 {
-		base += fmt.Sprintf(".%06d", us)
-	}
-	return base + "+00:00"
-}
 func unixTime(t time.Time) float64 {
 	ns := t.UnixNano()
 	if ns%1e9 == 0 {

@@ -3,6 +3,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -114,8 +115,7 @@ func haEnabled(a *agent) bool { return a != nil && a.OxiDNSHA != nil && yes(a.Ox
 func paired(a, b *agent) bool {
 	return a != nil && b != nil && agents.HAPairMatchesModel(a.Agent, b.Agent)
 }
-func yes(p *bool) bool  { return p != nil && *p }
-func ptr[T any](v T) *T { return &v }
+func yes(p *bool) bool { return p != nil && *p }
 func childTerminal(st string) bool {
 	switch st {
 	case "succeeded", "failed", "rolled_back", "rollback_failed":
@@ -125,7 +125,7 @@ func childTerminal(st string) bool {
 }
 func terminal(st string) bool { return st == "succeeded" || st == "failed" || st == "rollback_failed" }
 func active(a *agent) bool {
-	return a != nil && a.OxiDNSHAPublication != nil && string(rawObject(a.OxiDNSHAPublication)) != "{}" && !terminal(a.OxiDNSHAPublication.Status)
+	return a != nil && a.OxiDNSHAPublication != nil && string(jsonresp.Value(a.OxiDNSHAPublication)) != "{}" && !terminal(a.OxiDNSHAPublication.Status)
 }
 func selected(list []*agent, id string) *agent {
 	for _, a := range list {

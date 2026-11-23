@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"configflow/internal/timefmt"
 	"context"
 	"encoding/json"
 	"os"
@@ -105,10 +106,10 @@ func TestOverviewCountsAndHistorySampling(t *testing.T) {
 }
 
 func TestIsoformatZ(t *testing.T) {
-	if got := isoformatZ(time.Date(2026, 1, 2, 3, 4, 5, 123456789, time.UTC)); got != "2026-01-02T03:04:05.123456Z" {
+	if got := timefmt.UTCZ(time.Date(2026, 1, 2, 3, 4, 5, 123456789, time.UTC)); got != "2026-01-02T03:04:05.123456Z" {
 		t.Fatal(got)
 	}
-	if got := isoformatZ(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)); got != "2026-01-02T03:04:05Z" {
+	if got := timefmt.UTCZ(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)); got != "2026-01-02T03:04:05Z" {
 		t.Fatal(got)
 	}
 }

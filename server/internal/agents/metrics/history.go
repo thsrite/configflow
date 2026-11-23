@@ -194,15 +194,6 @@ func naiveNow() time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond()/1000*1000, time.UTC)
 }
 
-// isoformat is datetime.isoformat() of a naive datetime.
-func isoformat(t time.Time) string {
-	text := fmt.Sprintf("%04d-%02d-%02dT%02d:%02d:%02d", t.Year(), int(t.Month()), t.Day(), t.Hour(), t.Minute(), t.Second())
-	if micro := t.Nanosecond() / 1000; micro != 0 {
-		text += fmt.Sprintf(".%06d", micro)
-	}
-	return text
-}
-
 // ErrHoursOutOfRange is returned for a query window whose start is not a
 // representable date (before year 1 or after year 9999).
 var ErrHoursOutOfRange = errors.New(msgHoursOutOfRange)

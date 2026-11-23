@@ -2,6 +2,7 @@ package installation
 
 import (
 	"bytes"
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,7 +21,7 @@ func TestEnrollRefusesEarlierDuplicateTarget(t *testing.T) {
 	proofs := map[string]json.RawMessage{}
 	for _, service := range services {
 		o := object(f.register(t, service))
-		proofs[service] = raw(map[string]json.RawMessage{"id": o["id"], "token": o["token"]})
+		proofs[service] = jsonresp.Value(map[string]json.RawMessage{"id": o["id"], "token": o["token"]})
 	}
 	// An administrator edit can give a second record the same name and host;
 	// placing it first is the order a last-wins index cannot see.
@@ -40,7 +41,7 @@ func TestEnrollRefusesEarlierDuplicateTarget(t *testing.T) {
 	must(t, err)
 	before := document(t, f)
 	record := recordBytes(t, f)
-	_, err = f.s.Enroll(f.ctx, f.r.ID, f.r.Token, raw(map[string]any{"agents": proofs}))
+	_, err = f.s.Enroll(f.ctx, f.r.ID, f.r.Token, jsonresp.Value(map[string]any{"agents": proofs}))
 	refusal(t, err, 409, msgDuplicate)
 	if !bytes.Equal(before, document(t, f)) || !bytes.Equal(record, recordBytes(t, f)) {
 		t.Fatal("refused enrollment wrote")

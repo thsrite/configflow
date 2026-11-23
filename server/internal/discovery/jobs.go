@@ -62,7 +62,7 @@ func cloneJob(j *Job) *Job {
 	}
 	v := *j
 	if j.FinishedAt != nil {
-		v.FinishedAt = ptr(*j.FinishedAt)
+		v.FinishedAt = new(*j.FinishedAt)
 	}
 	v.Errors = append([]JobError{}, j.Errors...)
 	return &v
@@ -157,7 +157,7 @@ func startJobOn(ctx context.Context, profile, kind string, wait bool, run func(c
 	jobState.Unlock()
 	failAdmission := func() {
 		jobState.Lock()
-		j.Status, j.Message, j.FinishedAt = "failed", msgFailed, ptr(timestamp())
+		j.Status, j.Message, j.FinishedAt = "failed", msgFailed, new(timestamp())
 		release()
 		jobState.Unlock()
 	}
@@ -197,7 +197,7 @@ func startJobOn(ctx context.Context, profile, kind string, wait bool, run func(c
 			if err != nil {
 				j.Status, j.Errors = "failed", []JobError{}
 			}
-			j.FinishedAt = ptr(timestamp())
+			j.FinishedAt = new(timestamp())
 			release()
 		}()
 		out, err = run(workCtx, func(done, total int) { jobState.Lock(); j.Done = done; j.Total = total; jobState.Unlock() })

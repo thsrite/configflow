@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -43,11 +44,11 @@ func (s *Service) Enroll(ctx context.Context, id, did string, config Document) e
 		if task == nil {
 			return nil
 		}
-		task["ipv6_verification_requested"] = raw(true)
-		tasks.Set(did, raw(task))
-		a["deployments"] = raw(tasks)
+		task["ipv6_verification_requested"] = jsonresp.Value(true)
+		tasks.Set(did, jsonresp.Value(task))
+		a["deployments"] = jsonresp.Value(tasks)
 		if text(object(a["latest_deployment"])["deployment_id"]) == did {
-			a["latest_deployment"] = raw(task)
+			a["latest_deployment"] = jsonresp.Value(task)
 		}
 		return nil
 	})
@@ -60,11 +61,11 @@ func (s *Service) unavailable(ctx context.Context, a Document, did string, bound
 	var revision *int64
 	_ = json.Unmarshal(object(a["latest_deployment"])["config_revision"], &revision)
 	report := s.newRun(ctx, a, revision, did, all)
-	report["status"] = raw("error")
-	report["checks"] = raw([]Check{check("verification_unavailable", msgUnavailable, "error", boundary.Message)})
-	report["checked_at"] = raw(now(ctx))
-	report["error_code"] = raw(boundary.Code)
-	report["message"] = raw(boundary.Message)
+	report["status"] = jsonresp.Value("error")
+	report["checks"] = jsonresp.Value([]Check{check("verification_unavailable", msgUnavailable, "error", boundary.Message)})
+	report["checked_at"] = jsonresp.Value(now(ctx))
+	report["error_code"] = jsonresp.Value(boundary.Code)
+	report["message"] = jsonresp.Value(boundary.Message)
 	return s.update(ctx, text(a["id"]), func(ctx context.Context, current Document, all []Document) error {
 		latest := object(current["latest_deployment"])
 		if current == nil || len(s.findings(ctx, current, report, all)) > 0 || text(latest["deployment_id"]) != did || text(latest["status"]) != "succeeded" || yes(latest["manual_rollback"]) {
@@ -72,8 +73,8 @@ func (s *Service) unavailable(ctx context.Context, a Document, did string, bound
 		}
 		m := runs(current)
 		if _, ok := m.Get(did); !ok {
-			m.Set(did, raw(report))
-			current["ipv6_verifications"] = raw(m)
+			m.Set(did, jsonresp.Value(report))
+			current["ipv6_verifications"] = jsonresp.Value(m)
 		}
 		return nil
 	})
@@ -109,10 +110,10 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 					r := object(b)
 					if expired(ctx, r) {
 						interrupt(ctx, r, msgInterrupted)
-						m.Set(key, raw(r))
+						m.Set(key, jsonresp.Value(r))
 					}
 				}
-				current["ipv6_verifications"] = raw(m)
+				current["ipv6_verifications"] = jsonresp.Value(m)
 				return nil
 			}); e != nil {
 				return false, e
@@ -155,7 +156,7 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 			continue
 		}
 		idle = false
-		_, e = s.Start(ctx, text(a["id"]), text(a["profile_id"]), raw(Document{"deployment_id": raw(did)}), true)
+		_, e = s.Start(ctx, text(a["id"]), text(a["profile_id"]), jsonresp.Value(Document{"deployment_id": jsonresp.Value(did)}), true)
 		var boundary *Error
 		if errors.As(e, &boundary) {
 			switch boundary.Code {

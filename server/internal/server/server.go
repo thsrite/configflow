@@ -13,6 +13,7 @@ package server
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -71,7 +72,6 @@ import (
 	"configflow/internal/setupflow"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
-	"configflow/internal/utilx"
 	"configflow/internal/webdav"
 )
 
@@ -190,7 +190,7 @@ func defaultServerDomain() string {
 	if err == nil {
 		port = address.Port
 	}
-	return "http://" + utilx.GetLocalIP() + ":" + strconv.Itoa(port)
+	return "http://" + localIP(net.Dial) + ":" + strconv.Itoa(port)
 }
 
 // NewApp builds the full application: wiring, every route package, the

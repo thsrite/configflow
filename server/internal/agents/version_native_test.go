@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"configflow/internal/version"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -62,12 +63,13 @@ func TestNativeVersionBusinessRules(t *testing.T) {
 	}{
 		{"1.2-go", "1.2.0", 0}, {"1.2", "1.2.1", -1},
 		{"1.alpha", "1.beta", -1}, {"1.", "1.0", -1},
-		{"1. 02 ", "1.2", 0}, {"1.2_0", "1.20", 0},
-		{"1.٣", "1.4", 1}, {strings.Repeat("1", 4301), "2", 1},
+		// Spaces, underscores and over-long numbers are text (O17).
+		{"1. 02 ", "1.2", -1}, {"1.2_0", "1.20", 1},
+		{"1.٣", "1.4", 1}, {strings.Repeat("1", 4301), "2", -1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.a[:min(len(tt.a), 32)]+"/"+tt.b, func(t *testing.T) {
-			if got := CompareVersions(tt.a, tt.b); got != tt.want {
+			if got := version.CompareAgent(tt.a, tt.b); got != tt.want {
 				t.Fatalf("got %d want %d", got, tt.want)
 			}
 		})
@@ -79,11 +81,11 @@ func FuzzNativeVersionComparison(f *testing.F) {
 		f.Add(s, "1.0")
 	}
 	f.Fuzz(func(t *testing.T, a, b string) {
-		ab, ba := CompareVersions(a, b), CompareVersions(b, a)
-		if ab < -1 || ab > 1 || ab != -ba || CompareVersions(a, a) != 0 {
+		ab, ba := version.CompareAgent(a, b), version.CompareAgent(b, a)
+		if ab < -1 || ab > 1 || ab != -ba || version.CompareAgent(a, a) != 0 {
 			t.Fatalf("invalid comparison %q %q: %d/%d", a, b, ab, ba)
 		}
-		if CompareVersions(a+"-native", b+"-native") != ab {
+		if version.CompareAgent(a+"-native", b+"-native") != ab {
 			t.Fatal("suffix changed comparison")
 		}
 	})

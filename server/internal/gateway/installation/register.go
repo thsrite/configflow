@@ -2,6 +2,7 @@ package installation
 
 import (
 	"configflow/internal/agents"
+	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"context"
 	"encoding/json"
@@ -77,9 +78,9 @@ func (s *Service) RegistrationProfile(ctx context.Context, id, token string, dat
 		return "", nil, err
 	}
 	o := object(data)
-	o["host"] = raw(a.Host)
-	o["profile_id"] = raw(r.ProfileID)
-	return r.ProfileID, raw(o), nil
+	o["host"] = jsonresp.Value(a.Host)
+	o["profile_id"] = jsonresp.Value(r.ProfileID)
+	return r.ProfileID, jsonresp.Value(o), nil
 }
 
 // Register records the exact capability marker atomically with the Agent and
@@ -135,9 +136,9 @@ func (s *Service) Register(ctx context.Context, id, token string, data json.RawM
 			return failure(msgBoundChanged, 409)
 		}
 		o := object(data)
-		o["profile_id"] = raw(r.ProfileID)
+		o["profile_id"] = jsonresp.Value(r.ProfileID)
 
-		input, err := agents.DecodeRegistrationInput(raw(o))
+		input, err := agents.DecodeRegistrationInput(jsonresp.Value(o))
 		if err != nil {
 			return err
 		}
@@ -194,7 +195,7 @@ func (s *Service) Enroll(ctx context.Context, id, token string, body json.RawMes
 	if err != nil {
 		return nil, err
 	}
-	return raw(struct {
+	return jsonresp.Value(struct {
 		Success bool   `json:"success"`
 		Message string `json:"message"`
 	}{true, msgEnrolledOK}), nil

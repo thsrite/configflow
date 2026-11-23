@@ -93,7 +93,7 @@ func TestShutdownRejectsEveryPublishCommit(t *testing.T) {
 		{"generate-owner", func() error { return GenerateFinal(ctx, f.m, "publish-agent", GenerateRequest{Body: []byte(`{}`)}).Err }},
 		{"reserve", func() error { _, e := f.m.ReserveDeployment(ctx, "publish-agent", "closed"); return e }},
 		{"record", func() error {
-			_, e := recordUpdate(ctx, f.m, "publish-agent", "closed", Update{Status: ptr("uploading"), Submitted: ptr(true)}, agents.RecordOptions{})
+			_, e := recordUpdate(ctx, f.m, "publish-agent", "closed", Update{Status: new("uploading"), Submitted: new(true)}, agents.RecordOptions{})
 			return e
 		}},
 		{"activate", func() error { _, e := f.m.ActivateCandidateModel(ctx, "publish-agent", "closed"); return e }},

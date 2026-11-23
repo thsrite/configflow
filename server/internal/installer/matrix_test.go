@@ -2,6 +2,7 @@ package installer
 
 import (
 	"bufio"
+	"configflow/internal/textx"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -102,7 +103,7 @@ func testCompatIntegerText(value any, fallback int64) (string, error) {
 func testCompatDecimalPort(value any) bool {
 	switch n := value.(type) {
 	case string:
-		return asciiDigits(n)
+		return textx.ASCIIDigits(n)
 	case bool:
 		return false
 	case int:

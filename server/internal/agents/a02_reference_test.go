@@ -6,6 +6,8 @@ package agents
 
 import (
 	"bytes"
+	"configflow/internal/timefmt"
+	"configflow/internal/version"
 	"database/sql"
 	"encoding/json"
 	"math"
@@ -234,6 +236,18 @@ func TestReferenceDNSReportFields(t *testing.T) {
 	}
 }
 
+// intOnlyComponent reports a version with a dotted component that only
+// Python's int() reads as a number: surrounding whitespace, a sign, an
+// underscore or more than 19 digits.
+func intOnlyComponent(text string) bool {
+	for _, part := range strings.Split(strings.SplitN(text, "-", 2)[0], ".") {
+		if part != "" && (strings.ContainsAny(part, "+_") || strings.TrimSpace(part) != part || len(part) > 19 && strings.Trim(part, "0123456789") == "") {
+			return true
+		}
+	}
+	return false
+}
+
 func TestReferenceCompareVersions(t *testing.T) {
 	for i, raw := range referenceRawCases(t, "compare_versions") {
 		var c struct {
@@ -244,7 +258,10 @@ func TestReferenceCompareVersions(t *testing.T) {
 		if err := json.Unmarshal(raw, &c); err != nil {
 			t.Fatal(err)
 		}
-		if got, want := CompareVersions(c.A, c.B), nativeVersionReferenceWant(t, i, raw, c.Want); got != want {
+		if intOnlyComponent(c.A) || intOnlyComponent(c.B) {
+			continue // O17: only Python int() read these as numbers; see version.TestNonDecimalComponents
+		}
+		if got, want := version.CompareAgent(c.A, c.B), nativeVersionReferenceWant(t, i, raw, c.Want); got != want {
 			t.Errorf("compare_versions(%.40q, %q) = %d, want %d", c.A, c.B, got, want)
 		}
 	}
@@ -403,7 +420,7 @@ func TestReferenceTimestampsAndLocalTimes(t *testing.T) {
 				if got := pyFloatRepr(ts); got != c.Float {
 					t.Errorf("time.time() for %d ns = %s, want %s", c.NS, got, c.Float)
 				}
-				if got := isoformat(fromTimestamp(ts), false); got != c.Want {
+				if got := timefmt.Naive(fromTimestamp(ts)); got != c.Want {
 					t.Errorf("%s: datetime.fromtimestamp(%s).isoformat() = %s, want %s", zone, c.Float, got, c.Want)
 				}
 			}

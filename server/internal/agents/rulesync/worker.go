@@ -2,6 +2,7 @@ package rulesync
 
 import (
 	"configflow/internal/store"
+	"configflow/internal/version"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -78,7 +79,7 @@ func (w *worker) failure(ctx context.Context, id string, cause error) error {
 	} else if text, ok := pairFailureMessage(ctx, w.s.m, cause); ok && text != "" {
 		message = text
 	}
-	return w.state(ctx, id, status, message, model.RuleSyncState{RetryAt: ptr(nowSeconds(w.s.now().Add(RetryAfter))), ForceRefresh: ptr(true), NativeTask: old.NativeTask, Key: old.Key})
+	return w.state(ctx, id, status, message, model.RuleSyncState{RetryAt: new(nowSeconds(w.s.now().Add(RetryAfter))), ForceRefresh: new(true), NativeTask: old.NativeTask, Key: old.Key})
 }
 func (s *Service) comparison(ctx context.Context, record *model.Agent, settings Settings) (comparison, string, error) {
 	head, e := s.m.Repository().Head(ctx)
@@ -208,11 +209,11 @@ func (w *worker) run(ctx context.Context, id string) error {
 	if a.Enabled != nil && !*a.Enabled || a.Status != "online" {
 		force := old.ForceRefresh
 		if old.Status == "running" && force == nil {
-			force = ptr(true)
+			force = new(true)
 		}
 		return w.state(ctx, id, "pending", msgOffline, model.RuleSyncState{NativeTask: old.NativeTask, Key: old.Key, ForceRefresh: force})
 	}
-	supported := agents.CompareVersions(a.Version, MinAgentVersion)
+	supported := version.CompareAgent(a.Version, MinAgentVersion)
 	if supported < 0 {
 		return w.state(ctx, id, "blocked", fmt.Sprintf(msgUpgrade, MinAgentVersion), model.RuleSyncState{})
 	}
@@ -232,7 +233,7 @@ func (w *worker) run(ctx context.Context, id string) error {
 	}
 	if task != nil && value(old.DeploymentID) == task.DeploymentID {
 		if task.Status != "succeeded" {
-			return w.state(ctx, id, "failed", msgReloadFailed, model.RuleSyncState{RetryAt: ptr(nowSeconds(s.now().Add(RetryAfter)))})
+			return w.state(ctx, id, "failed", msgReloadFailed, model.RuleSyncState{RetryAt: new(nowSeconds(s.now().Add(RetryAfter)))})
 		}
 		if e = w.state(ctx, id, "succeeded", msgReloadSuccess, model.RuleSyncState{}); e != nil {
 			return e
@@ -325,7 +326,7 @@ func (w *worker) run(ctx context.Context, id string) error {
 		return w.resumeNative(ctx, record, a, settings, old, source, key)
 	}
 	if value(old.Key) != key {
-		return w.state(ctx, id, "pending", msgDebounce, model.RuleSyncState{Key: &key, NoticedAt: &now, ForceRefresh: ptr(value(old.ForceRefresh) || old.Status == "running")})
+		return w.state(ctx, id, "pending", msgDebounce, model.RuleSyncState{Key: &key, NoticedAt: &now, ForceRefresh: new(value(old.ForceRefresh) || old.Status == "running")})
 	}
 	if now-value(old.NoticedAt) < PollInterval.Seconds() {
 		return nil
@@ -414,9 +415,9 @@ func (w *worker) resumeNative(ctx context.Context, record *model.Agent, a *model
 		if message == "" {
 			message = msgNativeFailed
 		}
-		return w.state(ctx, a.ID, "failed", message, model.RuleSyncState{ForceRefresh: ptr(true), RetryAt: ptr(nowSeconds(s.now().Add(RetryAfter)))})
+		return w.state(ctx, a.ID, "failed", message, model.RuleSyncState{ForceRefresh: new(true), RetryAt: new(nowSeconds(s.now().Add(RetryAfter)))})
 	}
-	return w.state(ctx, a.ID, "pending", msgContinue, model.RuleSyncState{Key: &key, NoticedAt: ptr(nowSeconds(s.now())), ForceRefresh: ptr(true)})
+	return w.state(ctx, a.ID, "pending", msgContinue, model.RuleSyncState{Key: &key, NoticedAt: new(nowSeconds(s.now())), ForceRefresh: new(true)})
 }
 func newDeploymentID() (string, error) {
 	var raw [16]byte
@@ -493,7 +494,7 @@ func (w *worker) refresh(ctx context.Context, record *model.Agent, a *model.Agen
 			return e
 		}
 		if existing.Status == "running" {
-			return w.state(ctx, a.ID, "pending", msgExisting, model.RuleSyncState{Key: &key, NoticedAt: ptr(nowSeconds(s.now().Add(-PollInterval)))})
+			return w.state(ctx, a.ID, "pending", msgExisting, model.RuleSyncState{Key: &key, NoticedAt: new(nowSeconds(s.now().Add(-PollInterval)))})
 		}
 		var paths []string
 		if monitor.SupportsRulePaths(a) {
@@ -550,14 +551,14 @@ func (w *worker) refresh(ctx context.Context, record *model.Agent, a *model.Agen
 			if len(paths) > 0 {
 				message = fmt.Sprintf(msgChangedFiles, len(paths))
 			}
-			return w.state(ctx, a.ID, "running", message, model.RuleSyncState{Key: &key, NativeTask: &task.ID, NoticedAt: ptr(nowSeconds(s.now().Add(-PollInterval)))})
+			return w.state(ctx, a.ID, "running", message, model.RuleSyncState{Key: &key, NativeTask: &task.ID, NoticedAt: new(nowSeconds(s.now().Add(-PollInterval)))})
 		}
 		if task.Status != "succeeded" {
 			message := task.Message
 			if message == "" {
 				message = msgUnconfirmed
 			}
-			return w.state(ctx, a.ID, "failed", message, model.RuleSyncState{RetryAt: ptr(nowSeconds(s.now().Add(RetryAfter)))})
+			return w.state(ctx, a.ID, "failed", message, model.RuleSyncState{RetryAt: new(nowSeconds(s.now().Add(RetryAfter)))})
 		}
 	}
 	same, e = s.unchanged(ctx, record, settings, "")
@@ -667,7 +668,7 @@ func (w *worker) publish(ctx context.Context, record *model.Agent, a *model.Agen
 	case "succeeded":
 		return w.state(ctx, a.ID, "succeeded", msgReloadSuccess, model.RuleSyncState{})
 	case "failed", "rolled_back", "rollback_failed":
-		return w.state(ctx, a.ID, "failed", msgReloadFailed, model.RuleSyncState{RetryAt: ptr(nowSeconds(s.now().Add(RetryAfter)))})
+		return w.state(ctx, a.ID, "failed", msgReloadFailed, model.RuleSyncState{RetryAt: new(nowSeconds(s.now().Add(RetryAfter)))})
 	}
 	return nil
 }

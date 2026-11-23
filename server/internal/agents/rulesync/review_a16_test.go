@@ -32,7 +32,7 @@ func TestStructurePublicationIgnoresStoredForceRefresh(t *testing.T) {
 	}
 	// A previous round failed: Run's failure path always stores force_refresh.
 	past := nowSeconds(f.now.Add(-time.Second))
-	if e := persistSync(f.ctx, f.s.m, "device", nil, &model.RuleSyncState{Status: "failed", Message: msgFailed, RetryAt: &past, ForceRefresh: ptr(true)}); e != nil {
+	if e := persistSync(f.ctx, f.s.m, "device", nil, &model.RuleSyncState{Status: "failed", Message: msgFailed, RetryAt: &past, ForceRefresh: new(true)}); e != nil {
 		t.Fatal(e)
 	}
 	_, e := f.s.m.Repository().UpdateProfile(f.ctx, "default", func(_ context.Context, p *model.Profile) error {

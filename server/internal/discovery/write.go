@@ -238,8 +238,8 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 				p, ok := evidence[a.Value]
 				h := HistoryEntry{Value: a.Value, RuleType: a.RuleType, Target: a.Target, RulesetID: a.RulesetID, Source: source, AppliedAt: at}
 				if ok {
-					h.Verdict = ptr(p.Verdict)
-					h.Confidence = ptr(p.Confidence)
+					h.Verdict = new(p.Verdict)
+					h.Confidence = new(p.Confidence)
 				}
 				history = append(history, h)
 			}
@@ -360,7 +360,7 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 	for _, h := range c.Settings.History {
 		if h.Value == value && h.Target == target {
 			if h.RulesetID != "" {
-				rid = ptr(h.RulesetID)
+				rid = new(h.RulesetID)
 			}
 			break
 		}

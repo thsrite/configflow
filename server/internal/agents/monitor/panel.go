@@ -11,6 +11,7 @@ package monitor
 
 import (
 	"bytes"
+	"configflow/internal/textx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -162,19 +163,6 @@ func panelName(args [][2]string, key string) (string, error) {
 	return name, nil
 }
 
-// asciiDigits requires a nonempty unsigned ASCII digit sequence.
-func asciiDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i := range len(s) {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return true
-}
-
 var decimalIntegerRE = regexp.MustCompile(`^[+-]?[0-9]+(?:_[0-9]+)*$`)
 
 // decimalInteger accepts bounded decimal input without interpreting Unicode digits.
@@ -197,7 +185,7 @@ func panelLogsQuery(args [][2]string) (query, error) {
 		return nil, panelFail("INVALID_REQUEST", 400, msgLogLevel)
 	}
 	after := argGet(args, "after", "0")
-	if !asciiDigits(after) || runeLen(after) > 18 {
+	if !textx.ASCIIDigits(after) || runeLen(after) > 18 {
 		return nil, panelFail("INVALID_REQUEST", 400, "")
 	}
 	return query{{"level", level}, {"after", after}}, nil

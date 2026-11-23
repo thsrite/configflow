@@ -3,6 +3,7 @@ package installation
 // Legacy repository/registry boundaries are confined to this file. The
 // installation state machine itself uses native structs and raw JSON.
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -58,19 +59,19 @@ func decodeAgent(r *model.Agent) (*agent, error) {
 	for _, key := range []string{"id", "name", "host", "port", "profile_id", "service_type", "enabled", "version"} {
 		p[key] = o[key]
 		if len(p[key]) == 0 {
-			p[key] = raw(nil)
+			p[key] = jsonresp.Value(nil)
 		}
 	}
 	now := time.Now()
 	status := o["status"]
 	if !agents.FreshHeartbeat(r.LastHeartbeat, &now) {
-		status = raw("offline")
+		status = jsonresp.Value("offline")
 	}
 	if len(status) == 0 {
-		status = raw(nil)
+		status = jsonresp.Value(nil)
 	}
 	p["status"] = status
-	a.public = raw(p)
+	a.public = jsonresp.Value(p)
 	a.usable = string(o["enabled"]) != "false" && text(status) == "online"
 	return &a, nil
 }
@@ -382,7 +383,7 @@ func (s *Service) deployment(ctx context.Context, id, did string, activate bool)
 	return encodeResult(result)
 }
 func (s *Service) recordFailed(ctx context.Context, id, did string) (json.RawMessage, error) {
-	update, err := agents.DecodeDeploymentUpdate(raw(map[string]any{"success": false, "status": "failed", "message": msgPrepareFailed}))
+	update, err := agents.DecodeDeploymentUpdate(jsonresp.Value(map[string]any{"success": false, "status": "failed", "message": msgPrepareFailed}))
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -47,17 +48,17 @@ func TestManualVerificationSeparateStateAndStaleness(t *testing.T) {
 			for _, id := range []string{"deployed_config", "runtime_core", "runtime_ipv6", "runtime_tun", "proxy_http", "node_ipv6_transport", "dns_a", "dns_aaaa"} {
 				checks = append(checks, check(id, id, "ok", "synthetic evidence"))
 			}
-			return response(Document{"success": raw(true), "checks": raw(checks)}), nil
+			return response(Document{"success": jsonresp.Value(true), "checks": jsonresp.Value(checks)}), nil
 		}
 		return response(hostStatus()), nil
 	}))
-	_, e = s.Start(ctx, "source", "default", raw(Document{"expected_config_revision": raw(revision)}), false)
+	_, e = s.Start(ctx, "source", "default", jsonresp.Value(Document{"expected_config_revision": jsonresp.Value(revision)}), false)
 	if e != nil {
 		t.Fatal(e)
 	}
 	report := waitReport(t, s, ctx, "manual")
 	if text(report["status"]) != "warning" || text(report["scope"]) != "mihomo_runtime" || !strings.Contains(string(report["checks"]), "runtime_expected_config") || !strings.Contains(string(report["checks"]), "client_not_configured") {
-		t.Fatal(string(raw(report)))
+		t.Fatal(string(jsonresp.Value(report)))
 	}
 	_, after, e := s.snapshot(ctx, "default")
 	if e != nil || after != revision {
@@ -67,10 +68,10 @@ func TestManualVerificationSeparateStateAndStaleness(t *testing.T) {
 	if a["latest_deployment"] != nil {
 		t.Fatal("unrelated registry members changed")
 	}
-	_, e = s.Start(ctx, "source", "default", raw(Document{"expected_config_revision": raw(revision + 1)}), false)
+	_, e = s.Start(ctx, "source", "default", jsonresp.Value(Document{"expected_config_revision": jsonresp.Value(revision + 1)}), false)
 	requireCode(t, e, "CONFIG_CHANGED", 409)
 	if e = s.update(ctx, "source", func(_ context.Context, a Document, _ []Document) error {
-		a["gateway_installation_id"] = raw("replacement-installation")
+		a["gateway_installation_id"] = jsonresp.Value("replacement-installation")
 		return nil
 	}); e != nil {
 		t.Fatal(e)
@@ -90,7 +91,7 @@ func seedPublication(t *testing.T, s *Service, ctx context.Context, did string) 
 	if e != nil {
 		t.Fatal(e)
 	}
-	source, e := deploy.SourceFromJSON(raw(config), &revision)
+	source, e := deploy.SourceFromJSON(jsonresp.Value(config), &revision)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -108,12 +109,12 @@ func seedPublication(t *testing.T, s *Service, ctx context.Context, did string) 
 	}
 	e = s.update(ctx, "source", func(_ context.Context, a Document, _ []Document) error {
 		final := strings.Repeat("a", 64)
-		task := Document{"deployment_id": raw(did), "status": raw("succeeded"), "profile_id": raw("default"), "service_type": raw("mihomo"), "config_revision": raw(revision), "config_version": raw(final), "ipv6_verification_requested": raw(true)}
-		a["deployments"] = raw(Document{did: raw(task)})
-		a["latest_deployment"] = raw(task)
-		a["config_revision"] = raw(revision)
-		a["config_version"] = raw(final)
-		a["applied_content"] = raw(Document{"deployment_id": raw(did), "profile_id": raw("default"), "service_type": raw("mihomo"), "config_version": raw(final)})
+		task := Document{"deployment_id": jsonresp.Value(did), "status": jsonresp.Value("succeeded"), "profile_id": jsonresp.Value("default"), "service_type": jsonresp.Value("mihomo"), "config_revision": jsonresp.Value(revision), "config_version": jsonresp.Value(final), "ipv6_verification_requested": jsonresp.Value(true)}
+		a["deployments"] = jsonresp.Value(Document{did: jsonresp.Value(task)})
+		a["latest_deployment"] = jsonresp.Value(task)
+		a["config_revision"] = jsonresp.Value(revision)
+		a["config_version"] = jsonresp.Value(final)
+		a["applied_content"] = jsonresp.Value(Document{"deployment_id": jsonresp.Value(did), "profile_id": jsonresp.Value("default"), "service_type": jsonresp.Value("mihomo"), "config_version": jsonresp.Value(final)})
 		return nil
 	})
 	if e != nil {
@@ -135,11 +136,11 @@ func TestPublicationSnapshotAndAdaptedDigest(t *testing.T) {
 	s.Manager.SetClient(clientFunc(func(_ context.Context, r agents.Request) (*agents.Response, error) {
 		if strings.HasSuffix(r.URL, "/verify") {
 			hashes <- text(object(r.Body)["expected_config_sha256"])
-			return response(Document{"success": raw(true), "checks": raw([]Check{})}), nil
+			return response(Document{"success": jsonresp.Value(true), "checks": jsonresp.Value([]Check{})}), nil
 		}
 		return response(hostStatus()), nil
 	}))
-	result, e := s.Start(ctx, "source", "default", raw(Document{"deployment_id": raw("publication-one")}), false)
+	result, e := s.Start(ctx, "source", "default", jsonresp.Value(Document{"deployment_id": jsonresp.Value("publication-one")}), false)
 	if e != nil || result.Applicable != nil {
 		t.Fatal(result, e)
 	}
@@ -155,7 +156,7 @@ func TestPublicationSnapshotAndAdaptedDigest(t *testing.T) {
 		t.Fatal(notApplicable, e)
 	}
 	before := s.Manager.Repository().CommitCount()
-	_, e = s.Start(ctx, "source", "default", raw(Document{"deployment_id": raw("publication-one")}), true)
+	_, e = s.Start(ctx, "source", "default", jsonresp.Value(Document{"deployment_id": jsonresp.Value("publication-one")}), true)
 	if e != nil || s.Manager.Repository().CommitCount() != before {
 		t.Fatal("automatic re-enrolled existing publication", e)
 	}
@@ -164,9 +165,9 @@ func TestSchedulerUnavailableExpiryAndBadRows(t *testing.T) {
 	startRuntime(t)
 	s, ctx := fixture(t)
 	e := s.update(ctx, "source", func(_ context.Context, a Document, _ []Document) error {
-		task := Document{"deployment_id": raw("missing-snapshot"), "status": raw("succeeded"), "profile_id": raw("default"), "service_type": raw("mihomo"), "config_revision": raw(1), "ipv6_verification_requested": raw(true)}
-		a["deployments"] = raw(Document{"missing-snapshot": raw(task)})
-		a["latest_deployment"] = raw(task)
+		task := Document{"deployment_id": jsonresp.Value("missing-snapshot"), "status": jsonresp.Value("succeeded"), "profile_id": jsonresp.Value("default"), "service_type": jsonresp.Value("mihomo"), "config_revision": jsonresp.Value(1), "ipv6_verification_requested": jsonresp.Value(true)}
+		a["deployments"] = jsonresp.Value(Document{"missing-snapshot": jsonresp.Value(task)})
+		a["latest_deployment"] = jsonresp.Value(task)
 		a["ipv6_verifications"] = json.RawMessage(`{"bad":false,"expired":{"status":"running","started_epoch":"bad","future":{"keep":true}}}`)
 		return nil
 	})
@@ -243,7 +244,7 @@ func TestTwoLevelRedactionKeepsProtocolFields(t *testing.T) {
 	t.Setenv("AGENT_REGISTRATION_KEY", "synthetic-registration-key")
 	s, ctx := fixture(t)
 	e := s.update(ctx, "source", func(_ context.Context, a Document, _ []Document) error {
-		a["legacy"] = raw(Document{"password": raw("ok")})
+		a["legacy"] = jsonresp.Value(Document{"password": jsonresp.Value("ok")})
 		return nil
 	})
 	if e != nil {
@@ -260,7 +261,7 @@ func TestTwoLevelRedactionKeepsProtocolFields(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	value := Document{"outside": raw("synthetic-registration-key"), "status": raw("ok"), "agent_id": raw("ok"), "check_token": raw(strings.Repeat("a", 64)), "checks": raw([]Check{check("ok", "ok", "ok", "ok synthetic-peer-token synthetic-peer-password synthetic-source-token")})}
+	value := Document{"outside": jsonresp.Value("synthetic-registration-key"), "status": jsonresp.Value("ok"), "agent_id": jsonresp.Value("ok"), "check_token": jsonresp.Value(strings.Repeat("a", 64)), "checks": jsonresp.Value([]Check{check("ok", "ok", "ok", "ok synthetic-peer-token synthetic-peer-password synthetic-source-token")})}
 	public, e := s.Public(ctx, "default", value)
 	if e != nil {
 		t.Fatal(e)
@@ -282,7 +283,7 @@ func addClient(t *testing.T, s *Service, ctx context.Context) {
 	t.Helper()
 	e := s.Manager.Repository().UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
 		var client model.Agent
-		data := raw(map[string]any{
+		data := jsonresp.Value(map[string]any{
 			"id": "client", "host": "192.0.2.3", "port": 8080, "token": "synthetic-client-token",
 			"profile_id": "default", "service_type": "oxidns", "deployment_method": "shell",
 			"enabled": true, "status": "online", "last_heartbeat": time.Now().Format(time.RFC3339),
@@ -305,7 +306,7 @@ func TestSettingsIndependentClientAndCapabilities(t *testing.T) {
 		if !strings.HasSuffix(r.URL, "/api/capabilities") || r.Method != "GET" || len(r.Body) != 0 || r.Timeout != agents.Pair(2, 3) {
 			t.Errorf("wrong capability request %+v", r)
 		}
-		return response(Document{"success": raw(true), "platform": raw("linux"), "ipv6_client_probe_protocols": raw([]int{1})}), nil
+		return response(Document{"success": jsonresp.Value(true), "platform": jsonresp.Value("linux"), "ipv6_client_probe_protocols": jsonresp.Value([]int{1})}), nil
 	}))
 	_, e := s.VerificationSettings(ctx, "source", "default", json.RawMessage(`{"client_agent_id":"source","test_url":""}`))
 	requireCode(t, e, "CLIENT_UNAVAILABLE", 409)
@@ -314,7 +315,7 @@ func TestSettingsIndependentClientAndCapabilities(t *testing.T) {
 		t.Fatal(result, e)
 	}
 	if e = s.update(ctx, "source", func(_ context.Context, a Document, _ []Document) error {
-		a["ipv6_verifications"] = raw(Document{"manual": raw(Document{"status": raw("running")})})
+		a["ipv6_verifications"] = jsonresp.Value(Document{"manual": jsonresp.Value(Document{"status": jsonresp.Value("running")})})
 		return nil
 	}); e != nil {
 		t.Fatal(e)
@@ -340,7 +341,7 @@ func TestClientChecksRequireMatchingRunAndIdentity(t *testing.T) {
 			runID := strings.Repeat("b", 32)
 			s.Manager.SetClient(clientFunc(func(ctx context.Context, r agents.Request) (*agents.Response, error) {
 				if strings.HasSuffix(r.URL, "/capabilities") {
-					return response(Document{"platform": raw("linux"), "ipv6_client_probe_protocols": raw([]int{1})}), nil
+					return response(Document{"platform": jsonresp.Value("linux"), "ipv6_client_probe_protocols": jsonresp.Value([]int{1})}), nil
 				}
 				if strings.HasSuffix(r.URL, "/verify-connections") {
 					<-clientDone
@@ -348,19 +349,19 @@ func TestClientChecksRequireMatchingRunAndIdentity(t *testing.T) {
 					if mode == "different-run" {
 						id = "previous"
 					}
-					return response(Document{"success": raw(true), "request_id": raw(id), "target_host": raw("site.example"), "matches": raw([]Document{{"source_ip": raw("192.0.2.3"), "source_port": raw(34567), "host": raw("site.example"), "network": raw("tcp"), "destination_port": raw(443), "proxy_name": raw("node"), "proxy_type": raw("ss"), "chains": raw([]string{"node"}), "ipv6_transport_verified": raw(true)}})}), nil
+					return response(Document{"success": jsonresp.Value(true), "request_id": jsonresp.Value(id), "target_host": jsonresp.Value("site.example"), "matches": jsonresp.Value([]Document{{"source_ip": jsonresp.Value("192.0.2.3"), "source_port": jsonresp.Value(34567), "host": jsonresp.Value("site.example"), "network": jsonresp.Value("tcp"), "destination_port": jsonresp.Value(443), "proxy_name": jsonresp.Value("node"), "proxy_type": jsonresp.Value("ss"), "chains": jsonresp.Value([]string{"node"}), "ipv6_transport_verified": jsonresp.Value(true)}})}), nil
 				}
 				if strings.HasSuffix(r.URL, "/verify-client") {
 					if mode == "changed-client" {
 						if e := s.update(ctx, "client", func(_ context.Context, a Document, _ []Document) error {
-							a["token"] = raw("synthetic-replaced-client")
+							a["token"] = jsonresp.Value("synthetic-replaced-client")
 							return nil
 						}); e != nil {
 							t.Error(e)
 						}
 					}
 					close(clientDone)
-					return response(Document{"success": raw(true), "request_id": raw(runID), "target_host": raw("site.example"), "requests": raw([]Document{{"status": raw("ok"), "source_ip": raw("192.0.2.3"), "source_port": raw(34567), "address": raw("198.51.100.9"), "family": raw("ipv4")}})}), nil
+					return response(Document{"success": jsonresp.Value(true), "request_id": jsonresp.Value(runID), "target_host": jsonresp.Value("site.example"), "requests": jsonresp.Value([]Document{{"status": jsonresp.Value("ok"), "source_ip": jsonresp.Value("192.0.2.3"), "source_port": jsonresp.Value(34567), "address": jsonresp.Value("198.51.100.9"), "family": jsonresp.Value("ipv4")}})}), nil
 				}
 				return response(hostStatus()), nil
 			}))
@@ -460,7 +461,10 @@ func TestVerificationRunsAtMostTwoWorkers(t *testing.T) {
 func TestClientRequiresStoredOnlineStatus(t *testing.T) {
 	s, ctx := fixture(t)
 	addClient(t, s, ctx)
-	if e := s.update(ctx, "client", func(_ context.Context, a Document, _ []Document) error { a["status"] = raw("preparing"); return nil }); e != nil {
+	if e := s.update(ctx, "client", func(_ context.Context, a Document, _ []Document) error {
+		a["status"] = jsonresp.Value("preparing")
+		return nil
+	}); e != nil {
 		t.Fatal(e)
 	}
 	source, e := s.agent(ctx, "source", "default")
@@ -474,16 +478,16 @@ func TestClientRequiresStoredOnlineStatus(t *testing.T) {
 func TestEnrollOnlyValidNewIPv6Publications(t *testing.T) {
 	startRuntime(t)
 	s, ctx := fixture(t)
-	task := Document{"deployment_id": raw("new"), "status": raw("preparing"), "future": raw(Document{"keep": raw(true)})}
+	task := Document{"deployment_id": jsonresp.Value("new"), "status": jsonresp.Value("preparing"), "future": jsonresp.Value(Document{"keep": jsonresp.Value(true)})}
 	if e := s.update(ctx, "source", func(_ context.Context, a Document, _ []Document) error {
-		a["deployments"] = raw(Document{"new": raw(task)})
-		a["latest_deployment"] = raw(task)
+		a["deployments"] = jsonresp.Value(Document{"new": jsonresp.Value(task)})
+		a["latest_deployment"] = jsonresp.Value(task)
 		return nil
 	}); e != nil {
 		t.Fatal(e)
 	}
 	for _, yaml := range []string{"ipv6: false", "ipv6: 'true'"} {
-		if e := s.Enroll(ctx, "source", "new", Document{"mihomo": raw(map[string]string{"custom_config": yaml})}); e != nil {
+		if e := s.Enroll(ctx, "source", "new", Document{"mihomo": jsonresp.Value(map[string]string{"custom_config": yaml})}); e != nil {
 			t.Fatal(e)
 		}
 		a, _ := s.agent(ctx, "source", "default")
@@ -501,7 +505,7 @@ func TestEnrollOnlyValidNewIPv6Publications(t *testing.T) {
 	a, _ := s.agent(ctx, "source", "default")
 	latest := object(a["latest_deployment"])
 	stored := object(object(a["deployments"])["new"])
-	if !yes(latest["ipv6_verification_requested"]) || string(raw(stored)) != string(raw(latest)) {
+	if !yes(latest["ipv6_verification_requested"]) || string(jsonresp.Value(stored)) != string(jsonresp.Value(latest)) {
 		t.Fatal("enrollment lost task/mirror", latest)
 	}
 	bound := lifecycle.BindRequest(ctx)
@@ -524,7 +528,7 @@ func TestSchedulerStartsCapturedPublicationOnce(t *testing.T) {
 	s.Manager.SetClient(clientFunc(func(_ context.Context, r agents.Request) (*agents.Response, error) {
 		if strings.HasSuffix(r.URL, "/verify") {
 			verifications.Add(1)
-			return response(Document{"success": raw(true), "checks": raw([]Check{})}), nil
+			return response(Document{"success": jsonresp.Value(true), "checks": jsonresp.Value([]Check{})}), nil
 		}
 		return response(hostStatus()), nil
 	}))
@@ -569,7 +573,7 @@ func TestSettingsCapabilityPreflightBelongsToWriteOwner(t *testing.T) {
 					case <-gate:
 					}
 				}
-				return response(Document{"platform": raw("linux"), "ipv6_client_probe_protocols": raw([]int{1})}), nil
+				return response(Document{"platform": jsonresp.Value("linux"), "ipv6_client_probe_protocols": jsonresp.Value([]int{1})}), nil
 			}))
 			bound, cancel := context.WithCancel(lifecycle.BindRequest(ctx))
 			defer cancel()
@@ -609,7 +613,7 @@ func TestClientStoredOnlineSurvivesAnOldHeartbeat(t *testing.T) {
 	s, ctx := fixture(t)
 	addClient(t, s, ctx)
 	if err := s.update(ctx, "client", func(_ context.Context, a Document, _ []Document) error {
-		a["last_heartbeat"] = raw("2000-01-01T00:00:00+00:00")
+		a["last_heartbeat"] = jsonresp.Value("2000-01-01T00:00:00+00:00")
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -643,22 +647,22 @@ func TestD2VerificationReportMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	native := s.newRun(ctx, a, &revision, "", all)
-	native["status"] = raw("ok")
-	native["message"] = raw(msgManualRunning)
-	native["checks"] = raw([]Check{check("native_result", "native", "ok", "synthetic")})
+	native["status"] = jsonresp.Value("ok")
+	native["message"] = jsonresp.Value(msgManualRunning)
+	native["checks"] = jsonresp.Value([]Check{check("native_result", "native", "ok", "synthetic")})
 	for _, tt := range []struct {
 		name   string
 		legacy bool
 	}{{"native", false}, {"legacy", true}} {
 		t.Run(tt.name, func(t *testing.T) {
-			report := object(raw(native))
+			report := object(jsonresp.Value(native))
 			if tt.legacy {
 				for _, key := range []string{"settings_fingerprint", "target_fingerprint", "applied_fingerprint"} {
-					report[key] = raw("old-python-fingerprint")
+					report[key] = jsonresp.Value("old-python-fingerprint")
 				}
 			}
 			if err := s.update(ctx, "source", func(_ context.Context, current Document, _ []Document) error {
-				current["ipv6_verifications"] = raw(Document{"manual": raw(report)})
+				current["ipv6_verifications"] = jsonresp.Value(Document{"manual": jsonresp.Value(report)})
 				return nil
 			}); err != nil {
 				t.Fatal(err)
@@ -670,7 +674,7 @@ func TestD2VerificationReportMigration(t *testing.T) {
 			}
 			actual := object(result.Verification)
 			if yes(actual["stale"]) != tt.legacy {
-				t.Fatalf("stale result: %s", raw(actual))
+				t.Fatalf("stale result: %s", jsonresp.Value(actual))
 			}
 			if tt.legacy {
 				var checks []Check
@@ -682,7 +686,7 @@ func TestD2VerificationReportMigration(t *testing.T) {
 					t.Fatalf("changed inputs: %+v", checks)
 				}
 			} else if text(actual["status"]) != "ok" || string(actual["checks"]) != string(native["checks"]) {
-				t.Fatalf("native result changed: %s", raw(actual))
+				t.Fatalf("native result changed: %s", jsonresp.Value(actual))
 			}
 			if s.Manager.Repository().CommitCount() != before {
 				t.Fatal("result GET rewrote stored report")

@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"configflow/internal/timefmt"
 	"context"
 	"encoding/json"
 	"errors"
@@ -61,7 +62,7 @@ func seedAgent(t *testing.T, ctx context.Context, r *repo.Repository, heartbeat 
 		"token": "agent-token-0123456789abcdef", "host": "h", "port": 8080,
 	}
 	if heartbeat {
-		agentMap["last_heartbeat"] = isoformat(naiveNow())
+		agentMap["last_heartbeat"] = timefmt.Naive(naiveNow())
 	}
 	agent := agentModelForTest(t, agentMap)
 	if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {

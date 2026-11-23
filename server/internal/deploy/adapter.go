@@ -117,7 +117,7 @@ func (s *Source) readRule(ctx context.Context, rawURL, sourceID string, declared
 		return ruleRead{declared: true}, err
 	}
 	if rule == nil && declared != nil {
-		rule = &model.RuleConfig{Name: declared.Name, Behavior: ptr(declared.Behavior), Format: ptr(declared.Format), SourceType: ptr("url"), URL: ptr(rawURL)}
+		rule = &model.RuleConfig{Name: declared.Name, Behavior: new(declared.Behavior), Format: new(declared.Format), SourceType: new("url"), URL: new(rawURL)}
 	}
 	if rule == nil || rule.SourceType != nil && *rule.SourceType != "url" {
 		return ruleRead{}, nil
@@ -162,7 +162,7 @@ func Wire() {
 }
 
 func (s *Source) normalize(value []byte, rule RuleRef) ([]byte, error) {
-	r := model.RuleConfig{ID: rule.ID, Name: rule.Name, URL: ptr(rule.URL), SourceType: ptr(rule.SourceType), Behavior: ptr(defaultBehavior(rule.Behavior)), Format: ptr(rule.Format)}
+	r := model.RuleConfig{ID: rule.ID, Name: rule.Name, URL: new(rule.URL), SourceType: new(rule.SourceType), Behavior: new(defaultBehavior(rule.Behavior)), Format: new(rule.Format)}
 	format, err := convert.RuleFormat(r, s.config(), "")
 	if err != nil {
 		return nil, err
@@ -174,7 +174,7 @@ func (s *Source) normalize(value []byte, rule RuleRef) ([]byte, error) {
 	return []byte(text), err
 }
 func (s *Source) validateRemote(value []byte, rule RuleRef) error {
-	return rulefetch.ValidateRemote(rulefetch.Content{Data: value}, model.RuleConfig{Name: rule.Name, URL: ptr(rule.URL), SourceType: ptr("url"), Behavior: ptr(rule.Behavior), Format: ptr(rule.Format)}, nil, rule.Format)
+	return rulefetch.ValidateRemote(rulefetch.Content{Data: value}, model.RuleConfig{Name: rule.Name, URL: new(rule.URL), SourceType: new("url"), Behavior: new(rule.Behavior), Format: new(rule.Format)}, nil, rule.Format)
 }
 func (s *Source) unavailable(paths []string) []string {
 	profile, err := s.dnsProfile()

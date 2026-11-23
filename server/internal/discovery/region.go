@@ -130,7 +130,7 @@ func evaluateRegion(targets []RegionTarget, raw map[string][]RegionResult, plan 
 		}
 		for _, failure := range failures {
 			if failure.Target == target.Name {
-				info.Error = ptr(failure.Message)
+				info.Error = new(failure.Message)
 				break
 			}
 		}
@@ -312,7 +312,7 @@ func RegionPayload(ctx context.Context, id string) (*RegionView, error) {
 		}
 		at := checkedAt(data.Services)
 		if i == 0 || (len(data.Services) > 0 && string(data.Services) != "null" && at > latest) {
-			chosen = ptr(a)
+			chosen = new(a)
 			result = data.Services
 			latest = at
 		}
@@ -328,7 +328,7 @@ func RegionPayload(ctx context.Context, id string) (*RegionView, error) {
 	}
 	regional := map[string]*RulesetInfo{}
 	for policy, rid := range c.Settings.RegionalRulesets {
-		regional[policy] = info(c, ptr(rid))
+		regional[policy] = info(c, new(rid))
 	}
 	return &RegionView{Enabled: c.Settings.RegionEnabled, Port: c.Settings.RegionPort, Services: publicServices(), Result: result, Agent: agent, Domains: domains, Policies: c.policies(), Ready: len(capable(as, minRegionVersion)) > 0, MinAgentVersion: minRegionVersion, Job: runningJob(id), RegionalRulesets: regional}, nil
 }
@@ -377,7 +377,7 @@ func ensurePolicy(ctx context.Context, id, policy string, values []string) error
 	if !contains(c.policies(), policy) {
 		return invalid(msgPolicy)
 	}
-	inf := info(c, ptr(c.Settings.RegionalRulesets[policy]))
+	inf := info(c, new(c.Settings.RegionalRulesets[policy]))
 	if inf != nil && inf.Problem == nil && inf.Active {
 		return nil
 	}

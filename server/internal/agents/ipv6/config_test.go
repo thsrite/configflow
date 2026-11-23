@@ -3,6 +3,7 @@ package ipv6
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"os"
@@ -18,12 +19,12 @@ func TestConfigurationAndTargetsPython(t *testing.T) {
 	input := bytes.Buffer{}
 	actual := []json.RawMessage{}
 	for _, source := range sources {
-		config := Document{"mihomo": raw(map[string]string{"custom_config": source}), "nodes": raw([]any{nil, true, map[string]any{"type": "ss", "server": "2001:db8::3", "port": 443}, map[string]any{"type": "ss", "server": "192.0.2.3", "port": 443}, map[string]any{"type": "trojan", "server": "node.example.com", "port": 443}, map[string]any{"type": "vless", "server": "2001:db8::4", "port": 443, "dialer-proxy": "previous"}, map[string]any{"type": "ss", "server": "2001:db8::5", "port": 443, "enabled": false}})}
+		config := Document{"mihomo": jsonresp.Value(map[string]string{"custom_config": source}), "nodes": jsonresp.Value([]any{nil, true, map[string]any{"type": "ss", "server": "2001:db8::3", "port": 443}, map[string]any{"type": "ss", "server": "192.0.2.3", "port": 443}, map[string]any{"type": "trojan", "server": "node.example.com", "port": 443}, map[string]any{"type": "vless", "server": "2001:db8::4", "port": 443, "dialer-proxy": "previous"}, map[string]any{"type": "ss", "server": "2001:db8::5", "port": 443, "enabled": false}})}
 		// Python's old helper crashes on malformed node rows in some upstream callers;
 		// this one already isolates them, and the Go fixture preserves healthy peers.
 		settings, doc := ReadConfiguration(config)
-		actual = append(actual, raw(map[string]any{"configuration": settings, "targets": ProbeTargets(config, doc)}))
-		input.Write(raw(config))
+		actual = append(actual, jsonresp.Value(map[string]any{"configuration": settings, "targets": ProbeTargets(config, doc)}))
+		input.Write(jsonresp.Value(config))
 		input.WriteByte('\n')
 	}
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
@@ -69,7 +70,7 @@ func TestConfigurationAndTargetsPython(t *testing.T) {
 	}
 }
 func TestSavedIPv6PrefixNormalization(t *testing.T) {
-	settings, _ := ReadConfiguration(Document{"mihomo": raw(map[string]string{"custom_config": "dns: {enable: true, enhanced-mode: fake-ip, ipv6: true, fake-ip-range6: 'fd00:abcd::1234/64'}"})})
+	settings, _ := ReadConfiguration(Document{"mihomo": jsonresp.Value(map[string]string{"custom_config": "dns: {enable: true, enhanced-mode: fake-ip, ipv6: true, fake-ip-range6: 'fd00:abcd::1234/64'}"})})
 	if text(settings.FakeIPv6Range) != "fd00:abcd::/64" || !settings.FakeIPv6Enabled || len(settings.Errors) != 0 {
 		t.Fatal("R11 received noncanonical IPv6 prefix", settings)
 	}
@@ -81,8 +82,8 @@ func FuzzSavedIPv6Configuration(f *testing.F) {
 		if len(source) > 65536 {
 			return
 		}
-		settings, doc := ReadConfiguration(Document{"mihomo": raw(map[string]string{"custom_config": source})})
-		if !json.Valid(raw(settings)) || doc == nil {
+		settings, doc := ReadConfiguration(Document{"mihomo": jsonresp.Value(map[string]string{"custom_config": source})})
+		if !json.Valid(jsonresp.Value(settings)) || doc == nil {
 			t.Fatal("configuration parse failed to produce diagnostic")
 		}
 		for _, target := range ProbeTargets(Document{}, doc) {

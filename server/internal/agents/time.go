@@ -1,7 +1,7 @@
 package agents
 
 import (
-	"fmt"
+	"configflow/internal/timefmt"
 	"math"
 	"math/big"
 	"strings"
@@ -15,23 +15,8 @@ import (
 var clock = time.Now
 var localZone = time.Local
 
-func isoformat(moment time.Time, aware bool) string {
-	text := moment.Format("2006-01-02T15:04:05")
-	if micro := moment.Nanosecond() / 1000; micro != 0 {
-		text += fmt.Sprintf(".%06d", micro)
-	}
-	if aware {
-		_, offset := moment.Zone()
-		if offset%60 != 0 {
-			text += moment.Format("-07:00:00")
-		} else {
-			text += moment.Format("-07:00")
-		}
-	}
-	return text
-}
-func nowISO() string    { return isoformat(clock(), false) }
-func utcNowISO() string { return isoformat(clock().UTC(), true) }
+func nowISO() string    { return timefmt.Naive(clock()) }
+func utcNowISO() string { return timefmt.Offset(clock().UTC()) }
 func utcNowZ() string   { return strings.TrimSuffix(utcNowISO(), "+00:00") + "Z" }
 
 // fromISO uses the shared accepted ISO grammar. Naive registry timestamps are

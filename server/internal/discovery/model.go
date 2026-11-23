@@ -135,7 +135,7 @@ func (h *HistoryEntry) UnmarshalJSON(b []byte) error {
 	}
 	*h = HistoryEntry{Value: record.Value, RuleType: record.RuleType, Target: record.Target, RulesetID: record.RulesetID, Source: record.Source, AppliedAt: record.AppliedAt, Verdict: record.Verdict}
 	if record.Confidence != nil {
-		h.Confidence = ptr(int(*record.Confidence))
+		h.Confidence = new(int(*record.Confidence))
 	}
 	if r := record.Recheck; r != nil {
 		h.Recheck = &Recheck{At: r.At, Verdict: r.Verdict, Reason: r.Reason, SuggestRemove: r.SuggestRemove != nil && *r.SuggestRemove}
@@ -398,7 +398,6 @@ func proxyPath(c config) *string {
 	}
 	return nil
 }
-func ptr[T any](v T) *T { return &v }
 
 // Match is the public rule-match metadata attached to discovered hosts.
 type Match struct {

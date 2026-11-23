@@ -4,6 +4,7 @@ package stats
 import (
 	"bytes"
 	"configflow/internal/jsondecode"
+	"configflow/internal/timefmt"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -87,13 +88,6 @@ func currentCounts(ctx context.Context) (Counts, error) {
 	return Counts{len(shared.Subscriptions), len(shared.Nodes), len(profile.ProxyGroups), len(profile.RuleConfigs)}, nil
 }
 
-func isoformatZ(t time.Time) string {
-	t = t.UTC()
-	if t.Nanosecond()/1000 == 0 {
-		return t.Format("2006-01-02T15:04:05") + "Z"
-	}
-	return t.Format("2006-01-02T15:04:05.000000") + "Z"
-}
 func recordHistory(ctx context.Context, counts Counts, persist bool) (map[string][]*json.Number, error) {
 	if persist {
 		ctx = lifecycle.Detach(ctx)
@@ -131,7 +125,7 @@ func recordHistory(ctx context.Context, counts Counts, persist bool) (map[string
 	current, err := json.Marshal(struct {
 		At string `json:"at"`
 		Counts
-	}{isoformatZ(now), counts})
+	}{timefmt.UTCZ(now), counts})
 	if err != nil {
 		return nil, err
 	}

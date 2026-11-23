@@ -1,6 +1,7 @@
 package ipv6
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,12 +16,12 @@ func (s *Service) credentials(ctx context.Context, config Document) (redact.Secr
 	if e != nil {
 		return nil, e
 	}
-	seeds := redact.CollectCredentials(raw(config), system)
+	seeds := redact.CollectCredentials(jsonresp.Value(config), system)
 	all, e := s.all(ctx)
 	if e != nil {
 		return nil, e
 	}
-	seeds = redact.CollectCredentials(raw(all), seeds)
+	seeds = redact.CollectCredentials(jsonresp.Value(all), seeds)
 	_, doc := ReadConfiguration(config)
 	if doc != nil {
 		if b, e := yamlx.ToJSON(doc); e == nil {
@@ -38,19 +39,19 @@ func diagnosticProjection(b json.RawMessage, seeds redact.Secrets) json.RawMessa
 			if diagnosticFields[key] {
 				obj[key] = redact.SanitizeCredentials(value, seeds)
 			} else if key != "check_token" && diag.IsCredentialKey(key) {
-				obj[key] = raw(redact.Redacted)
+				obj[key] = jsonresp.Value(redact.Redacted)
 			} else {
 				obj[key] = diagnosticProjection(value, seeds)
 			}
 		}
-		return raw(obj)
+		return jsonresp.Value(obj)
 	}
 	var list []json.RawMessage
 	if json.Unmarshal(b, &list) == nil && list != nil {
 		for i, v := range list {
 			list[i] = diagnosticProjection(v, seeds)
 		}
-		return raw(list)
+		return jsonresp.Value(list)
 	}
 	return b
 }
@@ -71,7 +72,7 @@ func (s *Service) Public(ctx context.Context, profile string, value any) (json.R
 	if e != nil {
 		return nil, e
 	}
-	projected := diagnosticProjection(raw(value), seeds)
+	projected := diagnosticProjection(jsonresp.Value(value), seeds)
 	return json.Marshal(redact.SanitizeWithSecrets(projected, system, false))
 }
 
@@ -82,7 +83,7 @@ func (s *Service) capturedPublic(ctx context.Context, config, a Document, value 
 	if e != nil {
 		return nil, e
 	}
-	seeds = redact.CollectCredentials(raw(a), seeds)
+	seeds = redact.CollectCredentials(jsonresp.Value(a), seeds)
 	system, e := s.systemSecrets(ctx)
 	if e != nil {
 		return nil, e
@@ -91,7 +92,7 @@ func (s *Service) capturedPublic(ctx context.Context, config, a Document, value 
 	for _, peer := range documents(config["agents"]) {
 		system = redact.NewSecrets(system, []string{text(peer["token"])})
 	}
-	projected := diagnosticProjection(raw(value), seeds)
+	projected := diagnosticProjection(jsonresp.Value(value), seeds)
 	return json.Marshal(redact.SanitizeWithSecrets(projected, system, false))
 }
 
@@ -103,7 +104,7 @@ func (s *Service) capturedError(ctx context.Context, config, a Document, err err
 	if !errors.As(err, &boundary) {
 		return err
 	}
-	b, e := s.capturedPublic(ctx, config, a, Document{"message": raw(boundary.Message)})
+	b, e := s.capturedPublic(ctx, config, a, Document{"message": jsonresp.Value(boundary.Message)})
 	if e != nil {
 		return e
 	}

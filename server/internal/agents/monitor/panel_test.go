@@ -8,6 +8,7 @@ package monitor
 // are replaced through requestRule / latestCoreVersion.
 
 import (
+	"configflow/internal/textx"
 	"context"
 	"encoding/json"
 	"errors"
@@ -861,7 +862,7 @@ func TestPanelASCIIIntegerRules(t *testing.T) {
 		}
 	}
 	for text, want := range map[string]bool{"7": true, "²": false, "١٢": false, "①": false, "": false, "-1": false, "1e3": false, "½": false} {
-		if asciiDigits(text) != want {
+		if textx.ASCIIDigits(text) != want {
 			t.Fatal(text)
 		}
 	}

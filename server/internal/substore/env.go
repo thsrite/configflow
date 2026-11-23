@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
+	"configflow/internal/version"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"math/big"
 	"os"
 	"os/exec"
 	"strconv"
@@ -181,43 +181,6 @@ func (e *PortError) Error() string { return msgBuiltinPort }
 // RuntimeDir is sub_store_runtime_dir(): DATA_DIR/sub-store/runtime.
 func (e *Env) RuntimeDir() string { return filepath.Join(e.DataDir(), "sub-store", "runtime") }
 
-// VersionParts parses dotted arbitrary-precision decimal version components.
-func VersionParts(text string) []*big.Int {
-	text = strings.TrimLeft(strings.TrimSpace(text), "vV")
-	var parts []*big.Int
-	for _, part := range strings.Split(text, ".") {
-		n, ok := new(big.Int).SetString(part, 10)
-		if !ok {
-			return nil
-		}
-		parts = append(parts, n)
-	}
-	return parts
-}
-
-// compareVersions is tuple comparison.
-func compareVersions(a, b []*big.Int) int {
-	for i := 0; i < len(a) && i < len(b); i++ {
-		if c := a[i].Cmp(b[i]); c != 0 {
-			return c
-		}
-	}
-	return len(a) - len(b)
-}
-
-func sameVersion(a, b []*big.Int) bool {
-	if (a == nil) != (b == nil) {
-		return false
-	}
-	return compareVersions(a, b) == 0
-}
-
-// VersionNewer compares two native version strings.
-func VersionNewer(candidate, current string) bool {
-	a, b := VersionParts(candidate), VersionParts(current)
-	return a != nil && (b == nil || compareVersions(a, b) > 0)
-}
-
 // readVersionFile is _read_version_file: VERSION stripped, "" when it
 // cannot be read; text that is not UTF-8 is ErrVersionEncoding.
 func readVersionFile(directory string) (string, error) {
@@ -254,7 +217,7 @@ func (e *Env) ActiveBundle() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	if isFile(filepath.Join(runtimeDir, SubStoreAsset)) && VersionNewer(runtimeVersion, builtinVersion) {
+	if isFile(filepath.Join(runtimeDir, SubStoreAsset)) && version.NewerRelease(runtimeVersion, builtinVersion) {
 		return runtimeDir, runtimeVersion, nil
 	}
 	return builtin, builtinVersion, nil

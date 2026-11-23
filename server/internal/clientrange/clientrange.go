@@ -2,6 +2,7 @@
 package clientrange
 
 import (
+	"configflow/internal/textx"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -21,7 +22,7 @@ func Normalize(raw string) (string, bool) {
 	}
 	prefix := address.BitLen()
 	if hasPrefix {
-		if len(prefixText) > 3 || !asciiDigits(prefixText) {
+		if len(prefixText) > 3 || !textx.ASCIIDigits(prefixText) {
 			return "", false
 		}
 		prefix, _ = strconv.Atoi(prefixText)
@@ -46,18 +47,6 @@ func Normalize(raw string) (string, bool) {
 		return address.String(), true
 	}
 	return network.String(), true
-}
-
-func asciiDigits(text string) bool {
-	if text == "" {
-		return false
-	}
-	for _, r := range text {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func lastAddress(network netip.Prefix) netip.Addr {

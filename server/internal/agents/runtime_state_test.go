@@ -4,6 +4,7 @@ package agents
 // parts; the HTTP case is in internal/api/agents).
 
 import (
+	"configflow/internal/timefmt"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -59,7 +60,7 @@ func (e *env) beat(id string, payload map[string]any) bool {
 }
 
 func (e *env) ageRegistration(minutes int) string {
-	old := isoformat(time.Now().Add(-time.Duration(minutes)*time.Minute), false)
+	old := timefmt.Naive(time.Now().Add(-time.Duration(minutes) * time.Minute))
 	e.editSystem(func(system *model.System) {
 		for i := range system.Agents {
 			system.Agents[i].LastHeartbeat = old
@@ -266,7 +267,7 @@ func TestStaleHeartbeatReadsAsOfflineOnlyInTheList(t *testing.T) {
 	e.ageRegistration(10)
 	e.beat(id, map[string]any{})
 	entry, _ := runtimeEntryCopy(e.m.Runtime(), id)
-	entry.LastHeartbeat = isoformat(time.Now().Add(-5*time.Minute), false)
+	entry.LastHeartbeat = timefmt.Naive(time.Now().Add(-5 * time.Minute))
 	setRuntimeEntry(e.m.Runtime(), id, entry)
 	if must[[]model.Agent](t)(e.m.ListAgents(e.ctx, true))[0].Status != "offline" || e.get(id).Status != "online" {
 		t.Fatal("freshness")
@@ -277,7 +278,7 @@ func TestOneFreshnessRuleTwoMinutesInclusive(t *testing.T) {
 	now := time.Date(2026, 10, 25, 12, 0, 0, 0, time.Local)
 	stamp := func(seconds float64) string {
 		at := now.Add(-time.Duration(seconds * float64(time.Second)))
-		return isoformat(at, false)
+		return timefmt.Naive(at)
 	}
 	if HeartbeatFreshSeconds != 120 || !FreshHeartbeat(stamp(0), &now) || !FreshHeartbeat(stamp(120), &now) ||
 		FreshHeartbeat(stamp(120.001), &now) {
@@ -289,8 +290,8 @@ func TestOneFreshnessRuleTwoMinutesInclusive(t *testing.T) {
 		}
 	}
 	aware := time.Now()
-	if !FreshHeartbeat(isoformat(aware.Add(-30*time.Second), true), nil) ||
-		FreshHeartbeat(isoformat(aware.Add(-3*time.Minute), true), nil) {
+	if !FreshHeartbeat(timefmt.Offset(aware.Add(-30*time.Second)), nil) ||
+		FreshHeartbeat(timefmt.Offset(aware.Add(-3*time.Minute)), nil) {
 		t.Fatal("aware")
 	}
 	tr, fa := true, false
@@ -315,7 +316,7 @@ func TestTheListDerivesStatusWithTheSharedRule(t *testing.T) {
 
 func TestARegistrationTimeAheadOfTheClockDoesNotHideHeartbeats(t *testing.T) {
 	e, id := setupRuntime(t)
-	ahead := isoformat(time.Now().Add(8*time.Hour), false)
+	ahead := timefmt.Naive(time.Now().Add(8 * time.Hour))
 	e.editSystem(func(system *model.System) { e.firstAgent(system).LastHeartbeat = ahead })
 	e.beat(id, map[string]any{"service_status": "running"})
 	current := e.get(id)
@@ -406,7 +407,7 @@ func legacyDatabase(t *testing.T, path string, rows [][4]any) {
 
 func legacyRowOf(id string, moment time.Time, fields map[string]any) [4]any {
 	text, _ := json.Marshal(fields)
-	return [4]any{id, pyTimestamp(moment), isoformat(moment, false), string(text)}
+	return [4]any{id, pyTimestamp(moment), timefmt.Naive(moment), string(text)}
 }
 
 func twoAgents(t *testing.T) (*env, string, string) {
@@ -612,7 +613,7 @@ func TestARestartDoesNotLogEveryAgentBackOnline(t *testing.T) {
 	must[bool](t)(restarted.ObserveHeartbeat(e.ctx, id, &model.Agent{}))
 	observePresenceModels(list())
 	entry, _ := runtimeEntryCopy(restarted.Runtime(), id)
-	entry.LastHeartbeat = isoformat(time.Now().Add(-5*time.Minute), false)
+	entry.LastHeartbeat = timefmt.Naive(time.Now().Add(-5 * time.Minute))
 	setRuntimeEntry(restarted.Runtime(), id, entry)
 	observePresenceModels(list())
 	must[bool](t)(restarted.ObserveHeartbeat(e.ctx, id, &model.Agent{}))
@@ -631,7 +632,7 @@ func TestARestartDoesNotLogEveryAgentBackOnline(t *testing.T) {
 
 func TestTimestampOfRejectsFutureAndGarbage(t *testing.T) {
 	if !math.IsInf(timestampOf("garbage"), -1) || !math.IsInf(timestampOf(5), -1) ||
-		!math.IsInf(timestampOf(isoformat(time.Now().Add(time.Hour), false)), -1) {
+		!math.IsInf(timestampOf(timefmt.Naive(time.Now().Add(time.Hour))), -1) {
 		t.Fatal("timestamp")
 	}
 }

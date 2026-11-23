@@ -561,13 +561,7 @@ func (i *invocation) installInfo(ctx context.Context) (json.RawMessage, error) {
 		}
 		s := rawString(v)
 		if s == "" && string(v) != "\"\"" {
-			s = string(v)
-			if s == "true" {
-				s = "True"
-			}
-			if s == "false" {
-				s = "False"
-			}
+			s = string(v) // numbers and booleans as their JSON text
 		}
 		q = append(q, [2]string{k, s})
 	}

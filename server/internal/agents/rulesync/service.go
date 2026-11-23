@@ -283,7 +283,6 @@ func stateOf(a *model.Agent) *model.RuleSyncState {
 	}
 	return &model.RuleSyncState{}
 }
-func ptr[T any](v T) *T { return &v }
 func value[T any](p *T) T {
 	if p != nil {
 		return *p

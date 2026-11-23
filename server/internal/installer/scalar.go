@@ -26,19 +26,6 @@ func inRange(n *big.Int, low, high int64) bool {
 	return n.Cmp(big.NewInt(low)) >= 0 && n.Cmp(big.NewInt(high)) <= 0
 }
 
-// asciiDigits is re.fullmatch(r"[0-9]+", text).
-func asciiDigits(text string) bool {
-	if text == "" {
-		return false
-	}
-	for i := 0; i < len(text); i++ {
-		if text[i] < '0' || text[i] > '9' {
-			return false
-		}
-	}
-	return true
-}
-
 // matchesClass is re.fullmatch(r"[<class>]+", text) for an ASCII class given
 // as the set of allowed bytes besides letters and digits.
 func matchesClass(text, extra string) bool {

@@ -1,6 +1,7 @@
 package dnsha
 
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -394,7 +395,7 @@ func TestIdentityChangeAndPayloadTamperFailClosed(t *testing.T) {
 					t.Fatal(err)
 				}
 				p.ID = "another-job"
-				e = deploy.WriteFileAtomic(f.ctx, f.s.folder(a.OxiDNSHAPublication)+"/payload.json", rawObject(p))
+				e = deploy.WriteFileAtomic(f.ctx, f.s.folder(a.OxiDNSHAPublication)+"/payload.json", jsonresp.Value(p))
 			}
 			if e != nil {
 				t.Fatal(e)

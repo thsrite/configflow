@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -64,7 +65,7 @@ func TestPythonPublicationStateAndGeneratedArtifacts(t *testing.T) {
 			must(t, e)
 			cmd := exec.CommandContext(ctx, filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), "testdata/publication.py")
 			cmd.Env = append(os.Environ(), "PYTHONPATH="+root, "PYTHONDONTWRITEBYTECODE=1")
-			cmd.Stdin = bytes.NewReader(raw(map[string]any{"directory": pyDir, "session_id": f.r.ID, "destinations": dest}))
+			cmd.Stdin = bytes.NewReader(jsonresp.Value(map[string]any{"directory": pyDir, "session_id": f.r.ID, "destinations": dest}))
 			var stderr bytes.Buffer
 			cmd.Stderr = &stderr
 			expected, e := cmd.Output()
@@ -110,7 +111,7 @@ func compareNativeJSON(t *testing.T, a, b []byte) {
 	must(t, json.Unmarshal(a, &x))
 	must(t, json.Unmarshal(b, &y))
 	if !reflect.DeepEqual(x, y) {
-		t.Fatalf("Python state mismatch\nGo: %s\nPython: %s", raw(x), raw(y))
+		t.Fatalf("Python state mismatch\nGo: %s\nPython: %s", jsonresp.Value(x), jsonresp.Value(y))
 	}
 }
 func archiveFiles(t *testing.T, b []byte) map[string][]byte {

@@ -2,6 +2,7 @@ package dnsha
 
 // Native registry/repository collaborators and typed HA result envelopes.
 import (
+	"configflow/internal/jsonresp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -163,13 +164,12 @@ func (s *Service) FailureMessage(ctx context.Context, e error) string {
 	}
 	return s.safe(ctx, e.Error())
 }
-func rawObject(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
 func equal(a, b any) bool {
-	left, err := yamlx.FromJSON(rawObject(a))
+	left, err := yamlx.FromJSON(jsonresp.Value(a))
 	if err != nil {
 		return false
 	}
-	right, err := yamlx.FromJSON(rawObject(b))
+	right, err := yamlx.FromJSON(jsonresp.Value(b))
 	return err == nil && yamlx.Equal(left, right)
 }
 func summary(j *model.HAJournal) *model.HAPublicationSummary {
@@ -256,7 +256,7 @@ func conflict(a *agent) *model.Deployment {
 }
 func rejection(message string) *model.Deployment {
 	// success is always written, so false is part of the response.
-	return &model.Deployment{Success: new(false), HTTPStatus: ptr(model.Int(409)), Message: &message}
+	return &model.Deployment{Success: new(false), HTTPStatus: new(model.Int(409)), Message: &message}
 }
 func (s *Service) capabilities(ctx context.Context, a *agent) (json.RawMessage, error) {
 	if e := ctx.Err(); e != nil {

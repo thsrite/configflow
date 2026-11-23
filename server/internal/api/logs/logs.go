@@ -6,6 +6,7 @@ package logs
 import (
 	"bufio"
 	"bytes"
+	"configflow/internal/timefmt"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +16,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"configflow/internal/httpx"
@@ -273,23 +273,13 @@ func getLogInfo(c *httpx.Ctx) (*httpx.Response, error) {
 		SizeMB   json.Number `json:"size_mb"`
 		Modified string      `json:"modified"`
 		Created  string      `json:"created"`
-	}{true, true, logPath, size, logSizeMB(size), isoformat(modified), isoformat(created)}), nil
+	}{true, true, logPath, size, logSizeMB(size), timefmt.Naive(modified.Local()), timefmt.Naive(created.Local())}), nil
 }
 
 // pyRound2 is round(x, 2): correctly rounded, ties to even.
 func pyRound2(x float64) float64 {
 	v, _ := strconv.ParseFloat(strconv.FormatFloat(x, 'f', 2, 64), 64)
 	return v
-}
-
-// isoformat is datetime.fromtimestamp(t).isoformat(): local time, with
-// microseconds only when they are not zero.
-func isoformat(t time.Time) string {
-	t = t.Local()
-	if t.Nanosecond()/1000 == 0 {
-		return t.Format("2006-01-02T15:04:05")
-	}
-	return t.Format("2006-01-02T15:04:05.000000")
 }
 
 func clearLogs(c *httpx.Ctx) (*httpx.Response, error) {
