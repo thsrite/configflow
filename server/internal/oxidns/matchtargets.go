@@ -17,7 +17,7 @@ type MatchTargets struct {
 // ReadMatchTargets lists the executors a custom match can safely call: not
 // ambiguous, not reaching sequence_main (or its recorded alias), not on a
 // dependency cycle.
-func ReadMatchTargets(document, settings *Node) (MatchTargets, error) {
+func ReadMatchTargets(document *nativeDoc, settings *Node) (MatchTargets, error) {
 	var sources *Sources
 	if externalIncludes(document) {
 		sources = &Sources{}

@@ -63,7 +63,7 @@ func bootstrapSocket(value *Node) bool {
 	return false
 }
 
-func collectGlobalIssues(document *Node) []Issue {
+func collectGlobalIssues(document *nativeDoc) []Issue {
 	var issues []Issue
 	issue := func(at Path, message, code string) {
 		issues = append(issues, Issue{Path: at, Message: message, Code: code, Severity: "error"})

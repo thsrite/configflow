@@ -501,7 +501,7 @@ func FinishRuleUpdates(document, settings, changes *Node, p *Profile, baseURL st
 	return finishRuleUpdates(c, changes, p, baseURL)
 }
 
-func managedDownloads(document *Node) *Node {
+func managedDownloads(document *nativeDoc) *Node {
 	for _, item := range items(get(document, "plugins")) {
 		if equal(get(item, "tag"), S("rules_download")) {
 			if !equal(get(item, "type"), S("download")) || !isSeq(get(mapOr(get(item, "args")), "downloads")) || !isMap(get(item, "args")) {
@@ -589,7 +589,7 @@ func generatedOrigin(entry *Node, tokens map[string]bool, endpoint, source, part
 	return origin
 }
 
-func withDownloads(document *Node, output []*Node) *Node {
+func withDownloads(document *nativeDoc, output []*Node) *Node {
 	rendered := clone(document)
 	for _, item := range items(get(rendered, "plugins")) {
 		if equal(get(item, "tag"), S("rules_download")) {
@@ -602,7 +602,7 @@ func withDownloads(document *Node, output []*Node) *Node {
 
 // refreshManagedRuleURLs rebases proven generated downloads onto the current
 // origin without changing custom native state.
-func (p *Profile) refreshManagedRuleURLs(document *Node, baseURL string) (*Node, error) {
+func (p *Profile) refreshManagedRuleURLs(document *nativeDoc, baseURL string) (*Node, error) {
 	downloads := managedDownloads(document)
 	tokens, endpoint, ok := p.proxyIdentity()
 	effective := p.base(baseURL)
@@ -697,7 +697,7 @@ func RebaseNativeRuleSources(before, after *Profile) (bool, error) {
 
 // PrepareNativeRuleUpdates renders current routing and manual updates
 // without changing the saved draft.
-func PrepareNativeRuleUpdates(document, settings *Node, p *Profile, baseURL string) (*Node, error) {
+func PrepareNativeRuleUpdates(document *nativeDoc, settings *Node, p *Profile, baseURL string) (*Node, error) {
 	document, settings, err := MigrateDomainOnlyRouting(document, settings, p, baseURL)
 	if err != nil {
 		return nil, err

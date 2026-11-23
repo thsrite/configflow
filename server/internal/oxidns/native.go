@@ -356,7 +356,7 @@ func containsString(list []string, s string) bool {
 
 // pluginList iterates document.get('plugins', []) like Python: a missing key
 // is empty, a non-list that Python cannot iterate as plugins is malformed.
-func pluginList(document *Node) ([]*Node, error) {
+func pluginList(document *nativeDoc) ([]*Node, error) {
 	plugins := get(document, "plugins")
 	switch {
 	case !has(document, "plugins"):
@@ -375,7 +375,7 @@ func pluginList(document *Node) ([]*Node, error) {
 }
 
 // ResourceReferences lists read-only local resources the document reads.
-func ResourceReferences(document *Node) ([]string, error) {
+func ResourceReferences(document *nativeDoc) ([]string, error) {
 	references := []string{}
 	add := func(value *Node) error {
 		if !isStr(value) || value.Value == "" {
@@ -405,7 +405,7 @@ func ResourceReferences(document *Node) ([]string, error) {
 	}
 	for _, plugin := range plugins {
 		args := get(plugin, "args")
-		if !(!isNone(args)) {
+		if isNone(args) {
 			args = M()
 		}
 		if !isMap(args) {
@@ -520,7 +520,7 @@ func relativeResource(value string) (string, bool, error) { return RelativeResou
 
 // referencedPaths is {relative_resource(p) for p in resource_references(doc)}
 // ("" stands for Python's None).
-func referencedPaths(document *Node) (map[string]bool, error) {
+func referencedPaths(document *nativeDoc) (map[string]bool, error) {
 	references, err := ResourceReferences(document)
 	if err != nil {
 		return nil, err
@@ -538,7 +538,7 @@ func referencedPaths(document *Node) (map[string]bool, error) {
 
 // ValidateResourceFiles checks every relative resource is shipped and that
 // runtime outputs are not attachments.
-func ValidateResourceFiles(document *Node, paths []string) error {
+func ValidateResourceFiles(document *nativeDoc, paths []string) error {
 	normalized := map[string]bool{}
 	for _, p := range paths {
 		n, err := safePath(p, PathLabel)
@@ -563,7 +563,7 @@ func ValidateResourceFiles(document *Node, paths []string) error {
 	plugins, _ := pluginList(document)
 	for _, plugin := range plugins {
 		args := get(plugin, "args")
-		if !(!isNone(args)) {
+		if isNone(args) {
 			args = M()
 		}
 		if !isMap(args) {

@@ -259,7 +259,7 @@ type commonContext struct {
 	includedTags  map[string]bool
 }
 
-func newContext(document, settings *Node) (*commonContext, error) {
+func newContext(document *nativeDoc, settings *Node) (*commonContext, error) {
 	plugins := get(document, "plugins")
 	if !has(document, "plugins") {
 		plugins = L()
@@ -1069,7 +1069,7 @@ type CommonView struct {
 	MatchTargets MatchTargets
 }
 
-func readCommon(document, settings *Node, p *Profile) (CommonView, error) {
+func readCommon(document *nativeDoc, settings *Node, p *Profile) (CommonView, error) {
 	c, err := newContext(document, settings)
 	if err != nil {
 		return CommonView{}, err
@@ -1125,7 +1125,7 @@ func readCommon(document, settings *Node, p *Profile) (CommonView, error) {
 	restorable := isMap(parkedTCP) && equal(get(parkedTCP, "type"), S("tcp_server")) && isMap(get(parkedTCP, "args")) &&
 		(str(get(get(parkedTCP, "args"), "listen")) != "") && (str(get(get(parkedTCP, "args"), "entry")) != "")
 	if tcp == nil && !restorable && (c.plugin("server_udp") == nil || !c.allowed("server_udp", "").Editable ||
-		!isMap(udp) || !(str(get(udp, "listen")) != "") || !(str(get(udp, "entry")) != "")) {
+		!isMap(udp) || str(get(udp, "listen")) == "" || str(get(udp, "entry")) == "") {
 		caps["tcp_enabled"] = capability(false, messageTCPPrerequisites, "server_tcp")
 	}
 	if tcp != nil && c.plugin("server_udp") != nil && (!isMap(udp) || !isMap(get(tcp, "args")) ||
@@ -1146,7 +1146,7 @@ func readCommon(document, settings *Node, p *Profile) (CommonView, error) {
 		caps[f.field] = cap
 	}
 	cache := c.storedArgs("lazy_cache")
-	dumpOn := isMap(cache) && (str(get(cache, "dump_file")) != "")
+	dumpOn := isMap(cache) && str(get(cache, "dump_file")) != ""
 	set(values, "cache_dump_enabled", B(dumpOn))
 	caps["cache_dump_enabled"] = c.allowed("lazy_cache", "")
 	if !dumpOn && isMap(cache) {
@@ -1450,7 +1450,7 @@ func (c *commonContext) patchAPI(field string, value *Node) error {
 		if len(auth.Content) > 0 {
 			setDefault(auth, "type", S("basic"))
 		}
-		if !(str(get(auth, "username")) != "") && !(str(get(auth, "password")) != "") {
+		if str(get(auth, "username")) == "" && str(get(auth, "password")) == "" {
 			c.park("api_auth", auth)
 			del(holder, "auth")
 		}
@@ -1474,14 +1474,14 @@ func (c *commonContext) patchCacheDump(changes *Node) error {
 		return err
 	}
 	args := get(plugin, "args")
-	enabled := (str(get(args, "dump_file")) != "")
+	enabled := str(get(args, "dump_file")) != ""
 	if has(changes, "cache_dump_enabled") {
-		enabled = (isTrue(get(changes, "cache_dump_enabled")))
+		enabled = isTrue(get(changes, "cache_dump_enabled"))
 	}
 	if str(get(args, "dump_file")) != "" {
 		c.park("cache_dump_file", get(args, "dump_file"))
 	}
-	if (str(get(args, "dump_file")) != "") || has(args, "dump_interval") {
+	if str(get(args, "dump_file")) != "" || has(args, "dump_interval") {
 		c.park("cache_dump_interval", orNull(get(args, "dump_interval")))
 	}
 	for _, field := range []string{"cache_dump_file", "cache_dump_interval"} {
@@ -1493,10 +1493,10 @@ func (c *commonContext) patchCacheDump(changes *Node) error {
 		path := get(changes, "cache_dump_file")
 		if !has(changes, "cache_dump_file") {
 			path = get(args, "dump_file")
-			if !(str(path) != "") {
+			if str(path) == "" {
 				path = get(c.parked, "cache_dump_file")
 			}
-			if !(str(path) != "") {
+			if str(path) == "" {
 				path = get(defaultSettingsNode, "cache_dump_file")
 			}
 		}
@@ -1611,7 +1611,7 @@ func (c *commonContext) patchDynamic(changes *Node) error {
 	parked := mapOr(get(c.parked, "dynamic_domain_set_state"))
 	nextEnabled := enabled
 	if has(changes, "dynamic_domain_set.enabled") {
-		nextEnabled = (isTrue(get(changes, "dynamic_domain_set.enabled")))
+		nextEnabled = isTrue(get(changes, "dynamic_domain_set.enabled"))
 	}
 	nextRoute := S(route)
 	if route == "" {
@@ -1680,7 +1680,7 @@ func (c *commonContext) patchDynamic(changes *Node) error {
 			list := c.sequence(chain)
 			list.Content = filter(list.Content, func(item *Node) bool { return !equal(item, learnCall) })
 		}
-		if nextEnabled && (isTrue(learn)) {
+		if nextEnabled && isTrue(learn) {
 			name := "ip_requery_proxy"
 			if nextRoute.Value == "direct" {
 				name = "direct_ip"
@@ -1916,10 +1916,10 @@ func (c *commonContext) patchResources(changes *Node, p *Profile, baseURL string
 		content = orDefault(resource, "content", S(""))
 	}
 	content = orDefault(changes, "adguard.content", content)
-	if !(str(content) != "") {
+	if str(content) == "" {
 		content = S("")
 	}
-	if (isTrue(get(changes, "adguard.enabled"))) && isMap(get(c.parked, "adguard_rules")) {
+	if isTrue(get(changes, "adguard.enabled")) && isMap(get(c.parked, "adguard_rules")) {
 		if _, err := c.ensure("adguard_rules", nil, ""); err != nil {
 			return err
 		}
@@ -1932,7 +1932,7 @@ func (c *commonContext) patchResources(changes *Node, p *Profile, baseURL string
 	if !isSeq(urlList) {
 		return errMalformed
 	}
-	if touches(changes, []string{"adguard.urls", "adguard.content"}) || (isTrue(get(changes, "adguard.enabled"))) && c.plugin("adguard_rules") == nil {
+	if touches(changes, []string{"adguard.urls", "adguard.content"}) || isTrue(get(changes, "adguard.enabled")) && c.plugin("adguard_rules") == nil {
 		provider, err := c.ensure("adguard_rules", M("files", L()), "")
 		if err != nil {
 			return err
@@ -2154,7 +2154,7 @@ func (c *commonContext) applyCommon(changes *Node, p *Profile, baseURL string) e
 	// Enable first so simultaneous argument edits modify the new node.
 	for _, f := range featureCalls {
 		if has(changes, f.field) {
-			if err := c.toggleCall(f.tag, f.chains, (isTrue(get(changes, f.field))), defaultArgs(f.tag)); err != nil {
+			if err := c.toggleCall(f.tag, f.chains, isTrue(get(changes, f.field)), defaultArgs(f.tag)); err != nil {
 				return err
 			}
 		}

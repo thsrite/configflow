@@ -193,7 +193,7 @@ func ruleDNSIDs(list *Node) []string {
 
 // UpstreamCatalog returns current local/remote/fallback upstreams in source order.
 // A nil document reads template lists or loads the saved native document.
-func UpstreamCatalog(settings, document *Node, bindings []DNSBinding) ([]UpstreamCandidate, error) {
+func UpstreamCatalog(settings, document *nativeDoc, bindings []DNSBinding) ([]UpstreamCandidate, error) {
 	lists := map[string]*Node{}
 	if document == nil && !isOneOf(get(settings, "config_mode"), "native") {
 		for _, source := range UpstreamSources {

@@ -245,7 +245,7 @@ func HelperPlugins(routes []string, actions *Node, features chainFeatures) ([]*N
 
 // pluginMap is tag → plugin of a document's plugins; nil when the list is
 // not a clean list of uniquely tagged mappings (routing's _plugins).
-func pluginMap(document *Node) map[string]*Node {
+func pluginMap(document *nativeDoc) map[string]*Node {
 	result := map[string]*Node{}
 	for _, item := range items(get(document, "plugins")) {
 		tag, ok := tagOf(item)

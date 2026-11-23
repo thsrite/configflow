@@ -108,7 +108,7 @@ func nativeManaged(tag string) bool {
 	return tagTypes[tag] != "" || slices.Contains(wrapperChains, tag) || slices.Contains([]string{"sequence_main", "remote_dns", "local_probe", "proxy_dns_seq", "ip_requery_proxy", "fallback_dns", "adguard_reject", "rules_refresh"}, tag)
 }
 
-func nativePlugins(document *Node) (map[string]*Node, error) {
+func nativePlugins(document *nativeDoc) (map[string]*Node, error) {
 	list := get(document, "plugins")
 	if !has(document, "plugins") {
 		list = L()
@@ -179,7 +179,7 @@ func ApplyNativeSettings(settings *Node, text string, p *Profile, baseURL string
 }
 
 func nativeWithoutTag(plugin *Node) *Node { out := clone(plugin); del(out, "tag"); return out }
-func renameNativeReferences(document *Node, old, next string) {
+func renameNativeReferences(document *nativeDoc, old, next string) {
 	var walk func(*Node, string)
 	walk = func(value *Node, field string) {
 		switch {
@@ -209,7 +209,7 @@ func renameNativeReferences(document *Node, old, next string) {
 	walk(document, "")
 }
 
-func nativeMaskOwned(document *Node, targets map[string]bool) *Node {
+func nativeMaskOwned(document *nativeDoc, targets map[string]bool) *Node {
 	out := clone(document)
 	for _, item := range items(get(out, "plugins")) {
 		tag := str(get(item, "tag"))
@@ -337,7 +337,7 @@ func upstreamFormState(value *Node) string {
 	}
 	return "draft"
 }
-func (e *nativeEdit) common(document, changes *Node) (*Node, error) {
+func (e *nativeEdit) common(document *nativeDoc, changes *Node) (*Node, error) {
 	if err := setNativeConfig(e.current, document); err != nil {
 		return nil, err
 	}

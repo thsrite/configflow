@@ -580,7 +580,7 @@ var pluginShape = &Schema{Type: typeList{"object"}, Required: []string{"tag", "t
 	"tag": {Type: typeList{"string"}, Format: "plugin-tag"}, "type": {Type: typeList{"string"}, MinLength: 1}, "args": {}}}
 
 // ValidateNativeConfig returns every issue of an expanded native document.
-func ValidateNativeConfig(document *Node) []Issue {
+func ValidateNativeConfig(document *nativeDoc) []Issue {
 	global, plugins := schemas()
 	issues := ValidateSchema(document, global, nil)
 	if !isMap(document) {
@@ -631,7 +631,7 @@ func ValidateNativeConfig(document *Node) []Issue {
 
 // RequireValidDocument returns the issues, or a *ValidationError when one
 // is an error.
-func RequireValidDocument(document *Node) ([]Issue, error) {
+func RequireValidDocument(document *nativeDoc) ([]Issue, error) {
 	issues := ValidateNativeConfig(document)
 	if hasError(issues) {
 		return nil, &ValidationError{issues}
@@ -641,7 +641,7 @@ func RequireValidDocument(document *Node) ([]Issue, error) {
 
 // ValidateExpandedDocument maps issues of an expanded document back to the
 // file and plugin index that declared them, and type-checks include globals.
-func ValidateExpandedDocument(document *Node, sources *Sources) []Issue {
+func ValidateExpandedDocument(document *nativeDoc, sources *Sources) []Issue {
 	if sources == nil {
 		sources = &Sources{}
 	}

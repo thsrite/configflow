@@ -14,13 +14,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Dynamic values (native documents, settings, profile configuration) are
-// *yaml.Node trees. Loaders resolve every alias to a shared pointer (pointer
-// identity is object identity: an in-place edit reaches every holder) and give
-// every scalar its resolved short tag.
+// Native OxiDNS documents and the stored settings object are YAML trees.
+// Loaders resolve every alias to one shared node, so an edit made through an
+// alias is visible at every place the document refers to it, and give every
+// scalar its resolved short tag.
 
-// Node is a node of a dynamic document.
+// Node is a node of a YAML tree.
 type Node = yaml.Node
+
+// nativeDoc is a user's native OxiDNS configuration document (or part of one).
+// It stays a YAML tree because ConfigFlow edits it in place and must keep the
+// user's comments, key order, unknown plugins and plugin arguments.
+// ConfigFlow's own schema is decoded into typed values instead
+// (templateSettings, RuleAction, devicenotes.Policy, model.RuleConfig).
+type nativeDoc = Node
 
 const (
 	tagStr   = "!!str"
@@ -384,7 +391,7 @@ func containsRune(s string, r rune) bool { return strings.ContainsRune(s, r) }
 func trimSpace(s string) string { return strings.TrimSpace(s) }
 
 // setNativeConfig serializes a draft before changing its stored text.
-func setNativeConfig(settings, document *Node) error {
+func setNativeConfig(settings, document *nativeDoc) error {
 	text, err := dump(document)
 	if err != nil {
 		return err
@@ -395,7 +402,7 @@ func setNativeConfig(settings, document *Node) error {
 
 // externalIncludes refuses any declared external graph; an empty include list
 // is inert. Malformed non-list declarations also fail closed.
-func externalIncludes(document *Node) bool {
+func externalIncludes(document *nativeDoc) bool {
 	value := get(document, "include")
 	return !isNone(value) && (!isSeq(value) || len(value.Content) > 0)
 }

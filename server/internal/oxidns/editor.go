@@ -555,7 +555,7 @@ func PreviewTemplate(settings, proposedInputs *Node, p *Profile, baseURL string,
 	currentAdguard := mapOr(get(current, "adguard"))
 	nextAdguard := get(nextTemplate, "adguard")
 	adguard := clone(currentAdguard)
-	set(adguard, "enabled", B((isTrue(get(currentAdguard, "enabled"))) || (isTrue(get(nextAdguard, "enabled")))))
+	set(adguard, "enabled", B(isTrue(get(currentAdguard, "enabled")) || isTrue(get(nextAdguard, "enabled"))))
 	set(adguard, "urls", union(get(currentAdguard, "urls"), get(nextAdguard, "urls")))
 	contentPath := []string{"resources", "adguard", "content"}
 	textOr := func(m *Node) *Node {

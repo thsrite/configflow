@@ -14,7 +14,7 @@ type RuleRouting struct {
 }
 
 // Analyze exposes the existing routing recognizer without duplicating its logic.
-func Analyze(document, settings *Node, p *Profile) RuleRouting {
+func Analyze(document *nativeDoc, settings *Node, p *Profile) RuleRouting {
 	s := p.analyzeRouting(document, settings)
 	out := RuleRouting{Values: s.values, Capabilities: s.caps}
 	for _, g := range s.groups.all() {
@@ -24,7 +24,7 @@ func Analyze(document, settings *Node, p *Profile) RuleRouting {
 }
 
 // References reports whether a document refers to a plugin tag.
-func References(document *Node, tag string) bool { return refersTo(document, tag) }
+func References(document *nativeDoc, tag string) bool { return refersTo(document, tag) }
 
 // ParseExec recognizes the existing rule DNS execution grammar.
 func ParseExec(value *Node, part string, plugins map[string]*Node) string {

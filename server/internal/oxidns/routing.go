@@ -94,7 +94,7 @@ func positions(values []*Node, tag string) []int {
 	return out
 }
 
-func withoutPlugins(document *Node) *Node {
+func withoutPlugins(document *nativeDoc) *Node {
 	top := M()
 	pairs(document, func(key string, value *Node) bool {
 		if key != "plugins" {
@@ -133,11 +133,11 @@ func prefixEnd(args []*Node) int {
 		switch {
 		case equal(item, WatchdogRule()):
 			index++
-		case !(len(items(get(item, "matches"))) > 0) && (isOneOf(action, "prefer_ipv4", "$query_recorder") || strings.HasPrefix(str(action), "metrics_collector ")):
+		case len(items(get(item, "matches"))) == 0 && (isOneOf(action, "prefer_ipv4", "$query_recorder") || strings.HasPrefix(str(action), "metrics_collector ")):
 			index++
 		case isOneOf(action, blockQtypesExecs...) && single && qtypeMatch.MatchString(match):
 			index++
-		case equal(action, S("$custom_hosts")) && !(len(items(get(item, "matches"))) > 0) && index+1 < len(args) &&
+		case equal(action, S("$custom_hosts")) && len(items(get(item, "matches"))) == 0 && index+1 < len(args) &&
 			equal(get(args[index+1], "exec"), S("accept")) && func() bool { m, ok := singleMatch(args[index+1]); return ok && m == "has_resp" }():
 			index += 2
 		case equal(action, S("goto adguard_reject")) && single && match == "question $adguard_rules":
@@ -362,7 +362,7 @@ func ipSuffix(entries []*Node, defaultForward string, probe bool) []*Node {
 }
 
 // ownedGroup: a generated provider only this sequence_main entry uses.
-func ownedGroup(document *Node, args []*Node, plugins []*Node, entry *Node, tag string) bool {
+func ownedGroup(document *nativeDoc, args []*Node, plugins []*Node, entry *Node, tag string) bool {
 	if !groupTagRE.MatchString(tag) || mapSize(entry) != 2 || !has(entry, "matches") || !has(entry, "exec") {
 		return false
 	}
@@ -411,7 +411,7 @@ func newRoutingValues(settings *Node, p *Profile) *Node {
 	return values
 }
 
-func (p *Profile) recognize(document, settings *Node, claim bool, catalog func() *ruleCatalog) *routingState {
+func (p *Profile) recognize(document *nativeDoc, settings *Node, claim bool, catalog func() *ruleCatalog) *routingState {
 	state := &routingState{values: newRoutingValues(settings, p), caps: map[string]Capability{}}
 	for _, key := range RoutingFields {
 		state.caps[key] = routingCap(false, routingReason)
@@ -493,7 +493,7 @@ func (p *Profile) recognize(document, settings *Node, claim bool, catalog func()
 				continue
 			}
 		}
-		if !(len(items(get(entry, "matches"))) > 0) && exec == "jump local_probe" {
+		if len(items(get(entry, "matches"))) == 0 && exec == "jump local_probe" {
 			middleEnd = min(middleEnd, index)
 		}
 	}
@@ -797,7 +797,7 @@ func cachedCatalog(p *Profile) func() *ruleCatalog {
 
 // analyzeRouting is _analyze: recognition that never locks a document that
 // was editable before rule DNS actions existed.
-func (p *Profile) analyzeRouting(document, settings *Node) *routingState {
+func (p *Profile) analyzeRouting(document *nativeDoc, settings *Node) *routingState {
 	catalog := cachedCatalog(p)
 	state := p.recognize(document, settings, true, catalog)
 	if state.claimed {
@@ -886,7 +886,7 @@ func replaceToken(s, token, replacement string) string {
 
 // aliasedCustomState recognizes recorded managed renames for the custom
 // match controls only.
-func (p *Profile) aliasedCustomState(document, settings *Node) (*routingState, error) {
+func (p *Profile) aliasedCustomState(document *nativeDoc, settings *Node) (*routingState, error) {
 	aliases := get(get(settings, "_common_disabled"), "renamed_plugins")
 	if !isMap(aliases) || len(aliases.Content) == 0 {
 		return nil, nil
@@ -964,7 +964,7 @@ type RoutingView struct {
 }
 
 // ReadRouting reads the recognized routing values and what can be edited.
-func ReadRouting(document, settings *Node, p *Profile) (RoutingView, error) {
+func ReadRouting(document *nativeDoc, settings *Node, p *Profile) (RoutingView, error) {
 	state := p.analyzeRouting(document, settings)
 	aliased, err := p.aliasedCustomState(document, settings)
 	if err != nil {
@@ -985,7 +985,7 @@ func ReadRouting(document, settings *Node, p *Profile) (RoutingView, error) {
 
 // MigrateDomainOnlyRouting renders old managed IP routing as domain-only
 // (only a fully recognizable owned suffix; anything else is returned as is).
-func MigrateDomainOnlyRouting(document, settings *Node, p *Profile, baseURL string) (*Node, *Node, error) {
+func MigrateDomainOnlyRouting(document *nativeDoc, settings *Node, p *Profile, baseURL string) (*Node, *Node, error) {
 	source := M()
 	if text := get(settings, "native_config"); strings.TrimSpace(str(text)) != "" {
 		var err error
@@ -1027,7 +1027,7 @@ func MigrateDomainOnlyRouting(document, settings *Node, p *Profile, baseURL stri
 }
 
 // usesRule: a domain/IP provider still holds a resource generated for identity.
-func (p *Profile) usesRule(document *Node, identity string) bool {
+func (p *Profile) usesRule(document *nativeDoc, identity string) bool {
 	c := p.catalog()
 	for _, plugin := range items(get(document, "plugins")) {
 		part := map[string]string{"domain_set": "domain", "ip_set": "ip"}[str(get(plugin, "type"))]
@@ -1196,11 +1196,11 @@ func ReloadReferences(existing []*Node, oldTags map[string]bool, newTags []strin
 
 // ResourceDownloads are the download descriptors ({url, dir, filename}) of
 // the provider resources the document actually reads.
-func ResourceDownloads(document, settings *Node, p *Profile, baseURL string) ([]*Node, error) {
+func ResourceDownloads(document *nativeDoc, settings *Node, p *Profile, baseURL string) ([]*Node, error) {
 	return p.resourceDownloads(document, settings, baseURL, nil)
 }
 
-func (p *Profile) resourceDownloads(document, settings *Node, baseURL string, c *ruleCatalog) ([]*Node, error) {
+func (p *Profile) resourceDownloads(document *nativeDoc, settings *Node, baseURL string, c *ruleCatalog) ([]*Node, error) {
 	referenced, err := referencedPaths(document)
 	if err != nil {
 		return nil, err
@@ -1256,7 +1256,7 @@ func (p *Profile) resourceDownloads(document, settings *Node, baseURL string, c 
 
 // ResourceReaders are conservative resource consumers (strings that look
 // like paths or patterns, including unknown plugin fields).
-func ResourceReaders(document *Node) []string {
+func ResourceReaders(document *nativeDoc) []string {
 	var out []string
 	var walk func(*Node)
 	walk = func(v *Node) {
@@ -1365,7 +1365,7 @@ func replaceDownloadEntries(download *Node, entries []*Node) {
 
 // ownHelpers creates, keeps, refreshes or removes the owned helper plugins.
 // entries are the rule group entries just written (not "elsewhere").
-func ownHelpers(document *Node, routes []string, actions *Node, entries []*Node) error {
+func ownHelpers(document *nativeDoc, routes []string, actions *Node, entries []*Node) error {
 	list := get(document, "plugins")
 	byTag := pluginMap(document)
 	desired, err := HelperPlugins(routes, actions, documentFeatures(byTag))
@@ -1488,7 +1488,7 @@ type ownedChain struct {
 	action *Node
 }
 
-func ownedChainList(document *Node) []ownedChain {
+func ownedChainList(document *nativeDoc) []ownedChain {
 	plugins := pluginMap(document)
 	var out []ownedChain
 	for _, item := range items(get(document, "plugins")) {
@@ -1506,7 +1506,7 @@ func ownedChainList(document *Node) []ownedChain {
 
 // OwnedChains maps the pinned upstream chains whose tag still names their
 // content to their actions.
-func OwnedChains(document *Node) map[string]*Node {
+func OwnedChains(document *nativeDoc) map[string]*Node {
 	out := map[string]*Node{}
 	for _, c := range ownedChainList(document) {
 		out[c.tag] = c.action
@@ -1516,7 +1516,7 @@ func OwnedChains(document *Node) map[string]*Node {
 
 // RefreshRuleHelpers rebuilds the owned pinned chains for the document's
 // current IP selection, RouterOS, cache and TTL features.
-func RefreshRuleHelpers(document *Node) error {
+func RefreshRuleHelpers(document *nativeDoc) error {
 	chains := ownedChainList(document)
 	if len(chains) == 0 {
 		return nil
@@ -1539,7 +1539,7 @@ func downloadPath(entry *Node) string {
 	return strings.TrimPrefix(strings.TrimRight(dir.Value, "/")+"/"+file.Value, "./")
 }
 
-func (p *Profile) syncUpdates(document, settings *Node, oldGroups []*recGroup, newGroups *routingGroups, baseURL string, records, before *ruleCatalog) error {
+func (p *Profile) syncUpdates(document *nativeDoc, settings *Node, oldGroups []*recGroup, newGroups *routingGroups, baseURL string, records, before *ruleCatalog) error {
 	plugins := pluginMap(document)
 	download, reload := plugins["rules_download"], plugins["rules_reload"]
 	if download == nil && reload == nil {
@@ -1905,7 +1905,7 @@ func normalizeCustomMatches(value *Node) (*Node, error) {
 	return out, nil
 }
 
-func applyAliasedCustom(document, settings *Node, state *routingState, changes *Node) (*Node, *Node, error) {
+func applyAliasedCustom(document *nativeDoc, settings *Node, state *routingState, changes *Node) (*Node, *Node, error) {
 	for _, field := range keys(changes) {
 		if c := state.caps[field]; !c.Editable {
 			return nil, nil, fail(c.Reason)
@@ -1963,7 +1963,7 @@ type RoutingOptions struct {
 
 // ApplyRouting applies one atomic routing edit to copies of document and
 // settings.
-func ApplyRouting(document, settings *Node, p *Profile, changes *Node, baseURL string, opts RoutingOptions) (*Node, *Node, error) {
+func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node, baseURL string, opts RoutingOptions) (*Node, *Node, error) {
 	filtered := M()
 	pairs(changes, func(key string, value *Node) bool {
 		if containsString(RoutingFields, key) {
@@ -2207,7 +2207,7 @@ func ApplyRouting(document, settings *Node, p *Profile, changes *Node, baseURL s
 
 // switchDefault rewrites only the final fallback (and the IP block, whose
 // probe depends on it).
-func switchDefault(document, settings *Node, current *routingState, defaultForward string) (*Node, *Node, error) {
+func switchDefault(document *nativeDoc, settings *Node, current *routingState, defaultForward string) (*Node, *Node, error) {
 	result := clone(document)
 	plugins := pluginMap(result)
 	args := get(plugins["sequence_main"], "args")

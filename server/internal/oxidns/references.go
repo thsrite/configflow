@@ -60,7 +60,7 @@ func mentions(s, tag string) bool {
 // ReferenceLocations finds the edges left after the caller removed the
 // ones it owns. Plugin tag/type declarations are not references; dynamic
 // also reports unexpanded ${...} references in reference fields.
-func ReferenceLocations(document *Node, tags []string, dynamic bool) []Reference {
+func ReferenceLocations(document *nativeDoc, tags []string, dynamic bool) []Reference {
 	return ReferenceLocationsWithOptions(document, tags, ReferenceOptions{Dynamic: dynamic})
 }
 
@@ -73,7 +73,7 @@ type ReferenceOptions struct {
 
 // ReferenceLocationsWithOptions reuses the common graph traversal for a
 // caller such as onboarding, whose safety proof also includes nested tag fields.
-func ReferenceLocationsWithOptions(document *Node, tags []string, options ReferenceOptions) []Reference {
+func ReferenceLocationsWithOptions(document *nativeDoc, tags []string, options ReferenceOptions) []Reference {
 	dynamic := options.Dynamic
 	var result []Reference
 	var walk func(value *Node, at Path, reference bool)

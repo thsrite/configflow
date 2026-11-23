@@ -294,7 +294,7 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 		}
 	}
 	adguard := get(settings, "adguard")
-	if isMap(adguard) && (isTrue(get(adguard, "enabled"))) {
+	if isMap(adguard) && isTrue(get(adguard, "enabled")) {
 		for _, url := range items(get(adguard, "urls")) {
 			path := "./rules/" + TagFor("adguard", url) + ".txt"
 			if native != nil {
@@ -334,7 +334,7 @@ func CustomFiles(p *Profile) ([]File, error) {
 		files = append(files, File{Path: "./rules/custom_hosts.txt", Content: []byte(content)})
 	}
 	adguard := mapOr(get(settings, "adguard"))
-	if content := get(adguard, "content"); (native == nil || native["rules/adguard-custom.txt"]) && (isTrue(get(adguard, "enabled"))) && isStr(content) && strings.TrimSpace(content.Value) != "" {
+	if content := get(adguard, "content"); (native == nil || native["rules/adguard-custom.txt"]) && isTrue(get(adguard, "enabled")) && isStr(content) && strings.TrimSpace(content.Value) != "" {
 		files = append(files, File{Path: "./rules/adguard-custom.txt", Content: []byte(content.Value)})
 	}
 	managed, err := ManagedFiles(get(settings, "additional_files"))
@@ -485,7 +485,7 @@ func (p *Profile) routingGroups(settings *Node, legacy legacyMode, candidates []
 		}
 		for _, e := range entries {
 			target := groups.part(e.part)
-			if n := len(*target); (isTrue(get(settings, "aggregate_rules"))) && n > 0 && (*target)[n-1].Route == route {
+			if n := len(*target); isTrue(get(settings, "aggregate_rules")) && n > 0 && (*target)[n-1].Route == route {
 				last := (*target)[n-1]
 				pairs(e.args, func(key string, values *Node) bool {
 					list := setDefault(last.Args, key, L())
@@ -523,7 +523,7 @@ func forwardUpstreams(text string, defaults []string) (*Node, error) {
 		}
 		bad := len(values) == 0
 		for _, item := range values {
-			bad = bad || !isStr(item) && !isMap(item) || isMap(item) && !(str(get(item, "addr")) != "")
+			bad = bad || !isStr(item) && !isMap(item) || isMap(item) && str(get(item, "addr")) == ""
 		}
 		if bad {
 			return nil, fail("DNS 上游 YAML 每项需要 addr 地址")

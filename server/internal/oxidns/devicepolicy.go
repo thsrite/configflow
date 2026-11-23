@@ -150,7 +150,7 @@ func displayValue(n *Node) string {
 }
 
 // checkMain: the hook needs a recognizable sequence_main and a local upstream.
-func checkMain(document *Node, plugins map[string]*Node) error {
+func checkMain(document *nativeDoc, plugins map[string]*Node) error {
 	if externalIncludes(document) {
 		return refuse("配置用 include 引入了其他文件，看不到完整的处理链")
 	}
@@ -205,7 +205,7 @@ func checkMain(document *Node, plugins map[string]*Node) error {
 			return refuse(messageNullForwardType)
 		}
 		return refuse("本地上游 forward_local 的类型是 " + displayValue(get(forward, "type")) + "，不是 forward")
-	case !isMap(get(forward, "args")) || !(len(items(get(get(forward, "args"), "upstreams"))) > 0):
+	case !isMap(get(forward, "args")) || len(items(get(get(forward, "args"), "upstreams"))) == 0:
 		return refuse("本地上游 forward_local 没有配置上游地址")
 	}
 	return nil
@@ -337,7 +337,7 @@ type server struct {
 
 // legacyNodeTest: a hand-made listener that node tests currently query, on
 // a chain of its own (it cannot touch client traffic).
-func legacyNodeTest(document *Node, plugins map[string]*Node, servers []server, reached map[string]bool, listen string, ctx EntryContext) bool {
+func legacyNodeTest(document *nativeDoc, plugins map[string]*Node, servers []server, reached map[string]bool, listen string, ctx EntryContext) bool {
 	text := strings.TrimSpace(listen)
 	i := strings.LastIndexByte(text, ':')
 	host, port := strings.Trim(text[:max(i, 0)], "[]"), text[i+1:]
@@ -417,7 +417,7 @@ type SideEntry struct {
 
 // InspectEntries checks every DNS listener: client DNS ports must enter
 // sequence_main; other listeners on their own chain are reported.
-func InspectEntries(document *Node, plugins map[string]*Node, order []string, p *Profile) (EntryReport, error) {
+func InspectEntries(document *nativeDoc, plugins map[string]*Node, order []string, p *Profile) (EntryReport, error) {
 	report := EntryReport{Side: []SideEntry{}, NodeTest: []SideEntry{}}
 	var servers []*Node
 	for _, tag := range order {
@@ -514,7 +514,7 @@ func InspectEntries(document *Node, plugins map[string]*Node, order []string, p 
 }
 
 // orderedPlugins is _plugins with the tag order.
-func orderedPlugins(document *Node) (map[string]*Node, []string) {
+func orderedPlugins(document *nativeDoc) (map[string]*Node, []string) {
 	plugins := pluginMap(document)
 	var order []string
 	if len(plugins) > 0 {
@@ -525,7 +525,7 @@ func orderedPlugins(document *Node) (map[string]*Node, []string) {
 	return plugins, order
 }
 
-func patchPolicies(document *Node, previous, rows []devicenotes.Policy, p *Profile) (*Node, EntryReport, error) {
+func patchPolicies(document *nativeDoc, previous, rows []devicenotes.Policy, p *Profile) (*Node, EntryReport, error) {
 	document = clone(document)
 	plugins, order := orderedPlugins(document)
 	if err := checkMain(document, plugins); err != nil {
@@ -572,7 +572,7 @@ func patchPolicies(document *Node, previous, rows []devicenotes.Policy, p *Profi
 
 // PatchDocument owns exactly two plugins and one hook in sequence_main;
 // altered or ambiguous chains are refused. previous/rows are policy rows.
-func PatchDocument(document *Node, previous, rows []devicenotes.Policy, p *Profile) (*Node, error) {
+func PatchDocument(document *nativeDoc, previous, rows []devicenotes.Policy, p *Profile) (*Node, error) {
 	doc, _, err := patchPolicies(document, previous, rows, p)
 	return doc, err
 }

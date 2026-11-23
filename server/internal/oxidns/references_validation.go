@@ -68,7 +68,7 @@ type depGraph struct {
 	edges map[string][]edge
 }
 
-func collectReferenceIssues(document *Node, graph *depGraph) []Issue {
+func collectReferenceIssues(document *nativeDoc, graph *depGraph) []Issue {
 	var issues []Issue
 	plugins := get(mapOr(document), "plugins")
 	if !has(mapOr(document), "plugins") || !isSeq(plugins) {

@@ -22,7 +22,7 @@ func WatchdogRule() *Node { return M("matches", L("qname full:"+WatchdogName), "
 // of document: sequences get the rule first, other executors a wrapper.
 // Documents with includes are returned unchanged (the Agent does not probe
 // them).
-func EnsureLocalDNSWatchdog(document *Node) (*Node, error) {
+func EnsureLocalDNSWatchdog(document *nativeDoc) (*Node, error) {
 	result := clone(document)
 	if externalIncludes(result) {
 		return result, nil

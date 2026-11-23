@@ -503,7 +503,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 				ips = seqOf(filter(ips.Content, func(x *Node) bool { return trimmed(x) != "" }))
 			}
 			switch {
-			case equal(mode, S("custom")) && (isSeq(ips) || isNone(ips)) && !(len(items(ips)) > 0):
+			case equal(mode, S("custom")) && (isSeq(ips) || isNone(ips)) && len(items(ips)) == 0:
 				errorAt(P("ips"), "custom 模式至少需要一个 IP", "required")
 			case !isNone(mode) && !equal(mode, S("custom")) && isSeq(ips) && len(ips.Content) > 0:
 				errorAt(P("ips"), "只有 custom 模式可以配置 ips", "mutually-exclusive")
