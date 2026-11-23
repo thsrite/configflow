@@ -10,7 +10,6 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/convert"
-	"configflow/internal/health/check"
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
@@ -137,21 +136,7 @@ func appendImported(ctx context.Context, nodes []proxy) (int, error) {
 	return added, err
 }
 
-// subscriptionChecks are the members validated as sent.
-type subscriptionChecks struct {
-	RegexFilter jsondecode.Member[string]          `json:"regex_filter"`
-	Interval    jsondecode.Member[json.RawMessage] `json:"interval"`
-}
-
-func validateOptions(sub *subscriptionFields) error {
-	data, err := sub.MarshalJSON()
-	if err != nil {
-		return err
-	}
-	var sent subscriptionChecks
-	if err := jsondecode.Unmarshal(data, &sent); err != nil {
-		return err
-	}
+func validateOptions(sent *subscriptionRequest) error {
 	if !sent.RegexFilter.Null() {
 		if !sent.RegexFilter.OK {
 			return errors.New(msgFilterType)
@@ -166,7 +151,28 @@ func validateOptions(sub *subscriptionFields) error {
 	}
 	return nil
 }
-func initialize(sub *subscriptionFields) error { return check.InitProviderHealth(&sub.Fields) }
+
+type subscriptionErrorItem struct {
+	ID          json.RawMessage `json:"id,omitempty"`
+	Interval    json.RawMessage `json:"interval,omitempty"`
+	HealthCheck json.RawMessage `json:"health_check,omitempty"`
+}
+
+func subscriptionTypeError(req *subscriptionRequest, overrideID string, cause error) error {
+	idRaw := req.ID.Raw
+	if overrideID != "" {
+		idRaw, _ = json.Marshal(overrideID)
+	}
+	list, err := json.Marshal([]subscriptionErrorItem{{
+		ID:          idRaw,
+		Interval:    req.Interval.Raw,
+		HealthCheck: req.HealthCheck.Raw,
+	}})
+	if err != nil {
+		return err
+	}
+	return repo.InputError(&model.MemberTypeError{Record: "shared", Member: "subscriptions", Value: list, Err: cause})
+}
 func filter(sub model.Subscription, nodes []proxy) ([]proxy, error) {
 	source := sub
 	graphs, err := proxyNodes(nodes)

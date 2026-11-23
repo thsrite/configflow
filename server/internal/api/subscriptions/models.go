@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"configflow/internal/health/check"
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
@@ -19,34 +20,75 @@ type proxy map[string]json.RawMessage
 
 func (o proxy) text(key string) string { var v string; _ = json.Unmarshal(o[key], &v); return v }
 
-// subscriptionFields is a subscription as sent: its members in order, as
-// JSON, after the derived statistics are dropped. The stored record decodes it.
-type subscriptionFields struct{ model.Fields }
+// subscriptionRequest is a subscription create/replace request body decoded
+// with exact member matching. Derived display statistics and undeclared
+// members are ignored.
+type subscriptionRequest struct {
+	ID             jsondecode.Member[json.RawMessage] `json:"id"`
+	Name           jsondecode.Member[string]          `json:"name"`
+	URL            jsondecode.Member[string]          `json:"url"`
+	Type           jsondecode.Member[json.RawMessage] `json:"type"`
+	Enabled        jsondecode.Member[json.RawMessage] `json:"enabled"`
+	Interval       jsondecode.Member[json.RawMessage] `json:"interval"`
+	RegexFilter    jsondecode.Member[string]          `json:"regex_filter"`
+	Description    jsondecode.Member[json.RawMessage] `json:"description"`
+	HealthCheck    jsondecode.Member[json.RawMessage] `json:"health_check"`
+	HealthCheckURL jsondecode.Member[string]          `json:"health_check_url"`
+}
 
-func (f subscriptionFields) text(key string) string {
-	raw, _ := f.Get(key)
-	var v string
-	_ = json.Unmarshal(raw, &v)
-	return v
-}
-func (f *subscriptionFields) set(key string, value any) {
-	raw, _ := json.Marshal(value)
-	_ = f.Set(key, raw)
-}
-func (f *subscriptionFields) stripDerived() {
-	for _, key := range []string{"cached_node_count", "cached_total_count", "cached_updated_at", "traffic", "traffic_at", "last_fetch"} {
-		f.Delete(key)
+func defaultProviderHealth(legacyURL jsondecode.Member[string]) *model.ProviderHealthCheck {
+	d := check.DefaultProviderHealth()
+	if legacyURL.OK && legacyURL.Value != "" {
+		d.URL = legacyURL.Value
+	}
+	return &model.ProviderHealthCheck{
+		Enable:         new(d.Enable),
+		URL:            new(d.URL),
+		Interval:       new(model.Int(d.Interval)),
+		Timeout:        new(model.Int(d.Timeout)),
+		Lazy:           new(d.Lazy),
+		ExpectedStatus: new(d.ExpectedStatus),
 	}
 }
 
-// record is the stored subscription the fields decode to.
-func (f subscriptionFields) record() (model.Subscription, error) {
-	var out model.Subscription
-	data, err := f.MarshalJSON()
-	if err == nil {
-		err = json.Unmarshal(data, &out)
+func decodeSubscription(req *subscriptionRequest, overrideID string, creating bool) (model.Subscription, error) {
+	sub := model.Subscription{
+		Name: req.Name.Value,
+		URL:  req.URL.Value,
 	}
-	return out, err
+	if overrideID != "" {
+		sub.ID = overrideID
+	}
+	fields := []struct {
+		name string
+		raw  json.RawMessage
+	}{
+		{"type", req.Type.Raw},
+		{"enabled", req.Enabled.Raw},
+		{"interval", req.Interval.Raw},
+		{"regex_filter", req.RegexFilter.Raw},
+		{"description", req.Description.Raw},
+		{"health_check", req.HealthCheck.Raw},
+		{"health_check_url", req.HealthCheckURL.Raw},
+	}
+	if overrideID == "" {
+		fields = append([]struct {
+			name string
+			raw  json.RawMessage
+		}{{"id", req.ID.Raw}}, fields...)
+	}
+	for _, field := range fields {
+		if field.raw == nil {
+			continue
+		}
+		if err := model.DecodeInputMember("subscription", &sub, field.name, field.raw); err != nil {
+			return model.Subscription{}, err
+		}
+	}
+	if creating && !req.HealthCheck.Present() {
+		sub.HealthCheck = defaultProviderHealth(req.HealthCheckURL)
+	}
+	return sub, nil
 }
 
 func response(status int, value any) *httpx.Response {
@@ -56,26 +98,26 @@ func response(status int, value any) *httpx.Response {
 	}
 	return httpx.RawJSON(status, data)
 }
-func readBody(c *httpx.Ctx) (*subscriptionFields, error) {
-	var raw json.RawMessage
-	if err := c.Bind(&raw); err != nil {
-		return nil, err
-	}
-	out, ok, err := httpx.DecodeObject[subscriptionFields](raw)
+func decodeSubscriptionBody(c *httpx.Ctx) (*subscriptionRequest, bool, error) {
+	raw, ok, err := httpx.BindObject[json.RawMessage](c, false)
 	if err != nil || !ok {
-		return nil, nil
+		return nil, ok, err
 	}
-	return &out, nil
+	req := new(subscriptionRequest)
+	if err := jsondecode.Unmarshal(raw, req); err != nil {
+		return nil, true, err
+	}
+	return req, true, nil
 }
 
 // readRequestObject rejects every non-object, including null and empty arrays,
 // before a reorder or fetch can acquire a write lock or contact a source.
 func readRequestObject(c *httpx.Ctx) (json.RawMessage, error) {
-	var raw json.RawMessage
-	if err := c.Bind(&raw); err != nil {
+	raw, ok, err := httpx.BindObject[json.RawMessage](c, false)
+	if err != nil {
 		return nil, err
 	}
-	if len(raw) == 0 || raw[0] != '{' {
+	if !ok {
 		return nil, httpx.BadRequest(msgBodyObject)
 	}
 	return raw, nil
@@ -111,11 +153,12 @@ type healthEntry struct {
 	TrafficAt json.RawMessage   `json:"traffic_at"`
 }
 
-func validateFields(sub *subscriptionFields) error {
-	for _, key := range []string{"name", "url"} {
-		if strings.TrimSpace(sub.text(key)) == "" {
-			return fmt.Errorf(msgRequiredField, key)
-		}
+func validateFields(sub *subscriptionRequest) error {
+	if strings.TrimSpace(sub.Name.Value) == "" {
+		return fmt.Errorf(msgRequiredField, "name")
+	}
+	if strings.TrimSpace(sub.URL.Value) == "" {
+		return fmt.Errorf(msgRequiredField, "url")
 	}
 	return validateOptions(sub)
 }

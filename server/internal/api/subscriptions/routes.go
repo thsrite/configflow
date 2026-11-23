@@ -89,29 +89,25 @@ func handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Request.Method != "POST" {
 		return nil, errors.New("unsupported method")
 	}
-	sub, err := readBody(c)
+	req, ok, err := decodeSubscriptionBody(c)
 	if err != nil {
 		return nil, err
 	}
-	if sub == nil {
+	if !ok {
 		return nil, repo.NewValidationError(msgSubscriptionObject)
 	}
-	sub.stripDerived()
-	if err := initialize(sub); err != nil {
-		return nil, err
-	}
-	if err := validateFields(sub); err != nil {
+	if err := validateFields(req); err != nil {
 		return httpx.Message(400, false, err.Error()), nil
 	}
-	record, err := sub.record()
+	record, err := decodeSubscription(req, "", true)
 	if err != nil {
-		return nil, err
+		return nil, subscriptionTypeError(req, "", err)
 	}
 	err = editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) { return append(list, record), nil })
 	return response(200, struct {
-		Success bool                `json:"success"`
-		Data    *subscriptionFields `json:"data"`
-	}{true, sub}), err
+		Success bool               `json:"success"`
+		Data    model.Subscription `json:"data"`
+	}{true, record}), err
 }
 func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
@@ -125,23 +121,20 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 	if !deleting && findSubscription(list, id) < 0 {
 		return httpx.Message(404, false, "Subscription not found"), nil
 	}
-	var body *subscriptionFields
 	var record model.Subscription
 	if !deleting {
-		body, err = readBody(c)
+		req, ok, err := decodeSubscriptionBody(c)
 		if err != nil {
 			return nil, err
 		}
-		if body == nil {
+		if !ok {
 			return nil, repo.NewValidationError(msgSubscriptionObject)
 		}
-		body.stripDerived()
-		if err := validateFields(body); err != nil {
+		if err := validateFields(req); err != nil {
 			return httpx.Message(400, false, err.Error()), nil
 		}
-		body.set("id", id)
-		if record, err = body.record(); err != nil {
-			return nil, err
+		if record, err = decodeSubscription(req, id, false); err != nil {
+			return nil, subscriptionTypeError(req, id, err)
 		}
 	}
 	changedURL := false
@@ -157,7 +150,7 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 				continue
 			}
 			if !replaced {
-				changedURL = sub.URL != body.text("url")
+				changedURL = sub.URL != record.URL
 				result = append(result, record)
 				replaced = true
 			} else {
@@ -186,9 +179,9 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 	}
 	return response(200, struct {
-		Success bool                `json:"success"`
-		Data    *subscriptionFields `json:"data"`
-	}{true, body}), nil
+		Success bool               `json:"success"`
+		Data    model.Subscription `json:"data"`
+	}{true, record}), nil
 }
 
 type reorderError struct{ missing []string }
