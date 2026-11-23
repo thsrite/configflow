@@ -2,6 +2,7 @@ package rulelibrary
 
 import (
 	"bytes"
+	"configflow/internal/model"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -40,7 +41,7 @@ func source(ctx context.Context, id string) (record, error) {
 	if err != nil {
 		return record{}, err
 	}
-	library, err := rows(catalog, "rule_library")
+	library, err := libraryItems(catalog)
 	if err != nil {
 		return record{}, err
 	}
@@ -110,8 +111,8 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body record) (draftR
 			staged.abort(ctx)
 		}
 	}()
-	err = editShared(ctx, func(tx context.Context, catalog *record) error {
-		library, err := rows(*catalog, "rule_library")
+	err = editShared(ctx, func(tx context.Context, catalog *model.Shared) error {
+		library, err := libraryItems(catalog)
 		if err != nil {
 			return err
 		}
@@ -142,7 +143,7 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body record) (draftR
 			return err
 		}
 		library[i] = next
-		if err = put(catalog, "rule_library", library); err != nil {
+		if err = setLibrary(catalog, library); err != nil {
 			return err
 		}
 		out.Revision, err = revision(next)

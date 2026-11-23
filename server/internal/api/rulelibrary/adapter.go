@@ -25,15 +25,6 @@ import (
 
 type jsonValue = json.RawMessage
 
-func native(v any) (record, error) {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return record{}, err
-	}
-	var out record
-	err = json.Unmarshal(raw, &out)
-	return out, err
-}
 func readBody(c *httpx.Ctx) (record, bool, error) {
 	var raw json.RawMessage
 	if err := c.Bind(&raw); err != nil {
@@ -46,16 +37,39 @@ func readBody(c *httpx.Ctx) (record, bool, error) {
 	err := json.Unmarshal(raw, &out)
 	return out, true, err
 }
-func sharedConfig(ctx context.Context) (record, error) {
+func sharedConfig(ctx context.Context) (*model.Shared, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
-		return record{}, err
+		return nil, err
 	}
-	value, err := r.Shared(ctx)
+	return r.Shared(ctx)
+}
+
+// libraryItems is the catalog's rule library as JSON members per item: editors
+// compare, validate and revise library items as sent (see record).
+func libraryItems(shared *model.Shared) ([]record, error) {
+	out := make([]record, len(shared.RuleLibrary))
+	for i, item := range shared.RuleLibrary {
+		data, err := model.Marshal(item)
+		if err == nil {
+			err = out[i].UnmarshalJSON(data)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// setLibrary stores items as the catalog's rule library. The catalog decodes
+// them strictly: a member of another type is refused with the repository's
+// message for the list.
+func setLibrary(shared *model.Shared, items []record) error {
+	raw, err := json.Marshal(items)
 	if err != nil {
-		return record{}, err
+		return err
 	}
-	return native(value)
+	return shared.SetJSON("rule_library", raw)
 }
 func systemConfig(ctx context.Context) (*model.SystemConfig, error) {
 	r, err := repo.GetRepository(ctx)
@@ -64,7 +78,7 @@ func systemConfig(ctx context.Context) (*model.SystemConfig, error) {
 	}
 	return r.SystemConfig(ctx)
 }
-func editShared(ctx context.Context, fn func(context.Context, *record) error) error {
+func editShared(ctx context.Context, fn func(context.Context, *model.Shared) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -77,18 +91,9 @@ func editShared(ctx context.Context, fn func(context.Context, *record) error) er
 		if err := tx.Err(); err != nil {
 			return err
 		}
-		value, err := native(shared)
-		if err != nil {
+		if err := fn(tx, shared); err != nil {
 			return err
 		}
-		before := value
-		if err = fn(tx, &value); err != nil {
-			return err
-		}
-		if err := applyFields(before, value, repo.SharedFields, shared.SetJSON); err != nil {
-			return err
-		}
-
 		return tx.Err()
 	}); err != nil {
 		return err
@@ -96,7 +101,7 @@ func editShared(ctx context.Context, fn func(context.Context, *record) error) er
 	repo.ResetConfigContext(ctx)
 	return nil
 }
-func editSystem(ctx context.Context, fn func(*record) error) error {
+func editSystem(ctx context.Context, fn func(*model.System) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -109,21 +114,9 @@ func editSystem(ctx context.Context, fn func(*record) error) error {
 		if err := tx.Err(); err != nil {
 			return err
 		}
-		value, err := native(system)
-		if err != nil {
+		if err := fn(system); err != nil {
 			return err
 		}
-		before := value
-		if err := fn(&value); err != nil {
-			return err
-		}
-		if err := tx.Err(); err != nil {
-			return err
-		}
-		if err := applyFields(before, value, value.Keys(), system.SetJSON); err != nil {
-			return err
-		}
-
 		return tx.Err()
 	}); err != nil {
 		return err
@@ -181,51 +174,42 @@ func create(ctx context.Context, item record, content []byte) error {
 
 	return err
 }
-func hasIP(item, catalog record) (bool, error) {
-	if err := put(&item, "itemType", "ruleset"); err != nil {
-		return false, err
-	}
-	if err := put(&item, "library_rule_id", text(item, "id")); err != nil {
-		return false, err
-	}
-	raw, err := json.Marshal(item)
+
+// hasIP reports whether a library item has (or may have) IP entries, as the
+// rules page shows it for a rule-set reference.
+func hasIP(item record, shared *model.Shared) (bool, error) {
+	rule, err := ruleRecord(item)
 	if err != nil {
 		return false, err
 	}
-	node, err := oxidns.FromJSON(raw)
+	rule.ItemType, rule.LibraryRuleID = "ruleset", text(item, "id")
+	profile, err := oxidns.NewTypedProfile(&model.Config{Profile: &model.Profile{}, RuleLibrary: shared.RuleLibrary,
+		Nodes: shared.Nodes, Subscriptions: shared.Subscriptions, Aggregations: shared.Aggregations})
 	if err != nil {
 		return false, err
 	}
-	raw, err = json.Marshal(catalog)
-	if err != nil {
-		return false, err
-	}
-	profile, err := oxidns.ProfileFromJSON(raw)
-	if err != nil {
-		return false, err
-	}
-	return oxidns.HasIPPart(node, profile), nil
+	return oxidns.RuleHasIPPart(rule, profile), nil
 }
-func inspect(content string, lines []string, body record) (record, error) {
+func inspect(content string, lines []string, body record) (*rulefetch.Inspection, error) {
 	if len(lines) > 0 {
 		_, payload, err := rulefetch.ReadRulePayload(content)
 		if err != nil {
-			return record{}, err
+			return nil, err
 		}
 		content, err = rulefetch.AppendRuleLines(content, lines, payload)
 		if err != nil {
-			return record{}, err
+			return nil, err
 		}
 	}
 	out, err := rulefetch.Inspect(content, text(body, "behavior"), optionalFormat(body, "format"))
 	if err != nil {
-		return record{}, err
+		return nil, err
 	}
 	if text(body, "behavior") == "classical" {
 		out.Content = content
 		out.Changes = []rulefetch.Change{}
 	}
-	return native(out)
+	return out, nil
 }
 
 func optionalFormat(r record, key string) string {
@@ -243,17 +227,15 @@ func optionalFormat(r record, key string) string {
 	}
 	return out
 }
-func reorder(items []record, body record) ([]record, []string, error) {
-	request := map[string]json.RawMessage{}
-	for key, raw := range body.All() {
-		request[key] = raw
-	}
-	ids, err := rules.OrderIDs(request, "rules")
+
+// reorder applies a reorder request; a malformed request is reported as
+// the only missing ID, as before.
+func reorder(items []model.RuleLibraryItem, body json.RawMessage) ([]model.RuleLibraryItem, []string) {
+	request, err := rules.DecodeOrder(body, "rules")
 	if err != nil {
-		return items, []string{err.Error()}, nil
+		return items, []string{err.Error()}
 	}
-	ordered, missing := rules.Reorder(items, ids, orderPosition(body), func(item record) string { return text(item, "id") })
-	return ordered, missing, nil
+	return rules.Reorder(items, request.IDs, request.Position, func(item model.RuleLibraryItem) string { return item.ID })
 }
 func missingText(ids []string) string { return rules.IdentifierList(ids) }
 
@@ -348,7 +330,7 @@ func removeLegacy(ctx context.Context, name string) error {
 	return err
 }
 
-func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(context.Context, *record) error, base string) ([]profileWarning, error) {
+func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(context.Context, *model.Shared) error, base string) ([]profileWarning, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -358,28 +340,24 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		catalog, err := native(shared)
-		if err != nil {
-			return nil, err
-		}
-		library, err := rows(catalog, "rule_library")
+		items, err := libraryItems(shared)
 		if err != nil {
 			return nil, err
 		}
 		applicable = nil
 		for _, change := range changes {
-			i := find(library, text(change.Old, "id"))
-			if i >= 0 && same(library[i], change.Old) {
+			i := find(items, text(change.Old, "id"))
+			if i >= 0 && same(items[i], change.Old) {
 				applicable = append(applicable, change)
 			}
 		}
 		ids := []string{}
-		for _, raw := range profiles {
-			profile, err := native(raw)
+		for _, profile := range profiles {
+			settings, err := profile.OxiDNS.Node()
 			if err != nil {
 				return nil, err
 			}
-			if text(child(profile, "oxidns"), "config_mode") != "native" {
+			if oxidns.SettingsText(settings, "config_mode") != "native" {
 				continue
 			}
 			routing, downloads, err := affects(profile, applicable)
@@ -387,7 +365,7 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 				return nil, err
 			}
 			if routing || downloads {
-				ids = append(ids, raw.Key())
+				ids = append(ids, profile.Key())
 			}
 		}
 		return ids, nil
@@ -400,18 +378,7 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 		if err := tx.Err(); err != nil {
 			return err
 		}
-		catalog, err := native(shared)
-		if err != nil {
-			return err
-		}
-		before, err := native(shared)
-		if err != nil {
-			return err
-		}
-		if err = edit(tx, &catalog); err != nil {
-			return err
-		}
-		if err := applyFields(before, catalog, repo.SharedFields, shared.SetJSON); err != nil {
+		if err := edit(tx, shared); err != nil {
 			return err
 		}
 		return tx.Err()
@@ -420,87 +387,72 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 		if err := tx.Err(); err != nil {
 			return err
 		}
-		before, err := native(old)
+		routing, downloads, err := affects(old.Profile, applicable)
 		if err != nil {
 			return err
 		}
-		after, err := native(current)
-		if err != nil {
-			return err
-		}
-		baseline, err := native(current)
-		if err != nil {
-			return err
-		}
-		routing, downloads, err := affects(before, applicable)
-		if err != nil {
-			return err
-		}
-		updated, messages, err := rebuild(before, after, routing, downloads, base)
+		messages, err := rebuild(old, current, routing, downloads, base)
 		if err != nil {
 			return err
 		}
 		for _, message := range messages {
 			warnings = append(warnings, profileWarning{id, message})
 		}
-		if err := applyFields(baseline, updated, repo.ProfileFields, current.Profile.SetJSON); err != nil {
-			return err
-		}
 		return tx.Err()
 	}, selector)
 
 	return warnings, err
 }
-func dnsProfile(p record) (*oxidns.Profile, error) {
-	raw, err := json.Marshal(p)
+
+// rebuild re-routes and rebases the native OxiDNS settings of a profile
+// whose library sources changed; before is resolved against the old catalog.
+func rebuild(before, after *model.Config, routing, downloads bool, base string) ([]string, error) {
+	warnings := []string{}
+	a, err := oxidns.NewTypedProfile(before)
 	if err != nil {
 		return nil, err
 	}
-	return oxidns.ProfileFromJSON(raw)
-}
-func rebuild(before, after record, routing, downloads bool, base string) (record, []string, error) {
-	warnings := []string{}
-	a, err := dnsProfile(before)
+	b, err := oxidns.NewTypedProfile(after)
 	if err != nil {
-		return after, nil, err
-	}
-	b, err := dnsProfile(after)
-	if err != nil {
-		return after, nil, err
+		return nil, err
 	}
 	if routing {
 		result, err := oxidns.ApplyRuleDNS(a, b, nil, oxidns.RuleDNSApplyOptions{BaseURL: base, Lenient: true})
 		if err != nil {
-			return after, nil, err
+			return nil, err
 		}
 		warnings = append(warnings, result.Warnings...)
 		if result.Changed {
-			if err = after.Set("oxidns", oxidns.ToJSON(result.Settings)); err != nil {
-				return after, nil, err
+			if err = after.Profile.OxiDNS.SetNode(result.Settings); err != nil {
+				return nil, err
 			}
-			b, err = dnsProfile(after)
+			b, err = oxidns.NewTypedProfile(after)
 			if err != nil {
-				return after, nil, err
+				return nil, err
 			}
 		}
 	}
 	if downloads {
-		if content := text(child(after, "oxidns"), "native_config"); content != "" {
+		settings, err := after.Profile.OxiDNS.Node()
+		if err != nil {
+			return nil, err
+		}
+		if content := oxidns.SettingsText(settings, "native_config"); content != "" {
 			if _, err := yamlx.Parse([]byte(content)); err != nil && !errors.Is(err, yamlx.ErrSyntax) {
-				return after, nil, repo.NewValidationError(err.Error())
+				return nil, repo.NewValidationError(err.Error())
 			}
 		}
 		changed, err := oxidns.RebaseNativeRuleSources(a, b)
 		if err != nil {
-			return after, nil, err
+			return nil, err
 		}
 		if changed {
-			if err = after.Set("oxidns", oxidns.ToJSON(b.Settings())); err != nil {
-				return after, nil, err
+			if err = after.Profile.OxiDNS.SetNode(b.Settings()); err != nil {
+				return nil, err
 			}
 		}
 	}
-	return after, warnings, nil
+	return warnings, nil
 }
 
 func rejectedBeforeCommit(err error) bool {
@@ -645,24 +597,4 @@ func libraryRecord(rule model.RuleConfig) model.RuleLibraryItem {
 func boundNonempty(c *httpx.Ctx) bool {
 	var raw json.RawMessage
 	return c.BindSilent(&raw) && rules.EnabledField(raw, false)
-}
-
-func orderPosition(body record) string {
-	if !body.Has("position") {
-		return "top"
-	}
-	return text(body, "position")
-}
-
-func applyFields(before, after record, keys []string, set func(string, json.RawMessage) error) error {
-	for _, key := range keys {
-		raw, present := after.Get(key)
-		previous, _ := before.Get(key)
-		if present && !bytes.Equal(previous, raw) {
-			if err := set(key, raw); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }

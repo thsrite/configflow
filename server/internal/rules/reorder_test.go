@@ -53,20 +53,12 @@ func parseOrderBody(t *testing.T, raw string) map[string]json.RawMessage {
 }
 
 func resolveOrder(current []any, body map[string]json.RawMessage, objectKey string) ([]any, []string) {
-	ids, err := OrderIDs(body, objectKey)
+	data, _ := json.Marshal(body)
+	request, err := DecodeOrder(data, objectKey)
 	if err != nil {
 		return current, []string{err.Error()}
 	}
-	position := "top"
-	if raw, ok := body["position"]; ok {
-		var p string
-		if string(raw) != "null" && json.Unmarshal(raw, &p) == nil {
-			position = p
-		} else {
-			position = ""
-		}
-	}
-	return Reorder(current, ids, position, itemID)
+	return Reorder(current, request.IDs, request.Position, itemID)
 }
 
 func TestReorderByIDsMovesSelectedItemsToTheTopInGivenOrder(t *testing.T) {

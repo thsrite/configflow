@@ -23,6 +23,9 @@ func Convertible(item *Node) bool { return convertible(item) }
 // RuleConvertible is Convertible for a stored rule.
 func RuleConvertible(item model.RuleConfig) bool { return convertible(ruleNode(item)) }
 
+// RuleHasIPPart is HasIPPart for a stored rule.
+func RuleHasIPPart(item model.RuleConfig, p *Profile) bool { return hasIPPart(ruleNode(item), p) }
+
 // RuleFollowRoute is FollowRoute for a stored rule.
 func RuleFollowRoute(item model.RuleConfig, p *Profile) string { return FollowRoute(ruleNode(item), p) }
 

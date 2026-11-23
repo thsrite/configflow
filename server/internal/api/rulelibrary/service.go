@@ -1,6 +1,7 @@
 package rulelibrary
 
 import (
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,7 +26,7 @@ func (s *Service) List(ctx context.Context) ([]record, error) {
 	if err != nil {
 		return nil, err
 	}
-	items, err := rows(catalog, "rule_library")
+	items, err := libraryItems(catalog)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +57,7 @@ func (s *Service) Create(ctx context.Context, item record) (itemResult, error) {
 	if err != nil {
 		return out, err
 	}
-	library, err := rows(catalog, "rule_library")
+	library, err := libraryItems(catalog)
 	if err != nil {
 		return out, err
 	}
@@ -107,18 +108,18 @@ func (s *Service) Create(ctx context.Context, item record) (itemResult, error) {
 }
 
 // Check validates editable content and appends complete lines via yamlx.
-func (s *Service) Check(body record) (record, error) {
+func (s *Service) Check(body record) (*rulefetch.Inspection, error) {
 	content, ok := stringField(body, "content")
 	if !ok {
-		return record{}, fail(400, msgCheckBody)
+		return nil, fail(400, msgCheckBody)
 	}
 	lines, err := stringsField(body, "append_lines")
 	if err != nil {
-		return record{}, fail(400, msgAppend)
+		return nil, fail(400, msgAppend)
 	}
 	for _, line := range lines {
 		if strings.ContainsAny(line, "\r\n") {
-			return record{}, fail(400, msgAppend)
+			return nil, fail(400, msgAppend)
 		}
 	}
 	return inspect(content, lines, body)
@@ -130,7 +131,7 @@ func (s *Service) Content(ctx context.Context, id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	library, err := rows(catalog, "rule_library")
+	library, err := libraryItems(catalog)
 	if err != nil {
 		return nil, err
 	}
@@ -157,23 +158,22 @@ func (s *Service) Reorder(ctx context.Context, body record) ([]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	data, err := body.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
 	order := []string{}
-	err := editShared(ctx, func(_ context.Context, catalog *record) error {
-		library, err := rows(*catalog, "rule_library")
-		if err != nil {
-			return err
-		}
-		ordered, missing, err := reorder(library, body)
-		if err != nil {
-			return err
-		}
+	err = editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
+		ordered, missing := reorder(catalog.RuleLibrary, data)
 		if len(missing) > 0 {
 			return fail(404, fmt.Sprintf(msgOrderMissing, missingText(missing)))
 		}
-		for _, row := range ordered {
-			order = append(order, text(row, "id"))
+		order = order[:0]
+		for _, item := range ordered {
+			order = append(order, item.ID)
 		}
-		return put(catalog, "rule_library", ordered)
+		catalog.RuleLibrary = ordered
+		return nil
 	})
 	return order, err
 }
@@ -203,12 +203,9 @@ func (s *Service) SetProxyDomains(ctx context.Context, body record) (string, err
 		}
 	}
 	value = strings.TrimSpace(value)
-	err := editSystem(ctx, func(system *record) error {
-		config := child(*system, "system_config")
-		if err := put(&config, "github_proxy_domain", value); err != nil {
-			return err
-		}
-		return put(system, "system_config", config)
+	err := editSystem(ctx, func(system *model.System) error {
+		system.SystemConfig.GitHubProxyDomain = value
+		return nil
 	})
 	return value, err
 }

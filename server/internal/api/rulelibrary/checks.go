@@ -1,6 +1,7 @@
 package rulelibrary
 
 import (
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
@@ -73,7 +74,7 @@ func (s *Service) Test(ctx context.Context, base string) (checksResult, error) {
 	if err != nil {
 		return out, err
 	}
-	library, err := rows(catalog, "rule_library")
+	library, err := libraryItems(catalog)
 	if err != nil {
 		return out, err
 	}
@@ -114,8 +115,8 @@ func (s *Service) Test(ctx context.Context, base string) (checksResult, error) {
 			changes = append(changes, sourceChange{selected[i], next})
 		}
 	}
-	_, err = editWithProfiles(ctx, changes, func(_ context.Context, current *record) error {
-		items, err := rows(*current, "rule_library")
+	_, err = editWithProfiles(ctx, changes, func(_ context.Context, current *model.Shared) error {
+		items, err := libraryItems(current)
 		if err != nil {
 			return err
 		}
@@ -127,7 +128,7 @@ func (s *Service) Test(ctx context.Context, base string) (checksResult, error) {
 				}
 			}
 		}
-		return put(current, "rule_library", items)
+		return setLibrary(current, items)
 	}, base)
 	return out, err
 }
@@ -210,7 +211,7 @@ func (s *Service) Cache(ctx context.Context, body record) (cacheResults, error) 
 	if err != nil {
 		return out, err
 	}
-	library, err := rows(catalog, "rule_library")
+	library, err := libraryItems(catalog)
 	if err != nil {
 		return out, err
 	}

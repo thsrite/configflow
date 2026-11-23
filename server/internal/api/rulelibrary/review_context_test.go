@@ -1,6 +1,7 @@
 package rulelibrary
 
 import (
+	"configflow/internal/model"
 	"context"
 	"errors"
 	"testing"
@@ -15,19 +16,24 @@ func TestReviewTransactionCallbacksKeepOwnerShutdown(t *testing.T) {
 			runtime, ctx, _ := runtimeRequest(t, app.Context())
 			ctx = lifecycle.Detach(ctx)
 			before := persisted(t, app)
-			stop := func(tx context.Context, candidate *record) error {
+			stop := func(tx context.Context, candidate *model.Shared) error {
 				runtime.Shutdown(t.Context())
 				if !errors.Is(tx.Err(), context.Canceled) {
 					t.Error("transaction lost owner shutdown", tx.Err())
 				}
-				return put(candidate, "review_should_not_commit", true)
+				candidate.RuleLibrary = append(candidate.RuleLibrary, model.RuleLibraryItem{ID: "review_should_not_commit"})
+				return nil
 			}
 			var err error
 			switch kind {
 			case "shared":
 				err = editShared(ctx, stop)
 			case "system":
-				err = editSystem(ctx, func(candidate *record) error { return stop(ctx, candidate) })
+				err = editSystem(ctx, func(candidate *model.System) error {
+					runtime.Shutdown(t.Context())
+					candidate.SystemConfig.GitHubProxyDomain = "review_should_not_commit"
+					return ctx.Err()
+				})
 			case "shared-profiles":
 				_, err = editWithProfiles(ctx, nil, stop, "http://example.com")
 			}

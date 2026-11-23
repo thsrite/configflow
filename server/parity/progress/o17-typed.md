@@ -30,7 +30,10 @@
   删除 `enabled(record)` 回归测试——节点的 `enabled` 已是 `*bool`）
 - [x] 1.6 api/subscriptions（订阅列表/健康/节点/排序类型化，列表视图为 `subscriptionView`；新增/替换请求为
   `subscriptionFields` 边界；代理定义改名 `proxy`（协议成员开放，保留 JSON 对象）；删除对象 `enabled` 真假回归测试）
-- [ ] 1.6 api/rulelibrary
+- [x] 1.6 api/rulelibrary（共享目录、系统设置、受影响配置的重建全部类型化：`editShared`/`editSystem`/`editWithProfiles`/`rebuild`
+  直接改 `*model.Shared`/`*model.System`/`*model.Config`；排序直接排 `[]model.RuleLibraryItem`。库条目本身保留为
+  JSON 成员（`record`），因为草稿修订号、按原样校验和「未发送则继承 update_interval」都定义在条目成员上；
+  写回用 `setLibrary`（`SetJSON("rule_library")`，文案与原来一致）。已删除 `rules.OrderIDs`）
 - [ ] 1.6 mcp/invoker
 - [ ] 1.8 RouterOS Row → map[string]string；只读分析结构体
 - [ ] 1.8 iKuai 结构体

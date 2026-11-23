@@ -49,17 +49,14 @@ func TestN811SectionEditsPreserveUnchangedBytes(t *testing.T) {
 	if bytes.Contains(beforeSubscriptions, []byte("opaque")) || bytes.Contains(beforeBackup, []byte("opaque")) {
 		t.Fatalf("undeclared member kept: %s %s", beforeSubscriptions, beforeBackup)
 	}
-	if err := editShared(ctx, func(_ context.Context, catalog *record) error {
-		return put(catalog, "rule_library", []record{recordJSON(t, `{"id":"record","name":"Record","source_type":"content","content":"+.records.example\n","behavior":"domain","format":"text"}`)})
+	if err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
+		return setLibrary(catalog, []record{recordJSON(t, `{"id":"record","name":"Record","source_type":"content","content":"+.records.example\n","behavior":"domain","format":"text"}`)})
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := editSystem(ctx, func(system *record) error {
-		settings := child(*system, "system_config")
-		if err := put(&settings, "github_proxy_domain", "https://proxy.example"); err != nil {
-			return err
-		}
-		return put(system, "system_config", settings)
+	if err := editSystem(ctx, func(system *model.System) error {
+		system.SystemConfig.GitHubProxyDomain = "https://proxy.example"
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -83,22 +80,16 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 		t.Fatal(err)
 	}
 	stop := errors.New("abort edit")
-	if err := editShared(ctx, func(_ context.Context, catalog *record) error {
-		if err := put(catalog, "rule_library", []record{recordJSON(t, `{"id":"temp","name":"Temp","source_type":"content","content":"+.temp.example\n","behavior":"domain","format":"text"}`)}); err != nil {
+	if err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
+		if err := setLibrary(catalog, []record{recordJSON(t, `{"id":"temp","name":"Temp","source_type":"content","content":"+.temp.example\n","behavior":"domain","format":"text"}`)}); err != nil {
 			return err
 		}
 		return stop
 	}); !errors.Is(err, stop) {
 		t.Fatalf("expected stop error, got %v", err)
 	}
-	if err := editSystem(ctx, func(system *record) error {
-		settings := child(*system, "system_config")
-		if err := put(&settings, "github_proxy_domain", "https://failed.example"); err != nil {
-			return err
-		}
-		if err := put(system, "system_config", settings); err != nil {
-			return err
-		}
+	if err := editSystem(ctx, func(system *model.System) error {
+		system.SystemConfig.GitHubProxyDomain = "https://failed.example"
 		return stop
 	}); !errors.Is(err, stop) {
 		t.Fatalf("expected stop error, got %v", err)
@@ -111,8 +102,8 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 	if len(cached.RuleLibrary) != 0 {
 		t.Fatalf("failed editShared changed snapshot: %v", cached.RuleLibrary)
 	}
-	if err := editShared(ctx, func(_ context.Context, catalog *record) error {
-		return put(catalog, "rule_library", []record{recordJSON(t, `{"id":"saved","name":"Saved","source_type":"content","content":"+.saved.example\n","behavior":"domain","format":"text"}`)})
+	if err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
+		return setLibrary(catalog, []record{recordJSON(t, `{"id":"saved","name":"Saved","source_type":"content","content":"+.saved.example\n","behavior":"domain","format":"text"}`)})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -126,12 +117,9 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 	if err := repo.SaveSharedRecord(ctx, sharedSnap, nil); !errors.Is(err, repo.ErrInUse) {
 		t.Fatalf("editShared did not clear Scope shared baseline: %v", err)
 	}
-	if err := editSystem(ctx, func(system *record) error {
-		settings := child(*system, "system_config")
-		if err := put(&settings, "github_proxy_domain", "https://mirror.example"); err != nil {
-			return err
-		}
-		return put(system, "system_config", settings)
+	if err := editSystem(ctx, func(system *model.System) error {
+		system.SystemConfig.GitHubProxyDomain = "https://mirror.example"
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -156,8 +144,8 @@ func TestReviewN811CheckContentRejectsNonStringFormat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: unexpected error %v", raw, err)
 		}
-		errs, err := rows(result, "errors")
-		if err != nil || len(errs) != 1 || text(errs[0], "message") != "规则集格式必须是 text、yaml 或 mrs。" {
+		errs := result.Errors
+		if len(errs) != 1 || errs[0].Message != "规则集格式必须是 text、yaml 或 mrs。" {
 			t.Fatalf("%s: expected format validation error, got %+v (%v)", raw, errs, err)
 		}
 	}
@@ -170,8 +158,8 @@ func TestReviewN811CheckContentRejectsNonStringFormat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: unexpected error %v", raw, err)
 		}
-		errs, err := rows(result, "errors")
-		if err != nil || len(errs) != 0 {
+		errs := result.Errors
+		if len(errs) != 0 {
 			t.Fatalf("%s: expected valid empty/null format, got %+v (%v)", raw, errs, err)
 		}
 	}

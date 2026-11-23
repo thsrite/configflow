@@ -68,15 +68,3 @@ func DecodeOrder(body []byte, collection string) (Order, error) {
 	}
 	return Order{IDs: ids, Position: sent.Position.Or("top")}, nil
 }
-
-// OrderIDs is DecodeOrder's IDs for callers still holding a decoded object.
-//
-// Deprecated: transitional until every editor decodes its request DTO.
-func OrderIDs(body map[string]json.RawMessage, collection string) ([]string, error) {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	order, err := DecodeOrder(data, collection)
-	return order.IDs, err
-}

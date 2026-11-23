@@ -2,6 +2,7 @@ package rulelibrary
 
 import (
 	"bytes"
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
@@ -53,14 +54,10 @@ var declarationFields = map[string]json.RawMessage{"url": json.RawMessage("null"
 var routingFields = map[string]json.RawMessage{"enabled": json.RawMessage("true"), "behavior": json.RawMessage(`"domain"`)}
 var downloadFields = map[string]json.RawMessage{"url": json.RawMessage("null"), "source_type": json.RawMessage(`"url"`)}
 
-func affects(profile record, changes []sourceChange) (routing, downloads bool, err error) {
-	rules, err := rows(profile, "rule_configs")
-	if err != nil {
-		return false, false, err
-	}
-	for _, item := range rules {
+func affects(profile *model.Profile, changes []sourceChange) (routing, downloads bool, err error) {
+	for _, item := range profile.RuleConfigs {
 		for _, change := range changes {
-			if text(item, "library_rule_id") == text(change.Old, "id") {
+			if item.LibraryRuleID == text(change.Old, "id") {
 				routing = routing || different(change.Old, change.Next, routingFields)
 				downloads = downloads || different(change.Old, change.Next, downloadFields)
 			}
@@ -144,8 +141,8 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 	if !remove {
 		changes = append(changes, sourceChange{baseline, next})
 	}
-	warnings, err := editWithProfiles(ctx, changes, func(tx context.Context, catalog *record) error {
-		library, err := rows(*catalog, "rule_library")
+	warnings, err := editWithProfiles(ctx, changes, func(tx context.Context, catalog *model.Shared) error {
+		library, err := libraryItems(catalog)
 		if err != nil {
 			return err
 		}
@@ -156,7 +153,7 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 		previous = library[i]
 		if remove {
 			library = append(library[:i:i], library[i+1:]...)
-			return put(catalog, "rule_library", library)
+			return setLibrary(catalog, library)
 		}
 		if !same(previous, baseline) {
 			return fail(409, msgDraftConflict)
@@ -185,7 +182,7 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 			}
 		}
 		library[i] = next
-		return put(catalog, "rule_library", library)
+		return setLibrary(catalog, library)
 	}, base)
 	if err != nil {
 		if !rejectedBeforeCommit(err) {
