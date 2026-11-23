@@ -3049,3 +3049,15 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   与以前结果相同）；符号链接环超过 40 层报 `resolve …: too many links`（以前照搬 CPython 的环检测和「Symlink loop from '…'」文本），仍按内部错误处理。
 - 路径中读不到的部分（不存在、不是目录、无权限）原样保留（HR 复核：C10 初版对非「不存在」的错误直接报错，与以前不同）。
 - `~`/`~name` 用 `os.UserHomeDir` / `user.Lookup` 展开；无法确定主目录时的错误文本改为 Go 的错误（以前照搬「Could not determine home directory.」）。
+
+## O18 T8 — 流量记录、OxiDNS 排行历史改用 database/sql 事务（C11）
+
+- 查询时长超出可表示日期范围（`/metrics/history`、`/metrics/summary` 的 `hours`、流量趋势）仍是 500，`message` 统一为
+  「查询时长超出可表示的日期范围」（以前是 Python `OverflowError` 的三种英文文本）。
+- 「监控历史保存」任务记录里流量记录失败的原因（「流量记录：…」）改为 Go 的错误文本：SQLite 错误带驱动的错误码后缀和
+  `begin/commit traffic transaction:` 前缀（以前照搬 `sqlite3_errmsg`，如 `database is locked`）；数据目录无法创建时是
+  `mkdir …: …`（以前是 `[Errno 17] File exists: '…'`）；手改文件里的无效计数为「流量记录里有无效的计数」、超出 INTEGER/REAL 范围为
+  「流量计数超出可保存的范围」（以前是英文的 `invalid stored traffic counter` / `Python int too large…`）。
+- 回滚本身失败时不再用回滚错误顶替原错误：返回原错误，回滚失败写一条告警日志（HR 复核补上日志）。
+- OxiDNS 排行的存槽和整理从第一条语句起就持有写锁（`BEGIN IMMEDIATE`，以前在第一条写语句前隐式 `BEGIN`）；只读查询不开事务，与以前相同。
+  存储内容不变：生产快照私有副本上同一组操作改前改后结果哈希、行数一致。

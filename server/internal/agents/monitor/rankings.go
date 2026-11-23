@@ -305,8 +305,14 @@ func (s *RankingStore) withContext(ctx context.Context, body func(c *rankConn) e
 	if err != nil {
 		return fmt.Errorf("begin ranking transaction: %w", err)
 	}
-	// Rollback after Commit is a no-op (sql.ErrTxDone).
-	defer tx.Rollback()
+	// Rollback after Commit (or after database/sql rolled back for a done
+	// ctx) is sql.ErrTxDone; any other failure is logged, the caller gets
+	// the error that caused the rollback.
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			rankingLogger.Warningf(msgRankingRollbackFailed, err)
+		}
+	}()
 	c.q = tx
 	if err := body(c); err != nil {
 		return err

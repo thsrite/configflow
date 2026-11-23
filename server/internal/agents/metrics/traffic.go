@@ -705,7 +705,7 @@ func (c *trafficConn) commitContext(ctx context.Context) error {
 	tx := c.tx
 	c.tx = nil
 	if err := ctx.Err(); err != nil {
-		tx.Rollback()
+		logRollback(tx)
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -717,15 +717,23 @@ func (c *trafficConn) commitContext(ctx context.Context) error {
 	return nil
 }
 
-// rollbackContext ends an open transaction without saving it. Its error is
-// not reported: the caller already returns the error that caused it, and
-// closing the connection discards whatever is still open.
+// rollbackContext ends an open transaction without saving it. The caller
+// returns the error that caused it; a failed ROLLBACK is only logged
+// (closing the connection discards whatever is still open).
 func (c *trafficConn) rollbackContext(context.Context) error {
 	if c.tx != nil {
-		_ = c.tx.Rollback()
+		logRollback(c.tx)
 		c.tx = nil
 	}
 	return nil
+}
+
+// logRollback rolls tx back and logs a failure. sql.ErrTxDone means
+// database/sql already rolled it back because its context ended.
+func logRollback(tx *sql.Tx) {
+	if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+		trafficLogger.Warningf(msgTrafficRollbackFailed, err)
+	}
 }
 
 // inTransaction runs body in one transaction: committed when body succeeds,
@@ -743,7 +751,8 @@ func (c *trafficConn) inTransaction(ctx context.Context, body func() error) erro
 
 func (c *trafficConn) close() {
 	if c.tx != nil {
-		_ = c.tx.Rollback()
+		logRollback(c.tx)
+		c.tx = nil
 	}
 	c.conn.Close()
 	c.db.Close()
@@ -804,17 +813,24 @@ func (h *TrafficHistory) connectContext(ctx context.Context) (*trafficConn, erro
 		return nil, err
 	}
 	c := &trafficConn{db: db, conn: conn}
+	// Closed unless it is handed to the caller, also when the migration
+	// panics: an open BEGIN IMMEDIATE would block every later writer.
+	opened := false
+	defer func() {
+		if !opened {
+			c.close()
+		}
+	}()
 	statements := append([]string{"PRAGMA busy_timeout=" + strconv.Itoa(trafficTimeoutMs), "PRAGMA journal_mode=DELETE"}, trafficSchema...)
 	for _, statement := range statements {
 		if _, err := c.execContext(ctx, statement); err != nil {
-			c.close()
 			return nil, err
 		}
 	}
 	if err := migrateLegacy(ctx, c); err != nil {
-		c.close()
 		return nil, err
 	}
+	opened = true
 	return c, nil
 }
 

@@ -158,3 +158,5 @@ const (
 	msgUpstreamServer     = "上游服务器"
 	msgRankingUnavailable = "OxiDNS 排行统计暂未取到 %s 的时段（%s），下一轮再试"
 )
+
+const msgRankingRollbackFailed = "OxiDNS 排行历史事务回滚失败：%v"

@@ -16,3 +16,5 @@ const msgHoursOutOfRange = "查询时长超出可表示的日期范围"
 const msgTrafficCounterRange = "流量计数超出可保存的范围"
 
 const msgTrafficCounterInvalid = "流量记录里有无效的计数"
+
+const msgTrafficRollbackFailed = "流量记录事务回滚失败：%v"
