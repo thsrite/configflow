@@ -34,13 +34,26 @@ type Service struct {
 	routeBudget time.Duration
 }
 
-// New constructs the wizard using the bundled first-start template.
+// Options configures a setup Service instance with explicit external owners.
+type Options struct {
+	Owners ExternalOwners
+}
+
+// New constructs the wizard using the bundled first-start template and the
+// process-registered ExternalOwners.
 func New(r *repo.Repository) (*Service, error) {
+	return NewWithOptions(r, Options{Owners: externalOwners()})
+}
+
+// NewWithOptions constructs the wizard with explicit external owners instead
+// of reading the process-level ExternalOwners registry. Missing owners fail
+// closed with HTTP 503.
+func NewWithOptions(r *repo.Repository, opts Options) (*Service, error) {
 	c, err := loadCatalog()
 	if err != nil {
 		return nil, err
 	}
-	return &Service{repository: r, catalog: c, owners: externalOwners()}, nil
+	return &Service{repository: r, catalog: c, owners: copyOwners(opts.Owners)}, nil
 }
 
 func bodyFields(raw json.RawMessage) (map[string]json.RawMessage, error) {

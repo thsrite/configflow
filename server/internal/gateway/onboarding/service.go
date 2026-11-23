@@ -14,11 +14,31 @@ import (
 	"configflow/internal/setupflow"
 )
 
+// ServiceOptions configures an onboarding Service with explicit collaborators.
+type ServiceOptions struct {
+	DNSLoop         DNSLoopChecker
+	AdoptOwnedWrite AdoptOwnedWrite
+}
+
 // Service owns onboarding reads and the atomic two-service profile write.
 // It retains no context; detached writes are bound to the Runtime generation.
 type Service struct {
-	Repository *repo.Repository
-	DNSLoop    DNSLoopChecker
+	Repository      *repo.Repository
+	DNSLoop         DNSLoopChecker
+	AdoptOwnedWrite AdoptOwnedWrite
+	explicitAdopter bool
+}
+
+// New constructs an onboarding Service with explicit collaborators. A nil
+// AdoptOwnedWrite fails closed with ErrSetupUnavailable when a pending setup
+// session exists, without falling back to the package-level hook.
+func New(r *repo.Repository, opts ServiceOptions) *Service {
+	return &Service{
+		Repository:      r,
+		DNSLoop:         opts.DNSLoop,
+		AdoptOwnedWrite: opts.AdoptOwnedWrite,
+		explicitAdopter: true,
+	}
 }
 
 // Operation describes the explicit HTTP operation; HEAD uses Write=false.
@@ -49,7 +69,10 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	adopter := currentAdopter()
+	adopter := s.AdoptOwnedWrite
+	if !s.explicitAdopter && adopter == nil {
+		adopter = currentAdopter()
+	}
 	raw, revision, err := s.Repository.PublishConfig(ctx, op.ProfileID, true)
 	if err != nil {
 		return nil, err

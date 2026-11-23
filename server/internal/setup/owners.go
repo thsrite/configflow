@@ -6,10 +6,24 @@ import (
 	"sync"
 	"time"
 
+	"configflow/internal/gateway/onboarding"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	"configflow/internal/yamlx"
 )
+
+// DefaultDNSOwner returns the direct onboarding-backed DNSOwner (O17 D4).
+func DefaultDNSOwner() *DNSOwner {
+	return &DNSOwner{
+		LocalUpstreams: onboarding.LocalUpstreams,
+		PrepareMihomoDNS: func(document *yamlx.Node) (*yamlx.Node, error) {
+			return onboarding.PrepareMihomoDNS(document, nil, onboarding.CheckDNSLoop)
+		},
+		DefaultLocalDNS: onboarding.DefaultLocalDNS,
+		DNSTarget:       onboarding.DNSTarget,
+		Nameservers:     onboarding.DefaultMihomoNameservers,
+	}
+}
 
 // DNSOwner supplies A21's pure DNS helpers and defaults. The adapter supplies
 // the reviewed DNS-loop checker; documents are independently owned temporaries.

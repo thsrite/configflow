@@ -1,50 +1,65 @@
 package server
 
 import (
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"configflow/internal/agents"
-	apirules "configflow/internal/api/rules"
+	"configflow/internal/gateway"
 	"configflow/internal/gateway/host"
 	"configflow/internal/gateway/installation"
 	"configflow/internal/gateway/onboarding"
+	"configflow/internal/jsondecode"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
+	"configflow/internal/rulesource"
 	"configflow/internal/setup"
-	"configflow/internal/yamlx"
-	"errors"
 )
 
-// wireSetupContent joins the existing C32 source owner. A21 and A22 install
-// their callbacks when those modules are merged; absent owners fail closed.
-func wireSetupContent() {
+// wireRuleSource installs the shared rulesource Service for routers and
+// gateway providers without importing internal/api/rules.
+func wireRuleSource(rs *rulesource.Service) {
+	if rs == nil {
+		rs = rulesource.Default()
+	}
+	routers.RulesetContent = func(ctx context.Context, profile json.RawMessage, item routers.RuleSet, library *routers.LibraryRule) (string, error) {
+		var libRaw json.RawMessage
+		if library != nil {
+			libRaw = library.Raw
+		}
+		return rs.ReadOfflineJSON(ctx, profile, item.Raw, libRaw)
+	}
+	gateway.SetRuleSourceReader(rs.ReadGateway)
+}
+
+// wireSetupContent joins the shared rulesource owner for setup route reads.
+func wireSetupContent() { wireSetupContentWith(rulesource.Default()) }
+
+func wireSetupContentWith(rs *rulesource.Service) {
+	if rs == nil {
+		rs = rulesource.Default()
+	}
 	setup.RegisterExternalOwners(setup.ExternalOwners{ReadRouteContent: func(ctx context.Context, config json.RawMessage, item routers.RuleSet, library *routers.LibraryRule, options setup.RouteReadOptions) (string, error) {
 		var raw json.RawMessage
 		if library != nil {
 			raw = library.Raw
 		}
-		return apirules.ReadRulesetContent(ctx, config, item.Raw, raw, apirules.ContentOptions{AllowNetwork: options.AllowNetwork, ConnectTimeout: options.ConnectTimeout, ReadTimeout: options.ReadTimeout})
+		return rs.ReadJSON(ctx, config, item.Raw, raw, rulesource.ContentOptions{
+			AllowNetwork:   options.AllowNetwork,
+			ConnectTimeout: options.ConnectTimeout,
+			ReadTimeout:    options.ReadTimeout,
+		})
 	}})
 }
 
-// wireSetupOnboarding joins A21's pure DNS helpers and C36's ownership owner.
-// HTTP preparation has no target host addresses, matching Python's empty
-// default; A22 supplies discovered addresses to AssertReady at installation.
+// wireSetupOnboarding installs setup's direct onboarding DNSOwner (O17 D4)
+// and registers C36's adoption callback for onboarding writes.
 func wireSetupOnboarding() {
 	onboarding.SetAdoptOwnedWrite(setup.AdoptOwnedWrite)
-	setup.RegisterExternalOwners(setup.ExternalOwners{DNS: &setup.DNSOwner{
-		LocalUpstreams: onboarding.LocalUpstreams,
-		PrepareMihomoDNS: func(document *yamlx.Node) (*yamlx.Node, error) {
-			return onboarding.PrepareMihomoDNS(document, nil, onboarding.CheckDNSLoop)
-		},
-		DefaultLocalDNS: onboarding.DefaultLocalDNS,
-		DNSTarget:       onboarding.DNSTarget,
-		Nameservers:     onboarding.DefaultMihomoNameservers,
-	}})
+	setup.RegisterExternalOwners(setup.ExternalOwners{DNS: setup.DefaultDNSOwner()})
 }
 
 // wireSetupInstallation supplies C36 with actual durable publication evidence

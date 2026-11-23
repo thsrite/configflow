@@ -14,7 +14,6 @@ import (
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/aggregations"
 	apinotifications "configflow/internal/api/notifications"
-	apirules "configflow/internal/api/rules"
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/configexport"
@@ -27,6 +26,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
+	"configflow/internal/rulesource"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/webdav"
@@ -60,6 +60,7 @@ type App struct {
 	Provider      *provider.Service
 	Aggregations  *aggregations.Service
 	Deploy        *deploy.Service
+	RuleSource    *rulesource.Service
 }
 
 // New wires the application, registers ordered startup steps and background
@@ -84,6 +85,8 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	rs := rulesource.New(rulesource.Options{})
+	rulesource.UseService(rs)
 	registerStartup(rt, gen.substore, ag.manager, ag.metrics)
 	if opts.Repo != nil {
 		webdav.WireTasksAndStartupOn(rt)
@@ -94,7 +97,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		webdav.WireTasksAndStartupOn(rt)
 		webdav.Wire()
 	}
-	if err := wireOtherSubsystems(rt, tk, gen); err != nil {
+	if err := wireOtherSubsystems(rt, tk, gen, rs); err != nil {
 		return nil, err
 	}
 	if err := tk.Validate(); err != nil {
@@ -131,13 +134,14 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		Provider:      gen.provider,
 		Aggregations:  gen.aggregations,
 		Deploy:        gen.deploy,
+		RuleSource:    rs,
 	}, nil
 }
 
 // wireOtherSubsystems registers the generation-pipeline loops and task rows
 // (W7) and the subsystems not yet instantiated (W8-W10). Agent-domain
 // services are wired exactly once in wireAgents.
-func wireOtherSubsystems(rt *lifecycle.Runtime, tk *tasks.Registry, gen *generateServices) error {
+func wireOtherSubsystems(rt *lifecycle.Runtime, tk *tasks.Registry, gen *generateServices, rs *rulesource.Service) error {
 	gen.substore.Register(rt)
 	gen.refresh.Register(rt, tk)
 	discovery.WireOn(rt)
@@ -145,11 +149,11 @@ func wireOtherSubsystems(rt *lifecycle.Runtime, tk *tasks.Registry, gen *generat
 		return err
 	}
 	routers.Wire() // routers R01: repo.Hooks.RedactRouters + router-rule-sync (W9)
-	wireSetupContent()
+	wireSetupContentWith(rs)
 	wireSetupOnboarding()
 	wireSetupInstallation()
 	wireSetupRouter()
-	apirules.Wire()
+	wireRuleSource(rs)
 	return nil
 }
 

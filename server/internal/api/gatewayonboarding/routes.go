@@ -23,9 +23,12 @@ func Register(r *httpx.Router) {
 	Handler{DNSLoop: onboarding.CheckDNSLoop}.Register(r)
 }
 
-// Handler registers routes with their pure DNS-check collaborator.
+// Handler registers routes with their pure DNS-check and ownership collaborators.
 // Register supplies the shared checker in production.
-type Handler struct{ DNSLoop onboarding.DNSLoopChecker }
+type Handler struct {
+	DNSLoop         onboarding.DNSLoopChecker
+	AdoptOwnedWrite onboarding.AdoptOwnedWrite
+}
 
 // Register adds all onboarding methods with the same authentication policy.
 func (h Handler) Register(r *httpx.Router) {
@@ -66,7 +69,7 @@ func (h Handler) handle(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.Message(400, false, err.Error()).NoStore(), nil
 		}
 	}
-	service := onboarding.Service{Repository: r, DNSLoop: h.DNSLoop}
+	service := onboarding.Service{Repository: r, DNSLoop: h.DNSLoop, AdoptOwnedWrite: h.AdoptOwnedWrite}
 	data, err := service.Execute(c.Context(), op)
 	if err != nil {
 		if errors.Is(err, onboarding.ErrSetupUnavailable) {
