@@ -81,43 +81,29 @@ func fuzzMembers(t *testing.T, data []byte) ([]string, map[string]json.RawMessag
 	return order, members
 }
 
+// FuzzRecordRoundTrip: a plain struct without codecs read leniently from any
+// JSON is written as valid, duplicate-free JSON, and its encoding is stable.
 func FuzzRecordRoundTrip(f *testing.F) {
 	for _, source := range []string{`{}`, ` { "name":"\u4f8b","count":6e1,"future": { "b":1.0,"a":null } } `, `{"count":true,"enabled":false,"children":[{"name":7,"future":[1,2]}]}`, "{\"future\":1 \n,\"name\":\"x\" \t}"} {
 		f.Add([]byte(source))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		var record sampleRecord
-		if DecodeRecord(data, &record, &record.raw) != nil {
+		if _, err := DecodeStored(data, &record, ""); err != nil {
 			return
 		}
 		encoded, err := Marshal(record)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !json.Valid(encoded) || !bytes.Equal(encoded, data) {
-			t.Fatal("no-op changed original record bytes")
-		}
-		order, before := fuzzMembers(t, data)
-		record.Name = "edited <>& 例"
-		changed, err := Marshal(record)
-		if err != nil {
+		fuzzUniqueJSON(t, encoded)
+		var again sampleRecord
+		if _, err := DecodeStored(encoded, &again, ""); err != nil {
 			t.Fatal(err)
 		}
-		afterOrder, actual := fuzzMembers(t, changed)
-		if _, present := before["name"]; !present {
-			order = append(order, "name")
-		}
-		if !slices.Equal(afterOrder, order) {
-			t.Fatal("member order changed")
-		}
-		for name, value := range before {
-			if name != "name" && !bytes.Equal(value, actual[name]) {
-				t.Fatal("untouched member bytes changed")
-			}
-		}
-		var name string
-		if json.Unmarshal(actual["name"], &name) != nil || name != record.Name {
-			t.Fatal("typed edit lost")
+		repeated, err := Marshal(again)
+		if err != nil || !bytes.Equal(repeated, encoded) {
+			t.Fatalf("record codec is not stable: %s != %s", repeated, encoded)
 		}
 	})
 }
@@ -127,7 +113,7 @@ func FuzzDocumentRoundTrip(f *testing.F) {
 		f.Add([]byte(source))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		document, issues, err := DecodeDocument(data)
+		document, err := DecodeDocument(data)
 		if err != nil {
 			return
 		}
@@ -141,18 +127,13 @@ func FuzzDocumentRoundTrip(f *testing.F) {
 			t.Fatal("document encoding is not JSON")
 		}
 		fuzzUniqueJSON(t, encoded)
-		again, _, err := DecodeDocument(encoded)
+		again, err := DecodeDocument(encoded)
 		if err != nil {
 			t.Fatal(err)
 		}
 		repeated, err := Marshal(again)
 		if err != nil || !bytes.Equal(repeated, encoded) {
 			t.Fatal("document codec is not stable")
-		}
-		for _, issue := range issues {
-			if issue.Path == "" || issue.Kind != IssueType {
-				t.Fatal("invalid issue metadata")
-			}
 		}
 		if len(document.Profiles) > 0 {
 			document.Profiles[0].Name = "edited <>& 例"

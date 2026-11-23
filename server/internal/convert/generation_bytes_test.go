@@ -100,8 +100,7 @@ func TestN88GenerationBytes(t *testing.T) {
 				if err != nil {
 					continue
 				}
-				_, issues, err := model.DecodeDocument(data)
-				if err != nil || len(issues) != 0 {
+				if _, err := model.DecodeDocument(data); err != nil {
 					continue
 				}
 				out, err := generateByteCase(t, entry)

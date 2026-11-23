@@ -81,16 +81,6 @@ func TestTypedEntryMatchesPythonFormatCorpus(t *testing.T) {
 		if err := json.Unmarshal(row.Args[2], &source); err != nil {
 			t.Fatal(err)
 		}
-		if len(model.Issues(rule)) != 0 {
-			continue
-		}
-		valid := true
-		for _, item := range config.Library {
-			valid = valid && len(model.Issues(item)) == 0
-		}
-		if !valid {
-			continue
-		}
 		native, nativeErr := RuleFormat(rule, config.Library, source)
 		var parseErr *URLParseError
 		if nativeErr != nil && !errors.As(nativeErr, &parseErr) {

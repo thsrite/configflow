@@ -17,11 +17,12 @@ import (
 // The O10-T2 reference corpus pins the codec's external behaviour from before
 // the single-validation change: for a deterministic set of synthetic inputs
 // and edits it records the outcome (error text, or a digest of the output
-// bytes, plus FieldIssues) of DecodeRecord, Marshal, EncodeRecord through
-// MarshalJSON, SetMemberJSON, Map/Fields/Config/Document codecs and the
-// internal validJSON/parseObject. testdata/o10t2_reference.txt was written by
-// the previous implementation (CONFIGFLOW_O10T2_GOLDEN=1); the current one must
-// reproduce it line for line.
+// bytes, plus FieldIssues) of Marshal, MarshalJSON, DecodeStored, the
+// OrderedMap/Fields/Config/Document codecs and the internal validJSON.
+// testdata/o10t2_reference.txt was written by the previous implementation
+// (CONFIGFLOW_O10T2_GOLDEN=1); the current one must reproduce it line for
+// line. O18 T1d removed the lines of the deleted R5 codec (object/,
+// decode-sample/, map-raw-direct/).
 const o10t2Golden = "testdata/o10t2_reference.txt"
 
 func o10t2Outcome(data []byte, err error) string {
@@ -38,20 +39,6 @@ func o10t2Issues(issues []FieldIssue) string {
 		parts = append(parts, issue.Path+"="+string(issue.Kind))
 	}
 	return "[" + strings.Join(parts, ",") + "]"
-}
-
-func o10t2Object(data []byte) string {
-	object, err := parseObject(data)
-	if err != nil {
-		return "err:" + err.Error()
-	}
-	var out strings.Builder
-	fmt.Fprintf(&out, "%q|%q|%q", object.data, object.opening, object.closing)
-	for _, m := range object.members {
-		fmt.Fprintf(&out, "|%q:%q:%q:%q:%q:%q", m.name, m.key, m.leading, m.separator, m.value, m.trailing)
-	}
-	sum := sha256.Sum256([]byte(out.String()))
-	return "ok:" + hex.EncodeToString(sum[:12])
 }
 
 // o10t2Values are member values for edits: valid values, fragments that are
@@ -168,7 +155,6 @@ func o10t2Cases() []string {
 	for _, value := range o10t2Values {
 		key := fmt.Sprintf("v%x", sha256.Sum256([]byte(value)))[:13]
 		add("valid/"+key, o10t2Outcome(nil, validJSON([]byte(value))))
-		add("object/"+key, o10t2Object([]byte(value)))
 		add("marshal-raw/"+key, o10t2Outcome(Marshal(json.RawMessage(value))))
 		add("marshal-raw-list/"+key, o10t2Outcome(Marshal([]json.RawMessage{json.RawMessage(value), json.RawMessage("3")})))
 		add("marshal-go-map/"+key, o10t2Outcome(Marshal(map[string]any{"k": map[string]json.RawMessage{"a": json.RawMessage(value)}, "z": 1})))
@@ -177,15 +163,12 @@ func o10t2Cases() []string {
 		setErr := fields.Set("a", json.RawMessage(value))
 		add("fields-set/"+key, o10t2Outcome(nil, setErr))
 		add("fields-marshal/"+key, o10t2Outcome(Marshal(fields)))
-		var rawMap Map[json.RawMessage]
+		var rawMap OrderedMap[json.RawMessage]
 		rawMap.Set("a", json.RawMessage(value))
 		rawMap.Set("b", json.RawMessage(`2`))
 		add("map-raw/"+key, o10t2Outcome(Marshal(rawMap)))
-		add("map-raw-direct/"+key, o10t2Outcome(rawMap.MarshalJSON()))
 		var dynamic Dynamic
 		add("dynamic/"+key, o10t2Outcome(nil, dynamic.UnmarshalJSON([]byte(value))))
-		var record sampleRecord
-		add("decode-sample/"+key, o10t2Outcome(nil, DecodeRecord([]byte(value), &record, &record.raw)))
 		var logging AgentLoggingConfig
 		logging.Enabled = json.RawMessage(value)
 		add("logging-marshal/"+key, o10t2Outcome(Marshal(logging)))
@@ -273,7 +256,6 @@ func o10t2Cases() []string {
 		for j, input := range inputs {
 			name := fmt.Sprintf("agent/%d/%d", i, j)
 			add(name+"/valid", o10t2Outcome(nil, validJSON([]byte(input))))
-			add(name+"/object", o10t2Object([]byte(input)))
 			var agent Agent
 			issues, err := DecodeStored([]byte(input), &agent, "")
 			if err == nil && requireObject([]byte(input)) != nil {
@@ -325,8 +307,8 @@ func o10t2Cases() []string {
 		inputs := []string{doc, o10t2Corrupt(r, doc)}
 		for j, input := range inputs {
 			name := fmt.Sprintf("document/%d/%d", i, j)
-			document, issues, err := DecodeDocument([]byte(input))
-			add(name+"/decode", o10t2Outcome(nil, err)+o10t2Issues(issues))
+			document, err := DecodeDocument([]byte(input))
+			add(name+"/decode", o10t2Outcome(nil, err)+o10t2Issues(nil))
 			if err != nil {
 				continue
 			}

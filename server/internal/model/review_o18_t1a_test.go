@@ -32,7 +32,7 @@ func TestReviewO18T1aInputListsHaveNoSpareCapacity(t *testing.T) {
 		if cap(shared.Nodes) != len(shared.Nodes) || len(shared.Nodes) != n {
 			t.Errorf("DecodeInput %d nodes: len %d cap %d", n, len(shared.Nodes), cap(shared.Nodes))
 		}
-		document, _, err := DecodeDocument([]byte(`{"schema_version":5,"system":{},"shared":{},"profiles":{"p":{"id":"p","proxy_groups":` + string(list) + `}}}`))
+		document, err := DecodeDocument([]byte(`{"schema_version":5,"system":{},"shared":{},"profiles":{"p":{"id":"p","proxy_groups":` + string(list) + `}}}`))
 		if err != nil {
 			t.Fatal(err)
 		}

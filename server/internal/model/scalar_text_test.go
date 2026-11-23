@@ -1,7 +1,6 @@
 package model
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -26,15 +25,15 @@ func TestGenericNumericTextAndQuotedIntegers(t *testing.T) {
 	if group.ManualNodes == nil || len(*group.ManualNodes) != 1 || (*group.ManualNodes)[0] != "5" || group.FollowGroup == nil || *group.FollowGroup != "7" {
 		t.Fatalf("pointer/list scalar decoding diverged: %+v", group)
 	}
-	var names Map[String]
-	if err := json.Unmarshal([]byte(`{"entry":9007199254740993}`), &names); err != nil {
+	var names OrderedMap[String]
+	if _, err := DecodeStored([]byte(`{"entry":9007199254740993}`), &names, ""); err != nil {
 		t.Fatal(err)
 	}
 	if value, ok := names.Get("entry"); !ok || value != "9007199254740993" {
 		t.Fatalf("map scalar decoding diverged: %q %t", value, ok)
 	}
 	var node Node
-	if err := json.Unmarshal([]byte(`{"port":"443"}`), &node); err != nil || IntValue(node.Port) != 443 || IssueUnder(Issues(node), "port") {
+	if issues, err := DecodeStored([]byte(`{"port":"443"}`), &node, ""); err != nil || IntValue(node.Port) != 443 || IssueUnder(issues, "port") {
 		t.Fatalf("quoted node port lost: %v %v", node.Port, err)
 	}
 }
@@ -66,12 +65,19 @@ func TestScalarTextBoundariesAndPreservation(t *testing.T) {
 			t.Fatalf("non-text accepted: %s %v", literal, err)
 		}
 	}
+	// A plain record reads text members with the same number-literal rule;
+	// a switch of another type keeps its truth value (1 is on) and is
+	// reported, as is an undeclared member, which is dropped.
 	source := []byte(`{"name":12.5,"count":"443","enabled":1,"children":[{"name":9007199254740993}],"future":{"keep":true}}`)
 	var record sampleRecord
-	if err := json.Unmarshal(source, &record); err != nil || record.Name != "12.5" || record.Count != 443 || record.Children[0].Name != "9007199254740993" || record.Enabled != nil {
+	issues, err := DecodeStored(source, &record, "")
+	if err != nil || record.Name != "12.5" || record.Count != 443 || record.Children[0].Name != "9007199254740993" || record.Enabled == nil || !*record.Enabled {
 		t.Fatalf("record scalar rules lost values: %+v %v", record, err)
 	}
-	if output, err := Marshal(record); err != nil || !bytes.Equal(output, source) {
-		t.Fatalf("stored data changed: %s %v", output, err)
+	if len(issues) != 2 || issues[0] != (FieldIssue{Path: "enabled", Kind: IssueType}) || issues[1] != (FieldIssue{Path: "future", Kind: IssueUnknown}) {
+		t.Fatalf("issues=%v", issues)
+	}
+	if output, err := Marshal(record); err != nil || string(output) != `{"name":"12.5","count":443,"enabled":true,"children":[{"name":"9007199254740993"}]}` {
+		t.Fatalf("written as %s %v", output, err)
 	}
 }

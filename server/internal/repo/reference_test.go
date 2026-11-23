@@ -176,7 +176,7 @@ func decodeInputDocObj(t *testing.T, obj *testObj) (*model.Document, error) {
 	if err := checkDocumentInput(raw); err != nil {
 		return nil, err
 	}
-	document, _, err := model.DecodeDocument(raw)
+	document, err := model.DecodeDocument(raw)
 	if err != nil {
 		return nil, inputError(err)
 	}

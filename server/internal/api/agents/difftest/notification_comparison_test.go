@@ -21,7 +21,7 @@ func notificationStoreComparison(t *testing.T, data []byte) string {
 		t.Fatal(err)
 	}
 	var store struct {
-		Items model.Map[json.RawMessage] `json:"items"`
+		Items model.OrderedMap[json.RawMessage] `json:"items"`
 	}
 	if err := json.Unmarshal(data, &store); err != nil {
 		t.Fatal(err)

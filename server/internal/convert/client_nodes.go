@@ -97,23 +97,6 @@ func resolveClientNode(input model.Node) (*clientNode, error) {
 		return nil, err
 	}
 	port := fmt.Sprint(model.IntValue(node.Port))
-	// Valid number spellings are retained under R2; invalid fields use R5 zero.
-	if !model.IssueUnder(model.Issues(node), "port") {
-		// Only the port member is read back (O10 R9).
-		raw, present, err := model.EncodeMember(&node, "port")
-		if err != nil {
-			return nil, err
-		}
-		if present {
-			original, err := yamlx.FromJSON(raw)
-			if err != nil {
-				return nil, err
-			}
-			if original.ShortTag() == "!!int" || original.ShortTag() == "!!float" {
-				port = original.Value
-			}
-		}
-	}
 	return &clientNode{sanitizeClientName(node.Name), sanitizeClientField(strings.ToLower(node.Type)), sanitizeClientField(node.Server), sanitizeClientField(port), options}, nil
 }
 

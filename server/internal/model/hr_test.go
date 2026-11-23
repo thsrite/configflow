@@ -45,7 +45,7 @@ func TestAgentJournalPreservation(t *testing.T) {
 	if agent.UnmarshalJSON(source) != nil {
 		t.Fatal("journal decode failed")
 	}
-	if agent.DNSFollow == nil || agent.DNSFollow.AfterDeploymentID != nil || len(valueIssues(reflect.ValueOf(&agent), "")) != 0 {
+	if agent.DNSFollow == nil || agent.DNSFollow.AfterDeploymentID != nil {
 		t.Fatal("nullable follow baseline lost")
 	}
 	if agent.Enabled == nil || *agent.Enabled || agent.ConfigRevision != nil || agent.AppliedContent != nil {

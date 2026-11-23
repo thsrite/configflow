@@ -139,7 +139,7 @@ func (r *Repository) PreviewNodeDeletionIDs(ctx context.Context, ids []string) (
 		if err != nil {
 			return err
 		}
-		owned, _, err := model.DecodeDocument(raw)
+		owned, err := model.DecodeDocument(raw)
 		if err != nil {
 			return err
 		}
@@ -162,7 +162,7 @@ func (r *Repository) DeleteNodesWithReferencesIDs(ctx context.Context, ids []str
 		if err != nil {
 			return err
 		}
-		owned, _, err := model.DecodeDocument(raw)
+		owned, err := model.DecodeDocument(raw)
 		if err != nil {
 			return err
 		}

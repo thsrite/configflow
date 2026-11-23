@@ -86,7 +86,8 @@ func ProxyNodes(proxies []*yamlx.Node) ([]model.Node, error) {
 			return nil, err
 		}
 		var source model.Node
-		if err := json.Unmarshal(data, &source); err != nil {
+		issues, err := model.DecodeStored(data, &source, "")
+		if err != nil {
 			return nil, err
 		}
 		if yamlx.Get(proxy, "name") == nil {
@@ -116,7 +117,6 @@ func ProxyNodes(proxies []*yamlx.Node) ([]model.Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		issues := model.Issues(&source)
 		for _, field := range []struct {
 			name   string
 			target *[]byte

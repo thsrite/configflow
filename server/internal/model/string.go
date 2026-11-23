@@ -7,8 +7,8 @@ import (
 )
 
 // String is text that also accepts lossless JSON number tokens. Null reads as
-// absent text; booleans and containers are incompatible. DecodeRecord applies
-// the same codec to ordinary string fields, pointers, lists and ordered maps.
+// absent text; booleans and containers are incompatible. Stored text members
+// of plain records accept number literals the same way (DecodeStored).
 type String string
 
 // UnmarshalJSON reads text without rounding numeric literals through float64.

@@ -421,9 +421,9 @@ func (r *Repository) createFreshLocked() error {
 		}
 	}
 	now := nowISO()
-	revisions := map[string]any{"system": typed.System.Revision, "shared": typed.Shared.Revision, "profiles": map[string]model.Int{}}
+	revisions := map[string]any{"system": typed.System.Revision, "shared": typed.Shared.Revision, "profiles": map[string]int64{}}
 	for _, profile := range typed.Profiles {
-		revisions["profiles"].(map[string]model.Int)[profile.Key()] = profile.Revision
+		revisions["profiles"].(map[string]int64)[profile.Key()] = profile.Revision
 	}
 	migration, _ := json.Marshal(map[string]any{"source": "defaults", "at": now, "snapshot": nil})
 	legacy, _ := json.Marshal(map[string]any{"sha256": nil, "size": nil, "revisions": revisions, "content": nil, "status": "migrated", "at": now, "data_source": false})

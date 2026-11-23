@@ -493,9 +493,8 @@ func (r *replayEnv) legacyContext(profileID string) (*recObj, error) {
 	}
 	var view struct {
 		Agents []model.Agent `json:"agents"`
-		Raw    model.Raw
 	}
-	if err = model.DecodeRecord(encoded, &view, &view.Raw); err != nil {
+	if err = model.DecodeLenient(encoded, &view); err != nil {
 		return nil, err
 	}
 	for _, a := range view.Agents {

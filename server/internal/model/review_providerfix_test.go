@@ -2,7 +2,6 @@ package model
 
 import (
 	"bytes"
-	"encoding/json"
 	"testing"
 )
 
@@ -36,8 +35,8 @@ func TestReviewProviderFixScalarContainersAndUnrelatedEdit(t *testing.T) {
 	if !bytes.Equal(renamed, bytes.Replace(encoded, []byte(`"G"`), []byte(`"renamed"`), 1)) {
 		t.Fatalf("unrelated edit changed scalar storage: %s", renamed)
 	}
-	var values Map[String]
-	if err := json.Unmarshal([]byte(`{"decimal":123.0,"exponent":1E+03,"bool":true}`), &values); err != nil {
+	var values OrderedMap[String]
+	if _, err := DecodeStored([]byte(`{"decimal":123.0,"exponent":1E+03,"bool":true}`), &values, ""); err != nil {
 		t.Fatal(err)
 	}
 	if value, _ := values.Get("decimal"); value != "123.0" {

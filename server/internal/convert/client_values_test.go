@@ -51,9 +51,6 @@ func TestClientTypedOptionsR5AndNull(t *testing.T) {
 	if clientOption(options.Password, "") != "123" || options.Cipher != nil || clientFlag(options.UDP) || clientFlag(options.TLS) {
 		t.Fatal("scalar/R5 projection", options)
 	}
-	if !model.IssueUnder(model.Issues(options), "udp") || !model.IssueUnder(model.Issues(options), "tls") {
-		t.Fatal("missing invalid-bool metadata")
-	}
 	if strings.Join(options.ALPN.strings(), ",") != "h2,http/1.1" || options.WS == nil || options.WS.Headers.Host.values[0] != "example.com" {
 		t.Fatal("nested options")
 	}

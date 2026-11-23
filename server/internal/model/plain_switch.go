@@ -205,8 +205,26 @@ func (*ProviderHealthCheck) checkInput(value jsontext.Value) error {
 }
 
 // strictUnmarshalers decode the plain records nested in strict input through
-// their wire view (decodeStrictInput).
-var strictUnmarshalers = jsonv2.UnmarshalFromFunc(decodeStrictInput)
+// their wire view (decodeStrictInput). A top-level int64 member (_revision)
+// takes integral notation such as 60.0 like Int, but not text.
+var strictUnmarshalers = jsonv2.JoinUnmarshalers(
+	jsonv2.UnmarshalFromFunc(decodeStrictInput),
+	jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *int64) error {
+		if dec.PeekKind() != '0' {
+			return fmt.Errorf("%w: integer expected", ErrType)
+		}
+		value, err := dec.ReadValue()
+		if err != nil {
+			return err
+		}
+		var n Int
+		if err := n.UnmarshalJSON(value); err != nil {
+			return err
+		}
+		*v = int64(n)
+		return nil
+	}),
+)
 
 // strictUnmarshalersFor are the input rules for the members of nested
 // plain records (root is the decoded type, for member tags): every member is

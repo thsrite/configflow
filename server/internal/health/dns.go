@@ -324,9 +324,15 @@ func NormalizeDNSConfigJSON(raw json.RawMessage) (DNSConfig, error) {
 	})
 }
 
-func checkSystemConfigRoot(system *model.System) error {
-	for _, issue := range model.Issues(system) {
-		if issue.Path == "system_config" {
+// checkSystemConfigRoot refuses node-test DNS reads and writes while the
+// stored system_config is not an object (it read as empty settings).
+func checkSystemConfigRoot(ctx context.Context, repository *repo.Repository) error {
+	issues, err := repository.StoredIssues(ctx)
+	if err != nil {
+		return err
+	}
+	for _, issue := range issues {
+		if issue.Path == "system.system_config" && issue.Kind == model.IssueType {
 			return valueError(msgStoredSystemCfgInvalid)
 		}
 	}
@@ -342,10 +348,10 @@ func LoadDNSConfig(ctx context.Context) (DNSConfig, error) {
 	}
 	var rawSaved, rawSettings []byte
 	hasSaved := false
+	if err := checkSystemConfigRoot(ctx, repository); err != nil {
+		return DNSConfig{}, err
+	}
 	if err := repository.View(ctx, func(doc *model.Document) error {
-		if err := checkSystemConfigRoot(&doc.System); err != nil {
-			return err
-		}
 		if saved := doc.System.SystemConfig.NodeTestDNSConfig; saved != nil && saved.Mode != "managed" {
 			var err error
 			rawSaved, err = model.Marshal(saved)
@@ -455,8 +461,8 @@ func SaveDNSConfigJSON(ctx context.Context, raw json.RawMessage) (DNSSettingsVie
 	if err != nil {
 		return DNSSettingsView{}, err
 	}
-	err = repository.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
-		if err := checkSystemConfigRoot(system); err != nil {
+	err = repository.UpdateSystem(ctx, func(tx context.Context, system *model.System) error {
+		if err := checkSystemConfigRoot(tx, repository); err != nil {
 			return err
 		}
 		if err := system.SystemConfig.SetJSON(ConfigKey, cfgJSON); err != nil {

@@ -65,11 +65,6 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	if err = json.Unmarshal(b, &stored); err != nil {
 		return nil, err
 	}
-	for _, member := range []string{"ros_policy_state", "dns_guard_state", "ipv6_fakeip_state", "ipv6_routes_state", "ipv6_pd_guard_state"} {
-		if model.IssueUnder(model.Issues(&stored), member) {
-			return nil, routerError(fmt.Sprintf(messageMalformedManifest, member))
-		}
-	}
 	if ros, ok := d.(*RouterOS); ok {
 		defer ros.ReuseAddressReads()()
 	}

@@ -635,9 +635,6 @@ func TestR11LegacyAndUnknownManifestRoundTrip(t *testing.T) {
 				if e := json.Unmarshal(source, &modelRouter); e != nil {
 					t.Fatal(e)
 				}
-				if len(model.Issues(&modelRouter)) != 0 {
-					t.Fatal("valid new proof marked as R5")
-				}
 				modelRouter.Name = "After"
 				saved, e := json.Marshal(modelRouter)
 				if e != nil {

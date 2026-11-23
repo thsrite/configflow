@@ -10,88 +10,43 @@ import (
 	"configflow/internal/yamlx"
 )
 
+// sampleRecord is a plain struct without codecs, like the DATA_DIR records
+// outside this package.
 type sampleRecord struct {
 	Name     string         `json:"name"`
-	Count    Int            `json:"count"`
-	Enabled  *bool          `json:"enabled"`
-	Children []sampleRecord `json:"children"`
-	Fields   Fields
-	raw      Raw
+	Count    Int            `json:"count,omitzero"`
+	Enabled  *bool          `json:"enabled,omitzero"`
+	Children []sampleRecord `json:"children,omitzero"`
 }
 
-func (r *sampleRecord) UnmarshalJSON(data []byte) error { return DecodeRecord(data, r, &r.raw) }
-func (r sampleRecord) MarshalJSON() ([]byte, error)     { return EncodeRecord(&r, &r.raw) }
-
-func TestRecordOriginalBytesAndTypedEdits(t *testing.T) {
-	original := []byte(" \n{ \"future\" : { \"z\": 1.0, \"a\": \"\\u4f8b <>&\" }, \"name\" : \"\\u4f8b\", \"count\":6e1, \"children\": [ {\"name\":\"a\",\"future\": { \"b\": 1, \"a\": 2 }} ] }\t")
+// A plain struct without codecs decodes leniently with DecodeStored (unknown
+// members dropped and reported) and is written by Marshal in declaration
+// order, omitzero members left out.
+func TestPlainStructWithoutCodecs(t *testing.T) {
+	original := []byte(` {"future":{"z":1.0},"name":"\u4f8b","count":6e1,"children":[{"name":"a","count":"x"}]} `)
 	var record sampleRecord
-	if err := DecodeRecord(original, &record, &record.raw); err != nil {
-		t.Fatal(err)
-	}
-	if record.Count != 60 || record.Name != "例" {
-		t.Fatal("typed values differ")
-	}
-	encoded, err := Marshal(record)
+	issues, err := DecodeStored(original, &record, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(encoded, original) {
-		t.Fatalf("no-op changed bytes:\n%s", encoded)
-	}
-	record.Children[0].Name = "changed <>&"
-	encoded, err = Marshal(record)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(encoded, []byte(`"future": { "b": 1, "a": 2 }`)) || !bytes.Contains(encoded, []byte(`"future" : { "z": 1.0, "a": "\u4f8b <>&" }`)) {
-		t.Fatalf("unknown bytes lost: %s", encoded)
-	}
-	if !bytes.Contains(encoded, []byte(`"count":6e1`)) {
-		t.Fatal("unchanged number normalized")
-	}
-	if !bytes.Contains(encoded, []byte(`changed <>&`)) {
-		t.Fatal("HTML escaped")
-	}
-}
-
-func TestRecordInvalidTypeAndPresence(t *testing.T) {
-	var record sampleRecord
-	original := []byte(`{"name":5,"count":true,"enabled":false,"future":null}`)
-	if err := json.Unmarshal(original, &record); err != nil {
-		t.Fatal(err)
-	}
-	if record.Name != "5" || record.Count != 0 || record.Enabled == nil || *record.Enabled {
-		t.Fatal("wrong fallback or pointer default")
-	}
-	if issues := valueIssues(reflect.ValueOf(record), ""); len(issues) != 1 {
+	want := []FieldIssue{{Path: "children[0].count", Kind: IssueType}, {Path: "future", Kind: IssueUnknown}}
+	if !reflect.DeepEqual(issues, want) {
 		t.Fatalf("issues=%v", issues)
 	}
-	got, err := Marshal(record)
-	if err != nil || !bytes.Equal(got, original) {
-		t.Fatalf("bad fields not kept: %s %v", got, err)
+	encoded, err := Marshal(record)
+	if err != nil || string(encoded) != `{"name":"例","count":60,"children":[{"name":"a"}]}` {
+		t.Fatalf("encoded=%s %v", encoded, err)
 	}
-	record.Name = "fixed"
-	record.Enabled = nil
-	got, err = Marshal(record)
-	if err != nil {
+	record.Enabled = new(false)
+	encoded, err = Marshal(&record)
+	if err != nil || !bytes.Contains(encoded, []byte(`"enabled":false`)) {
+		t.Fatalf("explicit false was lost: %s %v", encoded, err)
+	}
+	type withAny struct {
+		Value any `json:"value"`
+	}
+	if _, err := Marshal(withAny{Value: map[string]any{"b": 1, "a": "<&>"}}); err != nil {
 		t.Fatal(err)
-	}
-	if bytes.Contains(got, []byte(`"enabled"`)) || !bytes.Contains(got, []byte(`"count":true`)) {
-		t.Fatal(string(got))
-	}
-	if !record.Fields.Delete("future") {
-		t.Fatal("unknown field missing")
-	}
-	if err := record.Fields.Set("later", json.RawMessage(`{ "a": 1 }`)); err != nil {
-		t.Fatal(err)
-	}
-	copy := record
-	if err := copy.Fields.Set("later", json.RawMessage(`2`)); err != nil {
-		t.Fatal(err)
-	}
-	value, _ := record.Fields.Get("later")
-	if string(value) != `{ "a": 1 }` {
-		t.Fatal("Fields mutation aliased a copied record")
 	}
 }
 
@@ -118,10 +73,10 @@ func TestIntExactJSON(t *testing.T) {
 }
 
 func TestRejectDuplicateOrInvalidJSON(t *testing.T) {
-	for _, text := range []string{`{"x":1,"x":2}`, `{"x":{"a":1,"\u0061":2}}`, `{"x":NaN}`, "{\"x\":\"\xff\"}"} {
+	for _, text := range []string{`{"x":1,"x":2}`, `{"x":{"a":1,"\u0061":2}}`, `{"x":NaN}`} {
 		var record sampleRecord
-		if err := json.Unmarshal([]byte(text), &record); !errors.Is(err, ErrJSON) && json.Valid([]byte(text)) {
-			t.Fatalf("accepted invalid record: %v", err)
+		if _, err := DecodeStored([]byte(text), &record, ""); !errors.Is(err, ErrJSON) {
+			t.Fatalf("accepted invalid record %s: %v", text, err)
 		}
 	}
 	cyclic := map[string]any{}
@@ -141,7 +96,7 @@ func TestSliceOverlapIsNotACycle(t *testing.T) {
 		t.Fatal("acyclic overlapping slices rejected:", err)
 	}
 	var decoded []sampleRecord
-	if err := json.Unmarshal(encoded, &decoded); err != nil || len(decoded) != 2 || len(decoded[1].Children) != 1 || decoded[1].Children[0].Name != "first" {
+	if _, err := DecodeStored(encoded, &decoded, ""); err != nil || len(decoded) != 2 || len(decoded[1].Children) != 1 || decoded[1].Children[0].Name != "first" {
 		t.Fatal("overlapping slice values changed")
 	}
 	records[0].Children = records[:0]
@@ -155,29 +110,26 @@ func TestSliceOverlapIsNotACycle(t *testing.T) {
 }
 
 func TestOrderedMapAndDynamic(t *testing.T) {
-	original := []byte(`{ "second": {"name":"b","future": { "z": 1.0 }}, "first": {"count":6e1}, "bad":false }`)
-	var entries Map[sampleRecord]
-	if err := json.Unmarshal(original, &entries); err != nil {
+	original := []byte(`{"second":{"name":"b","future":{"z":1.0}},"first":{"count":6e1},"bad":false}`)
+	var entries OrderedMap[sampleRecord]
+	issues, err := DecodeStored(original, &entries, "entries")
+	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := Marshal(entries)
-	if err != nil || !bytes.Equal(encoded, original) {
-		t.Fatalf("map no-op: %s %v", encoded, err)
-	}
-	if issues := entries.fieldIssues("entries"); len(issues) != 1 || issues[0].Path != "entries[2]" {
+	if len(issues) != 2 || issues[0] != (FieldIssue{Path: "entries{*}", Kind: IssueType}) || issues[1].Kind != IssueUnknown {
 		t.Fatalf("map issues=%v", issues)
+	}
+	encoded, err := Marshal(entries)
+	if err != nil || string(encoded) != `{"second":{"name":"b"},"first":{"name":"","count":60},"bad":{"name":""}}` {
+		t.Fatalf("map: %s %v", encoded, err)
 	}
 	second, _ := entries.Get("second")
 	second.Name = "updated"
 	copy := entries
 	copy.Set("second", second)
-	encoded, err = Marshal(copy)
-	if err != nil || !bytes.Contains(encoded, []byte(`"future": { "z": 1.0 }`)) {
-		t.Fatalf("map edited value: %s %v", encoded, err)
-	}
 	unchanged, err := Marshal(entries)
-	if err != nil || !bytes.Equal(unchanged, original) {
-		t.Fatal("Map.Set changed copied map")
+	if err != nil || !bytes.Equal(unchanged, encoded) {
+		t.Fatal("OrderedMap.Set changed copied map")
 	}
 	var dynamic Dynamic
 	source := []byte(`{ "z":1.0,"a":"\u4f8b <>&" }`)
@@ -216,24 +168,24 @@ func TestPlainDocumentStrictInputUnknownMembersAndOrder(t *testing.T) {
 		{"section", `{"schema_version":5,"system":[],"shared":{},"profiles":{}}`, "document", "system"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := DecodeDocument([]byte(tt.source))
+			_, err := DecodeDocument([]byte(tt.source))
 			var typed *MemberTypeError
 			if !errors.As(err, &typed) || typed.Record != tt.record || typed.Member != tt.member || !errors.Is(err, ErrType) {
 				t.Fatalf("err=%v", err)
 			}
 		})
 	}
-	if _, _, err := DecodeDocument([]byte(`{"schema_version":5,"system":{},"shared":{}}`)); !errors.As(err, new(*MissingSectionError)) {
+	if _, err := DecodeDocument([]byte(`{"schema_version":5,"system":{},"shared":{}}`)); !errors.As(err, new(*MissingSectionError)) {
 		t.Fatalf("missing section: %v", err)
 	}
 
 	original := []byte(`{ "schema_version":5,"system":{"agents":[{"token":"synthetic","future": { "z":1.0 }}],"_revision":1,"future_system": { "z":1.0 }},"profiles":{"second":{"id":"second","name":"7","_revision":6e1,"proxy_groups":[{"name":"example","future":{"z":1}}],"future_profile": { "n":6e1 }},"first":{}},"shared":{"nodes":[],"_revision":0,"future_shared": [ "\u4f8b",1.0 ]},"future": { "a":1 } }`)
-	document, issues, err := DecodeDocument(original)
+	document, err := DecodeDocument(original)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(issues) != 0 || document.System.Revision != 1 || document.Profiles[0].Revision != 60 || document.Profiles[0].Name != "7" {
-		t.Fatalf("typed values issues=%v", issues)
+	if document.System.Revision != 1 || document.Profiles[0].Revision != 60 || document.Profiles[0].Name != "7" {
+		t.Fatal("typed values")
 	}
 	encoded, err := Marshal(document)
 	if err != nil {
@@ -249,7 +201,7 @@ func TestPlainDocumentStrictInputUnknownMembersAndOrder(t *testing.T) {
 			t.Fatalf("lost %s: %s", fragment, encoded)
 		}
 	}
-	again, _, err := DecodeDocument(encoded)
+	again, err := DecodeDocument(encoded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,76 +218,35 @@ func TestPlainDocumentStrictInputUnknownMembersAndOrder(t *testing.T) {
 	}
 }
 
-func TestScalarTypesDefaultsAndMemberLayout(t *testing.T) {
-	// Whitespace before commas belongs to the untouched source layout too.
-	var record sampleRecord
-	original := []byte("{\"future\" : { \"z\":1 } \n, \"name\":\"before\" \t, \"count\":6e1 \n}")
-	if err := DecodeRecord(original, &record, &record.raw); err != nil {
-		t.Fatal(err)
-	}
-	record.Name = "after"
-	encoded, err := Marshal(record)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(encoded, []byte("{ \"z\":1 } \n,")) || !bytes.Contains(encoded, []byte("6e1 \n}")) {
-		t.Fatal("member layout changed")
-	}
-	if record.Enabled != nil {
-		t.Fatal("missing optional bool became present")
-	}
-	enabled := func(value *bool) bool { return value == nil || *value }
-	if !enabled(record.Enabled) {
-		t.Fatal("absent default is not true")
-	}
-	off := false
-	record.Enabled = &off
-	encoded, err = Marshal(record)
-	if err != nil || !bytes.Contains(encoded, []byte(`"enabled":false`)) {
-		t.Fatal("explicit false was lost")
-	}
+func TestFieldsAreOwnedCopies(t *testing.T) {
 	var fields Fields
-	if err := fields.UnmarshalJSON([]byte(`{"n":{"z":1.0}}`)); err != nil {
+	if err := fields.UnmarshalJSON([]byte(`{"n":{"z":1.0},"m":[1]}`)); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := fields.Get("n")
 	raw[0] = 'X'
 	got, _ := fields.Get("n")
 	if string(got) != `{"z":1.0}` {
-		t.Fatal("Fields.Get exposes mutable provenance")
+		t.Fatal("Fields.Get exposes mutable state")
 	}
-	type numericRecord struct {
-		Number *json.Number `json:"number"`
-		raw    Raw
-	}
-	var numeric numericRecord
-	if err := DecodeRecord([]byte(`{"number":"60"}`), &numeric, &numeric.raw); err != nil {
+	copy := fields
+	if err := copy.Set("n", json.RawMessage(`2`)); err != nil {
 		t.Fatal(err)
 	}
-	if numeric.Number != nil || len(numeric.raw.Issues()) != 1 {
-		t.Fatal("quoted json.Number accepted")
+	copy.Delete("m")
+	if encoded, _ := fields.MarshalJSON(); string(encoded) != `{"n":{"z":1.0},"m":[1]}` {
+		t.Fatalf("copy changed the original: %s", encoded)
 	}
-	type unsafeRecord struct {
-		Value any `json:"value"`
-		raw   Raw
+	if encoded, _ := copy.MarshalJSON(); string(encoded) != `{"n":2}` {
+		t.Fatalf("copy: %s", encoded)
 	}
-	var unsafe unsafeRecord
-	if err := DecodeRecord([]byte(`{}`), &unsafe, &unsafe.raw); !errors.Is(err, ErrType) {
-		t.Fatal("interface field accepted")
+	for _, text := range []string{`[]`, `{"a":1,"a":2}`, `{`} {
+		var other Fields
+		if other.UnmarshalJSON([]byte(text)) == nil {
+			t.Fatalf("accepted %s", text)
+		}
 	}
-	type integerRecord struct {
-		Value int64 `json:"value"`
-		raw   Raw
-	}
-	var integer integerRecord
-	if err := DecodeRecord([]byte(`{}`), &integer, &integer.raw); !errors.Is(err, ErrType) {
-		t.Fatal("non-model integer field accepted")
-	}
-	type otherRecord struct {
-		Name string `json:"name"`
-	}
-	var other otherRecord
-	if _, err := EncodeRecord(&other, &record.raw); !errors.Is(err, ErrType) {
-		t.Fatal("provenance of another record type accepted")
+	if err := fields.Set("x", json.RawMessage(`1,2`)); !errors.Is(err, ErrJSON) {
+		t.Fatalf("fragment accepted: %v", err)
 	}
 }

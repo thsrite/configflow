@@ -21,8 +21,8 @@ func TestTypedClientSharedScalarOrList(t *testing.T) {
 				t.Fatal(err)
 			}
 			options, err := decodeClientOptions(node)
-			if err != nil || len(model.Issues(options)) != 0 {
-				t.Fatalf("valid scalar/list union rejected: %+v %v", model.Issues(options), err)
+			if err != nil {
+				t.Fatalf("valid scalar/list union rejected: %v", err)
 			}
 			if !reflect.DeepEqual(options.ALPN.strings(), []string{"h3"}) || !reflect.DeepEqual(options.DNS.strings(), []string{"example.com"}) || options.WS == nil || firstClientList(options.WS.Path) != "/ws" || firstClientList(options.WS.Headers.Host) != "example.com" {
 				t.Fatal("protocol union changed")
@@ -36,8 +36,8 @@ func TestTypedClientSharedCustomConfigText(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"surge":{"custom_config":1.5},"loon":{"custom_config":2}}`), &profile); err != nil {
 		t.Fatal(err)
 	}
-	if len(model.Issues(profile)) != 0 || profile.Surge.CustomConfig != "1.5" || profile.Loon.CustomConfig != "2" {
-		t.Fatalf("shared numeric text: %+v", model.Issues(profile))
+	if profile.Surge.CustomConfig != "1.5" || profile.Loon.CustomConfig != "2" {
+		t.Fatalf("shared numeric text: %+v", profile)
 	}
 }
 

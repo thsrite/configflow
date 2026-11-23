@@ -196,8 +196,15 @@ func (m *OrderedMap[V]) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 
 func (m OrderedMap[V]) orderedValueType() reflect.Type { return reflect.TypeFor[V]() }
 
-// fieldIssues: values are plain and report their issues while decoding.
-func (m OrderedMap[V]) fieldIssues(string) []FieldIssue { return nil }
+// walkValues visits the values for the encoder's cycle check.
+func (m OrderedMap[V]) walkValues(visit func(reflect.Value) error) error {
+	for _, entry := range m.entries {
+		if err := visit(reflect.ValueOf(entry.value)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // orderedMap is implemented by every OrderedMap instantiation.
 type orderedMap interface{ orderedValueType() reflect.Type }

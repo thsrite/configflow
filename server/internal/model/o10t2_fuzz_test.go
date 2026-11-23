@@ -6,15 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 	"testing"
 	"unicode/utf8"
 )
 
-// referenceValidJSON and referenceParseObject are the implementations before
-// O10-T2 (encoding/json Valid plus a Decoder token walk), kept verbatim as
-// the oracle for the jsontext-based replacements.
+// referenceValidJSON is the implementation before O10-T2 (encoding/json
+// Valid plus a Decoder token walk), kept verbatim as the oracle for the
+// jsontext-based replacement.
 func referenceValidJSON(data []byte) error {
 	if !utf8.Valid(data) || !json.Valid(data) {
 		return ErrJSON
@@ -69,62 +68,6 @@ func referenceValidJSON(data []byte) error {
 	return nil
 }
 
-func referenceParseObject(data []byte) (jsonObject, error) {
-	if err := referenceValidJSON(data); err != nil {
-		return jsonObject{}, err
-	}
-	data = bytes.Clone(data)
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	token, err := dec.Token()
-	if err != nil || token != json.Delim('{') {
-		return jsonObject{}, ErrType
-	}
-	obj := jsonObject{data: data, opening: data[:dec.InputOffset()]}
-	previous := int(dec.InputOffset())
-	for dec.More() {
-		keyStart := skipSpace(data, previous)
-		if data[keyStart] == ',' {
-			keyStart = skipSpace(data, keyStart+1)
-		}
-		token, err := dec.Token()
-		if err != nil {
-			return jsonObject{}, ErrJSON
-		}
-		name, ok := token.(string)
-		if !ok {
-			return jsonObject{}, ErrJSON
-		}
-		keyEnd := int(dec.InputOffset())
-		valueStart := skipSpace(data, skipSpace(data, keyEnd)+1)
-		var value json.RawMessage
-		if err := dec.Decode(&value); err != nil {
-			return jsonObject{}, ErrJSON
-		}
-		end := int(dec.InputOffset())
-		leading := data[previous:keyStart]
-		if comma := bytes.IndexByte(leading, ','); comma >= 0 {
-			if len(obj.members) > 0 {
-				obj.members[len(obj.members)-1].trailing = leading[:comma]
-			}
-			leading = leading[comma+1:]
-		}
-		obj.members = append(obj.members, jsonMember{name: name, key: data[keyStart:keyEnd], leading: leading, separator: data[keyEnd:valueStart], value: data[valueStart:end]})
-		previous = end
-	}
-	if _, err := dec.Token(); err != nil {
-		return jsonObject{}, ErrJSON
-	}
-	closingStart := skipSpace(data, previous)
-	if len(obj.members) > 0 {
-		obj.members[len(obj.members)-1].trailing = data[previous:closingStart]
-		obj.closing = data[closingStart:]
-	} else {
-		obj.closing = data[previous:]
-	}
-	return obj, nil
-}
-
 func sameError(a, b error) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -151,42 +94,6 @@ func FuzzValidJSONReference(f *testing.F) {
 			t.Fatalf("validJSON(%q) = %v, reference %v", data, got, want)
 		}
 	})
-}
-
-func FuzzParseObjectReference(f *testing.F) {
-	for _, seed := range o10t2Seeds {
-		f.Add([]byte(seed))
-	}
-	f.Fuzz(func(t *testing.T, data []byte) {
-		want, wantErr := referenceParseObject(data)
-		got, gotErr := parseObject(data)
-		if !sameError(gotErr, wantErr) {
-			t.Fatalf("parseObject(%q) error %v, reference %v", data, gotErr, wantErr)
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("parseObject(%q) = %#v, reference %#v", data, got, want)
-		}
-		if wantErr != nil {
-			return
-		}
-		// splitArray must agree with json.Unmarshal into []json.RawMessage.
-		for _, member := range want.members {
-			var items []json.RawMessage
-			reference := json.Unmarshal(member.value, &items)
-			split, err := splitArray(member.value)
-			if (err == nil) != (reference == nil) || (err == nil && (items == nil) != (split == nil)) || !reflect.DeepEqual(normalizeRaw(split), normalizeRaw(items)) {
-				t.Fatalf("splitArray(%q) = %q %v, json.Unmarshal %q %v", member.value, split, err, items, reference)
-			}
-		}
-	})
-}
-
-func normalizeRaw(items []json.RawMessage) []string {
-	out := make([]string, len(items))
-	for i, item := range items {
-		out[i] = string(item)
-	}
-	return out
 }
 
 // FuzzMarshalOutputValid decodes fuzzed Agents, applies edits that reach

@@ -331,7 +331,7 @@ func rcOxidnsUpdate(t *testing.T, fields string) func(context.Context, *model.Pr
 func TestSharedAndProfilesTransactionCommitsOnce(t *testing.T) {
 	r := rcRuleDNSRepository(t)
 	sharedRevision := must(r.Shared(bg))(t).Revision
-	revisions := map[string]model.Int{}
+	revisions := map[string]int64{}
 	for _, profileID := range []string{"default", "other"} {
 		revisions[profileID] = must(r.Profile(bg, profileID))(t).Revision
 	}

@@ -593,7 +593,7 @@ func (r *Repository) SaveProfileFieldsJSON(ctx context.Context, id string, raw, 
 		}
 	}
 	var saved *model.Profile
-	var sharedRevision model.Int
+	var sharedRevision int64
 	err := r.UpdateConfig(ctx, id, func(ctx context.Context, config *model.Config) error {
 		current, err := recordMembers(config)
 		if err != nil {
@@ -622,7 +622,7 @@ func (r *Repository) SaveProfileFieldsJSON(ctx context.Context, id string, raw, 
 		return nil, 0, err
 	}
 	result, err := copyRecord(saved)
-	return result, int64(saved.Revision) + int64(sharedRevision), err
+	return result, saved.Revision + sharedRevision, err
 }
 
 // MarshalJSON returns the importer's diagnostics with the committed metadata.

@@ -20,9 +20,6 @@ func ClientNodeReplayIssue(value any, target string) string {
 	if err != nil {
 		return "node record"
 	}
-	if issues := model.Issues(node); len(issues) > 0 {
-		return "node." + issues[0].Path + " R5"
-	}
 	for _, field := range []string{"name", "type", "server", "port", "params"} {
 		if raw, present := object.Get(field); present && raw == nil {
 			return "node." + field + " null absent"
@@ -45,9 +42,6 @@ func ClientNodeReplayIssue(value any, target string) string {
 			return ""
 		}
 		node, params = nodes[0].Node, nodes[0].Params
-		if issues := model.Issues(node); len(issues) > 0 {
-			return "parsed node." + issues[0].Path + " R5"
-		}
 	}
 	return clientOptionsReplayIssue(node.Type, params, target)
 }
@@ -56,9 +50,6 @@ func clientOptionsReplayIssue(kind string, params *yamlx.Node, target string) st
 	options, err := decodeClientOptions(params)
 	if err != nil {
 		return "node.params schema"
-	}
-	if issues := model.Issues(options); len(issues) > 0 {
-		return "options." + issues[0].Path + " R5"
 	}
 	for key, value := range yamlx.Pairs(params) {
 		if nullNode(value) {
@@ -96,9 +87,6 @@ func ClientGroupReplayIssue(value any, target string) string {
 	group, err := DecodeJ[model.ProxyGroup](value)
 	if err != nil {
 		return "group record"
-	}
-	if issues := model.Issues(group); len(issues) > 0 {
-		return "group." + issues[0].Path + " R5"
 	}
 	object, ok := value.(*JObj)
 	if !ok || object == nil {

@@ -150,20 +150,13 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 		t.Fatalf("raw injection: %v %v", written, err)
 	}
 	audit(t, "audit")
-	issues := 0
 	noError(t, r.View(bg, func(d *model.Document) error {
-		issues = len(model.Issues(d))
 		// auto_backup pushes on its own: a wrong type reads as off (O18 T1c).
 		if model.Flag(d.System.Backup.AutoBackup, false) || defaultProfile(d).Description != "" || d.System.SystemConfig.DefaultProfileID != nil {
 			t.Fatal("R5/null fallback values")
 		}
 		return nil
 	}))
-	// Plain records report load issues when decoded (logged by the
-	// repository), not through model.Issues (O18 T1c).
-	if issues != 0 {
-		t.Fatalf("issues %d", issues)
-	}
 	update(t, "unrelated edit keeps rows it does not change", []modelRowKey{profile("name")}, func(d *model.Document) { defaultProfile(d).Name = "N8-5 R5" })
 	// A row a typed edit changes is written in Go's form (O18 T1c): a stored
 	// null, a wrong-typed value and number text are not kept.

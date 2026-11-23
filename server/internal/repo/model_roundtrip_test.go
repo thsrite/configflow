@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,21 +14,80 @@ import (
 	"configflow/internal/store"
 )
 
-// Test-only records exercise nested R1–R9 without prematurely defining N8-4's
-// production group/node/agent/router/rule types. Unknown members remain opaque.
+// roundTripRecord is a test-only generic record over any stored list
+// element: id, name and enabled are typed, every other member stays opaque
+// in Fields (a counter of the wrong type reads as 0 and keeps its JSON).
 type roundTripRecord struct {
-	ID      string    `json:"id"`
-	Name    string    `json:"name"`
-	Enabled *bool     `json:"enabled"`
-	Counter model.Int `json:"n8_counter"`
-	Fields  model.Fields
-	raw     model.Raw
+	ID             string
+	Name           string
+	Enabled        *bool
+	Counter        model.Int
+	Fields         model.Fields
+	counterInvalid bool
 }
 
 func (r *roundTripRecord) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, r, &r.raw)
+	var fields model.Fields
+	if err := fields.UnmarshalJSON(data); err != nil {
+		return err
+	}
+	out := roundTripRecord{}
+	for _, member := range []struct {
+		name   string
+		target any
+	}{{"id", &out.ID}, {"name", &out.Name}, {"enabled", &out.Enabled}, {"n8_counter", &out.Counter}} {
+		raw, ok := fields.Get(member.name)
+		if !ok {
+			continue
+		}
+		if json.Unmarshal(raw, member.target) != nil {
+			if member.name != "n8_counter" {
+				return fmt.Errorf("record member %s", member.name)
+			}
+			out.counterInvalid = true
+			continue
+		}
+		fields.Delete(member.name)
+	}
+	out.Fields = fields
+	*r = out
+	return nil
 }
-func (r roundTripRecord) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&r, &r.raw) }
+
+func (r roundTripRecord) MarshalJSON() ([]byte, error) {
+	var fields model.Fields
+	set := func(name string, value any) error {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		return fields.Set(name, data)
+	}
+	if err := set("id", r.ID); err != nil {
+		return nil, err
+	}
+	if err := set("name", r.Name); err != nil {
+		return nil, err
+	}
+	if r.Enabled != nil {
+		if err := set("enabled", *r.Enabled); err != nil {
+			return nil, err
+		}
+	}
+	if r.Counter != 0 {
+		if err := set("n8_counter", int64(r.Counter)); err != nil {
+			return nil, err
+		}
+	}
+	for name, value := range r.Fields.All() {
+		if !fields.Has(name) {
+			if err := fields.Set(name, value); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return fields.MarshalJSON()
+}
 
 func roundTripList(value any) ([]roundTripRecord, error) {
 	raw, err := model.Marshal(value)
@@ -49,8 +109,8 @@ func roundTripNewRecord(t *testing.T, id, name string) roundTripRecord {
 	if err := json.Unmarshal(source, &r); err != nil {
 		t.Fatal("synthetic record decode failed")
 	}
-	if r.Counter != 0 || len(r.raw.Issues()) != 1 {
-		t.Fatal("record R5 fallback missing")
+	if r.Counter != 0 || !r.counterInvalid {
+		t.Fatal("record fallback missing")
 	}
 	return r
 }

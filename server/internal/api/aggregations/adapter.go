@@ -337,7 +337,7 @@ func cachedCount(ctx context.Context, shared, aggregation record) (countReply, e
 			continue
 		}
 		var count json.RawMessage
-		if !model.IssueUnder(model.Issues(cache), "nodes") && cache.Nodes != nil {
+		if !cache.NodesDamaged() && cache.Nodes != nil {
 			var sub model.Subscription
 			if item := find(subscriptions, id); item != nil {
 				if err := stored(item, &sub); err != nil {

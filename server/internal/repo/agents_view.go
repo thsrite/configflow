@@ -99,14 +99,16 @@ func (r *Repository) agentRecords(ctx context.Context) ([]model.Agent, store.Hea
 			return err
 		}
 		var system model.System
+		var issues []model.FieldIssue
 		if present {
-			if err := system.SetJSON("agents", raw); err != nil {
+			// The same lenient row decoding as a full document load.
+			if _, issues, err = model.DecodeStoredMember(&system, "agents", raw, "agents"); err != nil {
 				return fmt.Errorf(msgModelRowInvalid, "system", "", "agents", err)
 			}
 		}
 		r.agentLoads.Add(1)
 		records = system.Agents
-		r.reportAgentIssues(head, &system)
+		r.reportAgentIssues(head, issues)
 		// A byte cap here would decode an oversized registry on every heartbeat.
 		// Retain only this row for one generation instead of the whole document.
 		r.agentsCacheMu.Lock()
@@ -132,7 +134,7 @@ func (r *Repository) agentReadFailure(ctx context.Context, original error) error
 	return original
 }
 
-func (r *Repository) reportAgentIssues(head store.Head, system *model.System) {
+func (r *Repository) reportAgentIssues(head store.Head, issues []model.FieldIssue) {
 	r.cacheMu.Lock()
 	fullReported := r.modelIssueHeadSet && r.modelIssueHead == head
 	r.cacheMu.Unlock()
@@ -143,7 +145,7 @@ func (r *Repository) reportAgentIssues(head store.Head, system *model.System) {
 	if fullReported || already {
 		return
 	}
-	for _, issue := range model.Issues(system) {
+	for _, issue := range issues {
 		logger.Warningf(msgModelFieldIssue, "system."+issue.Path, issue.Kind)
 	}
 }

@@ -1,12 +1,6 @@
 package model
 
 import (
-	"bytes"
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"reflect"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -14,158 +8,6 @@ import (
 
 // hrSchemaSurvey collects value-free schema facts for HR records: tolerated
 // type issues, undeclared members and null stored in non-pointer members.
-type hrSchemaSurvey struct {
-	issues, unknown, nullValues, records map[string]int
-}
-
-var indexPattern = regexp.MustCompile(`\[\d+\]`)
-
-func (s *hrSchemaSurvey) walk(value reflect.Value) {
-	for value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
-		if value.IsNil() {
-			return
-		}
-		value = value.Elem()
-	}
-	switch value.Kind() {
-	case reflect.Slice:
-		if value.Type() == reflect.TypeFor[json.RawMessage]() {
-			return
-		}
-		for i := 0; i < value.Len(); i++ {
-			s.walk(value.Index(i))
-		}
-	case reflect.Struct:
-		if value.CanInterface() {
-			if walker, ok := value.Interface().(interface {
-				walkValues(func(reflect.Value) error) error
-			}); ok {
-				_ = walker.walkValues(func(child reflect.Value) error { s.walk(child); return nil })
-				return
-			}
-		}
-		schema := schemaFor(value.Type())
-		if schema.err != nil || schema.raw < 0 {
-			return
-		}
-		name := value.Type().Name()
-		s.records[name]++
-		if schema.extra >= 0 {
-			for _, key := range value.Field(schema.extra).Interface().(Fields).Keys() {
-				s.unknown[name+"."+key]++
-			}
-		}
-		raw := value.Field(schema.raw)
-		members := raw.FieldByName("members")
-		for i := 0; i < members.Len(); i++ {
-			member := members.Index(i)
-			if !member.FieldByName("known").Bool() {
-				continue
-			}
-			text := bytes.TrimSpace(member.FieldByName("jsonMember").FieldByName("value").Bytes())
-			field := schema.byName[member.FieldByName("jsonMember").FieldByName("name").String()]
-			kind := value.Field(field.index).Kind()
-			if bytes.Equal(text, []byte("null")) && kind != reflect.Pointer && kind != reflect.Slice &&
-				value.Field(field.index).Type() != reflect.TypeFor[Dynamic]() {
-				s.nullValues[name+"."+field.name]++
-			}
-		}
-		for _, field := range schema.fields {
-			s.walk(value.Field(field.index))
-		}
-	}
-}
-
-// TestHRSnapshotSchema checks the private snapshot against declared HR types:
-// no tolerated type issue, no null in a non-pointer member and no undeclared
-// member except retained derived/legacy ones. Only schema names are logged.
-func TestHRSnapshotSchema(t *testing.T) {
-	source := os.Getenv("CONFIGFLOW_SNAPSHOT")
-	if source == "" || os.Getenv("CONFIGFLOW_PY") == "" {
-		t.Skip("set CONFIGFLOW_SNAPSHOT and CONFIGFLOW_PY")
-	}
-	dir := t.TempDir()
-	if os.Chmod(dir, 0700) != nil {
-		t.Fatal("private directory permissions failed")
-	}
-	path := filepath.Join(dir, "rows.json")
-	pythonTypes(t, "snapshot", filepath.Join(source, "configflow.sqlite3"), path)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal("private rows read failed")
-	}
-	var rows []interchangeRow
-	if json.Unmarshal(data, &rows) != nil {
-		t.Fatal("private rows decode failed")
-	}
-	if os.Remove(path) != nil {
-		t.Fatal("private rows cleanup failed")
-	}
-	survey := hrSchemaSurvey{issues: map[string]int{}, unknown: map[string]int{}, nullValues: map[string]int{}, records: map[string]int{}}
-	for _, row := range rows {
-		var holder json.Unmarshaler
-		prefix := row.Name
-		switch row.Name {
-		case "agents":
-			holder = &System{}
-		case "routers":
-			holder = &Profile{}
-		case "AgentRuleSyncReceipt":
-			holder = &AgentRuleSyncReceipt{}
-		case "HAPayload":
-			holder = &HAPayload{}
-		case "RouterRuleSyncReceipt":
-			holder = &RouterRuleSyncReceipt{}
-		default:
-			continue
-		}
-		value := row.Value
-		if _, ok := holder.(*System); ok {
-			value = []byte(`{"agents":` + string(row.Value) + `}`)
-		} else if _, ok := holder.(*Profile); ok {
-			value = []byte(`{"routers":` + string(row.Value) + `}`)
-			prefix = ""
-		} else {
-			prefix = row.Name
-		}
-		if holder.UnmarshalJSON(value) != nil {
-			t.Fatal("snapshot HR decode failed")
-		}
-		if row.Name == "agents" {
-			prefix = ""
-		}
-		for _, issue := range valueIssues(reflect.ValueOf(holder), prefix) {
-			survey.issues[indexPattern.ReplaceAllString(issue.Path, "[]")]++
-		}
-		survey.walk(reflect.ValueOf(holder))
-	}
-	keys := func(values map[string]int) []string {
-		result := make([]string, 0, len(values))
-		for key := range values {
-			result = append(result, key)
-		}
-		slices.Sort(result)
-		return result
-	}
-	// Derived members written by older releases and kept opaque on purpose.
-	retained := map[string]bool{"Agent.has_update": true}
-	t.Logf("HR records visited (counts only): %v", survey.records)
-	unknown := keys(survey.unknown)
-	t.Logf("HR undeclared members (names only): %v", unknown)
-	t.Logf("HR null in non-pointer members (names only): %v", keys(survey.nullValues))
-	if issues := keys(survey.issues); len(issues) != 0 {
-		t.Fatalf("snapshot HR type issues (schema paths only): %v", issues)
-	}
-	if nulls := keys(survey.nullValues); len(nulls) != 0 {
-		t.Fatalf("snapshot HR nulls in non-pointer members: %v", nulls)
-	}
-	for _, name := range unknown {
-		if !retained[name] {
-			t.Fatalf("snapshot HR member is not declared: %v", unknown)
-		}
-	}
-}
-
 // TestIssuesSeparateFallbackFromEmptyProof is the type-level guard of the
 // N8-4f clarification: a lenient zero value read from a wrong-typed stored
 // manifest can be told apart from a stored empty or absent proof. Since O18
@@ -212,10 +54,6 @@ func TestIssuesSeparateFallbackFromEmptyProof(t *testing.T) {
 	}
 	if !slices.Equal(issues, []FieldIssue{{"ros_policy_state", IssueType}}) {
 		t.Fatalf("issues = %v", issues)
-	}
-	built := Router{ROSPolicyState: &ROSPolicyState{}}
-	if len(Issues(built)) != 0 {
-		t.Fatal("records built in Go have no stored issues")
 	}
 
 	var agent Agent

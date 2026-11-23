@@ -446,25 +446,9 @@ func NodeProxy(ctx context.Context, node model.Node, converter NodeConverter) (*
 	if params.ShortTag() != "!!null" && params.Kind != yaml.MappingNode {
 		return nil, errors.New(msgNodeParamsObject)
 	}
-	// R2 retains valid integer notation from storage (e.g. 443.0). An R5
-	// invalid field uses its typed zero, never the preserved invalid bytes.
-	// Quoted integers are accepted on read but generated as integer scalars.
+	// Stored integral notation (443.0, "443") was read as the integer; a port
+	// of the wrong type reads as absent (0).
 	port := yamlx.Int(model.IntValue(node.Port))
-	if !model.IssueUnder(model.Issues(node), "port") {
-		rawPort, present, err := model.EncodeMember(&node, "port")
-		if err != nil {
-			return nil, err
-		}
-		if present {
-			original, err := yamlx.FromJSON(rawPort)
-			if err != nil {
-				return nil, err
-			}
-			if original.ShortTag() == "!!int" || original.ShortTag() == "!!float" {
-				port = original
-			}
-		}
-	}
 	proxy := yamlx.Map(yamlx.Str("name"), yamlx.Str(node.Name), yamlx.Str("type"), yamlx.Str(kind), yamlx.Str("server"), yamlx.Str(node.Server), yamlx.Str("port"), port)
 	for name, value := range yamlx.Pairs(params) {
 		yamlx.Set(proxy, name, value)

@@ -192,7 +192,7 @@ func TestModelStoredValuesLoadLenientlyAndWriteTyped(t *testing.T) {
 	tests := []struct {
 		name, field, text string
 		wantIssues        bool
-		typedRevision     model.Int
+		typedRevision     int64
 		typedName         string
 		// unrelated is the error of a write elsewhere ("" = it commits).
 		unrelated string

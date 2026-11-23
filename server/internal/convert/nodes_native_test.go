@@ -64,7 +64,7 @@ func TestMihomoQuotedPort(t *testing.T) {
 	for _, literal := range []string{`"443"`, `"00443"`} {
 		t.Run(literal, func(t *testing.T) {
 			var node model.Node
-			if err := json.Unmarshal([]byte(`{"name":"N","type":"http","server":"example.com","port":`+literal+`}`), &node); err != nil || model.IntValue(node.Port) != 443 || model.IssueUnder(model.Issues(node), "port") {
+			if err := json.Unmarshal([]byte(`{"name":"N","type":"http","server":"example.com","port":`+literal+`}`), &node); err != nil || model.IntValue(node.Port) != 443 {
 				t.Fatalf("port lost during typed decode: %d %v", node.Port, err)
 			}
 			before, err := model.Marshal(node)
@@ -133,9 +133,6 @@ func NodeReplayIssue(node *JObj) string {
 	var typed model.Node
 	if err := json.Unmarshal(data, &typed); err != nil {
 		return "node type"
-	}
-	if model.IssueUnder(model.Issues(typed), "port") {
-		return "node.port integer"
 	}
 	if text, ok := node.Value("proxy_string").(string); ok {
 		return structuredTypeIssue(text)

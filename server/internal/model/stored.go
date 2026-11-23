@@ -19,9 +19,9 @@ import (
 // a value-free FieldIssue, so one bad value never makes a row unreadable.
 // Input from HTTP or imports is decoded strictly (SetMember, UnmarshalJSON).
 //
-// Records not yet migrated keep their own UnmarshalJSON (DecodeRecord with
-// R5 fallback); DecodeStored treats them as leaves and collects their nested
-// issues with Issues.
+// Types with their own UnmarshalJSON that are not plain records (Number, Int,
+// String, Dynamic, opaque objects outside this package) are leaves: a value
+// they refuse reads as their zero value plus an issue.
 
 // IssueUnknown means a stored member is not declared by its record. Its value
 // is dropped on load and is not written back.
@@ -269,7 +269,7 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 			return nil
 		}),
 		// An optional number or text stored with a wrong type is absent, so
-		// readers apply their default (as R5 did); the issue is reported.
+		// readers apply their default; the issue is reported.
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v **Int) error {
 			switch dec.PeekKind() {
 			case 'n':
@@ -381,8 +381,8 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 			}
 			return errors.ErrUnsupported
 		}),
-		// Records not yet migrated decode themselves (R5 inside); a value they
-		// refuse (not an object, for example) is zero plus an issue.
+		// Leaves that decode themselves: a value they refuse (not an object,
+		// for example) is zero plus an issue.
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v json.Unmarshaler) error {
 			if wired, ok := v.(plainWirer); ok {
 				return decodeWire(dec, v, wired)
@@ -517,8 +517,7 @@ func storedInt(dec *jsontext.Decoder, sink *issueSink, set func(int64)) error {
 // DecodeStored decodes stored JSON into v (a non-nil pointer) with the lenient
 // leaf rules. Path prefixes every issue. Only syntax errors (invalid JSON,
 // duplicate member names) are returned as errors. Unknown members of plain
-// records are dropped and reported as IssueUnknown; issues of records that are
-// not yet migrated are included.
+// records are dropped and reported as IssueUnknown.
 func DecodeStored(data []byte, v any, prefix string) ([]FieldIssue, error) {
 	return decodeStored(data, v, prefix, "")
 }
@@ -546,46 +545,7 @@ func decodeStored(data []byte, v any, prefix string, tag string) ([]FieldIssue, 
 		}
 		issues = append(issues, unknown...)
 	}
-	issues = append(issues, legacyIssues(target.Elem(), prefix)...)
 	return issues, nil
-}
-
-// legacyIssues collects the FieldIssues recorded by records that still decode
-// themselves, walking through plain structs and lists.
-func legacyIssues(value reflect.Value, prefix string) []FieldIssue {
-	for value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface {
-		if value.IsNil() {
-			return nil
-		}
-		value = value.Elem()
-	}
-	typ := value.Type()
-	if isPlain(typ) {
-		var issues []FieldIssue
-		for i := 0; i < typ.NumField(); i++ {
-			field := typ.Field(i)
-			name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
-			if !field.IsExported() || name == "-" {
-				continue
-			}
-			if name == "" {
-				name = field.Name
-			}
-			issues = append(issues, legacyIssues(value.Field(i), joinPath(prefix, name))...)
-		}
-		return issues
-	}
-	if (typ.Kind() == reflect.Slice || typ.Kind() == reflect.Array) && !hasPlain(typ) {
-		return valueIssues(value, prefix)
-	}
-	if typ.Kind() == reflect.Slice || typ.Kind() == reflect.Array {
-		var issues []FieldIssue
-		for i := 0; i < value.Len(); i++ {
-			issues = append(issues, legacyIssues(value.Index(i), fmt.Sprintf("%s[%d]", prefix, i))...)
-		}
-		return issues
-	}
-	return valueIssues(value, prefix)
 }
 
 var plainRecordType = reflect.TypeFor[plainRecord]()
@@ -989,15 +949,15 @@ func decodeStrict(data []byte, target any) error {
 	return jsonv2.Unmarshal(data, target, strictOptions, jsonv2.WithUnmarshalers(strictUnmarshalers))
 }
 
-// selfDecoding reports a type that is not yet migrated and decodes itself.
+// selfDecoding reports a leaf type that decodes itself (not a plain record).
 func selfDecoding(typ reflect.Type) bool {
 	return reflect.PointerTo(typ).Implements(unmarshalerType) && !(typ.Kind() == reflect.Struct && isPlain(typ))
 }
 
-// decodeRecordList decodes a list of records that decode themselves. As for
-// any member of such a record (R5), one element it refuses (for example a
-// number where a record belongs) makes the whole list its zero value with one
-// issue: a zero element would read as an empty record that was never stored.
+// decodeRecordList decodes a list of leaves that decode themselves. One
+// element such a leaf refuses (for example a number where an object belongs)
+// makes the whole list its zero value with one issue: a zero element would
+// read as a value that was never stored.
 func decodeRecordList(dec *jsontext.Decoder, sink *issueSink, target reflect.Value) error {
 	path := pointerPath(sink.root, sink.prefix, dec.StackPointer())
 	value, err := dec.ReadValue()

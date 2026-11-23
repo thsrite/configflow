@@ -184,7 +184,7 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize bool) (
 		if err != nil {
 			return err
 		}
-		document, _, err = model.DecodeDocument(raw)
+		document, err = model.DecodeDocument(raw)
 		return err
 	})
 	if err != nil {

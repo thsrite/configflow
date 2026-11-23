@@ -121,7 +121,7 @@ func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, op
 			return sourceResult{err: cacheErr}
 		}
 		if cache != nil {
-			if model.IssueUnder(model.Issues(cache), "nodes") {
+			if cache.NodesDamaged() {
 				return sourceResult{err: errors.New("cached nodes must be an array")}
 			}
 			nodes = cache.Nodes

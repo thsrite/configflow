@@ -169,7 +169,6 @@ func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
 
 	for i := range shared.Nodes {
 		node := &shared.Nodes[i]
-		issues := model.Issues(node)
 		rawNode, err := model.Marshal(node)
 		if err != nil {
 			return nil, fmt.Errorf("marshal shared node: %w", err)
@@ -189,10 +188,6 @@ func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
 			continue
 		}
 		name := node.Name
-		if hasFieldIssue(issues, "name") {
-			rawName, _ := nodeObj.Fields.Get("name")
-			return nil, valueError(fmt.Sprintf(msgStoredNodeNameInvalid, node.ID, compactRaw(rawName)))
-		}
 
 		if name == "" {
 			continue
@@ -351,6 +346,14 @@ type LatencyEntry struct {
 	// damagedSettings: a stored test setting had the wrong type, so the
 	// entry's history is never continued (Python compared the stored value).
 	damagedSettings bool
+}
+
+type latencyWire LatencyEntry
+
+// UnmarshalJSON decodes a stored or measured entry leniently: a member of the
+// wrong type reads as absent.
+func (e *LatencyEntry) UnmarshalJSON(data []byte) error {
+	return model.DecodeLenient(data, (*latencyWire)(e))
 }
 
 // sameTestSettings reports whether the stored entry was measured with the
@@ -518,7 +521,7 @@ func parseProbeResults(stdout string, proxies []model.Fields) (model.OrderedMap[
 			return results, err
 		}
 		var typedEntry LatencyEntry
-		if _, err := model.DecodeStored(rawEntry, &typedEntry, ""); err != nil {
+		if err := typedEntry.UnmarshalJSON(rawEntry); err != nil {
 			return results, err
 		}
 		results.Set(string(name), typedEntry)
@@ -556,7 +559,7 @@ func LoadLatencyResults(ctx context.Context) model.OrderedMap[LatencyEntry] {
 			continue
 		}
 		var entry LatencyEntry
-		issues, err := model.DecodeStored(rawEntry, &entry, "")
+		issues, err := model.DecodeStored(rawEntry, (*latencyWire)(&entry), "")
 		if err != nil {
 			continue
 		}

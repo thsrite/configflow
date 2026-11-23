@@ -8,8 +8,8 @@ import (
 
 // TextLines is the two stored forms of a MosDNS matches editor: multiline text
 // or a list of expressions. Text != nil selects text; otherwise Lines selects
-// the list form. A decoded null has the zero value; its containing Raw retains
-// the original null until changed. No string conversion is done while loading.
+// the list form. A decoded null has the zero value. No string conversion is
+// done while loading.
 type TextLines struct {
 	Text  *string
 	Lines []string

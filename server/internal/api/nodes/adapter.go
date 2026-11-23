@@ -164,7 +164,7 @@ func Wire() {
 		if err != nil {
 			return nil, nil, err
 		}
-		docOut, _, err := model.DecodeDocument(data)
+		docOut, err := model.DecodeDocument(data)
 		return &preview, docOut, err
 	}}})
 

@@ -6,7 +6,6 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"fmt"
-	"reflect"
 )
 
 // The stored root, its three sections and the profiles are plain records
@@ -27,7 +26,7 @@ type Profile struct {
 	Description     string          `json:"description"`
 	CreatedAt       string          `json:"created_at"`
 	UpdatedAt       string          `json:"updated_at"`
-	Revision        Int             `json:"_revision"`
+	Revision        int64           `json:"_revision"`
 	ProxyGroups     []ProxyGroup    `json:"proxy_groups"`
 	RuleConfigs     []RuleConfig    `json:"rule_configs"`
 	Mihomo          MihomoSettings  `json:"mihomo"`
@@ -117,7 +116,7 @@ type Shared struct {
 	Nodes         []Node            `json:"nodes"`
 	Aggregations  []Aggregation     `json:"subscription_aggregations"`
 	RuleLibrary   []RuleLibraryItem `json:"rule_library"`
-	Revision      Int               `json:"_revision"`
+	Revision      int64             `json:"_revision"`
 }
 
 type sharedWire Shared
@@ -156,7 +155,7 @@ type System struct {
 	Backup               Backup                     `json:"backup"`
 	Agents               []Agent                    `json:"agents"`
 	RegistrationSessions []AgentRegistrationSession `json:"agent_registration_sessions,omitzero"`
-	Revision             Int                        `json:"_revision"`
+	Revision             int64                      `json:"_revision"`
 }
 
 type systemWire System
@@ -221,63 +220,58 @@ var DocumentSections = []string{"system", "shared", "profiles"}
 // DecodeDocument strictly decodes a whole document (exports, imports, owned
 // copies). A member of the wrong type is a *MemberTypeError naming its
 // section member, a missing section a *MissingSectionError. Unknown members
-// are dropped. Issues are those of records that still decode themselves.
-func DecodeDocument(data []byte) (*Document, []FieldIssue, error) {
+// are dropped.
+func DecodeDocument(data []byte) (*Document, error) {
 	if err := validJSON(data); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	dec := jsontext.NewDecoder(bytes.NewReader(data), jsontext.AllowInvalidUTF8(true))
 	if dec.PeekKind() != '{' {
-		return nil, nil, fmt.Errorf("%w: document must be an object", ErrType)
+		return nil, fmt.Errorf("%w: document must be an object", ErrType)
 	}
 	if _, err := dec.ReadToken(); err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", ErrJSON, err)
+		return nil, fmt.Errorf("%w: %v", ErrJSON, err)
 	}
 	document := &Document{}
 	seen := map[string]bool{}
 	for dec.PeekKind() != '}' {
 		token, err := dec.ReadToken()
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %v", ErrJSON, err)
+			return nil, fmt.Errorf("%w: %v", ErrJSON, err)
 		}
 		name := token.String()
 		value, err := dec.ReadValue()
 		if err != nil {
-			return nil, nil, fmt.Errorf("%w: %v", ErrJSON, err)
+			return nil, fmt.Errorf("%w: %v", ErrJSON, err)
 		}
 		seen[name] = true
 		switch name {
 		case "schema_version":
 			if err := decodeStrict(value, &document.SchemaVersion); err != nil {
-				return nil, nil, memberError("document", name, value, err)
+				return nil, memberError("document", name, value, err)
 			}
 		case "system":
 			if err := decodeSection("system", value, (*systemWire)(&document.System)); err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 		case "shared":
 			if err := decodeSection("shared", value, (*sharedWire)(&document.Shared)); err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 		case "profiles":
 			profiles, err := decodeProfiles(value)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			document.Profiles = profiles
 		}
 	}
 	for _, section := range DocumentSections {
 		if !seen[section] {
-			return nil, nil, &MissingSectionError{Section: section}
+			return nil, &MissingSectionError{Section: section}
 		}
 	}
-	issues := legacyIssues(reflect.ValueOf(&document.System), "system")
-	issues = append(issues, legacyIssues(reflect.ValueOf(&document.Shared), "shared")...)
-	for i, profile := range document.Profiles {
-		issues = append(issues, legacyIssues(reflect.ValueOf(profile), fmt.Sprintf("profiles[%d]", i))...)
-	}
-	return document, issues, nil
+	return document, nil
 }
 
 func decodeProfiles(data []byte) ([]*Profile, error) {
@@ -420,7 +414,7 @@ func (d Document) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON is DecodeDocument without the issues.
 func (d *Document) UnmarshalJSON(data []byte) error {
-	document, _, err := DecodeDocument(data)
+	document, err := DecodeDocument(data)
 	if err != nil {
 		return err
 	}

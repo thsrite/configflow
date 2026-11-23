@@ -3,7 +3,6 @@ package convert
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 
 	"configflow/internal/model"
@@ -25,13 +24,6 @@ func MihomoReplayIssue(profile *JObj) string {
 	var shared model.Shared
 	if json.Unmarshal(data, &p) != nil || json.Unmarshal(data, &shared) != nil {
 		return "config object"
-	}
-	for _, issue := range append(model.Issues(p), model.Issues(shared)...) {
-		for _, prefix := range []string{"mihomo", "mosdns.custom_hosts", "proxy_groups", "subscriptions", "subscription_aggregations", "domain_discovery"} {
-			if issue.Path == prefix || strings.HasPrefix(issue.Path, prefix+".") || strings.HasPrefix(issue.Path, prefix+"[") {
-				return "R5 " + issue.Path
-			}
-		}
 	}
 	for _, key := range []string{"subscriptions", "subscription_aggregations"} {
 		for _, raw := range profile.GetList(key) {

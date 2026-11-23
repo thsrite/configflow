@@ -488,10 +488,8 @@ func prepareSubscription(ctx context.Context, sub model.Subscription, snapshot *
 			return nil, err
 		}
 		if cache != nil {
-			for _, issue := range model.Issues(cache) {
-				if issue.Path == "nodes" {
-					return nil, dialerErr(msgNodesList)
-				}
+			if cache.NodesDamaged() {
+				return nil, dialerErr(msgNodesList)
 			}
 		}
 		if cache == nil || len(cache.Nodes) == 0 {

@@ -889,10 +889,11 @@ func TestMosDNSMatchScalarForm(t *testing.T) {
 	for _, source := range []string{`"qname example.com"`, `"qname\u0020example.com"`, `""`} {
 		var settings MosDNSSettings
 		raw := []byte(`{"custom_matches":[` + source + `,{"matches":["qtype 28"],"exec":"return"}]}`)
-		if err := json.Unmarshal(raw, &settings); err != nil {
+		issues, err := DecodeStored(raw, &settings, "")
+		if err != nil {
 			t.Fatal(err)
 		}
-		if issues := Issues(settings); len(issues) != 0 {
+		if len(issues) != 0 {
 			t.Fatalf("valid union rejected: %v", issues)
 		}
 		if len(settings.CustomMatches) != 2 || settings.CustomMatches[0].Text == nil {

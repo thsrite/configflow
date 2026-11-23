@@ -1,9 +1,6 @@
 package model
 
-import (
-	"reflect"
-	"strings"
-)
+import "strings"
 
 // IssueKind identifies an invalid stored field without including its value.
 type IssueKind string
@@ -13,23 +10,19 @@ const (
 	IssueType IssueKind = "type"
 )
 
+// joinPath appends a member name to an issue path.
+func joinPath(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+	return prefix + "." + name
+}
+
 // FieldIssue describes a tolerated invalid field. Paths use schema names and
 // numeric indices, never user-supplied map keys, identifiers or stored values.
 type FieldIssue struct {
 	Path string
 	Kind IssueKind
-}
-
-// Issues returns the value-free diagnostics recorded when value and everything
-// nested in it were decoded, with paths relative to value. It describes the
-// stored bytes, not later assignments; a record built in Go has none. Code that
-// acts on stored evidence (router ownership manifests, deployment receipts) uses
-// it to tell an R5 fallback zero value from a genuinely empty one.
-func Issues(value any) []FieldIssue {
-	if value == nil {
-		return nil
-	}
-	return legacyIssues(reflect.ValueOf(value), "")
 }
 
 // IssueUnder reports whether an issue is at path or nested below it. Whole path

@@ -258,9 +258,6 @@ type IPv6Settings struct {
 func ipv6Document(config *model.Profile) (*yamlx.Node, error) {
 	raw := ""
 	if config != nil {
-		if model.IssueUnder(model.Issues(config), "mihomo.custom_config") {
-			return nil, routerError(messageIPv6YAMLType)
-		}
 		raw = config.Mihomo.CustomConfig
 	}
 	if strings.TrimSpace(raw) == "" {

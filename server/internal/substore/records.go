@@ -4,6 +4,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/subs"
 	"encoding/json"
+	"strings"
 )
 
 // Traffic is the arbitrary-precision usage reported by the subscription source.
@@ -40,4 +41,23 @@ type Cache struct {
 	Nodes          []model.Node       `json:"nodes"`
 	Metadata       *CacheMetadata     `json:"metadata,omitzero"`
 	Issues         []model.FieldIssue `json:"-"`
+}
+
+// NodesDamaged reports a stored node list that is not a list or holds an
+// element that is not a node object (such elements are left out of Nodes).
+// A node member of the wrong type does not count: the node reads with that
+// member absent, as for any stored node.
+func (c *Cache) NodesDamaged() bool {
+	for _, issue := range c.Issues {
+		if issue.Kind != model.IssueType {
+			continue
+		}
+		if issue.Path == "nodes" {
+			return true
+		}
+		if rest, ok := strings.CutPrefix(issue.Path, "nodes["); ok && strings.HasSuffix(rest, "]") && !strings.ContainsAny(rest, ".[") {
+			return true
+		}
+	}
+	return false
 }

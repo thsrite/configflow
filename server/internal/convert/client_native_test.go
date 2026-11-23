@@ -206,9 +206,6 @@ func TestTypedClientSharedIntegerStrings(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"name":"N","type":"http","server":"example.com","port":"443"}`), &node); err != nil {
 		t.Fatal(err)
 	}
-	if model.IssueUnder(model.Issues(node), "port") {
-		t.Fatal("shared model integer-string entry did not decode port")
-	}
 	line, _, err := SurgeNode(node)
 	if err != nil || line != "N = http, example.com, 443" {
 		t.Fatal(line, err)
@@ -216,9 +213,6 @@ func TestTypedClientSharedIntegerStrings(t *testing.T) {
 	var group model.ProxyGroup
 	if err = json.Unmarshal([]byte(`{"id":"g","name":"G","type":"url-test","interval":"300"}`), &group); err != nil {
 		t.Fatal(err)
-	}
-	if model.IssueUnder(model.Issues(group), "interval") {
-		t.Fatal("shared integer coercion did not cover group interval")
 	}
 	line, err = LoonGroup(group, []string{"DIRECT"})
 	if err != nil || line != "G = url-test,DIRECT,url="+LoonDefaultTestURL+",interval=300,tolerance=100" {
@@ -229,9 +223,6 @@ func TestTypedClientSharedNumericText(t *testing.T) {
 	var node model.Node
 	if err := json.Unmarshal([]byte(`{"id":"n","name":123,"type":"http","server":456,"port":443}`), &node); err != nil {
 		t.Fatal(err)
-	}
-	if model.IssueUnder(model.Issues(node), "name") || model.IssueUnder(model.Issues(node), "server") {
-		t.Fatal("shared model numeric-string entry did not decode name/server")
 	}
 	line, _, err := SurgeNode(node)
 	if err != nil || line != "123 = http, 456, 443" {

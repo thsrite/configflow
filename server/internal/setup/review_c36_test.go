@@ -272,7 +272,7 @@ func TestReviewC36PrepareRevisionAndStoredOwnership(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if profile.Revision != previous+1 || record.ProfileRevision == nil || *record.ProfileRevision != previous+1 || record.ConfigRevision == nil || *record.ConfigRevision != model.Int(revision) || text(record.OwnedDigest) != full || text(record.OwnedDigestWithoutBase) != without {
+		if profile.Revision != previous+1 || record.ProfileRevision == nil || int64(*record.ProfileRevision) != previous+1 || record.ConfigRevision == nil || *record.ConfigRevision != model.Int(revision) || text(record.OwnedDigest) != full || text(record.OwnedDigestWithoutBase) != without {
 			t.Fatalf("prepare attempt %d did not preserve revision/ownership contract", attempt)
 		}
 	}

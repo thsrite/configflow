@@ -91,9 +91,6 @@ func TestNativeStoredR5AndSharedNumbers(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"proxy_groups":[{"id":"g","name":123.50}],"domain_discovery":{"region_probe_port":"18003"}}`), &record); err != nil {
 		t.Fatal(err)
 	}
-	if issues := model.Issues(record); len(issues) != 0 {
-		t.Fatalf("shared scalar decode reported issues: %+v", issues)
-	}
 	view, err := configFromModel(&model.Config{Profile: &record})
 	if err != nil || view.Groups[0].Name != "123.50" || view.Settings.RegionPort != 18003 {
 		t.Fatalf("shared coercion: %+v %v", view, err)
