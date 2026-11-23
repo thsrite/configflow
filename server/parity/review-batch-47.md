@@ -1,12 +1,12 @@
 # batch-47 复核：O10 缓存预算（`go-perf-cache-budget`）
 
 复核者：Claude Opus 5.5，2026-11-23。分支 `batch-47` 已 `git rebase go`（`go@ffd33e872`），无冲突。
-测试服务器：`.64`（`.32` 当时 load 25–30，未用于计时）。
+正确性验证在 `.64`；性能结论以 PVE 正式测量 CT 240 为准（第 4 节），`.64` 的数字只作参考。
 
 ## 结论
 
 改动正确，可以合并。没有发现高/中级问题；修了两处低级问题，补了三组只读/失效测试。
-内存下降站得住；CPU 与改前持平，作者报告中的「CPU −7.7%」「provider 延迟 −33%」在本次重跑中没有复现（落在噪声内）。
+内存下降站得住（CT 240：负载后存活堆增量 11.4 → 5.8 MB，静置 RSS 92.9 → 78.2 MB）；CPU 与改前持平（19 条路由合计 +3%，来自一次后台任务撞进 `/api/routers` 窗口，去掉路由器族 +1.8%）。作者报告中的「CPU −7.7%」「provider 延迟 −33%」没有复现。
 
 ## 1. 零拷贝共享（`LoadSubscriptionCacheShared` / `BindTypedSubscriptionCache` / own=false）
 
@@ -42,34 +42,45 @@
 - 竞态情形（旧 head 的 `setCache` 晚于新 head 的 `agentsCache` 写入）只会多一次解码，不会返回错数据（命中要求 head 相等）。
 - 新增 `repo/TestDroppedAgentsCacheKeepsBorrowedRecords`：4 个读者在借用期间反复 `dropCache`，同时 20 次 `UpdateSystem`，`-race` 通过，借出记录不变，最后可见最新一代。
 
-## 4. 性能（`.64`，`O10_LEAN=1 GODEBUG=disablethp=1`，改前 = `go@ffd33e872`）
+## 4. 性能
 
-内存（`--idle-minutes 2 --iterations 10 --mem-detail --settle-seconds 60`，改前/改后各 2 轮，交替顺序）：
+### 4.1 PVE 正式测量机 CT 240（结论以此为准）
 
-| 指标 | 改前 base1 / base2 | 改后 after1 / after2 |
-|---|---:|---:|
-| 空闲结束存活堆（GC 后） | 9.64 / 10.46 MB | 7.57 / 6.80 MB |
-| 负载后即刻 RSS | 94.4 / 91.6 MB | 73.3 / 78.9 MB |
-| 静置后存活堆（GC 后） | 18.23 / 18.28 MB | **11.36 / 11.98 MB** |
-| 负载后存活堆增量 | +8.59 / +7.82 MB | **+3.79 / +5.18 MB** |
-| 每次请求分配：mihomo / provider | 36.5 / 38.1–41.3 MB | 34.6 / 36.1 MB |
+`rt -- server/tools/o10perf/pve.sh run --servers go`（改后 = 本分支）与 `pve.sh run --src ~/o10src/b47-base --servers go`
+（改前 = `git archive go@ffd33e872`），参数相同（默认：空闲 30 min + 每路由 1 次预热 + 10 次计时 + 静置 120 s），
+串行独占 CT：改后 10:33–11:09 UTC，改前 11:09–11:46 UTC；开跑前 `pct status 240` = stopped、两台测试服务器都没有其他 o10perf；
+宿主 load 1–2。私有输出：`.32` `~/cf-prod-snapshot/runs/pve-20261123-103316`（改后）、`pve-20261123-110944`（改前）。
 
-静置存活堆净降约 6.5 MB，负载后 RSS 降 13–21 MB，与作者数字一致。
+| 指标 | 改前 `ffd33e872` | 改后 batch-47 | 变化 | 对照 `o10-pve-baseline.md` batch-21 |
+|---|---:|---:|---|---:|
+| 空闲 CPU 平均 | 0.52% | 0.55% | 持平 | 1.91–1.97%（Python 1.45–1.57%） |
+| 空闲 10 s 窗口中位 / p10 / p90 | 0.20 / 0.10 / 0.40% | 0.30 / 0.10 / 0.40% | 持平（0.1% 是一个 tick） | 1.1 / 0.9–1.0 / 1.3–1.4% |
+| 空闲尖峰 | 12.4% | 12.2% | 持平 | 41% |
+| 空闲 RSS 结束 / 最大 | 60.8 / 70.6 MB | **57.8** / 71.9 MB | −3.0 MB | 91–93 / 125–142 MB |
+| 空闲 GC 后存活堆（MemStats） | 4.83 MB | 4.72 MB | 持平 | 16.7 MB |
+| 存活堆 空闲 → 负载后（heap profile inuse） | 6.46 → 17.84 MB | 7.20 → 12.99 MB | | |
+| **负载后存活堆增量** | **+11.4 MB** | **+5.8 MB** | **−5.6 MB** | （batch-21 负载后 GC 存活堆 35–42 MB） |
+| 负载后即刻 RSS | 97.2 MB | 105.3 MB | 取决于采样时刻与 GC 相位 | 132–140 MB |
+| 静置 120 s 后 RSS / 静置期最低 heap_alloc | 92.9 MB / 18.8 MB | **78.2 MB / 12.1 MB** | −14.7 MB / −6.7 MB | 141–155 MB |
+| 19 条路由 CPU/次合计 | 394 ms | 406 ms | +3.0% | |
+| mihomo 延迟 / CPU / 分配 | 65 ms / 87 ms / 36.4 MB | 66 ms / 87 ms / 34.5 MB | 分配 −5% | 236–274 / 346–359 ms / 171 MB |
+| provider 延迟 / CPU / 分配 | 78 ms / 94 ms / 38.0 MB | 76 ms / 94 ms / 36.0 MB | 分配 −5% | 313–334 / 440 ms / 206 MB |
 
-CPU：after 两轮跑时 `.64` 被其他任务推到 load 109/40，CPU 不可比，另补两组安静时的对比（load ≤ 4）：
+19 条路由 CPU 的 +12 ms 几乎全在路由器族：`GET /api/routers` 7 → 22 ms（分配 2.8 → 9.4 MB），而 `policy` 12 → 8、
+`policy-settings` 31 → 24 ms 反向变化；去掉路由器族 4 条后合计 342 → 348 ms（+1.8%），其余路由逐条差 ≤ 2 ms。
+`.64` 上 12 轮（改前改后各 6 轮）`/api/routers` 都是 0.4 MB/次，policy 族的偶发尖峰（13.4 MB、8.9 MB）两边都出现过，
+说明这是单轮里后台任务（断网下的规则源/订阅重试、rule-sync）撞进该路由计时窗口，与 `o10-pve-baseline.md` 记录的
+「`GET /api/routers` 第 2 轮分配 25 MB（第 1 轮 15 MB）」是同一类波动，不是本批引入的回退。所有请求 200。
 
-| 运行 | 19 条路由 CPU/次合计 | mihomo CPU | provider CPU |
-|---|---:|---:|---:|
-| iter10 改前 B1 / B2 | 206 / 211 ms | 55 / 56 | 53 / 54 |
-| iter10 改后 A1（load 4→13 衰减中）/ A2 | 241 / 216 ms | 66 / 54 | 61 / 53 |
-| iter40 改前 B1 / B2（全部行合计） | 340 / 341 ms | 48–50 | 53–54 |
-| iter40 改后 A1（load 8）/ A2 | 424 / 352 ms | 48–60 | 52–64 |
+结论：内存目标成立（负载后存活堆增量从 11.4 MB 降到 5.8 MB，低于 ≤ 10 MB 目标；静置 RSS −15 MB）；空闲与路由 CPU 没有回退；
+作者写的 CPU −7.7%、provider 延迟 −33% 在正式测量机上没有出现（CPU、延迟都持平，只有分配 −5%）。
 
-安静条件下改后比改前高 0–3%，在噪声内，**没有 CPU 回退**，但也看不出作者写的 −7.7%。provider 路由延迟中位数
-两边都在 72–152 ms 之间跳动（每个点只有 10/40 次），不能支持「−33%」的结论；CPU/次两边相同。
+### 4.2 `.64` 参考数字（门禁同时在跑，只看内存方向）
 
-私有运行目录（不提交）：`.64` `~/cf-prod-snapshot/runs/o10-b47rev-{base1,base2,after1,after2}-165710`、
-`o10-b47rev-{cpuA1,cpuA2,cpuB1,cpuB2}-171512`、`o10-b47rev-i40{A1,A2,B1,B2}-172318`。
+内存（`O10_LEAN=1 GODEBUG=disablethp=1 --idle-minutes 2 --iterations 10 --mem-detail --settle-seconds 60`，各 2 轮）：
+静置后存活堆 18.23 / 18.28 MB → 11.36 / 11.98 MB，负载后存活堆增量 +8.6 / +7.8 → +3.8 / +5.2 MB，与 CT 240 方向一致。
+CPU 数字受负载影响（改后两轮期间 load 达 109/40），不作结论。
+私有输出：`.64` `~/cf-prod-snapshot/runs/o10-b47rev-*`。
 
 ## 发现
 
@@ -78,7 +89,7 @@ CPU：after 两轮跑时 `.64` 被其他任务推到 load 109/40，CPU 不可比
 | 低 | `refresh.cacheTexts.store`：新文本超过 `limitBytes/2` 时直接返回，同一订阅的旧一代（旧记录指针 + 旧文本）留在表里直到被 LRU 挤出。不影响正确性（命中要求指针相同），但违背「只留一代」 | 已修 `b45802350`：先删旧一代再判断大小；测试补断言 |
 | 低 | `aggregations.sourceNodes`：同上，超限文本不缓存时旧一代滞留 | 已修 `b45802350`，测试补断言 |
 | 低 | `activeTypedSubscriptionCache` 用 `reflect.Value.Pointer()` 比较函数值：同一函数字面量生成的不同闭包代码指针相同，若测试用同一字面量的闭包替换 `LoadSubscriptionCache` 不会触发回退。目前生产与测试都没有这种用法 | 记录，不改 |
-| 信息 | 作者报告的 CPU −7.7%、provider 延迟 −33% 未复现；内存数字复现 | 见第 4 节 |
+| 信息 | 作者报告的 CPU −7.7%、provider 延迟 −33% 在 CT 240 上未复现（持平）；内存下降复现 | 见第 4.1 节 |
 | 信息 | 第一次 `GATE_ONLY=difftest` 有 `substore/difftest TestDifferentialReviewMalformedState` 一项不同：Sub-Store「检查更新」的网络异常类型（Python `ConnectionError` vs Go `ProxyError`），取决于当时的外网/代理环境，与本批无关；单独重跑两次、整阶段重跑一次均通过 | 无需处理 |
 
 功能差异：无。
