@@ -75,6 +75,7 @@ services:
       ADMIN_USERNAME: "your-admin-name"
       ADMIN_PASSWORD: "replace-with-your-own-password"
       JWT_SECRET_KEY: "replace-with-at-least-32-random-characters"
+    stop_grace_period: 10s
     restart: unless-stopped
 ```
 
@@ -96,6 +97,7 @@ services:
       ADMIN_USERNAME: "your-admin-name"
       ADMIN_PASSWORD: "replace-with-your-own-password"
       JWT_SECRET_KEY: "replace-with-at-least-32-random-characters"
+    stop_grace_period: 10s
     restart: unless-stopped
 ```
 
@@ -438,9 +440,9 @@ IPv6 访问地址需加方括号，例如 `http://[2001:db8::10]:8088`，示例�
 
 更新前，先从「系统设置」导出全部数据；如需完整保留运行文件，再正常停服并复制**整个实际数据目录**。不要在运行中单独复制数据库文件。JSON 导出不含端口文件和监控历史，具体看 [哪些内容需要另外备份](../manual/system-settings.md#backup-scope)。
 
-更新后配置看似丢失时，先检查是否挂载了另一个空目录，保留原文件，不要立即重置。如果原数据目录中只有 SQLite 之前的旧版配置文件（如 `config.json` 或 `system.json`）而没有 `configflow.sqlite3`，Go 镜像会拒绝启动并给出中文提示，不会改动其中的配置数据（只会新建日志文件 `app.log`）：请先使用最后一个 Python 版本启动一次完成旧格式迁移，再升级到 Go 镜像。需要退回镜像时，应使用事先记录的旧版本及对应数据备份；不要盲目让旧版本打开已经迁移的数据。
+更新后配置看似丢失时，先检查是否挂载了另一个空目录，保留原文件，不要立即重置。如果原数据目录中只有 SQLite 之前的旧版配置文件（如 `config.json` 或 `system.json`）而没有 `configflow.sqlite3`，Go 镜像会拒绝启动并给出中文提示，不会改动其中的配置数据（只会新建日志文件 `app.log`）：请先使用最后一个 Python 版本（`v2.2.0`，镜像 `thsrite/config-flow:2.2.0`）启动一次完成旧格式迁移，再升级到 v3.0.0。v3.0.0 首次打开旧版数据库前会自动备份到 `DATA_DIR/backups/configflow-v1-<时间>.sqlite3`，升级为存储 v2 后不能再退回 `v2.2.0` 及以前版本；完整说明见 [v3.0.0 升级说明](upgrade-v3.md)。
 
-如使用自动更新标签镜像（`autoupdate`），容器启动时会按 `CONFIGFLOW_UPDATE_REPO` / `CONFIGFLOW_UPDATE_BRANCH` 检查源码，并按源码指纹仅重建有变动的组件（Go 服务、前端、Agent、独立测速组件），构建缓存保存在 `/data/.auto-update`（旧版镜像留下的构建可以继续沿用，换到本版镜像不会因此全部重建）。若网络不可达或构建失败，会自动回退到上一次可用构建或镜像自带版本，不会阻塞服务启动；若检测到数据目录中只有 SQLite 之前的旧版配置文件而没有 `configflow.sqlite3`，自动更新会跳过切换并保持镜像自带版本且给出中文提示，避免跳过最后一个 Python 版本的迁移。
+如使用自动更新标签镜像（`autoupdate`），容器启动时会按 `CONFIGFLOW_UPDATE_REPO` / `CONFIGFLOW_UPDATE_BRANCH` 检查源码，并按源码指纹仅重建有变动的组件（Go 服务、前端、Agent、独立测速组件），构建缓存保存在 `/data/.auto-update`（旧版镜像留下的构建可以继续沿用，换到本版镜像不会因此全部重建）。若网络不可达或构建失败，会自动回退到上一次可用构建或镜像自带版本，不会阻塞服务启动；若检测到数据目录中只有 SQLite 之前的旧版配置文件而没有 `configflow.sqlite3`，自动更新会跳过切换并保持镜像自带版本且给出中文提示，避免跳过最后一个 Python 版本（`v2.2.0`）的迁移。
 
 <a id="next"></a>
 ## 下一步

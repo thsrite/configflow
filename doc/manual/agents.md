@@ -38,6 +38,19 @@ Agent 是装在目标设备上的管理程序，负责接收 ConfigFlow 的配�
 | DNS 检查 | 查看错误、提醒、通过项目和检查时间。检查时运行的旧 DNS 正常，不代表待发布的新配置已经生效。 |
 | 正在执行、失败或待确认的状态行 | 应先处理这些状态，再开始另一项发布、更新、重启或绑定操作。 |
 
+### 从不含运行记录的备份恢复后
+
+v3.0.0 起的「导出全部数据」与 WebDAV 备份只保存配置，不包含 Agent 运行记录（发布历史、已应用内容、规则同步/DNS 联动/DNS 高可用进度与 IPv6 校验记录）。使用这类备份恢复后，页面顶部会显示提示横幅：**「运行记录未包含在备份里，各 Agent 需要重新发布一次」**，每张对应卡片也会显示 **「待重新发布：运行记录未包含在备份里」**。
+
+在重新发布成功之前：
+
+- 不能修改该 Agent 的地址、端口、服务类型、绑定配置空间或启用开关，也不能换绑（接口返回 409），名称等非受保护字段仍可修改；
+- 规则自动同步与 DNS 联动暂停自动推送；
+- 已开启 DNS 高可用的配对仍保持锁定，发布照常按成对流程进行；
+- 删除 Agent 不受限制。
+
+对每台普通 Agent 成功点一次 **推送**（DNS 高可用成员走成对发布），即可自动清除提示并恢复正常。详见 [v3.0.0 升级说明](../guide/upgrade-v3.md#backup-restore)。
+
 ### 顶部三个按钮
 
 | 按钮 | 用途和生效时机 |
@@ -347,7 +360,7 @@ Docker 的按钮打开 **Docker Agent 更新步骤**。网页只生成说明，�
 | 原安装方式 | 默认“Docker Compose”；用 `docker run` 或容器管理器装的，选“Docker Run / 容器管理器”。 |
 | Compose 服务名 | 默认 `agent`，应以原 Compose 文件中的服务名为准，**不是容器名**。可用页面提示的命令查看。 |
 | 复制 Compose 命令 | 在原项目目录、沿用原项目名/环境文件执行拉取并重建。如果原命令有 `-f`、`-p`、`--env-file`，每条都保留相同参数。 |
-| 目标镜像 | Docker Run 路径默认官方 `thsrite/config-flow-agent:latest`；私有镜像或固定版本改为自己实际目标。 |
+| 目标镜像 | Docker Run 路径默认官方 `thsrite/config-flow-agent:latest`；升级到 v3.0.0 及以上版本时，请改为与当前面板相同的版本号标签（例如 `thsrite/config-flow-agent:3.0.0`），避免拉取旧版 `latest`；私有镜像或固定版本也按自己实际目标填写。 |
 | 复制拉取命令 | 只拉取镜像，还需要按原参数重建容器。 |
 | 刷新 Agent 列表 | 远端完成后回来核对版本与在线状态；它本身不更新容器。 |
 
@@ -501,17 +514,18 @@ Docker 每次生成同时提供 Compose 和 Run，同一服务共用凭据，二
 
 1. 停止 ConfigFlow 主服务，备份整个数据目录（包括 `configflow.sqlite3` 和可能存在的
    `-wal`、`-shm` 文件），保留设备日志和任务编号。
-2. 用 SQLite 工具打开数据目录的 `configflow.sqlite3`。在 `fields` 表中找到
-   `scope='system' AND owner='' AND field='agents'` 的唯一行。`value` 是 Agent JSON 数组，
-   按原始字符串 `id` 精确找到目标设备，保留其他设备和未知字段。
-3. 错误字段为 `latest_upgrade` 或它的子字段时，删除目标设备的整个 `latest_upgrade` 成员；
-   错误字段为 `latest_deployment` 时，先确认该配置发布已结束再删除这个成员。
-   `oxidns_ha_publication` 是 HA 发布守卫，`oxidns_ha` 是 HA 配置；这两者应从已核实的备份
-   恢复为正确对象，或在确认两台设备均已停用 HA 后删除对应坏成员，再重新配置 HA。
-   不要把数字、布尔值、数组或空字符串当成“清空”；删除成员或明确设为 `null`。
-4. 在同一个 SQLite 事务中保存修复后的 `value`，将 `meta` 中 `generation` 的 JSON 数字加一，
-   将这行 `fields.revision` 设为新的 generation，并将 `meta.commit_id` 更新为新的 32 位
-   小写十六进制随机 ID（值须是带双引号的 JSON 字符串）。提交后关闭 SQLite 工具。
+2. 用 SQLite 工具打开数据目录的 `configflow.sqlite3`。在存储 v2（v3.0.0 及以上）中：
+   - Agent 的运行记录（`latest_upgrade`、`latest_deployment`、`oxidns_ha_publication` 等）位于 **`agent_state`** 表，按 `(agent_id, member)` 存放；
+   - Agent 的配置成员（包括 `oxidns_ha` 设置）位于 **`fields`** 表中 `scope='system' AND owner='' AND field='agents'` 的唯一行（`value` 为 Agent JSON 数组，按原始字符串 `id` 精确匹配目标设备）。
+3. 按损坏字段所在表清理或恢复：
+   - 错误字段为 `latest_upgrade` 或其子字段时，在 `agent_state` 表删除 `agent_id = '<目标ID>' AND member = 'latest_upgrade'`；
+   - 错误字段为 `latest_deployment` 时，先确认该配置发布已结束，再在 `agent_state` 表删除 `agent_id = '<目标ID>' AND member = 'latest_deployment'`；
+   - `oxidns_ha_publication`（在 `agent_state` 表）是 HA 发布守卫，`oxidns_ha`（在 `fields` 表的 `agents` 行）是 HA 配置；这两者应从已核实的备份恢复为正确对象，或在确认两台设备均已停用 HA 后删除对应坏记录/坏成员，再重新配置 HA。
+   不要把数字、布尔值、数组或空字符串当成“清空”；删除对应行/成员或明确设为 `null`。
+4. 在同一个 SQLite 事务中提交修复并更新 `meta`：
+   - 若改动了 `agent_state` 表：将 `meta` 中 `state_generation` 的 JSON 数字加一；
+   - 若改动了 `fields` 表的 `agents` 行：将 `meta` 中 `generation` 的 JSON 数字加一，并将这行 `fields.revision` 设为新的 `generation`；
+   - 同时将 `meta.commit_id` 更新为新的 32 位小写十六进制随机 ID（值须是带双引号的 JSON 字符串）。提交后关闭 SQLite 工具。
 5. 启动主服务，核对设备身份、实际版本和迁移结果，再重新发起升级。清除升级记录会丢失该次
    升级的面板时间线与回滚证明；设备日志和备份应继续保留。
 
