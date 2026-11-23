@@ -30,7 +30,7 @@
 - **存储结果、HTTP 状态码、中文报错文案**：不变（三组 live Flask 差分全部通过）。
 - **成功响应 `data` 回显**：
   - `POST/PUT /api/aggregations`、`POST/PUT /api/subscriptions`、`POST/PUT /api/rule-library`、`POST/PUT /api/proxy-groups` 的响应 `data` 现在直接序列化保存后的强类型记录（`model.Aggregation` / `model.Subscription` / `model.RuleLibraryItem` / `model.ProxyGroup`），按结构体声明顺序输出且不再回显未声明成员（例如请求中附带的自定义未知字段），与 batch-44 中 `api/rules` 和 `api/nodes` 的口径一致。
-  - `POST/PUT /api/subscriptions` 的声明字段由原先的 `json.Unmarshal` 宽松解码改为 `model.DecodeInputMember` 严格解码，非法字段类型（如错误类型的 `health_check` 或 `enabled`）现在返回 400 及仓库对应的中文验证提示，而非静默丢弃该字段。
+  - （batch-48 复核更正）订阅创建/修改、规则库创建改回按存储规则读入类型不对的成员（与改前相同，不报 400）；见 `review-batch-48.md`。
   - 上述变化已同步记录至 `server/parity/behaviour-changes.md` 的「O17 1.6」节。
 
 ## 验证（测试服务器 `.64`）
