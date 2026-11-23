@@ -1,31 +1,27 @@
 # O17 1.6 收尾：剩余 CRUD API 请求体强类型化
 
-分支：`go-o17-typed-rest`（基于 `go@595972901`）。
+分支：`go-o17-typed-rest`（叠在 `go-o17-agent-small@7145aa40d` 之上）。
 
 ## 改动摘要
 
-将 batch-44（O17 1.6）之后剩余 4 个 CRUD API 包中的 `model.Fields` / 字典式请求体全部改为强类型结构体，并合并重复的 JSON 对象请求体读取逻辑：
+复用 `go-o17-agent-small`（提交 `7145aa40d`）在 `internal/httpx` 中合并的 `httpx.BindObject`，将 batch-44（O17 1.6）之后剩余 4 个 CRUD API 包中的 `model.Fields` / 字典式请求体全部改为强类型结构体（通过 `httpx.BindObject[json.RawMessage]` + `jsondecode.Unmarshal` 保持精确大小写成员匹配，不再保留私有 `readBody`）：
 
-1. **共用请求体读取（`internal/httpx`）**
-   - 在 `internal/httpx/bind.go` 新增 `(c *Ctx) BindObject(silent bool) (json.RawMessage, bool, error)` 与泛型 `httpx.DecodeObject[T any](c *Ctx, silent bool) (*T, bool, error)`。
-   - 合并并删除 `api/aggregations`、`api/subscriptions`、`api/rulelibrary`、`api/proxygroups` 各自私有的 `readBody` / `requestObject` / `readGroup` / `decodeObject` 副本。
-
-2. **`internal/api/aggregations`**
+1. **`internal/api/aggregations`**
    - 删除 `aggregationFields struct{ model.Fields }` 与 `stripStats`、`readBody`。
    - 新增 `aggregationRequest`（`jsondecode.Member` 精确成员匹配）与 `decodeAggregation`，逐字段调用 `model.DecodeInputMember` 严格解码为 `model.Aggregation`；创建时在 `health_check` 缺失的情况下直接构造默认 `*model.ProviderHealthCheck`（保留兼容的 `health_check_url` 覆盖）。
    - 类型错误通过 `aggregationTypeError` 构造 `model.MemberTypeError` 并交给 `repo.InputError`，保留原中文报错文案；替换更新直接赋值 `shared.Aggregations[index]`，不再整表回序列化重解码。
 
-3. **`internal/api/subscriptions`**
+2. **`internal/api/subscriptions`**
    - 删除 `subscriptionFields struct{ model.Fields }` 与 `stripDerived`、`readBody`。
    - 新增 `subscriptionRequest` 与 `decodeSubscription`，在 `validateFields` / `validateOptions` 校验通过后按字段严格解码为 `model.Subscription`；创建时在 `health_check` 缺失时填充默认 `*model.ProviderHealthCheck`。
    - 类型错误经 `subscriptionTypeError` → `repo.InputError` 保留原中文报错文案；保留 `proxy map[string]json.RawMessage`（开放 Mihomo 代理协议定义）。
 
-4. **`internal/api/rulelibrary`**
+3. **`internal/api/rulelibrary`**
    - 删除 `type record = model.Fields` 以及整套字典辅助函数（`text`/`field`/`put`/`rows`/`child`/`stringField`/`stringsField`/`libraryItems`/`setLibrary`）。
    - 全部接口请求体改为专用 DTO：`libraryRequest`、`draftRequest`（保持严格仅允许 `revision` + `content` 两个字符串成员）、`singleRequest`、`cacheRequest`、`checkContentRequest`、`proxyDomainsRequest`；`GET /api/rule-library` 改为 `libraryListItem`（嵌入 `libraryItemWire` + `HasIPPart`），`GET /draft-content` 改为 `draftRule`。
    - 内部流转、缓存暂存、并发探测、变更判定全部直接使用 `model.RuleLibraryItem`；`declarationChanged`/`routingChanged`/`downloadChanged` 改为结构体字段比较，去掉逐字段 `json.Compact` 字节比对（顺带消除本包的 O17 1.9 痕迹）。
 
-5. **`internal/api/proxygroups`**
+4. **`internal/api/proxygroups`**
    - 删除 `groupFields struct{ model.Fields }`、`fieldsOf`、`groupOf`、`storeGroups`、`merge` 等字典桥接代码。
    - 新增 `groupRequest`（全成员使用 `jsondecode.Member`），在 `Create`/`Mutate` 中按组类型直接清理非所属成员（不论原类型）并补齐健康检查默认值，直接构建 `shared.GroupMembers` 参与候选与筛选校验，通过 `buildGroup` 严格解码为新 `model.ProxyGroup`（无写穿借用快照风险），类型错误经 `groupTypeError` → `repo.InputError` 保持原中文提示。
 
