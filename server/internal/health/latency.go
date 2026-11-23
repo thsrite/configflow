@@ -1,6 +1,7 @@
 package health
 
 import (
+	"encoding/json/jsontext"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -343,6 +344,10 @@ type LatencyEntry struct {
 	DNSServers   []string          `json:"dns_servers,omitzero"`
 	DNSBootstrap []string          `json:"dns_bootstrap,omitzero"`
 	UnifiedDelay *bool             `json:"unified_delay,omitzero"`
+	// Extensions are the worker's other measurement members, kept as
+	// reported and stored with the entry (node_latency.py stores the whole
+	// measurement); written after the declared members.
+	Extensions jsontext.Value `json:",embed"`
 	// damagedSettings: a stored test setting had the wrong type, so the
 	// entry's history is never continued (Python compared the stored value).
 	damagedSettings bool
@@ -355,6 +360,9 @@ type latencyWire LatencyEntry
 func (e *LatencyEntry) UnmarshalJSON(data []byte) error {
 	return model.DecodeLenient(data, (*latencyWire)(e))
 }
+
+// MarshalJSON writes the declared members, then the extensions.
+func (e LatencyEntry) MarshalJSON() ([]byte, error) { return model.Marshal(latencyWire(e)) }
 
 // sameTestSettings reports whether the stored entry was measured with the
 // same test settings; its history is then continued.

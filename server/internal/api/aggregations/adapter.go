@@ -347,11 +347,10 @@ func cachedCount(ctx context.Context, shared, aggregation record) (countReply, e
 			count, _ = json.Marshal(len(subs.FilterNodes(sub, cache.Nodes)))
 		} else {
 			// Summary counts retain malformed legacy count tokens in per-source output.
-			var fields map[string]json.RawMessage
-			if err := stored(cache, &fields); err != nil {
-				return result, err
+			count = cache.StoredCount
+			if len(count) == 0 && cache.Count != nil {
+				count, _ = json.Marshal(int64(*cache.Count))
 			}
-			count = fields["count"]
 			if len(count) == 0 {
 				count = json.RawMessage("0")
 			}

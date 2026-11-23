@@ -115,10 +115,10 @@ func TestLatencyEntryTypedRoundTripAndExtensionRetention(t *testing.T) {
 	if string(entry.Latency) != "42" || entry.Method != Method || len(entry.DNSServers) != 0 {
 		t.Fatal("typed attributes not decoded")
 	}
-	// Written as read (O18 T1d): the undeclared member and the wrong-typed
-	// setting are not kept.
+	// Written as read (O18 T1d): the wrong-typed setting is not kept; the
+	// worker's other members are (node_latency.py stores the measurement).
 	before, err := model.Marshal(entry)
-	if want := `{"latency":42,"method":"proxy_http_v2","history":[1.0,null]}`; err != nil || string(before) != want {
+	if want := `{"latency":42,"method":"proxy_http_v2","history":[1.0,null],"extra":{"number":1e2,"text":"\\u4e2d"}}`; err != nil || string(before) != want {
 		t.Fatalf("round trip: %s %v", before, err)
 	}
 	copy := entry

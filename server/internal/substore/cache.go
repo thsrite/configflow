@@ -415,6 +415,12 @@ func decodeCacheFile(ctx context.Context, id, path string) (*Cache, error) {
 		return nil, nil
 	}
 	cache.Issues = issues
+	var envelope struct {
+		Count json.RawMessage `json:"count"`
+	}
+	if jsondecode.Unmarshal(data, &envelope) == nil {
+		cache.StoredCount = envelope.Count
+	}
 	if cache.Count == nil {
 		var envelope struct {
 			Nodes json.RawMessage `json:"nodes"`

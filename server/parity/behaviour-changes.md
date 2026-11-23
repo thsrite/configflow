@@ -3072,8 +3072,8 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   删除 `model.DecodeRecord/EncodeRecord/SetMemberJSON/ClearMember/Raw/Map/Raw.MemberJSON/Issues/JSONHasContent/JSONSwitchEnabled` 和保原字节的 JSON 解析
   （`record.go/map.go/member.go/fields.go/json.go/switch.go/content.go`）；`model.Fields` 换成不保原片段的普通有序对象（`object.go`），编码器（`encode.go`）
   可直接写出没有编解码方法的结构体。JSON 真值判断统一为 `model.Truthy`/`model.Switch`。`_revision` 改为 `int64`（输入仍接受 `60.0` 这样的整数写法，不接受文本）。
-- **未声明成员丢弃**：上述文件第一次被 Go 重写时，不认识的成员不再写回（例如通知记录、区域/探测文件、Sub-Store 状态、向导会话里的扩展成员，
-  测速结果里节点测速组件以外的成员）。Python 写的这些文件实际只有已声明成员。
+- **未声明成员丢弃**：上述文件第一次被 Go 重写时，不认识的成员不再写回（例如通知记录、区域/探测文件、Sub-Store 状态、向导会话里的扩展成员）。
+  例外：节点测速结果保留测速组件报告的全部成员（`LatencyEntry.Extensions`），与 Python 相同。Python 写的这些文件实际只有已声明成员。
 - **存储里的 `null`**：可选文本/对象成员存成 `null` 读作缺失，重写时不写（例如通知记录的 `title: null`、`target: null`；任务回执的 `null` 成员）。
   例外：通知记录的 `profile_id/profile_name/checked_at/failure_count/evidence` 保留原 JSON（任务通知按 Python 写 `null`）。
   通知记录的 `occurrences` 为 `null`/非有限数时读作缺失（以前保留 `null`；Python 两种情况都无法再计数）。类型不对的计数读作 0。

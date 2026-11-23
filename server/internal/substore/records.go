@@ -42,6 +42,9 @@ type Cache struct {
 	Nodes          []model.Node       `json:"nodes"`
 	Metadata       *CacheMetadata     `json:"metadata,omitzero"`
 	Issues         []model.FieldIssue `json:"-"`
+	// StoredCount is the stored count token as written (summary counts
+	// without usable nodes add it with Python's numeric semantics).
+	StoredCount json.RawMessage `json:"-"`
 }
 
 // NodesDamaged reports a stored node list that is not a list or holds an
