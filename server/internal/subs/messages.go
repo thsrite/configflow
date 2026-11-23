@@ -64,3 +64,7 @@ const (
 	msgChainGroupType    = "策略组 type"
 	msgChainIdentityType = "%s 必须是字符串，当前值：%s"
 )
+
+// msgCustomConfigNotText: listener references are never rewritten into a
+// stored custom_config that is not text (model.DamagedText).
+const msgCustomConfigNotText = "mihomo.custom_config 不是文本，请在配置页重新填写后保存"

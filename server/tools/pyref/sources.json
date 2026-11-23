@@ -204,6 +204,7 @@
       "UnsupportedYAMLError.Error",
       "Upstreams",
       "hasNonStringKey",
+      "msgCustomConfigNotText",
       "msgCustomYAML",
       "rejectYAML",
       "textScalar"
@@ -415,6 +416,7 @@
       "UnsupportedYAMLError.Error",
       "Upstreams",
       "hasNonStringKey",
+      "msgCustomConfigNotText",
       "msgCustomYAML",
       "rejectYAML",
       "textScalar"
@@ -626,6 +628,7 @@
       "UnsupportedYAMLError.Error",
       "Upstreams",
       "hasNonStringKey",
+      "msgCustomConfigNotText",
       "msgCustomYAML",
       "rejectYAML",
       "textScalar"

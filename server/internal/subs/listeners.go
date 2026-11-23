@@ -67,6 +67,9 @@ func RelinkListeners(profile *model.Profile, oldName string, newName *string) ([
 	}
 	settings := &profile.Mihomo
 	source := settings.CustomConfig
+	if source == model.DamagedText {
+		return nil, lre(msgCustomConfigNotText)
+	}
 	if strings.TrimSpace(source) == "" || newName != nil && oldName == *newName {
 		return nil, nil
 	}

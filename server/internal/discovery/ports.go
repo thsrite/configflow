@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"configflow/internal/convert"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 	"errors"
@@ -11,6 +12,9 @@ import (
 
 func customPorts(text string) (map[int]bool, error) {
 	out := map[int]bool{}
+	if text == model.DamagedText {
+		return out, repo.NewValidationError(msgCustomConfigNotText)
+	}
 	parsed, parseErr := yamlx.Parse([]byte(text))
 	if parseErr != nil {
 		if errors.Is(parseErr, yamlx.ErrPolicy) || errors.Is(parseErr, yamlx.ErrAliasRecursion) || errors.Is(parseErr, yamlx.ErrAliasBudget) {

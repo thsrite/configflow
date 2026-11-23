@@ -83,3 +83,7 @@ const (
 	msgPublishedLog = "网关安装 %s：Mihomo 和 OxiDNS 均已发布并通过健康检查"
 	msgFailedLog    = "网关安装 %s 发布未完成：%s"
 )
+
+// msgCustomConfigNotText: ports cannot be checked against a stored
+// custom_config that is not text (model.DamagedText).
+const msgCustomConfigNotText = "mihomo.custom_config 不是文本，请在配置页重新填写后保存"

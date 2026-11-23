@@ -3,6 +3,7 @@ package subs
 import (
 	"testing"
 
+	"configflow/internal/model"
 	"configflow/internal/yamlx"
 )
 
@@ -26,5 +27,19 @@ func TestReviewO18T1dDNSSwitchNullIsAbsent(t *testing.T) {
 	settings, err := readDNSSettings(yamlx.Resolve(node))
 	if err != nil || settings.UseHosts == nil || *settings.UseHosts || settings.Enable == nil || !*settings.Enable || settings.Listen != "53" {
 		t.Fatalf("settings %+v, %v", settings, err)
+	}
+}
+
+// TestReviewO18T1dDamagedCustomConfigNotRelinked (M3 ruling): listener
+// references are never rewritten into a damaged custom_config.
+func TestReviewO18T1dDamagedCustomConfigNotRelinked(t *testing.T) {
+	profile := &model.Profile{}
+	profile.Mihomo.CustomConfig = model.DamagedText
+	next := "B"
+	if _, err := RelinkListeners(profile, "A", &next); err == nil || err.Error() != msgCustomConfigNotText {
+		t.Fatalf("err = %v", err)
+	}
+	if profile.Mihomo.CustomConfig != model.DamagedText {
+		t.Fatal("damaged base rewritten")
 	}
 }

@@ -172,6 +172,24 @@ func storedUnmarshalers(sink *issueSink) *jsonv2.Unmarshalers {
 			return nil
 		}),
 		jsonv2.UnmarshalFromFunc(func(dec *jsontext.Decoder, v *string) error {
+			// A restricted member tagged falsy:"empty" (a user's custom base
+			// configuration) follows Python's `value or ''`: a stored value
+			// that is not text reads as empty when Python's bool() of it is
+			// false, otherwise as DamagedText; both report the issue.
+			if kind := dec.PeekKind(); kind != '"' && kind != 'n' && storedTag(sink, dec.StackPointer()) == restrictTag {
+				if field, ok := leafField(sink.root, dec.StackPointer()); ok && field.Tag.Get("falsy") == "empty" {
+					value, err := dec.ReadValue()
+					if err != nil {
+						return err
+					}
+					*v = ""
+					if truthy(value) {
+						*v = DamagedText
+					}
+					sink.add(dec, IssueType)
+					return nil
+				}
+			}
 			switch dec.PeekKind() {
 			case '"':
 				token, err := dec.ReadToken()

@@ -32,6 +32,9 @@ func clientPreflight(ctx context.Context, config *model.Config, target string) e
 
 // SurgeConfig builds the complete client document from a resolved typed view.
 func SurgeConfig(ctx context.Context, config *model.Config, base string) (string, error) {
+	if config != nil && config.Profile != nil && config.Profile.Surge.CustomConfig == model.DamagedText {
+		return "", &CustomConfigYAMLError{Message: fmt.Sprintf(msgCustomConfigNotText, "surge")}
+	}
 	ctx = EnsureConversions(ctx)
 	if err := clientPreflight(ctx, config, "Surge"); err != nil {
 		return "", err
@@ -199,6 +202,9 @@ type clientLoonEntry struct {
 
 // LoonConfig builds remote sources, filters and policy references in stable order.
 func LoonConfig(ctx context.Context, config *model.Config, base string) (string, error) {
+	if config != nil && config.Profile != nil && config.Profile.Loon.CustomConfig == model.DamagedText {
+		return "", &CustomConfigYAMLError{Message: fmt.Sprintf(msgCustomConfigNotText, "loon")}
+	}
 	ctx = EnsureConversions(ctx)
 	if err := clientPreflight(ctx, config, "Loon"); err != nil {
 		return "", err

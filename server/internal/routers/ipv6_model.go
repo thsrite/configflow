@@ -260,6 +260,11 @@ func ipv6Document(config *model.Profile) (*yamlx.Node, error) {
 	if config != nil {
 		raw = config.Mihomo.CustomConfig
 	}
+	// A stored base that is not text is refused, not read as an empty base
+	// (which would withdraw the managed IPv6 settings).
+	if raw == model.DamagedText {
+		return nil, routerError(messageIPv6YAMLType)
+	}
 	if strings.TrimSpace(raw) == "" {
 		return yamlx.Map(), nil
 	}

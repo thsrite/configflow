@@ -125,6 +125,9 @@ func (s *Service) checkPorts(ctx context.Context, profile string, ports map[stri
 		return err
 	}
 	text := p.Mihomo.CustomConfig
+	if text == model.DamagedText {
+		return failure(msgCustomConfigNotText, 400)
+	}
 	document := convert.MihomoTemplate()
 	if strings.TrimSpace(text) != "" {
 		n, e := yamlx.Parse([]byte(text))

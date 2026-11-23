@@ -65,3 +65,7 @@ const (
 	msgRecheckProxy   = "直连已不通，建议改为代理"
 	msgRecheckEmpty   = "复检没有得到探测结果"
 )
+
+// msgCustomConfigNotText: listen ports cannot be checked against a stored
+// custom_config that is not text (model.DamagedText).
+const msgCustomConfigNotText = "mihomo.custom_config 不是文本，请在配置页重新填写后保存"

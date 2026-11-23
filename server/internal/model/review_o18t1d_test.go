@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -120,4 +121,78 @@ func TestReviewO18T1dLenientInvalidUTF8(t *testing.T) {
 		t.Fatalf("read value not writable: %v", err)
 	}
 	t.Logf("written %s", data)
+}
+
+// TestReviewO18T1dDamagedCustomConfig (M3 ruling): a stored custom_config of
+// Mihomo, Surge, Loon or MosDNS that is not text and is true for Python's
+// bool() reads as DamagedText with an issue (the repository decodes profile rows member by member and logs
+// it) and stays damaged when written back; null is an empty base.
+func TestReviewO18T1dDamagedCustomConfig(t *testing.T) {
+	engines := []string{"mihomo", "surge", "loon", "mosdns"}
+	read := func(t *testing.T, member func(engine string) string) (*Profile, []FieldIssue) {
+		t.Helper()
+		var profile Profile
+		var all []FieldIssue
+		for _, engine := range engines {
+			raw := member(engine)
+			if raw == "" {
+				continue
+			}
+			_, issues, err := DecodeStoredMember(&profile, engine, []byte(raw), "profiles[0]."+engine)
+			if err != nil {
+				t.Fatal(err)
+			}
+			all = append(all, issues...)
+		}
+		return &profile, all
+	}
+	texts := func(p *Profile) []string {
+		return []string{p.Mihomo.CustomConfig, p.Surge.CustomConfig, p.Loon.CustomConfig, p.MosDNS.CustomConfig}
+	}
+	for _, value := range []string{`{"a":1}`, `["x"]`, `true`, `5`, `1.5`, `-1e-3`} {
+		profile, issues := read(t, func(string) string { return `{"custom_config":` + value + `}` })
+		for i, text := range texts(profile) {
+			if text != DamagedText {
+				t.Errorf("%s: %s read %q", value, engines[i], text)
+			}
+		}
+		for _, engine := range engines {
+			path := "profiles[0]." + engine + ".custom_config"
+			if !slices.ContainsFunc(issues, func(issue FieldIssue) bool { return issue.Path == path && issue.Kind == IssueType }) {
+				t.Errorf("%s: no issue at %s (%v)", value, path, issues)
+			}
+		}
+		written := map[string][]byte{}
+		for _, engine := range engines {
+			data, _, err := EncodeMember(profile, engine)
+			if err != nil {
+				t.Fatal(err)
+			}
+			written[engine] = data
+		}
+		again, _ := read(t, func(engine string) string { return string(written[engine]) })
+		for i, text := range texts(again) {
+			if text != DamagedText {
+				t.Errorf("%s: %s rewritten as %q", value, engines[i], text)
+			}
+		}
+	}
+	// Python's `custom_config or ''`: a falsy value of another type is an
+	// empty base (reported), not damaged.
+	for _, value := range []string{`[]`, `{}`, `false`, `0`, `0.0`} {
+		profile, issues := read(t, func(string) string { return `{"custom_config":` + value + `}` })
+		for i, text := range texts(profile) {
+			if text != "" {
+				t.Errorf("%s: %s read %q", value, engines[i], text)
+			}
+		}
+		if len(issues) != len(engines) {
+			t.Errorf("%s: issues %v", value, issues)
+		}
+	}
+	members := map[string]string{"mihomo": `{"custom_config":null}`, "surge": `{"custom_config":"[General]"}`, "loon": `{}`, "mosdns": `{"custom_config":"log: {}"}`}
+	profile, issues := read(t, func(engine string) string { return members[engine] })
+	if got := texts(profile); got[0] != "" || got[1] != "[General]" || got[2] != "" || got[3] != "log: {}" || len(issues) != 0 {
+		t.Fatalf("texts %q issues %v", got, issues)
+	}
 }

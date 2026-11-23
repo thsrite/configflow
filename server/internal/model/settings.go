@@ -15,7 +15,7 @@ import (
 // LinuxGateway and LinuxGatewayRestorePoint are schema-free objects owned by
 // the router-split and Linux gateway features.
 type MihomoSettings struct {
-	CustomConfig             string            `json:"custom_config"`
+	CustomConfig             string            `json:"custom_config" stored:"restrict" falsy:"empty"`
 	ProviderUpdateInterval   *Int              `json:"provider_update_interval,omitzero"`
 	EasyTier                 *EasyTierSettings `json:"easytier,omitzero"`
 	RouterSplit              Dynamic           `json:"router_split,omitzero"`
@@ -25,7 +25,7 @@ type MihomoSettings struct {
 
 // SurgeSettings stores the editable client text and explicit smart-group choices.
 type SurgeSettings struct {
-	CustomConfig string            `json:"custom_config"`
+	CustomConfig string            `json:"custom_config" stored:"restrict" falsy:"empty"`
 	SmartGroups  []SurgeSmartGroup `json:"smart_groups,omitzero"`
 }
 
@@ -37,7 +37,7 @@ type SurgeSmartGroup struct {
 
 // LoonSettings stores the editable Loon client text.
 type LoonSettings struct {
-	CustomConfig string `json:"custom_config"`
+	CustomConfig string `json:"custom_config" stored:"restrict" falsy:"empty"`
 }
 
 // EasyTierSettings holds the profile overlay settings without applying defaults during decoding.
@@ -100,7 +100,7 @@ type EasyTierOptions struct {
 // normalizing a draft. The cache numbers are int:"text": Python's editor read
 // them with int(), so input may give them as ASCII decimal text.
 type MosDNSSettings struct {
-	CustomConfig        string        `json:"custom_config"`
+	CustomConfig        string        `json:"custom_config" stored:"restrict" falsy:"empty"`
 	DirectRulesets      []string      `json:"direct_rulesets"`
 	ProxyRulesets       []string      `json:"proxy_rulesets"`
 	DirectRules         []string      `json:"direct_rules"`

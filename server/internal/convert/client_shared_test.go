@@ -31,13 +31,15 @@ func TestTypedClientSharedScalarOrList(t *testing.T) {
 	}
 }
 
+// TestTypedClientSharedCustomConfigText: a client base stored as a number is
+// damaged (O18 T1d review M3 ruling; Python failed on it), zero is empty.
 func TestTypedClientSharedCustomConfigText(t *testing.T) {
 	var profile model.Profile
-	if err := json.Unmarshal([]byte(`{"surge":{"custom_config":1.5},"loon":{"custom_config":2}}`), &profile); err != nil {
+	if err := json.Unmarshal([]byte(`{"surge":{"custom_config":1.5},"loon":{"custom_config":0}}`), &profile); err != nil {
 		t.Fatal(err)
 	}
-	if profile.Surge.CustomConfig != "1.5" || profile.Loon.CustomConfig != "2" {
-		t.Fatalf("shared numeric text: %+v", profile)
+	if profile.Surge.CustomConfig != model.DamagedText || profile.Loon.CustomConfig != "" {
+		t.Fatalf("shared numeric text: %q %q", profile.Surge.CustomConfig, profile.Loon.CustomConfig)
 	}
 }
 

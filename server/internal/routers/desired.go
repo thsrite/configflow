@@ -3,6 +3,7 @@ package routers
 import (
 	"cmp"
 	"configflow/internal/jsondecode"
+	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
@@ -65,6 +66,10 @@ func RuleSourceIssue(item *RuleSet, library *LibraryRule, requireLibrary bool) s
 // Ordinary syntax errors and absent/invalid range values use the established
 // default; facade policy and unsafe-alias errors are returned before planning.
 func FakeIPNetwork(customConfig string) (netip.Prefix, error) {
+	// A stored base that is not text has no fake-ip range (not the default).
+	if customConfig == model.DamagedText {
+		return netip.Prefix{}, routerError(messageIPv6YAMLType)
+	}
 	doc, err := yamlx.Parse([]byte(customConfig))
 	if err != nil && !errors.Is(err, yamlx.ErrSyntax) {
 		return netip.Prefix{}, err

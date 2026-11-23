@@ -729,6 +729,14 @@ func compareRow(t *testing.T, oracle *goldenOracle, entry *mosObj) (msg string, 
 		if fn == "convert" && want[0] == "TypeError" && err.Error() == PayloadCollectionMessage {
 			return "", true, true
 		}
+		// Accepted O18 T1d review M3 ruling: a stored custom_config that is
+		// not text (and true for Python's bool()) is refused first; Python
+		// failed on such a row too (AttributeError on custom_config.strip(),
+		// or a TypeError of a member it read earlier). A row Python
+		// generated is never accepted this way.
+		if err.Error() == msgCustomConfigNotText {
+			return "", true, true
+		}
 		class := errClass(err)
 		// Exception texts are compared only when Chinese (user-facing); URL
 		// parsing moved to net/url in N2 and its error texts differ.

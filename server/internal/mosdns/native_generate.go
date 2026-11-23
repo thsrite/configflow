@@ -108,6 +108,9 @@ func Generate(config *model.Config, baseURL string) (string, error) {
 }
 
 func document(config *model.Config, baseURL string) (*yamlx.Node, error) {
+	if config != nil && config.Profile != nil && config.Profile.MosDNS.CustomConfig == model.DamagedText {
+		return nil, &UnsupportedYAMLError{Msg: msgCustomConfigNotText}
+	}
 	layout, err := layoutFor(config)
 	if err != nil {
 		return nil, err

@@ -66,7 +66,7 @@ func TestNativeMihomoStoredMemberFallbacks(t *testing.T) {
 		source, path string
 		compatible   bool
 	}{
-		{`{"mihomo":{"custom_config":5}}`, "mihomo.custom_config", true},
+		{`{"mihomo":{"custom_config":5}}`, "mihomo.custom_config", false},
 		{`{"mihomo":{"provider_update_interval":"300"}}`, "mihomo.provider_update_interval", true},
 		{`{"proxy_groups":[{"id":"g","type":"select","interval":"300"}]}`, "proxy_groups[0].interval", true},
 		{`{"subscriptions":[{"id":"s","health_check":"x"}]}`, "subscriptions[0].health_check", false},
@@ -86,8 +86,9 @@ func TestNativeMihomoStoredMemberFallbacks(t *testing.T) {
 			}
 			switch tt.path {
 			case "mihomo.custom_config":
-				if profile.Mihomo.CustomConfig != "5" {
-					t.Fatal("numeric base text not decoded")
+				// O18 T1d review M3 ruling: a numeric base is damaged.
+				if profile.Mihomo.CustomConfig != model.DamagedText {
+					t.Fatal("numeric base not read as damaged")
 				}
 			case "mihomo.provider_update_interval":
 				if profile.Mihomo.ProviderUpdateInterval == nil || *profile.Mihomo.ProviderUpdateInterval != 300 {

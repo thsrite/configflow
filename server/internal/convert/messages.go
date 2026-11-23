@@ -4,10 +4,13 @@ package convert
 const AfterMatchNote = "仅 Mihomo 生效（位于 MATCH 之后，只匹配节点不支持 UDP 而跳过的连接），已忽略"
 
 const (
-	msgIPv6Boolean           = "ipv6 必须为 true 或 false，不能是字符串或拼写错误的值"
-	msgDNSIPv6Boolean        = "dns 下的 ipv6 必须为 true 或 false，不能是字符串或拼写错误的值"
-	msgCustomYAMLInvalid     = "mihomo.custom_config YAML 解析失败: "
-	msgCustomYAMLMapping     = "mihomo.custom_config 不是 mapping，得到 "
+	msgIPv6Boolean       = "ipv6 必须为 true 或 false，不能是字符串或拼写错误的值"
+	msgDNSIPv6Boolean    = "dns 下的 ipv6 必须为 true 或 false，不能是字符串或拼写错误的值"
+	msgCustomYAMLInvalid = "mihomo.custom_config YAML 解析失败: "
+	msgCustomYAMLMapping = "mihomo.custom_config 不是 mapping，得到 "
+	// msgCustomConfigNotText: a stored custom_config that is not text (read
+	// as model.DamagedText) is refused, never generated as an empty base.
+	msgCustomConfigNotText   = "%s.custom_config 不是文本，请在配置页重新填写后保存"
 	msgProxyYAMLInvalid      = "代理 YAML 校验失败"
 	msgProxyYAMLNode         = "代理 YAML 节点无效"
 	msgProxyYAMLScalar       = "代理 YAML 标量无法转换"

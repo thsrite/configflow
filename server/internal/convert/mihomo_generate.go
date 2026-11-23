@@ -116,6 +116,9 @@ func readMihomoBase(text string) (*yamlx.Node, error) {
 	return node, nil
 }
 func customMihomoBase(text string) (*yamlx.Node, error) {
+	if text == model.DamagedText {
+		return nil, &CustomConfigYAMLError{Message: fmt.Sprintf(msgCustomConfigNotText, "mihomo")}
+	}
 	if strings.TrimSpace(text) == "" {
 		return MihomoTemplate(), nil
 	}
