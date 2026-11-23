@@ -45,14 +45,16 @@ func TestRecordPreservesUnknownAndExplicitClear(t *testing.T) {
 	var a, b map[string]json.RawMessage
 	json.Unmarshal(raw, &a)
 	json.Unmarshal(encoded, &b)
-	if !bytes.Equal(a["future"], b["future"]) || string(b["profile_revision"]) != "0" || string(b["prepared"]) != "false" {
-		t.Fatal("lost stored fields", string(encoded))
+	// Undeclared members are dropped (O18 T1d); declared ones keep their
+	// values, false and 0 included.
+	if b["future"] != nil || string(b["profile_revision"]) != "0" || string(b["prepared"]) != "false" || string(b["domain_rules"]) != `{"direct":[],"proxy":[]}` {
+		t.Fatal("stored fields", string(encoded))
 	}
 	if err := record.clear("router_draft"); err != nil {
 		t.Fatal(err)
 	}
 	encoded, err = json.Marshal(record)
-	if err != nil || bytes.Contains(encoded, []byte(`"router_draft"`)) || !bytes.Contains(encoded, a["future"]) {
+	if err != nil || bytes.Contains(encoded, []byte(`"router_draft"`)) {
 		t.Fatalf("clear failed: %s %v", encoded, err)
 	}
 	if err := json.Unmarshal([]byte(`{"prepared":"wrong"}`), &record); !errors.Is(err, ErrCorruptRecord) {

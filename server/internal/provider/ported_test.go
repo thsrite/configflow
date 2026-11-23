@@ -381,7 +381,7 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 		t.Fatal(err)
 	}
 	if first.Content != second.Content || calls != 1 ||
-		first.CacheUpdates[0].Metadata.FetchedAt != second.CacheUpdates[0].Metadata.FetchedAt {
+		model.TextValue(first.CacheUpdates[0].Metadata.FetchedAt) != model.TextValue(second.CacheUpdates[0].Metadata.FetchedAt) {
 		t.Fatalf("calls %d", calls)
 	}
 	if cache, _ := substore.LoadCache(ctx, "s"); cache != nil {

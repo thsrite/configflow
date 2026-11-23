@@ -44,6 +44,7 @@ type SourceMetadata struct {
 // text (the cache must not be claimed for any URL); UpdatedAtDamaged: the
 // stored updated_at is not text.
 type NodeCache struct {
+	SubscriptionID   string          `json:"subscription_id"`
 	Nodes            []model.Node    `json:"nodes"`
 	Count            model.Int       `json:"count"`
 	UpdatedAt        *string         `json:"updated_at"`

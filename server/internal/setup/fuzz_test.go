@@ -25,13 +25,11 @@ func FuzzSetupRecord(f *testing.F) {
 		if err := json.Unmarshal(encoded, &again); err != nil {
 			t.Fatal(err)
 		}
-		var before, after any
-		json.Unmarshal(raw, &before)
-		json.Unmarshal(encoded, &after)
-		a, _ := json.Marshal(before)
-		b, _ := json.Marshal(after)
-		if string(a) != string(b) {
-			t.Fatalf("stored fields changed: %s / %s", a, b)
+		// A session is written in its typed form (O18 T1d): undeclared
+		// members are dropped, the encoding is stable.
+		repeated, err := json.Marshal(again)
+		if err != nil || string(repeated) != string(encoded) {
+			t.Fatalf("session encoding not stable: %s / %s", encoded, repeated)
 		}
 	})
 }

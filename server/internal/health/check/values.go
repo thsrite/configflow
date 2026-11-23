@@ -118,9 +118,9 @@ func (o *rawJSONObject) UnmarshalJSON(data []byte) error { return o.Fields.Unmar
 
 func (o rawJSONObject) MarshalJSON() ([]byte, error) { return o.Fields.MarshalJSON() }
 
-// decodeClean decodes stored or reported JSON into v leniently and reports
+// decodeClean decodes a stored or reported map into v leniently and reports
 // whether every value had its declared type.
-func decodeClean(data []byte, v any) bool {
+func decodeClean[V NullableText | TimedRecord](data []byte, v *model.OrderedMap[V]) bool {
 	issues, err := model.DecodeStored(data, v, "")
 	return err == nil && len(issues) == 0
 }

@@ -494,6 +494,10 @@ func TestReferenceCorpus(t *testing.T) {
 		if skipOut {
 			continue
 		}
+		if !testjson.Equal(want, out) && testjson.Equal(o18T1dWithoutUndeclared(want), o18T1dWithoutUndeclared(out)) {
+			accepted["O18 T1d: undeclared member of a stored file or worker result dropped"]++
+			continue
+		}
 		if !testjson.Equal(want, out) {
 			failures++
 			t.Errorf("row %d %s:\n want %s\n got  %s", i, label, encode(want), encode(out))
@@ -507,6 +511,53 @@ func TestReferenceCorpus(t *testing.T) {
 		t.Errorf("typed reference entries exercised=%d, want %d", nativeCount, len(native))
 	}
 	t.Logf("%d rows, %d differences, classified=%v, O18 T1c 接受=%v", len(corpus.Rows), failures, classified, accepted)
+}
+
+// o18T1dUndeclared are the members the synthetic Python fixtures add beside
+// declared ones (a region or probe file's "keep"/"extra", a worker result's
+// "name2"). Since O18 T1d the Go records drop undeclared members of DATA_DIR
+// files and worker results (accepted difference).
+var o18T1dUndeclared = map[string]bool{"keep": true, "extra": true, "name2": true}
+
+// o18T1dWithoutUndeclared returns value (decoded JSON) without those members.
+func o18T1dWithoutUndeclared(value any) any {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+	var decoded any
+	if json.Unmarshal(data, &decoded) != nil {
+		return value
+	}
+	var strip func(any) any
+	strip = func(v any) any {
+		switch typed := v.(type) {
+		case map[string]any:
+			out := map[string]any{}
+			for key, item := range typed {
+				if !o18T1dUndeclared[key] {
+					out[key] = strip(item)
+				}
+			}
+			return out
+		case []any:
+			for i := range typed {
+				typed[i] = strip(typed[i])
+			}
+			return typed
+		case string:
+			// A file kept as text (the store's "after" bytes).
+			var inner map[string]any
+			if strings.HasPrefix(typed, "{") && json.Unmarshal([]byte(typed), &inner) == nil {
+				stripped, _ := json.Marshal(strip(inner))
+				var compact map[string]any
+				_ = json.Unmarshal(stripped, &compact)
+				return compact
+			}
+		}
+		return v
+	}
+	return strip(decoded)
 }
 
 // o18T1cDirtyHealthCheck reports a subscription whose stored health_check has
@@ -529,9 +580,15 @@ func saveProbeRaw(store *check.ProbeStore, agentID string, raw json.RawMessage, 
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || trimmed[0] != '{' {
 		return &check.ValueError{Message: "探测记录必须为对象且 checked_at 为字符串"}
 	}
+	// A result entry that is not an object cannot be represented in the
+	// typed map: the caller's validation refuses it (Python's message).
 	var entries model.OrderedMap[check.TimedRecord]
-	if err := jsondecode.Unmarshal(trimmed, &entries); err != nil {
+	issues, err := model.DecodeStored(trimmed, &entries, "")
+	if err != nil {
 		return err
+	}
+	if len(issues) > 0 {
+		return &check.ValueError{Message: "探测记录必须为对象且 checked_at 为字符串"}
 	}
 	return store.SaveEntries(agentID, entries, now)
 }

@@ -179,7 +179,7 @@ func TestR5FallbacksAndStoreValidation(t *testing.T) {
 		t.Fatalf("unexpected decoded PathStats: %+v", ps)
 	}
 	encoded, err := json.Marshal(ps)
-	if want := `{"ok":0,"total":2,"delays":[],"errors":{}}`; err != nil || string(encoded) != want {
+	if want := `{"ok":0,"total":2,"delays":null,"errors":{}}`; err != nil || string(encoded) != want {
 		t.Fatalf("round-trip mismatch: got %s, want %s (%v)", encoded, want, err)
 	}
 

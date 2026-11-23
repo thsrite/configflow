@@ -188,8 +188,8 @@ func RequireDocument(n *yamlx.Node) error {
 type Context struct {
 	SessionGoal       *string       `json:"session_goal"`
 	SessionID         *model.String `json:"session_id"`
-	SessionCompleted  bool          `json:"session_completed"`
-	HasGatewaySession bool          `json:"has_gateway_session"`
+	SessionCompleted  bool          `json:"session_completed" stored:"gate"`
+	HasGatewaySession bool          `json:"has_gateway_session" stored:"gate"`
 	MihomoAgentIDs    []string      `json:"mihomo_agent_ids"`
 	invalidIdentity   bool
 }
@@ -197,7 +197,7 @@ type Context struct {
 type contextWire Context
 
 // UnmarshalJSON reads a legacy context leniently; an identity of the wrong
-// type marks it invalid.
+// type marks it invalid, a flag of another type than a boolean is false.
 func (c *Context) UnmarshalJSON(b []byte) error {
 	if err := model.DecodeLenient(b, (*contextWire)(c)); err != nil {
 		return err
@@ -234,15 +234,15 @@ func (c *Context) UnmarshalJSON(b []byte) error {
 type Session struct {
 	ID        *model.String `json:"id"`
 	Goal      *string       `json:"goal"`
-	Abandoned bool          `json:"abandoned"`
-	Completed bool          `json:"completed"`
+	Abandoned bool          `json:"abandoned" stored:"gate"`
+	Completed bool          `json:"completed" stored:"gate"`
 	invalidID bool
 }
 
 type sessionWire Session
 
 // UnmarshalJSON reads the setup-session view leniently; an ID of the wrong
-// type marks it invalid.
+// type marks it invalid, a flag of another type than a boolean is false.
 func (s *Session) UnmarshalJSON(b []byte) error {
 	if err := model.DecodeLenient(b, (*sessionWire)(s)); err != nil {
 		return err

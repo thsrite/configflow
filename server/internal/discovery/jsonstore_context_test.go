@@ -113,8 +113,9 @@ func TestDiscoveryJSONStoreOwnerLifetime(t *testing.T) {
 					if err := json.Unmarshal(raw, &stored); err != nil {
 						t.Fatal(err)
 					}
-					if string(stored["opaque"]) != `"keep"` {
-						t.Errorf("lost unknown sibling: %s", raw)
+					// An undeclared member is not written back (O18 T1d).
+					if _, kept := stored["opaque"]; kept {
+						t.Errorf("undeclared sibling kept: %s", raw)
 					}
 					if operation == "probe" {
 						got := probe.LoadEntries("synthetic", now())

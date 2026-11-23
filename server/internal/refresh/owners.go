@@ -175,7 +175,11 @@ func sourceCache(cache *substore.Cache, err error) (*NodeCache, error) {
 	if err != nil || cache == nil {
 		return nil, err
 	}
-	out := &NodeCache{Nodes: cache.Nodes, UpdatedAt: new(cache.UpdatedAt)}
+	// A missing or null updated_at reads as "" and is no timestamp.
+	out := &NodeCache{SubscriptionID: cache.SubscriptionID, Nodes: cache.Nodes}
+	if cache.UpdatedAt != "" {
+		out.UpdatedAt = new(cache.UpdatedAt)
+	}
 	if cache.Count != nil {
 		out.Count = *cache.Count
 	}

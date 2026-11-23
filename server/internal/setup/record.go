@@ -73,6 +73,11 @@ func (r *Record) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON writes the session in declaration order; the always-written
+// members (Python creates every session with them) include empty lists as
+// [], optional members only when set.
+func (r Record) MarshalJSON() ([]byte, error) { return model.Marshal(recordWire(r)) }
+
 // Selections contains the two independently ordered domain-rule choices.
 type Selections struct {
 	Direct []string `json:"direct"`
@@ -99,6 +104,9 @@ func (s *Selections) UnmarshalJSON(data []byte) error {
 	*s = Selections(next)
 	return nil
 }
+
+// MarshalJSON writes both lists, empty ones as [].
+func (s Selections) MarshalJSON() ([]byte, error) { return model.Marshal(selectionsWire(s)) }
 
 // requireObject refuses stored data that is not a JSON object.
 func requireObject(data []byte) error {

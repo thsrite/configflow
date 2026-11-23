@@ -84,12 +84,17 @@ type PathStats struct {
 	Errors model.OrderedMap[model.Int] `json:"errors"`
 }
 
-// UnmarshalJSON decodes reported statistics leniently.
+// UnmarshalJSON decodes reported statistics leniently; a delay list with an
+// element that is not a number reads as no delays.
 func (s *PathStats) UnmarshalJSON(data []byte) error {
 	type wire PathStats
 	var decoded wire
-	if _, err := model.DecodeStored(data, &decoded, ""); err != nil {
+	issues, err := model.DecodeStored(data, &decoded, "")
+	if err != nil {
 		return err
+	}
+	if model.IssueUnder(issues, "delays") {
+		decoded.Delays = nil
 	}
 	*s = PathStats(decoded)
 	return nil

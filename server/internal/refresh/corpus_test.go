@@ -574,10 +574,36 @@ func checkScenario(t *testing.T, clock *fakeClock, row map[string]any, native ma
 		if label == "rows" {
 			want = storedSwitchTruth(t, want, got, mapObj(files, "shared"))
 		}
+		want = healthDroppedTraffic(want).(map[string]any)
 		if !yamlxtest.EqualJSON(got, want) {
 			t.Errorf("scenario %s / %s: %s\n  got  %s\n  want %s", name, label, testjson.Diff(want, got), compactJSON(got), compactJSON(want))
 		}
 	}
+}
+
+// healthDroppedTraffic removes, from expected health output, a subscription's
+// traffic member that is not an object. Accepted O18 T1d difference: the
+// recorded entry is rewritten from its typed form, where traffic of another
+// type reads as absent (Python kept the stored value).
+func healthDroppedTraffic(want any) any {
+	root, ok := want.(map[string]any)
+	if !ok {
+		return want
+	}
+	output, ok := root["output"].(map[string]any)
+	if !ok {
+		return want
+	}
+	for _, entry := range output {
+		if fields, ok := entry.(map[string]any); ok {
+			if traffic, present := fields["traffic"]; present {
+				if _, object := traffic.(map[string]any); !object {
+					delete(fields, "traffic")
+				}
+			}
+		}
+	}
+	return want
 }
 
 // storedSwitchTruth handles, in the expected task rows, a subscription or

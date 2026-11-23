@@ -457,9 +457,17 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 						if !rawCheck.Has("domains") || !rawCheck.Has("websites") {
 							return &check.ValueError{Message: "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"}
 						}
+						// Sections or entries that are not objects cannot be
+						// represented in the typed record: refused as Python did.
 						var next check.RegionData
-						if uerr := jsondecode.Unmarshal(rec.mutated, &next); uerr != nil {
+						issues, uerr := model.DecodeStored(rec.mutated, &next, "")
+						if uerr != nil {
 							return uerr
+						}
+						for _, issue := range issues {
+							if model.IssueUnder([]model.FieldIssue{issue}, "domains") || model.IssueUnder([]model.FieldIssue{issue}, "websites") {
+								return &check.ValueError{Message: "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"}
+							}
 						}
 						*data = next
 						return nil
@@ -508,6 +516,10 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 			want["after"] = row["after"]
 		}
 		equal := testjson.Equal(want, got)
+		if !equal && testjson.Equal(o18T1dWithoutUndeclared(want), o18T1dWithoutUndeclared(got)) {
+			counts["accepted (O18 T1d: undeclared member dropped)"]++
+			continue
+		}
 		if !equal && len(runner.mismatch) == 0 && n2Accepted(got, want, row) {
 			counts["accepted (N2 URL parsing)"]++
 			continue
