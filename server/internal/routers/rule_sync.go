@@ -133,6 +133,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 		return s.store().Write(work, profile, r.ID, RuleSyncReceipt{Status: "synced", Message: messageSyncCaptured, SyncedAt: &timestamp, UpdatedAt: &timestamp, Baseline: baseline, Rules: records, RuleOrder: syncSelectedOrder(config, r)})
 	}()
 	if err == nil {
+		ruleSyncLoop.wake.Notify()
 		return nil
 	}
 	if work.Err() != nil {
@@ -553,8 +554,12 @@ func (s *RuleSyncService) RunRound(ctx context.Context) error {
 				next = min(next, interval-elapsed)
 				continue
 			}
-			if _, err = copyService.Sync(held, profile.ID, r.ID, "schedule"); err != nil && held.Err() != nil {
-				return held.Err()
+			if _, err = copyService.Sync(held, profile.ID, r.ID, "schedule"); err != nil {
+				if held.Err() != nil {
+					return held.Err()
+				}
+				next = min(next, RuleSyncPause)
+				continue
 			}
 			next = min(next, interval)
 		}

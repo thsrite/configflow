@@ -8,8 +8,10 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/lifecycle/lifecycletest"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers/routerfake"
@@ -272,4 +274,99 @@ func FuzzR14Classify(f *testing.F) {
 			t.Fatal("inconsistent counts")
 		}
 	})
+}
+
+func TestO17FollowupCaptureWakesRuleSyncLoop(t *testing.T) {
+	service, _, r := r14Fixture(t)
+	ctx := repo.WithRepository(t.Context(), service.Repo)
+	// Remove the captured receipt so the first round sleeps for RuleSyncMaxPause.
+	if err := os.Remove(service.store().path("default", r.ID)); err != nil {
+		t.Fatal(err)
+	}
+	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
+	reg := lifecycle.NewRegistry()
+	rounds := make(chan struct{}, 4)
+	reg.RegisterPeriodic(lifecycle.Periodic{
+		Name:       "router-rule-sync",
+		Start:      lifecycle.AtBoot,
+		FirstDelay: 30 * time.Second,
+		Interval:   ruleSyncPause,
+		Wake:       &ruleSyncLoop.wake,
+		OnStart:    func(context.Context) { ruleSyncLoop.wake.Clear(); ruleSyncLoop.pause.Store(0) },
+		Round: func(rctx context.Context) error {
+			err := service.RunRound(rctx)
+			rounds <- struct{}{}
+			return err
+		},
+	})
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: reg, Clock: clock})
+	runtime.Start(ctx)
+	defer runtime.Shutdown(context.Background())
+
+	awaitTimer := func() {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if clock.Pending() == 1 {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatalf("timer not pending (pending=%d)", clock.Pending())
+	}
+	awaitTimer()
+	clock.Advance(30 * time.Second)
+	<-rounds
+	awaitTimer()
+	if got := ruleSyncPause(ctx); got != RuleSyncMaxPause {
+		t.Fatalf("pause without baseline = %v, want %v", got, RuleSyncMaxPause)
+	}
+
+	// Capture a fresh baseline; this must wake the sleeping loop at once
+	// without advancing the clock.
+	cfg, err := syncConfig(ctx, service.Repo, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := findSyncRouter(cfg, r.ID)
+	_, records, err := loadSyncSources(ctx, cfg, router, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := service.driver(router)
+	defer d.Close()
+	inspection, err := Inspect(ctx, InspectRequest{Loader: syncIPLoader(records), ProfileID: "default", Config: cfg, Router: router, Driver: d, Agents: service.Agents, Repo: service.Repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Capture(ctx, "default", cfg, router, d, inspection.Desired); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-rounds:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Capture did not wake router-rule-sync")
+	}
+	receipt, err := service.store().Read(ctx, "default", r.ID)
+	if err != nil || receipt.CheckedAt == nil {
+		t.Fatalf("expected first check to run after Capture wake, receipt=%+v err=%v", receipt, err)
+	}
+}
+
+func TestO17FollowupBusySyncRetriesWithin30Seconds(t *testing.T) {
+	service, _, r := r14Fixture(t)
+	ctx := repo.WithRepository(t.Context(), service.Repo)
+	// Hold the router job lock to simulate a round racing with an in-flight publish.
+	_, release, err := RouterJobLock(ctx, "default", r.ID, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+
+	if err := service.RunRound(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := ruleSyncPause(ctx); got > RuleSyncPause || got < time.Second {
+		t.Fatalf("pause after busy sync = %v, want <= %v", got, RuleSyncPause)
+	}
 }
