@@ -124,6 +124,9 @@ images in lab registry 10.97.0.151:5000; + gate cross-build stage dfba21fcb). Ga
 TestManualRollbackRestoresCurrentRevisionOnlyAndKeepsState timed out once at 12 s under load; 10× rerun + agent
 stage rerun PASS → flaky under load, watch. L6 rulings: snapshot fetched read-only by the coordinator at soak
 start; Python final = v2.2.0; gateways keep egress during soak; CT 251 and the cfgt DNS redirect live/die together.
+batch-47 MERGED (O10 cache budget; PVE CT 240 before/after: post-load live-heap growth +11.4 → +5.8 MB, settled RSS
+92.9 → 78.2 MB, idle CPU flat 0.5%, 19-route CPU 394 → 406 ms (+3%, /api/routers single-run noise suspected — recheck in
+final acceptance); author's CPU/latency gains not reproduced; review-batch-47.md).
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
