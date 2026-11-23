@@ -56,6 +56,12 @@ func (r *Repository) borrow(ctx context.Context, fn func(document *model.Documen
 // fn read; head is nil when fn read a writer's working copy, which has no
 // head yet.
 func (r *Repository) borrowAt(ctx context.Context, fn func(document *model.Document, shared bool) error) (*store.Head, error) {
+	return r.borrowWithHead(ctx, func(document *model.Document, _ *store.Head, shared bool) error {
+		return fn(document, shared)
+	})
+}
+
+func (r *Repository) borrowWithHead(ctx context.Context, fn func(document *model.Document, head *store.Head, shared bool) error) (*store.Head, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -75,7 +81,7 @@ func (r *Repository) borrowAt(ctx context.Context, fn func(document *model.Docum
 	if shared {
 		r.guardBorrow(document, document)
 	}
-	return head, fn(document, shared)
+	return head, fn(document, head, shared)
 }
 
 // lend returns a shallow copy of a snapshot record for a borrowing read, or a

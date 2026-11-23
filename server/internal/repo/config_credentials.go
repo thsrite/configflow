@@ -4,30 +4,30 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
-	"weak"
 
 	"configflow/internal/model"
+	"configflow/internal/store"
 )
 
-// configCredentials remembers, for one immutable snapshot document, the
-// credential values found in the encoded ConfigWithOxiDNSAgents view of each
-// profile. The weak pointer identifies the generation without keeping a
-// replaced document alive.
+// configCredentials remembers, for one configuration generation (SameConfig),
+// the credential values found in the encoded ConfigWithOxiDNSAgents view of
+// each profile. Because ConfigWithOxiDNSAgents reads no state member, a
+// state-only commit keeps the cached credentials valid.
 type configCredentials struct {
-	document weak.Pointer[model.Document]
-	mu       sync.Mutex
-	values   map[string][]string
+	head   store.Head
+	mu     sync.Mutex
+	values map[string][]string
 }
 
 // ConfigCredentials returns the credential values collect finds in the
 // encoded ConfigWithOxiDNSAgents view of profileID. A borrowing read
-// remembers them per generation and profile, so a cached generation resolves
-// nothing; inside a write transaction or section updater they are collected
-// from the working copy each time. collect must depend only on its input; the
-// returned slice is shared and must not be modified.
+// remembers them per configuration generation and profile, so a cached
+// generation resolves nothing; inside a write transaction or section updater
+// they are collected from the working copy each time. collect must depend only
+// on its input; the returned slice is shared and must not be modified.
 func (r *Repository) ConfigCredentials(ctx context.Context, profileID string, collect func(json.RawMessage) []string) (values []string, err error) {
-	err = r.borrow(ctx, func(document *model.Document, shared bool) error {
-		values, err = r.configCredentials(document, shared, profileID, nil, collect)
+	_, err = r.borrowWithHead(ctx, func(document *model.Document, head *store.Head, shared bool) error {
+		values, err = r.configCredentials(document, head, shared, profileID, nil, collect)
 		return err
 	})
 	return values, err
@@ -37,11 +37,11 @@ func (r *Repository) ConfigCredentials(ctx context.Context, profileID string, co
 // ConfigCredentials for the same generation: the credential values belong to
 // exactly the returned view. The view is borrowed like Config.
 func (r *Repository) ConfigWithCredentials(ctx context.Context, profileID string, collect func(json.RawMessage) []string) (result *model.Config, values []string, err error) {
-	err = r.borrow(ctx, func(document *model.Document, shared bool) error {
+	_, err = r.borrowWithHead(ctx, func(document *model.Document, head *store.Head, shared bool) error {
 		if result, err = resolveConfig(document, profileID, ResourceRoots{}, agentCopyOxiDNS, shared); err != nil {
 			return err
 		}
-		values, err = r.configCredentials(document, shared, profileID, result, collect)
+		values, err = r.configCredentials(document, head, shared, profileID, result, collect)
 		return err
 	})
 	return result, values, err
@@ -51,7 +51,7 @@ func (r *Repository) ConfigWithCredentials(ctx context.Context, profileID string
 // profile of the same generation, borrowed like Profile. A cached generation
 // resolves nothing; errors are those of ConfigWithCredentials.
 func (r *Repository) ProfileWithCredentials(ctx context.Context, profileID string, collect func(json.RawMessage) []string) (result *model.Profile, values []string, err error) {
-	err = r.borrow(ctx, func(document *model.Document, shared bool) error {
+	_, err = r.borrowWithHead(ctx, func(document *model.Document, head *store.Head, shared bool) error {
 		if err := ValidateProfileID(profileID); err != nil {
 			return err
 		}
@@ -59,7 +59,7 @@ func (r *Repository) ProfileWithCredentials(ctx context.Context, profileID strin
 		if stored == nil {
 			return notFound(profileID)
 		}
-		if values, err = r.configCredentials(document, shared, profileID, nil, collect); err != nil {
+		if values, err = r.configCredentials(document, head, shared, profileID, nil, collect); err != nil {
 			return err
 		}
 		result, err = lend(stored, shared)
@@ -70,10 +70,10 @@ func (r *Repository) ProfileWithCredentials(ctx context.Context, profileID strin
 
 // configCredentials looks up or collects the values for one profile of
 // document; config is the already resolved view, or nil.
-func (r *Repository) configCredentials(document *model.Document, shared bool, profileID string, config *model.Config, collect func(json.RawMessage) []string) ([]string, error) {
+func (r *Repository) configCredentials(document *model.Document, head *store.Head, shared bool, profileID string, config *model.Config, collect func(json.RawMessage) []string) ([]string, error) {
 	var cache *configCredentials
-	if shared {
-		cache = r.configCredentialsFor(document)
+	if shared && head != nil {
+		cache = r.configCredentialsFor(*head)
 		cache.mu.Lock()
 		values, ok := cache.values[profileID]
 		cache.mu.Unlock()
@@ -100,15 +100,15 @@ func (r *Repository) configCredentials(document *model.Document, shared bool, pr
 	return values, nil
 }
 
-// configCredentialsFor returns the cache of document's generation, replacing
-// the cache of an older one.
-func (r *Repository) configCredentialsFor(document *model.Document) *configCredentials {
+// configCredentialsFor returns the cache of head's configuration generation,
+// replacing the cache of an older one.
+func (r *Repository) configCredentialsFor(head store.Head) *configCredentials {
 	for {
 		current := r.configCredentialsCache.Load()
-		if current != nil && current.document.Value() == document {
+		if current != nil && current.head.SameConfig(head) {
 			return current
 		}
-		next := &configCredentials{document: weak.Make(document), values: map[string][]string{}}
+		next := &configCredentials{head: head, values: map[string][]string{}}
 		if r.configCredentialsCache.CompareAndSwap(current, next) {
 			return next
 		}

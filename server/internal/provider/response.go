@@ -74,7 +74,7 @@ var soloRenders atomic.Uint64
 func newFlightKey(kind, profileID, itemID, format, regex, excludeRegex string, head *store.Head) flightKey {
 	key := flightKey{kind: kind, profileID: profileID, itemID: itemID, format: format, regex: regex, excludeRegex: excludeRegex}
 	if head != nil {
-		key.head = *head
+		key.head = head.ConfigKey()
 	} else {
 		key.solo = soloRenders.Add(1)
 	}

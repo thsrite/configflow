@@ -575,7 +575,7 @@ func routerSignatures(ctx context.Context, repository *repo.Repository, profileI
 			return nil, err
 		}
 		routerSigMu.Lock()
-		if cached, ok := routerSigCache[cacheKey]; ok && cached.head == head {
+		if cached, ok := routerSigCache[cacheKey]; ok && cached.head.SameConfig(head) {
 			sigs := cached.signatures
 			routerSigMu.Unlock()
 			return sigs, nil

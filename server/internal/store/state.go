@@ -50,6 +50,12 @@ func (h Head) SameConfig(o Head) bool {
 	return h.StoreID == o.StoreID && h.Generation == o.Generation && h.CommitID == o.CommitID
 }
 
+// ConfigKey returns the configuration-only part of h (zeroing State) for
+// map/flight keys whose values provably read no state member.
+func (h Head) ConfigKey() Head {
+	return Head{StoreID: h.StoreID, Generation: h.Generation, CommitID: h.CommitID}
+}
+
 // targetState validates rows and returns them keyed, in (owner, member) order.
 func targetState(rows []StateRow) (*ordered[stateKey, string], error) {
 	sorted := make([]StateRow, len(rows))

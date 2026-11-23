@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -447,5 +448,87 @@ func TestO17FollowupExportKeepsHALeftoverMembersOnly(t *testing.T) {
 	}
 	if agents[1].OxiDNSHAState != nil || agents[1].StateRestoredAt == nil {
 		t.Fatalf("restored enabled pair unexpected state: %+v", agents[1])
+	}
+}
+
+func TestO17FollowupSameConfigCaches(t *testing.T) {
+	r := newRepo(t)
+	o17AgentWithState(t, r)
+
+	// Populate tokensCache, agentDefault, and configCredentialsCache.
+	if _, _, err := r.sanitizationTokensNow(bg); err != nil {
+		t.Fatal(err)
+	}
+	tokens1 := r.tokensCache.Load()
+	if _, err := r.AgentDefaultProfileID(bg); err != nil {
+		t.Fatal(err)
+	}
+	r.agentDefaultMu.Lock()
+	def1 := r.agentDefault
+	r.agentDefaultMu.Unlock()
+	collectCalls := 0
+	collect := func(raw json.RawMessage) []string {
+		collectCalls++
+		return []string{"secret"}
+	}
+	if _, err := r.ConfigCredentials(bg, DefaultProfileID, collect); err != nil {
+		t.Fatal(err)
+	}
+	if collectCalls != 1 {
+		t.Fatalf("collectCalls = %d, want 1", collectCalls)
+	}
+
+	// State-only commit: all three config-only caches must stay hit.
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Version = "2.0.0"
+		return nil
+	}))
+	if _, _, err := r.sanitizationTokensNow(bg); err != nil {
+		t.Fatal(err)
+	}
+	if r.tokensCache.Load() != tokens1 {
+		t.Fatal("tokensCache invalidated by state-only commit")
+	}
+	if _, err := r.AgentDefaultProfileID(bg); err != nil {
+		t.Fatal(err)
+	}
+	r.agentDefaultMu.Lock()
+	def2 := r.agentDefault
+	r.agentDefaultMu.Unlock()
+	if def2 != def1 {
+		t.Fatal("agentDefault cache invalidated by state-only commit")
+	}
+	if _, err := r.ConfigCredentials(bg, DefaultProfileID, collect); err != nil {
+		t.Fatal(err)
+	}
+	if collectCalls != 1 {
+		t.Fatalf("configCredentialsCache invalidated by state-only commit (collectCalls=%d)", collectCalls)
+	}
+
+	// Configuration commit: all three caches must invalidate.
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Token = "tok-rotated"
+		return nil
+	}))
+	if _, _, err := r.sanitizationTokensNow(bg); err != nil {
+		t.Fatal(err)
+	}
+	if r.tokensCache.Load() == tokens1 {
+		t.Fatal("tokensCache not invalidated by config commit")
+	}
+	if _, err := r.AgentDefaultProfileID(bg); err != nil {
+		t.Fatal(err)
+	}
+	r.agentDefaultMu.Lock()
+	def3 := r.agentDefault
+	r.agentDefaultMu.Unlock()
+	if def3 == def1 {
+		t.Fatal("agentDefault cache not invalidated by config commit")
+	}
+	if _, err := r.ConfigCredentials(bg, DefaultProfileID, collect); err != nil {
+		t.Fatal(err)
+	}
+	if collectCalls != 2 {
+		t.Fatalf("configCredentialsCache not invalidated by config commit (collectCalls=%d)", collectCalls)
 	}
 }

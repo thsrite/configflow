@@ -10,6 +10,7 @@ import (
 	core "configflow/internal/agents"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/store"
 )
 
@@ -265,5 +266,51 @@ func TestAgentViewMasksItsOwnGenerationCredentials(t *testing.T) {
 	}
 	if strings.Contains(string(public["name"]), old) {
 		t.Fatalf("own generation token leaked: %s", public["name"])
+	}
+}
+
+func TestO17FollowupAgentViewSourcesSurviveStateCommit(t *testing.T) {
+	v := newAgentViews(true)
+	r := &repo.Repository{}
+	gen1 := core.Generation{Head: store.Head{StoreID: "s", Generation: 1, CommitID: "c1", State: 1}, Shared: true}
+	genState := core.Generation{Head: store.Head{StoreID: "s", Generation: 1, CommitID: "c1", State: 2}, Shared: true}
+	genCfg := core.Generation{Head: store.Head{StoreID: "s", Generation: 2, CommitID: "c2", State: 2}, Shared: true}
+
+	sourceCalls := 0
+	readSource := func(gen core.Generation) {
+		v.source(r, gen, "default", func() contentSnapshot {
+			sourceCalls++
+			return contentSnapshot{}
+		})
+	}
+	entryCalls := 0
+	record := model.Agent{ID: "a"}
+	readEntry := func(gen core.Generation) {
+		if _, err := v.public(r, gen, viewKey{0, "a", viewFull}, &record, func() (map[string]json.RawMessage, error) {
+			entryCalls++
+			return map[string]json.RawMessage{"id": json.RawMessage(`"a"`)}, nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	readSource(gen1)
+	readEntry(gen1)
+	if sourceCalls != 1 || entryCalls != 1 {
+		t.Fatalf("initial calls: source=%d entry=%d", sourceCalls, entryCalls)
+	}
+	// State-only change: sources stay hit, entries invalidate.
+	readSource(genState)
+	readEntry(genState)
+	if sourceCalls != 1 {
+		t.Fatalf("sources invalidated by state-only commit (calls=%d)", sourceCalls)
+	}
+	if entryCalls != 2 {
+		t.Fatalf("entries should invalidate on state commit (calls=%d)", entryCalls)
+	}
+	// Config change: sources also invalidate.
+	readSource(genCfg)
+	if sourceCalls != 2 {
+		t.Fatalf("sources not invalidated by config commit (calls=%d)", sourceCalls)
 	}
 }

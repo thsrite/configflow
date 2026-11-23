@@ -197,7 +197,7 @@ func (r *Repository) AgentDefaultProfileID(ctx context.Context) (string, error) 
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if cached := r.agentDefault; cached != nil && cached.head == head {
+	if cached := r.agentDefault; cached != nil && cached.head.SameConfig(head) {
 		return cached.id, nil
 	}
 	entry, err := r.readEntry(ctx, false)

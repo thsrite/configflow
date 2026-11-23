@@ -137,7 +137,7 @@ func (r *Repository) sanitizationTokensNow(ctx context.Context) (TokenSet, Token
 		}
 		return nil, nil, err
 	}
-	if cached := r.tokensCache.Load(); cached != nil && cached.head == head {
+	if cached := r.tokensCache.Load(); cached != nil && cached.head.SameConfig(head) {
 		return cached.ruleProxy, cached.agents, nil
 	}
 	entry, err := r.readEntry(ctx, false)

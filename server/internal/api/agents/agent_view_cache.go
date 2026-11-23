@@ -63,11 +63,15 @@ type viewEntry struct {
 type agentViews struct {
 	enabled atomic.Bool
 	mu      sync.Mutex
-	// generation identity of the maps below
+	// generation identity of entries (full Head: includes Agent state)
 	repository *repo.Repository
 	head       store.Head
 	env        string
 	entries    map[viewKey]viewEntry
+	// generation identity of sources (configuration-only SameConfig: content
+	// sources come from repo.Config and read no Agent state)
+	sourceRepo *repo.Repository
+	sourceHead store.Head
 	sources    map[string]contentSnapshot
 }
 
@@ -91,11 +95,13 @@ func (v *agentViews) reset() {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.repository, v.head, v.env = nil, store.Head{}, ""
+	v.sourceRepo, v.sourceHead = nil, store.Head{}
 	v.entries, v.sources = nil, nil
 }
 
-// generation selects the maps of (repository, head) under v.mu, starting a new
-// generation when it differs. It reports false when nothing may be cached.
+// generation selects the public view map of (repository, head) under v.mu,
+// starting a new generation when it differs. It reports false when nothing
+// may be cached.
 func (v *agentViews) generation(repository *repo.Repository, gen core.Generation) bool {
 	if !v.enabled.Load() || !gen.Shared || repository == nil {
 		return false
@@ -104,6 +110,19 @@ func (v *agentViews) generation(repository *repo.Repository, gen core.Generation
 	if v.repository != repository || v.head != gen.Head || v.env != env || v.entries == nil {
 		v.repository, v.head, v.env = repository, gen.Head, env
 		v.entries = map[viewKey]viewEntry{}
+	}
+	return true
+}
+
+// sourceGeneration selects the content-source map of (repository, head) under
+// v.mu using SameConfig so state-only commits do not invalidate resolved
+// profile content sources.
+func (v *agentViews) sourceGeneration(repository *repo.Repository, gen core.Generation) bool {
+	if !v.enabled.Load() || !gen.Shared || repository == nil {
+		return false
+	}
+	if v.sourceRepo != repository || !v.sourceHead.SameConfig(gen.Head) || v.sources == nil {
+		v.sourceRepo, v.sourceHead = repository, gen.Head
 		v.sources = map[string]contentSnapshot{}
 	}
 	return true
@@ -175,7 +194,7 @@ func (v *agentViews) public(repository *repo.Repository, gen core.Generation, ke
 func (v *agentViews) source(repository *repo.Repository, gen core.Generation, profile string,
 	compute func() contentSnapshot) contentSnapshot {
 	v.mu.Lock()
-	if v.generation(repository, gen) {
+	if v.sourceGeneration(repository, gen) {
 		if saved, ok := v.sources[profile]; ok {
 			v.mu.Unlock()
 			return saved
@@ -188,7 +207,7 @@ func (v *agentViews) source(repository *repo.Repository, gen core.Generation, pr
 		return snapshot
 	}
 	v.mu.Lock()
-	if v.generation(repository, gen) {
+	if v.sourceGeneration(repository, gen) {
 		v.sources[profile] = snapshot
 	}
 	v.mu.Unlock()
