@@ -6,14 +6,14 @@
 被复核提交（rebase 后）：5dce7d9b7（Agent atomicfile）、8295688ad（weburl.HasControl）、abebcf082（pathx）、
 30445de6a（slices.Contains）、398401d94（digest）、1653d3dac（httpx.BindObject/DecodeObject）。
 复核新增提交：075428f4c（AIO 转发提交文案）、72f6b515a（漏掉的 3 份 sha256 摘要）、185520ace（atomicfile.SyncDir 与 fsx 一致）、
-5b7a91671（monitor 的 contains）、本报告。
+5b7a91671（monitor 的 contains）、9d3c608db（DecodeObject 精确成员名）、0bf120ebe（另 4 份 pathx.Accessible 副本）、本报告。
 
 rebase 冲突只有 `installer/{aio,gateway,templates}.go`：go 侧已把 `valueError` 改成 `invalidInput`、`splitLines` 换成 `textx`，
 本批把 `hasControl` 换成 `weburl.HasControl`；取两边（`invalidInput` + `weburl.HasControl`，删掉 `hasControl`）。
 
 ## 结论
 
-中 2 个（已修）、低 3 个（1 个已修，2 个说明不改）。服务端 4 个提交逐项等价；`BindObject/DecodeObject` 用改前/改后对照测试证明响应逐字节一致。
+中 2 个（已修）、低 4 个（2 个已修，2 个说明不改）。batch-43 与 batch-45 之间没有两份做同一件事的共享工具。服务端 4 个提交逐项等价；`BindObject/DecodeObject` 用改前/改后对照测试证明响应逐字节一致。
 
 ## 发现
 
@@ -39,6 +39,23 @@ rebase 冲突只有 `installer/{aio,gateway,templates}.go`：go 侧已把 `value
 - sha256 十六进制摘要：`agents/dnsha/storage.go` 的 `digest`、`agents/rulesync/snapshot.go` 的 `digest`、`agents/dnsfollow/publish.go` 的 `hash`
   没有换成 `digest.SHA256Hex`（提交说明称已统一）。已换，输出相同。
 - `agents/monitor` 的 `contains([]string, string)` 是 o17 3.5 清单里最后一份可直接替换的，已换 `slices.Contains`。
+- 与 `pathx.Accessible` 逐行相同的私有函数还有 4 份（0bf120ebe）：`agents/runtime_state.go` 的 `exists`、`agents/metrics/traffic.go`、
+  `rulefetch/cache.go`、`rules/ruleutils.go` 的 `fileExists`，已换。
+
+### 低（已修，9d3c608db）：`httpx.DecodeObject` 对结构体目标大小写不敏感
+
+`DecodeObject` 用的是 `encoding/json` v1，目标是普通结构体时 `"Name"`/`"URL"` 会填进 `name`/`url`。**当前三个调用方没有行为变化**：
+`rulelibrary` 的 `record`、`aggregationFields`、`subscriptionFields` 都是（或嵌入）`model.Fields`，它的 `UnmarshalJSON` 按原样保存成员名，
+改前（`json.Unmarshal` 或直接调 `UnmarshalJSON`）与改后走同一个方法；对照测试加了 `{"Name","URL"}`、`{"NAME","name"}`、`{"name","Name"}`
+三种请求体，三个包各 93 个请求仍逐字节一致。为了不给后续类型化接口（typed-rest）留坑，`DecodeObject` 改走 `jsondecode.Unmarshal`
+（json v2、精确成员名，与 `Bind` 相同）；`model.Fields` 这类自定义解码器拿到的仍是原始字节。表驱动测试 `TestDecodeObjectMemberNamesAreExact`。
+
+### batch-43 与 batch-45 的工具有没有重复
+
+batch-43 新增 `fsx`、`textx`（`ASCIIDigits`、`SplitLines`）、`timefmt`、`version`、`jsonresp.Value`；batch-45 新增 `pathx`、`digest`、
+`weburl.HasControl`、`httpx.BindObject/DecodeObject`、Agent 的 `atomicfile`。职责不重叠。`atomicfile` 与 `fsx` 是同一件事的两份，但 Agent
+是独立 Go 模块不能引用服务端 `internal`（o17 3.4 本来就建议「go-agent 自己一份」）；两者行为已对齐（同目录 `O_EXCL` 临时文件、fsync、
+rename、目录 fsync 且 EINVAL/ENOTSUP 视为成功、失败删临时文件），差别只在 Agent 版另有 Link 独占发布、属主和 `BeforeCommit`，且没有 ctx。
 
 ### 低（不改）：Agent 侧几处英文内部错误的包装文本变了
 
@@ -107,7 +124,7 @@ companion 证据从 `.companion-<pid>` 变成 `.companion-<随机>`。没有代�
 
 ## 验证（.64，`RT_HOST=sunbroke@192.168.0.64`，`GOTMPDIR=~/.cache/rt-tmp/b45`）
 
-在 5b7a91671 上执行（本报告提交只加文档）。
+第一轮在 5b7a91671 上；9d3c608db、0bf120ebe 之后在 0bf120ebe 上重跑了受影响部分（见末尾「第二轮」）。本报告提交只加文档。
 
 - 服务端受影响 65 个包 `go test -race -count=1 -p 6 -timeout 40m`（httpx、pathx、digest、weburl、installer、api/...、repo、deploy/...、
   gateway/...、rules、testgolden、discovery、agents/...）：全部 ok；`agents/monitor` 改动后单独 `-race`：`ok configflow/internal/agents/monitor 525.957s`。
@@ -118,3 +135,12 @@ companion 证据从 `.companion-<pid>` 变成 `.companion-<随机>`。没有代�
 - `GATE_ONLY=difftest scripts/gate.sh -p 6`：`DIFF PASS: 214 required entries ran and passed; 0 test skips` / `GATE STAGE PASS: difftest`
 - `GATE_ONLY=proddiff scripts/gate.sh -p 6`：self-check 全 PASS，`baseline: new=0 stale=0` / `GATE STAGE PASS: proddiff`
 - `/tmp/preflight.sh .paseo__worktrees__302rx1dg__batch-45 -p 6`：`PREFLIGHT PASS`
+
+第二轮（0bf120ebe）：
+
+- `go test -race` httpx/...、pathx、api/{rulelibrary,aggregations,subscriptions}、agents、agents/metrics、rulefetch、rules：全部 ok；`go vet ./internal/...` 通过，gofmt 无输出。
+- 对照测试（加大小写变体后）：三个包各 `compared 93 requests`，PASS。
+- `GATE_ONLY=difftest`：`DIFF PASS: 214 required entries ran and passed; 0 test skips` / `GATE STAGE PASS: difftest`
+- `GATE_ONLY=proddiff`：`baseline: new=0 stale=0` / `GATE STAGE PASS: proddiff`
+- `/tmp/preflight.sh .paseo__worktrees__302rx1dg__batch-45 -p 6`：`PREFLIGHT PASS`
+- Agent 模块在第二轮没有改动，`GATE_ONLY=agent` 沿用第一轮结果。
