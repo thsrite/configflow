@@ -233,8 +233,7 @@ func TestRegistrationCapabilitiesAndAtomicEnrollment(t *testing.T) {
 	must(t, f.s.write(f.ctx, &foreign))
 	data := raw(map[string]any{"name": r.Name + "-mihomo", "host": r.Network.Address, "port": r.Ports["mihomo"], "service_type": "mihomo", "profile_id": r.ProfileID, "deployment_method": "shell"})
 	_, err := f.s.Register(f.ctx, foreign.ID, foreign.Token, data, "")
-	var permission *agents.PermissionError
-	if !errors.As(err, &permission) {
+	if !errors.Is(err, agents.ErrUnauthorized) {
 		t.Fatalf("foreign capability recovered another credential: %v", err)
 	}
 	// The first proof would change metadata; an invalid second proof must keep the

@@ -324,15 +324,15 @@ type preflightValue struct {
 func preflightDecode(output any) (map[string]preflightValue, string, error) {
 	text, isString := output.(string)
 	if !isString {
-		return nil, "", valueError(msgPreflightOutputType)
+		return nil, "", invalidInput(msgPreflightOutputType)
 	}
 	// A Go string holds no lone surrogate; invalid UTF-8 stands for the
 	// str Python cannot encode.
 	if !utf8.ValidString(text) {
-		return nil, "", valueError(msgPreflightUTF8)
+		return nil, "", invalidInput(msgPreflightUTF8)
 	}
 	if len(text) > PreflightMaxOutputBytes {
-		return nil, "", valueError(msgPreflightSize)
+		return nil, "", invalidInput(msgPreflightSize)
 	}
 	lines := machineLines(strings.ReplaceAll(text, "\r\n", "\n"))
 	for i, line := range lines {
@@ -634,7 +634,7 @@ func parseIPv4Interface(text string) (uint32, int, bool) {
 // Incomplete or malformed machine evidence produces an unknown check.
 func EvaluatePreflight(output, mode string) (*PreflightReport, error) {
 	if mode != "host" && mode != "macvlan" {
-		return nil, valueError(msgPreflightNetwork)
+		return nil, invalidInput(msgPreflightNetwork)
 	}
 	values, reason, err := preflightDecode(output)
 	if err != nil {
@@ -730,7 +730,7 @@ func EvaluatePreflight(output, mode string) (*PreflightReport, error) {
 			for i, part := range parts {
 				n, ok := new(big.Int).SetString(part, 10)
 				if !ok {
-					return nil, valueError("Invalid Compose version")
+					return nil, invalidInput("Invalid Compose version")
 				}
 				if !n.IsInt64() || n.Int64() > 1<<40 {
 					numbers[i] = 1 << 40

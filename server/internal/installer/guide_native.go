@@ -94,11 +94,11 @@ func validateGuidePath(text string, valid bool, label string, allowColon bool) (
 func decodeMount(raw json.RawMessage, label string) (composeMount, error) {
 	var fields model.Fields
 	if jsondecode.Unmarshal(raw, &fields) != nil {
-		return composeMount{}, valueError(label + "请选择 bind 目录或 Docker 命名卷")
+		return composeMount{}, invalidInput(label + "请选择 bind 目录或 Docker 命名卷")
 	}
 	kind, _ := fieldText(fields, "type")
 	if kind != "bind" && kind != "volume" {
-		return composeMount{}, valueError(label + "请选择 bind 目录或 Docker 命名卷")
+		return composeMount{}, invalidInput(label + "请选择 bind 目录或 Docker 命名卷")
 	}
 	source, ok := fieldText(fields, "source")
 	var err error
@@ -119,7 +119,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	request := GuideRequest{}
 	var fields model.Fields
 	if err := jsondecode.Unmarshal(data, &fields); err != nil {
-		return request, valueError(msgGuideObject)
+		return request, invalidInput(msgGuideObject)
 	}
 	request.Action, _ = textOr(fields, "action", "generate")
 	request.Options.NetworkMode, _ = textOr(fields, "network_mode", "host")
@@ -127,7 +127,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	case "check":
 		text, ok := fieldText(fields, "output")
 		if !ok {
-			return request, valueError(msgPreflightOutputType)
+			return request, invalidInput(msgPreflightOutputType)
 		}
 		request.Output = text
 		return request, nil
@@ -136,7 +136,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 		if !ok {
 			raw, _ := fields.Get("container_name")
 			if !emptyInspectionName(raw) {
-				return request, valueError(msgOriginalContainerName)
+				return request, invalidInput(msgOriginalContainerName)
 			}
 		}
 		request.ContainerName = text
@@ -145,39 +145,39 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 		raw, _ := fields.Get("vip")
 		ip, _, _, ok := decodeIPv4Value(raw)
 		if !ok {
-			return request, valueError(msgVirtualIPv4)
+			return request, invalidInput(msgVirtualIPv4)
 		}
 		request.VIP = ip
 		return request, nil
 	}
 	request.Mode, _ = textOr(fields, "mode", "new")
 	if request.Action != "generate" || (request.Mode != "new" && request.Mode != "migrate") {
-		return request, valueError(msgGuideAction)
+		return request, invalidInput(msgGuideAction)
 	}
 	request.InstallMethod, _ = textOr(fields, "install_method", "script")
 	switch request.InstallMethod {
 	case "script", "compose", "compose_direct", "compose_compact":
 	default:
-		return request, valueError(msgGuideMethod)
+		return request, invalidInput(msgGuideMethod)
 	}
 	if request.InstallMethod != "script" && request.Mode != "new" {
-		return request, valueError(msgComposeNewOnly)
+		return request, invalidInput(msgComposeNewOnly)
 	}
 	request.Image, _ = textOr(fields, "image", DockerAgentImage())
 	if !isImageName(request.Image) {
-		return request, valueError(msgDockerImage)
+		return request, invalidInput(msgDockerImage)
 	}
 	p := &request.Options
 	p.ServerURL, _ = textOr(fields, "server_url", "")
 	if !isServerURL(p.ServerURL) {
-		return request, valueError(msgServerURL)
+		return request, invalidInput(msgServerURL)
 	}
 	parsed, err := weburl.Parse(p.ServerURL)
 	if err != nil {
-		return request, valueError(err.Error())
+		return request, invalidInput(err.Error())
 	}
 	if weburl.HasCredentials(parsed) || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Hostname() == "" {
-		return request, valueError(msgServerURLComponents)
+		return request, invalidInput(msgServerURLComponents)
 	}
 	p.ServerURL = strings.TrimRight(p.ServerURL, "/")
 	port, ok := fieldNumber(fields, "oxidns_port")
@@ -185,7 +185,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 		port, ok = "8082", true
 	}
 	if !ok || strings.ContainsAny(port.String(), ".eE") {
-		return request, valueError(msgAgentPortInteger)
+		return request, invalidInput(msgAgentPortInteger)
 	}
 	p.OxidnsPort = port
 	// Preserve the exact historical plan members for identity hashing, including
@@ -221,7 +221,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 		*field.target, _ = textOr(fields, field.key, field.fallback)
 	}
 	if _, ok := fieldText(fields, "agent_ip"); !ok {
-		return request, valueError(msgFixedIPv4)
+		return request, invalidInput(msgFixedIPv4)
 	}
 	gatewayRaw, _ := p.identity.Get("ha_gateway")
 	if emptyInspectionName(gatewayRaw) {
@@ -234,7 +234,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 	if request.InstallMethod != "compose_compact" {
 		raw, present := fields.Get("create_host_identity")
 		if present && (!bytesBoolean(raw) || jsondecode.Unmarshal(raw, &request.CreateHostIdentity) != nil) {
-			return request, valueError(msgCreateIdentityBoolean)
+			return request, invalidInput(msgCreateIdentityBoolean)
 		}
 	}
 	if request.InstallMethod != "compose_compact" && !(request.InstallMethod == "compose_direct" && request.CreateHostIdentity) {
@@ -249,7 +249,7 @@ func DecodeGuideRequest(data json.RawMessage) (GuideRequest, error) {
 		}
 		request.ExistingAgentName, ok = fieldText(fields, "existing_agent_name")
 		if !ok {
-			return request, valueError(msgOriginalAgentName)
+			return request, invalidInput(msgOriginalAgentName)
 		}
 		if err := ValidateAgentName(request.ExistingAgentName); err != nil {
 			return request, err
@@ -338,7 +338,7 @@ func renderGuide(request GuideRequest, enrollment *Capability) (*GuideResult, er
 	case "verify":
 		vip, err := parseIPv4(request.VIP)
 		if err != nil || !usableAddress(vip) {
-			return nil, valueError(msgVirtualIPv4)
+			return nil, invalidInput(msgVirtualIPv4)
 		}
 		command := strings.ReplaceAll(haVerification, "{{VIP}}", ipv4Text(vip))
 		result.VerificationCommand = &command

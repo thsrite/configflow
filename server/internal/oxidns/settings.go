@@ -202,7 +202,7 @@ var httpURL = regexp.MustCompile(`^https?://`)
 // validateNative false only checks the native YAML is safe (stored drafts
 // may be incomplete).
 func NormalizeSettings(value *Node, validateNative bool) (*Node, error) {
-	if err := requestTypeError(value); err != nil {
+	if err := checkRequestTypes(value); err != nil {
 		return nil, err
 	}
 	if isNone(value) {

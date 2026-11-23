@@ -13,11 +13,11 @@ package installer
 type ValidationError struct{ Message string }
 
 func (e *ValidationError) Error() string { return e.Message }
-func valueError(message string) error    { return &ValidationError{Message: message} }
+func invalidInput(message string) error  { return &ValidationError{Message: message} }
 
 // RenderError rejects a malformed internal renderer or stored capability shape.
 // It carries a native diagnostic, never an interpreter exception or credential.
 type RenderError struct{ Message string }
 
-func (e *RenderError) Error() string { return e.Message }
-func typeError(message string) error { return &RenderError{Message: message} }
+func (e *RenderError) Error() string    { return e.Message }
+func renderFailed(message string) error { return &RenderError{Message: message} }

@@ -47,7 +47,7 @@ func DefaultDockerOptions(serverURL string) DockerInstallOptions {
 // as any other invalid name.
 func ValidateAgentName(name string) error {
 	if !matchesClass(name, "_-") {
-		return valueError("Invalid agent name: only alphanumeric characters, hyphens, and underscores are allowed.")
+		return invalidInput("Invalid agent name: only alphanumeric characters, hyphens, and underscores are allowed.")
 	}
 	return nil
 }
@@ -71,22 +71,22 @@ func isHAParent(parent string) bool {
 // dockerHANetwork is _docker_ha_network.
 func dockerHANetwork(o DockerInstallOptions) (*haNetwork, error) {
 	if !o.EnableOxidns || o.EnableMihomo || o.EnableMosdns {
-		return nil, valueError(msgDockerHAOxidnsOnly)
+		return nil, invalidInput(msgDockerHAOxidnsOnly)
 	}
 	if o.NetworkMode != "host" && o.NetworkMode != "macvlan" {
-		return nil, valueError(msgDockerHANetwork)
+		return nil, invalidInput(msgDockerHANetwork)
 	}
 	address, err := parseIPv4(o.AgentIP)
 	if err != nil || isLoopback(address) || isMulticast(address) || isLinkLocal(address) || isUnspecified(address) || isReserved(address) {
-		return nil, valueError(msgFixedIPv4)
+		return nil, invalidInput(msgFixedIPv4)
 	}
 	if o.NetworkMode == "host" {
 		return nil, nil
 	}
 	if !isHAParent(o.HAParent) {
-		return nil, valueError(msgHAParent)
+		return nil, invalidInput(msgHAParent)
 	}
-	invalid := valueError(msgHASubnet)
+	invalid := invalidInput(msgHASubnet)
 	subnet, err := parseIPv4Network(o.HASubnet)
 	if err != nil {
 		return nil, invalid
@@ -125,7 +125,7 @@ func dockerHANetwork(o DockerInstallOptions) (*haNetwork, error) {
 // dockerHAIdentity is _docker_ha_identity(path).
 func dockerHAIdentity(path string) (composeMount, error) {
 	if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, ",:\x00\r\n") {
-		return composeMount{}, valueError(msgDockerIdentityPath)
+		return composeMount{}, invalidInput(msgDockerIdentityPath)
 	}
 	return bindMount(path, "/run/configflow-host-machine-id", true, false), nil
 }
@@ -133,7 +133,7 @@ func dockerHAIdentity(path string) (composeMount, error) {
 func checkHAPort(port string) error {
 	n, err := parseInstallInteger(port)
 	if err != nil || !inRange(n, 1024, 65535) {
-		return valueError(msgDockerHAPort)
+		return invalidInput(msgDockerHAPort)
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func dockerCompose(o DockerInstallOptions) (*composeDocument, error) {
 		}
 	}
 	if o.EnableMosdns && o.EnableOxidns {
-		return nil, valueError(msgDNSServiceConflict)
+		return nil, invalidInput(msgDNSServiceConflict)
 	}
 	var services []string
 	if o.EnableMihomo {
@@ -317,7 +317,7 @@ func RenderDockerRun(o DockerInstallOptions) (string, error) {
 		return generateDockerHARun(o, o.OxidnsPort, network), nil
 	}
 	if o.EnableMosdns && o.EnableOxidns {
-		return "", valueError(msgDNSServiceConflict)
+		return "", invalidInput(msgDNSServiceConflict)
 	}
 	var services []string
 	if o.EnableMihomo {

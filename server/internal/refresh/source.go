@@ -254,7 +254,7 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 			}
 			return makeResult(receipt.Text, "source_cache", receipt.Traffic, receipt.FetchedAt), nil
 		}
-	} else if !isRepositoryOrOSError(err) {
+	} else if !isRepositoryOrFileError(err) {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {

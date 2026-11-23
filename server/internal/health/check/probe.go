@@ -472,7 +472,7 @@ func (s *ProbeStore) SaveEntriesContext(ctx context.Context, agentID string, res
 		now = time.Now()
 	}
 	if !validTimedRecords(results) {
-		return valueError(msgInvalidProbeEntry)
+		return invalidInput(msgInvalidProbeEntry)
 	}
 
 	probeLock.Lock()

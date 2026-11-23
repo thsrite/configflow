@@ -26,7 +26,7 @@ type composeInstallSettings struct {
 func generateDirectNative(params GuideOptions, request GuideRequest, enrollment *Capability) (string, *ComposeDeployment, error) {
 	data := params.DataDir
 	if composeDataDirRefused(data) {
-		return "", nil, valueError(composeDataDirMessage)
+		return "", nil, invalidInput(composeDataDirMessage)
 	}
 	identityMode := "file"
 	if request.CreateHostIdentity {
@@ -34,12 +34,12 @@ func generateDirectNative(params GuideOptions, request GuideRequest, enrollment 
 	}
 	if identityMode == "file" {
 		if raw, present := params.identity.Get("ha_host_id_path"); present && len(raw) > 0 && raw[0] != '"' {
-			return "", nil, typeError(msgRendererText)
+			return "", nil, renderFailed(msgRendererText)
 		}
 	}
 	identityCheck, dataCheck := path.Clean(params.HAHostIDPath), path.Clean(data)
 	if identityMode == "file" && (identityCheck == dataCheck || strings.HasPrefix(identityCheck, dataCheck+"/")) {
-		return "", nil, valueError(msgDirectIdentityLocation)
+		return "", nil, invalidInput(msgDirectIdentityLocation)
 	}
 	normalized := params
 	if identityMode != "file" {

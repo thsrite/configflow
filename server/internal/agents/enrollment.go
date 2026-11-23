@@ -201,7 +201,7 @@ func (m *Manager) refreshRegistration(ctx context.Context, system *model.System,
 		if admission := options.Authorization; admission != nil && !admission.AllowNew && !m.matchesRegistrationClaim(ctx, system, input.claim, *admission) {
 			return ErrRegistrationAuthorization
 		}
-		return &PermissionError{}
+		return ErrUnauthorized
 	}
 	if admission := options.Authorization; admission != nil && admission.Credential != "" {
 		optional := *admission

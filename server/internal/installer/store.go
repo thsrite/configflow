@@ -206,7 +206,7 @@ func (s *Store) SaveInstallScript(ctx context.Context, script string, expiresAt 
 		return "", 0, err
 	}
 	if len(script) > MaxScriptBytes {
-		return "", 0, valueError(msgInstallScriptSize)
+		return "", 0, invalidInput(msgInstallScriptSize)
 	}
 	token := ""
 	if s.Token != nil {
@@ -223,7 +223,7 @@ func (s *Store) SaveInstallScript(ctx context.Context, script string, expiresAt 
 	if expiresAt == nil {
 		expires = now + TTLSeconds
 	} else if !(now < *expiresAt && *expiresAt <= now+TTLSeconds) {
-		return "", 0, valueError(msgInstallLinkExpiry)
+		return "", 0, invalidInput(msgInstallLinkExpiry)
 	} else {
 		expires = *expiresAt
 	}

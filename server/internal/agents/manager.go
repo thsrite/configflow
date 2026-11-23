@@ -33,11 +33,9 @@ type DeploymentConflict struct{ Message string }
 
 func (e *DeploymentConflict) Error() string { return e.Message }
 
-// PermissionError is the PermissionError('Unauthorized') of a re-registration
-// without the existing Agent's token (401).
-type PermissionError struct{}
-
-func (e *PermissionError) Error() string { return "Unauthorized" }
+// ErrUnauthorized refuses a re-registration without the existing Agent's
+// token (401).
+var ErrUnauthorized = errors.New("Unauthorized")
 
 // ValidationError refuses a registry change or Agent request whose value is
 // invalid (answered as a client error with Message).

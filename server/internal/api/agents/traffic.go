@@ -251,18 +251,16 @@ func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(map[string]any{"success": true, "data": state}), nil
 }
 
-// setTrafficHistoryError is the except chain of set_agent_traffic_history:
-// `except ValueError` comes first, and AgentDeploymentConflict is a
-// ValueError, so a conflict (ProfileInUse of the system transaction) answers
-// 400 like every other ValueError — the `except AgentDeploymentConflict` 409
-// branch after it is never reached. Repository validation errors are
-// ValueErrors too; nil leaves the error to the 500 page.
+// setTrafficHistoryError maps a refused traffic-history switch to 400:
+// validation errors, deployment conflicts (a profile in use) and repository
+// rejections all answer 400 with their message; nil leaves the error to the
+// 500 page.
 func setTrafficHistoryError(err error) *httpx.Response {
-	var valueError *agents.ValidationError
+	var invalid *agents.ValidationError
 	var conflict *agents.DeploymentConflict
 	switch {
-	case errors.As(err, &valueError):
-		return failure(400, valueError.Message)
+	case errors.As(err, &invalid):
+		return failure(400, invalid.Message)
 	case errors.As(err, &conflict):
 		return failure(400, conflict.Message)
 	case errors.Is(err, repo.ErrRejected):
@@ -302,13 +300,9 @@ func setTrafficHistoryRetention(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	stored, err := metrics.SetTrafficRetention(c.Context(), manager, days)
 	if err != nil {
-		var valueError *metrics.ValueError
-		if errors.As(err, &valueError) {
-			return failure(400, valueError.Message), nil
-		}
-		if errors.Is(err, repo.ErrRejected) {
-			// `except ValueError` also catches the repository's
-			// ProfileValidationError / ProfileInUse / ProfileExists.
+		if errors.Is(err, metrics.ErrRetentionInvalid) || errors.Is(err, repo.ErrRejected) {
+			// Repository rejections (invalid profile, profile in use or
+			// already present) answer 400 with their message too.
 			return failure(400, err.Error()), nil
 		}
 		return nil, err

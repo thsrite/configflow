@@ -359,13 +359,8 @@ func pyFloatKey(f float64) string {
 }
 
 func storeErrorName(err error) string {
-	switch err.(type) {
-	case *trafficstore.TypeError:
-		return "TypeError"
-	case *trafficstore.AttributeError:
-		return "AttributeError"
-	case *trafficstore.KeyError:
-		return "KeyError"
+	if errors.Is(err, trafficstore.ErrInvalid) {
+		return "invalid"
 	}
 	return "?"
 }

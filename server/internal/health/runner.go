@@ -39,14 +39,7 @@ type Runner interface {
 // ErrTimeout reports that a worker subprocess exceeded its execution budget.
 var ErrTimeout = errors.New("worker execution timed out")
 
-// OSError wraps an operating-system failure when starting the worker process.
-type OSError struct{ Err error }
-
-// Error returns the underlying OS error text.
-func (e *OSError) Error() string { return e.Err.Error() }
-
-// Unwrap returns the underlying OS error.
-func (e *OSError) Unwrap() error { return e.Err }
+var errMissingWorkerCommand = errors.New("missing worker command")
 
 // ExecRunner executes worker commands via os/exec.
 type ExecRunner struct{}
@@ -55,7 +48,7 @@ type ExecRunner struct{}
 // The caller detaches request cancellation while preserving Runtime shutdown.
 func (ExecRunner) Run(ctx context.Context, command Command) (Result, error) {
 	if len(command.Argv) == 0 {
-		return Result{}, &OSError{Err: errors.New("missing worker command")}
+		return Result{}, errMissingWorkerCommand
 	}
 	budget, cancel := context.WithTimeout(ctx, command.Timeout)
 	defer cancel()
@@ -74,7 +67,7 @@ func (ExecRunner) Run(ctx context.Context, command Command) (Result, error) {
 	}
 	var exit *exec.ExitError
 	if err != nil && !errors.As(err, &exit) {
-		return Result{}, &OSError{Err: err}
+		return Result{}, err
 	}
 	code := cmd.ProcessState.ExitCode()
 	if status, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && status.Signaled() {
@@ -194,15 +187,15 @@ type ProbeBusy struct{ Message string }
 // Error returns the user-facing concurrency conflict message.
 func (e *ProbeBusy) Error() string { return e.Message }
 
-// ValueError reports an invalid caller or configuration input (HTTP 400).
-type ValueError struct{ Message string }
+// ValidationError reports an invalid caller or configuration input (HTTP 400).
+type ValidationError struct{ Message string }
 
 // Error returns the user-facing validation message.
-func (e *ValueError) Error() string { return e.Message }
+func (e *ValidationError) Error() string { return e.Message }
 
 func decodeText(data []byte) (string, error) {
 	if !utf8.Valid(data) {
-		return "", valueError(WorkerOutputEncodingError)
+		return "", invalidInput(WorkerOutputEncodingError)
 	}
 	return string(data), nil
 }

@@ -67,8 +67,8 @@ func ResolveDNSSettings(ctx context.Context) ([]string, error) {
 	return effective.DNSServers, nil
 }
 
-func isValueError(err error) bool {
-	var ve *ValueError
+func isInvalidInput(err error) bool {
+	var ve *ValidationError
 	if errors.As(err, &ve) {
 		return true
 	}
@@ -96,7 +96,7 @@ func ResolveSettings(ctx context.Context) (ProbeSettings, error) {
 	}
 	dns, err := EffectiveDNSSettings(ctx, nil)
 	if err != nil {
-		if isValueError(err) {
+		if isInvalidInput(err) {
 			return ProbeSettings{}, &ProbeUnavailable{Message: err.Error()}
 		}
 		return ProbeSettings{}, err
@@ -171,7 +171,7 @@ func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
 		}
 		if rawID, present := nodeObj.Fields.Get("id"); present && !isStringToken(rawID) {
 			rawID, _ := nodeObj.Fields.Get("id")
-			return nil, valueError(fmt.Sprintf(msgStoredNodeIDInvalid, compactRaw(rawID)))
+			return nil, invalidInput(fmt.Sprintf(msgStoredNodeIDInvalid, compactRaw(rawID)))
 		}
 		if node.ID == "" {
 			continue
@@ -214,7 +214,7 @@ func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
 			return nil, err
 		}
 		if rawID, present := subObj.Fields.Get("id"); present && !isStringToken(rawID) {
-			return nil, valueError(fmt.Sprintf(msgStoredSubIDInvalid, compactRaw(rawID)))
+			return nil, invalidInput(fmt.Sprintf(msgStoredSubIDInvalid, compactRaw(rawID)))
 		}
 
 		if sub.ID == "" {
@@ -236,10 +236,10 @@ func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
 					trimmedNodes := bytes.TrimSpace(rawNodes)
 					if !bytes.Equal(trimmedNodes, []byte("null")) && !bytes.Equal(trimmedNodes, []byte("false")) && !bytes.Equal(trimmedNodes, []byte("0")) {
 						if len(trimmedNodes) == 0 || trimmedNodes[0] != '[' {
-							return nil, valueError(fmt.Sprintf(msgCachedNodesMustBeArray, sub.ID, compactRaw(rawNodes)))
+							return nil, invalidInput(fmt.Sprintf(msgCachedNodesMustBeArray, sub.ID, compactRaw(rawNodes)))
 						}
 						if err := json.Unmarshal(trimmedNodes, &cachedNodes); err != nil {
-							return nil, valueError(fmt.Sprintf(msgCachedNodesMustBeArray, sub.ID, compactRaw(rawNodes)))
+							return nil, invalidInput(fmt.Sprintf(msgCachedNodesMustBeArray, sub.ID, compactRaw(rawNodes)))
 						}
 					}
 				}
@@ -266,7 +266,7 @@ func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
 			}
 			name, err := decodeNonNullText(bytes.TrimSpace(rawName))
 			if err != nil {
-				return nil, valueError(fmt.Sprintf(msgCachedNodeNameInvalid, sub.ID, compactRaw(rawName)))
+				return nil, invalidInput(fmt.Sprintf(msgCachedNodeNameInvalid, sub.ID, compactRaw(rawName)))
 			}
 			if name == "" {
 				continue
@@ -393,7 +393,7 @@ func runProbeFields(ctx context.Context, proxies []model.Fields, options ProbeSe
 	}
 
 	if len(data) > 8*1024*1024 {
-		return empty, valueError(msgBatchPayloadTooLarge)
+		return empty, invalidInput(msgBatchPayloadTooLarge)
 	}
 	batches := (len(proxies) + MaxWorkers - 1) / MaxWorkers
 	budget := time.Duration(batches)*time.Duration(options.TimeoutMS)*time.Millisecond + 5*time.Second
@@ -636,7 +636,7 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 		return TestOutcome{}, err
 	}
 	if names != nil && keys != nil {
-		return TestOutcome{}, valueError(msgNamesAndKeysConflict)
+		return TestOutcome{}, invalidInput(msgNamesAndKeysConflict)
 	}
 	var requestedIDs []string
 	switch {
@@ -652,7 +652,7 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 	}
 	requested := dedupeStrings(requestedIDs)
 	if len(requested) > MaxNodes {
-		return TestOutcome{}, valueError(fmt.Sprintf(msgMaxNodesExceeded, MaxNodes))
+		return TestOutcome{}, invalidInput(fmt.Sprintf(msgMaxNodesExceeded, MaxNodes))
 	}
 
 	var identityIDs []string
@@ -664,7 +664,7 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 		}
 		for _, name := range requested {
 			if len(byName[name]) > 1 {
-				return TestOutcome{}, valueError(msgDuplicateNodeName)
+				return TestOutcome{}, invalidInput(msgDuplicateNodeName)
 			}
 		}
 		for _, name := range requested {
@@ -693,7 +693,7 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 		}
 	}
 	if remote > MaxConversionWorker {
-		return TestOutcome{}, valueError(fmt.Sprintf(msgMaxRemoteConversions, MaxConversionWorker))
+		return TestOutcome{}, invalidInput(fmt.Sprintf(msgMaxRemoteConversions, MaxConversionWorker))
 	}
 
 	settings, err := ResolveSettings(ctx)

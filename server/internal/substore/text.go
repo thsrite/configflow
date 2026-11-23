@@ -42,7 +42,7 @@ func safeExceptionDetails(err error) string {
 	}
 	return result
 }
-func osError(err error, path string) error { return fmt.Errorf("file %s: %w", path, err) }
+func fileError(err error, path string) error { return fmt.Errorf("file %s: %w", path, err) }
 func latin1(s string) string {
 	out := make([]rune, len(s))
 	for i := 0; i < len(s); i++ {

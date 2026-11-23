@@ -839,7 +839,7 @@ func TestRunNowClaimsTheTask(t *testing.T) {
 	if f.status(key)["last_trigger"] != "manual" || f.status(key)["last_status"] != "success" {
 		t.Fatal(compactJSON(f.status(key)))
 	}
-	var lookup *LookupError
+	var lookup *NotFoundError
 	if _, err := RunResourceNow(f.ctx, "subscription", "gone"); !errors.As(err, &lookup) {
 		t.Fatal(err)
 	}

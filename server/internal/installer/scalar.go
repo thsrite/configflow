@@ -10,7 +10,7 @@ import (
 
 func parseInstallInteger(text string) (*big.Int, error) {
 	if strings.TrimSpace(text) == "" {
-		return nil, valueError("Invalid installer integer")
+		return nil, invalidInput("Invalid installer integer")
 	}
 	raw, err := json.Marshal(text)
 	if err != nil {
@@ -18,7 +18,7 @@ func parseInstallInteger(text string) (*big.Int, error) {
 	}
 	n, err := taskstatus.Count(raw)
 	if err != nil {
-		return nil, valueError("Invalid installer integer")
+		return nil, invalidInput("Invalid installer integer")
 	}
 	return n, nil
 }

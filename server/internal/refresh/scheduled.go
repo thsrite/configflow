@@ -48,13 +48,13 @@ func (e *StaleRuleCache) Error() string { return e.Message }
 // ErrorClass returns the stable native logging category.
 func (e *StaleRuleCache) ErrorClass() string { return "StaleRuleCache" }
 
-// LookupError means the resource referenced by a task no longer exists.
-type LookupError struct{ Message string }
+// NotFoundError means the resource referenced by a task no longer exists.
+type NotFoundError struct{ Message string }
 
-func (e *LookupError) Error() string { return e.Message }
+func (e *NotFoundError) Error() string { return e.Message }
 
 // ErrorClass returns the stable native logging category.
-func (e *LookupError) ErrorClass() string { return "LookupError" }
+func (e *NotFoundError) ErrorClass() string { return "NotFound" }
 
 // SourceTaskKey is a subscription's stable task identity.
 func SourceTaskKey(id string) string { return "subscription:" + id }
@@ -120,7 +120,7 @@ func ruleCacheAtLibrary(ctx context.Context, rule model.RuleConfig) (*string, er
 	}
 	path, err := rulefetch.CacheReadPath(ctx, rule, nil)
 	if err != nil {
-		if errors.Is(err, repo.ErrRejected) || isOSError(err) {
+		if errors.Is(err, repo.ErrRejected) || isFileError(err) {
 			return nil, nil
 		}
 		return nil, err
@@ -590,7 +590,7 @@ func LookupResource(ctx context.Context, kind, id string) (Resource, error) {
 			}
 		}
 	}
-	return Resource{}, &LookupError{Message: msgSourceGone}
+	return Resource{}, &NotFoundError{Message: msgSourceGone}
 }
 
 // RunResourceNow admits one manual refresh and retains the keyed job claim.

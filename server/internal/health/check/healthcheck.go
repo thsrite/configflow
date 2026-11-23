@@ -32,13 +32,13 @@ const (
 // ErrMissingHealthCheck reports that a provider source lacks health_check.
 var ErrMissingHealthCheck = errors.New(msgMissingHealthCheck)
 
-// ValueError reports an invalid health-check configuration or input value.
-type ValueError struct{ Message string }
+// ValidationError reports an invalid health-check configuration or input value.
+type ValidationError struct{ Message string }
 
 // Error returns the user-facing validation message.
-func (e *ValueError) Error() string { return e.Message }
+func (e *ValidationError) Error() string { return e.Message }
 
-func valueError(message string) error { return &ValueError{Message: message} }
+func invalidInput(message string) error { return &ValidationError{Message: message} }
 
 // ProviderHealth holds a resolved provider health-check configuration.
 type ProviderHealth struct {
@@ -186,14 +186,14 @@ var expectedStatusPattern = regexp.MustCompile(`^[0-9]{3}(?:-[0-9]{3})?(?:/[0-9]
 func ValidateHealthJSON(raw json.RawMessage, provider bool) error {
 	var object rawJSONObject
 	if err := json.Unmarshal(raw, &object); err != nil {
-		return valueError(msgHealthMustBeObject)
+		return invalidInput(msgHealthMustBeObject)
 	}
 	allowed := groupKeys
 	if provider {
 		allowed = providerKeys
 		for _, key := range object.Fields.Keys() {
 			if !containsKey(allowed, key) {
-				return valueError(msgHealthUnknownField)
+				return invalidInput(msgHealthUnknownField)
 			}
 		}
 	}
@@ -212,7 +212,7 @@ func ValidateHealthJSON(raw json.RawMessage, provider bool) error {
 // ValidateProviderHealth validates a stored provider health-check record.
 func ValidateProviderHealth(hc *model.ProviderHealthCheck) error {
 	if hc == nil {
-		return valueError(msgHealthMustBeObject)
+		return invalidInput(msgHealthMustBeObject)
 	}
 	raw, err := model.Marshal(hc)
 	if err != nil {
@@ -224,7 +224,7 @@ func ValidateProviderHealth(hc *model.ProviderHealthCheck) error {
 // ValidateGroupHealth validates the health-check fields of a stored proxy group.
 func ValidateGroupHealth(group *model.ProxyGroup) error {
 	if group == nil {
-		return valueError(msgHealthMustBeObject)
+		return invalidInput(msgHealthMustBeObject)
 	}
 	raw, err := model.Marshal(group)
 	if err != nil {
@@ -283,7 +283,7 @@ func validateFieldJSON(key string, raw json.RawMessage) error {
 	switch key {
 	case "enable", "lazy":
 		if !bytes.Equal(trimmed, []byte("true")) && !bytes.Equal(trimmed, []byte("false")) {
-			return valueError(fmt.Sprintf(msgHealthBool, key))
+			return invalidInput(fmt.Sprintf(msgHealthBool, key))
 		}
 	case "interval", "timeout", "tolerance":
 		minimum, maximum := int64(1), int64(600000)
@@ -294,36 +294,36 @@ func validateFieldJSON(key string, raw json.RawMessage) error {
 			maximum = 86400
 		}
 		if !isJSONIntLiteral(trimmed) {
-			return valueError(fmt.Sprintf(msgHealthIntRange, key, minimum, maximum))
+			return invalidInput(fmt.Sprintf(msgHealthIntRange, key, minimum, maximum))
 		}
 		n, err := strconv.ParseInt(string(trimmed), 10, 64)
 		if err != nil || n < minimum || n > maximum {
-			return valueError(fmt.Sprintf(msgHealthIntRange, key, minimum, maximum))
+			return invalidInput(fmt.Sprintf(msgHealthIntRange, key, minimum, maximum))
 		}
 	case "url":
 		var text StrictString
 		if err := json.Unmarshal(trimmed, &text); err != nil {
-			return valueError(msgHealthInvalidURL)
+			return invalidInput(msgHealthInvalidURL)
 		}
 		for _, r := range string(text) {
 			if unicode.IsSpace(r) || r < 32 {
-				return valueError(msgHealthInvalidURL)
+				return invalidInput(msgHealthInvalidURL)
 			}
 		}
 		if !validProbeURL(string(text)) {
-			return valueError(msgHealthURLNoCredentials)
+			return invalidInput(msgHealthURLNoCredentials)
 		}
 	case "expected-status":
 		var text StrictString
 		if err := json.Unmarshal(trimmed, &text); err != nil || !expectedStatusPattern.MatchString(string(text)) {
-			return valueError(msgHealthStatusFormat)
+			return invalidInput(msgHealthStatusFormat)
 		}
 		for _, item := range strings.Split(string(text), "/") {
 			bounds := strings.Split(item, "-")
 			first, _ := strconv.Atoi(bounds[0])
 			last, _ := strconv.Atoi(bounds[len(bounds)-1])
 			if first < 100 || first > 599 || last < 100 || last > 599 || first > last {
-				return valueError(msgHealthStatusRange)
+				return invalidInput(msgHealthStatusRange)
 			}
 		}
 	}
@@ -357,7 +357,7 @@ func ResolveProviderHealth(source *model.Fields) (ProviderHealth, error) {
 	}
 	var overlay model.ProviderHealthCheck
 	if err := json.Unmarshal(raw, &overlay); err != nil {
-		return ProviderHealth{}, valueError(msgHealthMustBeObject)
+		return ProviderHealth{}, invalidInput(msgHealthMustBeObject)
 	}
 	if err := ValidateProviderHealth(&overlay); err != nil {
 		return ProviderHealth{}, err

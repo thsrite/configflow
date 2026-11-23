@@ -96,14 +96,14 @@ func saveModel(ctx context.Context, m *agents.Manager, agentID, updateID string,
 			return err
 		}
 		if state == nil {
-			return valueError("Upgrade ownership changed")
+			return invalidInput("Upgrade ownership changed")
 		}
 		id, err := stateID(state)
 		if err != nil {
 			return err
 		}
 		if id != updateID {
-			return valueError("Upgrade ownership changed")
+			return invalidInput("Upgrade ownership changed")
 		}
 		before := state.Status
 		saved = state
@@ -211,11 +211,11 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 		return nil, err
 	}
 	if a == nil {
-		return nil, valueError("Agent not found")
+		return nil, invalidInput("Agent not found")
 	}
 	method, _ := a.DeploymentMethod, true
 	if method == "docker" {
-		return nil, valueError(msgDockerUpgrade)
+		return nil, invalidInput(msgDockerUpgrade)
 	}
 	response, err := requestModel(ctx, m, a, "GET", "/api/upgrade-info", nil)
 	if err != nil {
@@ -223,7 +223,7 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 			return nil, ctx.Err()
 		}
 		if agents.IsTransportError(err) || IsRefused(err) {
-			return nil, valueError(msgCannotConnect)
+			return nil, invalidInput(msgCannotConnect)
 		}
 		return nil, err
 	}
@@ -231,15 +231,15 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 	hasInfo := false
 	if response.StatusCode != 404 {
 		if response.StatusCode >= 400 && response.StatusCode < 600 {
-			return nil, valueError(msgCannotConnect)
+			return nil, invalidInput(msgCannotConnect)
 		}
 		data := responseData(response)
 		if !json.Valid(data) {
-			return nil, valueError(msgCannotConnect)
+			return nil, invalidInput(msgCannotConnect)
 		}
 		nonempty, err := model.Truthy(data)
 		if err != nil {
-			return nil, valueError(msgCannotConnect)
+			return nil, invalidInput(msgCannotConnect)
 		}
 		hasInfo = nonempty
 		if hasInfo {
@@ -253,10 +253,10 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 		}
 	}
 	if hasInfo && (info.AgentID != agentID || info.DeploymentMethod != "shell") {
-		return nil, valueError(msgIdentityMismatch)
+		return nil, invalidInput(msgIdentityMismatch)
 	}
 	if !hasInfo && method != "shell" {
-		return nil, valueError(msgLegacyMethod)
+		return nil, invalidInput(msgLegacyMethod)
 	}
 	available, err := artifactsFunc(ctx)
 	if err != nil {
@@ -264,15 +264,15 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 	}
 	if hasInfo {
 		if _, ok := available.Get(info.Architecture); !ok {
-			return nil, valueError(msgArtifactsNotReady)
+			return nil, invalidInput(msgArtifactsNotReady)
 		}
 	} else {
 		if available.Len() != len(Arches) {
-			return nil, valueError(msgArtifactsNotReady)
+			return nil, invalidInput(msgArtifactsNotReady)
 		}
 		for _, arch := range Arches {
 			if _, ok := available.Get(arch); !ok {
-				return nil, valueError(msgArtifactsNotReady)
+				return nil, invalidInput(msgArtifactsNotReady)
 			}
 		}
 	}
@@ -307,7 +307,7 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 			return err
 		}
 		if active {
-			return valueError(msgHAActive)
+			return invalidInput(msgHAActive)
 		}
 		prior, err := readState(current)
 		if err != nil {
@@ -331,10 +331,10 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 			}
 		}
 		if priorID != snapshotID {
-			return valueError(msgUpgradeChanged)
+			return invalidInput(msgUpgradeChanged)
 		}
 		if prior != nil && (!Terminal[prior.Status] || prior.Status == "rollback_failed") {
-			return valueError(msgUpgradeBusy)
+			return invalidInput(msgUpgradeBusy)
 		}
 		if deployment := current.LatestDeployment; deployment.HasMembers() {
 			status := deployment.Status
@@ -342,7 +342,7 @@ func StartModel(ctx context.Context, m *agents.Manager, agentID string) (*model.
 				return &CorruptStateError{Field: "latest_deployment.status"}
 			}
 			if !terminalNotRollbackFailed[status] {
-				return valueError(msgDeploymentBusy)
+				return invalidInput(msgDeploymentBusy)
 			}
 		}
 		if err := tx.Err(); err != nil {
@@ -399,14 +399,14 @@ func PollModel(ctx context.Context, m *agents.Manager, agentID string) (*model.A
 		return nil, err
 	}
 	if a == nil {
-		return nil, valueError("No upgrade recorded")
+		return nil, invalidInput("No upgrade recorded")
 	}
 	state, err := readState(a)
 	if err != nil {
 		return nil, err
 	}
 	if state == nil {
-		return nil, valueError("No upgrade recorded")
+		return nil, invalidInput("No upgrade recorded")
 	}
 	if terminalNotRollbackFailed[state.Status] {
 		return state, nil

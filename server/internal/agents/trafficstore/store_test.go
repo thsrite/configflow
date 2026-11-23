@@ -644,17 +644,17 @@ func TestCleanReportDropsOnlyTheBadItem(t *testing.T) {
 	}
 }
 
-// Unhashable values tested against a frozenset raise TypeError (the route
-// answers 500), as in Python.
+// An array or object where a status or outlet choice belongs is invalid
+// data (the route answers 500).
 func TestCleanReportUnhashableStatusOrOutletRaise(t *testing.T) {
 	r := discoveryReport()
 	r["status"] = []any{"running"}
 	raw, _ := json.Marshal(r)
-	if _, err := DecodeReport(raw); err == nil || err.Error() != "unhashable type: 'list'" {
+	if _, err := DecodeReport(raw); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("status: %v", err)
 	}
 	raw, _ = json.Marshal(discoveryReport(item("a.com", testjson.Field{Key: "outlet", Value: map[string]any{}})))
-	if _, err := DecodeReport(raw); err == nil || err.Error() != "unhashable type: 'dict'" {
+	if _, err := DecodeReport(raw); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("outlet: %v", err)
 	}
 	// schema True == 1 and 1.0 == 1 pass, as in Python.
@@ -718,18 +718,17 @@ func TestStoreCapsHostsPerDayKeepingHeaviest(t *testing.T) {
 	}
 }
 
-// Python indexes item['rule'] when merging: an item without "rule" (valid
-// for clean_report) is a KeyError, None a TypeError; nothing is written.
+// Merging needs item rule text: an item without "rule" (valid for
+// DecodeReport) is a missing member, a null rule invalid; nothing is written.
 func TestReportItemWithoutRuleFailsLikePython(t *testing.T) {
 	isolated(t)
 	store := NewNative(t.TempDir())
 	withoutRule := item("x.com")
 	delete(withoutRule, "rule")
-	if _, err := store.Add(context.Background(), "a1", mustDecodeReport(t, discoveryReport(withoutRule)), nil); err == nil || err.Error() != "'rule'" {
+	if _, err := store.Add(context.Background(), "a1", mustDecodeReport(t, discoveryReport(withoutRule)), nil); !errors.Is(err, ErrMissingMember) {
 		t.Fatalf("missing rule: %v", err)
 	}
-	if _, err := store.Add(context.Background(), "a1", mustDecodeReport(t, discoveryReport(item("x.com", testjson.Field{Key: "rule", Value: nil}))), nil); err == nil ||
-		err.Error() != "sequence item 0: expected str instance, NoneType found" {
+	if _, err := store.Add(context.Background(), "a1", mustDecodeReport(t, discoveryReport(item("x.com", testjson.Field{Key: "rule", Value: nil}))), nil); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("None rule: %v", err)
 	}
 	if _, err := os.Stat(store.Path("a1")); !errors.Is(err, os.ErrNotExist) {

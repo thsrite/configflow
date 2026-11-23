@@ -9,7 +9,7 @@
 // Get(ctx) is get_agent_manager() (one Manager per repository), Init(ctx)
 // init_agent_manager(), New(ctx, repository) AgentManager(repository). Every
 // method takes the request ctx first. Records are native model.Agent/model.Deployment values; errors are
-// *DeploymentConflict (AgentDeploymentConflict, 409), *PermissionError
+// *DeploymentConflict (AgentDeploymentConflict, 409), ErrUnauthorized
 // (re-registration without the token, 401), *ValidationError, *repo.Error,
 // *TransportError (requests.RequestException), *RemoteError (RuntimeError
 // with a message for the user).

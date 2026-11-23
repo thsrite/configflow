@@ -97,9 +97,9 @@ func TestWrongTypedOutputIdentitiesFailWithOffendingValue(t *testing.T) {
 				if err == nil {
 					_, err = EvaluateServiceList(results)
 				}
-				var ve *ValueError
+				var ve *ValidationError
 				if !errors.As(err, &ve) || ve.Message != tt.want {
-					t.Fatalf("EvaluateServiceList(%s): want ValueError %q, got %v", tt.raw, tt.want, err)
+					t.Fatalf("EvaluateServiceList(%s): want ValidationError %q, got %v", tt.raw, tt.want, err)
 				}
 
 				var exitResults []RegionResult
@@ -108,7 +108,7 @@ func TestWrongTypedOutputIdentitiesFailWithOffendingValue(t *testing.T) {
 					_, err = SummarizeExit(exitResults)
 				}
 				if !errors.As(err, &ve) || ve.Message != tt.want {
-					t.Fatalf("SummarizeExit(%s): want ValueError %q, got %v", tt.raw, tt.want, err)
+					t.Fatalf("SummarizeExit(%s): want ValidationError %q, got %v", tt.raw, tt.want, err)
 				}
 			})
 		}
@@ -130,9 +130,9 @@ func TestWrongTypedOutputIdentitiesFailWithOffendingValue(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				var targets []AvailableTarget
 				err := json.Unmarshal([]byte(tt.raw), &targets)
-				var ve *ValueError
+				var ve *ValidationError
 				if !errors.As(err, &ve) || ve.Message != tt.want {
-					t.Fatalf("Unmarshal AvailableTarget(%s): want ValueError %q, got %v", tt.raw, tt.want, err)
+					t.Fatalf("Unmarshal AvailableTarget(%s): want ValidationError %q, got %v", tt.raw, tt.want, err)
 				}
 			})
 		}

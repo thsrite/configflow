@@ -165,7 +165,7 @@ func pythonClass(err error) string {
 		listener *subs.ListenerReferenceError
 		strategy *rules.StrategyReferenceError
 		interval *refresh.IntervalError
-		health   *check.ValueError
+		health   *check.ValidationError
 		candid   *rules.CandidateValidationError
 		hook     *convert.HookMissingError
 	)

@@ -19,7 +19,7 @@ type records struct {
 func readRecords(raw json.RawMessage) (records, error) {
 	var fields model.Fields
 	if len(raw) == 0 || raw[0] != '{' || jsondecode.Unmarshal(raw, &fields) != nil {
-		return records{}, &TypeError{Message: "invalid traffic collection"}
+		return records{}, invalidData("invalid traffic collection")
 	}
 	r := records{values: make(map[string]json.RawMessage, fields.Len()), order: fields.Keys()}
 	for key, raw := range fields.All() {
@@ -106,7 +106,7 @@ func openHost(hosts records, name, stamp string) (*hostMerge, error) {
 		if raw, ok := entry.get(key); ok && string(raw) != "null" {
 			var value string
 			if jsondecode.Unmarshal(raw, &value) != nil {
-				return nil, &TypeError{Message: "invalid traffic host timestamp"}
+				return nil, invalidData("invalid traffic host timestamp")
 			}
 		}
 	}
@@ -129,7 +129,7 @@ func openHost(hosts records, name, stamp string) (*hostMerge, error) {
 	routesRaw, ok := entry.get("by_route")
 	if !ok {
 		if exists {
-			return nil, &KeyError{Key: "by_route"}
+			return nil, missingMember("by_route")
 		}
 		routesRaw = []byte(`{}`)
 	}

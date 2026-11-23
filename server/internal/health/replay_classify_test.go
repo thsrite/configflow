@@ -83,8 +83,8 @@ func assertNativeExpectation(t *testing.T, want typedExpectation, fn string, out
 	if fn != want.Fn {
 		t.Fatalf("typed reference row changed: %s vs %s", fn, want.Fn)
 	}
-	var cv *check.ValueError
-	var hv *ValueError
+	var cv *check.ValidationError
+	var hv *ValidationError
 	var unavailable *ProbeUnavailable
 	var shape *json.UnmarshalTypeError
 	var syntax *json.SyntaxError

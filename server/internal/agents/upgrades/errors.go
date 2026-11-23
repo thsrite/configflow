@@ -11,7 +11,7 @@ import (
 type ValidationError struct{ Message string }
 
 func (e *ValidationError) Error() string { return e.Message }
-func valueError(message string) error    { return &ValidationError{Message: message} }
+func invalidInput(message string) error  { return &ValidationError{Message: message} }
 
 // CorruptStateError refuses damaged persisted operation evidence without clearing it.
 // Administrators must repair the stored field before another operation can proceed.

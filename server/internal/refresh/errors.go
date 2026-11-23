@@ -88,14 +88,14 @@ func safeName(name, id string) string {
 	}
 	return logx.LogText(diag.EventText(name), 120)
 }
-func isOSError(err error) bool {
+func isFileError(err error) bool {
 	var path *fs.PathError
 	var link *os.LinkError
 	var errno syscall.Errno
 	return errors.Is(err, store.ErrStorage) || errors.As(err, &path) || errors.As(err, &link) || errors.As(err, &errno)
 }
-func isRepositoryOrOSError(err error) bool {
-	return errors.Is(err, repo.ErrRepository) || isOSError(err)
+func isRepositoryOrFileError(err error) bool {
+	return errors.Is(err, repo.ErrRepository) || isFileError(err)
 }
 func equalStoredMembers(a, b model.RuleLibraryItem, fields []string) bool {
 	for _, field := range fields {
@@ -128,5 +128,5 @@ func (e *SourceValidationError) ErrorClass() string {
 	if e.CacheShape {
 		return "DialerReferenceError"
 	}
-	return "ValueError"
+	return "SourceValidationError"
 }

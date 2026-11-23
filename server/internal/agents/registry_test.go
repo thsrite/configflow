@@ -61,8 +61,7 @@ func TestManagerRejectsUnauthenticatedExistingRegistrationWithoutMutation(t *tes
 			t.Fatal(err)
 		}
 		_, err = e.m.RegisterIdentity(e.ctx, input, RegistrationOptions{ExistingToken: token})
-		var permission *PermissionError
-		if !errors.As(err, &permission) {
+		if !errors.Is(err, ErrUnauthorized) {
 			t.Fatalf("%q: err %v", token, err)
 		}
 		if diffJSONValues(t, before, e.system().Agents) != "" || e.get(created.ID).Token != *created.Token {

@@ -105,7 +105,7 @@ func respond(out any, err error) (*httpx.Response, error) {
 	var candidate *shared.CandidateValidationError
 	var dialer *convert.DialerReferenceError
 	var listener *subs.ListenerReferenceError
-	var health *check.ValueError
+	var health *check.ValidationError
 	if errors.As(err, &candidate) || errors.As(err, &dialer) || errors.As(err, &listener) || errors.As(err, &health) {
 		return httpx.Message(400, false, err.Error()), nil
 	}

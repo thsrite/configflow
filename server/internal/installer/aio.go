@@ -104,40 +104,40 @@ func insideAgentDirectory(value string) bool {
 // RenderAIOInstall is generate_go_aio_install_script.
 func RenderAIOInstall(o AIOInstallOptions) (string, error) {
 	if o.TunPrepareAssumeEnabled && !(o.ManageTun && o.VerifiedAgentPath != "") {
-		return "", valueError("assume-tun-enabled is only supported inside the gateway installer")
+		return "", invalidInput("assume-tun-enabled is only supported inside the gateway installer")
 	}
 	if o.VerifiedAgentPath != "" && o.VerifiedAgentPath != "$GATEWAY_STAGE/configflow-agent" {
-		return "", valueError("Preverified Agent binary is only supported inside the gateway installer")
+		return "", invalidInput("Preverified Agent binary is only supported inside the gateway installer")
 	}
 	if o.VerifiedAgentPath != "" && !o.NonInteractive {
-		return "", valueError("Preverified Agent requires non-interactive installation")
+		return "", invalidInput("Preverified Agent requires non-interactive installation")
 	}
 	if (o.InstallationID != "") != (o.InstallationToken != "") {
-		return "", valueError("Installation id and token must be supplied together")
+		return "", invalidInput("Installation id and token must be supplied together")
 	}
 	if o.InstallationID != "" && !isInstallationID(o.InstallationID) {
-		return "", valueError("Invalid installation id")
+		return "", invalidInput("Invalid installation id")
 	}
 	if o.InstallationToken != "" && !IsSessionToken(o.InstallationToken) {
-		return "", valueError("Invalid installation token")
+		return "", invalidInput("Invalid installation token")
 	}
 	if !matchesClass(o.AgentName, "_-") {
-		return "", valueError("Invalid agent name: use letters, numbers, hyphens or underscores")
+		return "", invalidInput("Invalid agent name: use letters, numbers, hyphens or underscores")
 	}
 	var ports []string
 	for _, port := range []int{o.MihomoAgentPort, o.OxidnsAgentPort} {
 		if port < 1 || port > 65535 {
-			return "", valueError("Invalid Agent port")
+			return "", invalidInput("Invalid Agent port")
 		}
 		ports = append(ports, strconv.Itoa(port))
 	}
 	if ports[0] == ports[1] {
-		return "", valueError("Mihomo and OxiDNS Agent ports must be different")
+		return "", invalidInput("Mihomo and OxiDNS Agent ports must be different")
 	}
 	if o.InstallCore {
 		for _, port := range ports {
 			if port == "53" || port == "1053" {
-				return "", valueError(msgAIOCoreDNSPorts)
+				return "", invalidInput(msgAIOCoreDNSPorts)
 			}
 		}
 	}
@@ -150,18 +150,18 @@ func RenderAIOInstall(o AIOInstallOptions) (string, error) {
 			}
 		}
 		if bad {
-			return "", valueError("Core configuration paths must be absolute file paths without parent traversal")
+			return "", invalidInput("Core configuration paths must be absolute file paths without parent traversal")
 		}
 		if insideAgentDirectory(value) {
-			return "", valueError("Core configuration paths must be outside the Agent directory")
+			return "", invalidInput("Core configuration paths must be outside the Agent directory")
 		}
 		paths = append(paths, purePosixStr("/"+strings.TrimLeft(value, "/")))
 	}
 	if paths[0] == paths[1] {
-		return "", valueError("Mihomo and OxiDNS configuration paths must be different")
+		return "", invalidInput("Mihomo and OxiDNS configuration paths must be different")
 	}
 	if path.Dir(paths[0]) == path.Dir(paths[1]) {
-		return "", valueError("Core configurations require separate directories for deployment journals")
+		return "", invalidInput("Core configurations require separate directories for deployment journals")
 	}
 	replacements := map[string]string{
 		"binary_download_url_shell": shlexQuote(strings.TrimRight(o.BinaryDownloadURL, "/")),
@@ -211,21 +211,21 @@ cf_step_done "TUN 准备完成（具体处理结果见日志）"`),
 	}
 	for _, s := range services {
 		if !isUnitName(s.unit) {
-			return "", valueError("Invalid service unit")
+			return "", invalidInput("Invalid service unit")
 		}
 		unit := strings.TrimSuffix(s.unit, ".service")
 		if unit == "" || strings.HasPrefix(unit, "configflow-") {
-			return "", valueError("Core service unit must not be a ConfigFlow Agent unit")
+			return "", invalidInput("Core service unit must not be a ConfigFlow Agent unit")
 		}
 		if s.binary == "" || hasControl(s.binary) {
-			return "", valueError("Invalid core service binary")
+			return "", invalidInput("Invalid core service binary")
 		}
 		if strings.HasPrefix(s.binary, "/") && insideAgentDirectory(s.binary) {
-			return "", valueError("Core service binaries must be outside the Agent directory")
+			return "", invalidInput("Core service binaries must be outside the Agent directory")
 		}
 		if o.InstallCore && (s.path != "/etc/"+s.name+"/config.yaml" || unit != s.name ||
 			(s.binary != s.name && s.binary != "/usr/local/bin/"+s.name)) {
-			return "", valueError(msgAIOCoreDefaults)
+			return "", invalidInput(msgAIOCoreDefaults)
 		}
 		cfg := aioAgentConfig{
 			ServerURL: o.ServerURL, AgentName: o.AgentName + "-" + s.name,
@@ -249,7 +249,7 @@ cf_step_done "TUN 准备完成（具体处理结果见日志）"`),
 		replacements[s.name+"_service_binary_shell"] = shlexQuote(s.binary)
 	}
 	if strings.TrimSuffix(o.MihomoServiceUnit, ".service") == strings.TrimSuffix(o.OxidnsServiceUnit, ".service") {
-		return "", valueError("Mihomo and OxiDNS service units must be different")
+		return "", invalidInput("Mihomo and OxiDNS service units must be different")
 	}
 	archDetection := []string{
 		`case "$(uname -m)" in`,
@@ -312,7 +312,7 @@ fi`
 		}
 		if start < 0 || end < 0 {
 			// str.index raises ValueError("substring not found").
-			return "", valueError("substring not found")
+			return "", invalidInput("substring not found")
 		}
 		template = template[:start] + `cp "$GATEWAY_STAGE/configflow-agent" "$BINARY_TMP"` + template[end:]
 	}

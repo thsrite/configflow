@@ -50,8 +50,8 @@ func testEnv(runner Runner, vars map[string]string) *ProbeEnv {
 }
 
 func errorClass(err error) string {
-	var cv *check.ValueError
-	var hv *ValueError
+	var cv *check.ValidationError
+	var hv *ValidationError
 	var pu *ProbeUnavailable
 	switch {
 	case errors.As(err, &cv), errors.As(err, &hv):
@@ -564,7 +564,7 @@ func o18T1dWithoutUndeclared(value any) any {
 // members ProviderHealthCheck does not declare or values of another type.
 // Since O18 T1c stored records read leniently (undeclared members dropped,
 // lazy 0 reads as false), where Python's provider_health_check raised
-// ValueError; health_check input is still strict (accepted difference).
+// ValidationError; health_check input is still strict (accepted difference).
 func o18T1cDirtyHealthCheck(source json.RawMessage) bool {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(source, &fields) != nil || fields["health_check"] == nil {
@@ -578,7 +578,7 @@ func o18T1cDirtyHealthCheck(source json.RawMessage) bool {
 func saveProbeRaw(store *check.ProbeStore, agentID string, raw json.RawMessage, now time.Time) error {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || trimmed[0] != '{' {
-		return &check.ValueError{Message: "探测记录必须为对象且 checked_at 为字符串"}
+		return &check.ValidationError{Message: "探测记录必须为对象且 checked_at 为字符串"}
 	}
 	// A result entry that is not an object cannot be represented in the
 	// typed map: the caller's validation refuses it (Python's message).
@@ -588,7 +588,7 @@ func saveProbeRaw(store *check.ProbeStore, agentID string, raw json.RawMessage, 
 		return err
 	}
 	if len(issues) > 0 {
-		return &check.ValueError{Message: "探测记录必须为对象且 checked_at 为字符串"}
+		return &check.ValidationError{Message: "探测记录必须为对象且 checked_at 为字符串"}
 	}
 	return store.SaveEntries(agentID, entries, now)
 }
@@ -627,7 +627,7 @@ func evalSingleService(serviceID string, raw any) (any, error) {
 	for _, r := range list {
 		// EvaluateServiceList checks missing IDs; validate single-service input identically.
 		if _, err := check.EvaluateServiceList([]check.RegionResult{r}); err != nil {
-			var ve *check.ValueError
+			var ve *check.ValidationError
 			if errors.As(err, &ve) && strings.Contains(ve.Message, "id") {
 				return nil, err
 			}
@@ -713,7 +713,7 @@ func evalProbeURL(host string, rawPort any) (any, error) {
 	if rawPort != nil {
 		n, ok := isIntegralInt64(rawPort)
 		if !ok {
-			return nil, &ValueError{Message: "port must be integer"}
+			return nil, &ValidationError{Message: "port must be integer"}
 		}
 		port = int(n)
 	}

@@ -29,7 +29,7 @@ func decodeCleanedReport(raw json.RawMessage) (*Report, error) {
 	}
 	n, ok := new(big.Int).SetString(string(dropped), 10)
 	if !ok || n.Sign() < 0 {
-		return nil, &TypeError{Message: "invalid cleaned dropped counter"}
+		return nil, invalidData("invalid cleaned dropped counter")
 	}
 	if err := f.Set("dropped", json.RawMessage("0")); err != nil {
 		return nil, err
@@ -240,8 +240,7 @@ func TestNativeStoreInvalidFileMatchesCorruptDaysAndResetRecovers(t *testing.T) 
 			corruptionWarnings.Unlock()
 			for i := 0; i < 2; i++ {
 				_, err := s.Add(t.Context(), "a", nativeReport(t), &at)
-				var shape *TypeError
-				if !errors.As(err, &shape) || shape.Message != "invalid traffic days" {
+				if !errors.Is(err, ErrInvalid) || err.Error() != "invalid traffic data: invalid traffic days" {
 					t.Fatalf("must match corrupt days error: %v", err)
 				}
 				raw, err := os.ReadFile(s.Path("a"))

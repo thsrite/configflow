@@ -162,7 +162,7 @@ func findModel(records []model.Agent, id string) (*model.Agent, error) {
 			return &records[i], nil
 		}
 	}
-	return nil, valueError("Agent not found")
+	return nil, invalidInput("Agent not found")
 }
 func activeHA(a *model.Agent) (bool, error) {
 	job := a.OxiDNSHAPublication

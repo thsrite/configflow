@@ -41,13 +41,13 @@ func SetContentSyncInvalidator(fn ContentSyncInvalidator) {
 		contentSync.Store(&fn)
 	}
 }
-func isOSError(err error) bool {
+func isFileError(err error) bool {
 	var pe *fs.PathError
 	var le *os.LinkError
 	var errno syscall.Errno
 	return errors.Is(err, store.ErrStorage) || errors.As(err, &pe) || errors.As(err, &le) || errors.As(err, &errno)
 }
-func osErrorText(err error) string { return err.Error() }
+func fileErrorText(err error) string { return err.Error() }
 func ensureCacheDir(ctx context.Context) (string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
@@ -239,7 +239,7 @@ func saveCache(ctx context.Context, id string, payload *Cache) (*Cache, error) {
 		return nil, err
 	}
 	if _, err := r.WriteSharedText(ctx, filepath.Join("subscribes", filepath.Base(path)), formatted.Bytes()); err != nil {
-		if !isOSError(err) {
+		if !isFileError(err) {
 			return nil, err
 		}
 		cacheLog.Error(fmt.Sprintf(msgCacheWrite, id, err))

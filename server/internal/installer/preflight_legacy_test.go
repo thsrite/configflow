@@ -9,11 +9,11 @@ import (
 func ParsePreflightReport(output, networkMode any) (map[string]any, error) {
 	mode, _ := networkMode.(string)
 	if mode != "host" && mode != "macvlan" {
-		return nil, valueError(msgPreflightNetwork)
+		return nil, invalidInput(msgPreflightNetwork)
 	}
 	text, ok := output.(string)
 	if !ok {
-		return nil, valueError(msgPreflightOutputType)
+		return nil, invalidInput(msgPreflightOutputType)
 	}
 	report, err := EvaluatePreflight(text, mode)
 	if err != nil {

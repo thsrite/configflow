@@ -171,7 +171,7 @@ func (r *RegionResult) UnmarshalJSON(data []byte) error {
 		out.hasID = true
 		id, err := decodeNonNullText(bytes.TrimSpace(rawID))
 		if err != nil {
-			return valueError(fmt.Sprintf(msgRegionResultIDInvalid, compactRaw(rawID)))
+			return invalidInput(fmt.Sprintf(msgRegionResultIDInvalid, compactRaw(rawID)))
 		}
 		out.ID = id
 	}
@@ -352,7 +352,7 @@ func evaluateClaude(results map[string]RegionResult) (ServiceVerdict, error) {
 func splitPath(rawURL string) (string, error) {
 	parts, err := weburl.Parse(rawURL)
 	if err != nil {
-		return "", valueError(err.Error())
+		return "", invalidInput(err.Error())
 	}
 	return weburl.RawPath(parts), nil
 }
@@ -561,7 +561,7 @@ func indexResultsByID(results []RegionResult) (map[string]RegionResult, error) {
 	index := make(map[string]RegionResult, len(results))
 	for _, entry := range results {
 		if !entry.hasID && entry.ID == "" {
-			return nil, valueError(msgRegionResultIDMissing)
+			return nil, invalidInput(msgRegionResultIDMissing)
 		}
 		index[entry.ID] = entry
 	}
@@ -597,7 +597,7 @@ func SummarizeExit(results []RegionResult) (ExitSummary, error) {
 	var exit *RegionResult
 	for i := range results {
 		if !results[i].hasID && results[i].ID == "" {
-			return ExitSummary{}, valueError(msgRegionResultIDMissing)
+			return ExitSummary{}, invalidInput(msgRegionResultIDMissing)
 		}
 		if exit == nil && results[i].ID == "exit" {
 			exit = &results[i]
@@ -776,11 +776,11 @@ func (t *AvailableTarget) UnmarshalJSON(data []byte) error {
 	}
 	rawName, ok := rawObj.Fields.Get("name")
 	if !ok {
-		return valueError(msgTargetNameMissing)
+		return invalidInput(msgTargetNameMissing)
 	}
 	name, err := decodeNonNullText(bytes.TrimSpace(rawName))
 	if err != nil {
-		return valueError(fmt.Sprintf(msgTargetNameInvalid, compactRaw(rawName)))
+		return invalidInput(fmt.Sprintf(msgTargetNameInvalid, compactRaw(rawName)))
 	}
 	out := AvailableTarget{Name: name, Alive: true}
 	if rawType, ok := rawObj.Fields.Get("type"); ok {
@@ -961,13 +961,13 @@ func (s *RegionStore) UpdateDataContext(ctx context.Context, agentID string, mut
 	}
 	data := s.readData(agentID)
 	if data.damaged {
-		return valueError(msgInvalidRegionStore)
+		return invalidInput(msgInvalidRegionStore)
 	}
 	if err := mutate(&data); err != nil {
 		return err
 	}
 	if !validTimedRecords(data.Domains) || !validTimedRecords(data.Websites) {
-		return valueError(msgInvalidRegionStore)
+		return invalidInput(msgInvalidRegionStore)
 	}
 
 	bound := oldest(now, RegionRetentionDays)

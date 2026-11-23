@@ -28,13 +28,13 @@ const (
 // DefaultIntervalLabel is validate_refresh_interval's default label.
 const DefaultIntervalLabel = "订阅源更新间隔"
 
-// IntervalError is the ValueError of validate_refresh_interval.
+// IntervalError reports a refresh interval outside the allowed range.
 type IntervalError struct{ Message string }
 
 func (e *IntervalError) Error() string { return e.Message }
 
 // ErrorClass returns the stable native logging category.
-func (e *IntervalError) ErrorClass() string { return "ValueError" }
+func (e *IntervalError) ErrorClass() string { return "IntervalError" }
 
 // CheckInterval validates a typed interval supplied by the source owner.
 func CheckInterval(value model.Int, label string) (int64, error) {

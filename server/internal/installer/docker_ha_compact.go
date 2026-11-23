@@ -52,7 +52,7 @@ func generateCompactNative(params GuideOptions, request GuideRequest, enrollment
 		return "", nil, err
 	}
 	if composeDataDirRefused(data) {
-		return "", nil, valueError(composeDataDirMessage)
+		return "", nil, invalidInput(composeDataDirMessage)
 	}
 	baseParams := params
 	baseParams.HAHostIDPath = "/etc/machine-id"
@@ -70,7 +70,7 @@ func generateCompactNative(params GuideOptions, request GuideRequest, enrollment
 			session = session[i+1:]
 		}
 		if !composeSessionRe.MatchString(session) || !composeTokenRe.MatchString(enrollment.Token) {
-			return "", nil, valueError(msgCapabilityFormat)
+			return "", nil, invalidInput(msgCapabilityFormat)
 		}
 		key = session + "." + enrollment.Token
 	}

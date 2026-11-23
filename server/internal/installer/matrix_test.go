@@ -68,7 +68,7 @@ func testCompatInteger(value any, fallback int64) (*big.Int, error) {
 	case string:
 		return parseInstallInteger(n)
 	}
-	return nil, valueError("Invalid installer integer")
+	return nil, invalidInput("Invalid installer integer")
 }
 
 func testCompatPort(value any, fallback int64) (int, error) {
@@ -77,7 +77,7 @@ func testCompatPort(value any, fallback int64) (int, error) {
 		return 0, err
 	}
 	if !inRange(n, 1, 65535) {
-		return 0, valueError("Invalid Agent port")
+		return 0, invalidInput("Invalid Agent port")
 	}
 	return int(n.Int64()), nil
 }
@@ -161,7 +161,7 @@ func renderCase(fn string, k kwargs) (string, error) {
 			if _, err := RenderAgentInstall(opts); err != nil && err.Error() != msgCoreDNSPortConflict {
 				return "", err
 			}
-			return "", valueError("Invalid Agent port")
+			return "", invalidInput("Invalid Agent port")
 		}
 		if timeoutErr != nil {
 			opts.DeploymentHealthTimeout = big.NewInt(30)
@@ -180,10 +180,10 @@ func renderCase(fn string, k kwargs) (string, error) {
 		mihomoPort, portErr := testCompatPort(rawMihomo, 8080)
 		oxidnsPort, secondErr := testCompatPort(rawOxidns, 8082)
 		if rawMihomo != nil && !testCompatDecimalPort(rawMihomo) {
-			portErr = valueError("Invalid Agent port")
+			portErr = invalidInput("Invalid Agent port")
 		}
 		if rawOxidns != nil && !testCompatDecimalPort(rawOxidns) {
-			secondErr = valueError("Invalid Agent port")
+			secondErr = invalidInput("Invalid Agent port")
 		}
 		if portErr == nil {
 			portErr = secondErr
@@ -226,10 +226,10 @@ func renderCase(fn string, k kwargs) (string, error) {
 		mihomoPort, portErr := testCompatPort(rawMihomo, 8080)
 		oxidnsPort, secondErr := testCompatPort(rawOxidns, 8082)
 		if rawMihomo != nil && !testCompatDecimalPort(rawMihomo) {
-			portErr = valueError("Invalid Agent port")
+			portErr = invalidInput("Invalid Agent port")
 		}
 		if rawOxidns != nil && !testCompatDecimalPort(rawOxidns) {
-			secondErr = valueError("Invalid Agent port")
+			secondErr = invalidInput("Invalid Agent port")
 		}
 		if portErr == nil {
 			portErr = secondErr

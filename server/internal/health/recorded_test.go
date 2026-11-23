@@ -77,8 +77,8 @@ func loadRecordedRows(t *testing.T, name string) []recordedRow {
 }
 
 func recordedClass(err error) string {
-	var cv *check.ValueError
-	var hv *ValueError
+	var cv *check.ValidationError
+	var hv *ValidationError
 	var pu *ProbeUnavailable
 	var pb *ProbeBusy
 	switch {
@@ -175,7 +175,7 @@ func (r *replayRunner) Run(_ context.Context, command Command) (Result, error) {
 	case "TimeoutExpired":
 		return Result{}, ErrTimeout
 	case "OSError":
-		return Result{}, &OSError{Err: errors.New("exec format error")}
+		return Result{}, errors.New("exec format error")
 	case "":
 	default:
 		return Result{}, errors.New("unrecorded worker failure " + mapStr(w, "err"))
@@ -353,14 +353,14 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 			case "_ipv4_server":
 				text, ok := arg("value").(string)
 				if !ok {
-					err = valueError(str("message"))
+					err = invalidInput(str("message"))
 				} else {
 					value, err = ipv4ServerString(text, str("message"))
 				}
 			case "_server":
 				text, ok := arg("value").(string)
 				if !ok {
-					err = valueError(DNSError)
+					err = invalidInput(DNSError)
 				} else {
 					value, err = serverString(text)
 				}
@@ -455,7 +455,7 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 							return uerr
 						}
 						if !rawCheck.Has("domains") || !rawCheck.Has("websites") {
-							return &check.ValueError{Message: "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"}
+							return &check.ValidationError{Message: "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"}
 						}
 						// Sections or entries that are not objects cannot be
 						// represented in the typed record: refused as Python did.
@@ -466,7 +466,7 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 						}
 						for _, issue := range issues {
 							if model.IssueUnder([]model.FieldIssue{issue}, "domains") || model.IssueUnder([]model.FieldIssue{issue}, "websites") {
-								return &check.ValueError{Message: "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"}
+								return &check.ValidationError{Message: "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"}
 							}
 						}
 						*data = next

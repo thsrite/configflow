@@ -795,7 +795,7 @@ func convertFailure(err error) error {
 // ValueError is a validation error.
 func checkHealth(raw json.RawMessage, provider bool) error {
 	err := check.ValidateHealthJSON(raw, provider)
-	var invalid *check.ValueError
+	var invalid *check.ValidationError
 	if errors.As(err, &invalid) {
 		return validationError(invalid.Message)
 	}

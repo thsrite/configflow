@@ -110,7 +110,7 @@ func sessionExpired(s installationSession, now float64, allowMissing bool) (bool
 		if allowMissing {
 			return true, nil
 		}
-		return false, typeError(msgInstallationExpiry)
+		return false, renderFailed(msgInstallationExpiry)
 	}
 	text := string(bytes.TrimSpace(raw))
 	if text == "true" {
@@ -119,11 +119,11 @@ func sessionExpired(s installationSession, now float64, allowMissing bool) (bool
 		text = "0"
 	}
 	if len(text) == 0 || text[0] == '"' {
-		return false, typeError(msgInstallationExpiry)
+		return false, renderFailed(msgInstallationExpiry)
 	}
 	expiry, valid := new(big.Rat).SetString(text)
 	if !valid {
-		return false, typeError(msgInstallationExpiry)
+		return false, renderFailed(msgInstallationExpiry)
 	}
 	return expiry.Cmp(new(big.Rat).SetFloat64(now)) <= 0, nil
 }
@@ -153,7 +153,7 @@ func IssueCapability(ctx context.Context, dataDir string, request json.RawMessag
 	}
 	portValue, portErr := strconv.ParseUint(port.String(), 10, 16)
 	if !nameOK || !hostOK || !portOK || portErr != nil || portValue < 1024 {
-		return nil, typeError(msgInstallationIdentity)
+		return nil, renderFailed(msgInstallationIdentity)
 	}
 	server, _ := fieldText(fields, "server_url")
 	spec := fields
@@ -277,7 +277,7 @@ func IssueCapability(ctx context.Context, dataDir string, request json.RawMessag
 		}
 	}
 	if _, ok := fieldText(session.fields, "token"); !ok {
-		return nil, typeError(msgInstallationIdentity)
+		return nil, renderFailed(msgInstallationIdentity)
 	}
 	if !exists {
 		if err := ctx.Err(); err != nil {
@@ -328,14 +328,14 @@ func EnrollIdentity(ctx context.Context, dataDir string, manager AgentEditor, se
 		return result, enrollmentError(enrollmentExpired, 401)
 	}
 	if _, ok := fieldText(session.fields, "token_hash"); !ok || strings.ContainsFunc(session.tokenHash, func(r rune) bool { return r > 127 }) {
-		return result, typeError(msgInstallationIdentity)
+		return result, renderFailed(msgInstallationIdentity)
 	}
 	sum := sha256.Sum256([]byte(token))
 	if subtle.ConstantTimeCompare([]byte(hex.EncodeToString(sum[:])), []byte(session.tokenHash)) != 1 {
 		return result, enrollmentError(enrollmentExpired, 401)
 	}
 	if !session.fields.Has("profile_id") {
-		return result, typeError(msgInstallationIdentity)
+		return result, renderFailed(msgInstallationIdentity)
 	}
 	if _, ok := fieldText(session.fields, "profile_id"); !ok {
 		return result, repo.NewValidationError("Invalid profile id")
@@ -345,7 +345,7 @@ func EnrollIdentity(ctx context.Context, dataDir string, manager AgentEditor, se
 	}
 	for _, key := range []string{"name", "host", "port"} {
 		if !session.fields.Has(key) {
-			return result, typeError(msgInstallationIdentity)
+			return result, renderFailed(msgInstallationIdentity)
 		}
 	}
 	for _, key := range []string{"name", "host"} {

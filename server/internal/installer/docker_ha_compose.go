@@ -111,7 +111,7 @@ func generateBundleNative(params GuideOptions, request GuideRequest, enrollment 
 	data := params.DataDir
 	state := data + "/.ha-compose"
 	if raw, present := params.identity.Get("ha_host_id_path"); present && len(raw) > 0 && raw[0] != '"' {
-		return "", nil, typeError(msgRendererText)
+		return "", nil, renderFailed(msgRendererText)
 	}
 	identity := params.HAHostIDPath
 	identityCheck, dataCheck := path.Clean(identity), path.Clean(data)
@@ -122,7 +122,7 @@ func generateBundleNative(params GuideOptions, request GuideRequest, enrollment 
 		}
 	}
 	if aliased {
-		return "", nil, valueError(msgBundleIdentityLocation)
+		return "", nil, invalidInput(msgBundleIdentityLocation)
 	}
 	compose, err := guideComposeNative(params)
 	if err != nil {

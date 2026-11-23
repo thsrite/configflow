@@ -138,7 +138,6 @@ func registerAgent(c *httpx.Ctx) (*httpx.Response, error) {
 		return response, nil
 	}
 	var conflict *agents.DeploymentConflict
-	var permission *agents.PermissionError
 	var installation *agents.InstallationError
 	switch {
 	case errors.Is(err, agents.ErrRegistrationProfileType), errors.Is(err, agents.ErrRegistrationVersion):
@@ -149,7 +148,7 @@ func registerAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	case errors.As(err, &conflict):
 		registrationRejected(c.Context(), data, conflict.Message)
 		return failure(409, conflict.Message), nil
-	case errors.As(err, &permission):
+	case errors.Is(err, agents.ErrUnauthorized):
 		registrationRejected(c.Context(), data, unauthorizedReason)
 		return failure(401, "Unauthorized"), nil
 	case errors.As(err, &installation):

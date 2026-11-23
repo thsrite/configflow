@@ -336,11 +336,7 @@ func countJSON(raw json.RawMessage, defaultZero bool) (*big.Int, bool) {
 }
 func oneOf(raw json.RawMessage, choices []string) (bool, error) {
 	if len(raw) > 0 && (raw[0] == '[' || raw[0] == '{') {
-		kind := "list"
-		if raw[0] == '{' {
-			kind = "dict"
-		}
-		return false, &TypeError{Message: "unhashable type: '" + kind + "'"}
+		return false, invalidData("a JSON array or object is not a valid choice")
 	}
 	var value string
 	if jsondecode.Unmarshal(raw, &value) != nil {
@@ -599,7 +595,7 @@ func (s *NativeStore) read(id string) (Document, error) {
 	var f model.Fields
 	if len(raw) == 0 || raw[0] != '{' || jsondecode.Unmarshal(raw, &f) != nil {
 		cachePop(path)
-		return Document{}, &TypeError{Message: "invalid traffic days"}
+		return Document{}, invalidData("invalid traffic days")
 	}
 	days := member(f, "days")
 	var d model.Fields
@@ -609,7 +605,7 @@ func (s *NativeStore) read(id string) (Document, error) {
 	}
 	if days[0] != '{' || jsondecode.Unmarshal(days, &d) != nil {
 		cachePop(path)
-		return Document{}, &TypeError{Message: "invalid traffic days"}
+		return Document{}, invalidData("invalid traffic days")
 	}
 	rememberStatus(path, signature, member(f, "status"))
 	return Document{fields: f, days: d}, nil
@@ -638,7 +634,7 @@ func addNumber(raw json.RawMessage, n *big.Int) (json.RawMessage, error) {
 func object(raw json.RawMessage) (model.Fields, error) {
 	var f model.Fields
 	if len(raw) == 0 || raw[0] != '{' || jsondecode.Unmarshal(raw, &f) != nil {
-		return f, &TypeError{Message: "invalid traffic object"}
+		return f, invalidData("invalid traffic object")
 	}
 	return f, nil
 }
@@ -716,7 +712,7 @@ func validateStatusFields(raw json.RawMessage) error {
 		if exists && string(valueRaw) != "null" {
 			var value string
 			if jsondecode.Unmarshal(valueRaw, &value) != nil {
-				return &TypeError{Message: "invalid traffic status member"}
+				return invalidData("invalid traffic status member")
 			}
 		}
 	}
@@ -741,7 +737,7 @@ func validateDayBucketHeader(days model.Fields, dayKey string) error {
 	}
 	hostsRaw := bytes.TrimSpace(member(day, "hosts"))
 	if len(hostsRaw) == 0 || hostsRaw[0] != '{' {
-		return &TypeError{Message: "invalid traffic collection"}
+		return invalidData("invalid traffic collection")
 	}
 	return nil
 }
@@ -763,7 +759,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		return nil, err
 	}
 	if r == nil || r.IPOnlyConns == nil || r.Dropped == nil {
-		return nil, &TypeError{Message: "missing traffic report"}
+		return nil, invalidData("missing traffic report")
 	}
 	current := now()
 	if at != nil {
@@ -780,8 +776,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	preSig := statusSignature(path)
 	d, err := s.read(id)
 	if err != nil {
-		var te *TypeError
-		if errors.As(err, &te) {
+		if errors.Is(err, ErrInvalid) {
 			rememberDamaged(path, preSig, "", nil)
 		}
 		return nil, err
@@ -835,14 +830,14 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	for _, item := range r.Items {
 		for _, count := range item.Counts {
 			if count == nil {
-				return nil, &TypeError{Message: "missing cleaned item counter"}
+				return nil, invalidData("missing cleaned item counter")
 			}
 		}
 		if item.Rule == nil {
 			if item.rulePresent {
-				return nil, &TypeError{Message: "sequence item 0: expected str instance, NoneType found"}
+				return nil, invalidData("null rule text")
 			}
-			return nil, &KeyError{Key: "rule"}
+			return nil, missingMember("rule")
 		}
 		host := modified[item.Host]
 		if host == nil {
@@ -1004,8 +999,7 @@ func (s *NativeStore) InspectStatus(id string) StatusSnapshot {
 	cachePop(path)
 	d, err := s.read(id)
 	if err != nil {
-		var te *TypeError
-		if errors.As(err, &te) {
+		if errors.Is(err, ErrInvalid) {
 			rememberDamaged(path, signature, "", nil)
 			return StatusSnapshot{State: StoreStateDamaged}
 		}
@@ -1065,8 +1059,7 @@ func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 	}
 	d, err := s.read(id)
 	if err != nil {
-		var te *TypeError
-		if errors.As(err, &te) {
+		if errors.Is(err, ErrInvalid) {
 			rememberDamaged(path, preSig, "", nil)
 			mu.Unlock()
 			out := emptyDocument()

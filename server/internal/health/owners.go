@@ -71,7 +71,7 @@ func defaultCollaborators(converterFn func() convert.NodeConverter) Collaborator
 				return err
 			}
 			if !json.Valid(data) {
-				return &ValueError{Message: msgSaveLatencyFailed}
+				return &ValidationError{Message: msgSaveLatencyFailed}
 			}
 			_, err = r.WriteSharedText(ctx, LatencyFile, append(data, '\n'))
 			return err

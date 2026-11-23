@@ -60,7 +60,7 @@ func storedProjection(source *Node) (*Node, []model.FieldIssue) {
 	return settings, issues
 }
 
-func requestTypeError(settings *Node) error {
+func checkRequestTypes(settings *Node) error {
 	for _, item := range items(get(settings, "custom_matches")) {
 		if value := get(item, "enabled"); value != nil && !isBool(value) {
 			return fail(MatchEnabledTypeMessage)

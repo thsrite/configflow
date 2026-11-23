@@ -334,7 +334,7 @@ func (d *Dependencies) downloadBundle(ctx context.Context, release *Release, des
 		return err
 	}
 	if err := d.commit(ctx, "bundle-write", func() error { return os.WriteFile(dest, resp.Body, 0o666) }); err != nil {
-		return osError(err, dest)
+		return fileError(err, dest)
 	}
 	size := int64(len(resp.Body))
 	if size < d.MinBundleSize {
@@ -378,13 +378,13 @@ func (d *Dependencies) runUpdate(ctx context.Context, release *Release, unlock f
 func removeTree(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return osError(err, path)
+		return fileError(err, path)
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("remove tree %s: %w", path, errNotDir)
 	}
 	if err := os.RemoveAll(path); err != nil {
-		return osError(err, path)
+		return fileError(err, path)
 	}
 	return nil
 }
@@ -399,17 +399,17 @@ func copyTree(ctx context.Context, src, dst string) error {
 	}
 	entries, err := os.ReadDir(src)
 	if err != nil {
-		return osError(err, src)
+		return fileError(err, src)
 	}
 	info, err := os.Stat(src)
 	if err != nil {
-		return osError(err, src)
+		return fileError(err, src)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(dst, 0o777); err != nil {
-		return osError(err, dst)
+		return fileError(err, dst)
 	}
 	for _, entry := range entries {
 		if matched, _ := filepath.Match("*.download.js", entry.Name()); matched {
@@ -418,7 +418,7 @@ func copyTree(ctx context.Context, src, dst string) error {
 		from, to := filepath.Join(src, entry.Name()), filepath.Join(dst, entry.Name())
 		stat, err := os.Stat(from)
 		if err != nil {
-			return osError(err, from)
+			return fileError(err, from)
 		}
 		if stat.IsDir() {
 			if err := copyTree(ctx, from, to); err != nil {
@@ -447,7 +447,7 @@ func copyFile(ctx context.Context, from, to string, stat fs.FileInfo) error {
 	}
 	in, err := os.Open(from)
 	if err != nil {
-		return osError(err, from)
+		return fileError(err, from)
 	}
 	defer in.Close()
 	if err := ctx.Err(); err != nil {
@@ -455,14 +455,14 @@ func copyFile(ctx context.Context, from, to string, stat fs.FileInfo) error {
 	}
 	out, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o666)
 	if err != nil {
-		return osError(err, to)
+		return fileError(err, to)
 	}
 	if _, err := io.Copy(out, &contextReader{ctx: ctx, reader: in}); err != nil {
 		out.Close()
-		return osError(err, to)
+		return fileError(err, to)
 	}
 	if err := out.Close(); err != nil {
-		return osError(err, to)
+		return fileError(err, to)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -506,7 +506,7 @@ func (d *Dependencies) installRelease(ctx context.Context, release *Release) err
 			if errors.As(err, &pathErr) {
 				path = pathErr.Path
 			}
-			return osError(err, path)
+			return fileError(err, path)
 		}
 		d.setState("running", "正在下载 Sub-Store "+target+"…")
 		if err := d.downloadBundle(ctx, release, tmpBundle); err != nil {
@@ -527,14 +527,14 @@ func (d *Dependencies) installRelease(ctx context.Context, release *Release) err
 			return err
 		}
 		if err := d.commit(ctx, "bundle-replace", func() error { return os.Rename(tmpBundle, bundle) }); err != nil {
-			return osError(err, tmpBundle)
+			return fileError(err, tmpBundle)
 		}
 		replaced = true
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err := d.commit(ctx, "version-write", func() error { return os.WriteFile(versionFile, []byte(target+"\n"), 0o666) }); err != nil {
-			return osError(err, versionFile)
+			return fileError(err, versionFile)
 		}
 		d.setState("running", "正在重启 Sub-Store "+target+"…")
 		if err := d.restartSubStore(ctx); err != nil {
@@ -586,7 +586,7 @@ func (d *Dependencies) installRelease(ctx context.Context, release *Release) err
 					return "", err
 				}
 				if err := os.Rename(backupDir, runtimeDir); err != nil {
-					return "", osError(err, backupDir)
+					return "", fileError(err, backupDir)
 				}
 			}
 			if err := d.restartSubStore(ctx); err != nil {

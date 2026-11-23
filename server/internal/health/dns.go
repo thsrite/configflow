@@ -43,7 +43,7 @@ var CheckMessages = map[string]string{
 	"dns":           msgCheckDNS,
 }
 
-func valueError(message string) error { return &ValueError{Message: message} }
+func invalidInput(message string) error { return &ValidationError{Message: message} }
 
 func usableIPv4(addr netip.Addr) bool {
 	return !addr.IsUnspecified() && !addr.IsMulticast()
@@ -65,17 +65,17 @@ func ipv4ServerString(text, message string) (string, error) {
 	host, port, separator := strings.Cut(strings.TrimSpace(text), ":")
 	address, ok := parseIPv4(host)
 	if !ok || !usableIPv4(address) {
-		return "", valueError(message)
+		return "", invalidInput(message)
 	}
 	var portValue uint64
 	if separator {
 		if !isASCIIDecimal(port) {
-			return "", valueError(message)
+			return "", invalidInput(message)
 		}
 		var err error
 		portValue, err = strconv.ParseUint(port, 10, 16)
 		if err != nil || portValue == 0 {
-			return "", valueError(message)
+			return "", invalidInput(message)
 		}
 	}
 	out := address.String()
@@ -93,7 +93,7 @@ var (
 func serverString(raw string) (string, error) {
 	text := strings.TrimSpace(raw)
 	if text == "" {
-		return "", valueError(DNSError)
+		return "", invalidInput(DNSError)
 	}
 	if !strings.Contains(text, "://") {
 		return ipv4ServerString(text, DNSError)
@@ -101,7 +101,7 @@ func serverString(raw string) (string, error) {
 	if out, ok := encryptedServer(text); ok {
 		return out, nil
 	}
-	return "", valueError(DNSError)
+	return "", invalidInput(DNSError)
 }
 
 func encryptedServer(text string) (string, bool) {
@@ -175,7 +175,7 @@ func NormalizeServerList(servers []string, bootstrap bool) ([]string, error) {
 		message = BootstrapError
 	}
 	if len(servers) > 4 {
-		return nil, valueError(message)
+		return nil, invalidInput(message)
 	}
 	result := []string{}
 	for _, entry := range servers {
@@ -204,11 +204,11 @@ func NormalizeDNSServersJSON(raw json.RawMessage, bootstrap bool) ([]string, err
 	}
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '[' {
-		return nil, valueError(message)
+		return nil, invalidInput(message)
 	}
 	var items []strictString
 	if err := json.Unmarshal(trimmed, &items); err != nil {
-		return nil, valueError(message)
+		return nil, invalidInput(message)
 	}
 	plain := make([]string, len(items))
 	for i, item := range items {
@@ -252,7 +252,7 @@ type DNSSettingsView struct {
 // NormalizeDNSConfig validates and canonicalizes a typed DNSConfig.
 func NormalizeDNSConfig(cfg DNSConfig) (DNSConfig, error) {
 	if cfg.Mode != "system" && cfg.Mode != "custom" {
-		return DNSConfig{}, valueError(msgSelectDNSMode)
+		return DNSConfig{}, invalidInput(msgSelectDNSMode)
 	}
 	out := DNSConfig{
 		Mode:      cfg.Mode,
@@ -269,10 +269,10 @@ func NormalizeDNSConfig(cfg DNSConfig) (DNSConfig, error) {
 			return DNSConfig{}, err
 		}
 		if len(servers) == 0 {
-			return DNSConfig{}, valueError(msgCustomDNSMinOne)
+			return DNSConfig{}, invalidInput(msgCustomDNSMinOne)
 		}
 		if slices.ContainsFunc(servers, needsBootstrap) && len(bootstrap) == 0 {
-			return DNSConfig{}, valueError(msgCustomDNSNeedsBoot)
+			return DNSConfig{}, invalidInput(msgCustomDNSNeedsBoot)
 		}
 		out.Servers = servers
 		out.Bootstrap = bootstrap
@@ -284,15 +284,15 @@ func NormalizeDNSConfig(cfg DNSConfig) (DNSConfig, error) {
 func NormalizeDNSConfigJSON(raw json.RawMessage) (DNSConfig, error) {
 	var object rawObject
 	if err := json.Unmarshal(raw, &object); err != nil {
-		return DNSConfig{}, valueError(msgSelectDNSMode)
+		return DNSConfig{}, invalidInput(msgSelectDNSMode)
 	}
 	rawMode, ok := object.Fields.Get("mode")
 	if !ok {
-		return DNSConfig{}, valueError(msgSelectDNSMode)
+		return DNSConfig{}, invalidInput(msgSelectDNSMode)
 	}
 	var mode strictString
 	if err := json.Unmarshal(rawMode, &mode); err != nil || (mode != "system" && mode != "custom") {
-		return DNSConfig{}, valueError(msgSelectDNSMode)
+		return DNSConfig{}, invalidInput(msgSelectDNSMode)
 	}
 	if mode == "system" {
 		return DNSConfig{
@@ -333,7 +333,7 @@ func checkSystemConfigRoot(ctx context.Context, repository *repo.Repository) err
 	}
 	for _, issue := range issues {
 		if issue.Path == "system.system_config" && issue.Kind == model.IssueType {
-			return valueError(msgStoredSystemCfgInvalid)
+			return invalidInput(msgStoredSystemCfgInvalid)
 		}
 	}
 	return nil

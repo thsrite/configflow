@@ -184,7 +184,7 @@ func runTask(ctx context.Context, key, id string) error {
 	category, _, _ := strings.Cut(key, ":")
 	_, err := RunResourceNow(ctx, category, id)
 	var busy *TaskBusy
-	var lookup *LookupError
+	var lookup *NotFoundError
 	switch {
 	case err == nil:
 		return nil

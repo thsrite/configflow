@@ -79,48 +79,48 @@ func RenderAgentInstall(o AgentInstallOptions) (string, error) {
 	}
 	serviceType := o.ServiceType
 	if serviceType != "mihomo" && serviceType != "mosdns" && serviceType != "oxidns" {
-		return "", valueError("Go Agent transactional deployment supports mihomo, mosdns and oxidns")
+		return "", invalidInput("Go Agent transactional deployment supports mihomo, mosdns and oxidns")
 	}
 	if o.PrepareDNSHA && serviceType != "oxidns" {
-		return "", valueError(msgHARequiresOxidns)
+		return "", invalidInput(msgHARequiresOxidns)
 	}
 	if !matchesClass(o.AgentName, "_-") {
-		return "", valueError("Invalid agent name: use letters, numbers, hyphens or underscores")
+		return "", invalidInput("Invalid agent name: use letters, numbers, hyphens or underscores")
 	}
 	port := big.NewInt(int64(agentPort))
 	if !inRange(port, 1, 65535) {
-		return "", valueError("Invalid Agent port")
+		return "", invalidInput("Invalid Agent port")
 	}
 	unit := o.ServiceUnit
 	if unit == "" {
 		unit = serviceType
 	}
 	if !matchesClass(unit, "_.@-") {
-		return "", valueError("Invalid service unit")
+		return "", invalidInput("Invalid service unit")
 	}
 	unit = strings.TrimSuffix(unit, ".service")
 	serviceManager := o.ServiceManager
 	if serviceManager != "" && serviceManager != "systemd" && serviceManager != "openrc" && serviceManager != "command" {
-		return "", valueError("Shell installs require systemd, openrc or explicit command lifecycle")
+		return "", invalidInput("Shell installs require systemd, openrc or explicit command lifecycle")
 	}
 	standardRestart := o.RestartCommand == "" || o.RestartCommand == "systemctl restart "+unit ||
 		o.RestartCommand == "systemctl restart "+unit+".service" || o.RestartCommand == "rc-service "+unit+" restart"
 	if o.InstallCore {
 		if serviceType != "mihomo" && serviceType != "oxidns" {
-			return "", valueError(msgInstallCoreService)
+			return "", invalidInput(msgInstallCoreService)
 		}
 		if (o.ConfigPath != "" && o.ConfigPath != "/etc/"+serviceType+"/config.yaml") ||
 			unit != serviceType || serviceManager != "" || !standardRestart ||
 			(o.ServiceBinary != "" && o.ServiceBinary != serviceType && o.ServiceBinary != "/usr/local/bin/"+serviceType) ||
 			o.StopCommand != "" || o.StartCommand != "" || o.StatusCommand != "" {
-			return "", valueError(msgInstallCoreDefaults)
+			return "", invalidInput(msgInstallCoreDefaults)
 		}
 		dnsPort := int64(53)
 		if serviceType == "mihomo" {
 			dnsPort = 1053
 		}
 		if port.Cmp(big.NewInt(dnsPort)) == 0 {
-			return "", valueError(msgCoreDNSPortConflict)
+			return "", invalidInput(msgCoreDNSPortConflict)
 		}
 	}
 	if serviceManager == "" {
@@ -131,20 +131,20 @@ func RenderAgentInstall(o AgentInstallOptions) (string, error) {
 		}
 	}
 	if o.PrepareDNSHA && serviceManager == "command" {
-		return "", valueError(msgHANativeLifecycle)
+		return "", invalidInput(msgHANativeLifecycle)
 	}
 	if serviceManager == "command" && (o.StopCommand == "" || o.StartCommand == "" || o.StatusCommand == "") {
-		return "", valueError("Custom lifecycle requires stop_command, start_command and status_command; a restart command alone cannot support rollback")
+		return "", invalidInput("Custom lifecycle requires stop_command, start_command and status_command; a restart command alone cannot support rollback")
 	}
 	forwardingSupported := serviceType == "mihomo" && serviceManager != "command"
 	manageForwarding := o.ManageIPv4Forwarding == ForwardingOn
 	if o.ManageIPv4Forwarding == ForwardingAuto {
 		manageForwarding = forwardingSupported
 	} else if manageForwarding && !forwardingSupported {
-		return "", valueError(StandaloneForwardingUnsupported)
+		return "", invalidInput(StandaloneForwardingUnsupported)
 	}
 	if !timeoutValue.IsInt64() || timeoutValue.Cmp(big.NewInt(math.MaxInt64/int64(time.Second))) > 0 || timeoutValue.Cmp(big.NewInt(math.MinInt64/int64(time.Second))) < 0 {
-		return "", valueError("Invalid deployment health timeout")
+		return "", invalidInput("Invalid deployment health timeout")
 	}
 	configPath := o.ConfigPath
 	if configPath == "" {

@@ -10,6 +10,7 @@ package metrics
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strconv"
 	"testing"
@@ -121,7 +122,12 @@ func TestTrafficReferenceStoreReports(t *testing.T) {
 			result = nil
 		}
 		if err != nil {
-			result = map[string]any{"error": "TypeError: " + err.Error()}
+			// The reference records Python's exception text; only the
+			// refusal itself must match.
+			if _, want := testjson.Path(c.Output, "error"); !want || !errors.Is(err, trafficstore.ErrInvalid) {
+				t.Errorf("%s: go %v, python %s", name, err, c.Output)
+			}
+			continue
 		}
 		if diff := testjson.Diff(c.Output, result); diff != "" {
 			t.Errorf("%s: %s", name, diff)

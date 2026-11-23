@@ -67,9 +67,9 @@ func guidePath(text string, label string, allowColon bool) (string, error) {
 	// the cleaned path so it cannot bypass the root refusal.
 	if !strings.HasPrefix(text, "/") || path.Clean(text) == "/" || canonicalInstallPath(text) != text || strings.ContainsAny(text, bad) {
 		if allowColon {
-			return "", valueError(label + "须为规范的绝对路径，不能包含逗号或换行")
+			return "", invalidInput(label + "须为规范的绝对路径，不能包含逗号或换行")
 		}
-		return "", valueError(label + "须为规范的绝对路径，不能包含逗号、冒号或换行")
+		return "", invalidInput(label + "须为规范的绝对路径，不能包含逗号、冒号或换行")
 	}
 	return text, nil
 }
@@ -82,7 +82,7 @@ func isGuideName(value string) bool {
 // guideName is _name(value, label).
 func guideName(text string, label string) (string, error) {
 	if !isGuideName(text) {
-		return "", valueError(label + "只能包含字母、数字、点、下划线或短横线")
+		return "", invalidInput(label + "只能包含字母、数字、点、下划线或短横线")
 	}
 	return text, nil
 }
@@ -226,7 +226,7 @@ func haRun(service *composeService, cidFile, envFile, cidVariable string) (strin
 		add("--label", ComposeLabel+"="+service.owner)
 	}
 	if service.NetworkMode == "" && service.Networks["dns-ha"].IPv4Address.Tag != "!!str" {
-		return "", typeError(msgRendererText)
+		return "", renderFailed(msgRendererText)
 	}
 	if service.NetworkMode != "" {
 		add("--network", service.NetworkMode)
@@ -238,7 +238,7 @@ func haRun(service *composeService, cidFile, envFile, cidVariable string) (strin
 	}
 	for _, mount := range service.Volumes {
 		if mount.Short != "" {
-			return "", typeError(msgRendererMount)
+			return "", renderFailed(msgRendererMount)
 		}
 		text, err := mountArg(mount)
 		if err != nil {
@@ -267,7 +267,7 @@ func usableAddress(v uint32) bool {
 
 func guideComposeNative(p GuideOptions) (*composeDocument, error) {
 	if raw, present := p.identity.Get("agent_name"); present && len(raw) > 0 && raw[0] != '"' {
-		return nil, typeError(msgRendererText)
+		return nil, renderFailed(msgRendererText)
 	}
 
 	options := DefaultDockerOptions(p.ServerURL)
@@ -286,7 +286,7 @@ func guideComposeNative(p GuideOptions) (*composeDocument, error) {
 	document, err := dockerCompose(options)
 	if err != nil {
 		if raw, present := p.identity.Get("ha_parent"); present && len(raw) > 0 && raw[0] != '"' && err.Error() == msgHAParent {
-			return nil, typeError(msgRendererText)
+			return nil, renderFailed(msgRendererText)
 		}
 		return nil, err
 	}
@@ -491,12 +491,12 @@ func migrationNative(params GuideOptions, request GuideRequest) (string, string,
 		for _, right := range directories[i+1:] {
 			leftCheck, rightCheck := path.Clean(left), path.Clean(right)
 			if installPathsOverlap(leftCheck, rightCheck) {
-				return "", "", "", valueError(msgMigrationDirectories)
+				return "", "", "", invalidInput(msgMigrationDirectories)
 			}
 		}
 	}
 	if agent.Type == core.Type && agent.Source == core.Source {
-		return "", "", "", valueError(msgMigrationMounts)
+		return "", "", "", invalidInput(msgMigrationMounts)
 	}
 	params.DataDir = "/unused-migration-path"
 	compose, err := guideComposeNative(params)

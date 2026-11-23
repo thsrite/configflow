@@ -150,7 +150,7 @@ func seedSharedRaw(t *testing.T, r *repo.Repository, rawJSON string) context.Con
 // TestWrongTypedCandidateIdentitiesFailWithOffendingValue): shared resources
 // and cached nodes are plain records, so stored identities of the wrong type
 // read with the stored-data rules (a number as its text, anything else as
-// empty) instead of failing the whole latency run with Python's ValueError;
+// empty) instead of failing the whole latency run with a validation error;
 // the subscription cache is a data file and still fails with it.
 func TestWrongTypedCandidateIdentitiesReadLeniently(t *testing.T) {
 	tests := []struct {
@@ -235,9 +235,9 @@ func TestWrongTypedCandidateIdentitiesReadLeniently(t *testing.T) {
 			_, err = CollectCandidateNodes(ctx)
 			if tt.cacheRaw != "" {
 				// The subscription cache is a data file, checked as read.
-				var ve *ValueError
+				var ve *ValidationError
 				if !errors.As(err, &ve) || ve.Message != tt.want {
-					t.Fatalf("CollectCandidateNodes: want ValueError %q, got %v", tt.want, err)
+					t.Fatalf("CollectCandidateNodes: want ValidationError %q, got %v", tt.want, err)
 				}
 				return
 			}

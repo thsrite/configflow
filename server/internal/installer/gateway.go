@@ -85,11 +85,11 @@ func LocalAgentChecksums() (map[string]string, error) {
 // httpURL is _http_url(value, name).
 func httpURL(value, name string) (string, error) {
 	if hasControl(value) {
-		return "", valueError(name + " must be an HTTP(S) URL")
+		return "", invalidInput(name + " must be an HTTP(S) URL")
 	}
 	parsed, err := weburl.Parse(value)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" || weburl.HasCredentials(parsed) || parsed.Fragment != "" {
-		return "", valueError(name + " must be an HTTP(S) URL without credentials or fragment")
+		return "", invalidInput(name + " must be an HTTP(S) URL without credentials or fragment")
 	}
 	return strings.TrimRight(value, "/"), nil
 }
@@ -140,14 +140,14 @@ func RenderGatewayInstall(o GatewayInstallOptions) (string, error) {
 	if o.AgentIP != "" {
 		address, err := parseIPv4(o.AgentIP)
 		if err != nil {
-			return "", valueError("Gateway Agent address must be an IPv4 address")
+			return "", invalidInput("Gateway Agent address must be an IPv4 address")
 		}
 		if isLoopback(address) || isMulticast(address) || isUnspecified(address) || isLinkLocal(address) {
-			return "", valueError("Gateway Agent address must be a usable LAN IPv4 address")
+			return "", invalidInput("Gateway Agent address must be a usable LAN IPv4 address")
 		}
 	}
 	if (o.EnrollmentURL != "") != (o.EnrollmentToken != "") {
-		return "", valueError("Both enrollment_url and enrollment_token are required together")
+		return "", invalidInput("Both enrollment_url and enrollment_token are required together")
 	}
 	enrollmentURL := o.EnrollmentURL
 	if enrollmentURL != "" {
@@ -156,18 +156,18 @@ func RenderGatewayInstall(o GatewayInstallOptions) (string, error) {
 		}
 		a, err := weburl.Parse(enrollmentURL)
 		if err != nil {
-			return "", valueError(err.Error())
+			return "", invalidInput(err.Error())
 		}
 		b, err := weburl.Parse(serverURL)
 		if err != nil {
-			return "", valueError(err.Error())
+			return "", invalidInput(err.Error())
 		}
 		if a.Scheme != b.Scheme || a.User.String() != b.User.String() || a.Host != b.Host {
-			return "", valueError("Enrollment endpoint must use the ConfigFlow server origin")
+			return "", invalidInput("Enrollment endpoint must use the ConfigFlow server origin")
 		}
 	}
 	if o.EnrollmentToken != "" && !IsSessionToken(o.EnrollmentToken) {
-		return "", valueError("Invalid installation-session token")
+		return "", invalidInput("Invalid installation-session token")
 	}
 	checksums := o.AgentChecksums
 	if checksums == nil {
@@ -176,11 +176,11 @@ func RenderGatewayInstall(o GatewayInstallOptions) (string, error) {
 		}
 	}
 	if len(checksums) == 0 {
-		return "", valueError(msgAgentBinaryUnavailable)
+		return "", invalidInput(msgAgentBinaryUnavailable)
 	}
 	for arch, digest := range checksums {
 		if (arch != "linux-amd64" && arch != "linux-arm64") || !isSHA256Hex(digest) {
-			return "", valueError("Invalid Agent architecture or SHA256 digest")
+			return "", invalidInput("Invalid Agent architecture or SHA256 digest")
 		}
 	}
 	aioOptions := DefaultAIOOptions(serverURL, o.AgentName)

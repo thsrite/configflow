@@ -110,7 +110,7 @@ func ReadHealth(ctx context.Context) (HealthSnapshot, error) {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
-		if isRepositoryOrOSError(err) {
+		if isRepositoryOrFileError(err) {
 			return HealthSnapshot{}, nil
 		}
 		return nil, err
@@ -136,7 +136,7 @@ func saveHealthData(ctx context.Context, data HealthSnapshot) error {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
 		}
-		if isRepositoryOrOSError(err) {
+		if isRepositoryOrFileError(err) {
 			healthLog.Errorf(msgHealthWriteFailed, weburl.SafeErrorDetails(err))
 			return nil
 		}

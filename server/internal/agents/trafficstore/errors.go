@@ -1,16 +1,17 @@
 package trafficstore
 
-// TypeError reports invalid report or stored member types.
-type TypeError struct{ Message string }
+import (
+	"errors"
+	"fmt"
+)
 
-func (e *TypeError) Error() string { return e.Message }
+// ErrInvalid reports a traffic report or stored traffic file whose members
+// have the wrong type; a stored file failing this way is marked damaged.
+var ErrInvalid = errors.New("invalid traffic data")
 
-// AttributeError is retained for callers classifying historical stored-data errors.
-type AttributeError struct{ Message string }
+// ErrMissingMember reports a required member that is absent.
+var ErrMissingMember = errors.New("missing traffic member")
 
-func (e *AttributeError) Error() string { return e.Message }
+func invalidData(detail string) error { return fmt.Errorf("%w: %s", ErrInvalid, detail) }
 
-// KeyError reports a required stored member that is absent.
-type KeyError struct{ Key string }
-
-func (e *KeyError) Error() string { return "'" + e.Key + "'" }
+func missingMember(name string) error { return fmt.Errorf("%w %q", ErrMissingMember, name) }

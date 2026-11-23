@@ -24,7 +24,7 @@ func failure(code int, message string) *httpx.Response {
 }
 
 func isValueError(err error) bool {
-	var v *health.ValueError
+	var v *health.ValidationError
 	if errors.As(err, &v) {
 		return true
 	}
@@ -136,7 +136,7 @@ func nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
 			return health.DNSSettingsView{}, err
 		}
 		if payload == nil {
-			return health.DNSSettingsView{}, &health.ValueError{Message: msgLatencyDNS}
+			return health.DNSSettingsView{}, &health.ValidationError{Message: msgLatencyDNS}
 		}
 		var value json.RawMessage
 		if payload.DNS != nil {
@@ -155,7 +155,7 @@ func nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
 				return health.DNSSettingsView{}, err
 			}
 		} else {
-			return health.DNSSettingsView{}, &health.ValueError{Message: msgLatencyDNS}
+			return health.DNSSettingsView{}, &health.ValidationError{Message: msgLatencyDNS}
 		}
 		return health.SaveDNSConfigJSON(ctx, value)
 	}()

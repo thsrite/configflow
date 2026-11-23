@@ -32,7 +32,7 @@ func pyErr(class, format string, args ...any) *PyError {
 
 func errorFromLegacy(err error) error {
 	var reporter interface{ ErrorClass() string }
-	if errors.As(err, &reporter) && reporter.ErrorClass() == "ValueError" {
+	if errors.As(err, &reporter) && pythonClass(reporter.(error)) == "ValueError" {
 		return &PublicFailure{Reason: err.Error(), Cause: err}
 	}
 	return err
@@ -153,6 +153,15 @@ func pythonClass(err error) string {
 		return "ValueError"
 	}
 	switch e := err.(type) {
+	case *IntervalError:
+		return "ValueError"
+	case *NotFoundError:
+		return "LookupError"
+	case *SourceValidationError:
+		if e.CacheShape {
+			return "DialerReferenceError"
+		}
+		return "ValueError"
 	case *convert.DialerReferenceError:
 		return "DialerReferenceError"
 	case *convert.EasyTierSettingsError:
@@ -182,7 +191,7 @@ func pythonClass(err error) string {
 	case interface{ ErrorClass() string }:
 		return e.ErrorClass()
 	}
-	if isOSError(err) {
+	if isFileError(err) {
 		return osErrorClass(err)
 	}
 	return fmt.Sprintf("%T", err)

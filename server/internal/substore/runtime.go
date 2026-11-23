@@ -248,7 +248,7 @@ func (r *Runtime) runWork(ctx context.Context, root string, exclusive bool, fn f
 		return err
 	}
 	if err := os.MkdirAll(root, 0700); err != nil {
-		return r.directoryFailure(osError(err, root))
+		return r.directoryFailure(fileError(err, root))
 	}
 	lease := &workLease{root: root, exclusive: exclusive}
 	lease.active.Store(true)
@@ -271,7 +271,7 @@ func (r *Runtime) withControl(ctx context.Context, fn func(context.Context) erro
 		return err
 	}
 	if err := os.MkdirAll(root, 0700); err != nil {
-		return r.directoryFailure(osError(err, root))
+		return r.directoryFailure(fileError(err, root))
 	}
 	return fn(held)
 }

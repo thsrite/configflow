@@ -621,7 +621,7 @@ func GenerateGuide(value any, enrollment *Enrollment) (map[string]any, error) {
 func legacyGuideRequest(raw json.RawMessage) (GuideRequest, error) {
 	var fields model.Fields
 	if err := jsondecode.Unmarshal(raw, &fields); err != nil {
-		return GuideRequest{}, valueError(msgGuideObject)
+		return GuideRequest{}, invalidInput(msgGuideObject)
 	}
 	original, hasIP := fields.Get("agent_ip")
 	_, textIP := fieldText(fields, "agent_ip")
@@ -652,7 +652,7 @@ func legacyGuideRequest(raw json.RawMessage) (GuideRequest, error) {
 func IdentityCommand(value any) (string, error) {
 	text, ok := value.(string)
 	if !ok {
-		return "", valueError(msgIdentityPathCanonical)
+		return "", invalidInput(msgIdentityPathCanonical)
 	}
 	return identityCommand(text)
 }
@@ -664,7 +664,7 @@ func InspectionCommand(value any) (string, error) {
 	}
 	text, ok := value.(string)
 	if !ok {
-		return "", valueError(msgOriginalContainerName)
+		return "", invalidInput(msgOriginalContainerName)
 	}
 	return inspectionCommand(text, DockerAgentImage())
 }

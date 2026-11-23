@@ -22,7 +22,7 @@ func parseCounter(raw json.RawMessage) (storedCounter, error) {
 		return storedCounter{integer: new(big.Int)}, nil
 	}
 	if len(raw) == 0 || raw[0] == '"' {
-		return storedCounter{}, &TypeError{Message: "invalid traffic counter"}
+		return storedCounter{}, invalidData("invalid traffic counter")
 	}
 	if !bytes.ContainsAny(raw, ".eE") {
 		if n, ok := new(big.Int).SetString(string(raw), 10); ok {
@@ -31,11 +31,11 @@ func parseCounter(raw json.RawMessage) (storedCounter, error) {
 	}
 	var value json.Number
 	if err := jsondecode.Unmarshal(raw, &value); err != nil {
-		return storedCounter{}, &TypeError{Message: "invalid traffic counter"}
+		return storedCounter{}, invalidData("invalid traffic counter")
 	}
 	f, err := value.Float64()
 	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
-		return storedCounter{}, &TypeError{Message: "invalid traffic counter"}
+		return storedCounter{}, invalidData("invalid traffic counter")
 	}
 	return storedCounter{real: f}, nil
 }
@@ -52,7 +52,7 @@ func (n storedCounter) add(v storedCounter) (storedCounter, error) {
 	}
 	sum := n.float() + v.float()
 	if math.IsInf(sum, 0) || math.IsNaN(sum) {
-		return storedCounter{}, &TypeError{Message: "traffic counter overflow"}
+		return storedCounter{}, invalidData("traffic counter overflow")
 	}
 	return storedCounter{real: sum}, nil
 }

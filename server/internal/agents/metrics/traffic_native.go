@@ -9,6 +9,7 @@ import (
 	"configflow/internal/repo"
 	"context"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"strconv"
 )
@@ -114,7 +115,7 @@ func TrafficRetentionFromRepo(ctx context.Context, r *repo.Repository) (int64, e
 // SetTrafficRetention stores a validated retention choice without losing unknown settings.
 func SetTrafficRetention(ctx context.Context, m *agents.Manager, days int64) (int64, error) {
 	if !allowedRetention(days) {
-		return 0, RetentionValueError
+		return 0, ErrRetentionInvalid
 	}
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
@@ -152,10 +153,6 @@ func allowedRetention(days int64) bool {
 	return false
 }
 
-// ValueError reports an invalid traffic setting.
-type ValueError struct{ Message string }
-
-func (e *ValueError) Error() string { return e.Message }
-
-// RetentionValueError is returned for an unsupported retention interval.
-var RetentionValueError = &ValueError{Message: msgTrafficRetention}
+// ErrRetentionInvalid is returned for an unsupported retention interval; its
+// text is the user-facing message.
+var ErrRetentionInvalid = errors.New(msgTrafficRetention)
