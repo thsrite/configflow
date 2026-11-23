@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sync"
 
+	"configflow/internal/convert"
 	"configflow/internal/httpx"
 	"configflow/internal/model"
 	"configflow/internal/refresh"
@@ -167,7 +168,9 @@ func (s *Service) DeliveryEnv() *DeliveryEnv {
 	}
 	e := &DeliveryEnv{Fetch: fetch, SubscriptionFetch: fetch, AggregationFetch: fetch, NodeID: randomNodeID}
 	if sub != nil {
-		e.Converter = sub.Client
+		// Like the default environment, a node Sub-Store cannot convert is
+		// skipped rather than failing the whole delivery.
+		e.Converter = convert.OptionalNodeConverter(sub.Client)
 	}
 	if env != nil {
 		if env.Fetch != nil {
