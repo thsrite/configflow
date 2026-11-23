@@ -490,7 +490,17 @@ func (e *encoder) value(v reflect.Value) ([]byte, error) {
 		e.foreign = outer
 		return data, nil
 	case reflect.Struct:
-		return nil, fmt.Errorf("%w: record must implement JSON codecs", ErrType)
+		if !isPlain(v.Type()) {
+			return nil, fmt.Errorf("%w: record must implement JSON codecs", ErrType)
+		}
+		// A plain struct without codecs (a DATA_DIR record or an Agent
+		// reply outside this package) is written like marshalPlain; each
+		// member was checked by encodeUnit.
+		members, err := plainMembers(v)
+		if err != nil {
+			return nil, err
+		}
+		return joinMembers(members)
 	default:
 		return scalarJSON(v.Interface())
 	}

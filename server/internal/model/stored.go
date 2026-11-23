@@ -850,7 +850,11 @@ func EncodeMembers(rec any) ([]StoredMember, error) {
 	if value.Kind() != reflect.Pointer || value.IsNil() || !isPlain(value.Type().Elem()) {
 		return nil, fmt.Errorf("%w: stored members need a plain record", ErrType)
 	}
-	value = value.Elem()
+	return plainMembers(value.Elem())
+}
+
+// plainMembers is EncodeMembers for a plain struct value.
+func plainMembers(value reflect.Value) ([]StoredMember, error) {
 	fields := memberFields(value.Type())
 	members := make([]StoredMember, 0, len(fields))
 	for _, field := range fields {
@@ -905,6 +909,11 @@ func marshalPlain(rec any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return joinMembers(members)
+}
+
+// joinMembers writes members as one JSON object in their order.
+func joinMembers(members []StoredMember) ([]byte, error) {
 	var out bytes.Buffer
 	out.WriteByte('{')
 	for i, member := range members {

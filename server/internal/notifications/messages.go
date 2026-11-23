@@ -1,6 +1,7 @@
 package notifications
 
 const (
+	msgStoredFieldIssue      = "通知记录字段无法识别或类型不匹配，已忽略：%s（%s）"
 	msgItemShape             = "通知记录必须为对象"
 	msgSubscription          = "订阅更新"
 	msgRuleSource            = "规则集更新"

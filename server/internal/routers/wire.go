@@ -17,7 +17,7 @@ func Wire() {
 }
 
 func pendingSummary(report *notifications.RouterReport, plan json.RawMessage) (*notifications.RouterSummary, error) {
-	raw, err := json.Marshal(report)
+	raw, err := report.JSON()
 	if err != nil {
 		return nil, err
 	}

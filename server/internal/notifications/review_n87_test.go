@@ -3,6 +3,7 @@ package notifications
 import (
 	"configflow/internal/repo"
 	"encoding/json"
+	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,7 +37,8 @@ func TestN87ReviewOccurrenceCounterDoesNotOverflow(t *testing.T) {
 			if err = json.Unmarshal(raw, &doc); err != nil {
 				t.Fatal(err)
 			}
-			if string(doc.Items["notice:x"].Count) != value.after || string(doc.Items["notice:x"].Sibling) != "1e400" || string(doc.Future) != `{"unknown":9007199254740993123456789}` {
+			// Undeclared members (future, sibling) are dropped (O18 T1d).
+			if string(doc.Items["notice:x"].Count) != value.after || doc.Items["notice:x"].Sibling != nil || doc.Future != nil {
 				t.Fatalf("counter or sibling changed: %s", raw)
 			}
 		})
@@ -77,7 +79,7 @@ func TestN87ReviewNullableLegacyAgentCodecs(t *testing.T) {
 	})
 }
 
-func TestN87ReviewOccurrenceR5AndUntouchedNotation(t *testing.T) {
+func TestN87ReviewOccurrenceNotation(t *testing.T) {
 	for _, value := range []string{`60.0`, `true`, `"7"`, `60.5`} {
 		t.Run(value, func(t *testing.T) {
 			dir := t.TempDir()
@@ -100,8 +102,8 @@ func TestN87ReviewOccurrenceR5AndUntouchedNotation(t *testing.T) {
 					if err != nil || string(got) != want {
 						t.Fatalf("compatible occurrence: %s %v", got, err)
 					}
-				} else if item.Occurrences != nil {
-					t.Fatal("invalid occurrence bypassed R5")
+				} else if item.Occurrences != nil && (*big.Int)(item.Occurrences).Sign() != 0 {
+					t.Fatal("invalid occurrence was not read as zero")
 				}
 				item.Stale = new(true)
 				return nil
@@ -120,8 +122,11 @@ func TestN87ReviewOccurrenceR5AndUntouchedNotation(t *testing.T) {
 			if err = json.Unmarshal(raw, &doc); err != nil {
 				t.Fatal(err)
 			}
-			if string(doc.Items["n"].Occurrences) != value {
-				t.Fatalf("unowned number/type changed: %s", raw)
+			// The next write stores the value as read (O18 T1d): integral
+			// notation as an integer, an invalid counter as 0.
+			want := map[string]string{`60.0`: "60", `true`: "0", `"7"`: "7", `60.5`: "0"}[value]
+			if string(doc.Items["n"].Occurrences) != want {
+				t.Fatalf("occurrence written as %s, want %s", raw, want)
 			}
 		})
 	}

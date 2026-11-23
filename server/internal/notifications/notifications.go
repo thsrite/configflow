@@ -238,9 +238,7 @@ func TaskIncident(task *tasks.Task, agents map[string]model.Agent, profiles map[
 		}
 		profileName = &name
 	}
-	if err := item.profile(profileID, profileName); err != nil {
-		return nil, err
-	}
+	item.profile(profileID, profileName)
 	return item, nil
 }
 
@@ -301,7 +299,7 @@ func AgentIncident(ctx context.Context, agent *model.Agent, repository *repo.Rep
 	}
 	// An absent deployment id was Python None in evidence, but a real journal
 	// always supplies it. Keep the unknown observation's empty identity native.
-	return &Item{State: state, Source: "deployment", ProfileID: &profile, Scope: new("profile"), Title: &title, Message: new(eventText(message, agent.Token)), Impact: &impact, StatusLabel: &label, Severity: &severity,
+	return &Item{State: state, Source: "deployment", ProfileID: jsonString(profile), Scope: new("profile"), Title: &title, Message: new(eventText(message, agent.Token)), Impact: &impact, StatusLabel: &label, Severity: &severity,
 		CheckedAt: checkedJSON, Evidence: jsonString(record.DeploymentID + record.Status), Target: Destination("/agents", linkLabel, query)}, nil
 }
 
@@ -457,7 +455,7 @@ func SaveRouter(ctx context.Context, profileID string, config json.RawMessage, r
 	}
 	routerName := firstText(router.Name, router.ID)
 	common := func() *Item {
-		return &Item{Source: "router-check", Scope: new("profile"), ProfileID: &profileID, CheckedAt: jsonString(stamp), Evidence: jsonString(stamp), Signature: &signature}
+		return &Item{Source: "router-check", Scope: new("profile"), ProfileID: jsonString(profileID), CheckedAt: jsonString(stamp), Evidence: jsonString(stamp), Signature: &signature}
 	}
 	destination := func(label, section string) *Navigation {
 		return Destination("/routers", label, map[string]string{"router": router.ID, "profile": profileID, "section": section})
@@ -465,11 +463,7 @@ func SaveRouter(ctx context.Context, profileID string, config json.RawMessage, r
 	return UpdateItems(ctx, repository.DataDir(), func(items *Items) error {
 		for _, check := range checks {
 			state := "resolved"
-			empty := check.data == nil
-			if !empty {
-				encoded, _ := json.Marshal(check.data)
-				empty = string(encoded) == "{}"
-			}
+			empty := check.data.empty()
 			switch {
 			case check.reason != "":
 				state = "pending"
@@ -722,7 +716,7 @@ func collect(ctx context.Context, repository *repo.Repository, completedTask str
 		if router.at != "" {
 			at = jsonString(router.at)
 		}
-		observations = append(observations, observation{key, &Item{State: state, Source: "router-release", Scope: new("profile"), ProfileID: &profileID, Severity: new("error"), StatusLabel: new(msgPublishFailed), Title: new(firstText(router.name, router.id) + msgRouterPublication), Message: new(eventText(message, router.password)), CheckedAt: at, Evidence: at, Target: Destination("/routers", msgViewPublishResult, map[string]string{"router": router.id, "profile": profileID, "section": "report"})}})
+		observations = append(observations, observation{key, &Item{State: state, Source: "router-release", Scope: new("profile"), ProfileID: jsonString(profileID), Severity: new("error"), StatusLabel: new(msgPublishFailed), Title: new(firstText(router.name, router.id) + msgRouterPublication), Message: new(eventText(message, router.password)), CheckedAt: at, Evidence: at, Target: Destination("/routers", msgViewPublishResult, map[string]string{"router": router.id, "profile": profileID, "section": "report"})}})
 	}
 	return &collectedObservations{profiles, routers, keys, observations}, nil
 }
@@ -751,8 +745,8 @@ func (c *collectedObservations) apply(items *Items, retainUnseen bool) error {
 		if !c.keys[key] && !retainUnseen {
 			items.Delete(key)
 		}
-		if name, found := c.profiles[stringValue(item.ProfileID)]; found {
-			item.ProfileName = &name
+		if name, found := c.profiles[item.ProfileText()]; found {
+			item.ProfileName = jsonString(name)
 		}
 	}
 	return nil
@@ -811,12 +805,8 @@ func snapshot(ctx context.Context, completedTask string, persist, partial bool) 
 				continue
 			}
 			copy := *item
-			if err := model.ClearMember(&copy, &copy.Raw, "signature"); err != nil {
-				return err
-			}
-			if err := model.ClearMember(&copy, &copy.Raw, "evidence"); err != nil {
-				return err
-			}
+			copy.Signature = nil
+			copy.Evidence = nil
 			result = append(result, &copy)
 		}
 		return nil

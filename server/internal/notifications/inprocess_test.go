@@ -38,13 +38,11 @@ func TestLeafTransactionsShareMutexAndLeaveLegacyLock(t *testing.T) {
 				if err := UpdateItems(context.Background(), dir, func(items *Items) error {
 					var count int
 					if entry, ok := items.Get("counter"); ok && entry != nil {
-						if raw, ok := entry.Extra.Get("count"); ok {
-							_ = json.Unmarshal(raw, &count)
-						}
+						_ = json.Unmarshal(entry.FailureCount, &count)
 					}
 					next := &Item{State: "pending"}
 					rawCount, _ := json.Marshal(count + 1)
-					next.Extra.Set("count", rawCount)
+					next.FailureCount = rawCount
 					items.Set("counter", next)
 					return nil
 				}); err != nil {
@@ -58,9 +56,7 @@ func TestLeafTransactionsShareMutexAndLeaveLegacyLock(t *testing.T) {
 		entry, ok := items.Get("counter")
 		var count int
 		if ok && entry != nil {
-			if raw, exists := entry.Extra.Get("count"); exists {
-				_ = json.Unmarshal(raw, &count)
-			}
+			_ = json.Unmarshal(entry.FailureCount, &count)
 		}
 		if count != 100 {
 			t.Errorf("updates lost: count=%d", count)

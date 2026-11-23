@@ -124,7 +124,7 @@ func transaction(ctx context.Context, dataDir string, ticket uint64, persist boo
 	case err != nil:
 		return err
 	default:
-		if err := jsonresp.DecodeStored(raw, &data); err != nil {
+		if data, err = decodeStore(raw); err != nil {
 			return err
 		}
 	}

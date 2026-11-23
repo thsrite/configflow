@@ -22,7 +22,7 @@ func TestNativeSignatureChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	var item Item
-	if err = json.Unmarshal([]byte(`{"source":"notice","title":"中文","message":"message","severity":"warning","status_label":"pending","target":{"id":"router"},"evidence":["a","b"]}`), &item); err != nil {
+	if err = json.Unmarshal([]byte(`{"source":"notice","title":"中文","message":"message","severity":"warning","status_label":"pending","target":{"path":"/routers","query":{"router":"r"},"label":"查看"},"evidence":["a","b"]}`), &item); err != nil {
 		t.Fatal(err)
 	}
 	identity, err := IncidentFingerprint("notice", &item)
@@ -38,7 +38,7 @@ func TestNativeSignaturesAcrossProcessRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := []byte("17da2ce6aa800a88b9437370d51348e25d8ec354edcc9a68f494a480f401cbfa\n0267bf46778074b7eeb98037dc5d72c1d23748a3309dd1832c5d53fac18f1ebe")
+	expected := []byte("17da2ce6aa800a88b9437370d51348e25d8ec354edcc9a68f494a480f401cbfa\nf34c9223a6344ec2eeda74d69e8f2d261543a2f75ae43d4687920fe00628594a")
 	var first []byte
 	for i := range 2 {
 		path := filepath.Join(t.TempDir(), "signature.json")
@@ -78,8 +78,10 @@ json.dump(v,open(p,'w'))`
 	if err := UpdateItems(t.Context(), dir, func(items *Items) error { item, _ := items.Get("notice:x"); item.Stale = new(true); return nil }); err != nil {
 		t.Fatal(err)
 	}
+	// A member no record declares is dropped on the next write (O18 T1d);
+	// the declared members stay readable for Python.
 	if out, err := exec.CommandContext(t.Context(), "python3", "-c", `import json,sys
-v=json.load(open(sys.argv[1]));assert v['items']['notice:x']['future']=={'missing':None,'keep':1}`, path).CombinedOutput(); err != nil {
+v=json.load(open(sys.argv[1]));i=v['items']['notice:x'];assert 'future' not in i and i['title']=='synthetic' and i['stale'] is True`, path).CombinedOutput(); err != nil {
 		t.Fatalf("Python reread: %s %v", out, err)
 	}
 }
@@ -119,8 +121,9 @@ func TestNativeD2DismissalReappearsOnceAndRouterStateIsPreserved(t *testing.T) {
 	}
 }
 
-// Python can load/save null, but its observe += 1 cannot consume a manually
-// corrupted nonfinite occurrence counter after Go repairs it to null.
+// A manually corrupted nonfinite occurrence counter reads as null, which Go
+// treats as absent and leaves out when it writes the file (O18 T1d). Python
+// cannot observe such a receipt either way (null += 1 or a missing key).
 func TestNativeNotificationRollbackNullOccurrence(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "notifications.json")
@@ -136,11 +139,11 @@ func TestNativeNotificationRollbackNullOccurrence(t *testing.T) {
 	}
 	script := `import json,sys
 from backend.utils.notification_store import observe
-p=sys.argv[1];v=json.load(open(p));assert v['items']['notice:x']['occurrences'] is None
+p=sys.argv[1];v=json.load(open(p));assert 'occurrences' not in v['items']['notice:x']
 json.dump(v,open(p,'w'));v=json.load(open(p))
 try:
     observe(v['items'],'notice:x',{'state':'pending','source':'notice','evidence':'two'})
-except TypeError:
+except KeyError:
     pass
 else:
     raise AssertionError('Python null occurrence arithmetic changed')`

@@ -574,7 +574,7 @@ func TestSameRouterIDInDifferentProfilesDoesNotMerge(t *testing.T) {
 			&notifications.RouterReport{IPv6DNS: &notifications.RouterCheck{Status: "blocked", Blockers: []string{"需要指定 LAN"}}}, nil, "")
 	}
 	rows := f.items()
-	if strVal(rows["router:default:r:ipv6_dns"].ProfileID) != "default" || strVal(rows["router:other:r:ipv6_dns"].ProfileID) != "other" {
+	if rows["router:default:r:ipv6_dns"].ProfileText() != "default" || rows["router:other:r:ipv6_dns"].ProfileText() != "other" {
 		t.Fatal("profiles")
 	}
 	notifications.SaveRouter(ctx, "other", f.config("other"), router, &notifications.RouterReport{Desired: json.RawMessage(`{}`), Routes: &notifications.RouteHints{}, HasRoutes: true}, nil, "")
