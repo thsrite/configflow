@@ -32,7 +32,6 @@ import (
 	"configflow/internal/lockx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	"configflow/internal/setupflow"
 )
 
 const testOrigin = "https://panel.example.com"
@@ -50,7 +49,6 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	gateway.Wire()
 	mihomoenv.Wire()
-	setupflow.Wire()
 	deploy.Wire()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	must(t, err)

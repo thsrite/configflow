@@ -20,7 +20,7 @@ func TestRetiredHooksFailCompilation(t *testing.T) {
 		declaration.WriteString(shape.Field(i).Name + " int\n")
 	}
 	declaration.WriteString("}\n")
-	for _, field := range []string{"AddressFollow", "AddressConfirmed", "InstallationProfile", "InstallationRegister", "HAServiceOperation", "AddressFollowTyped"} {
+	for _, field := range []string{"AddressFollow", "AddressConfirmed", "InstallationProfile", "InstallationRegister", "HAServiceOperation", "AddressFollowTyped", "AddressConfirmedTyped", "InstallationProfileTyped", "InstallationRegisterTyped", "PinnedWithheld", "HAServiceOperationTyped"} {
 		t.Run(field, func(t *testing.T) {
 			set := token.NewFileSet()
 			file, err := parser.ParseFile(set, "hook.go", declaration.String()+"var _ = Hooks{"+field+": 1}\n", 0)
@@ -28,7 +28,7 @@ func TestRetiredHooksFailCompilation(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, err = new(types.Config).Check("boundary", set, []*ast.File{file}, nil)
-			if field == "AddressFollowTyped" {
+			if field == "HAServiceOperationTyped" {
 				if err != nil {
 					t.Fatal("positive compile control", err)
 				}

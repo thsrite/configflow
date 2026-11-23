@@ -506,6 +506,7 @@ func TestStartAndStopPathLoadsSavesAndRecords(t *testing.T) {
 	if !strings.Contains(strings.Join(lifecycle.Names(), ","), "metrics-history-flush") {
 		t.Fatal(lifecycle.Names())
 	}
+	RegisterStartup()
 	lifecycle.Start(ctx)
 	heartbeat(t, ctx, m, map[string]any{"cpu": map[string]any{"usage_percent": 7}})
 	lifecycle.Stop(10 * time.Second)

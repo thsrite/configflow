@@ -69,7 +69,7 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 		}
 		return shared.SetJSON("nodes", []byte(`[{"id": "n", "name": "N", "type": "ss", "server": "secret.test", "port": 1, "password": "pw", "params": {"k": "v"}}]`))
 	}))
-	_, _, err := r.SaveProfileFieldsJSON(bg, "default", []byte(`{"mihomo": {"custom_config": "secret", "linux_gateway_restore_point": {"x": 1}, "easytier": {"secret": "s"}}, "loon": {"custom_config": "secret"}}`), nil)
+	_, _, err := r.SaveProfileFieldsJSON(bg, "default", []byte(`{"mihomo": {"custom_config": "secret", "linux_gateway_restore_point": {"x": 1}, "easytier": {"options": {"network-secret": "s"}}}, "loon": {"custom_config": "secret"}}`), nil)
 	noError(t, err)
 	scAppendAgent(t, r, `{"id": "a", "name": "A", "profile_id": "default", "token": "agent-token"}`)
 
@@ -83,9 +83,8 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 			sanitizedWith = systemConfig
 			return payload, nil
 		},
-		RedactOxidnsJSON:   func(json.RawMessage) (json.RawMessage, error) { return []byte(`"oxidns-redacted"`), nil },
-		RedactRoutersJSON:  func(json.RawMessage) (json.RawMessage, error) { return []byte(`{"items":[],"redacted":true}`), nil },
-		RedactEasytierJSON: func(json.RawMessage) (json.RawMessage, error) { return []byte(`{"name":"easytier-redacted"}`), nil },
+		RedactOxidnsJSON:  func(json.RawMessage) (json.RawMessage, error) { return []byte(`"oxidns-redacted"`), nil },
+		RedactRoutersJSON: func(json.RawMessage) (json.RawMessage, error) { return []byte(`{"items":[],"redacted":true}`), nil },
 	}})
 	result := parseJSONObj(t, must(r.ExportAllJSON(bg, true))(t))
 	system := result.GetObject("system")
@@ -111,7 +110,7 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 		[]any{"[REDACTED]", "[REDACTED]", map[string]any{}, "N"})
 	profile := result.GetObject("profiles").GetObject("default")
 	mihomo := profile.GetObject("mihomo")
-	wantJSONEqual(t, mihomo, json.RawMessage(`{"custom_config": "", "easytier": {"name": "easytier-redacted", "options": {}}}`))
+	wantJSONEqual(t, mihomo, json.RawMessage(`{"custom_config": "", "easytier": {"options": {"network-secret": "[REDACTED]"}}}`))
 	wantJSONEqual(t, profile.Value("oxidns"), "oxidns-redacted")
 	// Routers is a plain record: the hook returns an object (O18 T1a) whose
 	// undeclared members are dropped (O18 T1c).
@@ -215,9 +214,8 @@ func TestExportSanitizerUsesExportRepositorySnapshot(t *testing.T) {
 			wantJSONEqual(t, settings, original)
 			return payload, nil
 		},
-		RedactOxidnsJSON:   pass,
-		RedactRoutersJSON:  pass,
-		RedactEasytierJSON: pass,
+		RedactOxidnsJSON:  pass,
+		RedactRoutersJSON: pass,
 	}}))
 	must(r.ExportAllJSON(WithRepository(bg, other), true))(t)
 	if !called {
@@ -267,7 +265,7 @@ func TestN811TypedExportHooksRunOnce(t *testing.T) {
 	}
 	defer SetHooks(SetHooks(Hooks{
 		RecordHooks: RecordHooks{
-			RedactOxidnsJSON: pass("oxidns"), RedactRoutersJSON: pass("routers"), RedactEasytierJSON: pass("easytier"),
+			RedactOxidnsJSON: pass("oxidns"), RedactRoutersJSON: pass("routers"),
 			SanitizeExternalDocument: func(_ context.Context, d *model.Document, s model.SystemConfig) (*model.Document, error) {
 				calls["sanitize"]++
 				if s.RuleProxyToken == "" || d.System.SystemConfig.RuleProxyToken != "" {
@@ -278,7 +276,7 @@ func TestN811TypedExportHooksRunOnce(t *testing.T) {
 		},
 	}))
 	raw := must(r.ExportAllJSON(bg, true))(t)
-	for _, name := range []string{"oxidns", "routers", "easytier", "sanitize"} {
+	for _, name := range []string{"oxidns", "routers", "sanitize"} {
 		if calls[name] != 1 {
 			t.Fatalf("%s calls=%d", name, calls[name])
 		}

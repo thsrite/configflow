@@ -347,23 +347,11 @@ func TestHeartbeatEndpointRecordsStateAndRejectsUnknownAgents(t *testing.T) {
 	h.s.Post("/api/agents/missing/heartbeat", httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{})).WantStatus(401)
 }
 
-func TestHeartbeatReportedHostUsesAddressFollowHooks(t *testing.T) {
+func TestHeartbeatReportedHostUsesAddressFollow(t *testing.T) {
 	h := newHeartbeat(t)
-	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "192.0.2.50"})).WantStatus(200),
-		map[string]any{"success": true, "domain_discovery_enabled": false, "traffic_history_enabled": false, "reads_host": true})
-	var followed string
-	agents.RegisterHooks(agents.Hooks{
-		AddressFollowTyped: func(_ context.Context, _ *agents.Manager, _ *model.Agent, host string) error {
-			followed = host
-			return nil
-		},
-		AddressConfirmedTyped: func(_ *model.Agent, host string) string { return host },
-	})
-	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "192.0.2.50"})).WantStatus(200),
-		map[string]any{"success": true, "domain_discovery_enabled": false, "traffic_history_enabled": false, "reads_host": true, "confirmed_host": "192.0.2.50"})
-	if followed != "192.0.2.50" {
-		t.Fatal("not followed")
-	}
+	// When reported host matches stored host, upgrades.ConfirmedModel returns it.
+	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "192.0.2.10"})).WantStatus(200),
+		map[string]any{"success": true, "domain_discovery_enabled": false, "traffic_history_enabled": false, "reads_host": true, "confirmed_host": "192.0.2.10"})
 }
 
 func TestAgentItemUpdateAndDelete(t *testing.T) {

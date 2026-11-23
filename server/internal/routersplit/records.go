@@ -3,6 +3,7 @@ package routersplit
 import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/setupflow"
 	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
@@ -37,12 +38,24 @@ func readSessions(ctx context.Context, r *repo.Repository, id string) (*Context,
 	sessionReaderState.RLock()
 	read := sessionReaderState.read
 	sessionReaderState.RUnlock()
-	if read == nil {
-		return nil, &HookMissingError{"setup_flow.profile_sessions", "config C36 (common/setup_flow.py)"}
+	if read != nil {
+		rows, err := read(ctx, r, id)
+		if err != nil {
+			return nil, err
+		}
+		return SessionContext(rows)
 	}
-	rows, err := read(ctx, r, id)
+	sessions, err := setupflow.ProfileSessions(ctx, r.DataDir(), id)
 	if err != nil {
 		return nil, err
+	}
+	rows := make([]Session, 0, len(sessions))
+	for _, session := range sessions {
+		var value Session
+		if err := json.Unmarshal(session.Raw, &value); err != nil {
+			return nil, err
+		}
+		rows = append(rows, value)
 	}
 	return SessionContext(rows)
 }

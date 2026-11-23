@@ -339,21 +339,7 @@ func Config(ctx context.Context, profileID string) (*model.Config, error) {
 	return config, nil
 }
 
-// LoadConfig is load_config(): startup initialisation. Outside a container
-// an empty system_config.server_domain is set from the DefaultServerDomain
-// hook; then the InitAgentManager hook runs and the default view is returned.
-func LoadConfig(ctx context.Context) (*model.Config, error) {
-	if err := prepareConfig(ctx); err != nil {
-		return nil, err
-	}
-	if h := currentHooks(); h.InitAgentManager != nil {
-		h.InitAgentManager()
-	}
-	return Config(ctx, "")
-}
-
-// PrepareConfig performs configuration startup preparation without initializing
-// the Agent manager. The server orders that work as a separate Startup step.
+// PrepareConfig performs configuration startup preparation.
 func PrepareConfig(ctx context.Context) (*model.Config, error) {
 	ctx = ctxx.Detach(ctx)
 	if err := prepareConfig(ctx); err != nil {

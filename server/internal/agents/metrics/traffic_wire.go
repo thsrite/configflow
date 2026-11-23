@@ -76,20 +76,10 @@ func deleteTrafficStore(ctx context.Context, agentID string) error {
 }
 
 // WireTraffic is A05's entry in internal/server wirePackages: the registry
-// hook that drops an Agent's traffic history (AgentManager.delete_agent),
-// the per-Agent traffic store the DELETE route clears, and the traffic
-// history save inside 「监控历史保存」 (metrics_flush.run, which also runs at
-// shutdown). The traffic history has no loop or task row of its own.
+// hook that drops an Agent's traffic history (AgentManager.delete_agent) and
+// the per-Agent traffic store the DELETE route clears. The traffic history has
+// no loop or task row of its own.
 func WireTraffic() {
 	agents.RegisterHooks(agents.Hooks{DeleteTrafficHistoryContext: deleteTrafficHistoryContext})
 	agents.OnAgentDeleted("traffic_store", deleteTrafficStore)
-	SetNativeTrafficFlush(flushTraffic)
-}
-
-// TrafficFlushSet reports whether the traffic history save is installed
-// in run() (tests).
-func TrafficFlushSet() bool {
-	trafficMu.Lock()
-	defer trafficMu.Unlock()
-	return trafficFlush != nil
 }

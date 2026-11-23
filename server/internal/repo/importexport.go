@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"configflow/internal/convert"
 	"configflow/internal/ctxx"
 	"configflow/internal/model"
 )
@@ -244,7 +245,7 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 		return model.Marshal(document)
 	}
 	h := recordHooks()
-	if h.SanitizeExternalDocument == nil || h.RedactOxidnsJSON == nil || h.RedactRoutersJSON == nil || h.RedactEasytierJSON == nil {
+	if h.SanitizeExternalDocument == nil || h.RedactOxidnsJSON == nil || h.RedactRoutersJSON == nil {
 		return nil, repositoryError(msgExportHooksMissing)
 	}
 	settings := document.System.SystemConfig
@@ -332,7 +333,7 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 		if raw, present, err := recordMemberJSON(profile.Mihomo, "easytier"); err != nil {
 			return nil, err
 		} else if present {
-			raw, err = h.RedactEasytierJSON(raw)
+			raw, err = convert.RedactEasyTierJSON(raw)
 			if err != nil {
 				return nil, err
 			}

@@ -8,7 +8,6 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -145,12 +144,6 @@ func TestNativeRepositoryUpdatesDropUndeclaredMembers(t *testing.T) {
 
 func TestNativeCollaboratorsInstalled(t *testing.T) {
 	t.Parallel()
-	value := reflect.ValueOf(collaboration)
-	for i := 0; i < value.NumField(); i++ {
-		if value.Field(i).IsNil() {
-			t.Errorf("missing collaborator %s", value.Type().Field(i).Name)
-		}
-	}
 	if client == nil {
 		t.Fatal("missing Agent client")
 	}

@@ -193,7 +193,7 @@ func startGo(t *testing.T, dataDir string) string {
 	t.Cleanup(substore.SetDefault(substore.NewService(substore.NewEnv())))
 	// The default native ProbeEnv is installed by the package owner.
 	app := server.NewApp()
-	if _, err := repo.LoadConfig(repo.WithScope(context.Background())); err != nil {
+	if _, err := repo.PrepareConfig(repo.WithScope(context.Background())); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(app)

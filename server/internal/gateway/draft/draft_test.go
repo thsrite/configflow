@@ -27,7 +27,6 @@ func draftService(t *testing.T) *Service {
 	t.Helper()
 	gateway.Wire()
 	mihomoenv.Wire()
-	setupflow.Wire()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)

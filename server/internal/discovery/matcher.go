@@ -60,7 +60,7 @@ func (matcherSpawner) Spawn(ctx context.Context, name string, fn func(context.Co
 }
 
 func matcherOptions() rules.CacheOptions {
-	options := collaboration.matcherOptions()
+	options := nativeMatcherOptions()
 	options.Clock = lifecycle.ClockFrom(context.Background())
 	options.Spawner = matcherSpawner{}
 	options.RulesDir = func() string { return filepath.Join(repo.DataDir(), "shared", "rules") }

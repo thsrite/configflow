@@ -17,7 +17,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/dnsfollow"
@@ -26,7 +25,6 @@ import (
 	"configflow/internal/agents/metrics"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/agents/rulesync"
-	"configflow/internal/agents/upgrades"
 	"configflow/internal/aggregations"
 	apiagents "configflow/internal/api/agents"
 	apiaggregations "configflow/internal/api/aggregations"
@@ -55,24 +53,17 @@ import (
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/configexport"
-	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
 	"configflow/internal/discovery"
 	"configflow/internal/gateway"
-	"configflow/internal/gateway/host"
-	"configflow/internal/gateway/installation"
 	"configflow/internal/health"
 	"configflow/internal/httpx"
-	"configflow/internal/ippresence"
 	"configflow/internal/mcp"
-	"configflow/internal/notifications"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
-	"configflow/internal/setupflow"
 	"configflow/internal/substore"
-	"configflow/internal/tasks"
 	"configflow/internal/webdav"
 )
 
@@ -110,15 +101,6 @@ var lateRoutePackages = []func(*httpx.Router){
 	apinotifications.Register,
 }
 
-var loopWakes sync.Once
-
-// wireLoopWakes connects change notifications across packages that must not
-// import each other: refreshed rule sources wake the Agent rule-sync loop
-// (design/o17-runtime-state.md 2.6). Hooks are process-wide, wired once.
-func wireLoopWakes() {
-	loopWakes.Do(func() { refresh.OnRulesRefreshed(rulesync.WakeLoop) })
-}
-
 // wirePackages run before the routes are registered (hooks, loops,
 // providers).
 var wirePackages = []func(){
@@ -136,39 +118,19 @@ var wirePackages = []func(){
 	metrics.Wire,
 	metrics.WireTraffic,
 	monitor.Wire,
-	upgrades.Wire,
 	substore.Wire,
 	refresh.Wire,
-	wireLoopWakes,
 	health.Wire,
 	discovery.Wire,
 	mihomoenv.Wire,
-	ippresence.Wire, // routers R02: convert.MihomoHooks.IsFullTun, oxidns classical_ip_lines
-	routers.Wire,    // routers R01: repo.Hooks.RedactRouters
+	routers.Wire, // routers R01: repo.Hooks.RedactRouters
 	wireSetupContent,
 	wireSetupOnboarding,
-	installation.Wire,
 	wireSetupInstallation,
-	wireSetupRouter,   // config C36 ← routers: managed-router completion preview
-	apirules.Wire,     // config C32: shared source loader for gateway providers
-	gateway.Wire,      // agents A19: convert.MihomoHooks Linux gateway
-	setupflow.Wire,    // agents A20 / config C36: routersplit setup-session reader
-	wireGatewayGuards, // agents A14 publication ← A20 live host guards
-	wireIPv6,          // A23 Manager-init hook is registered last
-}
-
-// gatewayGuards connects A14's publication guards to A20's live host checks.
-// host cannot import deploy, so the server owns this composition.
-func gatewayGuards() deploy.GatewayGuards {
-	bridge := func(m *agents.Manager) *host.Bridge { return &host.Bridge{Repository: m.Repository(), Manager: m} }
-	return deploy.GatewayGuards{
-		RequireForwardingKept: func(ctx context.Context, m *agents.Manager, t deploy.Target) error {
-			return bridge(m).RequireForwardingKept(ctx, t.ID, t.ProfileID)
-		},
-		RequireGatewayOffKept: func(ctx context.Context, m *agents.Manager, t deploy.Target) error {
-			return bridge(m).RequireGatewayOffKept(ctx, t.ID, t.ProfileID)
-		},
-	}
+	wireSetupRouter, // config C36 ← routers: managed-router completion preview
+	apirules.Wire,   // config C32: shared source loader for gateway providers
+	gateway.Wire,    // agents A19: convert.MihomoHooks Linux gateway
+	wireIPv6,        // A23 Manager-init hook is registered last
 }
 
 func wireIPv6() {
@@ -185,13 +147,8 @@ func wireIPv6() {
 	}
 }
 
-func wireGatewayGuards() { deploy.SetGatewayGuards(gatewayGuards()) }
-
 func wireCore() {
-	notifications.SetInputs(notifications.Inputs{Rows: tasks.Available, MissingTasks: tasks.Missing})
 	repo.RegisterHooks(repo.Hooks{DefaultServerDomain: defaultServerDomain})
-	// Desensitized export of EasyTier settings (repo cannot import convert).
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{RedactEasytierJSON: convert.RedactEasyTierJSON}})
 }
 
 // defaultServerDomain is what load_config stores outside a container:

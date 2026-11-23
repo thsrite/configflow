@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"configflow/internal/ippresence"
@@ -93,28 +92,19 @@ func BenchmarkOxiDNSMetadataChain(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-	var calls atomic.Int64
-	restore := oxidns.SetNativeClassicalIPLines(func(ctx context.Context, item model.RuleConfig, library []model.RuleLibraryItem) (*bool, error) {
-		calls.Add(1)
-		return ippresence.PeekTypedClassicalIPLines(repo.WithRepository(ctx, repository), item, library)
-	})
-	defer restore()
+	repo.SetRepository(repository)
+	b.Cleanup(func() { repo.SetRepository(nil) })
 
 	for _, width := range []int{0, 2 << 20} {
 		b.Run(fmt.Sprintf("rules128/unused%d", width), func(b *testing.B) {
 			profile := metadataProfile(b, 128, width)
 			b.ReportAllocs()
-			calls.Store(0)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				ippresence.ClearMemo()
 				if _, err := oxidns.Generate(profile, "http://panel.example"); err != nil {
 					b.Fatal(err)
 				}
-			}
-			b.StopTimer()
-			if calls.Load() < 128*int64(b.N) {
-				b.Fatal("benchmark did not reach IP-presence for every ruleset")
 			}
 		})
 	}
@@ -135,26 +125,18 @@ func TestMetadataChainAllocationBound(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var calls int
-	restore := oxidns.SetNativeClassicalIPLines(func(ctx context.Context, item model.RuleConfig, library []model.RuleLibraryItem) (*bool, error) {
-		calls++
-		return ippresence.PeekTypedClassicalIPLines(repo.WithRepository(ctx, repository), item, library)
-	})
-	defer restore()
+	repo.SetRepository(repository)
+	t.Cleanup(func() { repo.SetRepository(nil) })
 	var sizes []uint64
 	for _, width := range []int{0, 2 << 20} {
 		profile := metadataProfile(t, 128, width)
 		ippresence.ClearMemo()
-		calls = 0
 		var before, after runtime.MemStats
 		runtime.ReadMemStats(&before)
 		_, err := oxidns.Generate(profile, "http://panel.example")
 		runtime.ReadMemStats(&after)
 		if err != nil {
 			t.Fatal(err)
-		}
-		if calls < 128 {
-			t.Fatalf("only %d metadata callbacks", calls)
 		}
 		bytes := after.TotalAlloc - before.TotalAlloc
 		sizes = append(sizes, bytes)

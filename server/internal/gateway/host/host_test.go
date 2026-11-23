@@ -19,7 +19,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	"configflow/internal/setupflow"
 )
 
 type testManager struct {
@@ -49,7 +48,6 @@ func (c *recordClient) Do(ctx context.Context, r agents.Request) (*agents.Respon
 }
 func newBridge(t *testing.T) (*Bridge, *recordClient) {
 	t.Helper()
-	setupflow.Wire()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)

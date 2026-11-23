@@ -919,21 +919,17 @@
       "actionMap.len"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
       "configflow/internal/mosdns",
-      "configflow/internal/oxidns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/mosdns.ArchiveError",
       "configflow/internal/mosdns.ConfigFromJSON",
       "configflow/internal/mosdns.Download",
       "configflow/internal/mosdns.Message",
-      "configflow/internal/oxidns.SetNativeClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
+      "configflow/internal/repo.SetRepository",
       "configflow/internal/repo.WithRepository"
     ]
   },
@@ -1611,16 +1607,12 @@
       "parsePolicies"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -1853,16 +1845,12 @@
       "yamlReadError"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -2091,16 +2079,12 @@
       "yamlReadError"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -2304,16 +2288,12 @@
       "tokenizer.get"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -2610,16 +2590,12 @@
       "parsePolicies"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -2916,16 +2892,12 @@
       "parsePolicies"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -3222,16 +3194,12 @@
       "parsePolicies"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -3528,16 +3496,12 @@
       "parsePolicies"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -3834,16 +3798,12 @@
       "parsePolicies"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -4140,16 +4100,12 @@
       "parsePolicies"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -4446,16 +4402,12 @@
       "parsePolicies"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -4752,16 +4704,12 @@
       "parsePolicies"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {
@@ -5058,16 +5006,12 @@
       "parsePolicies"
     ],
     "product_imports": [
-      "configflow/internal/ippresence",
-      "configflow/internal/mosdns",
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/ippresence.PeekTypedClassicalIPLines",
       "configflow/internal/repo.Open",
       "configflow/internal/repo.Options",
-      "configflow/internal/repo.Repository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/repo.SetRepository"
     ]
   },
   {

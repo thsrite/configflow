@@ -45,7 +45,6 @@ func newTrafficEnv(t *testing.T, login bool) trafficEnv {
 	reset := func() {
 		metrics.Reset()
 		metrics.ResetTraffic()
-		metrics.SetNativeTrafficFlush(nil)
 		trafficstore.ResetCache()
 		agents.ResetRuntime()
 		agents.ResetHooks()

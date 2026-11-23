@@ -309,39 +309,6 @@ func legacyWebsiteMarkers() map[string]string {
 	return out
 }
 
-func init() {
-	collaboration = collaborators{
-		saveRule:        nativeSaveRule,
-		validateContent: nativeValidateContent,
-		cachedContent:   nativeCachedContent,
-		matcherOptions:  nativeMatcherOptions,
-		localMatcher:    nativeLocalMatcher,
-		supported:       legacySupported,
-		loadTraffic:     legacyLoadTraffic,
-		probes:          legacyProbes,
-		saveProbes:      legacySaveProbes,
-		judge:           legacyJudge,
-		regionData:      legacyRegionData,
-		editRegion:      legacyEditRegion,
-		knownService:    nativeKnownService,
-		pageIdentity:    nativePageIdentity,
-		publicServices:  legacyPublicServices,
-		probeControls:   legacyProbeControls,
-		pickTargets:     legacyPickTargets,
-		exitRequest:     legacyExitRequest,
-		serviceRequests: legacyServiceRequests,
-		domainRequest:   legacyDomainRequest,
-		registryAgents:  legacyRegistryAgents,
-		exitInfo:        legacyExitInfo,
-		serviceMatrix:   legacyServiceMatrix,
-		classifyRegion:  legacyClassifyRegion,
-		summarizeRegion: legacySummarizeRegion,
-		serviceDomains:  legacyServiceDomains,
-		websiteMarkers:  legacyWebsiteMarkers,
-	}
-	client = managerClient{}
-}
-
 // ProviderRevisions returns provider hashes for the existing Agent traffic protocol.
 func ProviderRevisions(ctx context.Context, id string) (map[string]string, error) {
 	return providerRevisions(ctx, id)

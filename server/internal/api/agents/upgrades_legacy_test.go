@@ -176,25 +176,6 @@ func registerAgentForTest(t testing.TB, ctx context.Context, m *agents.Manager, 
 	return res.ID, token
 }
 
-func TestN810TypedHeartbeatHooksTakePrecedence(t *testing.T) {
-	h := newHeartbeat(t)
-	followed, confirmed := 0, 0
-	agents.RegisterHooks(agents.Hooks{
-		AddressFollowTyped: func(_ context.Context, _ *agents.Manager, a *model.Agent, host string) error {
-			followed++
-			if a.ID != h.id || host != "192.0.2.50" {
-				t.Fatal("typed identity lost")
-			}
-			return nil
-		},
-		AddressConfirmedTyped: func(_ *model.Agent, host string) string { confirmed++; return host },
-	})
-	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "192.0.2.50"})).WantStatus(200)
-	if followed != 1 || confirmed != 1 {
-		t.Fatal("typed heartbeat hooks did not run exactly once", followed, confirmed)
-	}
-}
-
 func TestN810TypedAddressSnapshotPreservesHeartbeatPreferences(t *testing.T) {
 	h := newHeartbeat(t)
 	manager, err := agents.Get(h.s.Context())

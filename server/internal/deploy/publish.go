@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"configflow/internal/agents"
+	"configflow/internal/agents/monitor"
 	"configflow/internal/gateway"
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
@@ -340,13 +341,11 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 		return answer, nil
 	}
 	if o.Activate && t.ServiceType == "oxidns" {
-		if hook := agents.CurrentHooks().PublicationCheckpoint; hook != nil {
-			if err = ctx.Err(); err != nil {
-				return nil, err
-			}
-			if err = hook(ctx, m, id, did, prepared.DeployedConfigSHA256); err != nil {
-				return nil, err
-			}
+		if err = ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err = monitor.CheckpointStatistics(ctx, monitor.TypedFromAgents(m), id, did, prepared.DeployedConfigSHA256); err != nil {
+			return nil, err
 		}
 	}
 	if ctx.Err() != nil {

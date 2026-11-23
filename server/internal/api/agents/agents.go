@@ -21,7 +21,9 @@ import (
 	"strings"
 
 	"configflow/internal/agents"
+	"configflow/internal/agents/upgrades"
 	"configflow/internal/auth"
+	"configflow/internal/gateway/installation"
 	"configflow/internal/httpx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -198,18 +200,15 @@ func doRegister(c *httpx.Ctx, out *map[string]string, secrets *redact.Secrets) (
 	installing := idPresent && string(idRaw) != "null" || tokenPresent && string(tokenRaw) != "null"
 	data.Delete("installation_id")
 	data.Delete("installation_token")
-	hooks := agents.CurrentHooks()
 	if installing {
-		if hooks.InstallationProfileTyped == nil {
-			return nil, &agents.InstallationError{Message: "Gateway installation registration is not available yet", Status: 501}
-		}
 		raw, err := json.Marshal(data)
 		if err != nil {
 			return nil, err
 		}
-		_, updated, err := hooks.InstallationProfileTyped(ctx, raw, installationID, installationToken, c.RemoteAddr())
+		inst := installation.Service{Repository: manager.Repository()}
+		_, updated, err := inst.RegistrationProfile(ctx, installationID, installationToken, raw, c.RemoteAddr())
 		if err != nil {
-			return nil, err
+			return nil, inst.WrapError(ctx, err)
 		}
 		if err = jsondecode.Unmarshal(updated, &data); err != nil {
 			return nil, err
@@ -263,10 +262,11 @@ func doRegister(c *httpx.Ctx, out *map[string]string, secrets *redact.Secrets) (
 	logger.Infof("Agent注册字段: %v", *out)
 	var result json.RawMessage
 	if installing {
-		if hooks.InstallationRegisterTyped == nil {
-			return nil, &agents.InstallationError{Message: "Gateway installation registration is not available yet", Status: 501}
+		inst := installation.Service{Repository: manager.Repository(), Manager: manager}
+		result, err = inst.Register(ctx, installationID, installationToken, raw, existingToken)
+		if err != nil {
+			err = inst.WrapError(ctx, err)
 		}
-		result, err = hooks.InstallationRegisterTyped(ctx, manager, installationID, installationToken, raw, existingToken)
 	} else {
 		input, decodeErr := agents.DecodeRegistrationInput(raw)
 		if decodeErr != nil {
@@ -474,16 +474,11 @@ func heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	reply := map[string]any{"success": true, "domain_discovery_enabled": heartbeatFeature(agent, "domain_discovery_enabled"), "traffic_history_enabled": heartbeatFeature(agent, "traffic_history_enabled"), "reads_host": true}
 	if host := reported; host != "" {
-		hooks := agents.CurrentHooks()
-		if hooks.AddressFollowTyped != nil {
-			if err := hooks.AddressFollowTyped(ctx, manager, agent, host); err != nil {
-				return nil, err
-			}
+		if err := upgrades.FollowModel(ctx, manager, agent, host); err != nil {
+			return nil, err
 		}
-		if hooks.AddressConfirmedTyped != nil {
-			if confirmed := hooks.AddressConfirmedTyped(agent, host); confirmed != "" {
-				reply["confirmed_host"] = confirmed
-			}
+		if confirmed := upgrades.ConfirmedModel(agent, host); confirmed != "" {
+			reply["confirmed_host"] = confirmed
 		}
 	}
 

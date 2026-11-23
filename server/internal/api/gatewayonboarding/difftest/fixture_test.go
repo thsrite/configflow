@@ -18,7 +18,6 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/setup"
-	"configflow/internal/setupflow"
 )
 
 const validForm = `{"rule_set_ids":[],"direct_rule_set_ids":[],"proxy_rule_set_ids":[],"local_dns":"https://192.0.2.53/dns-query"}`
@@ -27,7 +26,6 @@ func testServer(t *testing.T) *httpxtest.Server {
 	t.Helper()
 	gateway.Wire()
 	mihomoenv.Wire()
-	setupflow.Wire()
 	t.Cleanup(onboarding.SetAdoptOwnedWrite(setup.AdoptOwnedWrite))
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apionboarding.Register)})
 	ctx := s.Context()

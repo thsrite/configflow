@@ -11,7 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	"configflow/internal/agents"
+	"configflow/internal/agents/rulesync"
+	"configflow/internal/deploy"
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
@@ -241,7 +242,7 @@ func nativeWithout(view *oxidns.Profile, head oxidns.SettingsHead, settings *oxi
 	}
 	return next, nil
 }
-func withheld(ctx context.Context, profileID string, ids []string) (*bool, error) {
+func withheld(ctx context.Context, profileID string, ids []string, check func(context.Context, string, []string) (bool, error)) (*bool, error) {
 	config, err := loadProfile(ctx, profileID)
 	if err != nil {
 		return nil, err
@@ -268,11 +269,16 @@ func withheld(ctx context.Context, profileID string, ids []string) (*bool, error
 	if len(ids) == 0 || !eligible {
 		return new(false), nil
 	}
-	hook := agents.CurrentHooks().PinnedWithheld
-	if hook == nil {
-		return nil, agents.ErrNotPorted
+	if check == nil {
+		check = func(ctx context.Context, profileID string, ruleIDs []string) (bool, error) {
+			r, err := repo.GetRepository(ctx)
+			if err != nil {
+				return false, err
+			}
+			return rulesync.PinnedWithheld(ctx, r, deploy.NewReceipts(r.DataDir()), profileID, ruleIDs)
+		}
 	}
-	v, err := hook(ctx, profileID, ids)
+	v, err := check(ctx, profileID, ids)
 	if err != nil {
 		return nil, err
 	}

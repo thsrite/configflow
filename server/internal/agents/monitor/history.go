@@ -1,18 +1,10 @@
 package monitor
 
 // The parts of backend/agents/oxidns_ranking_history.py the overview reads
-// (constants, supported, get_history(...).query / .has_any). The store, the
-// collector loop and its SQLite schema are A07's: it registers the real
-// store with SetRankingHistory. Until then the default store answers like
-// Python's when metrics/oxidns_rankings.sqlite3 does not exist (nothing
-// stored) and fails otherwise, so existing history is never hidden silently.
+// (constants, supported, get_history(...).query / .has_any).
 
 import (
 	"context"
-	"errors"
-	"os"
-	"path/filepath"
-	"sync"
 )
 
 // Constants of oxidns_ranking_history.py used here.
@@ -48,62 +40,8 @@ type RankingHistory interface {
 	Query(agentID, recorder string, since, until int64) (*HistoryAnswer, error)
 }
 
-// ErrHistoryNotPorted is the default store's answer when a ranking history
-// database exists (A07 replaces the store).
-var ErrHistoryNotPorted = errors.New("oxidns ranking history store is not ported yet (A07)")
-
-type absentHistory struct{ path string }
-
-func (h absentHistory) exists() (bool, error) {
-	_, err := os.Stat(h.path)
-	if err == nil {
-		return true, nil
-	}
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
-	return true, nil
-}
-
-func (h absentHistory) HasAny(string, string) (bool, error) {
-	if ok, _ := h.exists(); ok {
-		return false, ErrHistoryNotPorted
-	}
-	return false, nil
-}
-
-func (h absentHistory) Query(string, string, int64, int64) (*HistoryAnswer, error) {
-	if ok, _ := h.exists(); ok {
-		return nil, ErrHistoryNotPorted
-	}
-	return &HistoryAnswer{Rows: map[string][]HistoryRow{"clients": nil, "domains": nil, "blocked": nil}}, nil
-}
-
-var (
-	historyMu      sync.RWMutex
-	historyFactory = func(dataDir string) RankingHistory {
-		return absentHistory{filepath.Join(dataDir, "metrics", HistoryFilename)}
-	}
-)
-
-// SetRankingHistory installs get_history (A07) and returns a function
-// restoring the previous one.
-func SetRankingHistory(factory func(dataDir string) RankingHistory) (restore func()) {
-	historyMu.Lock()
-	previous := historyFactory
-	historyFactory = factory
-	historyMu.Unlock()
-	return func() {
-		historyMu.Lock()
-		historyFactory = previous
-		historyMu.Unlock()
-	}
-}
-
 func getHistory(dataDir string) RankingHistory {
-	historyMu.RLock()
-	defer historyMu.RUnlock()
-	return historyFactory(dataDir)
+	return rankingStoreFactory(dataDir)
 }
 
 func queryHistory(ctx context.Context, history RankingHistory, id, recorder string, since, until int64) (*HistoryAnswer, error) {

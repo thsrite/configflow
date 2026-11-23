@@ -104,8 +104,9 @@ func TestPinnedWithheldHookIsBestEffort(t *testing.T) {
 			}
 			t.Cleanup(func() { root.Close() })
 			calls := 0
+			svc := &Service{}
 			if name == "error" || name == "true" || name == "false" {
-				agents.RegisterHooks(agents.Hooks{PinnedWithheld: func(_ context.Context, id string, ids []string) (bool, error) {
+				svc.pinnedCheck = func(_ context.Context, id string, ids []string) (bool, error) {
 					calls++
 					if id != "other" || len(ids) != 1 || ids[0] != "rule_1" {
 						t.Errorf("incorrect hook scope %s %v", id, ids)
@@ -114,9 +115,13 @@ func TestPinnedWithheldHookIsBestEffort(t *testing.T) {
 						return false, errors.New("secret-rule-content https://user:secret-password@source.example/path?token=secret-token")
 					}
 					return name == "true", nil
-				}})
+				}
+			} else if name == "missing" {
+				svc.pinnedCheck = func(context.Context, string, []string) (bool, error) {
+					return false, agents.ErrNotPorted
+				}
 			}
-			out, err := (&Service{}).SetPolicy(repo.WithScope(repo.WithRepository(ctx, s.Repo)), "other", request[policyRequest](record{"ids": json.RawMessage(`["rule_1"]`), "policy": stringJSON("PROXY")}), "http://localhost")
+			out, err := svc.SetPolicy(repo.WithScope(repo.WithRepository(ctx, s.Repo)), "other", request[policyRequest](record{"ids": json.RawMessage(`["rule_1"]`), "policy": stringJSON("PROXY")}), "http://localhost")
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -17,7 +17,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	"configflow/internal/setupflow"
 	"configflow/internal/yamlx"
 )
 
@@ -25,7 +24,6 @@ func testService(t *testing.T) *Service {
 	t.Helper()
 	gateway.Wire()
 	mihomoenv.Wire()
-	setupflow.Wire()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)

@@ -262,7 +262,7 @@ func startGo(t *testing.T, dataDir string) string {
 	if !app.Router.HasEndpoint("tasks.get_tasks") {
 		t.Fatalf("task routes not registered; missing %v", tasks.Missing())
 	}
-	if _, err := repo.LoadConfig(repo.WithScope(context.Background())); err != nil {
+	if _, err := repo.PrepareConfig(repo.WithScope(context.Background())); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(app)

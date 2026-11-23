@@ -166,7 +166,7 @@ func startGo(t *testing.T, dataDir string) string {
 		apitasks.RegisterAlways(app.Router)
 	}
 	ctx := repo.WithScope(context.Background())
-	if _, err := repo.LoadConfig(ctx); err != nil {
+	if _, err := repo.PrepareConfig(ctx); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(app)

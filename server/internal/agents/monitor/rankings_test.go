@@ -560,8 +560,7 @@ func TestARemovedDeviceLosesItsHistory(t *testing.T) {
 
 func useStores(t *testing.T) {
 	ResetRankingStores()
-	restore := SetRankingHistory(rankingStoreFactory)
-	t.Cleanup(func() { restore(); ResetRankingStores() })
+	t.Cleanup(ResetRankingStores)
 }
 
 type panelEnv struct {

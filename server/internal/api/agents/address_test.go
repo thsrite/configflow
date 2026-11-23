@@ -36,7 +36,6 @@ type addressEnv struct {
 func newAddressEnv(t *testing.T) *addressEnv {
 	t.Helper()
 	s := newServer(t)
-	upgrades.Wire()
 	upgrades.ResetAddressState()
 	t.Cleanup(upgrades.ResetAddressState)
 	t.Cleanup(upgrades.RunInlineForTest())

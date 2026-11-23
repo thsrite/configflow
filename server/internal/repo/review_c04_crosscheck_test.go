@@ -208,9 +208,8 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 				capturedSettings = systemConfig
 				return payload, nil
 			},
-			RedactOxidnsJSON:   wrap("redacted_oxidns"),
-			RedactRoutersJSON:  wrap("redacted_routers"),
-			RedactEasytierJSON: wrap("redacted_easytier"),
+			RedactOxidnsJSON:  wrap("redacted_oxidns"),
+			RedactRoutersJSON: wrap("redacted_routers"),
 		}})
 		var raw json.RawMessage
 		raw, err = r.ExportAllJSON(bg, true)

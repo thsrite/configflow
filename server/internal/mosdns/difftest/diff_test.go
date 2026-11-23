@@ -208,7 +208,7 @@ func startGo(t *testing.T, dataDir string) string {
 	// (callback URLs of the rule proxy).
 	app.RegisterLocal()
 	t.Cleanup(func() { localhttp.Register(nil, nil) })
-	if _, err := repo.LoadConfig(repo.WithScope(context.Background())); err != nil {
+	if _, err := repo.PrepareConfig(repo.WithScope(context.Background())); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(app)

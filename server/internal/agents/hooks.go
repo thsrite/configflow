@@ -26,10 +26,6 @@ func (e *InstallationError) Error() string { return e.Message }
 
 // Hooks are the parts of other packages the registry calls.
 type Hooks struct {
-	// PinnedWithheld reports A16 baseline projection of pinned upstreams for
-	// selected rules. Nil means unavailable; callers omit the best-effort field
-	// after a committed save instead of rolling it back.
-	PinnedWithheld func(ctx context.Context, profileID string, ruleIDs []string) (bool, error)
 	// AddMetricsJSON is the context-aware native sample boundary. Installed
 	// owners check Runtime shutdown again at the in-memory append point.
 	AddMetricsJSON func(ctx context.Context, m *Manager, agentID string, sample json.RawMessage) error
@@ -42,13 +38,6 @@ type Hooks struct {
 	// oxidns_publication_stats.complete / checkpoint (#21). Default: nothing.
 	PublicationComplete   func(ctx context.Context, m *Manager, agentID, deploymentID string, status any) error
 	PublicationCheckpoint func(ctx context.Context, m *Manager, agentID, deploymentID string, configSHA256 any) error
-
-	// AddressFollow and AddressConfirmed are address_follow.follow and
-	// address_follow.confirmed (#28), used by the heartbeat route when the
-	// Agent reports its host. Default: nothing followed, no confirmed_host.
-	// AddressFollowTyped and AddressConfirmedTyped are the native address owners.
-	AddressFollowTyped    func(context.Context, *Manager, *model.Agent, string) error
-	AddressConfirmedTyped func(*model.Agent, string) string
 
 	// ReceiptMatches is oxidns_validation_receipt.receipt_matches (#28),
 	// checked before an OxiDNS candidate is activated. Default: false (fail
@@ -66,18 +55,6 @@ type Hooks struct {
 
 	HADeployment func(ctx context.Context, m *Manager, agentID, deploymentID string) (*model.Deployment, error)
 	HAActivate   func(ctx context.Context, m *Manager, agentID, deploymentID string) (*model.Deployment, error)
-
-	// InstallationProfile and InstallationRegister are
-	// gateway_installation.registration_profile / register (#30), used by
-	// the registration route for gateway installs. Return *InstallationError
-	// for the user-facing refusals. Default: an InstallationError (501).
-	// InstallationProfileTyped validates native request bytes and returns the bound
-	// profile and updated bytes. Argument order: data, installation ID, token, peer host.
-	// Only the native owner is registered for this event.
-	InstallationProfileTyped func(ctx context.Context, data json.RawMessage, installationID, installationToken, fallbackHost string) (profileID string, updated json.RawMessage, err error)
-	// InstallationRegisterTyped commits native request bytes through the installation
-	// owner. Argument order after manager: installation ID, token, data, existing token.
-	InstallationRegisterTyped func(ctx context.Context, m *Manager, installationID, installationToken string, data json.RawMessage, existingToken string) (json.RawMessage, error)
 }
 
 // ErrNotPorted is returned where the registry would call a later package
@@ -93,9 +70,6 @@ var (
 func RegisterHooks(h Hooks) {
 	hooksMu.Lock()
 	defer hooksMu.Unlock()
-	if h.PinnedWithheld != nil {
-		hooks.PinnedWithheld = h.PinnedWithheld
-	}
 	if h.AddMetricsJSON != nil {
 		hooks.AddMetricsJSON = h.AddMetricsJSON
 	}
@@ -111,12 +85,6 @@ func RegisterHooks(h Hooks) {
 	if h.PublicationCheckpoint != nil {
 		hooks.PublicationCheckpoint = h.PublicationCheckpoint
 	}
-	if h.AddressFollowTyped != nil {
-		hooks.AddressFollowTyped = h.AddressFollowTyped
-	}
-	if h.AddressConfirmedTyped != nil {
-		hooks.AddressConfirmedTyped = h.AddressConfirmedTyped
-	}
 	if h.ReceiptMatches != nil {
 		hooks.ReceiptMatches = h.ReceiptMatches
 	}
@@ -128,12 +96,6 @@ func RegisterHooks(h Hooks) {
 	}
 	if h.HAActivate != nil {
 		hooks.HAActivate = h.HAActivate
-	}
-	if h.InstallationProfileTyped != nil {
-		hooks.InstallationProfileTyped = h.InstallationProfileTyped
-	}
-	if h.InstallationRegisterTyped != nil {
-		hooks.InstallationRegisterTyped = h.InstallationRegisterTyped
 	}
 }
 

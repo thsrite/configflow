@@ -21,8 +21,9 @@ var logger = logx.Get("backend.routes.rules")
 
 // Service owns rule-page operations and their transaction boundaries.
 type Service struct {
-	client *rulefetch.Client
-	now    func() time.Time
+	client      *rulefetch.Client
+	now         func() time.Time
+	pinnedCheck func(ctx context.Context, profileID string, ruleIDs []string) (bool, error)
 }
 
 func invalid(message string) error { return repo.NewValidationError(message) }
@@ -104,7 +105,7 @@ func (s *Service) pinned(ctx context.Context, id string, ids []string) *bool {
 		logger.Warning(msgWithheldWarning)
 		return nil
 	}
-	value, err := withheld(ctx, resolved, ids)
+	value, err := withheld(ctx, resolved, ids, s.pinnedCheck)
 	if err != nil {
 		logger.Warning(msgWithheldWarning)
 		return nil

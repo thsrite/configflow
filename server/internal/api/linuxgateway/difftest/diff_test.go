@@ -38,7 +38,6 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routersplit"
-	"configflow/internal/setupflow"
 	"configflow/internal/yamlx"
 )
 
@@ -243,7 +242,6 @@ func newWorld(t *testing.T, sessions ...string) *world {
 	gateway.Wire()
 	mihomoenv.Wire()
 	apirules.Wire()
-	setupflow.Wire()
 	ctx := w.srv.Context()
 	r := w.srv.Repo
 	_, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "home", Name: "Home"}, "")

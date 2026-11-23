@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
-	"configflow/internal/agents/metrics"
 	"configflow/internal/tasks"
 )
 
@@ -96,9 +95,6 @@ func TestNewAppWiresTheTrafficStores(t *testing.T) {
 	}
 	if agents.CurrentHooks().DeleteTrafficHistoryContext == nil {
 		t.Error("delete_agent: traffic_history.delete (A05) not registered")
-	}
-	if !metrics.TrafficFlushSet() {
-		t.Error("metrics_flush.run: traffic history save (A05) not registered")
 	}
 }
 

@@ -1,4 +1,4 @@
-package ippresence
+package ippresence_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/ippresence"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
@@ -117,17 +118,13 @@ func TestGeneratePeeksLegacyCacheAfterRuntimeShutdown(t *testing.T) {
 					t.Fatal("not bound to stopped Runtime")
 				}
 			}
-			// Use the production Wire hook, not a test-selected read implementation.
-			restore := oxidns.SetNativeClassicalIPLines(nil)
-			t.Cleanup(restore)
 			repo.SetRepository(r)
 			t.Cleanup(func() { repo.SetRepository(nil) })
-			Wire()
 			profile, err := oxidns.ProfileFromJSON(raw)
 			if err != nil {
 				t.Fatal(err)
 			}
-			ClearMemo()
+			ippresence.ClearMemo()
 			before := generationState(t, ctx, r)
 			template, err := oxidns.Generate(profile, "http://panel.example.com")
 			if err != nil {
@@ -135,7 +132,7 @@ func TestGeneratePeeksLegacyCacheAfterRuntimeShutdown(t *testing.T) {
 			}
 			yamlx.Set(profile.Settings(), "config_mode", yamlx.Str("native"))
 			yamlx.Set(profile.Settings(), "native_config", yamlx.Str(template))
-			ClearMemo()
+			ippresence.ClearMemo()
 			text, err := oxidns.Generate(profile, "http://panel.example.com")
 			if err != nil || text == "" {
 				t.Fatalf("generation lost offline cache: %v", err)

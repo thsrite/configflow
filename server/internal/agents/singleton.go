@@ -148,16 +148,10 @@ func snapshotAgents(ctx context.Context, manager *Manager) ([]model.Agent, error
 }
 
 // Wire is the registry's entry in internal/server wirePackages: the
-// InitAgentManager repository hook (load_config) and the notification list's
-// Agent source. GET /api/notifications registers only once every task-row
-// slot is provided as well (api/notifications.ListComplete), so the source
-// is installed unconditionally.
+// notification list's Agent source. GET /api/notifications registers only once
+// every task-row slot is provided as well (api/notifications.ListComplete), so
+// the source is installed unconditionally.
 func Wire() {
-	repo.RegisterHooks(repo.Hooks{InitAgentManager: func() {
-		if _, err := Init(context.Background()); err != nil {
-			logger.Errorf("初始化 Agent 管理器失败：%s", err)
-		}
-	}})
 	notifications.SetInputs(notifications.Inputs{Agents: NotificationAgents})
 }
 

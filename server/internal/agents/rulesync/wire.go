@@ -2,8 +2,8 @@ package rulesync
 
 import (
 	"configflow/internal/agents"
-	"configflow/internal/deploy"
 	"configflow/internal/lifecycle"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"context"
 	"sync"
@@ -42,15 +42,11 @@ var loop = agents.NewWaker(PollInterval, IdleFallback)
 // refreshed and the shared rule files may have changed.
 func WakeLoop() { loop.Wake() }
 
+var wakeOnce sync.Once
+
 func Wire() {
 	agents.SetRuleSyncRow(agentTaskRow)
-	agents.RegisterHooks(agents.Hooks{PinnedWithheld: func(ctx context.Context, profileID string, ruleIDs []string) (bool, error) {
-		r, e := repo.GetRepository(ctx)
-		if e != nil {
-			return false, e
-		}
-		return PinnedWithheld(ctx, r, deploy.NewReceipts(r.DataDir()), profileID, ruleIDs)
-	}})
+	wakeOnce.Do(func() { refresh.OnRulesRefreshed(WakeLoop) })
 	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "agent-rule-sync", Start: lifecycle.AfterFirstRequest, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
 		s, e := Get(ctx)
 		if e != nil {

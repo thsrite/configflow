@@ -68,7 +68,6 @@ func Wire() {
 		service.Runtime.warnTempDirectory()
 		lifecycle.RegisterPeriodic(service.Runtime.idlePeriodic())
 	}
-	RegisterStartup()
 }
 
 // RegisterStartup registers cache pruning, allowing main to order it between

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"configflow/internal/configexport"
-	"configflow/internal/convert"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -21,7 +20,6 @@ func exportApp(t *testing.T) *httpxtest.Server {
 	t.Cleanup(func() { repo.SetHooks(previous) })
 	configexport.Wire()
 	routers.Wire()
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{RedactEasytierJSON: convert.RedactEasyTierJSON}})
 	return httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(Register)})
 }
 

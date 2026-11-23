@@ -112,7 +112,6 @@ func deleteHistoryContext(ctx context.Context, m *agents.Manager, id string) err
 // and the two phased saves at shutdown.
 func Wire() {
 	agents.RegisterHooks(agents.Hooks{AddMetricsJSON: addMetricsJSON, DeleteMetricsHistoryContext: deleteHistoryContext})
-	RegisterStartup()
 	tasks.SetRowBuilder(tasks.SlotMetrics, BuildRows)
 	tasks.SetRunner(TaskKey, runNow)
 	tasks.SetIntervalEditor(TaskKey, func(ctx context.Context, value *int64) error {

@@ -82,6 +82,7 @@ func TestWireRegistersIdleOnlyWithBuiltin(t *testing.T) {
 			if slices.Contains(lifecycle.Names(), "sub-store-idle") != builtin {
 				t.Fatal("conditional idle registration", lifecycle.Names())
 			}
+			RegisterStartup()
 			if !slices.Contains(lifecycle.Names(), "subscription-cache-prune") {
 				t.Fatal("prune Startup missing")
 			}

@@ -54,6 +54,8 @@ type RecordHooks struct {
 	RedactOxidnsJSON func(json.RawMessage) (json.RawMessage, error)
 	// RedactRoutersJSON removes secrets from the routers JSON value.
 	RedactRoutersJSON func(json.RawMessage) (json.RawMessage, error)
-	// RedactEasytierJSON removes secrets from EasyTier settings.
+	// RedactEasytierJSON is deprecated and ignored; repo calls
+	// convert.RedactEasyTierJSON directly. Retained temporarily so
+	// internal/routers tests remain untouched until W9.
 	RedactEasytierJSON func(json.RawMessage) (json.RawMessage, error)
 }

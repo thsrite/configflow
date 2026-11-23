@@ -12,7 +12,6 @@ import (
 // (oxidns_ranking_history.start_loop, which app.py starts in the service
 // process; once per process).
 func Wire() {
-	SetRankingHistory(rankingStoreFactory)
 	agents.RegisterHooks(agents.Hooks{PublicationComplete: completeHook, PublicationCheckpoint: checkpointHook})
 	lifecycle.RegisterPeriodic(rankingPeriodic())
 }

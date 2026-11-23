@@ -147,7 +147,7 @@ func profileAgents(ctx context.Context, id string) ([]Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	records, err := collaboration.registryAgents(ctx)
+	records, err := legacyRegistryAgents(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -34,7 +34,6 @@ import (
 	"configflow/internal/installer"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/setupflow"
 )
 
 const base = "/api/agents/gateway-installations"
@@ -123,9 +122,7 @@ func setup(t *testing.T) (*httpxtest.Server, string, installation.Record, map[st
 	t.Helper()
 	gateway.Wire()
 	mihomoenv.Wire()
-	setupflow.Wire()
 	deploy.Wire()
-	installation.Wire()
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apiagents.Register)})
 	static := t.TempDir()
 	t.Setenv("AGENTS_STATIC_DIR", static)

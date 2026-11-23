@@ -524,7 +524,7 @@ func TestAgentSupported(t *testing.T) {
 func wireTrafficForTest(t *testing.T) {
 	t.Helper()
 	ResetTraffic()
-	t.Cleanup(func() { SetNativeTrafficFlush(nil); ResetTraffic() })
+	t.Cleanup(ResetTraffic)
 	WireTraffic()
 }
 

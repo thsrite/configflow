@@ -19,6 +19,7 @@ import (
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
+	"configflow/internal/gateway/host"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
@@ -614,18 +615,13 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 		if e != nil {
 			return nil, e
 		}
-		publicationHooks.RLock()
-		guards := publicationHooks.guards
-		publicationHooks.RUnlock()
+		bridge := &host.Bridge{Repository: m.Repository(), Manager: m}
 		if isFullTun(cfg.Profile) {
 			if e = routersplit.RequireDocument(main); e != nil {
 				return nil, e
 			}
 			if t.DeploymentMethod != "docker" {
-				if guards.RequireForwardingKept == nil {
-					return nil, ErrGatewayGuardMissing
-				}
-				if e = guards.RequireForwardingKept(ctx, m, t); e != nil {
+				if e = bridge.RequireForwardingKept(ctx, t.ID, t.ProfileID); e != nil {
 					return nil, e
 				}
 			}
@@ -640,10 +636,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 					return nil, e
 				}
 				if used {
-					if guards.RequireGatewayOffKept == nil {
-						return nil, ErrGatewayGuardMissing
-					}
-					if e = guards.RequireGatewayOffKept(ctx, m, t); e != nil {
+					if e = bridge.RequireGatewayOffKept(ctx, t.ID, t.ProfileID); e != nil {
 						return nil, e
 					}
 				}

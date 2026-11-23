@@ -50,7 +50,6 @@ func newUpgradeApp(t *testing.T) *upgradeApp {
 	upgrades.ResetArtifactCache()
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "upgrade-admin", Password: "upgrade-test-password",
 		DefaultFactories: true, Register: httpxtest.Routes(apiagents.Register)})
-	upgrades.Wire()
 	app := &upgradeApp{t: t, s: s, static: static}
 	app.admin = s.Login()
 	m, err := agents.Get(s.Context())

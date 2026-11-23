@@ -42,7 +42,7 @@ func TestRouterSplitErrorIsALinuxGatewayError(t *testing.T) {
 
 // The setup sessions come from config C36 (setup_flow.profile_sessions);
 // until it registers the hook every session read fails closed.
-func TestProfileSessionsHookFailsClosedUntilRegistered(t *testing.T) {
+func TestProfileSessionsDirectAndOverride(t *testing.T) {
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -53,18 +53,18 @@ func TestProfileSessionsHookFailsClosedUntilRegistered(t *testing.T) {
 	}
 	restore := SetSessionReader(nil)
 	defer restore()
-	var missing *HookMissingError
-	if _, err := ReadContext(ctx, r, "home"); !errors.As(err, &missing) {
-		t.Fatalf("ReadContext without the hook: %v", err)
+	// With no override, ReadContext reads setupflow sessions directly.
+	direct, err := ReadContext(ctx, r, "home")
+	if err != nil {
+		t.Fatalf("ReadContext direct: %v", err)
+	}
+	if direct.SessionID != nil || direct.HasGatewaySession {
+		t.Fatalf("unexpected direct context: %+v", direct)
 	}
 	var gateway model.Profile
 	if err := json.Unmarshal([]byte(`{"mihomo":{"linux_gateway":{"enabled":true}}}`), &gateway); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PublishSource(ctx, r, "home", &gateway, "a"); !errors.As(err, &missing) {
-		t.Fatalf("PublishSource without the hook: %v", err)
-	}
-	// Marked or profile-less calls never read the sessions.
 	if source, err := PublishSource(ctx, r, "", &gateway, "a"); err != nil || source != "" {
 		t.Fatalf("no profile: %v %v", source, err)
 	}

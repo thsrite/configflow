@@ -15,6 +15,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
 	"configflow/internal/gateway"
+	"configflow/internal/gateway/host"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/testjson"
@@ -88,10 +89,13 @@ func newGatewayGuardFixture(t *testing.T, config json.RawMessage) (context.Conte
 // preparation failure (push 400, recorded failed/preparing), and nothing but
 // the read-only status request reaches the device.
 func TestGatewayGuardsRefuseUnsafePublication(t *testing.T) {
-	guards := gatewayGuards()
 	for name, guard := range map[string]func(context.Context, *agents.Manager, deploy.Target) error{
-		"forwarding-kept": guards.RequireForwardingKept,
-		"gateway-off":     guards.RequireGatewayOffKept,
+		"forwarding-kept": func(ctx context.Context, m *agents.Manager, t deploy.Target) error {
+			return (&host.Bridge{Repository: m.Repository(), Manager: m}).RequireForwardingKept(ctx, t.ID, t.ProfileID)
+		},
+		"gateway-off": func(ctx context.Context, m *agents.Manager, t deploy.Target) error {
+			return (&host.Bridge{Repository: m.Repository(), Manager: m}).RequireGatewayOffKept(ctx, t.ID, t.ProfileID)
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx, m, fake := newGatewayGuardFixture(t, nil)

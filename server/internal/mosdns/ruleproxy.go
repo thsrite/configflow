@@ -36,7 +36,9 @@ var routeLogger = logx.Get("backend.routes.mosdns")
 // MaxRuleProxyBytes bounds a proxied download (a variable for tests).
 var MaxRuleProxyBytes int64 = 5 * 1024 * 1024
 
-var downloadRule = rulefetch.DefaultClient.Download
+var downloadRule = func(ctx context.Context, rawURL string, req rulefetch.DownloadRequest) (*rulefetch.Response, error) {
+	return rulefetch.DefaultClient.Download(ctx, rawURL, req)
+}
 
 // Client errors (400) of the rule proxy's download.
 var (

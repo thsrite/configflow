@@ -17,9 +17,6 @@ type Hooks struct {
 	// system_config.server_domain when it is empty and the process is not in
 	// a container: "http://<local ip>:<backend port>". Default: not set.
 	DefaultServerDomain func() string
-	// InitAgentManager is common/agent_manager.init_agent_manager, called by
-	// LoadConfig. Default: nothing.
-	InitAgentManager func()
 }
 
 var (
@@ -51,14 +48,8 @@ func RegisterHooks(h Hooks) {
 	if h.RedactRoutersJSON != nil {
 		hooks.RedactRoutersJSON = h.RedactRoutersJSON
 	}
-	if h.RedactEasytierJSON != nil {
-		hooks.RedactEasytierJSON = h.RedactEasytierJSON
-	}
 	if h.DefaultServerDomain != nil {
 		hooks.DefaultServerDomain = h.DefaultServerDomain
-	}
-	if h.InitAgentManager != nil {
-		hooks.InitAgentManager = h.InitAgentManager
 	}
 }
 

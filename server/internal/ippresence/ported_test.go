@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/convert"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
@@ -106,28 +105,5 @@ func TestContentMemoLimit(t *testing.T) {
 	memoMu.Unlock()
 	if after != 1 {
 		t.Fatalf("memo not cleared at the limit: %d", after)
-	}
-}
-
-// Wire registers convert.MihomoIntegrations.FullTun (GatewayMode now answers
-// for a marked profile instead of failing closed).
-func TestWireRegistersIsFullTun(t *testing.T) {
-	var markedProfile model.Profile
-	if err := json.Unmarshal([]byte(`{"mihomo":{"router_split":{"version":1,"takeover":"full_tun","route_rule_set_ids":[],"origin":"setup"}}}`), &markedProfile); err != nil {
-		t.Fatal(err)
-	}
-	restore := convert.SetMihomoIntegrations(convert.MihomoIntegrations{})
-	defer restore()
-	Wire()
-	mode, err := convert.GatewayMode(&model.Config{Profile: &markedProfile})
-	if err != nil || mode != "full_tun" {
-		t.Fatalf("GatewayMode %q %v", mode, err)
-	}
-	var invalidProfile model.Profile
-	if err := json.Unmarshal([]byte(`{"mihomo":{"router_split":{"version":2}}}`), &invalidProfile); err != nil {
-		t.Fatal(err)
-	}
-	if mode, err := convert.GatewayMode(&model.Config{Profile: &invalidProfile}); err != nil || mode != "" {
-		t.Fatalf("GatewayMode invalid marker %q %v", mode, err)
 	}
 }

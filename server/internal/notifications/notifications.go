@@ -66,15 +66,12 @@ func ResetInputs()          { sourcesMu.Lock(); inputs = Inputs{}; sourcesMu.Unl
 func currentInputs() Inputs { sourcesMu.Lock(); defer sourcesMu.Unlock(); return inputs }
 
 // Complete reports whether all source kinds are wired.
-func Complete() bool { s := currentInputs(); return s.Rows != nil && s.Agents != nil }
+func Complete() bool { s := currentInputs(); return s.Agents != nil }
 
 // MissingSources lists required unwired sources.
 func MissingSources() []string {
 	s := currentInputs()
 	var missing []string
-	if s.Rows == nil {
-		missing = append(missing, "task_rows")
-	}
 	if s.Agents == nil {
 		missing = append(missing, "agents")
 	}
@@ -788,8 +785,14 @@ func snapshot(ctx context.Context, completedTask string, persist, partial bool) 
 		return nil, err
 	}
 	s := currentInputs()
-	if s.Rows == nil || s.Agents == nil {
+	if s.Agents == nil {
 		return nil, ErrSourcesMissing
+	}
+	if s.Rows == nil {
+		s.Rows = tasks.Available
+		if s.MissingTasks == nil {
+			s.MissingTasks = tasks.Missing
+		}
 	}
 	retainUnseen := false
 	if s.MissingTasks != nil {

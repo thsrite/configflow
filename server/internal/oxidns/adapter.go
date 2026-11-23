@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync"
 
+	"configflow/internal/ippresence"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
 	"configflow/internal/rules"
@@ -16,16 +16,13 @@ import (
 // Rules, groups, Agents and system settings are read from the typed source;
 // the OxiDNS settings object is decoded once from its stored JSON.
 type Profile struct {
-	source          *model.Config
-	settings        *Node
-	notes           json.RawMessage
-	notesChanged    func(json.RawMessage)
-	notesNull       bool
-	notesNonText    bool
-	presenceMu      sync.Mutex
-	presenceVersion uint64
-	presence        nativeIPResolver
-	issues          []model.FieldIssue
+	source       *model.Config
+	settings     *Node
+	notes        json.RawMessage
+	notesChanged func(json.RawMessage)
+	notesNull    bool
+	notesNonText bool
+	issues       []model.FieldIssue
 }
 
 // NewTypedProfile projects the consumed members without encoding
@@ -232,59 +229,12 @@ func (p *Profile) renderMembers(group model.ProxyGroup) *Node {
 	return rules.RenderGroupDocument(group, rules.GroupResources(p.source))
 }
 
-// NativeClassicalIPLinesFunc queries offline content from typed metadata only.
-type NativeClassicalIPLinesFunc func(context.Context, model.RuleConfig, []model.RuleLibraryItem) (*bool, error)
-
-type nativeIPResolver func(context.Context, model.RuleConfig) (*bool, error)
-type nativeIPFactory func([]model.RuleLibraryItem) nativeIPResolver
-
-var classicalHook struct {
-	sync.RWMutex
-	factory nativeIPFactory
-	version uint64
-}
-
-// SetNativeClassicalIPLines installs the typed offline metadata callback.
-func SetNativeClassicalIPLines(fn NativeClassicalIPLinesFunc) func() {
-	if fn == nil {
-		return setIPFactory(nil)
-	}
-	return setIPFactory(func(library []model.RuleLibraryItem) nativeIPResolver {
-		return func(ctx context.Context, item model.RuleConfig) (*bool, error) { return fn(ctx, item, library) }
-	})
-}
-func setIPFactory(factory nativeIPFactory) func() {
-	classicalHook.Lock()
-	previous := classicalHook.factory
-	classicalHook.factory = factory
-	classicalHook.version++
-	classicalHook.Unlock()
-	return func() {
-		classicalHook.Lock()
-		classicalHook.factory = previous
-		classicalHook.version++
-		classicalHook.Unlock()
-	}
-}
 func (p *Profile) classicalWithoutIP(item model.RuleConfig) bool {
-	classicalHook.RLock()
-	factory, version := classicalHook.factory, classicalHook.version
-	classicalHook.RUnlock()
-	if factory == nil {
-		return false
-	}
-	p.presenceMu.Lock()
-	if p.presence == nil || p.presenceVersion != version {
-		p.presence = factory(p.source.RuleLibrary)
-		p.presenceVersion = version
-	}
-	resolver := p.presence
-	p.presenceMu.Unlock()
 	rule := model.RuleConfig{ID: item.ID, Name: item.Name, LibraryRuleID: item.LibraryRuleID,
 		URL: item.URL, Format: item.Format, SourceType: item.SourceType, Content: item.Content, Behavior: item.Behavior}
-	// Generate owns only a snapshot, not a write-capable Runtime context. Wire
-	// installs the peek-only reader so this offline probe cannot migrate files.
-	value, err := resolver(context.Background(), rule)
+	// Generate owns only a snapshot, not a write-capable Runtime context.
+	// PeekTypedClassicalIPLines is peek-only so this offline probe cannot migrate files.
+	value, err := ippresence.PeekTypedClassicalIPLines(context.Background(), rule, p.source.RuleLibrary)
 	return err == nil && value != nil && !*value
 }
 

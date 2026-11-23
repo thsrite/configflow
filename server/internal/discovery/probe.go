@@ -70,7 +70,7 @@ type AgentClient interface {
 	Region(context.Context, Agent, RegionRequest) ([]RegionResult, error)
 }
 
-var client AgentClient
+var client AgentClient = managerClient{}
 
 type plannedHost struct {
 	ProbeTarget

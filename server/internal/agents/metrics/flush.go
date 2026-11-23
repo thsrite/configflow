@@ -194,24 +194,6 @@ func NextFlushAt(entry *taskstatus.Receipt, interval int64) *time.Time {
 	return &due
 }
 
-// NativeTrafficFlush is the traffic-history half of run(): retain_agents and
-// flush of manager.traffic_history (A05), returning flush()['rows']. A05
-// registers it with SetTrafficFlush; until then run() saves only the
-// monitoring history and its result has no "traffic_rows".
-type NativeTrafficFlush func(ctx context.Context, m *agents.Manager, agentIDs []string, system *model.System) (int64, error)
-
-var (
-	trafficMu    sync.Mutex
-	trafficFlush NativeTrafficFlush
-)
-
-// SetNativeTrafficFlush installs the traffic-history save of run() (A05).
-func SetNativeTrafficFlush(fn NativeTrafficFlush) {
-	trafficMu.Lock()
-	trafficFlush = fn
-	trafficMu.Unlock()
-}
-
 // TrafficHistoryFlushError is TrafficHistoryFlushError(error).
 type TrafficHistoryFlushError struct{ Err error }
 
@@ -316,16 +298,11 @@ func FlushNow(ctx context.Context, trigger string, recordIdle bool) (*SaveResult
 			result.FlushResult = counts
 		}
 		// 流量记录与监控历史一起保存；一项失败不影响另一项
-		trafficMu.Lock()
-		traffic := trafficFlush
-		trafficMu.Unlock()
-		if traffic != nil {
-			rows, err := traffic(ctx, manager, agentIDs, &minimalSystem)
-			if err != nil {
-				failures = append(failures, &TrafficHistoryFlushError{err})
-			} else {
-				result.TrafficRows = &rows
-			}
+		rows, err := flushTraffic(ctx, manager, agentIDs, &minimalSystem)
+		if err != nil {
+			failures = append(failures, &TrafficHistoryFlushError{err})
+		} else {
+			result.TrafficRows = &rows
 		}
 	}
 	duration := float64(time.Since(clock).Microseconds()) / 1000
