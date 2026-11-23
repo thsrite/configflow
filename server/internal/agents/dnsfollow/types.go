@@ -11,6 +11,7 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 // PollInterval is the production reconciliation interval.
@@ -46,7 +47,11 @@ func New(m *agents.Manager, o Options) *Service {
 	if o.Prepare == nil {
 		o.Prepare = deploy.PrepareContent
 	}
-	return &Service{m: m, now: o.Now, prepare: o.Prepare, waker: loop}
+	w := agents.NewWaker(PollInterval, agents.IdleFallback)
+	if m != nil {
+		w.Watch(m, repo.ChangeConfig|repo.ChangeState, true)
+	}
+	return &Service{m: m, now: o.Now, prepare: o.Prepare, waker: w}
 }
 
 // Error is a safe user-facing follow refusal.

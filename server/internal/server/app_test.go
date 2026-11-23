@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
+	"configflow/internal/agents/monitor"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
@@ -34,6 +35,9 @@ func TestNewRegistersStartupAndPeriodicNames(t *testing.T) {
 	if app == nil || app.HTTP == nil || app.Runtime != rt || app.Tasks == nil || app.Notifications == nil || app.Agents == nil {
 		t.Fatal("New returned unexpected App")
 	}
+	if app.Traffic == nil || app.Metrics == nil || app.Monitor == nil || app.Upgrades == nil || app.DNSHA == nil || app.DNSFollow == nil || app.RuleSync == nil || app.IPv6 == nil {
+		t.Fatal("New did not construct all Agent-domain services")
+	}
 	t.Cleanup(app.Agents.Close)
 
 	if err := app.Tasks.Validate(); err != nil {
@@ -47,6 +51,9 @@ func TestNewRegistersStartupAndPeriodicNames(t *testing.T) {
 	}
 	if err := app.Agents.SetPairPublisher(nil); !errors.Is(err, agents.ErrManagerStarted) {
 		t.Fatalf("SetPairPublisher after New = %v, want ErrManagerStarted", err)
+	}
+	if err := app.Monitor.SetHARules(nil); !errors.Is(err, monitor.ErrServiceStarted) {
+		t.Fatalf("Monitor.SetHARules after New = %v, want ErrServiceStarted", err)
 	}
 	stores := app.Agents.DeletedStores()
 	var storeNames []string
@@ -64,6 +71,7 @@ func TestNewRegistersStartupAndPeriodicNames(t *testing.T) {
 		"agent-rule-sync",
 		"dns-follow",
 		"domain-discovery-auto",
+		"ipv6-verification-scheduler",
 		"load-config",
 		"metrics-history-flush",
 		"metrics-load-history",

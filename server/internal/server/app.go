@@ -4,7 +4,14 @@ import (
 	"context"
 
 	"configflow/internal/agents"
+	"configflow/internal/agents/dnsfollow"
+	"configflow/internal/agents/dnsha"
+	agentipv6 "configflow/internal/agents/ipv6"
 	"configflow/internal/agents/metrics"
+	"configflow/internal/agents/monitor"
+	"configflow/internal/agents/rulesync"
+	"configflow/internal/agents/trafficstore"
+	"configflow/internal/agents/upgrades"
 	"configflow/internal/aggregations"
 	apinotifications "configflow/internal/api/notifications"
 	apirules "configflow/internal/api/rules"
@@ -40,6 +47,14 @@ type App struct {
 	Tasks         *tasks.Registry
 	Notifications *notifications.Service
 	Agents        *agents.Manager
+	Traffic       *trafficstore.Service
+	Metrics       *metrics.Service
+	Monitor       *monitor.Service
+	Upgrades      *upgrades.Service
+	DNSHA         *dnsha.Service
+	DNSFollow     *dnsfollow.Service
+	RuleSync      *rulesync.Service
+	IPv6          *agentipv6.Service
 }
 
 // New wires the application, registers ordered startup steps and background
@@ -56,11 +71,11 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	nt := notifications.New(notifications.Options{Repo: opts.Repo, Tasks: tk})
 	tasks.UseRegistry(tk)
 	notifications.UseService(nt)
-	m, err := wireAgents(ctx, opts, rt, tk, nt)
+	ag, err := wireAgents(ctx, opts, rt, tk, nt)
 	if err != nil {
 		return nil, err
 	}
-	registerStartup(rt, m)
+	registerStartup(rt, ag.manager, ag.metrics)
 	if opts.Repo != nil {
 		webdav.WireTasksAndStartupOn(rt)
 		webdav.Subscribe(opts.Repo)
@@ -91,7 +106,15 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		Runtime:       rt,
 		Tasks:         tk,
 		Notifications: nt,
-		Agents:        m,
+		Agents:        ag.manager,
+		Traffic:       ag.traffic,
+		Metrics:       ag.metrics,
+		Monitor:       ag.monitor,
+		Upgrades:      ag.upgrades,
+		DNSHA:         ag.dnsha,
+		DNSFollow:     ag.dnsfollow,
+		RuleSync:      ag.rulesync,
+		IPv6:          ag.ipv6,
 	}, nil
 }
 
@@ -112,7 +135,7 @@ func wireOtherSubsystems(rt *lifecycle.Runtime) {
 
 // registerStartup installs the synchronous startup steps in their required
 // order before webdav-worker-init runs.
-func registerStartup(rt *lifecycle.Runtime, m *agents.Manager) {
+func registerStartup(rt *lifecycle.Runtime, m *agents.Manager, mt *metrics.Service) {
 	rt.RegisterStartup(lifecycle.Startup{Name: "load-config", Run: func(ctx context.Context) error {
 		_, err := repo.PrepareConfig(ctx)
 		return err
@@ -126,5 +149,9 @@ func registerStartup(rt *lifecycle.Runtime, m *agents.Manager) {
 		_, err := agents.Init(ctx)
 		return err
 	}})
-	metrics.RegisterStartupOn(rt)
+	if mt != nil {
+		rt.RegisterStartup(mt.Startup(m))
+	} else {
+		metrics.RegisterStartupOn(rt)
+	}
 }

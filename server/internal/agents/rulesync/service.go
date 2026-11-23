@@ -16,13 +16,22 @@ import (
 	"configflow/internal/lockx"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
+	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
 
-// Options injects a wall clock and candidate preparation for deterministic workers.
+// PairHooks injects optional HA pair callbacks without creating an import cycle.
+type PairHooks struct {
+	Advance        func(context.Context, string)
+	FailureMessage func(context.Context, error) (string, bool)
+}
+
+// Options injects a wall clock, candidate preparation, and optional HA pair
+// callbacks for deterministic workers.
 type Options struct {
 	Now     func() time.Time
 	Prepare PrepareFunc
+	Pair    PairHooks
 }
 
 // Service owns lightweight comparison memory and at most two concurrent workers.
@@ -31,6 +40,8 @@ type Service struct {
 	receipts    *deploy.Receipts
 	now         func() time.Time
 	prepare     PrepareFunc
+	pair        PairHooks
+	waker       *agents.Waker
 	mu          sync.Mutex
 	comparisons map[string]comparison
 	pending     map[string]bool
@@ -48,7 +59,20 @@ func New(m *agents.Manager, r *deploy.Receipts, o Options) *Service {
 	if o.Prepare == nil {
 		o.Prepare = PrepareCandidate
 	}
-	return &Service{m: m, receipts: r, now: o.Now, prepare: o.Prepare, comparisons: map[string]comparison{}, pending: map[string]bool{}}
+	w := agents.NewWaker(PollInterval, IdleFallback)
+	if m != nil {
+		w.Watch(m, repo.ChangeConfig|repo.ChangeState, true)
+	}
+	return &Service{
+		m:           m,
+		receipts:    r,
+		now:         o.Now,
+		prepare:     o.Prepare,
+		pair:        o.Pair,
+		waker:       w,
+		comparisons: map[string]comparison{},
+		pending:     map[string]bool{},
+	}
 }
 
 // PublicState intentionally exposes no task identity, token, keys or snapshots.
@@ -207,15 +231,22 @@ func (s *Service) Run(ctx context.Context, id string) error {
 	})
 }
 
+func (s *Service) done(busy bool) {
+	if s.waker != nil {
+		s.waker.Done(busy)
+	}
+	loop.Done(busy)
+}
+
 // Round observes presence and admits at most two tracked workers in
 // round-robin order. It records whether work is in flight (loop pacing).
 func (s *Service) Round(ctx context.Context) (e error) {
 	records, e := s.m.RuleSyncAgents(ctx)
 	if e != nil {
-		loop.Done(true)
+		s.done(true)
 		return e
 	}
-	defer func() { loop.Done(e != nil || s.inFlight(records)) }()
+	defer func() { s.done(e != nil || s.inFlight(records)) }()
 	observeRuleSyncPresence(ctx, s.m, records)
 	s.mu.Lock()
 	for id, running := range s.pending {

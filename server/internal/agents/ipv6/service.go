@@ -34,6 +34,7 @@ func failure(code string, status int, message string) error { return &Error{code
 type Service struct {
 	Manager *agents.Manager
 	Checker func(*agents.Manager) *contentsync.Checker
+	waker   *agents.Waker
 }
 
 var operations = lockx.NewKeyed[string](lockx.LevelAgentOperation, "agent-ipv6")
