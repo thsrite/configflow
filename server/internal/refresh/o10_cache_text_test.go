@@ -49,11 +49,22 @@ func TestO10CacheTextOnlyForSharedStructuredRecords(t *testing.T) {
 	if got, ok := replaced.lookup(shared, "sub", second); !ok || got != "new" || len(replaced.texts) != 1 {
 		t.Fatalf("lookup = %q, %v with %d entries", got, ok, len(replaced.texts))
 	}
-	// The table is bounded.
+	// The table is bounded by entries and by retained text bytes.
 	for _, id := range []string{"a", "b", "c"} {
 		replaced.store(shared, id, &NodeCache{}, "x")
 	}
 	if len(replaced.texts) > 2 {
 		t.Fatalf("%d texts kept", len(replaced.texts))
+	}
+	bounded := &cacheTextMemo{limit: 16, limitBytes: 10}
+	bounded.store(shared, "big", &NodeCache{}, "123456") // > limitBytes/2
+	if len(bounded.texts) != 0 {
+		t.Fatalf("oversized text kept: %d", len(bounded.texts))
+	}
+	bounded.store(shared, "k1", &NodeCache{}, "12345")
+	bounded.store(shared, "k2", &NodeCache{}, "67890")
+	bounded.store(shared, "k3", &NodeCache{}, "abcde")
+	if bounded.bytes > bounded.limitBytes || len(bounded.texts) != 2 {
+		t.Fatalf("byte budget exceeded: bytes=%d entries=%d", bounded.bytes, len(bounded.texts))
 	}
 }

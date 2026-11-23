@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"container/list"
 	"sync"
 
 	"configflow/internal/yamlx"
@@ -14,21 +15,29 @@ import (
 //
 // A parsed graph keeps about 20 bytes of heap per byte of text (measured on
 // a 0.5 MB, 2000-proxy text), so the tables are bounded by that estimate of
-// what they keep alive, not by the length of their keys.
+// what they keep alive, not by the length of their keys, and evict
+// least-recently used entries first so superseded texts do not linger.
 
 // parsedRetainedPerByte estimates the heap a parsed proxy list keeps per byte
 // of its text (text key included).
 const parsedRetainedPerByte = 20
 
 // parsedProviders keeps readProviderNodes' validated proxy lists.
-var parsedProviders = parsedMemo{limitBytes: 32 << 20, limitEntries: 32}
+var parsedProviders = parsedMemo{limitBytes: 16 << 20, limitEntries: 32}
 
 // parsedSubscriptions keeps ParseNodes' normalized proxies, each its own graph.
-var parsedSubscriptions = parsedMemo{limitBytes: 32 << 20, limitEntries: 32}
+var parsedSubscriptions = parsedMemo{limitBytes: 16 << 20, limitEntries: 32}
+
+type parsedMemoEntry struct {
+	text  string
+	nodes []*yamlx.Node
+	cost  int
+}
 
 type parsedMemo struct {
 	mu      sync.Mutex
-	entries map[string][]*yamlx.Node
+	entries map[string]*list.Element
+	order   *list.List
 	// bytes and limitBytes are estimated retained heap, not text length.
 	bytes                    int
 	limitBytes, limitEntries int
@@ -37,8 +46,12 @@ type parsedMemo struct {
 func (m *parsedMemo) get(text string) ([]*yamlx.Node, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	nodes, ok := m.entries[text]
-	return nodes, ok
+	elem, ok := m.entries[text]
+	if !ok {
+		return nil, false
+	}
+	m.order.MoveToBack(elem)
+	return elem.Value.(*parsedMemoEntry).nodes, true
 }
 
 // lookup returns the list (shared when own is false, else copied as one
@@ -81,13 +94,22 @@ func (m *parsedMemo) keep(text string, nodes []*yamlx.Node) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.entries[text]; ok {
+	if m.entries == nil {
+		m.entries = map[string]*list.Element{}
+		m.order = list.New()
+	}
+	if elem, ok := m.entries[text]; ok {
+		m.order.MoveToBack(elem)
 		return
 	}
-	if m.entries == nil || len(m.entries) >= m.limitEntries || m.bytes+cost > m.limitBytes {
-		m.entries, m.bytes = map[string][]*yamlx.Node{}, 0
+	for m.order.Len() > 0 && (m.order.Len() >= m.limitEntries || m.bytes+cost > m.limitBytes) {
+		front := m.order.Front()
+		evicted := front.Value.(*parsedMemoEntry)
+		m.order.Remove(front)
+		delete(m.entries, evicted.text)
+		m.bytes -= evicted.cost
 	}
-	m.entries[text] = nodes
+	m.entries[text] = m.order.PushBack(&parsedMemoEntry{text: text, nodes: nodes, cost: cost})
 	m.bytes += cost
 }
 

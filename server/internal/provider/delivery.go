@@ -263,7 +263,13 @@ func readProviderNodesFor(text, name, path, kind, sourceLabel string, own bool) 
 	}
 	nodes, err := parseProviderNodes(text, name, path, kind, sourceLabel)
 	if err == nil {
-		parsedProviders.store(text, nodes)
+		if own {
+			parsedProviders.store(text, nodes)
+		} else {
+			// Callers with own=false promise read-only access, so the fresh
+			// parse can be retained directly without an extra CopyGraph.
+			parsedProviders.keep(text, nodes)
+		}
 	}
 	return nodes, err
 }
@@ -304,8 +310,9 @@ func ParseNodes(text, name, path string) ([]*yamlx.Node, error) {
 	if nodes, ok := parsedSubscriptions.lookupEach(text); ok {
 		return nodes, nil
 	}
-	// Each node is copied by Encode below, so the parsed list may be shared.
-	nodes, err := readProviderNodesFor(text, name, path, msgSubscription, msgSubscriptionSource, false)
+	// Parse directly instead of populating parsedProviders with a duplicate
+	// raw-subscription AST: ParseNodes caches its own normalized graphs below.
+	nodes, err := parseProviderNodes(text, name, path, msgSubscription, msgSubscriptionSource)
 	if err != nil {
 		return nil, err
 	}
@@ -573,7 +580,8 @@ func ValidateArtifacts(snapshot *DeliverySnapshot, providers []*Artifact) (bool,
 		if p.Content == "" {
 			continue
 		}
-		nodes, err := readProviderNodes(p.Content, p.Name, p.LocalPath, msgNodeSource, msgPreparedSource)
+		// Validate and ValidateTopology are read-only, so parsed nodes may be shared.
+		nodes, err := readProviderNodesFor(p.Content, p.Name, p.LocalPath, msgNodeSource, msgPreparedSource, false)
 		if err != nil {
 			return false, err
 		}

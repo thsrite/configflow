@@ -1,6 +1,7 @@
 package refresh
 
 import (
+	"container/list"
 	"reflect"
 	"sync"
 )
@@ -13,16 +14,21 @@ import (
 // node carries a proxy_string (those go through the converter, which may log
 // or call Sub-Store). One text is kept per subscription: a changed file
 // replaces the entry, so a superseded record and its text are not kept alive.
-var cacheTexts = cacheTextMemo{limit: 64}
+// Total retained text is bounded by limitBytes with LRU eviction.
+var cacheTexts = cacheTextMemo{limit: 64, limitBytes: 4 << 20}
 
 type cacheTextMemo struct {
-	mu    sync.Mutex
-	texts map[string]cacheText
-	limit int
+	mu         sync.Mutex
+	texts      map[string]*list.Element
+	order      *list.List
+	bytes      int
+	limit      int
+	limitBytes int
 }
 
 // cacheText is the text rendered from one shared record.
 type cacheText struct {
+	id    string
 	cache *NodeCache
 	text  string
 }
@@ -45,10 +51,15 @@ func (m *cacheTextMemo) lookup(env *RefreshEnv, id string, cache *NodeCache) (st
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	kept, ok := m.texts[id]
-	if !ok || kept.cache != cache {
+	elem, ok := m.texts[id]
+	if !ok {
 		return "", false
 	}
+	kept := elem.Value.(*cacheText)
+	if kept.cache != cache {
+		return "", false
+	}
+	m.order.MoveToBack(elem)
 	return kept.text, true
 }
 
@@ -56,12 +67,29 @@ func (m *cacheTextMemo) store(env *RefreshEnv, id string, cache *NodeCache, text
 	if !m.usable(env, cache) {
 		return
 	}
+	if m.limitBytes > 0 && len(text) > m.limitBytes/2 {
+		return
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, replaces := m.texts[id]; m.texts == nil || (!replaces && len(m.texts) >= m.limit) {
-		m.texts = map[string]cacheText{}
+	if m.texts == nil {
+		m.texts = map[string]*list.Element{}
+		m.order = list.New()
 	}
-	m.texts[id] = cacheText{cache: cache, text: text}
+	if prev, ok := m.texts[id]; ok {
+		m.bytes -= len(prev.Value.(*cacheText).text)
+		m.order.Remove(prev)
+		delete(m.texts, id)
+	}
+	for m.order.Len() > 0 && (m.order.Len() >= m.limit || (m.limitBytes > 0 && m.bytes+len(text) > m.limitBytes)) {
+		front := m.order.Front()
+		evicted := front.Value.(*cacheText)
+		m.order.Remove(front)
+		delete(m.texts, evicted.id)
+		m.bytes -= len(evicted.text)
+	}
+	m.texts[id] = m.order.PushBack(&cacheText{id: id, cache: cache, text: text})
+	m.bytes += len(text)
 }
 
 // sharedNodeLoader reports whether env loads node caches with loadNodeCache,
