@@ -4,7 +4,6 @@ import (
 	"configflow/internal/jsonresp"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 	"strings"
 
 	"configflow/internal/deploy"
+	digestx "configflow/internal/digest"
 	"configflow/internal/model"
 )
 
@@ -24,7 +24,7 @@ func randomID() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
-func digest(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
+func digest(b []byte) string { return digestx.SHA256Hex(b) }
 func childID(owner, did, id string) string {
 	if owner == id {
 		return did

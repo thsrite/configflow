@@ -7,8 +7,6 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,9 +14,10 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/deploy"
+	digestx "configflow/internal/digest"
 )
 
-func digest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
+func digest(data []byte) string { return digestx.SHA256Hex(data) }
 
 // ReadBundleFiles verifies a trusted immutable deployment and returns its files.
 func ReadBundleFiles(b *deploy.Bundle) (map[string]deploy.Content, error) {

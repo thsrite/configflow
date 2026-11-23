@@ -2,8 +2,6 @@ package dnsfollow
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +12,7 @@ import (
 	"strings"
 
 	"configflow/internal/deploy"
+	digestx "configflow/internal/digest"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
@@ -28,7 +27,7 @@ func equalJSON(a, b any) bool {
 	right, e := json.Marshal(b)
 	return e == nil && deploy.CanonicalDigest(left) == deploy.CanonicalDigest(right)
 }
-func hash(data []byte) string { h := sha256.Sum256(data); return hex.EncodeToString(h[:]) }
+func hash(data []byte) string { return digestx.SHA256Hex(data) }
 func (s *Service) sameNamespace(ctx context.Context, target, source *agent) error {
 	r, e := s.request(ctx, target, "dns/peer", "")
 	if e != nil {
