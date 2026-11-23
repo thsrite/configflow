@@ -106,7 +106,7 @@ Mihomo 等生成也按空自定义配置继续；Python 对非字符串 `yaml.sa
 - 55ba3da40 go(health,routers): dead helpers/messages（L4）
 - 5083ab920 go(refresh,health): review tests（metadata 认领、测速设置）
 - b2dfb4324 go(pyref): 17 个 golden 只重录 metadata
-- 本报告与 behaviour-changes 补充
+- d381c7bac 本报告与 behaviour-changes 补充
 
 ## 验证（末端树）
 
