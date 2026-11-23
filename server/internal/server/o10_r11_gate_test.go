@@ -108,7 +108,6 @@ var o10LoopPackages = []string{
 // their whole argument.
 var o10Encoders = map[string]bool{
 	"configflow/internal/model.Marshal":              true,
-	"configflow/internal/model.EncodeRecord":         true,
 	"configflow/internal/model.EncodeMembers":        true,
 	"configflow/internal/jsonresp.Encode":            true,
 	"configflow/internal/jsonresp.EncodeUTF8":        true,
