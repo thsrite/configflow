@@ -34,6 +34,7 @@ import (
 
 	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/pathx"
 	"configflow/internal/store"
 )
 
@@ -243,13 +244,6 @@ func lexists(path string) bool {
 	return err == nil
 }
 
-// pathExists is Path.exists(): symbolic links are followed, so a dangling
-// or looping link does not exist.
-func pathExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 // legacyData names the first pre-SQLite configuration file found in the data
 // directory, or "".
 func (r *Repository) legacyData() string {
@@ -337,7 +331,7 @@ func (r *Repository) openLocked(ctx context.Context) error {
 			return legacyOnlyError(legacy)
 		}
 		journal := r.dbPath + "-journal"
-		if pathExists(journal) {
+		if pathx.Accessible(journal) {
 			// Never apply a journal left by another file to a new database.
 			if err := os.Rename(journal, journal+".orphan-"+strconv.FormatInt(time.Now().UnixNano(), 10)); err != nil {
 				return err

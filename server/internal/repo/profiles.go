@@ -12,6 +12,7 @@ import (
 
 	"configflow/internal/ctxx"
 	"configflow/internal/model"
+	"configflow/internal/pathx"
 	"configflow/internal/store"
 )
 
@@ -234,7 +235,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 				return err
 			}
 			tombstone = filepath.Join(r.migrationsDir, "deleted-"+profileID+"-"+randomHex(32))
-			if pathExists(directory) {
+			if pathx.Accessible(directory) {
 				if err := os.Rename(directory, tombstone); err != nil {
 					return err
 				}
@@ -245,7 +246,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 			// The database keeps no old generations: retain the deleted
 			// profile itself (export_profile shape, 0600: it holds credentials).
 			exported = filepath.Join(tombstone, "deleted-profile.json")
-			if pathExists(exported) {
+			if pathx.Accessible(exported) {
 				exported = filepath.Join(tombstone, "deleted-profile-"+randomHex(32)+".json")
 			}
 			text, err := fileJSON(json.RawMessage(exportedProfile))
@@ -275,7 +276,7 @@ func (r *Repository) DeleteProfile(ctx context.Context, profileID, newDefaultID 
 			if exported != "" {
 				os.Remove(exported)
 			}
-			if tombstone != "" && pathExists(tombstone) {
+			if tombstone != "" && pathx.Accessible(tombstone) {
 				if moved {
 					os.Rename(tombstone, directory)
 				} else {

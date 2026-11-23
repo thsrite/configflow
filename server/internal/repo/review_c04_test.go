@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"configflow/internal/model"
+	"configflow/internal/pathx"
 	"configflow/internal/rules"
 	"configflow/internal/testjson"
 )
@@ -185,7 +186,7 @@ func TestCreateRuleLibraryItemFailedCommitRemovesCache(t *testing.T) {
 	if _, err := r.CreateRuleLibraryRecord(bg, rule, []byte("x")); err == nil {
 		t.Fatal("a rule source with a policy was accepted")
 	}
-	if pathExists(path) {
+	if pathx.Accessible(path) {
 		t.Fatal("cache of the failed creation kept")
 	}
 	_, release, acquired := fileLocks.TryLock(bg, resolvePath(path))

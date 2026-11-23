@@ -13,6 +13,7 @@ import (
 
 	"configflow/internal/ctxx"
 	"configflow/internal/model"
+	"configflow/internal/pathx"
 	"configflow/internal/rules"
 )
 
@@ -67,7 +68,7 @@ func (r *Repository) CreateRuleLibraryRecord(ctx context.Context, item model.Rul
 		releaseCache = release
 		// A previous/orphaned cache also belongs to an existing identity;
 		// importing a new source must not overwrite its custom bytes.
-		if pathExists(path) || pathExists(path+".bak") {
+		if pathx.Accessible(path) || pathx.Accessible(path+".bak") {
 			return exists(msgRuleCacheExists)
 		}
 		if err := beginCommitBatch(ctx, &batch); err != nil {

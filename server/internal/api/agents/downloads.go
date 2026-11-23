@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"configflow/internal/httpx"
+	"configflow/internal/pathx"
 	"configflow/internal/resource"
 )
 
@@ -26,13 +27,6 @@ func registerDownloads(r *httpx.Router) {
 	r.GET("/api/agents/download/<filename>", "agents.download_agent_binary", downloadAgentBinary)
 }
 
-// pathExists is os.path.exists: any stat error (including an embedded NUL,
-// ValueError in Python) is False.
-func pathExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
 // agentBinaryDirectory is the directory download_agent_binary serves:
 // os.getenv('AGENTS_STATIC_DIR', '/opt/configflow/static/agents') when
 // os.path.exists() (so an empty value falls back), else backend/static/agents.
@@ -41,7 +35,7 @@ func agentBinaryDirectory() string {
 	if !set {
 		directory = "/opt/configflow/static/agents"
 	}
-	if !pathExists(directory) {
+	if !pathx.Accessible(directory) {
 		directory = resource.FromEnv().Backend("static/agents")
 	}
 	return directory
@@ -69,7 +63,7 @@ func downloadAgentBinary(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(404, "Invalid filename"), nil
 	}
 	path := pyJoin(directory, filename)
-	if !pathExists(path) {
+	if !pathx.Accessible(path) {
 		logger.Errorf("Agent binary not found: %s", path)
 		return failure(404, "File not found"), nil
 	}

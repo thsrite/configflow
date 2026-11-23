@@ -20,6 +20,7 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/pathx"
 	"configflow/internal/rules"
 )
 
@@ -36,14 +37,6 @@ var LogFilePath = getLogFilePath
 // openFile is open(); tests replace it.
 var openFile = func(path string) (io.ReadCloser, error) { return os.Open(path) }
 
-func pathExists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-	return err == nil, err
-}
-
 func getLogFilePath() (string, error) {
 	dataDir := os.Getenv("DATA_DIR")
 	if dataDir == "" {
@@ -58,14 +51,14 @@ func getLogFilePath() (string, error) {
 		logFile = defaultLogFile
 	}
 	logPath := pathStr(logFile)
-	present, err := pathExists(logPath)
+	present, err := pathx.Exists(logPath)
 	if err != nil {
 		return "", err
 	}
 	if !present {
 		for _, candidate := range []string{pathJoin(dataDir, "app.log"), "./app.log", "data/app.log",
 			"logs/app.log", "/var/log/configflow/app.log", "app.log"} {
-			present, err := pathExists(candidate)
+			present, err := pathx.Exists(candidate)
 			if err != nil {
 				return "", err
 			}
@@ -138,7 +131,7 @@ func getLogs(c *httpx.Ctx) (*httpx.Response, error) {
 	search := c.ArgDefault("search", "")
 	levelFilter := strings.ToUpper(c.ArgDefault("level", ""))
 	lines = min(lines, 10000)
-	present, err := pathExists(logPath)
+	present, err := pathx.Exists(logPath)
 	if err != nil {
 		return errorResponse(err, true), nil
 	}
@@ -295,7 +288,7 @@ func clearLog(ctx context.Context) (*httpx.Response, error) {
 	if err != nil {
 		return errorResponse(err, false), nil
 	}
-	present, err := pathExists(logPath)
+	present, err := pathx.Exists(logPath)
 	if err != nil {
 		return errorResponse(err, false), nil
 	}
