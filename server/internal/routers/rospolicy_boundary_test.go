@@ -55,7 +55,7 @@ func r08Plan(ctx context.Context, d *RouterOS, desired *Desired) (*ROSPolicyPlan
 	if err != nil {
 		return nil, err
 	}
-	return BuildROSPolicy(desired, state), nil
+	return BuildROSPolicy(desired, state.NatContext, state.ROSPolicy), nil
 }
 
 func r08InspectState(ctx context.Context, d *RouterOS) (*RouterState, error) {

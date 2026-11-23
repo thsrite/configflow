@@ -37,6 +37,16 @@ type (
 	DNSReport            = device.DNSReport
 	DNSCheck             = device.DNSCheck
 	SupernetIndex        = device.SupernetIndex
+	ForwardHintResult    = device.ForwardHintResult
+	RouteItem            = device.RouteItem
+	ExtraRoute           = device.ExtraRoute
+	UnmanagedRoute       = device.UnmanagedRoute
+	RetiredPolicyItem    = device.RetiredPolicyItem
+	PolicyRules          = device.PolicyRules
+	RoutesReport         = device.RoutesReport
+	NatItem              = device.NatItem
+	DisabledNat          = device.DisabledNat
+	NatReport            = device.NatReport
 
 	Row              = ros.Row
 	NatContext       = ros.NatContext

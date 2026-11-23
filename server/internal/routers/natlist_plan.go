@@ -159,18 +159,18 @@ func viaGateway(gateway, value string) bool {
 
 // StillRoutedNAT returns destinations still reaching the proxy after route
 // deletions. Nil means unreadable evidence and prevents stale-rule deletion.
-func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.Prefix {
-	if state.NatContext == nil || state.NatContext.Routes == nil {
+func StillRoutedNAT(routes RoutesReport, facts *device.State, nat *NatContext, policyPlan *ROSPolicyPlan, gateway string) []netip.Prefix {
+	if nat == nil || nat.Routes == nil {
 		return nil
 	}
 	out := []netip.Prefix{}
 	deleting := map[string]bool{}
-	for _, extra := range report.Routes.Extra {
+	for _, extra := range routes.Extra {
 		deleting[extra.RouteID] = true
 	}
-	policy := state.natPolicyEvidence()
+	policy := natPolicyEvidence(policyPlan)
 	everything := netip.MustParsePrefix("0.0.0.0/0")
-	for _, row := range state.NatContext.Routes {
+	for _, row := range nat.Routes {
 		if !row.Enabled() || !viaGateway(gateway, row.Text("gateway")) || deleting[row.ID()] {
 			continue
 		}
@@ -193,7 +193,11 @@ func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.
 		}
 		out = append(out, networks...)
 	}
-	for _, entry := range append(slices.Clone(state.PolicyRoutes), state.RetiredPolicyRoutes...) {
+	var policyRoutes, retiredPolicyRoutes []*PolicyRouteEntry
+	if facts != nil {
+		policyRoutes, retiredPolicyRoutes = facts.PolicyRoutes, facts.RetiredPolicyRoutes
+	}
+	for _, entry := range append(slices.Clone(policyRoutes), retiredPolicyRoutes...) {
 		if entry.Enabled && viaGateway(gateway, entry.Gateway) {
 			if len(entry.Dst) == 0 {
 				out = append(out, everything)
@@ -202,7 +206,7 @@ func StillRoutedNAT(report *Report, state *RouterState, gateway string) []netip.
 			}
 		}
 	}
-	for _, row := range state.NatContext.Mangle {
+	for _, row := range nat.Mangle {
 		if row.Enabled() && row.Is("action", "route") && viaGateway(gateway, row.Text("route-dst")) {
 			out = append(out, everything)
 		}
@@ -292,25 +296,28 @@ func legacyNAT(rows []Row, sources []string, items []NatItem, desired, skipped [
 }
 
 // ListsOfNAT performs a deferred scoped read at most once for this state.
-func ListsOfNAT(ctx context.Context, state *RouterState) *NATLists {
-	if state.NATLists == nil && state.NATListsReader != nil {
-		read := state.NATListsReader
-		state.NATListsReader = nil
-		state.NATLists, _ = read(ctx)
+func ListsOfNAT(ctx context.Context, lists **NATLists, reader *func(context.Context) (*NATLists, error)) *NATLists {
+	if lists == nil {
+		return nil
 	}
-	return state.NATLists
+	if *lists == nil && reader != nil && *reader != nil {
+		read := *reader
+		*reader = nil
+		*lists, _ = read(ctx)
+	}
+	return *lists
 }
 
 // PlanNATLists plans member deltas and provable legacy migration without
 // changing the legacy read path when no list exemption is needed.
-func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gateway string, skipped []string) *NATListPlan {
-	if state.NatContext == nil {
+func PlanNATLists(ctx context.Context, routes RoutesReport, natReport NatReport, facts *device.State, nat *NatContext, listsSlot **NATLists, readerSlot *func(context.Context) (*NATLists, error), policyPlan *ROSPolicyPlan, gateway string, skipped []string) *NATListPlan {
+	if nat == nil {
 		return nil
 	}
-	rows := state.NatContext.Rules
+	rows := nat.Rules
 	items := []NatItem{}
 	missing, desired := []string{}, []string{}
-	for _, item := range report.NatBypass.Items {
+	for _, item := range natReport.Items {
 		desired = append(desired, item.CIDR)
 		if !slices.Contains(skipped, item.CIDR) {
 			items = append(items, item)
@@ -320,13 +327,13 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 		}
 	}
 	refs := []ListRef{}
-	if state.NATLists != nil {
-		refs = state.NATLists.refs()
+	if listsSlot != nil && *listsSlot != nil {
+		refs = (*listsSlot).refs()
 	}
 	found := ros.InspectNATListRule(rows, refs)
 	moving := map[string]bool{}
 	movingAddress := map[string]bool{}
-	if p := state.natPolicyEvidence(); p != nil {
+	if p := natPolicyEvidence(policyPlan); p != nil {
 		for _, item := range p.Migrations {
 			if item.Path == ros.PathNAT {
 				moving[item.ID] = true
@@ -341,12 +348,12 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	for _, network := range ros.ClientSourceNetworks(gatewayAddr) {
 		sources = append(sources, network.String())
 	}
-	legacy, legacyDest, stale, retained := legacyNAT(rows, sources, items, desired, skipped, moving, found.OutInterface, StillRoutedNAT(report, state, gateway))
+	legacy, legacyDest, stale, retained := legacyNAT(rows, sources, items, desired, skipped, moving, found.OutInterface, StillRoutedNAT(routes, facts, nat, policyPlan, gateway))
 	if found.Rule == nil && found.Problem == "" && len(missing) == 0 && len(legacy) == 0 {
 		return nil
 	}
 	result := &NATListPlan{Ops: []Op{}, Blockers: []string{}, Warnings: []string{}, Exempt: []string{}}
-	lists := ListsOfNAT(ctx, state)
+	lists := ListsOfNAT(ctx, listsSlot, readerSlot)
 	if lists == nil {
 		result.Blockers = append(result.Blockers, messageNATListsUnreadable)
 		return result
@@ -474,7 +481,11 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 		return slices.Compact(kept)
 	}
 	natRules := map[string]*NatBypassEntry{}
-	for _, entry := range state.NatBypass {
+	var natBypass []*NatBypassEntry
+	if facts != nil {
+		natBypass = facts.NatBypass
+	}
+	for _, entry := range natBypass {
 		if entry.Enabled && !moving[entry.ID] {
 			natRules[entry.ID] = entry
 		}
@@ -525,7 +536,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 	for _, item := range dstRemove {
 		removedKeys[natKey(item.Config.Text("address"))] = true
 	}
-	for _, entry := range state.NatBypass {
+	for _, entry := range natBypass {
 		if !entry.Enabled || moving[entry.ID] || gone[entry.ID] || entry.ID == ruleID && withdraw {
 			continue
 		}
@@ -536,7 +547,7 @@ func PlanNATLists(ctx context.Context, report *Report, state *RouterState, gatew
 		}
 	}
 	result.Exempt = append(result.Exempt, targets...)
-	if p := state.natPolicyEvidence(); p != nil {
+	if p := natPolicyEvidence(policyPlan); p != nil {
 		for _, item := range p.Replacements {
 			if item.Path == ros.PathNAT {
 				result.Exempt = append(result.Exempt, item.Values.Text("dst-address"))

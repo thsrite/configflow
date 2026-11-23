@@ -1182,7 +1182,13 @@ func (op GroupOp) OpKind() string { return op.Kind }
 func (op GroupOp) OpSummary() string { return op.Summary }
 
 // GroupReportSection lists pending migrations, unreferenced groups and markers to restore.
-func GroupReportSection(s *GroupState, natBypass []*device.NatBypassEntry, policyRoutes []*device.PolicyRouteEntry) GroupReport {
+func GroupReportSection(s *GroupState, facts *device.State) GroupReport {
+	var natBypass []*device.NatBypassEntry
+	var policyRoutes []*device.PolicyRouteEntry
+	if facts != nil {
+		natBypass = facts.NatBypass
+		policyRoutes = facts.PolicyRoutes
+	}
 	report := GroupReport{Migrations: []GroupMigration{}, Orphans: []string{}, Marks: []string{}}
 	custom := func(key string) []string {
 		if r := s.Rule(key); r != nil {

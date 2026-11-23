@@ -53,7 +53,7 @@ func guardConnected(ctx *NatContext, address netip.Addr) (string, string, error)
 	return iface, network.String(), nil
 }
 
-func guardDesiredSpec(settings DNSGuard, desired *Desired, state *RouterState) (*DNSGuardSpec, error) {
+func guardDesiredSpec(settings DNSGuard, desired *Desired, nat *NatContext) (*DNSGuardSpec, error) {
 	dns := desired.DNSSettings
 	if dns == nil {
 		return nil, device.Error(messageGuardAddress)
@@ -82,7 +82,7 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, state *RouterState) (
 		}
 		singles = append(singles, address)
 	}
-	iface, network, err := guardConnected(state.NatContext, address)
+	iface, network, err := guardConnected(nat, address)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func guardDesiredSpec(settings DNSGuard, desired *Desired, state *RouterState) (
 	}
 	for _, a := range singles {
 		if a != address && dns.HA != nil {
-			i, n, e := guardConnected(state.NatContext, a)
+			i, n, e := guardConnected(nat, a)
 			if e != nil || i != iface || n != network {
 				return nil, device.Error(fmt.Sprintf(messageGuardHAConnected, a, address, network))
 			}

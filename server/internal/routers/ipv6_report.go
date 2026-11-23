@@ -2,16 +2,16 @@ package routers
 
 import "slices"
 
-func ipv6ReportParts(state *RouterState) []ReportPart {
+func ipv6ReportParts(fake *IPv6FakeIPPlan, routes *IPv6RoutesPlan, dns *IPv6DNSPlan, pd *IPv6PDGuardPlan) []ReportPart {
 	parts := []ReportPart{}
-	if p := state.IPv6FakeIPPlan; p != nil {
+	if p := fake; p != nil {
 		statuses := []string{}
 		if p.Status != "disabled" && p.Status != "borrowed" {
 			statuses = append(statuses, p.Status)
 		}
 		parts = append(parts, ReportPart{Key: "ipv6_fakeip", Section: p.IPv6FakeIPReport, Statuses: statuses, InSync: slices.Contains([]string{"disabled", "synced", "borrowed"}, p.Status) && len(p.Blockers) == 0 && len(p.Ops) == 0})
 	}
-	if p := state.IPv6RoutesPlan; p != nil {
+	if p := routes; p != nil {
 		statuses := []string{}
 		for _, item := range p.Items {
 			if item.Status != "borrowed" {
@@ -20,14 +20,14 @@ func ipv6ReportParts(state *RouterState) []ReportPart {
 		}
 		parts = append(parts, ReportPart{Key: "ipv6_routes", Section: p.IPv6RoutesReport, Statuses: statuses, InSync: slices.Contains([]string{"disabled", "synced"}, p.Status) && len(p.Skip) == 0 && len(p.Ops) == 0})
 	}
-	if p := state.IPv6DNSPlan; p != nil {
+	if p := dns; p != nil {
 		statuses := []string{}
 		if p.Status != "disabled" {
 			statuses = append(statuses, p.Status)
 		}
 		parts = append(parts, ReportPart{Key: "ipv6_dns", Section: ipv6DNSPublic(p), Statuses: statuses, InSync: slices.Contains([]string{"disabled", "synced"}, p.Status) && len(p.Blockers) == 0 && len(p.Ops) == 0})
 	}
-	if p := state.IPv6PDGuardPlan; p != nil {
+	if p := pd; p != nil {
 		statuses := []string{}
 		if p.Status != "disabled" && p.Status != "borrowed" {
 			s := p.Status

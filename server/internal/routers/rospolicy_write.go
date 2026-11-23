@@ -120,7 +120,7 @@ func (d *RouterOS) applyPolicy(ctx context.Context, op policyWrite) (*ROSPolicyU
 			if err != nil {
 				return err
 			}
-			if err = VerifyNAT(ctx, *op.StaticNATChecks, state); err != nil {
+			if err = VerifyNAT(ctx, *op.StaticNATChecks, &state.State, state.NatContext); err != nil {
 				return err
 			}
 			for _, path := range []string{ros.PathNAT, ros.PathRoutes} {
@@ -527,15 +527,15 @@ func (d *RouterOS) verifyReplacementPolicyNAT(ctx context.Context, op policyWrit
 
 // VerifyNAT proves the same NAT prerequisites before withdrawal and on final
 // readback. R12 shares this implementation rather than reimplementing policy NAT.
-func VerifyNAT(ctx context.Context, checks NATChecks, state *RouterState) error {
+func VerifyNAT(ctx context.Context, checks NATChecks, facts *device.State, nat *NatContext) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	index := ros.NewRouteEgressIndex(state.NatContext)
+	index := ros.NewRouteEgressIndex(nat)
 	uncovered := []string{}
 	managed := []netip.Prefix{}
-	if state.NatContext == nil {
-		for _, rule := range state.NatBypass {
+	if nat == nil && facts != nil {
+		for _, rule := range facts.NatBypass {
 			if rule.Enabled && device.IsManaged(rule.Comment) {
 				managed = append(managed, device.Networks(rule.Dst)...)
 			}
@@ -544,8 +544,8 @@ func VerifyNAT(ctx context.Context, checks NATChecks, state *RouterState) error 
 	coverage := device.NewSupernetIndex(managed)
 	for _, cidr := range checks.NATBypass {
 		ok := false
-		if state.NatContext != nil {
-			status := ros.AssessBypass(cidr, checks.Gateway, state.AddressSets, state.NatContext, state.PolicyNATRetiring, index).Status
+		if nat != nil {
+			status := ros.AssessBypass(cidr, checks.Gateway, facts, nat, index).Status
 			ok = status == "synced" || status == "not_required"
 		} else if prefix, valid := netipx.ParseNetwork4(cidr, true); valid {
 			ok = coverage.Covers(prefix)
@@ -558,7 +558,7 @@ func VerifyNAT(ctx context.Context, checks NATChecks, state *RouterState) error 
 		return device.Error(fmt.Sprintf(messageNATVerifyUncovered, strings.Join(uncovered, ", ")))
 	}
 	for _, check := range checks.NATNotRequired {
-		assessment := ros.AssessBypass(check.CIDR, check.Gateway, state.AddressSets, state.NatContext, state.PolicyNATRetiring, index)
+		assessment := ros.AssessBypass(check.CIDR, check.Gateway, facts, nat, index)
 		if assessment.Status != "not_required" {
 			return device.Error(fmt.Sprintf(messageNATVerifyRequired, check.CIDR, assessment.Detail))
 		}

@@ -172,6 +172,18 @@ type DhcpDnsState struct {
 	Evidence json.RawMessage `json:"evidence"`
 }
 
+// State holds vendor-neutral device facts read from a router.
+type State struct {
+	Routes              []*RouteEntry       `json:"routes"`
+	NatBypass           []*NatBypassEntry   `json:"nat_bypass"`
+	AddressSets         map[string][]string `json:"address_sets"`
+	DhcpDNS             *DhcpDnsState       `json:"dhcp_dns"`
+	PolicyRoutes        []*PolicyRouteEntry `json:"policy_routes"`
+	RetiredPolicyRoutes []*PolicyRouteEntry `json:"retired_policy_routes"`
+	ActiveRoutes        []*RouteEntry       `json:"active_routes"`
+	PolicyNATRetiring   []string            `json:"-"`
+}
+
 // ReportPart is a feature module's section (policy routing, DNS guard, IPv6):
 // Statuses are added to the summary, InSync joins in_sync and RetireExtra are
 // route ids that leave routes.extra (a migration owns them).

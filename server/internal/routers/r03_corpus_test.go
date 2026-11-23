@@ -177,7 +177,7 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 		return map[string]string{"status": a.Status, "detail": a.Detail}
 	case "assess_bypass":
 		state.PolicyNATRetiring = v.Retiring
-		return ros.AssessBypass(v.CIDR, v.Gateway, state.AddressSets, state.NatContext, state.PolicyNATRetiring, nil)
+		return ros.AssessBypass(v.CIDR, v.Gateway, &state.State, state.NatContext, nil)
 	case "planned":
 		var expansions []BypassExpansion
 		for _, op := range v.Ops {
@@ -187,7 +187,7 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 			}
 			expansions = append(expansions, e)
 		}
-		return ros.PlannedBypassConflicts(expansions, state.AddressSets, state.NatContext, v.Gateway)
+		return ros.PlannedBypassConflicts(expansions, &state.State, state.NatContext, v.Gateway)
 	case "preserves":
 		accepted := []string{}
 		iface := ""

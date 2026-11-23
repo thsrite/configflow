@@ -232,11 +232,11 @@ func TestR07VerifyComparesMemberSets(t *testing.T) {
 	id := "*5"
 	check := &NATListCheck{Rule: &id, Sources: []string{"192.0.2.128/25"}, Destinations: []string{"198.51.100.0/24"}, Removed: []string{},
 		Members: NATListMembers{Src: []string{"192.0.2.128/25"}, Dst: []string{"198.51.100.0/24", "198.51.100.0/24"}}}
-	if err := VerifyNATLists(context.Background(), check, state); err != nil {
+	if err := VerifyNATLists(context.Background(), check, state.NatContext, &state.NATLists, &state.NATListsReader); err != nil {
 		t.Fatal(err)
 	}
 	check.Members.Dst = []string{"198.51.100.0/24", "203.0.113.0/24"}
-	if err := VerifyNATLists(context.Background(), check, state); err == nil {
+	if err := VerifyNATLists(context.Background(), check, state.NatContext, &state.NATLists, &state.NATListsReader); err == nil {
 		t.Fatal("missing planned member accepted")
 	}
 }

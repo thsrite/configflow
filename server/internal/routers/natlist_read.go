@@ -172,8 +172,8 @@ func NATMigration(stages []Stage) (merged, stale int) {
 }
 
 // VerifyNATLists checks exact owned membership and all outside reference tables.
-func VerifyNATLists(ctx context.Context, check *NATListCheck, state *RouterState) error {
-	lists := ListsOfNAT(ctx, state)
+func VerifyNATLists(ctx context.Context, check *NATListCheck, nat *NatContext, listsSlot **NATLists, readerSlot *func(context.Context) (*NATLists, error)) error {
+	lists := ListsOfNAT(ctx, listsSlot, readerSlot)
 	if lists == nil {
 		return device.Error(messageNATVerifyLists)
 	}
@@ -184,8 +184,8 @@ func VerifyNATLists(ctx context.Context, check *NATListCheck, state *RouterState
 		return device.Error(messageNATVerifyPrefix + messageNATFirewallUnreadable)
 	}
 	rows := []Row{}
-	if state.NatContext != nil {
-		rows = state.NatContext.Rules
+	if nat != nil {
+		rows = nat.Rules
 	}
 	found := ros.InspectNATListRule(rows, lists.refs())
 	if check.Withdraw {

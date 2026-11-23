@@ -325,7 +325,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 				expansions = append(expansions, BypassExpansion{ID: v.ID, AddDst: v.AddDst, Comment: v.Comment})
 			}
 		}
-		*blockers = append(*blockers, ros.PlannedBypassConflicts(expansions, state.AddressSets, state.NatContext, gateway)...)
+		*blockers = append(*blockers, ros.PlannedBypassConflicts(expansions, &state.State, state.NatContext, gateway)...)
 	}
 	for _, op := range policyOps {
 		if len(op.StaticChecks) == 0 {

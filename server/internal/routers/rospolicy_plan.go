@@ -110,17 +110,17 @@ func policyNATMigrations(live ROSPolicySnapshot, exclusions []netip.Prefix, owne
 
 // BuildROSPolicy plans a single guarded replacement and records complete stable
 // evidence even for a no-op. The caller owns serialization under the device lock.
-func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
+func BuildROSPolicy(desired *Desired, nat *NatContext, snap *ROSPolicySnapshot) *ROSPolicyPlan {
 	request := desired.ROSPolicy
 	result := &ROSPolicyPlan{Ops: []Op{}, Blockers: []string{}, Warnings: append([]string{}, request.Warnings...), Items: []ROSPolicyItem{}}
 	if request.Error != "" {
 		result.Blockers = append(result.Blockers, request.Error)
 	}
-	if state.ROSPolicy == nil {
+	if snap == nil {
 		result.Blockers = append(result.Blockers, messagePolicyUnreadable)
 		return result
 	}
-	live := *state.ROSPolicy
+	live := *snap
 	selected := len(request.Selected) > 0
 	owned, err := OwnedROSPolicyRows(request.Previous, &live)
 	if err == nil {
@@ -210,9 +210,9 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 	if selected && len(spec.Destinations) == 0 {
 		result.Blockers = append(result.Blockers, messagePolicyNoDestinations)
 	}
-	proxyState := *state
-	if state.NatContext != nil {
-		context := *state.NatContext
+	var proxyNAT *NatContext
+	if nat != nil {
+		context := *nat
 		context.Mangle = append([]Row{}, otherMangle...)
 		moving := map[string]bool{}
 		for _, item := range migrations {
@@ -221,19 +221,19 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 			}
 		}
 		context.Routes = slices.DeleteFunc(slices.Clone(context.Routes), func(row Row) bool { return moving[row.ID()] })
-		proxyState.NatContext = &context
+		proxyNAT = &context
 	}
-	index := ros.NewRouteEgressIndex(proxyState.NatContext)
+	index := ros.NewRouteEgressIndex(proxyNAT)
 	needNAT := false
 	iface := ""
 	if selected && len(spec.Destinations) > 0 {
 		var reason string
-		iface, reason = ros.Egress(spec.Destinations[0], spec.Gateway, proxyState.NatContext, true, index)
+		iface, reason = ros.Egress(spec.Destinations[0], spec.Gateway, proxyNAT, true, index)
 		if iface == "" {
 			result.Blockers = append(result.Blockers, messagePolicyLANUnknown+reason)
 		}
 		for _, cidr := range spec.Destinations {
-			assessment := ros.AssessNAT(cidr, spec.Gateway, proxyState.NatContext, true, index)
+			assessment := ros.AssessNAT(cidr, spec.Gateway, proxyNAT, true, index)
 			if assessment.Status == "unknown" {
 				result.Blockers = append(result.Blockers, cidr+"："+assessment.Detail)
 				break
@@ -371,11 +371,11 @@ func conflictingPolicyMangle(row Row) bool {
 
 // natPolicyEvidence derives shared migration proofs from the policy plan;
 // there is no independently populated NAT copy of the policy evidence.
-func (state *RouterState) natPolicyEvidence() *NATPolicyEvidence {
-	if state.ROSPolicyPlan == nil || state.ROSPolicyPlan.Check == nil {
+func natPolicyEvidence(plan *ROSPolicyPlan) *NATPolicyEvidence {
+	if plan == nil || plan.Check == nil {
 		return nil
 	}
-	check := state.ROSPolicyPlan.Check
+	check := plan.Check
 	proof := &NATPolicyEvidence{Migrations: check.Migrations, Replacements: check.Replacements}
 	if check.Spec != nil {
 		proof.Destinations = check.Spec.Destinations
@@ -407,9 +407,7 @@ func nestedNATMigration(op Op) (merged, stale int) {
 	return
 }
 
-func policyReportPart(desired *Desired, state *RouterState) ReportPart {
-	plan := BuildROSPolicy(desired, state)
-	state.ROSPolicyPlan = plan
+func policyReportPart(desired *Desired, plan *ROSPolicyPlan) (ReportPart, []string) {
 	// Report's summary counts a withdrawal with no destination items as pending.
 	statuses := []string{}
 	for _, item := range plan.Items {
@@ -422,7 +420,7 @@ func policyReportPart(desired *Desired, state *RouterState) ReportPart {
 		statuses = append(statuses, "pending")
 	}
 	retiring := []string{}
-	state.PolicyNATRetiring = nil
+	var natRetiring []string
 	if plan.Check != nil {
 		for _, item := range plan.Check.Migrations {
 			if item.Path == ros.PathRoutes {
@@ -434,7 +432,7 @@ func policyReportPart(desired *Desired, state *RouterState) ReportPart {
 		if op, ok := operation.(*ROSPolicyReplace); ok {
 			for _, item := range op.Owned {
 				if item.Path == ros.PathNAT {
-					state.PolicyNATRetiring = append(state.PolicyNATRetiring, item.ID)
+					natRetiring = append(natRetiring, item.ID)
 				}
 			}
 		}
@@ -446,5 +444,5 @@ func policyReportPart(desired *Desired, state *RouterState) ReportPart {
 		Blockers []string        `json:"blockers"`
 		Warnings []string        `json:"warnings"`
 	}{len(desired.ROSPolicy.Selected) > 0, desired.ROSPolicy.Sources, plan.Items, plan.Blockers, plan.Warnings}
-	return ReportPart{Key: "policy_routing", Section: section, Statuses: statuses, InSync: len(plan.Ops) == 0 && len(plan.Blockers) == 0, RetireExtra: retiring}
+	return ReportPart{Key: "policy_routing", Section: section, Statuses: statuses, InSync: len(plan.Ops) == 0 && len(plan.Blockers) == 0, RetireExtra: retiring}, natRetiring
 }

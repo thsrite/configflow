@@ -429,7 +429,7 @@ func TestR08NamesGatewayAndReportIntegration(t *testing.T) {
 	}
 	// R07 consumes exactly the policy check. The temporary alternate state field
 	// has been removed, so callers cannot populate disagreeing migration proofs.
-	if len(rs.natPolicyEvidence().Migrations) != len(rs.ROSPolicyPlan.Check.Migrations) {
+	if len(natPolicyEvidence(rs.ROSPolicyPlan).Migrations) != len(rs.ROSPolicyPlan.Check.Migrations) {
 		t.Fatal("NAT planner used alternate policy evidence")
 	}
 }

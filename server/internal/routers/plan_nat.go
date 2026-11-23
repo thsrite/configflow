@@ -91,7 +91,7 @@ func groupedNATOps(p *GroupPlanner, rules map[string]*NatBypassEntry, target *Na
 }
 func planNAT(ctx context.Context, report *Report, state *RouterState, gateway string, skipped []string, vendor string, p *GroupPlanner) ([]Op, []string, *NATListPlan) {
 	if vendor == "routeros" && state.NatContext != nil {
-		if listed := PlanNATLists(ctx, report, state, gateway, skipped); listed != nil {
+		if listed := PlanNATLists(ctx, report.Routes, report.NatBypass, &state.State, state.NatContext, &state.NATLists, &state.NATListsReader, state.ROSPolicyPlan, gateway, skipped); listed != nil {
 			return listed.Ops, listed.Exempt, listed
 		}
 	}

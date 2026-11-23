@@ -13,12 +13,12 @@ import (
 	"configflow/internal/netipx"
 )
 
-// ForwardHintResult is advisory only. Never include it in a release operation,
-// check, evidence snapshot, or fingerprint.
-type ForwardHintResult struct {
-	Status     string `json:"status"`
-	FixCommand string `json:"fix_command"`
-	Warning    string `json:"warning"`
+// ForwardInputs carries the narrowed router state needed for ForwardHint.
+type ForwardInputs struct {
+	Guard      *DNSGuardSnapshot
+	NAT        *NatContext
+	Policy     *ROSPolicySnapshot
+	PolicyPlan *ROSPolicyPlan
 }
 
 // ForwardHintCheck reports a definite filter drop, or an unconfirmed read.
@@ -162,18 +162,18 @@ func checkForwardSnapshot(snapshot *PolicySnapshot, family int, lan string, targ
 
 // ForwardHint provides the optional IPv4 report hint for this router. It never
 // changes the router, plan, checks, or fingerprint; unreadable evidence is advice.
-func ForwardHint(ctx context.Context, r *Router, desired *Desired, state *RouterState, report *Report, d *RouterOS) (*ForwardHintResult, error) {
-	if r == nil || r.Type != "routeros" || r.ManageReturnRouting || d == nil || state == nil || desired == nil || report == nil {
+func ForwardHint(ctx context.Context, r *Router, desired *Desired, inputs ForwardInputs, routes RoutesReport, d *RouterOS) (*ForwardHintResult, error) {
+	if r == nil || r.Type != "routeros" || r.ManageReturnRouting || d == nil || desired == nil {
 		return nil, nil
 	}
 	targets := []string{}
-	for _, item := range report.Routes.Items {
+	for _, item := range routes.Items {
 		if slices.Contains([]string{"synced", "adoptable", "missing"}, item.Status) {
 			targets = append(targets, item.CIDR)
 		}
 	}
-	if desired.ROSPolicy != nil && len(desired.ROSPolicy.Selected) > 0 && state.ROSPolicyPlan != nil && len(state.ROSPolicyPlan.Blockers) == 0 {
-		for _, item := range state.ROSPolicyPlan.Items {
+	if desired.ROSPolicy != nil && len(desired.ROSPolicy.Selected) > 0 && inputs.PolicyPlan != nil && len(inputs.PolicyPlan.Blockers) == 0 {
+		for _, item := range inputs.PolicyPlan.Items {
 			targets = append(targets, item.CIDR)
 		}
 	}
@@ -197,15 +197,15 @@ func ForwardHint(ctx context.Context, r *Router, desired *Desired, state *Router
 	if !ok {
 		return nil, nil
 	}
-	lan, _ := ros.NewRouteEgressIndex(state.NatContext).GatewayEgress(gateway)
+	lan, _ := ros.NewRouteEgressIndex(inputs.NAT).GatewayEgress(gateway)
 	if lan == "" {
 		return &ForwardHintResult{Status: "unknown", Warning: messageForwardUnknownLAN}, nil
 	}
 	var rows []Row
-	if state.ROSPolicy != nil {
-		rows = (*state.ROSPolicy)[ros.PathFilter]
-	} else if state.DNSGuard != nil {
-		rows = (*state.DNSGuard)[ros.PathFilter]
+	if inputs.Policy != nil {
+		rows = (*inputs.Policy)[ros.PathFilter]
+	} else if inputs.Guard != nil {
+		rows = (*inputs.Guard)[ros.PathFilter]
 	}
 	result := CheckForwardHint(ctx, d, 4, lan, targets, rows)
 	switch result.Status {

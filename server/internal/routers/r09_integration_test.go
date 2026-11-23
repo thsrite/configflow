@@ -52,7 +52,7 @@ func TestR09ReportPreservesPolicyAndDNSGuard(t *testing.T) {
 	}
 	// The real combined desired model must also protect DNS from policy routing.
 	tc.Desired.ROSPolicy.CIDRs = []ProxyCIDR{{CIDR: "192.0.2.2/32"}}
-	if plan := BuildDNSGuard(tc.Desired, state); len(plan.Blockers) != 1 || plan.Blockers[0] != messageGuardProxy || len(plan.Ops) != 0 {
+	if plan := BuildDNSGuard(tc.Desired, state.DNSGuard, state.NatContext); len(plan.Blockers) != 1 || plan.Blockers[0] != messageGuardProxy || len(plan.Ops) != 0 {
 		t.Fatalf("policy destination did not protect DNS: %s", r09Raw(plan))
 	}
 }

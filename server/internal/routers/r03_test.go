@@ -1,12 +1,9 @@
 package routers
 
 import (
-	"configflow/internal/routers/device"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
-	"encoding/json"
 	"net/netip"
-	"strings"
 	"testing"
 )
 
@@ -33,26 +30,6 @@ func TestAddressExcludeCoversTheRest(t *testing.T) {
 	}
 	if ros.AddressExclude(a, a) != nil {
 		t.Fatal("a without a is empty")
-	}
-}
-
-func TestReportPartsJoinSummaryAndSync(t *testing.T) {
-	defer func(old func(*Desired, *RouterState) ([]ReportPart, error)) { ReportParts = old }(ReportParts)
-	desired := &Desired{ProxyGateway: "192.168.0.3", ProxyCIDRs: []ProxyCIDR{}, IPv6CIDRs: []ProxyCIDR{},
-		Warnings: []string{}, BlockingWarnings: []string{}}
-	state := &RouterState{Routes: []*RouteEntry{device.NewRoute("*9", "203.0.113.0/24", "192.168.0.3", true, "cf-old")}}
-	ReportParts = func(*Desired, *RouterState) ([]ReportPart, error) {
-		return []ReportPart{{Key: "dns_guard", Section: map[string]string{"status": "pending"}, Statuses: []string{"pending"},
-			RetireExtra: []string{"*9"}}}, nil
-	}
-	report, err := BuildReport(desired, state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, _ := json.Marshal(report)
-	if report.InSync || report.Summary["pending"] != 1 || report.Summary["extra"] != 0 ||
-		!strings.Contains(string(data), `"dns_guard":{"status":"pending"}`) {
-		t.Fatalf("report %s", data)
 	}
 }
 

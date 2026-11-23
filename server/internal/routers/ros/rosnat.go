@@ -741,11 +741,17 @@ func ClientSourceNetworks(gateway netip.Addr) []netip.Prefix {
 // AssessBypass reads the ordered NAT chain before claiming an exemption is
 // effective. An accept with matchers it cannot evaluate is kept intact and
 // reported unknown instead of silently broadened.
-func AssessBypass(cidr, gateway string, addressSets map[string][]string, ctx *NatContext, policyNATRetiring []string, ix *RouteEgressIndex) NatAssessment {
+func AssessBypass(cidr, gateway string, facts *device.State, ctx *NatContext, ix *RouteEgressIndex) NatAssessment {
 	assessment := AssessNAT(cidr, gateway, ctx, false, ix)
 	assessment.RuleIDs = []string{}
 	if assessment.Status == "not_required" || ctx == nil || !RowsOK(ctx.Rules) {
 		return assessment
+	}
+	var addressSets map[string][]string
+	var policyNATRetiring []string
+	if facts != nil {
+		addressSets = facts.AddressSets
+		policyNATRetiring = facts.PolicyNATRetiring
 	}
 	rows := ctx.Rules
 	iface := ""
@@ -834,7 +840,7 @@ type BypassExpansion struct {
 
 // PlannedBypassConflicts checks the expanded copies without changing or
 // broadening their matchers; one message per CIDR that stays unproven.
-func PlannedBypassConflicts(expansions []BypassExpansion, addressSets map[string][]string, nat *NatContext, gateway string) []string {
+func PlannedBypassConflicts(expansions []BypassExpansion, facts *device.State, nat *NatContext, gateway string) []string {
 	if len(expansions) == 0 || nat == nil {
 		return []string{}
 	}
@@ -858,10 +864,14 @@ func PlannedBypassConflicts(expansions []BypassExpansion, addressSets map[string
 			targets[cidr] = true
 		}
 	}
+	var virtual *device.State
+	if facts != nil {
+		virtual = &device.State{AddressSets: facts.AddressSets}
+	}
 	ix := NewRouteEgressIndex(&ctx)
 	out := []string{}
 	for _, cidr := range slices.Sorted(maps.Keys(targets)) {
-		switch AssessBypass(cidr, gateway, addressSets, &ctx, nil, ix).Status {
+		switch AssessBypass(cidr, gateway, virtual, &ctx, ix).Status {
 		case "synced", "adoptable", "not_required":
 		default:
 			out = append(out, cidr+"：扩充后仍无法确认 NAT 免转换覆盖，已保留原规则的限制，请先检查现有规则")

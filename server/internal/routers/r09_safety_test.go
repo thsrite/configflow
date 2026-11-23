@@ -51,7 +51,7 @@ func r09Plan(t *testing.T, d *RouterOS, settings DNSGuard, previous json.RawMess
 		t.Fatal(err)
 	}
 	tc.Desired.DNSGuard = &DesiredDNSGuard{Settings: settings, Previous: previous}
-	return BuildDNSGuard(tc.Desired, state)
+	return BuildDNSGuard(tc.Desired, state.DNSGuard, state.NatContext)
 }
 func r09ApplyPlan(t *testing.T, d *RouterOS, p *DNSGuardPlan) *DNSGuardUndo {
 	t.Helper()

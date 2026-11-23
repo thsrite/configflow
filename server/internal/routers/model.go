@@ -9,38 +9,32 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"configflow/internal/routers/device"
 )
 
-// RouterState is one readback of the device (later modules add their fields).
+// RouterState is one readback of the device plus planning-stage outputs.
+// Field order matches the legacy JSON contract: dns_guard, ros_policy,
+// device.State (routes..active_routes), nat_context.
 type RouterState struct {
-	IPv6FakeIPPlan  *IPv6FakeIPPlan     `json:"-"`
-	IPv6DNSPlan     *IPv6DNSPlan        `json:"-"`
-	IPv6PDGuardPlan *IPv6PDGuardPlan    `json:"-"`
-	IPv6RoutesPlan  *IPv6RoutesPlan     `json:"-"`
-	DNSGuard        *DNSGuardSnapshot   `json:"dns_guard,omitempty"`
-	DNSGuardPlan    *DNSGuardPlan       `json:"-"`
-	ROSPolicy       *ROSPolicySnapshot  `json:"ros_policy,omitempty"`
-	ROSPolicyPlan   *ROSPolicyPlan      `json:"-"`
-	Routes          []*RouteEntry       `json:"routes"`
-	NatBypass       []*NatBypassEntry   `json:"nat_bypass"`
-	AddressSets     map[string][]string `json:"address_sets"`
-	DhcpDNS         *DhcpDnsState       `json:"dhcp_dns"`
-	// nil: proxy CIDRs go by static routes; a list: by policy rules.
-	PolicyRoutes []*PolicyRouteEntry `json:"policy_routes"`
-	// Our policy rules being withdrawn (RetirePolicyRoutes).
-	RetiredPolicyRoutes []*PolicyRouteEntry `json:"retired_policy_routes"`
-	// Routes the router actually forwards with (iKuai 当前路由表); nil when unknown.
-	ActiveRoutes []*RouteEntry `json:"active_routes"`
+	DNSGuard  *DNSGuardSnapshot  `json:"dns_guard,omitempty"`
+	ROSPolicy *ROSPolicySnapshot `json:"ros_policy,omitempty"`
+	device.State
 	// RouterOS NAT/forwarding evidence; nil keeps the legacy coverage check
 	// (empty Rules means there are no source-NAT rules).
 	NatContext *NatContext `json:"nat_context"`
-	// NAT rule ids the RouterOS policy-routing plan (R08) removes.
-	PolicyNATRetiring []string `json:"-"`
 	// iKuai only: IP groups with ConfigFlow ownership and the rules using them.
 	IkuaiGroups *GroupState `json:"-"`
 	// NATLists is eager when the lists are referenced; the reader is lazy otherwise.
 	NATLists       *NATLists                                `json:"-"`
 	NATListsReader func(context.Context) (*NATLists, error) `json:"-"`
+	// Planning-stage outputs owned by the orchestration package.
+	DNSGuardPlan    *DNSGuardPlan    `json:"-"`
+	ROSPolicyPlan   *ROSPolicyPlan   `json:"-"`
+	IPv6FakeIPPlan  *IPv6FakeIPPlan  `json:"-"`
+	IPv6DNSPlan     *IPv6DNSPlan     `json:"-"`
+	IPv6PDGuardPlan *IPv6PDGuardPlan `json:"-"`
+	IPv6RoutesPlan  *IPv6RoutesPlan  `json:"-"`
 }
 
 // Driver talks to one router.

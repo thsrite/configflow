@@ -260,7 +260,7 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 		if len(tc.PolicyCIDRs) > 0 {
 			request.ROSPolicy = &ROSPolicyDesired{CIDRs: tc.PolicyCIDRs}
 		}
-		plan := BuildDNSGuard(&request, state)
+		plan := BuildDNSGuard(&request, state.DNSGuard, state.NatContext)
 		row := r09StepResult{Plan: plan, Manifest: ros.GuardRaw(previous), Undo: json.RawMessage("null")}
 		if step.AfterPreview != nil {
 			f.ApplyExternal(*step.AfterPreview)

@@ -152,7 +152,7 @@ func TestR09ForwardHintPython(t *testing.T) {
 				routes = append(routes, deviceRow(row))
 			}
 			state := &RouterState{NatContext: &NatContext{Routes: routes}, ROSPolicyPlan: tc.PolicyPlan, ROSPolicy: tc.PolicyLive, DNSGuard: tc.GuardLive}
-			hint, err := ForwardHint(context.Background(), tc.Router, tc.Desired, state, &report, d)
+			hint, err := ForwardHint(context.Background(), tc.Router, tc.Desired, ForwardInputs{Guard: state.DNSGuard, NAT: state.NatContext, Policy: state.ROSPolicy, PolicyPlan: state.ROSPolicyPlan}, report.Routes, d)
 			if err != nil {
 				t.Fatal(err)
 			}

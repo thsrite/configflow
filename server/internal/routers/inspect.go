@@ -221,7 +221,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		return nil, err
 	}
 	if isROS {
-		report.Routes.ForwardHint, err = ForwardHint(ctx, r, desired, state, report, rosDriver)
+		report.Routes.ForwardHint, err = ForwardHint(ctx, r, desired, ForwardInputs{Guard: state.DNSGuard, NAT: state.NatContext, Policy: state.ROSPolicy, PolicyPlan: state.ROSPolicyPlan}, report.Routes, rosDriver)
 		if err != nil {
 			return nil, err
 		}

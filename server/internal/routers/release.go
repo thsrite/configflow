@@ -184,11 +184,11 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 			}
 		}
 	} else if stage == StageNATBypass {
-		if err := VerifyNAT(ctx, checks.NATChecks, state); err != nil {
+		if err := VerifyNAT(ctx, checks.NATChecks, &state.State, state.NatContext); err != nil {
 			return nil, err
 		}
 		if checks.NATList != nil {
-			if err := VerifyNATLists(ctx, checks.NATList, state); err != nil {
+			if err := VerifyNATLists(ctx, checks.NATList, state.NatContext, &state.NATLists, &state.NATListsReader); err != nil {
 				return nil, err
 			}
 		}

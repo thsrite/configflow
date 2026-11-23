@@ -122,7 +122,7 @@ func guardForeignHijack(nat []Row, owned map[[2]string]bool) bool {
 }
 
 // BuildDNSGuard plans a safe incremental publish from a single device snapshot.
-func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
+func BuildDNSGuard(desired *Desired, live *DNSGuardSnapshot, nat *NatContext) *DNSGuardPlan {
 	p := &DNSGuardPlan{DNSGuardReport: DNSGuardReport{Status: "disabled", Items: []DNSGuardItem{}, Blockers: []string{}, Warnings: []string{}}, Spec: json.RawMessage("null"), Ops: []Op{}, Roles: []string{}}
 	if desired == nil || desired.DNSGuard == nil {
 		return p
@@ -136,10 +136,9 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 		p.Blockers = append(p.Blockers, err.Error())
 		return p
 	}
-	if state == nil || state.DNSGuard == nil {
+	if live == nil {
 		return fail(device.Error(messageGuardUnreadable))
 	}
-	live := state.DNSGuard
 	previous, err := parseDNSGuardManifest(request.Previous)
 	if err != nil {
 		return fail(err)
@@ -150,7 +149,7 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 	}
 	var spec *DNSGuardSpec
 	if settings.Enabled {
-		spec, err = guardDesiredSpec(settings, desired, state)
+		spec, err = guardDesiredSpec(settings, desired, nat)
 		if err != nil {
 			return fail(err)
 		}
@@ -266,19 +265,15 @@ func BuildDNSGuard(desired *Desired, state *RouterState) *DNSGuardPlan {
 	return p
 }
 
-func init() {
-	previous := ReportParts
-	ReportParts = func(desired *Desired, state *RouterState) ([]ReportPart, error) {
-		parts, err := previous(desired, state)
-		if err != nil || desired.DNSGuard == nil {
-			return parts, err
-		}
-		p := BuildDNSGuard(desired, state)
-		state.DNSGuardPlan = p
-		statuses := []string{}
-		if p.Status != "disabled" {
-			statuses = append(statuses, p.Status)
-		}
-		return append(parts, ReportPart{Key: "dns_guard", Section: p.DNSGuardReport, Statuses: statuses, InSync: (p.Status == "disabled" || p.Status == "synced") && len(p.Blockers) == 0 && len(p.Ops) == 0}), nil
+func dnsGuardReportPart(p *DNSGuardPlan) ReportPart {
+	statuses := []string{}
+	if p.Status != "disabled" {
+		statuses = append(statuses, p.Status)
+	}
+	return ReportPart{
+		Key:      "dns_guard",
+		Section:  p.DNSGuardReport,
+		Statuses: statuses,
+		InSync:   (p.Status == "disabled" || p.Status == "synced") && len(p.Blockers) == 0 && len(p.Ops) == 0,
 	}
 }

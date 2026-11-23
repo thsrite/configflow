@@ -99,7 +99,7 @@ func runR07Helper(tc boundaryCase, endpoint string) boundaryOutcome {
 		var state *routers.RouterState
 		state, err = d.ReadState(ctx)
 		if err == nil {
-			err = routers.VerifyNATLists(ctx, &p.Check, state)
+			err = routers.VerifyNATLists(ctx, &p.Check, state.NatContext, &state.NATLists, &state.NATListsReader)
 		}
 	case "locate":
 		out.Result, err = d.LocateAddresses(ctx, p.IDs)

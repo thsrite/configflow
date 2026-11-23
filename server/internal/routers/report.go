@@ -19,81 +19,6 @@ import (
 	"configflow/internal/netipx"
 )
 
-// RouteItem is the route status of one proxy CIDR.
-type RouteItem struct {
-	CIDR     string   `json:"cidr"`
-	Sources  []string `json:"sources"`
-	Status   string   `json:"status"`
-	Detail   string   `json:"detail"`
-	RouteIDs []string `json:"route_ids"`
-}
-
-// ExtraRoute is a managed route (or policy destination) no longer desired.
-type ExtraRoute struct {
-	CIDR    string `json:"cidr"`
-	Gateway string `json:"gateway"`
-	RouteID string `json:"route_id"`
-	Comment string `json:"comment"`
-}
-
-// UnmanagedRoute is a hand-made route to the gateway ConfigFlow does not
-// derive; Migrate (policy mode) means it becomes a policy rule.
-type UnmanagedRoute struct {
-	CIDR    string `json:"cidr"`
-	Gateway string `json:"gateway"`
-	Comment string `json:"comment"`
-	Enabled bool   `json:"enabled"`
-	Migrate *bool  `json:"migrate,omitempty"`
-}
-
-// RetiredPolicyItem is a destination of a policy rule being withdrawn.
-type RetiredPolicyItem struct {
-	CIDR    string `json:"cidr"`
-	Gateway string `json:"gateway"`
-	Comment string `json:"comment"`
-	Restore bool   `json:"restore"`
-}
-
-// PolicyRules are our two policy rules (nil when absent).
-type PolicyRules struct {
-	Auto   *PolicyRouteEntry `json:"auto"`
-	Manual *PolicyRouteEntry `json:"manual"`
-}
-
-// RoutesReport is the routes section; Mode and Policy only in policy mode.
-type RoutesReport struct {
-	ForwardHint    *ForwardHintResult  `json:"forward_hint,omitempty"`
-	Items          []RouteItem         `json:"items"`
-	Extra          []ExtraRoute        `json:"extra"`
-	UnmanagedOther []UnmanagedRoute    `json:"unmanaged_other"`
-	Mode           string              `json:"mode,omitempty"`
-	Policy         *PolicyRules        `json:"policy,omitempty"`
-	RetiredPolicy  []RetiredPolicyItem `json:"retired_policy"`
-}
-
-// NatItem is the NAT bypass status of one proxy CIDR.
-type NatItem struct {
-	CIDR    string   `json:"cidr"`
-	Status  string   `json:"status"`
-	Detail  string   `json:"detail"`
-	RuleIDs []string `json:"rule_ids"`
-}
-
-// DisabledNat is a disabled bypass rule.
-type DisabledNat struct {
-	RuleID  string   `json:"rule_id"`
-	Comment string   `json:"comment"`
-	Dst     []string `json:"dst"`
-}
-
-type NatReport struct {
-	Items         []NatItem     `json:"items"`
-	DisabledRules []DisabledNat `json:"disabled_rules"`
-}
-
-// ReportParts builds the later modules' sections; R08–R11 set it (none until then).
-var ReportParts = func(desired *Desired, state *RouterState) ([]ReportPart, error) { return nil, nil }
-
 // Report is the drift report.
 type Report struct {
 	ReturnRouting *ReturnStatus  `json:"return_routing,omitempty"`
@@ -191,7 +116,7 @@ func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
 	}
 	for _, r := range state.Routes {
 		if device.IsManaged(r.Comment) && !wanted[r.Dst] {
-			out.Extra = append(out.Extra, ExtraRoute{r.Dst, r.Gateway, r.ID, r.Comment})
+			out.Extra = append(out.Extra, ExtraRoute{CIDR: r.Dst, Gateway: r.Gateway, RouteID: r.ID, Comment: r.Comment})
 		}
 	}
 	if auto != nil {
@@ -202,13 +127,13 @@ func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
 		}
 		for _, cidr := range auto.Dst {
 			if !canon[ikuai.CanonAddress(cidr)] {
-				out.Extra = append(out.Extra, ExtraRoute{cidr, auto.Gateway, "policy:" + auto.ID, auto.Comment})
+				out.Extra = append(out.Extra, ExtraRoute{CIDR: cidr, Gateway: auto.Gateway, RouteID: "policy:" + auto.ID, Comment: auto.Comment})
 			}
 		}
 	}
 	for _, r := range state.Routes {
 		if gateway != "" && r.Gateway == gateway && !device.IsManaged(r.Comment) && !wanted[r.Dst] {
-			out.UnmanagedOther = append(out.UnmanagedOther, UnmanagedRoute{r.Dst, r.Gateway, r.Comment, r.Enabled, new(r.Enabled)})
+			out.UnmanagedOther = append(out.UnmanagedOther, UnmanagedRoute{CIDR: r.Dst, Gateway: r.Gateway, Comment: r.Comment, Enabled: r.Enabled, Migrate: new(r.Enabled)})
 		}
 	}
 	return out
@@ -260,7 +185,7 @@ func routeItems(desired *Desired, state *RouterState) RoutesReport {
 		// Policy ownership is established by its manifest, not its name.
 		if r.Table == "main" && device.IsManaged(r.Comment) && !wanted[r.Dst] && !required[r.ID] &&
 			!strings.HasPrefix(r.Comment, "cf-ros-policy-") {
-			out.Extra = append(out.Extra, ExtraRoute{r.Dst, r.Gateway, r.ID, r.Comment})
+			out.Extra = append(out.Extra, ExtraRoute{CIDR: r.Dst, Gateway: r.Gateway, RouteID: r.ID, Comment: r.Comment})
 		}
 	}
 	// Hand-made routes to the gateway ConfigFlow does not derive (e.g. public
@@ -280,7 +205,7 @@ func natItems(desired *Desired, state *RouterState) NatReport {
 		if r.Enabled {
 			rules = append(rules, r)
 		} else {
-			out.DisabledRules = append(out.DisabledRules, DisabledNat{r.ID, r.Comment, r.Dst})
+			out.DisabledRules = append(out.DisabledRules, DisabledNat{RuleID: r.ID, Comment: r.Comment, Dst: r.Dst})
 		}
 	}
 	routeIndex := ros.NewRouteEgressIndex(state.NatContext)
@@ -288,7 +213,7 @@ func natItems(desired *Desired, state *RouterState) NatReport {
 	for _, entry := range desired.ProxyCIDRs {
 		item := NatItem{CIDR: entry.CIDR, RuleIDs: []string{}}
 		if state.NatContext != nil {
-			a := ros.AssessBypass(entry.CIDR, desired.ProxyGateway, state.AddressSets, state.NatContext, state.PolicyNATRetiring, routeIndex)
+			a := ros.AssessBypass(entry.CIDR, desired.ProxyGateway, &state.State, state.NatContext, routeIndex)
 			item.Status, item.Detail, item.RuleIDs = a.Status, a.Detail, a.RuleIDs
 			out.Items = append(out.Items, item)
 			continue
@@ -326,18 +251,24 @@ func natItems(desired *Desired, state *RouterState) NatReport {
 	return out
 }
 
-// BuildReport compares desired with the router state. Later modules' plans
-// are built through ReportParts (they may record plans on state).
+// BuildReport compares desired with the router state, calling each feature's
+// report builder in fixed order (dns_guard, policy_routing, ipv6).
 func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 	r := &Report{Desired: desired, Routes: routeItems(desired, state), Summary: map[string]int{}}
-	parts, err := ReportParts(desired, state)
-	if err != nil {
-		return nil, err
+	parts := []ReportPart{}
+	if desired.DNSGuard != nil {
+		p := BuildDNSGuard(desired, state.DNSGuard, state.NatContext)
+		state.DNSGuardPlan = p
+		parts = append(parts, dnsGuardReportPart(p))
 	}
 	if desired.ROSPolicy != nil {
-		parts = append(parts, policyReportPart(desired, state))
+		plan := BuildROSPolicy(desired, state.NatContext, state.ROSPolicy)
+		state.ROSPolicyPlan = plan
+		part, natRetiring := policyReportPart(desired, plan)
+		state.PolicyNATRetiring = natRetiring
+		parts = append(parts, part)
 	}
-	parts = append(parts, ipv6ReportParts(state)...)
+	parts = append(parts, ipv6ReportParts(state.IPv6FakeIPPlan, state.IPv6RoutesPlan, state.IPv6DNSPlan, state.IPv6PDGuardPlan)...)
 	r.Parts = parts
 	for _, part := range parts {
 		r.Routes.Extra = slices.DeleteFunc(r.Routes.Extra, func(e ExtraRoute) bool { return slices.Contains(part.RetireExtra, e.RouteID) })
@@ -347,7 +278,7 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 	for _, entry := range state.RetiredPolicyRoutes {
 		for _, cidr := range entry.Dst {
 			r.Routes.RetiredPolicy = append(r.Routes.RetiredPolicy,
-				RetiredPolicyItem{cidr, entry.Gateway, entry.Comment, entry.Comment == PolicyManualComment})
+				RetiredPolicyItem{CIDR: cidr, Gateway: entry.Gateway, Comment: entry.Comment, Restore: entry.Comment == PolicyManualComment})
 		}
 	}
 	r.NatBypass = natItems(desired, state)
@@ -380,7 +311,7 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 		r.InSync = r.InSync && part.InSync
 	}
 	if state.IkuaiGroups != nil {
-		groups := ikuai.GroupReportSection(state.IkuaiGroups, state.NatBypass, state.PolicyRoutes)
+		groups := ikuai.GroupReportSection(state.IkuaiGroups, &state.State)
 		r.IkuaiGroups = &groups
 		// Rules still listing CIDRs themselves, groups nothing uses, or a
 		// marker to write back: a release is due.
