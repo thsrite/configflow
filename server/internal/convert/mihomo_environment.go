@@ -47,20 +47,20 @@ type MihomoEnvironment struct {
 	// typedCacheFor records the LoadSubscriptionCache paired with
 	// LoadSubscriptionCacheTyped. If a caller replaces LoadSubscriptionCache
 	// (e.g. a test stub), the typed fast path is bypassed automatically.
-	typedCacheFor              CacheReader
-	DownloadedText             func(context.Context, string) (string, bool)
-	Preflight                  func(context.Context, *model.Config, *yamlx.Node) error
-	LowerChains                func(*model.Config) (*model.Config, error)
-	RenderMembers              func(model.ProxyGroup, *model.Config) (*yamlx.Node, error)
-	ProviderHealth             func(*model.ProviderHealthCheck) (*yamlx.Node, error)
-	FilterGroups               func(*model.Config, *yamlx.Node) error
-	ChainProviders             func(*model.Config, *yamlx.Node) error
-	MergeHosts                 func(context.Context, *yamlx.Node, *model.Config, []string, []string, []InlineNode, CacheReader) (*HostsResult, error)
-	NodeDNS                    func(*yamlx.Node, *yamlx.Node, string) (*yamlx.Node, error)
-	LogHosts                   func(string, *yamlx.Node) error
-	DialerGroups               func(context.Context, *yamlx.Node, *model.Config, DialerCollaborators) (*yamlx.Node, error)
-	ValidateRules              func(*model.Config, []string, string) error
-	ValidateListeners          func(*yamlx.Node) error
+	typedCacheFor     CacheReader
+	DownloadedText    func(context.Context, string) (string, bool)
+	Preflight         func(context.Context, *model.Config, *yamlx.Node) error
+	LowerChains       func(*model.Config) (*model.Config, error)
+	RenderMembers     func(model.ProxyGroup, *model.Config) (*yamlx.Node, error)
+	ProviderHealth    func(*model.ProviderHealthCheck) (*yamlx.Node, error)
+	FilterGroups      func(*model.Config, *yamlx.Node) error
+	ChainProviders    func(*model.Config, *yamlx.Node) error
+	MergeHosts        func(context.Context, *yamlx.Node, *model.Config, []string, []string, []InlineNode, CacheReader) (*HostsResult, error)
+	NodeDNS           func(*yamlx.Node, *yamlx.Node, string) (*yamlx.Node, error)
+	LogHosts          func(string, *yamlx.Node) error
+	DialerGroups      func(context.Context, *yamlx.Node, *model.Config, DialerCollaborators) (*yamlx.Node, error)
+	ValidateRules     func(*model.Config, []string, string) error
+	ValidateListeners func(*yamlx.Node) error
 }
 
 var environmentState = struct {
