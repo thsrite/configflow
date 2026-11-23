@@ -127,3 +127,11 @@ GATE_ONLY=proddiff server/scripts/gate.sh -p 6
 ```
 
 第一次 preflight 失败于 `TestHeartbeatReportedHostUsesAddressFollow`（作者 HEAD 同样失败），修复后通过。
+
+## 与 go-o17-wall 复核的重叠（协调者 2026-11-24 通知）
+
+另一位复核在 go-o17-wall 上二分出的 X1（`TestPublishHTTPAgainstFlask` 多出 `configflow.sqlite3-journal`，自 W1）和
+X2（`TestHeartbeatReportedHostUsesAddressFollow`「runtime is stopping」，自 W0），就是本报告的两条「中」：
+X1 → `97bc72176`（根因：`NewApp` 注册了 cmd 专属启动步骤，Manager 在 `holdIPv6Scheduler` 之后初始化，真 IPv6 调度器写库；
+journal 只是写入中的表象，等 300ms 后暴露的是 `ipv6_verifications` 差异），X2 → `871edc8d8`。通知到达时两者已提交；
+合并时二选一即可，若采用对方的修复，丢弃这两个提交即可（与其余提交无依赖）。
