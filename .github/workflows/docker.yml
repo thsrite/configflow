@@ -113,7 +113,7 @@ jobs:
 
       # autoupdate 镜像（target: autoupdate，容器启动时按分支源码重建 Go server/前端/Agent）。
       # 标签与 runtime 同一套 D3 规则：
-      # - 版本标签（含预发布）推 `<版本>-autoupdate`，例如 `2.0.0-rc.1-autoupdate`，固定且可回溯；
+      # - 版本标签（含预发布）推 `<版本>-autoupdate`，例如 `3.0.0-rc.1-autoupdate`，固定且可回溯；
       # - 浮动标签 `autoupdate` 是旧 Python autoupdate 用户正在跟的那个，与 `latest` 同一开关
       #   （PUBLISH_LATEST=true 且不是预发布）才移动：观察期结束前它不会指向 Go 版。
       - name: Extract autoupdate metadata

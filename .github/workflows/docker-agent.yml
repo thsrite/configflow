@@ -158,7 +158,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       # 标签规则：
-      # - 版本标签（含预发布）推 `<版本>`（semver，与 docker.yml 同一规则，例如 `2.0.0-rc.1`），不动 `latest`；
+      # - 版本标签（含预发布）推 `<版本>`（semver，与 docker.yml 同一规则，例如 `3.0.0-rc.1`），不动 `latest`；
       # - 其余触发（main 推送、定时、手动）保持原规则，只推 `latest`。
       - name: Extract metadata
         id: meta

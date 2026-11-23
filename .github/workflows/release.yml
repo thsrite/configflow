@@ -20,51 +20,96 @@ jobs:
 
       - name: Get version
         id: version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          PUBLISH_LATEST_VAR: ${{ vars.PUBLISH_LATEST }}
         run: |
-          echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          set -eu
+          echo "version=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          if [[ "${TAG_NAME}" == *-* ]]; then
+            is_prerelease="true"
+          else
+            is_prerelease="false"
+          fi
+          echo "is_prerelease=${is_prerelease}" >> "$GITHUB_OUTPUT"
+          if [[ "${PUBLISH_LATEST_VAR}" == "true" && "${is_prerelease}" == "false" ]]; then
+            echo "publish_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish_latest=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Generate release notes
         id: release_notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          IS_PRERELEASE: ${{ steps.version.outputs.is_prerelease }}
+          PUBLISH_LATEST_TAG: ${{ steps.version.outputs.publish_latest }}
+          IMAGE_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || 'thsrite' }}
+          REPO: ${{ github.repository }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          set -eu
           VERSION_NUM="${VERSION#v}"  # 移除 v 前缀
 
-          cat > release_notes.md << EOF
-          ## 🚀 ConfigFlow ${VERSION}
-
-          ### 📦 Docker 版本
-
-          \`\`\`bash
-          # Docker Hub
-          docker pull thsrite/config-flow:${VERSION_NUM}
-          docker pull thsrite/config-flow:latest
-
-          # 快速启动
-          docker run -d \\
-            -p 80:80 \\
-            -v ./data:/data \\
-            --name config-flow \\
-            thsrite/config-flow:latest
-          \`\`\`
-
-          ### ✨ 更新内容
-
-          EOF
+          {
+            echo "## 🚀 ConfigFlow ${VERSION}"
+            echo ""
+            if [ "${IS_PRERELEASE}" = "true" ]; then
+              echo "> ⚠️ 预发布版本：仅推送具体版本号标签，不会移动浮动标签 \`latest\` / \`autoupdate\`。"
+              echo ""
+            fi
+            if [[ "${VERSION}" == v3.0.0* ]] && [ -f doc/guide/upgrade-v3.md ]; then
+              echo "📖 **从 v2.x（Python 版）升级前请先阅读**：[v3.0.0 升级说明](https://github.com/${REPO}/blob/${VERSION}/doc/guide/upgrade-v3.md)"
+              echo ""
+            fi
+            echo "### 📦 Docker 镜像（多架构：\`linux/amd64\`、\`linux/arm64\`）"
+            echo ""
+            echo "面板镜像与配套 Docker Agent 镜像按同一版本号同步发布（面板内置 Linux Shell Agent 包含 \`amd64\` / \`arm64\` / \`armv7\`）："
+            echo ""
+            echo '```bash'
+            echo "# 面板镜像（固定版本）"
+            echo "docker pull ${IMAGE_NAMESPACE}/config-flow:${VERSION_NUM}"
+            echo "docker pull ${IMAGE_NAMESPACE}/config-flow:${VERSION_NUM}-autoupdate"
+            echo ""
+            echo "# 配套 Docker Agent 镜像（与面板同版本）"
+            echo "docker pull ${IMAGE_NAMESPACE}/config-flow-agent:${VERSION_NUM}"
+            if [ "${PUBLISH_LATEST_TAG}" = "true" ]; then
+              echo ""
+              echo "# 浮动标签（正式版）"
+              echo "docker pull ${IMAGE_NAMESPACE}/config-flow:latest"
+              echo "docker pull ${IMAGE_NAMESPACE}/config-flow:autoupdate"
+            fi
+            echo ""
+            echo "# 快速启动"
+            echo "docker run -d \\"
+            echo "  -p 5010:80 \\"
+            echo "  -v ./data:/data \\"
+            echo "  -e DATA_DIR=/data \\"
+            echo "  -e TZ=Asia/Shanghai \\"
+            echo "  --stop-timeout 10 \\"
+            echo "  --name config-flow \\"
+            echo "  ${IMAGE_NAMESPACE}/config-flow:${VERSION_NUM}"
+            echo '```'
+            echo ""
+            echo "### ✨ 更新内容"
+            echo ""
+          } > release_notes.md
 
           # 获取上一个 tag
-          PREV_TAG=$(git describe --tags --abbrev=0 ${VERSION}^ 2>/dev/null || echo "")
+          PREV_TAG=$(git describe --tags --abbrev=0 "${VERSION}^" 2>/dev/null || echo "")
 
           if [ -n "$PREV_TAG" ]; then
-            echo "#### 提交历史" >> release_notes.md
-            echo "" >> release_notes.md
-            git log ${PREV_TAG}..${VERSION} --pretty=format:"- %s (%h)" --no-merges >> release_notes.md
-            echo "" >> release_notes.md
-            echo "" >> release_notes.md
+            {
+              echo "#### 提交历史"
+              echo ""
+              git log "${PREV_TAG}..${VERSION}" --pretty=format:"- %s (%h)" --no-merges
+              echo ""
+              echo ""
+            } >> release_notes.md
           fi
 
           # 添加完整更新日志链接
           if [ -f CHANGELOG.md ]; then
-            echo "📝 查看完整更新日志：[CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)" >> release_notes.md
+            echo "📝 查看完整更新日志：[CHANGELOG.md](https://github.com/${REPO}/blob/main/CHANGELOG.md)" >> release_notes.md
           fi
 
       - name: Create Release
@@ -72,6 +117,6 @@ jobs:
         with:
           body_path: release_notes.md
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.version.outputs.is_prerelease == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
