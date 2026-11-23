@@ -914,7 +914,6 @@
       "RoutingLockedError.Error",
       "SettingsError.Error",
       "ValidationError.Error",
-      "text",
       "tokenizer.name"
     ],
     "product_imports": [
@@ -944,6 +943,7 @@
       "server/go.mod",
       "server/go.sum",
       "server/internal/jsondecode/jsondecode.go",
+      "server/internal/jsondecode/member.go",
       "server/internal/jsonresp/canonical.go",
       "server/internal/jsonresp/jsonresp.go",
       "server/internal/jsonresp/stored.go",
@@ -1048,6 +1048,7 @@
       "server/go.mod",
       "server/go.sum",
       "server/internal/jsondecode/jsondecode.go",
+      "server/internal/jsondecode/member.go",
       "server/internal/jsonresp/canonical.go",
       "server/internal/jsonresp/jsonresp.go",
       "server/internal/jsonresp/stored.go",
@@ -1152,6 +1153,7 @@
       "server/go.mod",
       "server/go.sum",
       "server/internal/jsondecode/jsondecode.go",
+      "server/internal/jsondecode/member.go",
       "server/internal/jsonresp/canonical.go",
       "server/internal/jsonresp/jsonresp.go",
       "server/internal/jsonresp/stored.go",
@@ -1474,7 +1476,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -1510,7 +1515,6 @@
       "PreviewTemplate",
       "Profile",
       "Profile.Settings",
-      "Profile.get",
       "ProfileFromJSON",
       "ReadCommonSettings",
       "ReadMatchTargets",
@@ -1772,7 +1776,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "CommonView",
@@ -1787,7 +1794,6 @@
       "NormalizeSettings",
       "Null",
       "Path",
-      "Profile.get",
       "ReferenceError.Error",
       "RoutingLockedError.Error",
       "RulesetDownload",
@@ -2007,7 +2013,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "CommonView",
@@ -2022,7 +2031,6 @@
       "NormalizeSettings",
       "Null",
       "Path",
-      "Profile.get",
       "ReferenceError.Error",
       "RoutingLockedError.Error",
       "RulesetDownload",
@@ -2235,7 +2243,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "DefaultSettings",
@@ -2247,12 +2258,10 @@
       "NormalizeSettings",
       "Path",
       "Profile.FieldIssues",
-      "Profile.get",
       "ReadCommonSettings",
       "S",
       "ToJSON",
       "get",
-      "has",
       "isMap",
       "isNum",
       "isStr",
@@ -2444,7 +2453,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -2480,7 +2492,6 @@
       "PreviewTemplate",
       "Profile",
       "Profile.Settings",
-      "Profile.get",
       "ProfileFromJSON",
       "ReadCommonSettings",
       "ReadMatchTargets",
@@ -2741,7 +2752,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -2777,7 +2791,6 @@
       "PreviewTemplate",
       "Profile",
       "Profile.Settings",
-      "Profile.get",
       "ProfileFromJSON",
       "ReadCommonSettings",
       "ReadMatchTargets",
@@ -3038,7 +3051,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -3074,7 +3090,6 @@
       "PreviewTemplate",
       "Profile",
       "Profile.Settings",
-      "Profile.get",
       "ProfileFromJSON",
       "ReadCommonSettings",
       "ReadMatchTargets",
@@ -3335,7 +3350,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -3371,7 +3389,6 @@
       "PreviewTemplate",
       "Profile",
       "Profile.Settings",
-      "Profile.get",
       "ProfileFromJSON",
       "ReadCommonSettings",
       "ReadMatchTargets",
@@ -3632,7 +3649,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -3668,7 +3688,6 @@
       "PreviewTemplate",
       "Profile",
       "Profile.Settings",
-      "Profile.get",
       "ProfileFromJSON",
       "ReadCommonSettings",
       "ReadMatchTargets",
@@ -3929,7 +3948,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -3965,7 +3987,6 @@
       "PreviewTemplate",
       "Profile",
       "Profile.Settings",
-      "Profile.get",
       "ProfileFromJSON",
       "ReadCommonSettings",
       "ReadMatchTargets",
@@ -4226,7 +4247,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -4262,7 +4286,6 @@
       "PreviewTemplate",
       "Profile",
       "Profile.Settings",
-      "Profile.get",
       "ProfileFromJSON",
       "ReadCommonSettings",
       "ReadMatchTargets",
@@ -4523,7 +4546,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -4559,7 +4585,6 @@
       "PreviewTemplate",
       "Profile",
       "Profile.Settings",
-      "Profile.get",
       "ProfileFromJSON",
       "ReadCommonSettings",
       "ReadMatchTargets",
@@ -4820,7 +4845,10 @@
       "server/internal/yamlx/yamlxtest/testdata/n73_index.json.gz",
       "server/internal/yamlx/yamlxtest/testdata/reader_history.json.gz",
       "server/internal/yamlx/yamlxtest/value.go",
-      "server/internal/yamlx/yamlxtest/writer.go"
+      "server/internal/yamlx/yamlxtest/writer.go",
+      "server/internal/jsondecode/member.go",
+      "server/internal/oxidns/settings_template.go",
+      "server/internal/rules/group_members.go"
     ],
     "product_symbols": [
       "ApplyCommonSettings",
@@ -4856,7 +4884,6 @@
       "PreviewTemplate",
       "Profile",
       "Profile.Settings",
-      "Profile.get",
       "ProfileFromJSON",
       "ReadCommonSettings",
       "ReadMatchTargets",
