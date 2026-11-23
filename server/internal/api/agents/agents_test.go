@@ -348,10 +348,23 @@ func TestHeartbeatEndpointRecordsStateAndRejectsUnknownAgents(t *testing.T) {
 }
 
 func TestHeartbeatReportedHostUsesAddressFollow(t *testing.T) {
-	h := newHeartbeat(t)
-	// When reported host matches stored host, upgrades.ConfirmedModel returns it.
+	s := newServer(t)
+	manager, err := agents.Get(s.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, token := registerAgentForTest(t, s.Context(), manager, map[string]any{"name": "confirmed", "host": "192.0.2.10"})
+	h := heartbeatEnv{s: s, id: id, token: token}
+	// The reported host is the stored one: nothing to follow, and
+	// upgrades.ConfirmedModel confirms it.
 	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "192.0.2.10"})).WantStatus(200),
 		map[string]any{"success": true, "domain_discovery_enabled": false, "traffic_history_enabled": false, "reads_host": true, "confirmed_host": "192.0.2.10"})
+	// A loopback report is not a usable address: nothing followed or confirmed.
+	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "127.0.0.1"})).WantStatus(200),
+		map[string]any{"success": true, "domain_discovery_enabled": false, "traffic_history_enabled": false, "reads_host": true})
+	if h.agent(t)["host"] != "192.0.2.10" {
+		t.Fatal("an unusable report changed the stored host")
+	}
 }
 
 func TestAgentItemUpdateAndDelete(t *testing.T) {
