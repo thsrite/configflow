@@ -489,6 +489,29 @@ func (r *Runtime) wait(ctx context.Context, g *generation, runners bool, drained
 // Names lists registered loops and startup work (not shutdown hooks).
 func (r *Runtime) Names() []string { return r.registry.names() }
 
+// RegisterPeriodic adds a periodic loop specification to r and starts it
+// immediately if the current generation is already eligible.
+func (r *Runtime) RegisterPeriodic(p Periodic) {
+	r.registry.RegisterPeriodic(p)
+	r.startEligible()
+}
+
+// RegisterStartup registers synchronous once-per-start work on r.
+func (r *Runtime) RegisterStartup(s Startup) { r.registry.RegisterStartup(s) }
+
+// RegisterShutdown registers a phased shutdown hook on r.
+func (r *Runtime) RegisterShutdown(h ShutdownHook) { r.registry.RegisterShutdown(h) }
+
+// Stop shuts down the current generation of r, bounded by timeout and its grace.
+func (r *Runtime) Stop(timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	r.Shutdown(ctx)
+}
+
+// ReportReady emits build-tag-specific readiness markers after Start.
+func (r *Runtime) ReportReady() { reportReady(r) }
+
 // clockContext bounds a context using the injected clock. Its one controller
 // goroutine is always joined by cancel; it never outlives the owning shutdown.
 func (r *Runtime) clockContext(parent context.Context, d time.Duration) (context.Context, func()) {

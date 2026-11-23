@@ -9,25 +9,23 @@ import (
 )
 
 func TestNewRegistersStartupAndPeriodicNames(t *testing.T) {
-	if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-		t.Fatal(err)
-	}
+	rt := lifecycle.NewProcessRuntime(lifecycle.Options{})
 	t.Cleanup(func() {
 		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
 			t.Error(err)
 		}
 	})
 
-	app, err := New(context.Background(), Options{})
+	app, err := New(context.Background(), Options{Runtime: rt})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if app == nil || app.HTTP == nil {
-		t.Fatal("New returned nil App or HTTP")
+	if app == nil || app.HTTP == nil || app.Runtime != rt {
+		t.Fatal("New returned unexpected App")
 	}
 
-	got := lifecycle.Names()
-	// Every startup step and periodic loop must be registered.
+	got := rt.Names()
+	// Every startup step and periodic loop must be registered on the injected Runtime.
 	wantRequired := []string{
 		"agent-manager-init",
 		"agent-rule-sync",

@@ -267,13 +267,19 @@ func periodic() lifecycle.Periodic {
 		Round:   func(ctx context.Context) error { round(ctx); return nil }}
 }
 
-// Wire registers native task builders/runners and the tracked refresh loop.
-func Wire() {
+// Wire registers native task builders/runners and the tracked refresh loop on the default runtime.
+func Wire() { WireOn(lifecycle.Current()) }
+
+// WireOn registers native task builders/runners and the tracked refresh loop on rt.
+func WireOn(rt *lifecycle.Runtime) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
 	tasks.SetRowBuilder(tasks.SlotSubscriptions, SubscriptionTasks)
 	tasks.SetRowBuilder(tasks.SlotRuleSources, RuleTasks)
 	tasks.SetRunner("subscription", runTask)
 	tasks.SetRunner("rule_source", runTask)
-	lifecycle.RegisterPeriodic(periodic())
+	rt.RegisterPeriodic(periodic())
 }
 
 var rulesRefreshed struct {

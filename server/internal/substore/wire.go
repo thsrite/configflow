@@ -58,22 +58,30 @@ func SetDefault(s *Service) (restore func()) {
 // NativeConverter supplies the shared typed node-conversion collaborator.
 func NativeConverter() convert.NodeConverter { return Default().Client }
 
-// Wire registers the startup work of backend/app.py::initialize_app that
-// belongs to this module: the Sub-Store idle monitor (only with the bundled
-// Sub-Store) and the one-time removal of node caches of deleted
-// subscriptions.
-func Wire() {
+// Wire registers the Sub-Store idle monitor on the default runtime.
+func Wire() { WireOn(lifecycle.Current()) }
+
+// WireOn registers the Sub-Store idle monitor on rt.
+func WireOn(rt *lifecycle.Runtime) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
 	service := Default()
 	if service.Env.IsBuiltinAvailable() {
 		service.Runtime.warnTempDirectory()
-		lifecycle.RegisterPeriodic(service.Runtime.idlePeriodic())
+		rt.RegisterPeriodic(service.Runtime.idlePeriodic())
 	}
 }
 
-// RegisterStartup registers cache pruning, allowing main to order it between
-// configuration preparation and Agent initialization before wiring the app.
-func RegisterStartup() {
-	lifecycle.RegisterStartup(lifecycle.Startup{Name: "subscription-cache-prune", Run: func(ctx context.Context) error {
+// RegisterStartup registers cache pruning on the default runtime.
+func RegisterStartup() { RegisterStartupOn(lifecycle.Current()) }
+
+// RegisterStartupOn registers cache pruning on rt.
+func RegisterStartupOn(rt *lifecycle.Runtime) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
+	rt.RegisterStartup(lifecycle.Startup{Name: "subscription-cache-prune", Run: func(ctx context.Context) error {
 		// Caches of deleted subscriptions hold node credentials.
 		_, err := PruneOrphanCaches(ctx)
 		return err

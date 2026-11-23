@@ -44,10 +44,17 @@ func WakeLoop() { loop.Wake() }
 
 var wakeOnce sync.Once
 
-func Wire() {
+// Wire registers rule sync on the default lifecycle runtime.
+func Wire() { WireOn(lifecycle.Current()) }
+
+// WireOn registers rule sync on rt.
+func WireOn(rt *lifecycle.Runtime) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
 	agents.SetRuleSyncRow(agentTaskRow)
 	wakeOnce.Do(func() { refresh.OnRulesRefreshed(WakeLoop) })
-	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "agent-rule-sync", Start: lifecycle.AfterFirstRequest, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
+	rt.RegisterPeriodic(lifecycle.Periodic{Name: "agent-rule-sync", Start: lifecycle.AfterFirstRequest, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
 		s, e := Get(ctx)
 		if e != nil {
 			return e

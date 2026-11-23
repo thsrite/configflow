@@ -256,11 +256,17 @@ func automaticRound(ctx context.Context) error {
 	return nil
 }
 
-// Wire registers task providers and the automatic discovery periodic.
-func Wire() {
+// Wire registers task providers and the automatic discovery periodic on the default runtime.
+func Wire() { WireOn(lifecycle.Current()) }
+
+// WireOn registers task providers and the automatic discovery periodic on rt.
+func WireOn(rt *lifecycle.Runtime) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
 	wireTasks()
-	lifecycle.RegisterPeriodic(autoPeriodic())
-	lifecycle.RegisterShutdown(matcherShutdown(clearMatcherCache))
+	rt.RegisterPeriodic(autoPeriodic())
+	rt.RegisterShutdown(matcherShutdown(clearMatcherCache))
 }
 
 func autoStopping(ctx context.Context) bool {

@@ -173,9 +173,16 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 	return idle, nil
 }
 
-// Wire installs A14 enrollment and the last Manager-init scheduler hook. The
-// checker accessor comes from A13 through server composition, never a new cache.
+// Wire installs A14 enrollment and the Manager-init scheduler hook on the default runtime.
 func Wire(checker func(*agents.Manager) *contentsync.Checker) {
+	WireOn(lifecycle.Current(), checker)
+}
+
+// WireOn installs A14 enrollment and the Manager-init scheduler hook on rt.
+func WireOn(rt *lifecycle.Runtime, checker func(*agents.Manager) *contentsync.Checker) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
 	deploy.SetIPv6Enroll(func(ctx context.Context, m *agents.Manager, id, did string, src *deploy.Source) error {
 		b, e := src.Raw()
 		if e != nil {
@@ -197,7 +204,7 @@ func Wire(checker func(*agents.Manager) *contentsync.Checker) {
 			}
 			scheduler.Unlock()
 		})
-		lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "ipv6-verification-scheduler", FirstDelay: 0, Interval: schedulerLoop.Interval, Wake: schedulerLoop.Signal(), Round: schedulerRound})
+		rt.RegisterPeriodic(lifecycle.Periodic{Name: "ipv6-verification-scheduler", FirstDelay: 0, Interval: schedulerLoop.Interval, Wake: schedulerLoop.Signal(), Round: schedulerRound})
 	})
 }
 

@@ -35,12 +35,18 @@ func ForManager(m *agents.Manager) *Service {
 	return s
 }
 
-// Register supplies HA hooks and the 0/2-second boot loop.
-func Register() {
+// Register supplies HA hooks and the 0/2-second boot loop on the default runtime.
+func Register() { RegisterOn(lifecycle.Current()) }
+
+// RegisterOn supplies HA hooks and the 0/2-second boot loop on rt.
+func RegisterOn(rt *lifecycle.Runtime) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
 	installHooks()
 	agents.OnManagerInit(func(_ context.Context, m *agents.Manager) { Wire(m) })
 	rulesync.SetPairAdvance(func(ctx context.Context, m *agents.Manager, id string) { _, _ = ForManager(m).Advance(ctx, id) })
-	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "oxidns-ha-publish", Start: lifecycle.AtBoot, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
+	rt.RegisterPeriodic(lifecycle.Periodic{Name: "oxidns-ha-publish", Start: lifecycle.AtBoot, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
 		m, e := agents.Get(ctx)
 		if e != nil {
 			return e

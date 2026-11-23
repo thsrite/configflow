@@ -43,10 +43,15 @@ func Reset() {
 	ResetFlushState()
 }
 
-// RegisterStartup registers history loading as a synchronous startup step.
-// Main calls it in startup order; Wire's repeated registration retains its slot.
-func RegisterStartup() {
-	lifecycle.RegisterStartup(historyStartup())
+// RegisterStartup registers history loading on the default runtime.
+func RegisterStartup() { RegisterStartupOn(lifecycle.Current()) }
+
+// RegisterStartupOn registers history loading as a synchronous startup step on rt.
+func RegisterStartupOn(rt *lifecycle.Runtime) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
+	rt.RegisterStartup(historyStartup())
 }
 
 func historyStartup() lifecycle.Startup {
@@ -106,11 +111,14 @@ func deleteHistoryContext(ctx context.Context, m *agents.Manager, id string) err
 	return err
 }
 
-// Wire is A04's entry in internal/server wirePackages: the registry hooks
-// (heartbeat metrics, Agent deletion), synchronous saved-history Startup,
-// the task-list row with "run now" and the interval edit, the flush loop,
-// and the two phased saves at shutdown.
-func Wire() {
+// Wire installs metrics hooks, task row/runner, and lifecycle loops on the default runtime.
+func Wire() { WireOn(lifecycle.Current()) }
+
+// WireOn installs metrics hooks, task row/runner, and lifecycle loops on rt.
+func WireOn(rt *lifecycle.Runtime) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
 	agents.RegisterHooks(agents.Hooks{AddMetricsJSON: addMetricsJSON, DeleteMetricsHistoryContext: deleteHistoryContext})
 	tasks.SetRowBuilder(tasks.SlotMetrics, BuildRows)
 	tasks.SetRunner(TaskKey, runNow)
@@ -120,9 +128,9 @@ func Wire() {
 		}
 		return SetFlushInterval(ctx, *value)
 	})
-	lifecycle.RegisterPeriodic(flushPeriodic())
-	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-first", Phase: lifecycle.PhaseStopSignal, Run: func(ctx context.Context) { shutdownFlush(ctx, true) }})
-	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-last", Phase: lifecycle.PhaseAfterDrain, Run: func(ctx context.Context) { shutdownFlush(ctx, false) }})
+	rt.RegisterPeriodic(flushPeriodic())
+	rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-first", Phase: lifecycle.PhaseStopSignal, Run: func(ctx context.Context) { shutdownFlush(ctx, true) }})
+	rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "metrics-history-flush-last", Phase: lifecycle.PhaseAfterDrain, Run: func(ctx context.Context) { shutdownFlush(ctx, false) }})
 }
 
 // shutdownFlush runs one save in its own repository scope. The stop-signal

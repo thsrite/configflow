@@ -23,6 +23,41 @@ var defaultStarting int
 
 func currentRuntime() *Runtime { defaultMu.Lock(); defer defaultMu.Unlock(); return defaultRuntime }
 
+// Current returns the process default Runtime (transitional helper until W9/W11
+// remove the remaining package-level lifecycle registrations).
+func Current() *Runtime { return currentRuntime() }
+
+// NewProcessRuntime constructs a Runtime configured with the build's mode and
+// a fresh Registry when opts.Registry is nil.
+func NewProcessRuntime(opts Options) *Runtime {
+	if opts.Registry == nil {
+		opts.Registry = NewRegistry()
+	}
+	opts.Mode = defaultMode()
+	return NewRuntime(opts)
+}
+
+// UseRuntime replaces an idle/stopped default runtime with rt so packages not
+// yet migrated to explicit Runtime injection (internal/routers until W9) and
+// legacy RequestSeen callers share rt.
+func UseRuntime(rt *Runtime) error {
+	if rt == nil {
+		return nil
+	}
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
+	r := defaultRuntime
+	r.mu.Lock()
+	g := r.current
+	running := defaultStarting > 0 || r.pending > 0 || g != nil && !g.closed && (g.started || g.draining)
+	r.mu.Unlock()
+	if running {
+		return ErrRunning
+	}
+	defaultRuntime = rt
+	return nil
+}
+
 // Configure replaces an idle/stopped default runtime, preserving registrations
 // when Registry is nil. Its mode is fixed by the build, never by environment or
 // options. Active jobs or Start/Shutdown in progress return ErrRunning.

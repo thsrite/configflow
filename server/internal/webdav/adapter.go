@@ -132,11 +132,16 @@ func Subscribe(r *repo.Repository) func() {
 	return r.OnConfigurationCommitted(commitObserver(automaticWorker))
 }
 
-// WireTasksAndStartup registers the WebDAV task runner and startup step
-// without installing global repository hooks.
-func WireTasksAndStartup() {
+// WireTasksAndStartup registers the WebDAV task runner and startup step on the default runtime.
+func WireTasksAndStartup() { WireTasksAndStartupOn(lifecycle.Current()) }
+
+// WireTasksAndStartupOn registers the WebDAV task runner and startup step on rt.
+func WireTasksAndStartupOn(rt *lifecycle.Runtime) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
 	wireTasks()
-	lifecycle.RegisterStartup(workerStartup(automaticWorker, lifecycle.DefaultSpawner{}, lifecycle.RegisterShutdown))
+	rt.RegisterStartup(workerStartup(automaticWorker, rt, rt.RegisterShutdown))
 }
 
 // Wire installs the post-commit hook and bounded shutdown handling.

@@ -34,9 +34,14 @@ func ForManager(m *agents.Manager) *Service {
 // Wire initializes the DNS-follow owner when the registry manager is replaced.
 func Wire(m *agents.Manager) { ForManager(m) }
 
-// Register installs the boot loop and C07 row/runner without synthesizing the
-// missing rule-sync half of the Agent task slot.
-func Register() {
+// Register installs the boot loop and C07 row/runner on the default runtime.
+func Register() { RegisterOn(lifecycle.Current()) }
+
+// RegisterOn installs the boot loop and C07 row/runner on rt.
+func RegisterOn(rt *lifecycle.Runtime) {
+	if rt == nil {
+		rt = lifecycle.Current()
+	}
 	agents.OnManagerInit(func(_ context.Context, m *agents.Manager) { Wire(m) })
 	agents.SetDNSFollowRow(agentTaskRow)
 	tasks.SetRunner("dns_follow", func(ctx context.Context, _, id string) error {
@@ -51,7 +56,7 @@ func Register() {
 		}
 		return e
 	})
-	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "dns-follow", Start: lifecycle.AtBoot, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
+	rt.RegisterPeriodic(lifecycle.Periodic{Name: "dns-follow", Start: lifecycle.AtBoot, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
 		m, e := agents.Get(ctx)
 		if e == nil {
 			e = ForManager(m).Tick(ctx)

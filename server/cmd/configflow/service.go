@@ -123,11 +123,12 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 		}
 		return drainServers(ctx, backend, web)
 	}
-	if err := lifecycle.Configure(lifecycle.Options{Grace: grace, Drain: drain}); err != nil {
+	rt := lifecycle.NewProcessRuntime(lifecycle.Options{Grace: grace, Drain: drain})
+	if err := lifecycle.UseRuntime(rt); err != nil {
 		return err
 	}
-	defer lifecycle.Stop(grace)
-	srv, err := server.New(work, server.Options{Repo: repository})
+	defer rt.Stop(grace)
+	srv, err := server.New(work, server.Options{Repo: repository, Runtime: rt})
 	if err != nil {
 		return err
 	}
@@ -137,7 +138,7 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	if opts.register != nil {
 		opts.register(app)
 	}
-	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "http-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) {
+	rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "http-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) {
 		_ = backend.Close()
 		if web != nil {
 			_ = web.Close()
@@ -146,20 +147,20 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	// Ranking and traffic database connections are operation-scoped and closed
 	// by their owners; the configuration store keeps idle read connections,
 	// closed here after every request and loop has stopped.
-	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "store-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { repository.Close() }})
-	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "logs-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { flushLog() }})
-	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "instance-release", Phase: lifecycle.PhaseClose, Run: func(context.Context) { owner.Release() }})
+	rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "store-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { repository.Close() }})
+	rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "logs-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { flushLog() }})
+	rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "instance-release", Phase: lifecycle.PhaseClose, Run: func(context.Context) { owner.Release() }})
 	// Registered after every package's stop-signal hook (Wire and opts.register
 	// ran above), so it marks the end of the first shutdown save.
 	firstSaveDone := make(chan struct{})
 	var markFirstSave sync.Once
-	lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "stop-signal-saved", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
+	rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "stop-signal-saved", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
 		markFirstSave.Do(func() { close(firstSaveDone) })
 	}})
 	if err := writeTestManifest(app); err != nil {
 		return err
 	}
-	lifecycle.RunStartup(work)
+	rt.RunStartup(work)
 	listen := opts.listen
 	if listen == nil {
 		listen = net.Listen
@@ -197,7 +198,8 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 		logx.Get("backend.app").Info("Web UI listening on port " + strconv.Itoa(port))
 	}
 	printStartupBanner(address)
-	lifecycle.Start(work)
+	rt.Start(work)
+	rt.ReportReady()
 	logx.Get("backend.app").Info(msgInitialized)
 	if opts.ready != nil {
 		opts.ready(listener.Addr())
@@ -217,7 +219,7 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 			}
 			stopped <- err
 		}()
-		lifecycle.Stop(grace)
+		rt.Stop(grace)
 	}()
 	for {
 		select {
