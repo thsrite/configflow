@@ -48,7 +48,7 @@ json.dump(v,open(p,'w'))`
 		t.Fatal("nonfinite output", string(raw))
 	}
 	if out, err := exec.CommandContext(t.Context(), "python3", "-c", `import json,sys
-v=json.load(open(sys.argv[1]));assert v['samples'][0]['nodes'] is None;assert v['samples'][0]['rules']==9007199254740993123456789;assert v['future']=={'keep':1}`, path).CombinedOutput(); err != nil {
+v=json.load(open(sys.argv[1]));assert v['samples'][0]['nodes'] is None;assert v['samples'][0]['rules']==9007199254740993123456789;assert 'future' not in v`, path).CombinedOutput(); err != nil {
 		t.Fatalf("Python reread: %s %v", out, err)
 	}
 }

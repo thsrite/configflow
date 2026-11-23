@@ -217,6 +217,9 @@ func readCache(ctx context.Context, id string, summary bool) (*cache, error) {
 	}
 	// Summary routes tolerate a malformed legacy node collection, while a
 	// publication still rejects it before conversion or cache writes.
+	if !summary && v.NodesDamaged() {
+		return nil, errors.New("cached nodes must be an array of node objects")
+	}
 	if summary && v.NodesDamaged() {
 		var fields object
 		if err := json.Unmarshal(data, &fields); err != nil {

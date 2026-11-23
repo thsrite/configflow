@@ -138,13 +138,13 @@ type clientOptions struct {
 	HopInterval         *clientText             `json:"hop-interval"`
 	Down                *clientText             `json:"down"`
 	IdleSessionTimeout  *clientText             `json:"idle-session-timeout"`
-	UDP                 *bool                   `json:"udp" stored:"gate"`
-	UDPRelay            *bool                   `json:"udp-relay" stored:"gate"`
-	TLS                 *bool                   `json:"tls" stored:"gate"`
-	SkipCertVerify      *bool                   `json:"skip-cert-verify" stored:"gate"`
-	Reuse               *bool                   `json:"reuse" stored:"gate"`
-	TFO                 *bool                   `json:"tfo" stored:"gate"`
-	UDPOverTCP          *bool                   `json:"udp-over-tcp" stored:"gate"`
+	UDP                 *bool                   `json:"udp"`
+	UDPRelay            *bool                   `json:"udp-relay"`
+	TLS                 *bool                   `json:"tls"`
+	SkipCertVerify      *bool                   `json:"skip-cert-verify"`
+	Reuse               *bool                   `json:"reuse"`
+	TFO                 *bool                   `json:"tfo"`
+	UDPOverTCP          *bool                   `json:"udp-over-tcp"`
 	WS                  *clientTransportOptions `json:"ws-opts"`
 	WSConfig            *clientTransportOptions `json:"ws-config"`
 	HTTP                *clientTransportOptions `json:"http-opts"`
@@ -189,11 +189,22 @@ func decodeClientOptions(node *yamlx.Node) (clientOptions, error) {
 	if err := json.Unmarshal(data, &members); err != nil || members == nil {
 		return result, fmt.Errorf("%s: %w", msgClientOptions, model.ErrType)
 	}
-	// Options of the wrong type read as absent; a switch of another type
-	// than a boolean is off (stored:"gate") and reported.
+	// Options of the wrong type read as absent and are reported.
 	issues, err := model.DecodeStored(data, &result, "")
 	if err != nil {
 		return result, fmt.Errorf("%s: %w", msgClientOptions, err)
+	}
+	// A switch is only a JSON boolean: null or another type is absent
+	// (readers apply their default), as before O18 T1d.
+	for _, flag := range []struct {
+		name  string
+		value **bool
+	}{{"udp", &result.UDP}, {"udp-relay", &result.UDPRelay}, {"tls", &result.TLS}, {"skip-cert-verify", &result.SkipCertVerify}, {"reuse", &result.Reuse}, {"tfo", &result.TFO}, {"udp-over-tcp", &result.UDPOverTCP}} {
+		switch raw := bytes.TrimSpace(members[flag.name]); string(raw) {
+		case "true", "false":
+		default:
+			*flag.value = nil
+		}
 	}
 	result.ALPNRaw = bytes.Clone(members["alpn"])
 	if raw := bytes.TrimSpace(members["reality-opts"]); len(raw) > 0 && raw[0] == '{' {

@@ -101,9 +101,8 @@ func (f Fields) index(name string) int {
 }
 
 // UnmarshalJSON reads a JSON object (anything else is ErrType; a repeated
-// member name is ErrJSON). Invalid UTF-8 in values reads as U+FFFD.
+// member name or invalid UTF-8 is ErrJSON).
 func (f *Fields) UnmarshalJSON(data []byte) error {
-	data = validUTF8(data)
 	if err := validJSON(data); err != nil {
 		return err
 	}

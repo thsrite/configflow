@@ -51,6 +51,20 @@ func clientOptionsReplayIssue(kind string, params *yamlx.Node, target string) st
 	if err != nil {
 		return "node.params schema"
 	}
+	if data, err := yamlx.ToJSON(params); err == nil && params != nil && !nullNode(params) {
+		var view clientOptions
+		if issues, err := model.DecodeStored(data, &view, ""); err == nil {
+			// The options' own members are reported before nested ones,
+			// as the classification index was recorded.
+			for _, nested := range []bool{false, true} {
+				for _, issue := range issues {
+					if issue.Kind == model.IssueType && strings.Contains(issue.Path, ".") == nested {
+						return "options." + issue.Path + " R5"
+					}
+				}
+			}
+		}
+	}
 	for key, value := range yamlx.Pairs(params) {
 		if nullNode(value) {
 			return "options." + key + " null absent"
