@@ -78,8 +78,8 @@ func TestR17RawWireAndProductionTimeouts(t *testing.T) {
 				d = driver
 			} else {
 				driver := NewIkuai(server.URL, routerfake.IkuaiUser, routerfake.IkuaiPassword, false)
-				spy = &r17Timeouts{DeviceHTTP: driver.client}
-				driver.client = spy
+				spy = &r17Timeouts{DeviceHTTP: driver.HTTP()}
+				driver.SetHTTP(spy)
 				d = driver
 			}
 			defer d.Close()

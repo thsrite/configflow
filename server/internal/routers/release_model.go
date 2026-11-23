@@ -127,12 +127,6 @@ type ReturnRemoveOp struct {
 	Previous      json.RawMessage `json:"previous,omitempty"`
 }
 
-// OpKind returns the group operation discriminator.
-func (op GroupOp) OpKind() string { return op.Kind }
-
-// OpSummary returns the group operation's user-facing summary.
-func (op GroupOp) OpSummary() string { return op.Summary }
-
 // ReleaseEntry is one execution or compensation outcome.
 type ReleaseEntry struct {
 	Stage   string `json:"stage"`

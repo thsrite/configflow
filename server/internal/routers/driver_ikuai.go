@@ -5,7 +5,23 @@ import (
 	"encoding/json"
 
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 )
+
+// Ikuai is the composed iKuai 4.x driver: it embeds the low-level client and adds ReadState.
+type Ikuai struct {
+	*ikuai.Client
+}
+
+// NewIkuai constructs an iKuai 4.x driver with requests-compatible device HTTP.
+func NewIkuai(endpoint, username, password string, verifyTLS bool) *Ikuai {
+	return &Ikuai{Client: ikuai.NewClient(endpoint, username, password, verifyTLS)}
+}
+
+// NewIkuaiWithHTTP creates an iKuai driver with an injected device client.
+func NewIkuaiWithHTTP(endpoint, username, password string, client DeviceHTTP) *Ikuai {
+	return &Ikuai{Client: ikuai.NewClientWithHTTP(endpoint, username, password, client)}
+}
 
 // ReadState reads static routes, IP groups, NAT filters, 端口分流 rules, and
 // the routes the router forwards with. 端口分流 rules route proxy CIDRs: a
@@ -19,13 +35,13 @@ func (d *Ikuai) ReadState(ctx context.Context) (*RouterState, error) {
 		return nil, err
 	}
 	for _, row := range routes {
-		if dst, ok := ikuaiNetwork(row); ok {
-			state.Routes = append(state.Routes, device.NewRoute(row.text("id"), dst, row.text("gateway"),
-				row.is("enabled", "yes"), percentDecode(row.text("comment"))))
+		if dst, ok := ikuai.Network(row); ok {
+			state.Routes = append(state.Routes, device.NewRoute(row.Text("id"), dst, row.Text("gateway"),
+				row.Is("enabled", "yes"), ikuai.PercentDecode(row.Text("comment"))))
 		}
 	}
 	// IDs are optional here: only an edit or delete of one of our groups needs one.
-	groups, err := d.readGroups(ctx)
+	groups, err := d.ReadGroups(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -41,33 +57,33 @@ func (d *Ikuai) ReadState(ctx context.Context) (*RouterState, error) {
 		return nil, err
 	}
 	for _, row := range natRows {
-		if !row.is("action", "filter") {
+		if !row.Is("action", "filter") {
 			continue
 		}
-		state.NatBypass = append(state.NatBypass, &NatBypassEntry{ID: row.text("id"),
-			Dst: ikuaiAddresses(row["dst_addr"], state.AddressSets, byGID), Src: ikuaiAddresses(row["src_addr"], state.AddressSets, byGID),
-			Enabled: row.is("enabled", "yes"), Comment: percentDecode(row.text("comment")), Attributes: json.RawMessage("{}")})
+		state.NatBypass = append(state.NatBypass, &NatBypassEntry{ID: row.Text("id"),
+			Dst: ikuai.Addresses(row["dst_addr"], state.AddressSets, byGID), Src: ikuai.Addresses(row["src_addr"], state.AddressSets, byGID),
+			Enabled: row.Is("enabled", "yes"), Comment: ikuai.PercentDecode(row.Text("comment")), Attributes: json.RawMessage("{}")})
 	}
 	policyRaw, err := d.ListAll(ctx, "stream_ipport", "", true, "")
 	if err != nil {
 		return nil, err
 	}
-	policyRows := decodeRows(policyRaw)
+	policyRows := ikuai.DecodeRows(policyRaw)
 	for _, row := range policyRows {
-		entry := &PolicyRouteEntry{ID: row.text("id"), Dst: ikuaiAddresses(row["dst_addr"], state.AddressSets, byGID),
-			Enabled: row.is("enabled", "yes"), Comment: row.text("comment"),
-			Src:       ikuaiAddresses(row["src_addr"], state.AddressSets, byGID),
-			SrcInvert: numberEquals(row["src_addr_inv"], 1), DstInvert: numberEquals(row["dst_addr_inv"], 1),
-			Protocol: row.text("protocol")}
-		if numberEquals(row["type"], ikuaiPolicyNexthop) {
-			entry.Gateway = row.text("nexthop")
+		entry := &PolicyRouteEntry{ID: row.Text("id"), Dst: ikuai.Addresses(row["dst_addr"], state.AddressSets, byGID),
+			Enabled: row.Is("enabled", "yes"), Comment: row.Text("comment"),
+			Src:       ikuai.Addresses(row["src_addr"], state.AddressSets, byGID),
+			SrcInvert: ikuai.NumberEquals(row["src_addr_inv"], 1), DstInvert: ikuai.NumberEquals(row["dst_addr_inv"], 1),
+			Protocol: row.Text("protocol")}
+		if ikuai.NumberEquals(row["type"], ikuai.PolicyNexthop) {
+			entry.Gateway = row.Text("nexthop")
 		}
-		if prio, ok := jsonInt(row["prio"]); ok {
+		if prio, ok := ikuai.JSONInt(row["prio"]); ok {
 			entry.Priority = &prio
 		}
 		state.PolicyRoutes = append(state.PolicyRoutes, entry)
 	}
-	state.IkuaiGroups = ReadGroupRules(groups, decodeRows(natRows), policyRows)
-	state.ActiveRoutes = d.activeRoutes(ctx)
+	state.IkuaiGroups = ikuai.ReadGroupRules(groups, ikuai.DecodeRows(natRows), policyRows)
+	state.ActiveRoutes = d.ActiveRoutes(ctx)
 	return state, nil
 }

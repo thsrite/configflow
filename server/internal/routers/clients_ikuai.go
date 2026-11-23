@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"context"
 	"fmt"
 	"net/netip"
@@ -12,18 +13,18 @@ import (
 	"configflow/internal/routerdoc"
 )
 
-func clientText(row ikuaiRow, key string) string {
+func clientText(row ikuai.Row, key string) string {
 	switch v := row[key].(type) {
 	case string:
-		return strings.TrimSpace(replyText(DecodeIkuaiValue(v, key)))
+		return strings.TrimSpace(ikuai.ReplyText(ikuai.DecodeIkuaiValue(v, key)))
 	default:
-		if n, ok := jsonInt(v); ok {
+		if n, ok := ikuai.JSONInt(v); ok {
 			return strconv.FormatInt(n, 10)
 		}
 	}
 	return ""
 }
-func clientName(row ikuaiRow) string {
+func clientName(row ikuai.Row) string {
 	for _, key := range []string{"comment", "termname", "hostname"} {
 		if name := clientText(row, key); name != "" {
 			return name
@@ -31,8 +32,8 @@ func clientName(row ikuaiRow) string {
 	}
 	return ""
 }
-func (d *Ikuai) clientRows(ctx context.Context, name string) ([]ikuaiRow, error) {
-	result := []ikuaiRow{}
+func (d *Ikuai) clientRows(ctx context.Context, name string) ([]ikuai.Row, error) {
+	result := []ikuai.Row{}
 	for page := 0; page < 10; page++ {
 		reply, err := d.Call(ctx, name, map[string]any{"TYPE": "data,total", "limit": fmt.Sprintf("%d,1000", page*1000)})
 		if err != nil {
@@ -42,24 +43,24 @@ func (d *Ikuai) clientRows(ctx context.Context, name string) ([]ikuaiRow, error)
 		count := 0
 		for _, v := range data {
 			if row, ok := v.(map[string]any); ok {
-				result = append(result, ikuaiRow(row))
+				result = append(result, ikuai.Row(row))
 				count++
 			}
 		}
-		total, err := strconv.Atoi(replyText(reply["total"]))
+		total, err := strconv.Atoi(ikuai.ReplyText(reply["total"]))
 		if count < 1000 || err == nil && len(result) >= total {
 			break
 		}
 	}
 	return result, nil
 }
-func ikuaiClient(row ikuaiRow, online bool) *routerdoc.Sighting {
-	ip := routerdoc.IPv4(row.text("ip_addr"))
+func ikuaiClient(row ikuai.Row, online bool) *routerdoc.Sighting {
+	ip := routerdoc.IPv4(row.Text("ip_addr"))
 	if ip == "" {
 		return nil
 	}
 	s := routerdoc.NewSighting(ip)
-	s.MAC = routerdoc.NormalizeMAC(row.text("mac"))
+	s.MAC = routerdoc.NormalizeMAC(row.Text("mac"))
 	s.Hostname = clientName(row)
 	if online {
 		s.AddSource("online")
@@ -69,9 +70,9 @@ func ikuaiClient(row ikuaiRow, online bool) *routerdoc.Sighting {
 		s.AddSource("lease")
 		s.Presence = "offline"
 		s.Basis = "absent"
-		start, a := jsonInt(row["start_time"])
-		end, b := jsonInt(row["end_time"])
-		left, c := jsonInt(row["timeout"])
+		start, a := ikuai.JSONInt(row["start_time"])
+		end, b := ikuai.JSONInt(row["end_time"])
+		left, c := ikuai.JSONInt(row["timeout"])
 		if a && b && c && left >= 0 && end-start >= left {
 			n := end - start - left
 			s.LastSeen = &n
@@ -123,7 +124,7 @@ func (d *Ikuai) ReadClients(ctx context.Context, opts ClientReadOptions) (*route
 		if !ok {
 			continue
 		}
-		for _, part := range strings.Fields(strings.ReplaceAll(ikuaiRow(row).text("ip_mask"), ",", " ")) {
+		for _, part := range strings.Fields(strings.ReplaceAll(ikuai.Row(row).Text("ip_mask"), ",", " ")) {
 			if p, ok := clientInterface(part); ok {
 				r.Own[p.Addr().String()] = true
 				r.LAN = append(r.LAN, p.Masked())

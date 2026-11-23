@@ -1,4 +1,4 @@
-package routers
+package ikuai
 
 // Typed iKuai write forms for objects ConfigFlow creates. Edits and restores
 // send an open device record (ikuaiRow) instead: they must write back every
@@ -12,8 +12,8 @@ type ikuaiForm interface {
 	formID() string
 }
 
-func (r ikuaiRow) formTag() string { s, _ := r["tagname"].(string); return s }
-func (r ikuaiRow) formID() string  { return r.text("id") }
+func (r Row) formTag() string { s, _ := r["tagname"].(string); return s }
+func (r Row) formID() string  { return r.Text("id") }
 
 // ikuaiAddressSet is an address or port field: literal entries and IP group
 // references.

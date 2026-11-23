@@ -19,6 +19,7 @@ import (
 
 	"configflow/internal/devhttp"
 	"configflow/internal/routers"
+	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -186,7 +187,7 @@ func TestIkuaiMalformedDeviceDataNeverPanics(t *testing.T) {
 				call(fmt.Sprintf("op %d", i), func() error { _, err := driver.Apply(context.Background(), mustJSON(t, op)); return err })
 			}
 			call("oversized", func() error {
-				routers.IkuaiOversizedRequests([]json.RawMessage{mustJSON(t, map[string]any{"kind": "nat_update", "groups": value})})
+				ikuai.IkuaiOversizedRequests([]json.RawMessage{mustJSON(t, map[string]any{"kind": "nat_update", "groups": value})})
 				return nil
 			})
 		})
@@ -250,7 +251,7 @@ func TestIkuaiRequestBytesBoundsTheBody(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := routers.IkuaiRequestBytes("nat_rule", "edit", payload); got < len(body) {
+		if got := ikuai.IkuaiRequestBytes("nat_rule", "edit", payload); got < len(body) {
 			t.Fatalf("IkuaiRequestBytes = %d < %d sent", got, len(body))
 		}
 	}

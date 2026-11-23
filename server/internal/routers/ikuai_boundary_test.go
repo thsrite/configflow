@@ -10,6 +10,7 @@ package routers_test
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"context"
 	"encoding/json"
 	"errors"
@@ -283,11 +284,11 @@ func runGoIkuai(t *testing.T, tc ikuaiCase, endpoint string) ikuaiOutcome {
 	case "values":
 		var values []any
 		for _, pair := range tc.input["values"].([][2]string) {
-			values = append(values, routers.DecodeIkuaiValue(pair[1], pair[0]))
+			values = append(values, ikuai.DecodeIkuaiValue(pair[1], pair[0]))
 		}
 		var tags []string
 		for _, pair := range tc.input["tags"].([][2]string) {
-			tags = append(tags, routers.IkuaiTagname(pair[0], pair[1]))
+			tags = append(tags, ikuai.IkuaiTagname(pair[0], pair[1]))
 		}
 		result = map[string]any{"decoded": values, "tagnames": tags}
 	case "oversized":
@@ -295,11 +296,11 @@ func runGoIkuai(t *testing.T, tc ikuaiCase, endpoint string) ikuaiOutcome {
 		for _, op := range tc.input["ops"].([]map[string]any) {
 			ops = append(ops, encode(op))
 		}
-		result = routers.IkuaiOversizedRequests(ops)
+		result = ikuai.IkuaiOversizedRequests(ops)
 	case "request_bytes":
 		var sizes []int
 		for _, item := range tc.input["items"].([]map[string]any) {
-			sizes = append(sizes, routers.IkuaiRequestBytes(stringOf(item["func"]), stringOf(item["action"]), item["param"]))
+			sizes = append(sizes, ikuai.IkuaiRequestBytes(stringOf(item["func"]), stringOf(item["action"]), item["param"]))
 		}
 		result = sizes
 	default:

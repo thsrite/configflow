@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
 	"context"
 	"encoding/binary"
@@ -71,18 +72,18 @@ func groupedNATOps(p *GroupPlanner, rules map[string]*NatBypassEntry, target *Na
 			if len(missing) > 0 {
 				added = fmt.Sprintf(messageNATGroupAdded, len(missing))
 			}
-			summary := fmt.Sprintf(messageNATGroupUpdate, comment, GroupSpan(final), total, added)
+			summary := fmt.Sprintf(messageNATGroupUpdate, comment, ikuai.GroupSpan(final), total, added)
 			if adopting {
-				summary = fmt.Sprintf(messageNATGroupAdopt, device.OrText(target.Comment, target.ID), comment, GroupSpan(final), total, added)
+				summary = fmt.Sprintf(messageNATGroupAdopt, device.OrText(target.Comment, target.ID), comment, ikuai.GroupSpan(final), total, added)
 			} else if p.Migration(key, messageNATLabel, comment) > 0 {
-				summary = fmt.Sprintf(messageNATGroupMigrate, comment, GroupSpan(final), total, added)
+				summary = fmt.Sprintf(messageNATGroupMigrate, comment, ikuai.GroupSpan(final), total, added)
 			}
 			ops = append(ops, NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: summary}, ID: target.ID, AddDst: missing, Groups: &final, KeepForeign: true, Comment: comment})
 		}
 	} else if len(missing) > 0 {
 		src := lanExcept(gateway)
 		checks = append(checks, GroupRuleCheck{Func: "nat_rule", Comment: PolicyAutoComment, Groups: final, KeepForeign: true})
-		ops = append(ops, NATAddOp{OpHead: OpHead{Kind: "nat_add", Summary: fmt.Sprintf(messageNATGroupAdd, strings.Join(src, ", "), GroupSpan(final), total)}, Src: src, Dst: missing, Groups: &final, Comment: PolicyAutoComment})
+		ops = append(ops, NATAddOp{OpHead: OpHead{Kind: "nat_add", Summary: fmt.Sprintf(messageNATGroupAdd, strings.Join(src, ", "), ikuai.GroupSpan(final), total)}, Src: src, Dst: missing, Groups: &final, Comment: PolicyAutoComment})
 	}
 	removed := p.Cleanup("nat")
 	p.StageChecks[StageNATBypass] = p.Check([]string{"nat"}, checks, deletedGroupNames(removed))
@@ -144,7 +145,7 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 		exempt = append(exempt, r.Dst...)
 	}
 	if p != nil {
-		target = NATTarget(p.State, managed)
+		target = ikuai.NATTarget(p.State, managed)
 		if target == nil && len(adopt) > 0 {
 			target = rules[adopt[0]]
 		}

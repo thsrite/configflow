@@ -1,4 +1,4 @@
-package routers
+package ikuai
 
 // iKuai 4.x driver (backend/routers/ikuai.py).
 //
@@ -52,7 +52,7 @@ const (
 	// Writing a rule back on rollback costs iKuai about 1.6 ms per literal entry (4.0.314).
 	ikuaiRestoreSlowEntries     = 1000
 	ikuaiRestoreSecondsPerEntry = 0.003
-	ikuaiPolicyNexthop          = 1 // 端口分流 type 1: next-hop gateway (0: a WAN line)
+	PolicyNexthop               = 1 // 端口分流 type 1: next-hop gateway (0: a WAN line)
 )
 
 // IkuaiMaxRequestBytes is the largest request body iKuai 4.0.314 accepts
@@ -80,10 +80,10 @@ var (
 // Ikuai is an iKuai 4.x driver. A driver is used by one goroutine at a time
 // (the session, the batch snapshot and the proofs of absent adds are per
 // driver); create one per release or read.
-type Ikuai struct {
+type Client struct {
 	endpoint           string
 	username, password string
-	client             DeviceHTTP
+	client             device.DeviceHTTP
 	loggedIn           bool
 	batch              *ikuaiBatch
 	// absent holds objects this driver added whose absence a complete read
@@ -94,28 +94,28 @@ type Ikuai struct {
 }
 
 // NewIkuai returns a driver for the router's management address.
-func NewIkuai(endpoint, username, password string, verifyTLS bool) *Ikuai {
-	return NewIkuaiWithHTTP(endpoint, username, password, devhttp.New(devhttp.Config{VerifyTLS: verifyTLS, Cookies: true}))
+func NewClient(endpoint, username, password string, verifyTLS bool) *Client {
+	return NewClientWithHTTP(endpoint, username, password, devhttp.New(devhttp.Config{VerifyTLS: verifyTLS, Cookies: true}))
 }
 
 // NewIkuaiWithHTTP returns a driver using client, which must keep the
 // session cookie the login sets.
-func NewIkuaiWithHTTP(endpoint, username, password string, client DeviceHTTP) *Ikuai {
-	return &Ikuai{endpoint: strings.TrimRight(endpoint, "/"), username: username, password: password,
+func NewClientWithHTTP(endpoint, username, password string, client device.DeviceHTTP) *Client {
+	return &Client{endpoint: strings.TrimRight(endpoint, "/"), username: username, password: password,
 		client: client, absent: map[string]bool{}}
 }
 
 // Vendor returns the stored vendor name.
-func (*Ikuai) Vendor() string { return "ikuai" }
+func (*Client) Vendor() string { return "ikuai" }
 
 // SupportsWrite reports that release operations are written directly.
-func (*Ikuai) SupportsWrite() bool { return true }
+func (*Client) SupportsWrite() bool { return true }
 
 // RenderScript is empty: iKuai is written directly.
-func (*Ikuai) RenderScript([]json.RawMessage) (string, error) { return "", nil }
+func (*Client) RenderScript([]json.RawMessage) (string, error) { return "", nil }
 
 // Close drops idle connections.
-func (d *Ikuai) Close() {
+func (d *Client) Close() {
 	if d.client != nil {
 		d.client.Close()
 	}
@@ -127,7 +127,7 @@ func ikuaiSeconds(seconds float64) string { return strconv.FormatFloat(seconds, 
 
 // post sends one request and returns the reply object. timeout is in seconds
 // (0: the default 10).
-func (d *Ikuai) post(ctx context.Context, path string, body any, timeout float64) (ikuaiRow, error) {
+func (d *Client) post(ctx context.Context, path string, body any, timeout float64) (Row, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -210,7 +210,7 @@ func ikuaiHTTPError(response *devhttp.Response, target string) error {
 			if err != nil {
 				// Location is untrusted and may contain credentials. Do not wrap
 				// url.Parse's error or echo the response header.
-				return &RouterError{Kind: KindInvalidResponse, Message: messageIkuaiRedirectFormat}
+				return &device.RouterError{Kind: device.KindInvalidResponse, Message: messageIkuaiRedirectFormat}
 			}
 			redirect = ikuaiOrigin(base.ResolveReference(ref))
 		}
@@ -232,7 +232,7 @@ func ikuaiHTTPError(response *devhttp.Response, target string) error {
 // --- replies -------------------------------------------------------------------
 
 // jsonInt is a JSON integer (an integer literal; not a bool or a fraction).
-func jsonInt(v any) (int64, bool) {
+func JSONInt(v any) (int64, bool) {
 	if n, ok := v.(json.Number); ok {
 		i, err := strconv.ParseInt(n.String(), 10, 64)
 		return i, err == nil
@@ -241,12 +241,12 @@ func jsonInt(v any) (int64, bool) {
 }
 
 // replyCode is the integer "code" of a reply.
-func replyCode(data ikuaiRow) (int64, bool) { return jsonInt(data["code"]) }
+func replyCode(data Row) (int64, bool) { return JSONInt(data["code"]) }
 
-func codeIs(data ikuaiRow, code int64) bool { n, ok := replyCode(data); return ok && n == code }
+func codeIs(data Row, code int64) bool { n, ok := replyCode(data); return ok && n == code }
 
 // replyText shows a value iKuai sent (strings and numbers as they are).
-func replyText(v any) string {
+func ReplyText(v any) string {
 	switch t := v.(type) {
 	case string:
 		return t
@@ -272,7 +272,7 @@ func nonEmptyText(v any) string {
 // read and 1002 no write permission for the account's user group (Label
 // names the feature), 1003 a func_name this firmware lacks, 1008 session
 // expired, 3001 invalid action or parameter.
-func ikuaiCallError(funcName string, data ikuaiRow) string {
+func ikuaiCallError(funcName string, data Row) string {
 	message, _ := data["message"].(string)
 	label, _ := data["Label"].(string)
 	feature := " " + funcName + " "
@@ -296,12 +296,12 @@ func ikuaiCallError(funcName string, data ikuaiRow) string {
 	case data["code"] == nil:
 		return fmt.Sprintf(messageIkuaiCallFormat, funcName)
 	}
-	return fmt.Sprintf(messageIkuaiCallFailed, funcName, cmp.Or(message, messageIkuaiUnknownError), replyText(data["code"]))
+	return fmt.Sprintf(messageIkuaiCallFailed, funcName, cmp.Or(message, messageIkuaiUnknownError), ReplyText(data["code"]))
 }
 
 // --- session -------------------------------------------------------------------
 
-func (d *Ikuai) login(ctx context.Context) error {
+func (d *Client) login(ctx context.Context) error {
 	if d.loggedIn {
 		return nil
 	}
@@ -321,14 +321,14 @@ func (d *Ikuai) login(ctx context.Context) error {
 	if _, hasCode := data["code"]; hasCode {
 		failed = !codeIs(data, 0)
 	} else {
-		result, ok := jsonInt(data["Result"])
+		result, ok := JSONInt(data["Result"])
 		failed = !ok || result != 10000
 	}
 	if failed {
 		detail := cmp.Or(nonEmptyText(data["message"]), nonEmptyText(data["ErrMsg"]), messageIkuaiLoginDefault)
 		code := ""
 		if _, hasCode := data["code"]; hasCode {
-			code = fmt.Sprintf(messageIkuaiErrorCode, replyText(data["code"]))
+			code = fmt.Sprintf(messageIkuaiErrorCode, ReplyText(data["code"]))
 		}
 		return device.Error(fmt.Sprintf(messageIkuaiLoginFailed, detail, code))
 	}
@@ -339,7 +339,7 @@ func (d *Ikuai) login(ctx context.Context) error {
 // send posts one /Action/call, logging in first and once more when the
 // session expired (code 1008: the router restarted or another login replaced
 // it; an expired session ran nothing, so the one retry is safe).
-func (d *Ikuai) send(ctx context.Context, payload map[string]any, timeout float64) (ikuaiRow, error) {
+func (d *Client) send(ctx context.Context, payload map[string]any, timeout float64) (Row, error) {
 	if err := d.login(ctx); err != nil {
 		return nil, err
 	}
@@ -355,7 +355,7 @@ func (d *Ikuai) send(ctx context.Context, payload map[string]any, timeout float6
 }
 
 // Call runs a show call and returns its results.
-func (d *Ikuai) Call(ctx context.Context, funcName string, param map[string]any) (ikuaiRow, error) {
+func (d *Client) Call(ctx context.Context, funcName string, param map[string]any) (Row, error) {
 	data, err := d.send(ctx, map[string]any{"func_name": funcName, "action": "show", "param": param}, 0)
 	if err != nil {
 		return nil, err
@@ -363,7 +363,7 @@ func (d *Ikuai) Call(ctx context.Context, funcName string, param map[string]any)
 	if results, ok := data["results"].(map[string]any); ok && codeIs(data, 0) {
 		return results, nil
 	}
-	if _, hasCode := data["code"]; !hasCode && (data.has("Data") || data.has("Result")) {
+	if _, hasCode := data["code"]; !hasCode && (data.Has("Data") || data.Has("Result")) {
 		return nil, device.Error(messageIkuai3x)
 	}
 	return nil, device.Error(ikuaiCallError(funcName, data))
@@ -375,13 +375,13 @@ func (d *Ikuai) Call(ctx context.Context, funcName string, param map[string]any)
 // in seconds (0: the default 10). A started write is not abandoned when ctx
 // disconnects (o3-concurrency 2.5); Runtime shutdown still cancels it. The
 // device request keeps its own timeout.
-func (d *Ikuai) Write(ctx context.Context, funcName, action string, param any, timeout float64) (ikuaiRow, error) {
-	return d.writeForm(lifecycle.Detach(ctx), funcName, action, param, timeout)
+func (d *Client) Write(ctx context.Context, funcName, action string, param any, timeout float64) (Row, error) {
+	return d.WriteForm(lifecycle.Detach(ctx), funcName, action, param, timeout)
 }
 
 // writeForm shares wire encoding and refusal classification. Write and R17
 // supply detached Runtime contexts so shutdown can cancel an in-flight write.
-func (d *Ikuai) writeForm(ctx context.Context, funcName, action string, param any, timeout float64) (ikuaiRow, error) {
+func (d *Client) WriteForm(ctx context.Context, funcName, action string, param any, timeout float64) (Row, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -401,40 +401,40 @@ func (d *Ikuai) writeForm(ctx context.Context, funcName, action string, param an
 	}
 	if code != 0 {
 		if slices.Contains([]int64{1001, 1002, 1003, 1008}, code) {
-			return nil, &RouterError{Kind: KindRejected, Message: ikuaiCallError(funcName, data)}
+			return nil, &device.RouterError{Kind: device.KindRejected, Message: ikuaiCallError(funcName, data)}
 		}
 		var details []string
 		items, _ := data["details"].([]any)
 		for _, item := range items {
 			if detail, ok := item.(map[string]any); ok {
-				details = append(details, replyText(detail["field"])+": "+replyText(detail["msg"]))
+				details = append(details, ReplyText(detail["field"])+": "+ReplyText(detail["msg"]))
 			}
 		}
-		message := fmt.Sprintf(messageIkuaiWriteFailed, funcName, action, cmp.Or(nonEmptyText(data["message"]), replyText(data["code"])))
+		message := fmt.Sprintf(messageIkuaiWriteFailed, funcName, action, cmp.Or(nonEmptyText(data["message"]), ReplyText(data["code"])))
 		if len(details) > 0 {
 			message += "（" + strings.Join(details, "；") + "）"
 		}
-		return nil, &RouterError{Kind: KindRejected, Message: message}
+		return nil, &device.RouterError{Kind: device.KindRejected, Message: message}
 	}
 	results, _ := data["results"].(map[string]any)
 	if results == nil {
-		results = ikuaiRow{}
+		results = Row{}
 	}
 	return results, nil
 }
 
-func isRejected(err error) bool { return device.RouterErrorKind(err) == KindRejected }
+func isRejected(err error) bool { return device.RouterErrorKind(err) == device.KindRejected }
 
 // ListAll reads every row of a list page by page (prefix "static_" for
 // dhcp_static). It fails closed when a page is short, the total changes
 // between pages, or (with ids) a row lacks a unique positive integer id.
 // incomplete replaces the default incomplete-read message.
-func (d *Ikuai) ListAll(ctx context.Context, funcName, prefix string, ids bool, incomplete string) ([]ikuaiRow, error) {
+func (d *Client) ListAll(ctx context.Context, funcName, prefix string, ids bool, incomplete string) ([]Row, error) {
 	label := cmp.Or(ikuaiListLabels[funcName], funcName)
 	if incomplete == "" {
 		incomplete = fmt.Sprintf(messageIkuaiListIncomplete, label)
 	}
-	rows := []ikuaiRow{}
+	rows := []Row{}
 	seen := map[int64]bool{}
 	total, offset := int64(-1), int64(0)
 	for total < 0 || offset < total {
@@ -445,7 +445,7 @@ func (d *Ikuai) ListAll(ctx context.Context, funcName, prefix string, ids bool, 
 		if err != nil {
 			return nil, err
 		}
-		count, countOK := jsonInt(result[prefix+"total"])
+		count, countOK := JSONInt(result[prefix+"total"])
 		page, pageOK := result[prefix+"data"].([]any)
 		if !countOK || count < 0 || !pageOK || (total >= 0 && count != total) ||
 			int64(len(page)) != min(ikuaiPageSize, max(0, count-offset)) {
@@ -459,7 +459,7 @@ func (d *Ikuai) ListAll(ctx context.Context, funcName, prefix string, ids bool, 
 					return nil, device.Error(incomplete)
 				}
 			} else {
-				id, ok := jsonInt(ikuaiRow(row)["id"])
+				id, ok := JSONInt(Row(row)["id"])
 				if !isRow || !ok || id < 1 || seen[id] {
 					return nil, device.Error(fmt.Sprintf(messageIkuaiListIDs, label))
 				}
@@ -478,16 +478,16 @@ func (d *Ikuai) ListAll(ctx context.Context, funcName, prefix string, ids bool, 
 // --- probe and read-back ---------------------------------------------------------
 
 // Probe checks the firmware (4.x only) and which lists the account may read.
-func (d *Ikuai) Probe(ctx context.Context) (*RouterInfo, error) {
+func (d *Client) Probe(ctx context.Context) (*device.RouterInfo, error) {
 	results, err := d.Call(ctx, "sysstat", map[string]any{"TYPE": "verinfo"})
 	if err != nil {
 		return nil, err
 	}
 	verinfo, ok := results["verinfo"].(map[string]any)
 	if !ok && results["verinfo"] != nil {
-		return nil, &RouterError{Kind: KindInvalidResponse, Message: messageIkuaiVersionFormat}
+		return nil, &device.RouterError{Kind: device.KindInvalidResponse, Message: messageIkuaiVersionFormat}
 	}
-	version := nonEmptyText(ikuaiRow(verinfo)["version"])
+	version := nonEmptyText(Row(verinfo)["version"])
 	if !strings.HasPrefix(version, "4.") {
 		return nil, device.Error(fmt.Sprintf(messageIkuaiVersion, cmp.Or(version, device.MessageUnknown)))
 	}
@@ -500,21 +500,21 @@ func (d *Ikuai) Probe(ctx context.Context) (*RouterInfo, error) {
 			return nil, err
 		}
 	}
-	return &RouterInfo{Vendor: "ikuai", Version: version, Model: nonEmptyText(ikuaiRow(verinfo)["verstring"]),
+	return &device.RouterInfo{Vendor: "ikuai", Version: version, Model: nonEmptyText(Row(verinfo)["verstring"]),
 		Capabilities: capabilities}, nil
 }
 
 // ikuaiRouteMask removes static_rt's presentation suffix, as its edit form
 // already does. Only the mask token is configuration; the remaining fields
 // still participate in ownership checks without normalization.
-func ikuaiRouteMask(mask string) string {
+func RouteMask(mask string) string {
 	mask, _, _ = strings.Cut(mask, " ")
 	return mask
 }
 
 // ikuaiNetwork is a row's dst_addr/netmask as a network (host bits cleared).
-func ikuaiNetwork(row ikuaiRow) (string, bool) {
-	network, ok := netipx.ParseNetwork(row.text("dst_addr")+"/"+ikuaiRouteMask(row.text("netmask")), false)
+func Network(row Row) (string, bool) {
+	network, ok := netipx.ParseNetwork(row.Text("dst_addr")+"/"+RouteMask(row.Text("netmask")), false)
 	if !ok {
 		return "", false
 	}
@@ -523,32 +523,32 @@ func ikuaiNetwork(row ikuaiRow) (string, bool) {
 
 // activeRoutes is 当前路由表: what the kernel forwards with, including routes
 // no configuration explains (nil when it cannot be read).
-func (d *Ikuai) activeRoutes(ctx context.Context) []*RouteEntry {
+func (d *Client) ActiveRoutes(ctx context.Context) []*device.RouteEntry {
 	rows, err := d.ListAll(ctx, "static_rt_table", "", false, "")
 	if err != nil {
 		return nil
 	}
-	routes := []*RouteEntry{}
+	routes := []*device.RouteEntry{}
 	for _, row := range rows {
-		if dst, ok := ikuaiNetwork(row); ok {
-			routes = append(routes, device.NewRoute("active:"+row.text("id"), dst, row.text("gateway"), true,
-				row.text("interface")+" prio "+row.text("prio")))
+		if dst, ok := Network(row); ok {
+			routes = append(routes, device.NewRoute("active:"+row.Text("id"), dst, row.Text("gateway"), true,
+				row.Text("interface")+" prio "+row.Text("prio")))
 		}
 	}
 	return routes
 }
 
 // readGroups reads every IP group (decoded, ownership marked; IDs optional).
-func (d *Ikuai) readGroups(ctx context.Context) ([]*IkuaiGroup, error) {
+func (d *Client) ReadGroups(ctx context.Context) ([]*IkuaiGroup, error) {
 	rows, err := d.ListAll(ctx, "route_object", "", false, "")
 	if err != nil {
 		return nil, err
 	}
-	return GroupsFromRows(decodeRows(rows)), nil
+	return GroupsFromRows(DecodeRows(rows)), nil
 }
 
 // numberEquals: v is a JSON number equal to n.
-func numberEquals(v any, n int64) bool {
+func NumberEquals(v any, n int64) bool {
 	if number, ok := v.(json.Number); ok {
 		f, err := number.Float64()
 		return err == nil && f == float64(n)
@@ -561,7 +561,7 @@ func numberEquals(v any, n int64) bool {
 // returns empty lists as {}, the forms send [].
 func ikuaiAddressField(value any) map[string]any {
 	field, _ := value.(map[string]any)
-	if row, ok := value.(ikuaiRow); ok {
+	if row, ok := value.(Row); ok {
 		field = row
 	}
 	out := map[string]any{}
@@ -579,7 +579,7 @@ func ikuaiAddressField(value any) map[string]any {
 // reference resolves by its group ID; only one without an ID by name. A
 // reference to a group that no longer exists adds nothing, so a coverage
 // check fails closed instead of reading a same-named group.
-func ikuaiAddresses(value any, sets, byGID map[string][]string) []string {
+func Addresses(value any, sets, byGID map[string][]string) []string {
 	field, ok := value.(map[string]any)
 	if !ok {
 		return []string{}
@@ -597,10 +597,10 @@ func ikuaiAddresses(value any, sets, byGID map[string][]string) []string {
 		if !ok {
 			continue
 		}
-		if gid := ikuaiRow(ref).text("gid"); gid != "" {
+		if gid := Row(ref).Text("gid"); gid != "" {
 			result = append(result, byGID[gid]...)
 		} else {
-			result = append(result, sets[ikuaiRow(ref).text("gp_name")]...)
+			result = append(result, sets[Row(ref).Text("gp_name")]...)
 		}
 	}
 	return result
@@ -608,7 +608,7 @@ func ikuaiAddresses(value any, sets, byGID map[string][]string) []string {
 
 // percentDecode undoes URL percent-encoding of route and NAT comments; an
 // invalid escape stays as it is and invalid UTF-8 becomes U+FFFD.
-func percentDecode(text string) string {
+func PercentDecode(text string) string {
 	if !strings.Contains(text, "%") {
 		return text
 	}
@@ -641,8 +641,8 @@ func DecodeIkuaiValue(value any, key string) any {
 			out[k] = DecodeIkuaiValue(item, k)
 		}
 		return out
-	case ikuaiRow:
-		return ikuaiRow(DecodeIkuaiValue(map[string]any(v), key).(map[string]any))
+	case Row:
+		return Row(DecodeIkuaiValue(map[string]any(v), key).(map[string]any))
 	case []any:
 		out := make([]any, len(v))
 		for i, item := range v {
@@ -665,12 +665,12 @@ func DecodeIkuaiValue(value any, key string) any {
 }
 
 // decodeRow is a decoded device row.
-func decodeIkuaiRow(row ikuaiRow) ikuaiRow { return DecodeIkuaiValue(row, "").(ikuaiRow) }
+func DecodeRow(row Row) Row { return DecodeIkuaiValue(row, "").(Row) }
 
-func decodeRows(rows []ikuaiRow) []ikuaiRow {
-	out := make([]ikuaiRow, len(rows))
+func DecodeRows(rows []Row) []Row {
+	out := make([]Row, len(rows))
 	for i, row := range rows {
-		out[i] = decodeIkuaiRow(row)
+		out[i] = DecodeRow(row)
 	}
 	return out
 }
@@ -747,7 +747,7 @@ func IkuaiTagname(kind, key string) string {
 
 // ikuaiRestoreTimeout gives a rule listing many entries literally more time
 // to be written back (a rollback of a migration to IP groups); 0 = default.
-func ikuaiRestoreTimeout(payload ikuaiRow) float64 {
+func ikuaiRestoreTimeout(payload Row) float64 {
 	count := 0
 	for _, field := range []string{"src_addr", "dst_addr"} {
 		count += len(ikuaiAddressField(payload[field])["custom"].([]any))
@@ -757,3 +757,15 @@ func ikuaiRestoreTimeout(payload ikuaiRow) float64 {
 	}
 	return 0
 }
+
+// Endpoint returns the configured iKuai base endpoint URL.
+func (d *Client) Endpoint() string { return d.endpoint }
+
+// Password returns the configured iKuai password (for redaction only).
+func (d *Client) Password() string { return d.password }
+
+// HTTP returns the underlying device HTTP transport.
+func (d *Client) HTTP() device.DeviceHTTP { return d.client }
+
+// SetHTTP replaces the underlying device HTTP transport.
+func (d *Client) SetHTTP(client device.DeviceHTTP) { d.client = client }

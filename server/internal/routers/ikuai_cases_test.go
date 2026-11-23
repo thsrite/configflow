@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/routers"
+	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -52,7 +52,7 @@ func ikRoute(id int, cidr, gateway, comment, tag string) routerfake.Row {
 }
 
 func ikManaged(id int, cidr, comment string) routerfake.Row {
-	return ikRoute(id, cidr, ikGateway, comment, routers.IkuaiTagname("rt", cidr))
+	return ikRoute(id, cidr, ikGateway, comment, ikuai.IkuaiTagname("rt", cidr))
 }
 
 func ikBulk(count int) rows {
@@ -151,7 +151,7 @@ var ikDHCPFieldNames = func() []string {
 // dhcpOp is the update a plan builds from the server row as read (decoded).
 func dhcpOp(server routerfake.Row, changes map[string]any) map[string]any {
 	attributes := map[string]any{}
-	decodedRow := routers.DecodeIkuaiValue(map[string]any(server), "").(map[string]any)
+	decodedRow := ikuai.DecodeIkuaiValue(map[string]any(server), "").(map[string]any)
 	for _, key := range ikDHCPFieldNames {
 		if value, ok := decodedRow[key]; ok {
 			attributes[key] = value
@@ -668,7 +668,7 @@ func ikuaiReleaseCases() []ikuaiCase {
 	add(ikuaiCase{name: "policy_add_duplicate_name_refused", action: "apply", state: routerfake.IkuaiState{Tables: tables("stream_ipport",
 		rows{func() routerfake.Row {
 			r := ikPolicy(3, "x", addressField(nil))
-			r["tagname"] = routers.IkuaiTagname("pr", "cf-mihomo")
+			r["tagname"] = ikuai.IkuaiTagname("pr", "cf-mihomo")
 			return r
 		}()})},
 		input: map[string]any{"op": map[string]any{"kind": "policy_route_add", "gateway": ikGateway, "dst": []string{"203.0.113.0/24"}, "comment": "cf-mihomo"}}})
@@ -695,7 +695,7 @@ func ikuaiGroupCases() []ikuaiCase {
 	var cases []ikuaiCase
 	add := func(c ikuaiCase) { cases = append(cases, c) }
 	values := []string{"198.51.100.0/24", "203.0.113.0/24"}
-	digest := routers.GroupDigest(values)
+	digest := ikuai.GroupDigest(values)
 	groupAdd := groupOp("ikuai_group_add", "cf_pa_1", "pa", values, "")
 	policyAdd := map[string]any{"kind": "policy_route_add", "gateway": ikGateway, "dst": values, "comment": "cf-mihomo", "groups": []string{"cf_pa_1"}}
 	add(ikuaiCase{name: "group_add_policy_refs_and_rollback", action: "release", input: map[string]any{
@@ -718,7 +718,7 @@ func ikuaiGroupCases() []ikuaiCase {
 	add(ikuaiCase{name: "group_add_with_notes", action: "apply", input: map[string]any{"op": notes}})
 	owned := ikGroup(5, "cf_pa_1", "cf-mihomo", "192.0.2.0/25", "192.0.2.128/25")
 	owned["group_value"].([]any)[1].(map[string]any)["comment"] = "user%20note"
-	oldDigest := routers.GroupDigest([]string{"192.0.2.0/25", "192.0.2.128/25"})
+	oldDigest := ikuai.GroupDigest([]string{"192.0.2.0/25", "192.0.2.128/25"})
 	ownedTables := tables("route_object", rows{owned}, "stream_ipport", rows{ikPolicy(3, "cf-mihomo", addressField(nil, ref("IPGP5", "cf_pa_1")))})
 	update := groupOp("ikuai_group_update", "cf_pa_1", "pa", values, oldDigest)
 	add(ikuaiCase{name: "group_update_and_restore", action: "release", state: routerfake.IkuaiState{Tables: ownedTables},
@@ -734,11 +734,11 @@ func ikuaiGroupCases() []ikuaiCase {
 		input: map[string]any{"ops": []map[string]any{update}, "always_rollback": true}})
 	unmarked := ikGroup(5, "cf_pa_1", "", "192.0.2.0/25")
 	adoptTables := tables("route_object", rows{unmarked}, "stream_ipport", rows{ikPolicy(3, "cf-mihomo", addressField(nil, ref("IPGP5", "cf_pa_1")))})
-	mark := groupOp("ikuai_group_update", "cf_pa_1", "pa", []string{"192.0.2.0/25"}, routers.GroupDigest([]string{"192.0.2.0/25"}))
+	mark := groupOp("ikuai_group_update", "cf_pa_1", "pa", []string{"192.0.2.0/25"}, ikuai.GroupDigest([]string{"192.0.2.0/25"}))
 	mark["mark"] = true
 	add(ikuaiCase{name: "group_mark_adopted", action: "apply", state: routerfake.IkuaiState{Tables: adoptTables}, input: map[string]any{"op": mark}})
 	add(ikuaiCase{name: "group_unmarked_update_refused", action: "apply", state: routerfake.IkuaiState{Tables: adoptTables},
-		input: map[string]any{"op": groupOp("ikuai_group_update", "cf_pa_1", "pa", values, routers.GroupDigest([]string{"192.0.2.0/25"}))}})
+		input: map[string]any{"op": groupOp("ikuai_group_update", "cf_pa_1", "pa", values, ikuai.GroupDigest([]string{"192.0.2.0/25"}))}})
 	add(ikuaiCase{name: "group_delete_in_use", action: "apply", state: routerfake.IkuaiState{Tables: ownedTables},
 		input: map[string]any{"op": groupOp("ikuai_group_delete", "cf_pa_1", "pa", nil, oldDigest)}})
 	hidden := maps.Clone(owned)
@@ -764,14 +764,14 @@ func ikuaiGroupCases() []ikuaiCase {
 	add(ikuaiCase{name: "group_unknown_kind", action: "apply", input: map[string]any{"op": map[string]any{"kind": "ikuai_group_merge", "name": "cf_pa_1", "role": "pa"}}})
 	foreign := tables("route_object", rows{ikGroup(5, "cf_pa_1", "", "192.0.2.0/24")})
 	add(ikuaiCase{name: "group_foreign_same_name_not_ours", action: "apply", state: routerfake.IkuaiState{Tables: foreign},
-		input: map[string]any{"op": groupOp("ikuai_group_delete", "cf_pa_1", "pa", nil, routers.GroupDigest([]string{"192.0.2.0/24"}))}})
+		input: map[string]any{"op": groupOp("ikuai_group_delete", "cf_pa_1", "pa", nil, ikuai.GroupDigest([]string{"192.0.2.0/24"}))}})
 	dup := tables("route_object", rows{ikGroup(5, "cf_pa_1", "cf-mihomo", "192.0.2.0/24"), ikGroup(6, "cf_pa_1", "cf-mihomo", "192.0.2.0/24")})
 	add(ikuaiCase{name: "group_duplicate_names_not_ours", action: "apply", state: routerfake.IkuaiState{Tables: dup},
-		input: map[string]any{"op": groupOp("ikuai_group_delete", "cf_pa_1", "pa", nil, routers.GroupDigest([]string{"192.0.2.0/24"}))}})
+		input: map[string]any{"op": groupOp("ikuai_group_delete", "cf_pa_1", "pa", nil, ikuai.GroupDigest([]string{"192.0.2.0/24"}))}})
 	noID := ikGroup(5, "cf_pa_1", "cf-mihomo", "192.0.2.0/24")
 	delete(noID, "id")
 	add(ikuaiCase{name: "group_without_id_not_edited", action: "apply", state: routerfake.IkuaiState{Tables: tables("route_object", rows{noID})},
-		input: map[string]any{"op": groupOp("ikuai_group_update", "cf_pa_1", "pa", values, routers.GroupDigest([]string{"192.0.2.0/24"}))}})
+		input: map[string]any{"op": groupOp("ikuai_group_update", "cf_pa_1", "pa", values, ikuai.GroupDigest([]string{"192.0.2.0/24"}))}})
 	// NAT and 端口分流 rules referencing groups.
 	natGroups := tables("route_object", rows{ikGroup(5, "cf_nat_1", "cf-mihomo-nat", "198.51.100.0/24"), ikGroup(6, "office", "", "192.0.2.0/24")},
 		"nat_rule", rows{ikNAT(1, "cf-mihomo", addressField([]string{"203.0.113.0/24"}, ref("IPGP6", "office"), ref("IPGP5", "cf_nat_1")))})

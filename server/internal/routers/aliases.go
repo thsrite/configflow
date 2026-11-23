@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
 )
 
@@ -50,6 +51,19 @@ type (
 	Manifest         = ros.Manifest
 	Manifests        = ros.Manifests
 	ManifestHolder   = ros.ManifestHolder
+
+	GroupEntry      = ikuai.GroupEntry
+	GroupForm       = ikuai.GroupForm
+	GroupMigration  = ikuai.GroupMigration
+	GroupOp         = ikuai.GroupOp
+	GroupPlanner    = ikuai.GroupPlanner
+	GroupReport     = ikuai.GroupReport
+	GroupRule       = ikuai.GroupRule
+	GroupRuleCheck  = ikuai.GroupRuleCheck
+	GroupStageCheck = ikuai.GroupStageCheck
+	GroupState      = ikuai.GroupState
+	GroupUser       = ikuai.GroupUser
+	IkuaiGroup      = ikuai.IkuaiGroup
 )
 
 const (
@@ -84,4 +98,15 @@ const (
 	NATDstList     = ros.NATDstList
 	PathNAT        = ros.PathNAT
 	PathMangle     = ros.PathMangle
+
+	GroupMaxBytes   = ikuai.GroupMaxBytes
+	GroupMaxEntries = ikuai.GroupMaxEntries
+	MaxRuleGroups   = ikuai.MaxRuleGroups
+	OpGroupAdd      = ikuai.OpGroupAdd
+	OpGroupDelete   = ikuai.OpGroupDelete
+	OpGroupUpdate   = ikuai.OpGroupUpdate
+	PolicyNexthop   = ikuai.PolicyNexthop
+	RefForeign      = ikuai.RefForeign
+	RefOwned        = ikuai.RefOwned
+	RefStale        = ikuai.RefStale
 )

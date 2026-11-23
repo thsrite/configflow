@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
 	"context"
 	"crypto/sha256"
@@ -175,7 +176,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 	}
 	var planner *GroupPlanner
 	if state.IkuaiGroups != nil {
-		planner = NewGroupPlanner(state.IkuaiGroups, warnings, blockers)
+		planner = ikuai.NewGroupPlanner(state.IkuaiGroups, warnings, blockers)
 	}
 	var routeOps []Op
 	var skipped []string
@@ -315,7 +316,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 			}
 			raw = append(raw, b)
 		}
-		*blockers = append(*blockers, IkuaiOversizedRequests(raw)...)
+		*blockers = append(*blockers, ikuai.IkuaiOversizedRequests(raw)...)
 	}
 	if r.Type == "routeros" && state.NatContext != nil {
 		expansions := []BypassExpansion{}

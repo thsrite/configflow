@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"context"
 	"encoding/json"
 	"errors"
@@ -193,7 +194,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		}
 	}
 	if c, ok := checks.IkuaiGroups[stage]; ok {
-		if err := VerifyGroups(c, state.IkuaiGroups); err != nil {
+		if err := ikuai.VerifyGroups(c, state.IkuaiGroups); err != nil {
 			return nil, err
 		}
 	}
@@ -203,7 +204,7 @@ func sameCanonical(a, b []string) bool {
 	normalize := func(values []string) []string {
 		out := make([]string, len(values))
 		for i, v := range values {
-			out[i] = CanonAddress(v)
+			out[i] = ikuai.CanonAddress(v)
 		}
 		return out
 	}

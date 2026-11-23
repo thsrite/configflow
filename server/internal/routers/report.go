@@ -9,6 +9,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
 	"encoding/json"
 	"net/netip"
@@ -197,10 +198,10 @@ func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
 		// iKuai may read an IP group's 1.1.1.1/32 back as 1.1.1.1: compare addresses.
 		canon := map[string]bool{}
 		for cidr := range wanted {
-			canon[CanonAddress(cidr)] = true
+			canon[ikuai.CanonAddress(cidr)] = true
 		}
 		for _, cidr := range auto.Dst {
-			if !canon[CanonAddress(cidr)] {
+			if !canon[ikuai.CanonAddress(cidr)] {
 				out.Extra = append(out.Extra, ExtraRoute{cidr, auto.Gateway, "policy:" + auto.ID, auto.Comment})
 			}
 		}
@@ -379,7 +380,7 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 		r.InSync = r.InSync && part.InSync
 	}
 	if state.IkuaiGroups != nil {
-		groups := GroupReportSection(state.IkuaiGroups, state.NatBypass, state.PolicyRoutes)
+		groups := ikuai.GroupReportSection(state.IkuaiGroups, state.NatBypass, state.PolicyRoutes)
 		r.IkuaiGroups = &groups
 		// Rules still listing CIDRs themselves, groups nothing uses, or a
 		// marker to write back: a release is due.

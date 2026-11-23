@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -32,7 +33,7 @@ type EditableRoute struct {
 // iKuai row); it encodes as that record.
 type RouteSnapshot struct {
 	ros   Row
-	ikuai ikuaiRow
+	ikuai ikuai.Row
 }
 
 // MarshalJSON encodes the vendor record.

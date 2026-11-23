@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"fmt"
 	"slices"
 	"strings"
@@ -89,14 +90,14 @@ func makePolicyOp(p *GroupPlanner, role string, rule *PolicyRouteEntry, gateway 
 	}
 	op.Groups = &final
 	op.KeepForeign = keep
-	targets := fmt.Sprintf(messageGroupTargets, GroupSpan(final), groupTotal(p, role))
+	targets := fmt.Sprintf(messageGroupTargets, ikuai.GroupSpan(final), groupTotal(p, role))
 	scope = fmt.Sprintf(messagePlanPolicyScope, gateway, targets, gateway)
 	op.Summary = fmt.Sprintf(messagePolicyAdd, comment, scope)
 	if rule != nil {
 		p.Rewritten[key] = final
 		op.Summary = fmt.Sprintf(messagePolicyUpdate, comment, scope)
 		if p.Migration(key, messagePortPolicy, comment) > 0 {
-			op.Summary = fmt.Sprintf(messagePolicyMigrate, comment, GroupSpan(final), groupTotal(p, role))
+			op.Summary = fmt.Sprintf(messagePolicyMigrate, comment, ikuai.GroupSpan(final), groupTotal(p, role))
 		}
 		if !keep {
 			if dropped := p.DroppedForeign(key); len(dropped) > 0 {

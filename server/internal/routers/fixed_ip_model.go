@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -77,9 +78,9 @@ type FixedIPSnapshot struct {
 	Addresses []Row `json:"addresses,omitempty"`
 	Leases    []Row `json:"leases"`
 	// iKuai tables.
-	ikuaiServers []ikuaiRow
-	ikuaiStatic  []ikuaiRow
-	ikuaiLeases  []ikuaiRow
+	ikuaiServers []ikuai.Row
+	ikuaiStatic  []ikuai.Row
+	ikuaiLeases  []ikuai.Row
 }
 
 // FixedIPState separates control eligibility from evidence about existing leases.

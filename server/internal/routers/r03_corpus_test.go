@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
 	"encoding/json"
 	"net/netip"
@@ -90,13 +91,13 @@ type r03State struct {
 }
 
 type r03Ikuai struct {
-	Groups []ikuaiRow `json:"groups"`
-	NAT    []ikuaiRow `json:"nat"`
-	Policy []ikuaiRow `json:"policy"`
+	Groups []ikuai.Row `json:"groups"`
+	NAT    []ikuai.Row `json:"nat"`
+	Policy []ikuai.Row `json:"policy"`
 }
 
 func (k r03Ikuai) state() *GroupState {
-	return ReadGroupRules(GroupsFromRows(k.Groups), k.NAT, k.Policy)
+	return ikuai.ReadGroupRules(ikuai.GroupsFromRows(k.Groups), k.NAT, k.Policy)
 }
 
 func prefixes(t *testing.T, texts []string) []netip.Prefix {
@@ -155,9 +156,9 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 		decodeInto(t, in, &list)
 		switch fn {
 		case "span":
-			return GroupSpan(list)
+			return ikuai.GroupSpan(list)
 		case "digest":
-			return GroupDigest(list)
+			return ikuai.GroupDigest(list)
 		}
 		return texts(device.Networks(list))
 	case "canon", "client_sources":
@@ -166,7 +167,7 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 		if fn == "client_sources" {
 			return texts(ros.ClientSourceNetworks(netip.MustParseAddr(s)))
 		}
-		return CanonAddress(s)
+		return ikuai.CanonAddress(s)
 	}
 	decodeInto(t, in, &v)
 	state := &RouterState{NatContext: v.State.NatContext, AddressSets: v.State.AddressSets}
@@ -236,18 +237,18 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 		if !v.Missing {
 			state.IkuaiGroups = v.r03Ikuai.state()
 		}
-		if err := VerifyGroups(v.Check, state.IkuaiGroups); err != nil {
+		if err := ikuai.VerifyGroups(v.Check, state.IkuaiGroups); err != nil {
 			return err.Error()
 		}
 		return nil
 	case "payload":
 		entries := make([]GroupEntry, len(v.Values))
 		for i, value := range v.Values {
-			entries[i] = GroupEntry{value, "n"}
+			entries[i] = GroupEntry{IP: value, Comment: "n"}
 		}
-		return map[string]any{"payload": GroupPayload(v.Name, v.Role, v.Values, v.ID, v.Notes),
-			"bytes":         GroupBytes(v.Name, v.Role, v.Values, v.Notes),
-			"entry_payload": EntryPayload(v.Name, entries, v.ID)}
+		return map[string]any{"payload": ikuai.GroupPayload(v.Name, v.Role, v.Values, v.ID, v.Notes),
+			"bytes":         ikuai.GroupBytes(v.Name, v.Role, v.Values, v.Notes),
+			"entry_payload": ikuai.EntryPayload(v.Name, entries, v.ID)}
 	}
 	t.Fatalf("unknown fn %s", fn)
 	return nil
@@ -277,7 +278,7 @@ func deref(s *string) string {
 
 func runSteps(state *GroupState, steps []r03Step) any {
 	warnings, blockers := []string{"earlier"}, []string{}
-	p := NewGroupPlanner(state, &warnings, &blockers)
+	p := ikuai.NewGroupPlanner(state, &warnings, &blockers)
 	results := []any{}
 	for _, s := range steps {
 		key := deref(s.Key)
@@ -341,4 +342,11 @@ func withoutGroupType(t *testing.T, raw json.RawMessage) json.RawMessage {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func nonNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }
