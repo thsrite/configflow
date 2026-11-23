@@ -12,7 +12,6 @@ import (
 	"configflow/internal/ctxx"
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
-	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
@@ -20,44 +19,6 @@ import (
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 )
-
-// requestObject returns the sent JSON object, or nil (ok false) for any other body.
-func requestObject(c *httpx.Ctx, silent bool) (json.RawMessage, bool, error) {
-	var raw json.RawMessage
-	if silent {
-		if !c.BindSilent(&raw) {
-			return nil, false, nil
-		}
-	} else if err := c.Bind(&raw); err != nil {
-		return nil, false, err
-	}
-	if len(raw) == 0 || raw[0] != '{' {
-		return nil, false, nil
-	}
-	return raw, true, nil
-}
-
-// readGroup reads a group request as sent (see groupFields).
-func readGroup(c *httpx.Ctx) (groupFields, bool, error) {
-	raw, ok, err := requestObject(c, false)
-	if err != nil || !ok {
-		return groupFields{}, ok, err
-	}
-	var out groupFields
-	err = out.UnmarshalJSON(raw)
-	return out, true, err
-}
-
-// decodeObject decodes an object body into a request DTO.
-func decodeObject[T any](c *httpx.Ctx, silent bool) (*T, bool, error) {
-	raw, ok, err := requestObject(c, silent)
-	if err != nil || !ok {
-		return nil, ok, err
-	}
-	out := new(T)
-	err = jsondecode.Unmarshal(raw, out)
-	return out, true, err
-}
 
 func load(ctx context.Context, id string) (*model.Config, error) {
 	r, err := repo.GetRepository(ctx)
@@ -96,85 +57,40 @@ func profileBefore(config *model.Config) *model.Config {
 	return &copy
 }
 
-// fieldsOf is a stored group as sent members.
-func fieldsOf(group model.ProxyGroup) (groupFields, error) {
-	var out groupFields
-	data, err := model.Marshal(group)
-	if err == nil {
-		err = out.UnmarshalJSON(data)
+// groupTypeError reports a sent group member the group record cannot hold, with
+// the repository's message for the resulting proxy_groups list.
+func groupTypeError(groups []model.ProxyGroup, index int, edited *groupRequest, cause error) error {
+	failed, err := edited.marshalSent()
+	if err != nil {
+		return err
 	}
-	return out, err
-}
-
-// groupOf reads a group as the stored record does (a member of another
-// type is dropped; the write reports it).
-func groupOf(fields groupFields) (model.ProxyGroup, error) {
-	var group model.ProxyGroup
-	data, err := fields.MarshalJSON()
-	if err == nil {
-		err = json.Unmarshal(data, &group)
-	}
-	return group, err
-}
-
-// storeGroups stores groups with groups[index] replaced by (or, at
-// len(groups), extended with) a group as sent. The profile record decodes
-// the sent members strictly, so a member of another type is refused with the
-// repository's message for the resulting list.
-func storeGroups(config *model.Config, groups []model.ProxyGroup, index int, edited groupFields) error {
 	list := make([]json.RawMessage, 0, len(groups)+1)
 	for i, group := range groups {
-		data, err := model.Marshal(group)
 		if i == index {
-			data, err = edited.MarshalJSON()
+			list = append(list, failed)
+			continue
 		}
+		data, err := model.Marshal(group)
 		if err != nil {
 			return err
 		}
 		list = append(list, data)
 	}
 	if index == len(groups) {
-		data, err := edited.MarshalJSON()
-		if err != nil {
-			return err
-		}
-		list = append(list, data)
+		list = append(list, failed)
 	}
 	raw, err := json.Marshal(list)
 	if err != nil {
 		return err
 	}
-	return config.Profile.SetJSON("proxy_groups", raw)
+	return repo.InputError(&model.MemberTypeError{Record: "profile", Member: "proxy_groups", Value: raw, Err: cause})
 }
 
 func healthKind(kind string) bool { return check.IsGroupHealthType(kind) }
-func healthFields() []string      { return shared.HealthFields }
-func initializeHealth(group groupFields) (groupFields, error) {
-	err := check.InitGroupHealth(&group.Fields)
-	return group, err
-}
 
 // validate checks a group as sent against the catalogs and the proposed
 // profile groups; original is the stored group of an update.
-func validate(ctx context.Context, group groupFields, groups []model.ProxyGroup, original *groupFields) error {
-	g, err := groupOf(group)
-	if err != nil {
-		return err
-	}
-	var old *model.ProxyGroup
-	var before *shared.GroupMembers
-	if original != nil {
-		v, err := groupOf(*original)
-		if err != nil {
-			return err
-		}
-		old = &v
-		members, err := original.members()
-		if err != nil {
-			return err
-		}
-		before = &members
-	}
+func validate(ctx context.Context, group model.ProxyGroup, sent shared.GroupMembers, groups []model.ProxyGroup, original *model.ProxyGroup, before *shared.GroupMembers) error {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err
@@ -183,46 +99,7 @@ func validate(ctx context.Context, group groupFields, groups []model.ProxyGroup,
 	if err != nil {
 		return err
 	}
-	// The request's own members are checked: the group record cannot hold a
-	// member of the wrong type (O18 T1c).
-	sent, err := group.members()
-	if err != nil {
-		return err
-	}
-	return shared.CheckCandidateMembers(g, sent, shared.GroupCatalog{Nodes: catalog.Nodes, Subscriptions: catalog.Subscriptions, Aggregations: catalog.Aggregations, Groups: groups}, old, before)
-}
-
-// merge applies a group patch to the stored group; the result keeps the
-// request's values as sent, so validation sees a member of the wrong type
-// before the group record decodes it.
-func merge(original, patch groupFields) (groupFields, error) {
-	group, err := groupOf(original)
-	if err != nil {
-		return groupFields{}, err
-	}
-	if _, err := shared.MergeGroup(group, patch.Fields); err != nil {
-		return groupFields{}, err
-	}
-	var request struct {
-		DeleteFields member[[]string] `json:"delete_fields"`
-	}
-	data, err := patch.MarshalJSON()
-	if err != nil {
-		return groupFields{}, err
-	}
-	_ = jsondecode.Unmarshal(data, &request)
-	merged := original
-	for field, value := range patch.All() {
-		if field != "delete_fields" {
-			if err := merged.Set(field, value); err != nil {
-				return groupFields{}, err
-			}
-		}
-	}
-	for _, field := range request.DeleteFields.Value {
-		merged.Delete(field)
-	}
-	return merged, nil
+	return shared.CheckCandidateMembers(group, sent, shared.GroupCatalog{Nodes: catalog.Nodes, Subscriptions: catalog.Subscriptions, Aggregations: catalog.Aggregations, Groups: groups}, original, before)
 }
 func incoming(config *model.Config, id string) (bool, error) {
 	refs, err := convert.IncomingRefs(config, "group", id)

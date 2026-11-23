@@ -27,69 +27,57 @@ func (s *Service) List(ctx context.Context, id string) ([]model.ProxyGroup, erro
 	return config.Profile.ProxyGroups, nil
 }
 
-// clean drops the members the group kind does not keep.
-func clean(group *groupFields) {
-	kind := group.text("type")
-	if !healthKind(kind) {
-		for _, key := range healthFields() {
-			group.Delete(key)
-		}
-	}
-	if kind != "url-test" {
-		group.Delete("tolerance")
-	}
-	if kind != "load-balance" {
-		group.Delete("strategy")
-	}
-	if kind == "chain" {
-		for _, key := range []string{"subscriptions", "regex", "exclude_regex", "manual_nodes", "aggregations", "aggregation_regex", "aggregation_exclude_regex", "include_groups", "follow_group", "proxies", "source", "source_type", "proxies_order", "url", "interval", "strategy", "lazy", "use", "include_all", "include-all"} {
-			group.Delete(key)
-		}
-	} else {
-		group.Delete("chain")
-	}
-}
-
 // Create validates a complete new group before adding it in one transaction.
-func (s *Service) Create(ctx context.Context, id string, sent model.Fields, base string) (result, error) {
-	group := groupFields{sent}
+func (s *Service) Create(ctx context.Context, id string, sent json.RawMessage, base string) (result, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := result{Success: true}
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
-	if group.Has("delete_fields") {
-		return out, bad(msgDeleteCreate)
-	}
-	clean(&group)
-	var err error
-	group, err = initializeHealth(group)
+	req, err := decodeGroupRequest(sent)
 	if err != nil {
 		return out, err
 	}
+	if req.DeleteFields.Present() {
+		return out, bad(msgDeleteCreate)
+	}
+	kind := req.Type.Value
+	req.clean(kind)
+	req.initHealthDefaults(kind)
+	group, typeErr := req.buildGroup()
 	err = edit(ctx, id, func(ctx context.Context, config *model.Config) error {
 		before := profileBefore(config)
 		groups := config.Profile.ProxyGroups
-		if err := validate(ctx, group, groups, nil); err != nil {
+		if err := validate(ctx, group, req.groupMembers(), groups, nil, nil); err != nil {
 			return err
 		}
-		if err := storeGroups(config, groups, len(groups), group); err != nil {
-			return err
+		if typeErr != nil {
+			return groupTypeError(groups, len(groups), req, typeErr)
 		}
+		config.Profile.ProxyGroups = append(slices.Clone(groups), group)
 		out.Warnings, err = syncFollow(ctx, before, config, base)
 		return err
 	})
-	out.Data = &group
+	if err == nil {
+		out.Data = &group
+	}
 	return out, err
 }
 
 // Mutate edits or deletes a group, including listeners, references and DNS.
-func (s *Service) Mutate(ctx context.Context, id, groupID string, sent model.Fields, remove bool, base string) (result, error) {
-	patch := groupFields{sent}
+func (s *Service) Mutate(ctx context.Context, id, groupID string, sent json.RawMessage, remove bool, base string) (result, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := result{Success: true}
 	if err := ctx.Err(); err != nil {
 		return out, err
+	}
+	var patch *groupRequest
+	if !remove {
+		var err error
+		patch, err = decodeGroupRequest(sent)
+		if err != nil {
+			return out, err
+		}
 	}
 	err := edit(ctx, id, func(ctx context.Context, config *model.Config) error {
 		before := profileBefore(config)
@@ -99,51 +87,44 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, sent model.Fie
 			return absent("Group not found")
 		}
 		stored := groups[index]
-		original, err := fieldsOf(stored)
-		if err != nil {
-			return err
-		}
-		var next groupFields
+		var next *groupRequest
 		var group model.ProxyGroup
+		var typeErr error
 		if !remove {
-			if raw, ok := patch.Get("id"); ok {
-				var ident string
-				if json.Unmarshal(raw, &ident) != nil || ident != groupID {
-					return conflict(msgImmutableID)
-				}
+			if patch.ID.Present() && (!patch.ID.OK || patch.ID.Value != groupID) {
+				return conflict(msgImmutableID)
 			}
-			baseGroup := original
-			kind := patch.text("type")
-			if !patch.Has("type") {
-				kind = stored.Type
+			if err := shared.CheckFilterMembers(patch.groupMembers(), nil); err != nil {
+				return err
 			}
-			if !healthKind(stored.Type) && healthKind(kind) {
-				if err = baseGroup.set("type", kind); err != nil {
-					return err
-				}
-				baseGroup, err = initializeHealth(baseGroup)
-				if err != nil {
-					return err
-				}
-			}
-			next, err = merge(baseGroup, patch)
+			deletes, err := shared.DeleteFields(patch.DeleteFields, patch.hasHealthField)
 			if err != nil {
 				return err
 			}
-			if err = next.set("id", groupID); err != nil {
+			baseGroup, err := requestFromGroup(stored)
+			if err != nil {
 				return err
 			}
-			clean(&next)
-			if group, err = groupOf(next); err != nil {
-				return err
+			kind := patch.Type.Value
+			if !patch.Type.Present() {
+				kind = stored.Type
 			}
+			if !healthKind(stored.Type) && healthKind(kind) {
+				baseGroup.initHealthDefaults(kind)
+			}
+			next = overlayGroup(baseGroup, patch, deletes)
+			idRaw, _ := json.Marshal(groupID)
+			next.ID = member[string]{Raw: idRaw, Value: groupID, OK: true}
+			next.clean(kind)
+			group, typeErr = next.buildGroup()
 			proposed := slices.Clone(groups)
 			proposed[index] = group
-			if err = validate(ctx, next, proposed, &original); err != nil {
+			beforeMembers := shared.GroupMembersOf(stored)
+			if err = validate(ctx, group, next.groupMembers(), proposed, &stored, &beforeMembers); err != nil {
 				return err
 			}
 			for i, other := range groups {
-				if i != index && other.Name == next.text("name") {
+				if i != index && other.Name == next.Name.Value {
 					return conflict(msgNameExists)
 				}
 			}
@@ -158,11 +139,12 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, sent model.Fie
 				return conflict(msgUsed)
 			}
 		}
-		if removing || stored.Name != next.text("name") {
+		if removing || stored.Name != next.Name.Value {
 			var name *string
 			if !removing {
-				name = new(next.text("name"))
+				name = new(next.Name.Value)
 			}
+			var err error
 			out.ListenerChanges, err = relink(config, stored.Name, name)
 			if err != nil {
 				return err
@@ -175,29 +157,29 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, sent model.Fie
 			proposed[index] = group
 			for _, other := range groups {
 				if model.TextValue(other.FollowGroup) == groupID {
-					fields, err := fieldsOf(other)
-					if err != nil {
-						return err
-					}
-					if err = validate(ctx, fields, proposed, &fields); err != nil {
+					otherMembers := shared.GroupMembersOf(other)
+					if err := validate(ctx, other, otherMembers, proposed, &other, &otherMembers); err != nil {
 						return err
 					}
 				}
 			}
-			if stored.Name != next.text("name") {
+			if stored.Name != next.Name.Value {
 				rules := slices.Clone(config.Profile.RuleConfigs)
 				for i := range rules {
 					if model.TextValue(rules[i].Policy) == stored.Name {
-						rules[i].Policy = new(next.text("name"))
+						rules[i].Policy = new(next.Name.Value)
 					}
 				}
 				config.Profile.RuleConfigs = rules
 			}
-			if err := storeGroups(config, groups, index, next); err != nil {
-				return err
+			if typeErr != nil {
+				return groupTypeError(groups, index, next, typeErr)
 			}
-			out.Data = &next
+			groups[index] = group
+			config.Profile.ProxyGroups = groups
+			out.Data = &group
 		}
+		var err error
 		out.Warnings, err = syncFollow(ctx, before, config, base)
 		if err != nil {
 			return err
