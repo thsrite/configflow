@@ -785,7 +785,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 			return nil, e
 		}
 		for _, v := range ds {
-			p.RulesetDownloads = append(p.RulesetDownloads, convert.ResourceDownload{Name: v.Name, URL: v.URL, LocalPath: v.LocalPath, Behavior: scalar(v.Behavior)})
+			p.RulesetDownloads = append(p.RulesetDownloads, convert.ResourceDownload{Name: v.Name, URL: v.URL, LocalPath: v.LocalPath, Behavior: v.Behavior})
 		}
 		fs, e := oxidns.CustomFiles(profile)
 		if e != nil {

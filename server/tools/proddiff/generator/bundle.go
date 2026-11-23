@@ -104,11 +104,7 @@ func deploymentBundle(ctx context.Context, repository *repo.Repository, config *
 			return "", err
 		}
 		for _, d := range downloads {
-			behavior := ""
-			if d.Behavior != nil {
-				behavior = d.Behavior.Value
-			}
-			in.RulesetDownloads = append(in.RulesetDownloads, convert.ResourceDownload{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: behavior})
+			in.RulesetDownloads = append(in.RulesetDownloads, convert.ResourceDownload{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior})
 		}
 		files, err := oxidns.CustomFiles(profile)
 		if err != nil {

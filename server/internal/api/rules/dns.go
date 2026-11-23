@@ -144,7 +144,7 @@ func (s *Service) SetDNS(ctx context.Context, id string, body *dnsWriteRequest, 
 		changed = changed[:0]
 		for _, entry := range assignments {
 			index := find(items, entry.RuleID)
-			if skip && index >= 0 && entry.Choice != "default" && !oxidns.RuleConvertible(items[index]) {
+			if skip && index >= 0 && entry.Choice != "default" && !oxidns.Convertible(items[index]) {
 				out.Skipped = append(out.Skipped, entry.RuleID)
 				continue
 			}

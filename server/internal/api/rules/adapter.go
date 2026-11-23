@@ -189,7 +189,7 @@ func dnsError(err error) error {
 	return err
 }
 func ensureDNSKind(before *oxidns.Profile, config *model.Config, item model.RuleConfig, dns string) error {
-	if oxidns.RuleConvertible(item) {
+	if oxidns.Convertible(item) {
 		return nil
 	}
 	kind := item.RuleType

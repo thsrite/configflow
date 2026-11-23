@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"configflow/internal/model"
+	"configflow/internal/mosdns"
 	"configflow/internal/yamlx"
 )
 
@@ -31,40 +32,55 @@ func TagFor(prefix string, identity *Node) string {
 
 func tagForString(prefix, identity string) string { return TagFor(prefix, S(identity)) }
 
-// RulePath is the generated resource of one ruleset part.
+// RulePath is the generated resource of one ruleset part, for a stored rule
+// object whose id may be of any JSON type.
 func RulePath(item *Node, part string) string {
 	return "./rules/" + TagFor("rule", get(item, "id")) + "_" + part + ".txt"
 }
 
+// rulePath is the generated resource of one part of the ruleset with this id.
+func rulePath(id, part string) string {
+	return "./rules/" + tagForString("rule", id) + "_" + part + ".txt"
+}
+
 // base is the effective panel origin: system_config.server_domain or baseURL.
 func (p *Profile) base(baseURL string) string {
-	domain := get(mapOr(p.get("system_config")), "server_domain")
-	if str(domain) != "" {
-		baseURL = str(domain)
+	if domain := p.source.SystemConfig.ServerDomain; domain != "" {
+		baseURL = domain
 	}
 	return strings.TrimRight(baseURL, "/")
 }
 
 // activeItems is _items: enabled rule_configs, or the legacy rules/rule sets.
-func (p *Profile) activeItems() []*Node {
-	if configs := p.get("rule_configs"); len(items(configs)) > 0 {
-		return filter(items(configs), func(item *Node) bool {
-			return enabledOrDefault(item, "enabled") && enabledOrDefault(item, "library_enabled")
-		})
+func (p *Profile) activeItems() []model.RuleConfig {
+	out := []model.RuleConfig{}
+	if configs := p.ruleConfigs(); len(configs) > 0 {
+		for _, item := range configs {
+			if ruleActive(item) {
+				out = append(out, item)
+			}
+		}
+		return out
 	}
-	ruleList, sets := p.splitRules()
-	var out []*Node
+	rules, sets, err := mosdns.SplitRules(p.source)
+	if err != nil {
+		return out
+	}
 	for _, pair := range []struct {
 		kind string
-		list *Node
-	}{{"rule", ruleList}, {"ruleset", sets}} {
-		for _, item := range items(pair.list) {
-			c := shallow(mapOr(item))
-			set(c, "itemType", S(pair.kind))
-			out = append(out, c)
+		list []model.RuleConfig
+	}{{"rule", rules}, {"ruleset", sets}} {
+		for _, item := range pair.list {
+			item.ItemType = pair.kind
+			out = append(out, item)
 		}
 	}
 	return out
+}
+
+// ruleActive: the rule and its library source are enabled (absent means on).
+func ruleActive(item model.RuleConfig) bool {
+	return model.Flag(item.Enabled, true) && model.Flag(item.LibraryEnabled, true)
 }
 
 // enabledOrDefault defaults an absent enable flag to true and evaluates stored
@@ -84,29 +100,29 @@ func enabledOrDefault(item *Node, key string) bool {
 	return model.Switch(raw, true)
 }
 
-func suffixOf(item *Node) string {
-	if equal(get(item, "itemType"), S("ruleset")) {
+func suffixOf(item model.RuleConfig) string {
+	if item.ItemType == "ruleset" {
 		return "rulesets"
 	}
 	return "rules"
 }
 
 // inSelector is `identity in selector` for a selector list (or mapping).
-func inSelector(selector, identity *Node) bool {
+func inSelector(selector *Node, identity string) bool {
 	if isMap(selector) {
-		return isStr(identity) && has(selector, identity.Value)
+		return has(selector, identity)
 	}
-	return contains(selector, identity)
+	return containsStr(selector, identity)
 }
 
 type selection struct {
-	item  *Node
+	item  model.RuleConfig
 	route string
 }
 
 // selected is _selected: (item, route) for the routed candidates; a rule DNS
 // action wins over the selector lists. candidates nil means every active rule.
-func (p *Profile) selected(settings *Node, candidates []*Node) ([]selection, error) {
+func (p *Profile) selected(settings *Node, candidates []model.RuleConfig) ([]selection, error) {
 	actions := get(settings, "rule_actions")
 	if candidates == nil {
 		candidates = p.activeItems()
@@ -114,13 +130,12 @@ func (p *Profile) selected(settings *Node, candidates []*Node) ([]selection, err
 	var out []selection
 	for _, item := range candidates {
 		suffix := suffixOf(item)
-		identity := get(item, "id")
 		switch {
-		case isStr(identity) && has(actions, identity.Value):
-			out = append(out, selection{item, RouteKey(get(actions, identity.Value))})
-		case inSelector(get(settings, "direct_"+suffix), identity):
+		case has(actions, item.ID):
+			out = append(out, selection{item, RouteKey(get(actions, item.ID))})
+		case inSelector(get(settings, "direct_"+suffix), item.ID):
 			out = append(out, selection{item, "direct"})
-		case inSelector(get(settings, "proxy_"+suffix), identity):
+		case inSelector(get(settings, "proxy_"+suffix), item.ID):
 			out = append(out, selection{item, "proxy"})
 		}
 	}
@@ -130,10 +145,10 @@ func (p *Profile) selected(settings *Node, candidates []*Node) ([]selection, err
 // UnavailableRulesets explains, one line per ruleset, why referenced
 // generated rule files cannot be produced.
 func UnavailableRulesets(p *Profile, paths []string) []string {
-	rulesets := map[string]*Node{}
-	for _, item := range items(p.get("rule_configs")) {
-		if equal(get(item, "itemType"), S("ruleset")) {
-			rulesets[TagFor("rule", get(item, "id"))] = item
+	rulesets := map[string]model.RuleConfig{}
+	for _, item := range p.ruleConfigs() {
+		if item.ItemType == "ruleset" {
+			rulesets[tagForString("rule", item.ID)] = item
 		}
 	}
 	lines := []string{}
@@ -145,30 +160,22 @@ func UnavailableRulesets(p *Profile, paths []string) []string {
 			continue
 		}
 		seen[m[1]] = true
-		item := rulesets[m[1]]
-		if item == nil {
+		item, ok := rulesets[m[1]]
+		if !ok {
 			deleted = append(deleted, m[1])
 			continue
 		}
-		name := get(item, "name")
-		if !(str(name) != "") {
-			name = get(item, "id")
+		label := item.Name
+		if label == "" {
+			label = item.ID
 		}
-		behavior := get(item, "behavior")
-		if !has(item, "behavior") {
-			behavior = S("domain")
-		}
-		switch label := displayValue(name); {
-		case !enabledOrDefault(item, "enabled"):
+		switch behavior := behaviorOf(item); {
+		case !model.Flag(item.Enabled, true):
 			lines = append(lines, "「"+label+"」已停用：请在规则管理中重新启用")
-		case !enabledOrDefault(item, "library_enabled"):
+		case !model.Flag(item.LibraryEnabled, true):
 			lines = append(lines, "「"+label+"」的规则来源已停用：请在规则库中重新启用")
 		case !containsString(rulesetParts(behavior), m[2]):
-			if isNone(behavior) {
-				lines = append(lines, fmt.Sprintf(messageNullRulesetType, label))
-			} else {
-				lines = append(lines, "「"+label+"」的类型被改成了 "+displayValue(behavior)+"：请改回原来的类型")
-			}
+			lines = append(lines, "「"+label+"」的类型被改成了 "+behavior+"：请改回原来的类型")
 		default:
 			lines = append(lines, "「"+label+"」没有下载地址：请检查规则来源")
 		}
@@ -179,27 +186,29 @@ func UnavailableRulesets(p *Profile, paths []string) []string {
 	return lines
 }
 
-// RulesetDownload is one rule file the Agent downloads.
+// RulesetDownload is one rule file the Agent downloads. Behavior is the
+// ruleset's behavior ("" for AdGuard subscriptions).
 type RulesetDownload struct {
 	Name      string `json:"name"`
 	URL       string `json:"url"`
 	LocalPath string `json:"local_path"`
-	Behavior  *Node  `json:"-"`
+	Behavior  string `json:"-"`
 }
 
 // managedRulesetParts is ruleset_parts: managed routing only uses names.
-func managedRulesetParts(item *Node) []string {
-	if containsString(rulesetParts(behaviorNode(item)), "domain") {
+func managedRulesetParts(behavior string) []string {
+	if containsString(rulesetParts(behavior), "domain") {
 		return []string{"domain"}
 	}
 	return nil
 }
 
-func behaviorNode(item *Node) *Node {
-	if has(item, "behavior") {
-		return get(item, "behavior")
+// behaviorOf is a ruleset's behavior; an absent one means domain.
+func behaviorOf(item model.RuleConfig) string {
+	if item.Behavior != nil {
+		return *item.Behavior
 	}
-	return S("domain")
+	return "domain"
 }
 
 // RulesetDownloads is get_oxidns_ruleset_downloads.
@@ -248,43 +257,39 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 	downloads := []RulesetDownload{}
 	for _, c := range candidates {
 		item := c.item
-		if !equal(get(item, "itemType"), S("ruleset")) {
+		if item.ItemType != "ruleset" {
 			continue
 		}
 		var parts []string
 		if native != nil {
-			for _, part := range rulesetParts(behaviorNode(item)) {
-				if path, _, err := relativeResource(RulePath(item, part)); err == nil && native[path] {
+			for _, part := range rulesetParts(behaviorOf(item)) {
+				if path, _, err := relativeResource(rulePath(item.ID, part)); err == nil && native[path] {
 					parts = append(parts, part)
 				}
 			}
 		} else {
-			parts = managedRulesetParts(item)
+			parts = managedRulesetParts(behaviorOf(item))
 		}
 		if len(parts) == 0 {
 			continue
 		}
-		url := get(item, "url")
-		if !(str(url) != "") {
+		link := model.TextValue(item.URL)
+		if link == "" {
 			return nil, fail("已选择的规则集缺少下载来源")
 		}
-		if !isStr(url) {
-			return nil, errMalformed
-		}
-		link := url.Value
 		if strings.HasPrefix(link, "/") {
 			link = effective + link
 		}
 		name := "规则集"
-		if n := get(item, "name"); str(n) != "" {
-			name = displayValue(n)
+		if item.Name != "" {
+			name = item.Name
 		}
 		for _, part := range parts {
 			proxied, err := p.ruleProxyURL(effective, link, part)
 			if err != nil {
 				return nil, err
 			}
-			downloads = append(downloads, RulesetDownload{name, proxied, RulePath(item, part), behaviorNode(item)})
+			downloads = append(downloads, RulesetDownload{name, proxied, rulePath(item.ID, part), behaviorOf(item)})
 		}
 	}
 	adguard := get(settings, "adguard")
@@ -296,7 +301,7 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 					continue
 				}
 			}
-			downloads = append(downloads, RulesetDownload{"AdGuard DNS 规则", displayValue(url), path, nil})
+			downloads = append(downloads, RulesetDownload{"AdGuard DNS 规则", displayValue(url), path, ""})
 		}
 	}
 	return downloads, nil
@@ -427,7 +432,7 @@ func (g *routingGroups) all() []*ruleGroup {
 
 // routingGroups is _routing_groups: managed domain groups, or the historical
 // IP shapes (legacy) used to recognize native documents.
-func (p *Profile) routingGroups(settings *Node, legacy legacyMode, candidates []*Node) (*routingGroups, error) {
+func (p *Profile) routingGroups(settings *Node, legacy legacyMode, candidates []model.RuleConfig) (*routingGroups, error) {
 	groups := &routingGroups{}
 	selected, err := p.selected(settings, candidates)
 	if err != nil {
@@ -440,40 +445,30 @@ func (p *Profile) routingGroups(settings *Node, legacy legacyMode, candidates []
 			args *Node
 		}
 		var entries []entry
-		if equal(get(item, "itemType"), S("ruleset")) {
-			parts := managedRulesetParts(item)
+		if item.ItemType == "ruleset" {
+			parts := managedRulesetParts(behaviorOf(item))
 			if legacy != legacyNone {
-				parts = rulesetParts(behaviorNode(item))
+				parts = rulesetParts(behaviorOf(item))
 			}
 			for _, part := range parts {
 				if part == "ip" && legacy == legacyContentAware && !hasIPPart(item, p) {
 					continue
 				}
-				entries = append(entries, entry{part, M("files", L(RulePath(item, part)))})
+				entries = append(entries, entry{part, M("files", L(rulePath(item.ID, part)))})
 			}
 		} else {
-			kind, value := get(item, "rule_type"), get(item, "value")
-			kindText, valueText := "", ""
-			if has(item, "rule_type") {
-				kindText = displayValue(kind)
-			}
-			if has(item, "value") {
-				valueText = displayValue(value)
-			}
+			kind, value := item.RuleType, model.TextValue(item.Value)
 			part := "domain"
-			if kindText == "IP-CIDR" || kindText == "IP-CIDR6" {
+			if IsIPRuleType(kind) {
 				part = "ip"
 			}
 			if part == "ip" && legacy == legacyNone {
 				continue
 			}
-			if !isStr(kind) && has(item, "rule_type") || !containsString(dnsRuleTypes, kindText) {
-				if isNone(kind) && has(item, "rule_type") {
-					return nil, fail(messageNullRuleType)
-				}
-				return nil, fail("所选规则类型暂不能转换为 OxiDNS 规则：" + kindText)
+			if !containsString(dnsRuleTypes, kind) {
+				return nil, fail("所选规则类型暂不能转换为 OxiDNS 规则：" + kind)
 			}
-			converted, err := convertRule(kindText+","+valueText, part)
+			converted, err := convertRule(kind+","+value, part)
 			if err != nil {
 				return nil, err
 			}

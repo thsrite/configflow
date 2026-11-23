@@ -13,11 +13,13 @@ import (
 )
 
 // Profile is an owned DNS projection of one captured typed repository view.
-// OxiDNS settings are deliberately schema-free; resource metadata is typed.
+// Rules, groups, Agents and system settings are read from the typed source;
+// the OxiDNS settings object is decoded once from its stored JSON.
 type Profile struct {
-	doc             *Node
 	source          *model.Config
-	notesChanged    func(*Node)
+	settings        *Node
+	notes           json.RawMessage
+	notesChanged    func(json.RawMessage)
 	notesNull       bool
 	notesNonText    bool
 	presenceMu      sync.Mutex
@@ -33,165 +35,40 @@ func NewTypedProfile(source *model.Config) (*Profile, error) {
 		source = &model.Config{Profile: &model.Profile{}}
 	}
 	profile := source.Profile
-	doc := M("profile_id", source.ProfileID)
 	settings, err := profile.OxiDNS.Node()
 	if err != nil {
 		return nil, err
 	}
 	var issues []model.FieldIssue
 	settings, issues = storedProjection(settings)
-	if !isNone(settings) {
-		set(doc, "oxidns", settings)
+	if isNone(settings) {
+		settings = nil
 	}
-	rules := L()
-	for _, item := range profile.RuleConfigs {
-		rules.Content = append(rules.Content, ruleNode(item))
+	notes, err := profile.DeviceNotes.MarshalJSON()
+	if err != nil {
+		return nil, err
 	}
-	set(doc, "rule_configs", rules)
-	for _, key := range []string{"rules", "rule_sets"} {
-		if raw, ok := profile.LegacyRuleList(key); ok {
-			var container model.Profile
-			if err := container.SetJSON(key, raw); err != nil {
-				return nil, err
-			}
-			rules, sets, err := mosdns.SplitRules(&model.Config{Profile: &container})
-			if err != nil {
-				return nil, err
-			}
-			values := rules
-			if key == "rule_sets" {
-				values = sets
-			}
-			list := L()
-			for _, item := range values {
-				list.Content = append(list.Content, ruleNode(item))
-			}
-			set(doc, key, list)
-		}
-	}
-	system := source.SystemConfig
-	credentials := mosdns.ProxyCredentials(system)
-	set(doc, "system_config", M("server_domain", system.ServerDomain, "rule_proxy_token", credentials.Current, "retired_rule_proxy_tokens", strs(credentials.Retired), "config_token", system.ConfigToken, "default_profile_id", text(system.DefaultProfileID, "default"), "node_test_dns", strs(system.NodeTestDNS)))
-	if system.NodeTestDNSConfig != nil {
-		v := system.NodeTestDNSConfig
-		set(get(doc, "system_config"), "node_test_dns_config", M("mode", v.Mode, "servers", strs(v.Servers)))
-	}
-	groups := L()
-	for _, group := range profile.ProxyGroups {
-		node, err := groupNode(group)
-		if err != nil {
-			return nil, err
-		}
-		groups.Content = append(groups.Content, node)
-	}
-	set(doc, "proxy_groups", groups)
-	selectors := profile.MosDNS
-	set(doc, "mosdns", M("direct_rulesets", strs(selectors.DirectRulesets), "proxy_rulesets", strs(selectors.ProxyRulesets), "direct_rules", strs(selectors.DirectRules), "proxy_rules", strs(selectors.ProxyRules)))
 	// Stored notes Python refused to extend (null, a name that is not text).
-	notesNull, notesNonText := profile.DeviceNotes.Null, profile.DeviceNotes.NonTextName
-	notesJSON, err := profile.DeviceNotes.MarshalJSON()
-	if err != nil {
-		return nil, err
-	}
-	notes, err := yamlx.FromJSON(notesJSON)
-	if err != nil {
-		return nil, err
-	}
-	set(doc, "device_notes", notes)
-
-	agents := L()
-	for _, agent := range source.Agents {
-		// Agent rows are an opaque foreign-owner DTO: public display names and the
-		// rulesync callback require original fields. No Agent policy is duplicated.
-		data, err := model.Marshal(agent)
-		if err != nil {
-			return nil, err
-		}
-		row, err := yamlx.FromJSON(data)
-		if err != nil {
-			return nil, err
-		}
-		agents.Content = append(agents.Content, row)
-	}
-	if source.HasAgents {
-		set(doc, "agents", agents)
-	}
-	nodes := L()
-	for _, node := range source.Nodes {
-		nodes.Content = append(nodes.Content, M("id", node.ID, "name", node.Name))
-	}
-	set(doc, "nodes", nodes)
-	subscriptions := L()
-	for _, item := range source.Subscriptions {
-		subscriptions.Content = append(subscriptions.Content, M("id", item.ID, "name", item.Name))
-	}
-	set(doc, "subscriptions", subscriptions)
-	aggregations := L()
-	for _, item := range source.Aggregations {
-		aggregations.Content = append(aggregations.Content, M("id", item.ID, "name", item.Name, "enabled", model.Flag(item.Enabled, true), "subscriptions", strs(item.Subscriptions)))
-	}
-	set(doc, "subscription_aggregations", aggregations)
-
-	return &Profile{doc: doc, source: source, issues: issues, notesNull: notesNull, notesNonText: notesNonText}, nil
+	return &Profile{source: source, settings: settings, notes: notes, issues: issues,
+		notesNull: profile.DeviceNotes.Null, notesNonText: profile.DeviceNotes.NonTextName}, nil
 }
 
-func text(value *string, fallback string) string {
-	if value == nil {
-		return fallback
+// ruleConfigs is the profile's rule list (disabled rules included).
+func (p *Profile) ruleConfigs() []model.RuleConfig { return p.source.Profile.RuleConfigs }
+
+// profileID is the profile's own id ("" for an unnamed projection).
+func (p *Profile) profileID() string { return p.source.ProfileID }
+
+// defaultProfileID is the system's default profile id.
+func (p *Profile) defaultProfileID() string {
+	if id := p.source.SystemConfig.DefaultProfileID; id != nil && *id != "" {
+		return *id
 	}
-	return *value
+	return "default"
 }
-func ruleNode(item model.RuleConfig) *Node {
-	out := M("id", item.ID, "itemType", item.ItemType, "name", item.Name, "rule_type", item.RuleType, "value", model.TextValue(item.Value),
-		"enabled", model.Flag(item.Enabled, true),
-		"library_enabled", model.Flag(item.LibraryEnabled, true))
-	if item.LibraryRuleID != "" {
-		set(out, "library_rule_id", S(item.LibraryRuleID))
-	}
-	for _, field := range []struct {
-		key   string
-		value *string
-	}{{"url", item.URL}, {"behavior", item.Behavior}, {"content", item.Content}, {"source_type", item.SourceType}, {"format", item.Format}, {"policy", item.Policy}} {
-		if field.value != nil {
-			set(out, field.key, S(*field.value))
-		}
-	}
-	return out
-}
-func libraryNode(item model.RuleLibraryItem) *Node {
-	out := M("id", item.ID, "name", item.Name, "enabled", model.Flag(item.Enabled, true))
-	for _, field := range []struct {
-		key   string
-		value *string
-	}{{"url", item.URL}, {"behavior", item.Behavior}, {"content", item.Content}, {"source_type", item.SourceType}, {"format", item.Format}} {
-		if field.value != nil {
-			set(out, field.key, S(*field.value))
-		}
-	}
-	return out
-}
-func groupNode(group model.ProxyGroup) (*Node, error) {
-	// A DTO alias excludes storage's preservation marshaler. Known consumed
-	// values have already passed the shared R5 decoder; private Raw is omitted.
-	type groupDTO model.ProxyGroup
-	value := groupDTO(group)
-	value.ChainDialer, value.ChainOriginalCandidates = nil, model.Dynamic{}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	node, err := yamlx.FromJSON(data)
-	if err != nil {
-		return nil, err
-	}
-	for _, key := range keys(node) {
-		if isNone(get(node, key)) {
-			del(node, key)
-		}
-	}
-	set(node, "enabled", B(model.Flag(group.Enabled, true)))
-	return node, nil
-}
+
+// agents returns the configuration's Agents.
+func (p *Profile) agents() []model.Agent { return p.source.Agents }
 
 // ProfileFromJSON decodes only DNS/profile metadata; unrelated fields do not
 // enter model.Profile.Raw or trigger whole-configuration decoding.
@@ -300,17 +177,16 @@ func ProfileFromJSON(data []byte) (*Profile, error) {
 	source.Aggregations = shared.Aggregations
 	return NewTypedProfile(source)
 }
-func (p *Profile) get(key string) *Node {
+
+// Settings returns the owned settings tree; missing settings are nil.
+func (p *Profile) Settings() *Node {
 	if p == nil {
 		return nil
 	}
-	return get(p.doc, key)
+	return p.settings
 }
-
-// Settings returns the owned settings tree; missing settings are nil.
-func (p *Profile) Settings() *Node { return p.get("oxidns") }
-func (p *Profile) setDeviceNotes(notes *Node) {
-	set(p.doc, "device_notes", notes)
+func (p *Profile) setDeviceNotes(notes json.RawMessage) {
+	p.notes = notes
 	if p.notesChanged != nil {
 		p.notesChanged(notes)
 	}
@@ -329,25 +205,12 @@ func safeLoad(text string) (*Node, bool, error) {
 	yamlx.MaterializeAliases(root)
 	return root, true, nil
 }
-func (p *Profile) splitRules() (*Node, *Node) {
-	rules, sets, err := mosdns.SplitRules(p.source)
-	if err != nil {
-		return L(), L()
-	}
-	r, s := L(), L()
-	for _, item := range rules {
-		r.Content = append(r.Content, ruleNode(item))
-	}
-	for _, item := range sets {
-		s.Content = append(s.Content, ruleNode(item))
-	}
-	return r, s
-}
 func (p *Profile) ruleProxyURL(baseURL, url, part string) (string, error) {
-	source := &model.Config{Profile: &model.Profile{}, ProfileID: str(p.get("profile_id")), SystemConfig: model.SystemConfig{RuleProxyToken: str(get(p.get("system_config"), "rule_proxy_token"))}}
+	credentials := mosdns.ProxyCredentials(p.source.SystemConfig)
+	source := &model.Config{Profile: &model.Profile{}, ProfileID: p.profileID(), SystemConfig: model.SystemConfig{RuleProxyToken: credentials.Current}}
 	return mosdns.RuleProxyURL(source, baseURL, url, part, "")
 }
-func rulesetParts(behavior *Node) []string { return mosdns.Parts(str(behavior)) }
+func rulesetParts(behavior string) []string { return mosdns.Parts(behavior) }
 func convertRule(text, part string) (string, error) {
 	return mosdns.ConvertRuleContentForMosDNS(text, part)
 }
@@ -367,12 +230,8 @@ func parseCustomMatches(list *Node) (*Node, error) {
 	}
 	return seqOf(mosdns.MatchEntries(settings.CustomMatches)), nil
 }
-func (p *Profile) renderMembers(group *Node) *Node {
-	var typed model.ProxyGroup
-	if err := json.Unmarshal(ToJSON(group), &typed); err != nil {
-		return M()
-	}
-	return rules.RenderGroupDocument(typed, rules.GroupResources(p.source))
+func (p *Profile) renderMembers(group model.ProxyGroup) *Node {
+	return rules.RenderGroupDocument(group, rules.GroupResources(p.source))
 }
 
 // NativeClassicalIPLinesFunc queries offline content from typed metadata only.
@@ -409,7 +268,7 @@ func setIPFactory(factory nativeIPFactory) func() {
 		classicalHook.Unlock()
 	}
 }
-func (p *Profile) classicalWithoutIP(item *Node) bool {
+func (p *Profile) classicalWithoutIP(item model.RuleConfig) bool {
 	classicalHook.RLock()
 	factory, version := classicalHook.factory, classicalHook.version
 	classicalHook.RUnlock()
@@ -423,16 +282,8 @@ func (p *Profile) classicalWithoutIP(item *Node) bool {
 	}
 	resolver := p.presence
 	p.presenceMu.Unlock()
-	rule := model.RuleConfig{ID: str(get(item, "id")), Name: str(get(item, "name")), LibraryRuleID: str(get(item, "library_rule_id"))}
-	for _, member := range []struct {
-		key         string
-		destination **string
-	}{{"url", &rule.URL}, {"format", &rule.Format}, {"source_type", &rule.SourceType}, {"content", &rule.Content}, {"behavior", &rule.Behavior}} {
-		if value := get(item, member.key); isStr(value) {
-			text := str(value)
-			*member.destination = &text
-		}
-	}
+	rule := model.RuleConfig{ID: item.ID, Name: item.Name, LibraryRuleID: item.LibraryRuleID,
+		URL: item.URL, Format: item.Format, SourceType: item.SourceType, Content: item.Content, Behavior: item.Behavior}
 	// Generate owns only a snapshot, not a write-capable Runtime context. Wire
 	// installs the peek-only reader so this offline probe cannot migrate files.
 	value, err := resolver(context.Background(), rule)
@@ -440,7 +291,7 @@ func (p *Profile) classicalWithoutIP(item *Node) bool {
 }
 
 func emptyProfile() *Profile {
-	return &Profile{doc: M(), source: &model.Config{Profile: &model.Profile{}}}
+	return &Profile{source: &model.Config{Profile: &model.Profile{}}}
 }
 
 type profileIdentity struct {

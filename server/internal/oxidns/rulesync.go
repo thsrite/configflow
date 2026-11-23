@@ -38,7 +38,7 @@ func PinnedAction(key string, plugins map[string]*Node) *Node { return pinnedAct
 func BlackholePlugin() *Node { return clone(blackholeNode) }
 
 // RulesetParts returns the converter's parts for one rule behavior.
-func RulesetParts(behavior string) []string { return managedRulesetParts(M("behavior", behavior)) }
+func RulesetParts(behavior string) []string { return managedRulesetParts(behavior) }
 
 // RuleEnabled applies the converter's existing enabled/library-enabled policy.
 func RuleEnabled(item *Node) bool {

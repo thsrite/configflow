@@ -198,11 +198,7 @@ func materialize(ctx context.Context, config *model.Config, out Output, engine E
 		}
 		downloads := make([]mosdns.Download, 0, len(rows))
 		for _, row := range rows {
-			behavior := ""
-			if row.Behavior != nil {
-				behavior = row.Behavior.Value
-			}
-			downloads = append(downloads, mosdns.Download{Name: row.Name, URL: row.URL, LocalPath: row.LocalPath, Behavior: behavior})
+			downloads = append(downloads, mosdns.Download{Name: row.Name, URL: row.URL, LocalPath: row.LocalPath, Behavior: row.Behavior})
 		}
 		files, err := oxidns.CustomFiles(profile)
 		if err != nil {

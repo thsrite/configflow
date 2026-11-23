@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"configflow/internal/model"
 	"errors"
 	"strings"
 )
@@ -16,22 +17,11 @@ var (
 )
 
 // ruleIDs is (every rule id → item, ids of active rules) of a profile.
-func (p *Profile) ruleIDs() (map[string]*Node, map[string]bool) {
-	known := map[string]*Node{}
-	list := items(p.get("rule_configs"))
-	if !(len(items(p.get("rule_configs"))) > 0) {
-		list = p.activeItems()
-	}
-	for _, item := range list {
-		if id := get(item, "id"); isMap(item) && isStr(id) && known[id.Value] == nil {
-			known[id.Value] = item
-		}
-	}
+func (p *Profile) ruleIDs() (map[string]*model.RuleConfig, map[string]bool) {
+	known, _ := p.knownRules()
 	active := map[string]bool{}
 	for _, item := range p.activeItems() {
-		if id := get(item, "id"); isStr(id) {
-			active[id.Value] = true
-		}
+		active[item.ID] = true
 	}
 	return known, active
 }
@@ -48,7 +38,7 @@ func restoreParked(inputs *Node, p *Profile) *Node {
 			return inputs // normalization reports the malformed value
 		}
 	}
-	known := map[string]*Node{}
+	known := map[string]*model.RuleConfig{}
 	if p != nil {
 		known, _ = p.ruleIDs()
 	}
@@ -58,7 +48,7 @@ func restoreParked(inputs *Node, p *Profile) *Node {
 		case isOneOf(route, "direct", "proxy"):
 			suffix := "rules"
 			if item := known[identity]; item != nil {
-				suffix = suffixOf(item)
+				suffix = suffixOf(*item)
 			} else if containsStr(get(inputs, route.Value+"_rulesets"), identity) {
 				suffix = "rulesets"
 			}

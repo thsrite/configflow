@@ -28,6 +28,7 @@ import (
 	"configflow/internal/testgolden"
 	"configflow/internal/yamlx"
 	"configflow/internal/yamlx/yamlxtest"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -171,9 +172,15 @@ func profileOf(n *Node) *Profile {
 	}
 	p, err := ProfileFromJSON(ToJSON(n))
 	if err != nil {
-		return &Profile{doc: n, source: &model.Config{Profile: &model.Profile{}}}
+		return &Profile{settings: get(n, "oxidns"), source: &model.Config{Profile: &model.Profile{}}}
 	}
-	p.notesChanged = func(notes *Node) { set(n, "device_notes", notes) }
+	p.notesChanged = func(notes json.RawMessage) {
+		node, err := FromJSON(notes)
+		if err != nil {
+			panic(err)
+		}
+		set(n, "device_notes", node)
+	}
 	return p
 }
 
@@ -203,8 +210,8 @@ func toNode(v any) *Node {
 		out := L()
 		for _, d := range x {
 			item := M("name", d.Name, "url", d.URL, "local_path", d.LocalPath)
-			if d.Behavior != nil {
-				set(item, "behavior", d.Behavior)
+			if d.Behavior != "" {
+				set(item, "behavior", S(d.Behavior))
 			}
 			out.Content = append(out.Content, item)
 		}

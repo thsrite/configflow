@@ -181,7 +181,7 @@ func hasIP(item model.RuleLibraryItem, shared *model.Shared) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return oxidns.RuleHasIPPart(rule, profile), nil
+	return oxidns.HasIPPart(rule, profile), nil
 }
 func inspect(content string, lines []string, body *checkContentRequest) (*rulefetch.Inspection, error) {
 	if len(lines) > 0 {

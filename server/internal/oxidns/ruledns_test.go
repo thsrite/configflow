@@ -3,6 +3,7 @@ package oxidns
 import (
 	"bytes"
 	"compress/gzip"
+	"configflow/internal/model"
 	"encoding/json"
 	"errors"
 	"io"
@@ -96,7 +97,14 @@ func callRuleDNSReference(t *testing.T, operation string, args []*Node) (*Node, 
 	case "rule_dns_state":
 		options := RuleDNSReadOptions{}
 		if len(args) > 2 && !isNone(args[2]) {
-			options.Agents = append([]*Node{}, items(args[2])...)
+			options.Agents = []model.Agent{}
+			for _, row := range items(args[2]) {
+				var agent model.Agent
+				if err := json.Unmarshal(ToJSON(row), &agent); err != nil {
+					t.Fatal(err)
+				}
+				options.Agents = append(options.Agents, agent)
+			}
 		}
 		state, err := ReadRuleDNS(profileOf(args[0]), options)
 		return toNode(state), err
@@ -104,7 +112,15 @@ func callRuleDNSReference(t *testing.T, operation string, args []*Node) (*Node, 
 		entries, err := RuleDNSEntries(profileOf(args[0]), ruleDNSIDs(args[1]), RuleDNSReadOptions{})
 		return toNode(entries), err
 	case "profile_agents":
-		return seqOf(ProfileAgents(profileOf(args[0]))), nil
+		out := L()
+		for _, agent := range ProfileAgents(profileOf(args[0])) {
+			row, err := FromJSON(mustMarshal(t, agent))
+			if err != nil {
+				t.Fatal(err)
+			}
+			out.Content = append(out.Content, row)
+		}
+		return out, nil
 	case "explicit_route":
 		route, err := ExplicitRuleDNS(profileOf(args[0]), str(args[1]))
 		if route == "" {
@@ -180,7 +196,7 @@ func TestRuleDNSAssignmentOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := ToJSON(p.doc)
+	before := profileSnapshot(t, p)
 	result, err := ApplyRuleDNS(p, p, []DNSAssignment{{"a", "drop"}, {"b", "proxy"}, {"a", "direct"}}, RuleDNSApplyOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +205,27 @@ func TestRuleDNSAssignmentOrder(t *testing.T) {
 		!same(get(result.Settings, "future"), M("retained", false)) || !result.Changed {
 		t.Fatalf("bulk assignment lost final choice or unknown settings: %s", ToJSON(result.Settings))
 	}
-	if !bytes.Equal(before, ToJSON(p.doc)) {
+	if !bytes.Equal(before, profileSnapshot(t, p)) {
 		t.Fatal("bulk assignment changed its profile input")
 	}
+}
+
+// profileSnapshot encodes everything a profile projection holds, so a test can
+// prove an operation left its input unchanged.
+func profileSnapshot(t *testing.T, p *Profile) []byte {
+	t.Helper()
+	source, err := model.Marshal(p.source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bytes.Join([][]byte{ToJSON(p.settings), p.notes, source}, []byte{0})
+}
+
+func mustMarshal(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := model.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

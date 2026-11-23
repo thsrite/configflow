@@ -1,8 +1,9 @@
 package oxidns
 
 import (
-	"gopkg.in/yaml.v3"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestSchemaRejectsNonFiniteExponentBeforeRationalExpansion(t *testing.T) {

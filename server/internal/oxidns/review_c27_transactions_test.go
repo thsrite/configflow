@@ -32,7 +32,7 @@ func c27Snapshot(t *testing.T, native bool) *Profile {
 		if err != nil {
 			t.Fatal(err)
 		}
-		set(p.doc, "oxidns", settings)
+		p.settings = settings
 	}
 	return p
 }
@@ -42,7 +42,7 @@ func TestC27ReviewConcurrentSnapshots(t *testing.T) {
 	for _, native := range []bool{false, true} {
 		t.Run(fmt.Sprint(native), func(t *testing.T) {
 			p := c27Snapshot(t, native)
-			before := ToJSON(p.doc)
+			before := profileSnapshot(t, p)
 			const workers = 8
 			failures := make(chan error, workers)
 			var wg sync.WaitGroup
@@ -68,7 +68,7 @@ func TestC27ReviewConcurrentSnapshots(t *testing.T) {
 						state.Engine.Agents[0].Name[0] = 'x'
 						at(result.Settings, "extra", "retain").Content[0].Value = "changed"
 						agents := ProfileAgents(p)
-						set(agents[0], "name", S("changed"))
+						agents[0].Name = "changed"
 					}
 				}()
 			}
@@ -77,7 +77,7 @@ func TestC27ReviewConcurrentSnapshots(t *testing.T) {
 			for err := range failures {
 				t.Error(err)
 			}
-			if !bytes.Equal(before, ToJSON(p.doc)) {
+			if !bytes.Equal(before, profileSnapshot(t, p)) {
 				t.Fatal("parallel operations or returned values changed the shared snapshot")
 			}
 		})
@@ -98,12 +98,12 @@ func TestC27ReviewNativeIdentitiesRemainEditable(t *testing.T) {
 				}
 				set(settings, source+"_dns", S(text))
 				set(settings, "rule_actions", M("a", M("action", "upstream", "source", source, "upstream", entry)))
-				set(p.doc, "oxidns", settings)
+				p.settings = settings
 				settings, err = PrepareEditor(settings, p, "https://panel.example.com")
 				if err != nil {
 					t.Fatal(err)
 				}
-				set(p.doc, "oxidns", settings)
+				p.settings = settings
 				state, err := ReadRuleDNS(p, RuleDNSReadOptions{})
 				if err != nil {
 					t.Fatal(err)
@@ -142,7 +142,7 @@ func c27Repository(t *testing.T, native bool) (*repo.Repository, context.Context
 	ctx := repo.WithRepository(context.Background(), r)
 	p := c27Snapshot(t, native)
 	fields, err := json.Marshal(map[string]json.RawMessage{
-		"rule_configs": ToJSON(p.get("rule_configs")),
+		"rule_configs": mustMarshal(t, p.ruleConfigs()),
 		"oxidns":       ToJSON(p.Settings()),
 	})
 	if err != nil {
@@ -396,9 +396,9 @@ func TestC27ReviewIssueKeysAndRuleClassification(t *testing.T) {
 		{S("ipcidr\x00"), true, false},
 	}
 	for _, test := range tests {
-		item := M("itemType", "ruleset")
+		item := model.RuleConfig{ItemType: "ruleset"}
 		if test.behavior != nil {
-			set(item, "behavior", test.behavior)
+			item.Behavior = &test.behavior.Value
 		}
 		if Convertible(item) != test.convertible || HasIPPart(item, nil) != test.ip {
 			t.Fatalf("unexpected classification for %s", ToJSON(test.behavior))

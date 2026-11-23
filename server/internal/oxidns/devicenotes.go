@@ -1,6 +1,8 @@
 package oxidns
 
 import (
+	"bytes"
+
 	"configflow/internal/devicenotes"
 	"configflow/internal/jsondecode"
 	"encoding/json"
@@ -30,6 +32,14 @@ func notesNode(notes devicenotes.Names) *Node {
 	}
 	return result
 }
+
+// storedPolicies is the stored device_policies member ([] when absent).
+func storedPolicies(settings *Node) json.RawMessage {
+	if !has(settings, "device_policies") {
+		return json.RawMessage("[]")
+	}
+	return ToJSON(get(settings, "device_policies"))
+}
 func policyRowsNode(rows []devicenotes.Policy) *Node {
 	result := L()
 	for _, row := range rows {
@@ -44,14 +54,7 @@ func notesState(p *Profile) (devicenotes.State, error) {
 	if p.notesNonText {
 		return devicenotes.State{}, fail(devicenotes.NameMessage)
 	}
-	notes, policies := p.get("device_notes"), get(p.Settings(), "device_policies")
-	if !has(p.doc, "device_notes") {
-		notes = M()
-	}
-	if !has(p.Settings(), "device_policies") {
-		policies = L()
-	}
-	state, err := devicenotes.New(ToJSON(notes), ToJSON(policies))
+	state, err := devicenotes.New(p.notes, storedPolicies(p.Settings()))
 	if err != nil {
 		return devicenotes.State{}, fail(err.Error())
 	}
@@ -87,18 +90,11 @@ func ReadNotes(p *Profile) (map[string]string, error) {
 
 // SetNote changes only display names in the owning profile document.
 func SetNote(p *Profile, ip, name string) error {
-	rawNotes, rawPolicies := p.get("device_notes"), get(p.Settings(), "device_policies")
-	if !has(p.doc, "device_notes") {
-		rawNotes = M()
-	}
-	if !has(p.Settings(), "device_policies") {
-		rawPolicies = L()
-	}
-	notes, err := devicenotes.Set(ToJSON(rawNotes), ToJSON(rawPolicies), ip, name)
+	notes, err := devicenotes.Set(p.notes, storedPolicies(p.Settings()), ip, name)
 	if err != nil {
 		return fail(err.Error())
 	}
-	p.setDeviceNotes(notesNode(notes))
+	p.setDeviceNotes(ToJSON(notesNode(notes)))
 	return nil
 }
 
@@ -135,7 +131,7 @@ func SavePolicyRows(p *Profile, settings, rows *Node, baseURL string) (*Node, er
 	if err != nil {
 		return nil, err
 	}
-	p.setDeviceNotes(notes)
+	p.setDeviceNotes(ToJSON(notes))
 	current := get(settings, "device_policies")
 	if !has(settings, "device_policies") {
 		current = L()
@@ -156,4 +152,4 @@ func SavePolicyRows(p *Profile, settings, rows *Node, baseURL string) (*Node, er
 
 // DeviceNotesJSON returns the native notes after SetNote or SavePolicyRows.
 // The caller commits this value through its profile transaction.
-func (p *Profile) DeviceNotesJSON() json.RawMessage { return ToJSON(p.get("device_notes")) }
+func (p *Profile) DeviceNotesJSON() json.RawMessage { return bytes.Clone(p.notes) }

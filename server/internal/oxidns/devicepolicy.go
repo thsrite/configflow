@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/netip"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -282,16 +283,16 @@ func NewEntryContext(p *Profile) EntryContext {
 	if p == nil {
 		return ctx
 	}
-	system := mapOr(p.get("system_config"))
-	values := items(get(system, "node_test_dns"))
-	if saved := get(system, "node_test_dns_config"); equal(get(saved, "mode"), S("custom")) && isSeq(get(saved, "servers")) {
-		values = append(append([]*Node{}, values...), get(saved, "servers").Content...)
+	system := p.source.SystemConfig
+	values := slices.Clone(system.NodeTestDNS)
+	if saved := system.NodeTestDNSConfig; saved != nil && saved.Mode == "custom" {
+		values = append(values, saved.Servers...)
 	}
 	for _, value := range values {
-		if !isStr(value) || strings.Contains(value.Value, "://") {
+		if strings.Contains(value, "://") {
 			continue
 		}
-		host, port, separator := strings.Cut(strings.TrimSpace(value.Value), ":")
+		host, port, separator := strings.Cut(strings.TrimSpace(value), ":")
 		ip, ok := netipx.ParseAddr4(host)
 		if !ok || strings.Contains(host, "%") {
 			continue
@@ -301,14 +302,13 @@ func NewEntryContext(p *Profile) EntryContext {
 		}
 		ctx.Addresses[[2]string{ip.String(), port}] = true
 	}
-	profileID := p.get("profile_id")
-	for _, agent := range items(p.get("agents")) {
-		agentProfile := get(agent, "profile_id")
-		if !has(agent, "profile_id") {
-			agentProfile = S("default")
+	for _, agent := range p.agents() {
+		agentProfile := agent.ProfileID
+		if agentProfile == "" {
+			agentProfile = "default"
 		}
-		if isMap(agent) && equal(get(agent, "service_type"), S("oxidns")) && equal(agentProfile, profileID) && isStr(get(agent, "host")) {
-			ctx.Hosts[get(agent, "host").Value] = true
+		if agent.ServiceType == "oxidns" && agentProfile == p.profileID() && agent.Host != "" {
+			ctx.Hosts[agent.Host] = true
 		}
 	}
 	return ctx

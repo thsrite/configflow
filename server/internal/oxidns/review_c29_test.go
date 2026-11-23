@@ -41,7 +41,7 @@ func TestReviewC29ReaderCausesReachConsumers(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				set(profile.doc, "oxidns", settings)
+				profile.settings = settings
 				if output, err := Generate(profile, "http://config.example"); output != "" || !errors.Is(err, test.cause) {
 					t.Errorf("Generate lost reader cause: %q %v", output, err)
 				}

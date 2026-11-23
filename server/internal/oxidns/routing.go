@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"configflow/internal/model"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -159,7 +160,7 @@ type ruleRecord struct {
 	suffix string
 	parts  map[string]bool
 	shapes map[string]bool
-	item   *Node
+	item   model.RuleConfig
 }
 
 type ruleCatalog struct {
@@ -200,23 +201,21 @@ func selectorSettings() *Node {
 func (p *Profile) catalog() *ruleCatalog {
 	c := &ruleCatalog{records: map[string]*ruleRecord{}, atoms: map[string]map[string]bool{}}
 	list := p.activeItems()
-	same := map[string][]*Node{}
+	same := map[string][]model.RuleConfig{}
 	for _, item := range list {
-		if id := get(item, "id"); isStr(id) {
-			key := id.Value + "\x00" + suffixOf(item)
-			same[key] = append(same[key], item)
-		}
+		key := item.ID + "\x00" + suffixOf(item)
+		same[key] = append(same[key], item)
 	}
 	for _, item := range list {
-		id := get(item, "id")
-		if !isStr(id) || c.records[id.Value] != nil {
+		id := item.ID
+		if c.records[id] != nil {
 			continue
 		}
 		suffix := suffixOf(item)
 		settings := selectorSettings()
 		set(settings, "aggregate_rules", B(false))
-		set(settings, "direct_"+suffix, L(id.Value))
-		groups, err := p.routingGroups(settings, legacyAll, same[id.Value+"\x00"+suffix])
+		set(settings, "direct_"+suffix, L(id))
+		groups, err := p.routingGroups(settings, legacyAll, same[id+"\x00"+suffix])
 		if err != nil {
 			continue
 		}
@@ -229,7 +228,7 @@ func (p *Profile) catalog() *ruleCatalog {
 							if c.atoms[atom] == nil {
 								c.atoms[atom] = map[string]bool{}
 							}
-							c.atoms[atom][id.Value] = true
+							c.atoms[atom][id] = true
 							parts[part] = true
 						}
 					}
@@ -239,7 +238,7 @@ func (p *Profile) catalog() *ruleCatalog {
 		}
 		current := map[string]bool{}
 		if suffix == "rulesets" {
-			for _, part := range managedRulesetParts(item) {
+			for _, part := range managedRulesetParts(behaviorOf(item)) {
 				current[part] = true
 			}
 		} else {
@@ -254,8 +253,8 @@ func (p *Profile) catalog() *ruleCatalog {
 				delete(aware, k)
 			}
 		}
-		c.order = append(c.order, id.Value)
-		c.records[id.Value] = &ruleRecord{suffix, parts,
+		c.order = append(c.order, id)
+		c.records[id] = &ruleRecord{suffix, parts,
 			map[string]bool{shapeKey(parts): true, shapeKey(aware): true, shapeKey(current): true}, item}
 	}
 	return c
@@ -317,17 +316,17 @@ type routingState struct {
 }
 
 // knownRules is every rule of the space by id (disabled ones included).
-func (p *Profile) knownRules() (map[string]*Node, []string) {
-	list := items(p.get("rule_configs"))
-	if !(len(items(p.get("rule_configs"))) > 0) {
+func (p *Profile) knownRules() (map[string]*model.RuleConfig, []string) {
+	list := p.ruleConfigs()
+	if len(list) == 0 {
 		list = p.activeItems()
 	}
-	known := map[string]*Node{}
+	known := map[string]*model.RuleConfig{}
 	var order []string
-	for _, item := range list {
-		if id := get(item, "id"); isMap(item) && isStr(id) && known[id.Value] == nil {
-			known[id.Value] = item
-			order = append(order, id.Value)
+	for i := range list {
+		if id := list[i].ID; known[id] == nil {
+			known[id] = &list[i]
+			order = append(order, id)
 		}
 	}
 	return known, order
@@ -1225,15 +1224,14 @@ func (p *Profile) resourceDownloads(document, settings *Node, baseURL string, c 
 		}
 		sort.Strings(parts)
 		for _, part := range parts {
-			local := RulePath(record.item, part)
+			local := rulePath(record.item.ID, part)
 			if rel, _, err := relativeResource(local); err != nil || !referenced[rel] {
 				continue
 			}
-			url := get(record.item, "url")
-			if !isStr(url) || url.Value == "" {
+			link := model.TextValue(record.item.URL)
+			if link == "" {
 				return nil, fail("已选择的规则集缺少下载来源。")
 			}
-			link := url.Value
 			if strings.HasPrefix(link, "/") {
 				link = effective + link
 			}
@@ -1573,7 +1571,7 @@ func (p *Profile) syncUpdates(document, settings *Node, oldGroups []*recGroup, n
 		for _, r := range c.records {
 			if r.suffix == "rulesets" {
 				for part := range r.parts {
-					knownPaths[strings.TrimPrefix(RulePath(r.item, part), "./")] = true
+					knownPaths[strings.TrimPrefix(rulePath(r.item.ID, part), "./")] = true
 				}
 			}
 		}
@@ -1618,17 +1616,16 @@ func (p *Profile) syncUpdates(document, settings *Node, oldGroups []*recGroup, n
 func routeLabel(route string) string { return RouteLabels[strings.SplitN(route, ":", 2)[0]] }
 
 // assignStored routes one active rule by a stored choice.
-func assignStored(values, item, action *Node) error {
+func assignStored(values *Node, item model.RuleConfig, action *Node) error {
 	action, err := NormalizeAction(action, true)
 	if err != nil {
 		return err
 	}
-	identity := get(item, "id")
 	if kind := str(get(action, "action")); isListRoute(kind) {
 		list := get(values, kind+"_"+suffixOf(item))
-		list.Content = append(list.Content, identity)
+		list.Content = append(list.Content, S(item.ID))
 	} else {
-		set(get(values, "rule_actions"), identity.Value, action)
+		set(get(values, "rule_actions"), item.ID, action)
 	}
 	return nil
 }
@@ -1645,7 +1642,7 @@ func routeOf(values *Node, identity string) string {
 	return ""
 }
 
-func validateSelections(values, changes *Node, known map[string]*Node) error {
+func validateSelections(values, changes *Node, known map[string]*model.RuleConfig) error {
 	for _, key := range Selectors {
 		if !allStrings(get(values, key)) {
 			return fail(key + " 必须为规则 ID 列表")
@@ -1657,7 +1654,7 @@ func validateSelections(values, changes *Node, known map[string]*Node) error {
 		}
 		if has(changes, key) {
 			for _, id := range get(values, key).Content {
-				if known[id.Value] == nil || suffixOf(known[id.Value]) != suffix {
+				if known[id.Value] == nil || suffixOf(*known[id.Value]) != suffix {
 					return fail(missingRule)
 				}
 			}
@@ -1712,7 +1709,7 @@ func validateSelections(values, changes *Node, known map[string]*Node) error {
 	return nil
 }
 
-func takeOver(values *Node, current *routingState, changes *Node, known map[string]*Node, notices *[]string) error {
+func takeOver(values *Node, current *routingState, changes *Node, known map[string]*model.RuleConfig, notices *[]string) error {
 	old := current.values
 	type taken struct{ identity, before, after string }
 	var moved []taken
@@ -1755,7 +1752,7 @@ func takeOver(values *Node, current *routingState, changes *Node, known map[stri
 	}
 	if notices != nil {
 		for _, t := range moved {
-			*notices = append(*notices, "规则「"+displayValue(ruleName(known[t.identity]))+"」的 DNS 处理已从「"+routeLabel(t.before)+"」改为「"+routeLabel(t.after)+"」")
+			*notices = append(*notices, "规则「"+ruleName(known[t.identity])+"」的 DNS 处理已从「"+routeLabel(t.before)+"」改为「"+routeLabel(t.after)+"」")
 		}
 	}
 	return nil
@@ -1771,17 +1768,21 @@ func filterOnce(list []*Node, value string) []*Node {
 	return list
 }
 
-func ruleName(item *Node) *Node {
-	for _, key := range []string{"name", "value", "id"} {
-		if v := get(item, key); str(v) != "" {
-			return v
+// ruleName is the label of a rule: its name, else its value, else its id.
+func ruleName(item *model.RuleConfig) string {
+	if item == nil {
+		return ""
+	}
+	for _, text := range []string{item.Name, model.TextValue(item.Value)} {
+		if text != "" {
+			return text
 		}
 	}
-	return get(item, "id")
+	return item.ID
 }
 
 // settle keeps only active rules in the selections; returns (parked, follow).
-func settle(values, settings, changes *Node, current *routingState, known map[string]*Node, active *ruleCatalog, routes map[string]string) (*Node, *Node, error) {
+func settle(values, settings, changes *Node, current *routingState, known map[string]*model.RuleConfig, active *ruleCatalog, routes map[string]string) (*Node, *Node, error) {
 	followGiven := has(changes, "rule_dns_follow")
 	follow := seqOf(filter(get(values, "rule_dns_follow").Content, func(v *Node) bool { return known[v.Value] != nil }))
 	parked := M()

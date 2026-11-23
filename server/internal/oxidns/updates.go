@@ -1,6 +1,8 @@
 package oxidns
 
 import (
+	"configflow/internal/model"
+	"configflow/internal/mosdns"
 	"net/url"
 	"strconv"
 	"strings"
@@ -75,7 +77,7 @@ func ReconcileNativeWithdrawals(before, candidate, originalSettings, settings *N
 	for _, r := range c.records {
 		if r.suffix == "rulesets" {
 			for part := range r.parts {
-				managed[strings.TrimPrefix(RulePath(r.item, part), "./")] = true
+				managed[strings.TrimPrefix(rulePath(r.item.ID, part), "./")] = true
 			}
 		}
 	}
@@ -514,20 +516,17 @@ func managedDownloads(document *Node) *Node {
 // proxyIdentity: the known capability tokens and the profile's rule-proxy
 // endpoint (ok false without a token).
 func (p *Profile) proxyIdentity() (map[string]bool, string, bool) {
-	system := mapOr(p.get("system_config"))
-	token := get(system, "rule_proxy_token")
-	if !isStr(token) || token.Value == "" {
+	credentials := mosdns.ProxyCredentials(p.source.SystemConfig)
+	if credentials.Current == "" {
 		return nil, "", false
 	}
-	tokens := map[string]bool{token.Value: true}
-	for _, t := range items(get(system, "retired_rule_proxy_tokens")) {
-		if isStr(t) && t.Value != "" {
-			tokens[t.Value] = true
-		}
+	tokens := map[string]bool{credentials.Current: true}
+	for _, t := range credentials.Retired {
+		tokens[t] = true
 	}
 	endpoint := "/api/mosdns/rule-proxy"
-	if id := p.get("profile_id"); str(id) != "" {
-		endpoint = "/api/profiles/" + displayValue(id) + "/mosdns/rule-proxy"
+	if id := p.profileID(); id != "" {
+		endpoint = "/api/profiles/" + id + "/mosdns/rule-proxy"
 	}
 	return tokens, endpoint, true
 }
@@ -540,14 +539,14 @@ func (p *Profile) rulesetSources(referenced map[string]bool) map[string]sourcePa
 	c := p.catalog()
 	for _, id := range c.order {
 		r := c.records[id]
-		source := get(r.item, "url")
-		if r.suffix != "rulesets" || !isStr(source) || source.Value == "" {
+		source := model.TextValue(r.item.URL)
+		if r.suffix != "rulesets" || source == "" {
 			continue
 		}
 		for part := range r.parts {
-			path, _, _ := relativeResource(RulePath(r.item, part))
+			path, _, _ := relativeResource(rulePath(r.item.ID, part))
 			if referenced == nil || referenced[path] {
-				out[path] = sourcePart{source.Value, part}
+				out[path] = sourcePart{source, part}
 			}
 		}
 	}

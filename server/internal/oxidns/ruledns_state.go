@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"configflow/internal/model"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -15,8 +16,8 @@ type SyncSettings struct {
 // RuleDNSReadOptions supplies an optional Agent subset and synchronization adapter.
 // Nil Agents selects enabled Agents of the profile; an empty slice selects none.
 type RuleDNSReadOptions struct {
-	Agents       []*Node
-	SyncSettings func(agent *Node) SyncSettings
+	Agents       []model.Agent
+	SyncSettings func(agent model.Agent) SyncSettings
 }
 
 // RuleDNSAgent describes an Agent shown by the rules page. Missing or null
@@ -29,12 +30,11 @@ type RuleDNSAgent struct {
 	AutoSync    SyncSettings    `json:"auto_sync"`
 }
 
-func agentText(value *Node) *string {
-	if !isStr(value) {
+func agentText(value string) *string {
+	if value == "" {
 		return nil
 	}
-	text := value.Value
-	return &text
+	return &value
 }
 
 // RuleDNSEngine describes the active profile's DNS routing capabilities.
@@ -112,26 +112,23 @@ type RuleDNSState struct {
 }
 
 // ProfileAgents returns copies of enabled Agents bound to the resolved profile.
-func ProfileAgents(p *Profile) []*Node {
+func ProfileAgents(p *Profile) []model.Agent {
 	if p == nil {
-		return []*Node{}
+		return []model.Agent{}
 	}
-	defaultID := str(get(p.get("system_config"), "default_profile_id"))
-	if defaultID == "" {
-		defaultID = "default"
-	}
-	profileID := str(p.get("profile_id"))
+	defaultID := p.defaultProfileID()
+	profileID := p.profileID()
 	if profileID == "" {
 		profileID = defaultID
 	}
-	out := []*Node{}
-	for _, agent := range items(p.get("agents")) {
-		id := str(get(agent, "profile_id"))
+	out := []model.Agent{}
+	for _, agent := range p.agents() {
+		id := agent.ProfileID
 		if id == "" {
 			id = defaultID
 		}
-		if isMap(agent) && enabledOrDefault(agent, "enabled") && id == profileID {
-			out = append(out, clone(agent))
+		if model.Flag(agent.Enabled, true) && id == profileID {
+			out = append(out, agent)
 		}
 	}
 	return out
@@ -146,7 +143,7 @@ func PolicyDNSRoutes(p *Profile) map[string]string {
 }
 
 // FollowRoute returns the route implied by an item's policy; empty means no route.
-func FollowRoute(item *Node, p *Profile) string {
+func FollowRoute(item model.RuleConfig, p *Profile) string {
 	routes := map[string]string{}
 	if p != nil {
 		routes = policyDNSRoutes(p)
@@ -336,19 +333,18 @@ func nullableRoute(route string) *string {
 	return &route
 }
 
-func dnsBindings(agents []*Node) []DNSBinding {
+func dnsBindings(agents []model.Agent) []DNSBinding {
 	out := []DNSBinding{}
 	for _, agent := range agents {
-		binding := get(agent, "dns_follow")
-		index, ok := int64Of(get(binding, "upstream_index"))
-		if isOneOf(get(agent, "service_type"), "oxidns") && isMap(binding) && ok && index >= 0 && isStr(get(binding, "upstream_tag")) {
-			out = append(out, DNSBinding{str(get(binding, "upstream_tag")), int(index)})
+		binding := agent.DNSFollow
+		if agent.ServiceType == "oxidns" && binding != nil && binding.UpstreamIndex >= 0 && binding.UpstreamTag != "" {
+			out = append(out, DNSBinding{binding.UpstreamTag, int(binding.UpstreamIndex)})
 		}
 	}
 	return out
 }
 
-func viewUpstreams(settings *Node, view ruleDNSView, agents []*Node) ([]UpstreamCandidate, error) {
+func viewUpstreams(settings *Node, view ruleDNSView, agents []model.Agent) ([]UpstreamCandidate, error) {
 	if isOneOf(get(settings, "config_mode"), "native") && view.Document == nil {
 		return []UpstreamCandidate{}, nil
 	}
@@ -373,21 +369,16 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 	routes := policyDNSRoutes(p)
 	active := map[string]bool{}
 	for _, item := range p.activeItems() {
-		if isStr(get(item, "id")) {
-			active[str(get(item, "id"))] = true
-		}
+		active[item.ID] = true
 	}
 	native := isOneOf(get(settings, "config_mode"), "native")
 	state := RuleDNSState{Rules: map[string]RuleDNSRule{}, Upstreams: []UpstreamChoice{}, MosDNS: map[string]string{}}
-	for _, item := range items(p.get("rule_configs")) {
-		if !isMap(item) || !isStr(get(item, "id")) {
-			continue
-		}
-		id := str(get(item, "id"))
+	for _, item := range p.ruleConfigs() {
+		id := item.ID
 		if !convertible(item) {
-			kind := str(get(item, "rule_type"))
+			kind := item.RuleType
 			if kind == "" {
-				kind = str(get(item, "behavior"))
+				kind = model.TextValue(item.Behavior)
 			}
 			if kind == "" {
 				kind = messageDNSUnknownKind
@@ -460,12 +451,23 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 	}
 	engine.Warnings = cacheWarnings(settings, view)
 	for _, agent := range agents {
-		sync := SyncSettings{isTrue(at(agent, "rule_sync", "settings", "library")), isTrue(at(agent, "rule_sync", "settings", "rules"))}
+		var sync SyncSettings
+		if agent.RuleSync != nil {
+			sync = SyncSettings{model.Flag(agent.RuleSync.Settings.Library, false), model.Flag(agent.RuleSync.Settings.Rules, false)}
+		}
 		if options.SyncSettings != nil {
 			sync = options.SyncSettings(agent)
 		}
-		engine.Agents = append(engine.Agents, RuleDNSAgent{agentText(get(agent, "id")), json.RawMessage(ToJSON(orDefault(agent, "name", get(agent, "id")))), agentText(get(agent, "service_type")), sync})
-		engine.InUse = engine.InUse || isOneOf(get(agent, "service_type"), "oxidns")
+		name := agent.Name
+		if name == "" {
+			name = agent.ID
+		}
+		display, err := json.Marshal(agentText(name))
+		if err != nil {
+			return RuleDNSState{}, fmt.Errorf("encode Agent name: %w", err)
+		}
+		engine.Agents = append(engine.Agents, RuleDNSAgent{agentText(agent.ID), display, agentText(agent.ServiceType), sync})
+		engine.InUse = engine.InUse || agent.ServiceType == "oxidns"
 	}
 	candidates, err := viewUpstreams(settings, view, agents)
 	if err != nil {
@@ -474,11 +476,13 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 	for _, candidate := range candidates {
 		state.Upstreams = append(state.Upstreams, candidate.UpstreamChoice)
 	}
-	for _, route := range ListRoutes {
-		for _, suffix := range []string{"rules", "rulesets"} {
-			for _, id := range ruleDNSIDs(at(p.doc, "mosdns", route+"_"+suffix)) {
-				state.MosDNS[id] = route
-			}
+	selectors := p.source.Profile.MosDNS
+	for _, selector := range []struct {
+		route string
+		ids   []string
+	}{{"direct", selectors.DirectRules}, {"direct", selectors.DirectRulesets}, {"proxy", selectors.ProxyRules}, {"proxy", selectors.ProxyRulesets}} {
+		for _, id := range selector.ids {
+			state.MosDNS[id] = selector.route
 		}
 	}
 	state.Engine = engine

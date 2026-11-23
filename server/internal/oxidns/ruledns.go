@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"configflow/internal/model"
 )
 
 // Per-rule DNS handling (backend/common/rule_dns.py, the parts generation and
@@ -407,20 +409,18 @@ func pinnedAction(key string, plugins map[string]*Node) *Node {
 // policyDNSRoutes maps each proxy group to the DNS route of its configured
 // default (manual select groups only; everything else stays proxy).
 func policyDNSRoutes(p *Profile) map[string]string {
-	groups := map[string]*Node{}
-	byID := map[string]*Node{}
+	groups := map[string]model.ProxyGroup{}
+	byID := map[string]model.ProxyGroup{}
 	var names []string
-	for _, group := range items(p.get("proxy_groups")) {
-		if name, ok := get(group, "name"), isMap(group); ok && isStr(name) {
-			if groups[name.Value] == nil {
-				names = append(names, name.Value)
-			}
-			groups[name.Value] = group
+	for _, group := range p.source.Profile.ProxyGroups {
+		if _, seen := groups[group.Name]; !seen {
+			names = append(names, group.Name)
 		}
+		groups[group.Name] = group
 	}
 	for _, name := range names {
-		if id := get(groups[name], "id"); isStr(id) {
-			byID[id.Value] = groups[name]
+		if id := groups[name].ID; id != "" {
+			byID[id] = groups[name]
 		}
 	}
 	resolved := map[string]string{}
@@ -435,23 +435,21 @@ func policyDNSRoutes(p *Profile) map[string]string {
 		if route, ok := resolved[name]; ok {
 			return route
 		}
-		group := groups[name]
-		if group == nil || !enabledOrDefault(group, "enabled") || equal(get(group, "type"), S("chain")) ||
-			visiting[name] || len(visiting) >= 64 {
+		group, ok := groups[name]
+		if !ok || !model.Flag(group.Enabled, true) || group.Type == "chain" || visiting[name] || len(visiting) >= 64 {
 			return "proxy"
 		}
 		source := group
-		if follow := get(group, "follow_group"); str(follow) != "" {
-			source = byID[str(follow)]
-			if !isStr(follow) || source == nil || (str(get(source, "follow_group")) != "") {
+		if follow := model.TextValue(group.FollowGroup); follow != "" {
+			if source, ok = byID[follow]; !ok || model.TextValue(source.FollowGroup) != "" {
 				return "proxy"
 			}
 		}
-		if !equal(get(source, "type"), S("select")) {
+		if source.Type != "select" {
 			return "proxy"
 		}
 		emitted := p.renderMembers(source)
-		if strings.Contains(str(get(emitted, "filter")), "`") || (str(get(source, "exclude-filter")) != "") || (str(get(source, "exclude-type")) != "") {
+		if strings.Contains(str(get(emitted, "filter")), "`") || model.TextValue(source.ExcludeFilter) != "" || model.TextValue(source.ExcludeType) != "" {
 			return "proxy"
 		}
 		route := "proxy"
@@ -473,42 +471,47 @@ func policyDNSRoutes(p *Profile) map[string]string {
 }
 
 // followRoute is the DNS route implied by a rule's policy ("" = none).
-func followRoute(item *Node, routes map[string]string) string {
+func followRoute(item model.RuleConfig, routes map[string]string) string {
 	if !convertible(item) {
 		return ""
 	}
-	policy := get(item, "policy")
-	if equal(policy, S("DIRECT")) {
+	policy := model.TextValue(item.Policy)
+	if policy == "DIRECT" {
 		return "direct"
 	}
-	if !isStr(policy) || policy.Value == "" || containsString(nonProxyPolicies, policy.Value) {
+	if policy == "" || containsString(nonProxyPolicies, policy) {
 		return ""
 	}
-	if route, ok := routes[policy.Value]; ok {
+	if route, ok := routes[policy]; ok {
 		return route
 	}
 	return "proxy"
 }
 
 // convertible: the rule can take part in DNS routing.
-func convertible(item *Node) bool {
-	if isOneOf(get(item, "itemType"), "ruleset") {
-		return !isOneOf(get(item, "behavior"), "ipcidr")
+func convertible(item model.RuleConfig) bool {
+	if item.ItemType == "ruleset" {
+		return model.TextValue(item.Behavior) != "ipcidr"
 	}
-	return isOneOf(get(item, "rule_type"), "DOMAIN-SUFFIX", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX")
+	switch item.RuleType {
+	case "DOMAIN-SUFFIX", "DOMAIN", "DOMAIN-KEYWORD", "DOMAIN-REGEX":
+		return true
+	}
+	return false
 }
 
 // hasIPPart: the source has IP entries; a classical set only when its known
 // content has IP lines (p nil keeps the old assumption).
-func hasIPPart(item *Node, p *Profile) bool {
-	if isOneOf(get(item, "itemType"), "ruleset") {
-		behavior := get(item, "behavior")
-		if !isOneOf(behavior, "classical") || p == nil {
-			return isOneOf(behavior, "ipcidr", "classical")
-		}
-		return !p.classicalWithoutIP(item)
+func hasIPPart(item model.RuleConfig, p *Profile) bool {
+	if item.ItemType != "ruleset" {
+		return IsIPRuleType(item.RuleType)
 	}
-	return isOneOf(get(item, "rule_type"), "IP-CIDR", "IP-CIDR6")
+	switch behavior := model.TextValue(item.Behavior); {
+	case behavior == "classical" && p != nil:
+		return !p.classicalWithoutIP(item)
+	default:
+		return behavior == "ipcidr" || behavior == "classical"
+	}
 }
 
 func defaultRoute(defaultForward string) string {

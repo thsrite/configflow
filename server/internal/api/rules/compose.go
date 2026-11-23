@@ -227,7 +227,7 @@ func (s *Service) Compose(ctx context.Context, id string, body *composeRequest, 
 			if oxidns.IsIPRuleType(row.Kind) {
 				choice = dnsIP
 			}
-			if choice != "default" && !oxidns.RuleConvertible(model.RuleConfig{ItemType: "rule", RuleType: row.Kind}) {
+			if choice != "default" && !oxidns.Convertible(model.RuleConfig{ItemType: "rule", RuleType: row.Kind}) {
 				return out, invalid(fmt.Sprintf(msgUnsupportedLineDNS, row.Line, row.Kind))
 			}
 		}
@@ -346,7 +346,7 @@ func (s *Service) Compose(ctx context.Context, id string, body *composeRequest, 
 				return err
 			}
 			converted = append(converted, next)
-			capable[next.ID] = oxidns.RuleConvertible(next)
+			capable[next.ID] = oxidns.Convertible(next)
 		}
 		if position == "top" {
 			items = append(converted, items...)

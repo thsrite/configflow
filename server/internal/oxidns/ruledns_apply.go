@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -18,16 +19,10 @@ var ErrRoutingLocked = errors.New("OxiDNS routing is locked")
 func RuleDNSMetadataFields() []string { return append([]string{}, ruleDNSFields...) }
 
 // Convertible reports whether a rule can participate in domain DNS routing.
-func Convertible(item *Node) bool { return convertible(item) }
+func Convertible(item model.RuleConfig) bool { return convertible(item) }
 
-// RuleConvertible is Convertible for a stored rule.
-func RuleConvertible(item model.RuleConfig) bool { return convertible(ruleNode(item)) }
-
-// RuleHasIPPart is HasIPPart for a stored rule.
-func RuleHasIPPart(item model.RuleConfig, p *Profile) bool { return hasIPPart(ruleNode(item), p) }
-
-// RuleFollowRoute is FollowRoute for a stored rule.
-func RuleFollowRoute(item model.RuleConfig, p *Profile) string { return FollowRoute(ruleNode(item), p) }
+// HasIPPart reports known or possible IP content, for legacy routing recognition.
+func HasIPPart(item model.RuleConfig, p *Profile) bool { return hasIPPart(item, p) }
 
 // SettingsStrings returns a member of settings that is a list of text values.
 func SettingsStrings(settings *Node, key string) ([]string, bool) {
@@ -87,9 +82,6 @@ func WithoutRuleReferences(settings *Node, id string) *Node {
 // IsIPRuleType identifies connection-only IP rules for rules-page validation.
 func IsIPRuleType(kind string) bool { return kind == "IP-CIDR" || kind == "IP-CIDR6" }
 
-// HasIPPart reports known or possible IP content, for legacy routing recognition.
-func HasIPPart(item *Node, p *Profile) bool { return hasIPPart(item, p) }
-
 // RoutingUsage identifies the part of the native configuration blocking a write.
 type RoutingUsage struct {
 	Kind   string `json:"kind"`
@@ -147,53 +139,60 @@ func CheckDNSChoice(choice string) error {
 	return fail(fmt.Sprintf(messageDNSInvalidChoice, choice))
 }
 
-func dnsRuleMap(p *Profile) map[string]*Node {
-	out := map[string]*Node{}
-	for _, item := range items(p.get("rule_configs")) {
-		if isMap(item) && isStr(get(item, "id")) {
-			out[str(get(item, "id"))] = item
-		}
+func dnsRuleMap(p *Profile) map[string]model.RuleConfig {
+	out := map[string]model.RuleConfig{}
+	for _, item := range p.ruleConfigs() {
+		out[item.ID] = item
 	}
 	return out
 }
 
-func routingDependencies(p *Profile, routes map[string]string) *Node {
-	out := L()
-	for _, item := range items(p.get("rule_configs")) {
-		if !isMap(item) {
-			continue
-		}
-		values := L()
-		for _, key := range []string{"id", "itemType", "rule_type", "value", "behavior", "url"} {
-			values.Content = append(values.Content, orNull(get(item, key)))
-		}
-		values.Content = append(values.Content, orDefault(item, "enabled", B(true)), orDefault(item, "library_enabled", B(true)))
-		route := followRoute(item, routes)
-		if route == "" {
-			values.Content = append(values.Content, Null())
-		} else {
-			values.Content = append(values.Content, S(route))
-		}
-		out.Content = append(out.Content, values)
+// ruleDependency is what one rule contributes to DNS routing decisions.
+type ruleDependency struct {
+	id, itemType, ruleType, value string
+	behavior, url                 *string
+	enabled, libraryEnabled       bool
+	route                         string
+}
+
+func (d ruleDependency) equal(o ruleDependency) bool {
+	sameText := func(a, b *string) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
+	return d.id == o.id && d.itemType == o.itemType && d.ruleType == o.ruleType && d.value == o.value &&
+		sameText(d.behavior, o.behavior) && sameText(d.url, o.url) &&
+		d.enabled == o.enabled && d.libraryEnabled == o.libraryEnabled && d.route == o.route
+}
+
+func routingDependencies(p *Profile, routes map[string]string) []ruleDependency {
+	out := []ruleDependency{}
+	for _, item := range p.ruleConfigs() {
+		out = append(out, ruleDependency{item.ID, item.ItemType, item.RuleType, model.TextValue(item.Value), item.Behavior, item.URL,
+			model.Flag(item.Enabled, true), model.Flag(item.LibraryEnabled, true), followRoute(item, routes)})
 	}
 	return out
 }
 
-func pruneDNSFields(values *Node, rules map[string]*Node) *Node {
+func sameDependencies(a, b []ruleDependency) bool {
+	return slices.EqualFunc(a, b, ruleDependency.equal)
+}
+
+func pruneDNSFields(values *Node, rules map[string]model.RuleConfig) *Node {
 	out := M()
 	for _, key := range ruleDNSFields {
 		value := get(values, key)
 		if isMap(value) {
 			kept := M()
 			pairs(value, func(id string, action *Node) bool {
-				if rules[id] != nil {
+				if _, ok := rules[id]; ok {
 					set(kept, id, clone(action))
 				}
 				return true
 			})
 			set(out, key, kept)
 		} else {
-			set(out, key, seqOf(filter(items(value), func(id *Node) bool { return isStr(id) && rules[id.Value] != nil })))
+			set(out, key, seqOf(filter(items(value), func(id *Node) bool {
+				_, ok := rules[id.Value]
+				return isStr(id) && ok
+			})))
 		}
 	}
 	return out
@@ -210,8 +209,8 @@ func installDNSFields(settings, values *Node, fields []string) {
 	}
 }
 
-func placeDNSChoice(values, item, action *Node) {
-	id := str(get(item, "id"))
+func placeDNSChoice(values *Node, item model.RuleConfig, action *Node) {
+	id := item.ID
 	for _, key := range Selectors {
 		set(values, key, seqOf(filter(items(get(values, key)), func(value *Node) bool { return !isOneOf(value, id) })))
 	}
@@ -229,7 +228,7 @@ func placeDNSChoice(values, item, action *Node) {
 	}
 }
 
-func resolveDNSChoice(choice string, item, values *Node, catalog []UpstreamCandidate, routes map[string]string) (*Node, error) {
+func resolveDNSChoice(choice string, item model.RuleConfig, values *Node, catalog []UpstreamCandidate, routes map[string]string) (*Node, error) {
 	switch choice {
 	case "default":
 		return nil, nil
@@ -242,7 +241,7 @@ func resolveDNSChoice(choice string, item, values *Node, catalog []UpstreamCandi
 	if !strings.HasPrefix(choice, "upstream:") {
 		return M("action", choice), nil
 	}
-	id := str(get(item, "id"))
+	id := item.ID
 	current := get(get(values, "rule_actions"), id)
 	if current == nil {
 		current = get(get(values, "rule_dns_parked"), id)
@@ -340,14 +339,14 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 		}
 	}
 	for _, id := range order {
-		item := rules[id]
-		if item == nil {
+		item, ok := rules[id]
+		if !ok {
 			return RuleDNSUpdate{}, fail(fmt.Sprintf(messageDNSMissingRule, id))
 		}
 		if choices[id] != "default" && !convertible(item) {
-			kind := str(get(item, "rule_type"))
+			kind := item.RuleType
 			if kind == "" {
-				kind = str(get(item, "behavior"))
+				kind = model.TextValue(item.Behavior)
 			}
 			if kind == "" {
 				kind = messageDNSUnknownKind
@@ -358,7 +357,7 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 	stored := storedRuleDNS(settings)
 	pruned := pruneDNSFields(stored, rules)
 	beforeRoutes, afterRoutes := policyDNSRoutes(before), policyDNSRoutes(after)
-	if len(order) == 0 && equal(routingDependencies(before, beforeRoutes), routingDependencies(after, afterRoutes)) {
+	if len(order) == 0 && sameDependencies(routingDependencies(before, beforeRoutes), routingDependencies(after, afterRoutes)) {
 		for _, key := range ruleDNSFields {
 			if !equal(get(pruned, key), get(stored, key)) || dirtyDNSField(settings, stored, key) {
 				installDNSFields(out, pruned, ruleDNSFields)
@@ -384,10 +383,13 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 	}
 	values := clone(view.Values)
 	for _, key := range Selectors {
-		set(values, key, seqOf(filter(items(get(values, key)), func(id *Node) bool { return rules[str(id)] != nil })))
+		set(values, key, seqOf(filter(items(get(values, key)), func(id *Node) bool {
+			_, ok := rules[str(id)]
+			return ok
+		})))
 	}
 	for _, id := range keys(get(values, "rule_actions")) {
-		if rules[id] == nil {
+		if _, ok := rules[id]; !ok {
 			del(get(values, "rule_actions"), id)
 		}
 	}
@@ -420,7 +422,9 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 		}
 	}
 	for _, id := range ruleDNSIDs(follow) {
-		if _, assigned := choices[id]; assigned || previous[id] == nil || rules[id] == nil {
+		_, assigned := choices[id]
+		_, existed := previous[id]
+		if _, exists := rules[id]; assigned || !existed || !exists {
 			continue
 		}
 		route := followRoute(rules[id], afterRoutes)
@@ -446,7 +450,7 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 	}
 	active := map[string]bool{}
 	for _, item := range after.activeItems() {
-		active[str(get(item, "id"))] = true
+		active[item.ID] = true
 	}
 	for _, id := range ruleDNSIDs(follow) {
 		if !active[id] {
@@ -501,7 +505,7 @@ func InvalidateFollow(p *Profile, settings *Node) (*Node, error) {
 	}
 	active := map[string]bool{}
 	for _, item := range p.activeItems() {
-		active[str(get(item, "id"))] = true
+		active[item.ID] = true
 	}
 	set(out, "rule_dns_follow", seqOf(filter(items(get(settings, "rule_dns_follow")), func(id *Node) bool {
 		return !active[str(id)] || ruleRoute(old.Values, str(id)) == ruleRoute(next.Values, str(id))

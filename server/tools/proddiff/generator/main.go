@@ -242,8 +242,8 @@ func generate(ctx context.Context, repository *repo.Repository, j job) (string, 
 		output := make([]download, 0, len(files))
 		for _, file := range files {
 			item := download{Name: file.Name, URL: file.URL, LocalPath: file.LocalPath}
-			if file.Behavior != nil {
-				item.Behavior = oxidns.ToJSON(file.Behavior)
+			if file.Behavior != "" {
+				item.Behavior = oxidns.ToJSON(oxidns.S(file.Behavior))
 			}
 			output = append(output, item)
 		}

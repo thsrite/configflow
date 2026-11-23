@@ -175,7 +175,7 @@ func syncFollow(ctx context.Context, before, after *model.Config, base string) (
 		if i < 0 {
 			continue
 		}
-		if oxidns.RuleFollowRoute(before.Profile.RuleConfigs[i], a) != oxidns.RuleFollowRoute(row, b) {
+		if oxidns.FollowRoute(before.Profile.RuleConfigs[i], a) != oxidns.FollowRoute(row, b) {
 			changed = true
 			break
 		}
