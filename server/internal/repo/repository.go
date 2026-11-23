@@ -52,12 +52,29 @@ const (
 // DerivedDirs is ProfileRepository.DERIVED_DIRS.
 var DerivedDirs = []string{"providers", "rules", "generated"}
 
+// ExportSanitizer removes secrets from an exported configuration document.
+type ExportSanitizer interface {
+	SanitizeExternalDocument(ctx context.Context, document *model.Document, settings model.SystemConfig) (*model.Document, error)
+	RedactOxiDNSJSON(raw json.RawMessage) (json.RawMessage, error)
+	RedactRoutersJSON(raw json.RawMessage) (json.RawMessage, error)
+}
+
 // Options are the constructor arguments of ProfileRepository.
 type Options struct {
 	// DefaultSettings supplies caller-owned typed defaults for new profiles and imports.
 	DefaultSettings func() *model.Config
 	// InitialSettings supplies the first-start/reset configuration.
 	InitialSettings func() *model.Config
+	// Export sanitizes desensitized full-config exports. Nil falls back to
+	// deprecated global hooks (W9) and fails closed if unset.
+	Export ExportSanitizer
+	// RouterJobLock acquires the nonblocking router publication lease during
+	// router record mutations. Nil falls back to deprecated global hooks (W9)
+	// and fails closed if unset.
+	RouterJobLock func(context.Context, string, string, model.Router) (func(), bool)
+	// DefaultServerDomain supplies the initial system_config.server_domain
+	// outside containers when empty.
+	DefaultServerDomain func() string
 }
 
 type storedEntry struct {
@@ -120,6 +137,8 @@ type Repository struct {
 
 	// watchers are the OnCommit observers.
 	watchers commitWatchers
+	// observers are the OnConfigurationCommitted observers.
+	observers commitObservers
 }
 
 // Open is ProfileRepository(data_dir, default_config_factory,
@@ -202,7 +221,19 @@ func expandUser(path string) (string, error) {
 // OpenDefault opens the application's repository, as common/config.py's
 // get_repository() does: GetDefaultConfig and GetInitialConfig as factories.
 func OpenDefault(dataDir string) (*Repository, error) {
-	return Open(dataDir, Options{DefaultSettings: DefaultConfig, InitialSettings: InitialConfig})
+	return OpenDefaultWithOptions(dataDir, Options{})
+}
+
+// OpenDefaultWithOptions opens the application's repository with the default
+// config factories merged with caller-supplied Options.
+func OpenDefaultWithOptions(dataDir string, opts Options) (*Repository, error) {
+	if opts.DefaultSettings == nil {
+		opts.DefaultSettings = DefaultConfig
+	}
+	if opts.InitialSettings == nil {
+		opts.InitialSettings = InitialConfig
+	}
+	return Open(dataDir, opts)
 }
 
 // DataDir returns the resolved data directory.

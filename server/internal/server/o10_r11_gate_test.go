@@ -53,7 +53,6 @@ var o10WholeEncodeAllowed = map[string]string{
 	"internal/agents/metrics/traffic_native.go:SetTrafficRetention": "settings write transaction",
 	"internal/api/config/custom.go:saveCustom":                      "write: change baseline of the custom-config editor",
 	"internal/api/clientdevices/handlers.go:devices":                "write transaction (fixed-IP apply)",
-	"internal/api/nodes/adapter.go:Wire":                            "node deletion planner inside the write transaction",
 	"internal/api/profiles/profiles.go:importClient":                "write: client profile import",
 	"internal/routers/management.go:replaceManagementRouter":        "router write transaction",
 	"internal/routers/management.go:replaceManagementRawRouter":     "router write transaction",

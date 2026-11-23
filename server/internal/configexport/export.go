@@ -103,42 +103,65 @@ func redactNode(n *yamlx.Node, depth int) *yamlx.Node {
 	return n
 }
 
-// Wire installs native export sanitization collaborators.
+// Exporter implements repo.ExportSanitizer for desensitized full-config exports.
+type Exporter struct {
+	// RedactRouters removes router credentials from a profile's routers JSON.
+	// Nil fails closed so unredacted router credentials can never be exported.
+	RedactRouters func(json.RawMessage) (json.RawMessage, error)
+}
+
+// SanitizeExternalDocument strips tokens and secrets from an exported document.
+func (Exporter) SanitizeExternalDocument(ctx context.Context, document *model.Document, settings model.SystemConfig) (*model.Document, error) {
+	raw, err := json.Marshal(document)
+	if err != nil {
+		return nil, err
+	}
+	original, err := json.Marshal(settings)
+	if err != nil {
+		return nil, err
+	}
+	result, err := redact.SanitizeExternalPayload(ctx, json.RawMessage(raw), json.RawMessage(original))
+	if err != nil {
+		return nil, err
+	}
+	raw, err = json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("encode sanitized configuration: %w", err)
+	}
+	var out model.Document
+	if err = json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// RedactOxiDNSJSON redacts schema-free OxiDNS settings.
+func (Exporter) RedactOxiDNSJSON(raw json.RawMessage) (json.RawMessage, error) {
+	var input model.Dynamic
+	if err := json.Unmarshal(raw, &input); err != nil {
+		return nil, err
+	}
+	out, err := RedactOxiDNS(input)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(out)
+}
+
+// RedactRoutersJSON redacts router credentials, failing closed when RedactRouters is nil.
+func (e Exporter) RedactRoutersJSON(raw json.RawMessage) (json.RawMessage, error) {
+	if e.RedactRouters == nil {
+		return nil, fmt.Errorf("configexport: router redactor is not configured")
+	}
+	return e.RedactRouters(raw)
+}
+
+// Wire installs native export sanitization collaborators on deprecated global
+// repo hooks for tests that open a repository without repo.Options.Export.
 func Wire() {
+	exp := Exporter{}
 	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{
-		SanitizeExternalDocument: func(ctx context.Context, document *model.Document, settings model.SystemConfig) (*model.Document, error) {
-			raw, err := json.Marshal(document)
-			if err != nil {
-				return nil, err
-			}
-			original, err := json.Marshal(settings)
-			if err != nil {
-				return nil, err
-			}
-			result, err := redact.SanitizeExternalPayload(ctx, json.RawMessage(raw), json.RawMessage(original))
-			if err != nil {
-				return nil, err
-			}
-			raw, err = json.Marshal(result)
-			if err != nil {
-				return nil, fmt.Errorf("encode sanitized configuration: %w", err)
-			}
-			var out model.Document
-			if err = json.Unmarshal(raw, &out); err != nil {
-				return nil, err
-			}
-			return &out, nil
-		},
-		RedactOxidnsJSON: func(raw json.RawMessage) (json.RawMessage, error) {
-			var input model.Dynamic
-			if err := json.Unmarshal(raw, &input); err != nil {
-				return nil, err
-			}
-			out, err := RedactOxiDNS(input)
-			if err != nil {
-				return nil, err
-			}
-			return json.Marshal(out)
-		},
+		SanitizeExternalDocument: exp.SanitizeExternalDocument,
+		RedactOxidnsJSON:         exp.RedactOxiDNSJSON,
 	}})
 }

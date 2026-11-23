@@ -225,8 +225,11 @@ func (r *Repository) workingModel(ctx context.Context) (*model.Document, bool, e
 // configurationCommitted dispatches the post-commit observer on native,
 // immutable snapshots. Compatibility conversion is confined to recordHooks.
 func (r *Repository) configurationCommitted(base storedEntry, proposed *model.Document) {
-	committed := recordHooks().ConfigurationCommittedRecords
-	if committed == nil || proposed == nil {
+	observers := r.snapshotObservers()
+	if legacy := recordHooks().ConfigurationCommittedRecords; legacy != nil {
+		observers = append(observers, legacy)
+	}
+	if len(observers) == 0 || proposed == nil {
 		return
 	}
 	backup, err := viewOf(&proposed.System.Backup)
@@ -237,5 +240,7 @@ func (r *Repository) configurationCommitted(base storedEntry, proposed *model.Do
 	if raw, _ := backup.get("auto_backup"); !jsonTruthy(raw) {
 		return
 	}
-	committed(r, base.Model, proposed)
+	for _, committed := range observers {
+		committed(r, base.Model, proposed)
+	}
 }

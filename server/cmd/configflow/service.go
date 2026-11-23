@@ -108,7 +108,7 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	if !auth.IsAuthEnabled() {
 		printNoAuthBanner()
 	}
-	repository, err := repo.OpenDefault(dataDir)
+	repository, err := repo.OpenDefaultWithOptions(dataDir, server.RepoOptions())
 	if err != nil {
 		return err
 	}

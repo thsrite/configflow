@@ -1,6 +1,10 @@
 package repo
 
-import "sync"
+import (
+	"sync"
+
+	"configflow/internal/model"
+)
 
 // ChangeKind says what a commit changed: configuration rows, Agent state
 // rows (design/o17-runtime-state.md), or both.
@@ -56,6 +60,46 @@ func (r *Repository) notifyCommit(kinds ChangeKind) {
 	for _, fn := range fns {
 		fn()
 	}
+}
+
+type commitObservers struct {
+	mu   sync.Mutex
+	next int
+	list map[int]func(*Repository, *model.Document, *model.Document)
+}
+
+// OnConfigurationCommitted registers fn to observe committed configuration
+// documents (when auto_backup is enabled). cancel removes the registration.
+func (r *Repository) OnConfigurationCommitted(fn func(*Repository, *model.Document, *model.Document)) (cancel func()) {
+	if fn == nil {
+		return func() {}
+	}
+	r.observers.mu.Lock()
+	defer r.observers.mu.Unlock()
+	if r.observers.list == nil {
+		r.observers.list = map[int]func(*Repository, *model.Document, *model.Document){}
+	}
+	id := r.observers.next
+	r.observers.next++
+	r.observers.list[id] = fn
+	return func() {
+		r.observers.mu.Lock()
+		delete(r.observers.list, id)
+		r.observers.mu.Unlock()
+	}
+}
+
+func (r *Repository) snapshotObservers() []func(*Repository, *model.Document, *model.Document) {
+	r.observers.mu.Lock()
+	defer r.observers.mu.Unlock()
+	if len(r.observers.list) == 0 {
+		return nil
+	}
+	fns := make([]func(*Repository, *model.Document, *model.Document), 0, len(r.observers.list))
+	for _, fn := range r.observers.list {
+		fns = append(fns, fn)
+	}
+	return fns
 }
 
 // CommitWake keeps one OnCommit registration on the repository a loop last

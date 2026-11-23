@@ -354,16 +354,19 @@ func prepareConfig(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	h := currentHooks()
+	domainFn := repository.options.DefaultServerDomain
+	if domainFn == nil {
+		domainFn = currentHooks().DefaultServerDomain
+	}
 	_, dockerErr := os.Stat("/.dockerenv")
 	_, podmanErr := os.Stat("/run/.containerenv")
-	if dockerErr != nil && podmanErr != nil && h.DefaultServerDomain != nil {
+	if dockerErr != nil && podmanErr != nil && domainFn != nil {
 		settings, err := repository.SystemConfig(ctx)
 		if err != nil {
 			return err
 		}
 		if trimText(settings.ServerDomain) == "" {
-			domain := h.DefaultServerDomain()
+			domain := domainFn()
 			if err := repository.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 				s.SystemConfig.ServerDomain = domain
 				return nil

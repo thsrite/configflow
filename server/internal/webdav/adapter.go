@@ -124,11 +124,25 @@ func newAutomaticWorker(upload UploadFunc) *Worker { return NewWorker(time.Secon
 
 var automaticWorker = newAutomaticWorker(func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
 
+// Subscribe attaches the automatic WebDAV backup observer directly to r.
+func Subscribe(r *repo.Repository) func() {
+	if r == nil {
+		return func() {}
+	}
+	return r.OnConfigurationCommitted(commitObserver(automaticWorker))
+}
+
+// WireTasksAndStartup registers the WebDAV task runner and startup step
+// without installing global repository hooks.
+func WireTasksAndStartup() {
+	wireTasks()
+	lifecycle.RegisterStartup(workerStartup(automaticWorker, lifecycle.DefaultSpawner{}, lifecycle.RegisterShutdown))
+}
+
 // Wire installs the post-commit hook and bounded shutdown handling.
 func Wire() {
-	wireTasks()
+	WireTasksAndStartup()
 	registerHook(automaticWorker)
-	lifecycle.RegisterStartup(workerStartup(automaticWorker, lifecycle.DefaultSpawner{}, lifecycle.RegisterShutdown))
 }
 
 func workerStartup(worker *Worker, spawner lockx.Spawner, register func(lifecycle.ShutdownHook)) lifecycle.Startup {
@@ -144,8 +158,8 @@ func workerStartup(worker *Worker, spawner lockx.Spawner, register func(lifecycl
 	}}
 }
 
-func registerHook(worker *Worker) {
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{ConfigurationCommittedRecords: func(r *repo.Repository, previous, current *model.Document) {
+func commitObserver(worker *Worker) func(*repo.Repository, *model.Document, *model.Document) {
+	return func(r *repo.Repository, previous, current *model.Document) {
 		// A failed scheduling/serialization step must never change commit success.
 		defer func() {
 			if recover() != nil {
@@ -173,7 +187,11 @@ func registerHook(worker *Worker) {
 		if changed {
 			worker.Schedule(repositorySource{r})
 		}
-	}}})
+	}
+}
+
+func registerHook(worker *Worker) {
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{ConfigurationCommittedRecords: commitObserver(worker)}})
 }
 
 // autoBackupOff reports a committed generation whose automatic backup switch is

@@ -51,7 +51,6 @@ import (
 	apistats "configflow/internal/api/stats"
 	apisubscriptions "configflow/internal/api/subscriptions"
 	apitasks "configflow/internal/api/tasks"
-	"configflow/internal/configexport"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
 	"configflow/internal/discovery"
@@ -63,7 +62,6 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	"configflow/internal/substore"
-	"configflow/internal/webdav"
 )
 
 // routePackages are the Register functions of the ported blueprints.
@@ -104,11 +102,8 @@ var lateRoutePackages = []func(*httpx.Router){
 // providers).
 var wirePackages = []func(){
 	deploy.Wire,
-	configexport.Wire,
 	rulesync.Wire,
 	apiagents.WireContentSync,
-	wireCore,
-	webdav.Wire,
 	aggregations.Wire,
 	agents.Wire,
 	dnsfollow.Register,

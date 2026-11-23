@@ -244,8 +244,22 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 	if !desensitize {
 		return model.Marshal(document)
 	}
-	h := recordHooks()
-	if h.SanitizeExternalDocument == nil || h.RedactOxidnsJSON == nil || h.RedactRoutersJSON == nil {
+	var (
+		sanitizeDoc   func(context.Context, *model.Document, model.SystemConfig) (*model.Document, error)
+		redactOxiDNS  func(json.RawMessage) (json.RawMessage, error)
+		redactRouters func(json.RawMessage) (json.RawMessage, error)
+	)
+	if r.options.Export != nil {
+		sanitizeDoc = r.options.Export.SanitizeExternalDocument
+		redactOxiDNS = r.options.Export.RedactOxiDNSJSON
+		redactRouters = r.options.Export.RedactRoutersJSON
+	} else {
+		h := recordHooks()
+		sanitizeDoc = h.SanitizeExternalDocument
+		redactOxiDNS = h.RedactOxidnsJSON
+		redactRouters = h.RedactRoutersJSON
+	}
+	if sanitizeDoc == nil || redactOxiDNS == nil || redactRouters == nil {
 		return nil, repositoryError(msgExportHooksMissing)
 	}
 	settings := document.System.SystemConfig
@@ -284,7 +298,7 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 		if raw, present, err := recordMemberJSON(profile, "oxidns"); err != nil {
 			return nil, err
 		} else if present {
-			raw, err = h.RedactOxidnsJSON(raw)
+			raw, err = redactOxiDNS(raw)
 			if err != nil {
 				return nil, err
 			}
@@ -295,7 +309,7 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 		if raw, present, err := recordMemberJSON(profile, "routers"); err != nil {
 			return nil, err
 		} else if present {
-			raw, err = h.RedactRoutersJSON(raw)
+			raw, err = redactRouters(raw)
 			if err != nil {
 				return nil, err
 			}
@@ -342,7 +356,7 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 			}
 		}
 	}
-	document, err = h.SanitizeExternalDocument(ctx, document, settings)
+	document, err = sanitizeDoc(ctx, document, settings)
 	if err != nil {
 		return nil, err
 	}

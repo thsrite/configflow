@@ -6,10 +6,12 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/metrics"
 	"configflow/internal/auth"
+	"configflow/internal/configexport"
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
+	"configflow/internal/webdav"
 )
 
 // Options configures server construction. Zero-value fields fall back to the
@@ -30,6 +32,14 @@ type App struct {
 // loops, mounts every route package, and installs the authentication gate.
 func New(ctx context.Context, opts Options) (*App, error) {
 	registerStartup()
+	if opts.Repo != nil {
+		webdav.WireTasksAndStartup()
+		webdav.Subscribe(opts.Repo)
+	} else {
+		configexport.Wire()
+		wireCore()
+		webdav.Wire()
+	}
 	for _, wire := range wirePackages {
 		wire()
 	}
