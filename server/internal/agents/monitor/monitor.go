@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -165,21 +166,12 @@ func dashboardParams(args [][2]string) (query, error) {
 	for _, key := range uniqueKeys(args) {
 		values := getList(args, key)
 		if len(values) != 1 || key == "recorder" && !validRecorderTag(values[0]) ||
-			key == "range" && !contains(RankingRanges, values[0]) || key != "recorder" && key != "range" {
+			key == "range" && !slices.Contains(RankingRanges, values[0]) || key != "recorder" && key != "range" {
 			return nil, invalidQuery()
 		}
 		result = result.set(key, values[0])
 	}
 	return result, nil
-}
-
-func contains(list []string, value string) bool {
-	for _, item := range list {
-		if item == value {
-			return true
-		}
-	}
-	return false
 }
 
 func hasControl(value string) bool {
@@ -270,7 +262,7 @@ func QueryParams(args [][2]string, detail bool) (query, error) {
 				}
 			}
 		case "status":
-			if !contains([]string{"all", "error", "has_response", "no_response"}, value) {
+			if !slices.Contains([]string{"all", "error", "has_response", "no_response"}, value) {
 				return nil, invalidQuery()
 			}
 		case "recorder", "matcher_tag":

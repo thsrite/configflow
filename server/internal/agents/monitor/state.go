@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"time"
 
 	"configflow/internal/agents"
@@ -242,7 +243,7 @@ func decodeObservations(raw []byte) (*Observations, error) {
 				return nil, stateInvalid()
 			}
 			for key := range row.All() {
-				if !contains(family.labels, key) && !family.numbers[key] {
+				if !slices.Contains(family.labels, key) && !family.numbers[key] {
 					return nil, stateInvalid()
 				}
 			}

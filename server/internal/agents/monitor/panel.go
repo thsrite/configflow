@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -181,7 +182,7 @@ func decimalInteger(text string) (*big.Int, bool) {
 // panelLogsQuery is _logs_query(args).
 func panelLogsQuery(args [][2]string) (query, error) {
 	level := argGet(args, "level", "info")
-	if !contains(panelLogLevels, level) {
+	if !slices.Contains(panelLogLevels, level) {
 		return nil, panelFail("INVALID_REQUEST", 400, msgLogLevel)
 	}
 	after := argGet(args, "after", "0")
@@ -247,7 +248,7 @@ func panelPayload(resource, method string, body json.RawMessage) (json.RawMessag
 		return nil, panelFail("INVALID_REQUEST", 400, message)
 	}
 	value := fieldText(fields, key)
-	if key == "name" && (value == "" || runeLen(value) > PanelMaxNameLength) || key == "mode" && !contains(panelModes, value) {
+	if key == "name" && (value == "" || runeLen(value) > PanelMaxNameLength) || key == "mode" && !slices.Contains(panelModes, value) {
 		return nil, panelFail("INVALID_REQUEST", 400, message)
 	}
 	return jsonresp.Encode(fields)

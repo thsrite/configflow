@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -181,7 +182,7 @@ func decodeRankingSection(raw json.RawMessage, kind string, limit int) (*Ranking
 func liveRankings(ctx context.Context, m Registry, a *model.Agent, params query, stamp *SnapshotIdentity, state *DashboardState, recorders []string) (*Rankings, error) {
 	since := max(state.StartedAtMS, stamp.CollectedAtMS-RankingWindowMS)
 	selected, hasSelected := params.get("recorder")
-	if hasSelected && selected != "" && !contains(recorders, selected) {
+	if hasSelected && selected != "" && !slices.Contains(recorders, selected) {
 		return nil, invalidQuery()
 	}
 	if len(recorders) == 0 {
@@ -209,7 +210,7 @@ func liveRankings(ctx context.Context, m Registry, a *model.Agent, params query,
 			return nil, invalid
 		}
 	}
-	if !requiredBool(fields, "success", true) || !validRecorderTag(recorder) || !contains(recorders, recorder) || hasSelected && recorder != selected || !valid || !sampleValid {
+	if !requiredBool(fields, "success", true) || !validRecorderTag(recorder) || !slices.Contains(recorders, recorder) || hasSelected && recorder != selected || !valid || !sampleValid {
 		return nil, invalid
 	}
 	if fieldText(fields, "instance_id") != state.InstanceID || fieldText(fields, "source_revision") != state.SourceRevision || fieldText(fields, "runtime_revision") != state.RuntimeRevision || collected < stamp.CollectedAtMS {
@@ -380,7 +381,7 @@ func cachedRankings(ctx context.Context, m Registry, a *model.Agent, params quer
 }
 
 func storedRankings(ctx context.Context, m Registry, a *model.Agent, recorder, rangeKey string, stamp *SnapshotIdentity, state *DashboardState, recorders []string) (*Rankings, error) {
-	if len(recorders) == 0 || !contains(recorders, recorder) || !modelVersionAtLeast(a, HistoryAgentVersion) {
+	if len(recorders) == 0 || !slices.Contains(recorders, recorder) || !modelVersionAtLeast(a, HistoryAgentVersion) {
 		return nil, nil
 	}
 	now := floorDiv(stamp.CollectedAtMS, 1000)
@@ -424,7 +425,7 @@ func overviewRanking(ctx context.Context, m Registry, a *model.Agent, params que
 		if provided {
 			effective = query{{"recorder", selected}}
 		}
-		if !manual && (!provided || !contains(recorders, selected)) {
+		if !manual && (!provided || !slices.Contains(recorders, selected)) {
 			effective = nil
 			selected = ""
 		}
@@ -449,7 +450,7 @@ func overviewRanking(ctx context.Context, m Registry, a *model.Agent, params que
 				result.History = "upgrade_required"
 			} else {
 				stored := false
-				if contains(recorders, selected) {
+				if slices.Contains(recorders, selected) {
 					stored, err = hasHistory(ctx, getHistory(m.DataDir()), a.ID, selected)
 					if err != nil {
 						return nil, err

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"slices"
 	"sync"
 
 	"configflow/internal/agents"
@@ -72,7 +73,7 @@ func decodeRuleTask(raw json.RawMessage) (*RuleTask, error) {
 		return nil, invalid
 	}
 	task := &RuleTask{ID: fieldText(fields, "id"), Status: fieldText(fields, "status"), Phase: fieldText(fields, "phase")}
-	if !contains(taskStates, task.Status) || !contains(taskPhases, task.Phase) {
+	if !slices.Contains(taskStates, task.Status) || !slices.Contains(taskPhases, task.Phase) {
 		return nil, invalid
 	}
 	id, present := fields.Get("id")
