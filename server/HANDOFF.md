@@ -98,6 +98,12 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+R13+R12 DONE (Opus 1ac3f712, go-perf-r13, report server/parity/o10-r13-r12.md): the "57 MB non-heap" is mostly binary
+file pages (25 MB text/rodata) + 18 MB heap (6.4 MB live) + 8.4 MB SQLite allocator + 4.6 MB runtime; only change = PSL
+tries merged (1581→586 KB). R12 ruling: keep GOGC=100, no fixed GOMEMLIMIT (container limit ×0.8 soft limit stays).
+Follow-up queued: "cache budget" task (live heap +19 MB after load from derived caches; target ≤ 10 MB) after T1d;
+rankings cache_size low priority. Coordinator reviewed the PSL trie diff (equivalent; tested vs legacy tries).
+
 proddiff Go comparator MERGED 2026-11-23 (tools/proddiff/comparator, PRODDIFF_COMPARATOR=go; parity with run.py on
 2831 cases + 11 695 crosscheck inputs; switch commit flips defaults to PRODDIFF_MODE=go + COMPARATOR=go and deletes the
 Python side). T8 under HR review 1b8fa4cd (batch-40). T1d running 76a14452.
