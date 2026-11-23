@@ -67,19 +67,21 @@ func (m *cacheTextMemo) store(env *RefreshEnv, id string, cache *NodeCache, text
 	if !m.usable(env, cache) {
 		return
 	}
-	if m.limitBytes > 0 && len(text) > m.limitBytes/2 {
-		return
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.texts == nil {
 		m.texts = map[string]*list.Element{}
 		m.order = list.New()
 	}
+	// The superseded generation goes first, also when the new text is too
+	// large to keep, so an old record and its text never outlive a change.
 	if prev, ok := m.texts[id]; ok {
 		m.bytes -= len(prev.Value.(*cacheText).text)
 		m.order.Remove(prev)
 		delete(m.texts, id)
+	}
+	if m.limitBytes > 0 && len(text) > m.limitBytes/2 {
+		return
 	}
 	for m.order.Len() > 0 && (m.order.Len() >= m.limit || (m.limitBytes > 0 && m.bytes+len(text) > m.limitBytes)) {
 		front := m.order.Front()

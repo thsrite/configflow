@@ -1,6 +1,8 @@
 package aggregations
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"configflow/internal/provider"
@@ -39,5 +41,25 @@ func TestO10SourceNodesAreCopies(t *testing.T) {
 	sourceNodeMemo.mu.Unlock()
 	if gotText != updatedText {
 		t.Fatalf("superseded text was not replaced for sub-1")
+	}
+	// A text too large to keep still drops the superseded generation
+	// (batch-47 review).
+	var big strings.Builder
+	big.WriteString("proxies:\n")
+	for i := 0; big.Len() <= sourceNodeRetainedLimit/2/sourceNodeRetainedPerByte; i++ {
+		fmt.Fprintf(&big, "  - {name: N%06d, type: ss, server: n%06d.example.com, port: 443, cipher: aes-128-gcm, password: x}\n", i, i)
+	}
+	bigProxies, err := provider.ParseNodes(big.String(), "Feed", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nodes, err := sourceNodes("sub-1", big.String(), bigProxies); err != nil || len(nodes) != len(bigProxies) {
+		t.Fatalf("large text: %d nodes, %v", len(nodes), err)
+	}
+	sourceNodeMemo.mu.Lock()
+	_, kept := sourceNodeMemo.entries["sub-1"]
+	sourceNodeMemo.mu.Unlock()
+	if kept {
+		t.Fatal("superseded generation kept after an oversized update")
 	}
 }

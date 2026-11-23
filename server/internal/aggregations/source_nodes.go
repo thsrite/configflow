@@ -35,22 +35,27 @@ func sourceNodes(sourceID, text string, proxies []*yamlx.Node) ([]model.Node, er
 	}
 	sourceNodeMemo.mu.Unlock()
 	nodes, err := substore.ProxyNodes(proxies)
-	cost := len(text) * sourceNodeRetainedPerByte
-	if err != nil || cost > sourceNodeRetainedLimit/2 {
+	if err != nil {
 		return nodes, err
 	}
-	kept := subs.CloneNodes(nodes)
+	cost := len(text) * sourceNodeRetainedPerByte
 	sourceNodeMemo.mu.Lock()
 	defer sourceNodeMemo.mu.Unlock()
 	if sourceNodeMemo.entries == nil {
 		sourceNodeMemo.entries = map[string]*list.Element{}
 		sourceNodeMemo.order = list.New()
 	}
+	// The superseded generation goes first, also when the new text is too
+	// large to keep.
 	if prev, ok := sourceNodeMemo.entries[key]; ok {
 		sourceNodeMemo.bytes -= prev.Value.(*sourceNodeEntry).cost
 		sourceNodeMemo.order.Remove(prev)
 		delete(sourceNodeMemo.entries, key)
 	}
+	if cost > sourceNodeRetainedLimit/2 {
+		return nodes, nil
+	}
+	kept := subs.CloneNodes(nodes)
 	for sourceNodeMemo.order.Len() > 0 && (sourceNodeMemo.order.Len() >= sourceNodeMaxEntries || sourceNodeMemo.bytes+cost > sourceNodeRetainedLimit) {
 		front := sourceNodeMemo.order.Front()
 		evicted := front.Value.(*sourceNodeEntry)

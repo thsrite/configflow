@@ -67,4 +67,10 @@ func TestO10CacheTextOnlyForSharedStructuredRecords(t *testing.T) {
 	if bounded.bytes > bounded.limitBytes || len(bounded.texts) != 2 {
 		t.Fatalf("byte budget exceeded: bytes=%d entries=%d", bounded.bytes, len(bounded.texts))
 	}
+	// A changed record whose text is too large to keep still drops the
+	// superseded generation (batch-47 review).
+	bounded.store(shared, "k3", &NodeCache{}, "1234567")
+	if _, ok := bounded.texts["k3"]; ok || bounded.bytes != 5 || len(bounded.texts) != 1 {
+		t.Fatalf("superseded text kept: bytes=%d entries=%d", bounded.bytes, len(bounded.texts))
+	}
 }
