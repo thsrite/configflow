@@ -205,21 +205,21 @@ def execute_c04(repository, op, variables, arg):
         return repository.get_system_settings()
     if name == 'export_desensitized':
         # Marker redaction functions: the structure export_all builds around them is compared.
+        # EasyTier redaction is not replaced: Go calls convert.RedactEasyTierJSON directly
+        # (O17 W0), so both sides run their real redaction of mihomo.easytier.
         import backend.common.config_export as config_export
-        import backend.common.mihomo_easytier as mihomo_easytier
         import backend.routers.store as router_store
         saved = (config_export.sanitize_external_payload, config_export.redact_oxidns_settings,
-                 router_store.redact_routers, mihomo_easytier.redact_settings)
+                 router_store.redact_routers)
         config_export.sanitize_external_payload = lambda payload, system_config: {
             'sanitized': payload, 'system_config': system_config}
         config_export.redact_oxidns_settings = lambda value: {'redacted_oxidns': value}
         router_store.redact_routers = lambda value: {'redacted_routers': value}
-        mihomo_easytier.redact_settings = lambda value: {'redacted_easytier': value}
         try:
             return repository.export_all(desensitize=True)
         finally:
             (config_export.sanitize_external_payload, config_export.redact_oxidns_settings,
-             router_store.redact_routers, mihomo_easytier.redact_settings) = saved
+             router_store.redact_routers) = saved
     if name == 'sanitization_tokens':
         # generated tokens (43 characters) differ between the runs: only counted
         def summary(tokens):
