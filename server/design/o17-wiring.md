@@ -493,3 +493,4 @@ D1=J1、D2=J2、D6=J3、D4=J4、D5=J5、D7=J6、logx=J7（保留单例）、J8 �
 - 其余 D1–D14 按本文建议执行；D9（setup.VerifyRouter 漏接）由单独任务 go-setup-verify-router 先排查修复，W8 以其结果为准。
 - 开工条件：go-o17-state-followup 合并后，先用附录 A 脚本在新 go 上重算依赖并更新 1.2/1.3，再按第 3 节分三条线并行；R2、R8、W5、W6 由 Opus 对抗复核，其余步骤 Opus 复核；按第 3 节建议分 6 批走门禁。
 - 维护者 2026-11-23：不按步跑门禁。每步只做编译 + vet + 受影响包测试（几分钟）；R 线（纯搬家）全部做完后跑一次完整门禁；W 线在 W6 之后一次、W11 之后一次。共 3 次完整门禁（原建议 6 批）。复核仍按步骤（R2、R8、W5、W6 对抗复核），但可以按线合并成一次交付。
+- D9 已解决（2026-11-24，分支 go-setup-verify-router）：确为漏接，server 启动时注册 VerifyRouter（routers.Inspect + BuildPlan，只读），与 Python setup_completion 对照一致；全仓钩子审计无第二个漏接。W8 不再需要处理 D9。
