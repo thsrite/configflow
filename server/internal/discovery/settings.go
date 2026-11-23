@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/netip"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -192,7 +193,7 @@ func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy 
 	if err != nil {
 		return nil, err
 	}
-	if contains(targets, "proxy") && !contains(c.policies(), proxyPolicy) {
+	if slices.Contains(targets, "proxy") && !slices.Contains(c.policies(), proxyPolicy) {
 		return nil, invalid(msgProxyPolicy)
 	}
 	created := map[string]libraryItem{}
@@ -277,7 +278,7 @@ func UpdateIgnored(ctx context.Context, id string, values []string, add bool) ([
 	err := editSettings(ctx, id, func(s *Settings) error {
 		if add {
 			for _, v := range values {
-				if !contains(s.Ignored, v) {
+				if !slices.Contains(s.Ignored, v) {
 					s.Ignored = append(s.Ignored, v)
 				}
 			}
@@ -287,7 +288,7 @@ func UpdateIgnored(ctx context.Context, id string, values []string, add bool) ([
 		} else {
 			next := []string{}
 			for _, v := range s.Ignored {
-				if !contains(values, v) {
+				if !slices.Contains(values, v) {
 					next = append(next, v)
 				}
 			}

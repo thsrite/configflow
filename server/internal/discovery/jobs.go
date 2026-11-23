@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 
 	"configflow/internal/lifecycle"
@@ -225,7 +226,7 @@ func cleanValues(values []string) ([]string, error) {
 		if v == "" {
 			return nil, invalid(msgDomains)
 		}
-		if !contains(out, v) {
+		if !slices.Contains(out, v) {
 			out = append(out, v)
 		}
 	}

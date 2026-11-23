@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"configflow/internal/lifecycle"
@@ -42,7 +43,7 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 	stale := now().AddDate(0, 0, -3).Format("2006-01-02T15:04:05")
 	values := []string{}
 	for _, d := range listing.Items {
-		if !contains(d.Tags, "uncovered") {
+		if !slices.Contains(d.Tags, "uncovered") {
 			continue
 		}
 		needed := false
@@ -74,7 +75,7 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 			evidence := map[string]Probe{}
 			for _, d := range refreshed.Items {
 				v := d.Suggestion
-				if !contains(values, d.Domain) || v == nil || v.Target == nil || v.Confidence < s.Confidence {
+				if !slices.Contains(values, d.Domain) || v == nil || v.Target == nil || v.Confidence < s.Confidence {
 					continue
 				}
 				entries = append(entries, ApplyEntry{d.Domain, "DOMAIN-SUFFIX", *v.Target})

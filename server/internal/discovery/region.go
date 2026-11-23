@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 )
 
 // AvailableTarget is an Agent's usable proxy target.
@@ -374,7 +375,7 @@ func ensurePolicy(ctx context.Context, id, policy string, values []string) error
 	if err != nil {
 		return err
 	}
-	if !contains(c.policies(), policy) {
+	if !slices.Contains(c.policies(), policy) {
 		return invalid(msgPolicy)
 	}
 	inf := info(c, new(c.Settings.RegionalRulesets[policy]))

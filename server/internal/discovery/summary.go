@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -281,14 +282,6 @@ type Listing struct {
 	Job             *Job          `json:"probe_job"`
 }
 
-func contains[T comparable](vs []T, v T) bool {
-	for _, x := range vs {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
 func ignored(domain, host string, values []string) bool {
 	for _, v := range values {
 		v = strings.ToLower(v)
@@ -349,7 +342,7 @@ func summarize(reports []struct {
 					g.hosts[name] = h
 					g.hostOrder = append(g.hostOrder, name)
 				}
-				if !contains(h.AgentIDs, a.ID) {
+				if !slices.Contains(h.AgentIDs, a.ID) {
 					h.AgentIDs = append(h.AgentIDs, a.ID)
 				}
 				for _, port := range entry.portOrder {
@@ -455,9 +448,9 @@ func summarize(reports []struct {
 		case "all":
 			keep = !allIgnored
 		case "failing":
-			keep = contains(d.Tags, "failing")
+			keep = slices.Contains(d.Tags, "failing")
 		default:
-			keep = contains(d.Tags, "uncovered") || contains(d.Tags, "pending")
+			keep = slices.Contains(d.Tags, "uncovered") || slices.Contains(d.Tags, "pending")
 		}
 		if !keep {
 			continue
@@ -480,7 +473,7 @@ func summarize(reports []struct {
 	}
 	sort.SliceStable(out.Items, func(i, j int) bool {
 		a, b := out.Items[i], out.Items[j]
-		af, bf := contains(a.Tags, "failing"), contains(b.Tags, "failing")
+		af, bf := slices.Contains(a.Tags, "failing"), slices.Contains(b.Tags, "failing")
 		if af != bf {
 			return af
 		}

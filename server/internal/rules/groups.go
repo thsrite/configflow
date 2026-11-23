@@ -45,15 +45,6 @@ var (
 	FilterFields = []string{"regex", "aggregation_regex", "exclude_regex", "aggregation_exclude_regex"}
 )
 
-func contains(list []string, value string) bool {
-	for _, item := range list {
-		if item == value {
-			return true
-		}
-	}
-	return false
-}
-
 // Filter applies name filters without borrowing or replacing records.
 func Filter[T any](items []T, include, exclude *string, nameOf func(T) string) ([]T, error) {
 	keep, err := compileNameFilter(include)
