@@ -436,6 +436,11 @@ func (s *Service) saveDraft(ctx context.Context, profile string, fn func(context
 	return e
 }
 
+// TaskRow projects one Agent's DNS-follow task row for /api/tasks.
+func TaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
+	return agentTaskRow(ctx, a, statuses)
+}
+
 func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
 	if a.ServiceType != "oxidns" {
 		return nil, nil

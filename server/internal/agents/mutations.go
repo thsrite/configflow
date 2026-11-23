@@ -309,13 +309,18 @@ func (m *Manager) DeleteAgent(ctx context.Context, id string) (bool, error) {
 	if err := m.runtime.deleteContext(ctx, id); err != nil {
 		return true, nil
 	}
-	h := currentHooks()
-	if h.DeleteMetricsHistoryContext != nil {
-		_ = h.DeleteMetricsHistoryContext(ctx, m, id) // The history owner logs ordinary file failures.
-	}
 	var cleanupErr error
-	if h.DeleteTrafficHistoryContext != nil {
-		cleanupErr = h.DeleteTrafficHistoryContext(ctx, m, id)
+	if m.metrics != nil {
+		_ = m.metrics.DeleteMetricsHistory(ctx, m, id) // The history owner logs ordinary file failures.
+		cleanupErr = m.metrics.DeleteTrafficHistory(ctx, m, id)
+	} else {
+		h := currentHooks()
+		if h.DeleteMetricsHistoryContext != nil {
+			_ = h.DeleteMetricsHistoryContext(ctx, m, id) // The history owner logs ordinary file failures.
+		}
+		if h.DeleteTrafficHistoryContext != nil {
+			cleanupErr = h.DeleteTrafficHistoryContext(ctx, m, id)
+		}
 	}
 	if cleanupErr != nil && ctx.Err() == nil {
 		logger.Warningf(msgTrafficHistoryDeleteFailure, registryDiagnostic(deleted, id, 120), registryDiagnostic(deleted, cleanupErr.Error(), DetailLimit))

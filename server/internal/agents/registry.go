@@ -476,6 +476,9 @@ func (m *Manager) addReportedMetrics(ctx context.Context, id string, raw json.Ra
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if m.metrics != nil {
+		return m.metrics.AddMetricsJSON(ctx, m, id, raw)
+	}
 	if hook := currentHooks().AddMetricsJSON; hook != nil {
 		return hook(ctx, m, id, raw)
 	}

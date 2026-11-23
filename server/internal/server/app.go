@@ -4,24 +4,16 @@ import (
 	"context"
 
 	"configflow/internal/agents"
-	"configflow/internal/agents/dnsfollow"
-	"configflow/internal/agents/dnsha"
-	agentipv6 "configflow/internal/agents/ipv6"
 	"configflow/internal/agents/metrics"
-	"configflow/internal/agents/monitor"
-	"configflow/internal/agents/rulesync"
 	"configflow/internal/aggregations"
-	apiagents "configflow/internal/api/agents"
 	apinotifications "configflow/internal/api/notifications"
 	apirules "configflow/internal/api/rules"
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/configexport"
 	"configflow/internal/convert/mihomoenv"
-	"configflow/internal/deploy"
 	"configflow/internal/discovery"
 	"configflow/internal/gateway"
-	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/notifications"
@@ -47,6 +39,7 @@ type App struct {
 	Runtime       *lifecycle.Runtime
 	Tasks         *tasks.Registry
 	Notifications *notifications.Service
+	Agents        *agents.Manager
 }
 
 // New wires the application, registers ordered startup steps and background
@@ -63,7 +56,11 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	nt := notifications.New(notifications.Options{Repo: opts.Repo, Tasks: tk})
 	tasks.UseRegistry(tk)
 	notifications.UseService(nt)
-	registerStartup(rt)
+	m, err := wireAgents(ctx, opts, rt, tk, nt)
+	if err != nil {
+		return nil, err
+	}
+	registerStartup(rt, m)
 	if opts.Repo != nil {
 		webdav.WireTasksAndStartupOn(rt)
 		webdav.Subscribe(opts.Repo)
@@ -73,7 +70,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		webdav.WireTasksAndStartupOn(rt)
 		webdav.Wire()
 	}
-	wireSubsystems(rt)
+	wireOtherSubsystems(rt)
 	if err := tk.Validate(); err != nil {
 		return nil, err
 	}
@@ -94,23 +91,14 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		Runtime:       rt,
 		Tasks:         tk,
 		Notifications: nt,
+		Agents:        m,
 	}, nil
 }
 
-func wireSubsystems(rt *lifecycle.Runtime) {
-	deploy.Wire()
-	rulesync.WireOn(rt)
-	apiagents.WireContentSyncOn(rt)
+func wireOtherSubsystems(rt *lifecycle.Runtime) {
 	aggregations.Wire()
-	agents.Wire()
-	dnsfollow.RegisterOn(rt)
-	dnsha.RegisterOn(rt)
-	metrics.WireOn(rt)
-	metrics.WireTraffic()
-	monitor.WireOn(rt)
 	substore.WireOn(rt)
 	refresh.WireOn(rt)
-	health.Wire()
 	discovery.WireOn(rt)
 	mihomoenv.Wire()
 	routers.Wire() // routers R01: repo.Hooks.RedactRouters + router-rule-sync (W9)
@@ -120,32 +108,21 @@ func wireSubsystems(rt *lifecycle.Runtime) {
 	wireSetupRouter()
 	apirules.Wire()
 	gateway.Wire()
-	wireIPv6On(rt)
-}
-
-func wireIPv6On(rt *lifecycle.Runtime) {
-	agentipv6.WireOn(rt, apiagents.ContentChecker)
-	routers.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (routers.IPv6Host, error) {
-		m, err := agents.Get(ctx)
-		if err != nil {
-			return routers.IPv6Host{}, err
-		}
-		if agent == nil {
-			return (&agentipv6.Service{Manager: m}).Host(ctx, nil)
-		}
-		return (&agentipv6.Service{Manager: m}).Host(ctx, agent.Agent)
-	}
 }
 
 // registerStartup installs the synchronous startup steps in their required
-// order before subsystem wiring runs.
-func registerStartup(rt *lifecycle.Runtime) {
+// order before webdav-worker-init runs.
+func registerStartup(rt *lifecycle.Runtime, m *agents.Manager) {
 	rt.RegisterStartup(lifecycle.Startup{Name: "load-config", Run: func(ctx context.Context) error {
 		_, err := repo.PrepareConfig(ctx)
 		return err
 	}})
 	substore.RegisterStartupOn(rt)
 	rt.RegisterStartup(lifecycle.Startup{Name: "agent-manager-init", Run: func(ctx context.Context) error {
+		if m != nil {
+			agents.RunInitHooks(ctx, m)
+			return nil
+		}
 		_, err := agents.Init(ctx)
 		return err
 	}})

@@ -205,6 +205,12 @@ func logState(ctx context.Context, m *agents.Manager, record *model.Agent, statu
 		logger.Debugf("Agent %s 规则自动同步：%s", name, message)
 	}
 }
+
+// TaskRow projects one Agent's rule-sync task row for /api/tasks.
+func TaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
+	return agentTaskRow(ctx, a, statuses)
+}
+
 func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
 	if !recordSupported(a) {
 		return nil, nil

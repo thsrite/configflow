@@ -66,6 +66,12 @@ type rowSecrets struct {
 // withRowSecrets attaches the stored Agent record credentials and the system
 // secrets to ctx for one task-row projection pass, so row builders neither
 // re-read Agents and system settings nor re-encode a record.
+// WithRowSecrets caches per-pass agent and system redaction secrets on ctx for
+// task row builders.
+func WithRowSecrets(ctx context.Context, agentSecrets redact.Secrets, agentsErr error, systemSecrets redact.Secrets, systemErr error) context.Context {
+	return withRowSecrets(ctx, agentSecrets, agentsErr, systemSecrets, systemErr)
+}
+
 func withRowSecrets(ctx context.Context, agentSecrets redact.Secrets, agentsErr error, systemSecrets redact.Secrets, systemErr error) context.Context {
 	return context.WithValue(ctx, rowSecretsKey{}, &rowSecrets{
 		agents:    agentSecrets,

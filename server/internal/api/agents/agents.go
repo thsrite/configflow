@@ -543,9 +543,17 @@ func handleAgentItem(c *httpx.Ctx) (*httpx.Response, error) {
 	} else {
 		ok, err = manager.DeleteAgent(ctx, agentID)
 		if err == nil && ok {
-			for _, clear := range agents.AgentDeletedHooks() {
-				if err = clear(ctx, agentID); err != nil {
-					break
+			if stores := manager.DeletedStores(); len(stores) > 0 {
+				for _, store := range stores {
+					if err = store.Delete(ctx, agentID); err != nil {
+						break
+					}
+				}
+			} else {
+				for _, clear := range agents.AgentDeletedHooks() {
+					if err = clear(ctx, agentID); err != nil {
+						break
+					}
 				}
 			}
 			if err == nil {

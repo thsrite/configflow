@@ -129,6 +129,15 @@ type Manager struct {
 	runtime    *RuntimeState
 	client     Client
 
+	optsMu         sync.RWMutex
+	metrics        MetricsSink
+	publication    PublicationObserver
+	receiptMatches func(*model.Agent, *model.Deployment) bool
+	pair           PairPublisher
+	pairSet        bool
+	started        bool
+	deletedStores  []NamedDeleter
+
 	// presence are the OnPresence observers (wake.go).
 	presence presenceWatchers
 
@@ -145,17 +154,37 @@ type Manager struct {
 var processStart = time.Now()
 
 // New is AgentManager(repository): it shares the runtime state of the data
-// directory and imports a legacy runtime.sqlite3 once.
-func New(ctx context.Context, repository *repo.Repository) (*Manager, error) {
+// directory (unless Options.RuntimeState overrides it) and imports a legacy
+// runtime.sqlite3 once.
+func New(ctx context.Context, repository *repo.Repository, opts ...Options) (*Manager, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	var opt Options
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+	rtState := opt.RuntimeState
+	if rtState == nil {
+		rtState = RuntimeFor(repository.DataDir())
+	}
+	var stores []NamedDeleter
+	if len(opt.DeletedStores) > 0 {
+		stores = append([]NamedDeleter(nil), opt.DeletedStores...)
+	}
 	m := &Manager{
-		repository:   repository,
-		runtime:      RuntimeFor(repository.DataDir()),
-		preparations: map[[2]string]*preparationLease{},
-		monotonic:    func() float64 { return time.Since(processStart).Seconds() },
+		repository:     repository,
+		runtime:        rtState,
+		client:         opt.Client,
+		metrics:        opt.Metrics,
+		publication:    opt.Publication,
+		receiptMatches: opt.ReceiptMatches,
+		pair:           opt.Pair,
+		pairSet:        opt.Pair != nil,
+		deletedStores:  stores,
+		preparations:   map[[2]string]*preparationLease{},
+		monotonic:      func() float64 { return time.Since(processStart).Seconds() },
 	}
 	m.preparationRunning = m.defaultPreparationRunning
 	if err := importLegacyDatabase(ctx, repository, m.runtime, m.saveReportedModels); err != nil {

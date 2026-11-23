@@ -2,12 +2,15 @@ package server
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
+	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
+	"configflow/internal/repo"
 )
 
 func TestNewRegistersStartupAndPeriodicNames(t *testing.T) {
@@ -18,21 +21,40 @@ func TestNewRegistersStartupAndPeriodicNames(t *testing.T) {
 		}
 	})
 
-	app, err := New(context.Background(), Options{Runtime: rt})
+	r, err := repo.OpenDefaultWithOptions(t.TempDir(), RepoOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Close)
+
+	app, err := New(context.Background(), Options{Repo: r, Runtime: rt})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if app == nil || app.HTTP == nil || app.Runtime != rt || app.Tasks == nil || app.Notifications == nil {
+	if app == nil || app.HTTP == nil || app.Runtime != rt || app.Tasks == nil || app.Notifications == nil || app.Agents == nil {
 		t.Fatal("New returned unexpected App")
 	}
+	t.Cleanup(app.Agents.Close)
+
 	if err := app.Tasks.Validate(); err != nil {
 		t.Fatalf("Tasks.Validate: %v", err)
 	}
 	if err := app.Notifications.Validate(); err != nil {
 		t.Fatalf("Notifications.Validate: %v", err)
 	}
-	if err := app.Notifications.SetAgents(func(context.Context) ([]model.Agent, error) { return nil, nil }); err != notifications.ErrServiceStarted {
+	if err := app.Notifications.SetAgents(func(context.Context) ([]model.Agent, error) { return nil, nil }); !errors.Is(err, notifications.ErrServiceStarted) {
 		t.Fatalf("SetAgents after New = %v, want ErrServiceStarted", err)
+	}
+	if err := app.Agents.SetPairPublisher(nil); !errors.Is(err, agents.ErrManagerStarted) {
+		t.Fatalf("SetPairPublisher after New = %v, want ErrManagerStarted", err)
+	}
+	stores := app.Agents.DeletedStores()
+	var storeNames []string
+	for _, s := range stores {
+		storeNames = append(storeNames, s.Name)
+	}
+	if !slices.Equal(storeNames, agents.AgentDeletedStores) {
+		t.Fatalf("DeletedStores = %v, want %v", storeNames, agents.AgentDeletedStores)
 	}
 
 	got := rt.Names()

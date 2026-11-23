@@ -9,7 +9,6 @@ import (
 
 	"configflow/internal/model"
 	"configflow/internal/notifications"
-	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
@@ -71,71 +70,20 @@ func Init(ctx context.Context) (*Manager, error) {
 // when the Agent has none (statuses is the loaded task-status document).
 type AgentRowFunc func(ctx context.Context, agent *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error)
 
-var (
-	rowsMu       sync.Mutex
-	ruleSyncRow  AgentRowFunc
-	dnsFollowRow AgentRowFunc
-)
-
-// SetRuleSyncRow installs the agent_rule_sync row of routes/tasks._agent_rows
-// (#27). SetDNSFollowRow installs its dns_follow row (#28). The "agent" task
-// slot is provided once both are set: the registry itself owns no rows.
-func SetRuleSyncRow(fn AgentRowFunc) { setAgentRow(&ruleSyncRow, fn) }
-
-// SetDNSFollowRow: see SetRuleSyncRow.
-func SetDNSFollowRow(fn AgentRowFunc) { setAgentRow(&dnsFollowRow, fn) }
-
-func setAgentRow(slot *AgentRowFunc, fn AgentRowFunc) {
-	rowsMu.Lock()
-	*slot = fn
-	complete := ruleSyncRow != nil && dnsFollowRow != nil
-	rowsMu.Unlock()
-	if complete {
-		tasks.SetRowBuilder(tasks.SlotAgents, agentRows)
+// RunInitHooks invokes registered OnManagerInit callbacks on m (transitional
+// helper until W6 constructs dnsfollow/dnsha/ipv6 directly in server).
+func RunInitHooks(ctx context.Context, m *Manager) {
+	for _, fn := range managerInitHooks() {
+		fn(ctx, m)
 	}
 }
 
-// agentRows is routes/tasks._agent_rows(get_agent_manager(), statuses).
-func agentRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
-	manager, err := Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-	rowsMu.Lock()
-	builders := []AgentRowFunc{ruleSyncRow, dnsFollowRow}
-	rowsMu.Unlock()
-	records, err := snapshotAgents(ctx, manager)
-	if err != nil {
-		return nil, err
-	}
-	// Credentials and system secrets are read once per pass, not per row.
-	// Agent credentials come from the stored records with their histories,
-	// as the rows collected them before O10; the read is cached per store head.
-	agentSecrets, agentsErr := redact.AgentRecordCredentials(ctx, nil)
-	sysSecrets, sysErr := SystemSecrets(ctx, manager.repository)
-	rowCtx := withRowSecrets(ctx, agentSecrets, agentsErr, sysSecrets, sysErr)
-	rows := []*tasks.Task{}
-	for i := range records {
-		agent := &records[i]
-		for _, build := range builders {
-			row, err := build(rowCtx, agent, statuses)
-			if err != nil {
-				return nil, err
-			}
-			if row != nil {
-				rows = append(rows, row)
-			}
-		}
-	}
-	return rows, nil
-}
-
-// snapshotAgents returns the listing records (live heartbeat overlay and
+// SnapshotAgents returns the listing records (live heartbeat overlay and
 // offline status included) without deployment/IPv6 histories, which neither
 // task rows nor notifications read. Within one notification snapshot
 // (tasks.WithSnapshotCache) the registry is read once and shared; callers
 // must treat the shared records as read-only.
-func snapshotAgents(ctx context.Context, manager *Manager) ([]model.Agent, error) {
+func SnapshotAgents(ctx context.Context, manager *Manager) ([]model.Agent, error) {
 	if cached, ok := tasks.CachedAgents(ctx); ok {
 		return cached, nil
 	}
@@ -148,9 +96,7 @@ func snapshotAgents(ctx context.Context, manager *Manager) ([]model.Agent, error
 }
 
 // Wire is the registry's entry in internal/server wirePackages: the
-// notification list's Agent source. GET /api/notifications registers only once
-// every task-row slot is provided as well (api/notifications.ListComplete), so
-// the source is installed unconditionally.
+// notification list's Agent source.
 func Wire() {
 	notifications.SetInputs(notifications.Inputs{Agents: NotificationAgents})
 }
@@ -158,11 +104,11 @@ func Wire() {
 // NotificationAgents is the notification list's Agent source:
 // get_agent_manager().get_all_agents(), without the deployment and IPv6
 // verification histories no notification reads. One notification snapshot
-// shares the read with the Agent task rows (see snapshotAgents).
+// shares the read with the Agent task rows (see SnapshotAgents).
 func NotificationAgents(ctx context.Context) ([]model.Agent, error) {
 	manager, err := Get(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return snapshotAgents(ctx, manager)
+	return SnapshotAgents(ctx, manager)
 }

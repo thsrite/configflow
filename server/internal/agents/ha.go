@@ -24,6 +24,9 @@ func (m *Manager) GetDeploymentModel(ctx context.Context, agentID, id string) (*
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if pair := m.pairPublisher(); pair != nil {
+		return pair.PairDeployment(ctx, agentID, id)
+	}
 	if hook := currentHooks().HADeployment; hook != nil {
 		return hook(ctx, m, agentID, id)
 	}
@@ -35,6 +38,9 @@ func (m *Manager) ActivateDeploymentModel(ctx context.Context, agentID, id strin
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if pair := m.pairPublisher(); pair != nil {
+		return pair.ActivatePair(ctx, agentID, id)
 	}
 	if hook := currentHooks().HAActivate; hook != nil {
 		return hook(ctx, m, agentID, id)

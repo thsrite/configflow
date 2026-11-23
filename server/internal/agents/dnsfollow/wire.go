@@ -37,13 +37,12 @@ func Wire(m *agents.Manager) { ForManager(m) }
 // Register installs the boot loop and C07 row/runner on the default runtime.
 func Register() { RegisterOn(lifecycle.Current()) }
 
-// RegisterOn installs the boot loop and C07 row/runner on rt.
+// RegisterOn installs the boot loop and C07 runner on rt.
 func RegisterOn(rt *lifecycle.Runtime) {
 	if rt == nil {
 		rt = lifecycle.Current()
 	}
 	agents.OnManagerInit(func(_ context.Context, m *agents.Manager) { Wire(m) })
-	agents.SetDNSFollowRow(agentTaskRow)
 	tasks.SetRunner("dns_follow", func(ctx context.Context, _, id string) error {
 		m, e := agents.Get(ctx)
 		if e != nil {

@@ -52,7 +52,6 @@ func WireOn(rt *lifecycle.Runtime) {
 	if rt == nil {
 		rt = lifecycle.Current()
 	}
-	agents.SetRuleSyncRow(agentTaskRow)
 	wakeOnce.Do(func() { refresh.OnRulesRefreshed(WakeLoop) })
 	rt.RegisterPeriodic(lifecycle.Periodic{Name: "agent-rule-sync", Start: lifecycle.AfterFirstRequest, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
 		s, e := Get(ctx)

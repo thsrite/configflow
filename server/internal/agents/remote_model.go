@@ -419,6 +419,9 @@ func (m *Manager) RunServiceOperation(ctx context.Context, id string, operation 
 	}
 	run := func() (json.RawMessage, error) { return m.RunDirectOperation(ctx, id, operation, header, body) }
 	uninstall := operation == UninstallService
+	if pair := m.pairPublisher(); pair != nil {
+		return pair.ServiceOperationJSON(ctx, id, run, uninstall)
+	}
 	if hook := currentHooks().HAServiceOperationTyped; hook != nil {
 		return hook(ctx, m, id, run, uninstall)
 	}
