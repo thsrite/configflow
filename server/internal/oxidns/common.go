@@ -253,6 +253,7 @@ func neutral(value *Node) *Node {
 // commonContext is one edit of a native draft and its settings.
 type commonContext struct {
 	doc, settings *Node
+	view          settingsView
 	plugins       *Node
 	byTag         map[string]*Node
 	parked        *Node
@@ -267,7 +268,7 @@ func newContext(document *nativeDoc, settings *Node) (*commonContext, error) {
 	if !isSeq(plugins) {
 		return nil, fail("插件结构尚未完成，请在完整参数或 YAML 中继续编辑")
 	}
-	ctx := &commonContext{doc: document, settings: settings, plugins: plugins, byTag: map[string]*Node{}, includedTags: map[string]bool{}}
+	ctx := &commonContext{doc: document, settings: settings, view: readSettingsView(settings), plugins: plugins, byTag: map[string]*Node{}, includedTags: map[string]bool{}}
 	for _, item := range plugins.Content {
 		tag, ok := tagOf(item)
 		if !isMap(item) || !ok {
@@ -296,7 +297,7 @@ func newContext(document *nativeDoc, settings *Node) (*commonContext, error) {
 func (c *commonContext) plugin(tag string) *Node { return c.byTag[tag] }
 
 func (c *commonContext) aliasCapability(tag string) *Capability {
-	if alias, ok := readSettingsView(c.settings).renamedPlugin(tag); ok && alias != tag && c.plugin(alias) != nil {
+	if alias, ok := c.view.renamedPlugin(tag); ok && alias != tag && c.plugin(alias) != nil {
 		cap := capability(false, "受管插件已重命名为「"+alias+"」，请在完整参数中编辑自定义配置", alias)
 		return &cap
 	}
@@ -994,7 +995,7 @@ func (c *commonContext) resources() ([]*Node, bool, Capability) {
 		files = L()
 	}
 	known := map[string]*Node{}
-	for _, url := range readSettingsView(c.settings).adguardURLs() {
+	for _, url := range c.view.adguardURLs() {
 		known["rules/"+tagForString("adguard", url)+".txt"] = S(url)
 	}
 	if !isMap(args) || !allStrings(files) {
@@ -1233,7 +1234,7 @@ func readCommon(document *nativeDoc, settings *Node, p *Profile) (CommonView, er
 	set(get(update, "args"), "timezone", timezone)
 	caps["rule_update.args.schedule"], caps["rule_update.args.timezone"] = jobCap, jobCap
 	urls, hasContent, resourceCap := c.resources()
-	view := readSettingsView(settings)
+	view := c.view
 	adguard := get(values, "adguard")
 	set(adguard, "urls", seqOf(urls))
 	content := S("")
