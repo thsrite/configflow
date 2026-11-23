@@ -458,5 +458,15 @@
     "guard": "os.Args[0], fixed -test.run=^TestO17UpgradeKilled$ and CONFIGFLOW_O17_UPGRADE_DIR child environment",
     "kind": "go-subprocess",
     "reason": "在存储升级事务中途用 SIGKILL 杀掉当前Go测试二进制的子进程（模拟断电），验证重启后数据库仍是完整的版本1；不启动Python。"
+    },
+  {
+    "id": "B-037",
+    "file": "server/internal/repo/review_b50_test.go",
+    "function": "TestReviewB50DiskFullDuringUpgrade",
+    "callee": "exec.Command",
+    "count": 1,
+    "guard": "os.Args[0], fixed -test.run=^TestReviewB50DiskFullDuringUpgrade$ and CONFIGFLOW_B50_FSIZE_DIR child environment",
+    "kind": "go-subprocess",
+    "reason": "在文件大小上限（RLIMIT_FSIZE）下运行当前Go测试二进制的子进程做存储升级（模拟磁盘满），验证数据库仍是完整的版本1；不启动Python。"
   }
 ]
