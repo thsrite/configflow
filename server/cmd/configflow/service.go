@@ -14,8 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"configflow/internal/agents"
-	"configflow/internal/agents/metrics"
 	apisettings "configflow/internal/api/settings"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
@@ -24,7 +22,6 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/server"
-	"configflow/internal/substore"
 	"configflow/internal/version"
 	"configflow/internal/weblistener"
 )
@@ -73,19 +70,6 @@ func checkStartup(frontendDir string) error {
 		}
 	}
 	return nil
-}
-
-func registerStartup() {
-	lifecycle.RegisterStartup(lifecycle.Startup{Name: "load-config", Run: func(ctx context.Context) error {
-		_, err := repo.PrepareConfig(ctx)
-		return err
-	}})
-	substore.RegisterStartup()
-	lifecycle.RegisterStartup(lifecycle.Startup{Name: "agent-manager-init", Run: func(ctx context.Context) error {
-		_, err := agents.Init(ctx)
-		return err
-	}})
-	metrics.RegisterStartup()
 }
 
 func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts runOptions) error {
@@ -143,8 +127,11 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 		return err
 	}
 	defer lifecycle.Stop(grace)
-	registerStartup()
-	app := server.NewApp()
+	srv, err := server.New(work, server.Options{Repo: repository})
+	if err != nil {
+		return err
+	}
+	app := srv.HTTP
 	app.RegisterLocal()
 	backend.Handler = httpx.LimitRequestBody(app)
 	if opts.register != nil {

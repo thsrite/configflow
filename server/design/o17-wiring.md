@@ -378,7 +378,7 @@ R 线合计约 8–9 个工作日（单 agent 顺序）。R2/R3 可并行；R7 �
 
 | 步 | 内容 | 依赖 | 风险 | 验证（除 3.0 外） | 量 |
 |---|---|---|---|---|---|
-| W0 | **先清理，不改结构**：删 `InitAgentManager`、ippresence 那份 `FullTun`、重复 `RegisterStartup`；2.1 第 1、2 种钩子改直接调用（`RedactEasytierJSON`、notifications 的 tasks 输入、agents.Hooks 不读的 5 个字段、`SetGatewayGuards`、`SetSessionReader`、`SetNativeClassicalIPLines`、`wireLoopWakes`、四个自己装自己）；修 `mosdns.downloadRule` 捕获问题 | — | 低 | 受影响包测试；`lifecycle.Names()` 与启动步骤名单前后一致 | M（≈1 天） |
+| W0 | **先清理，不改结构**：删 `InitAgentManager`、ippresence 那份 `FullTun`、重复 `RegisterStartup`；2.1 第 1、2 种钩子改直接调用（`RedactEasytierJSON`、notifications 的 tasks 输入、agents.Hooks 不读的 5 个字段、`SetGatewayGuards`、`SetSessionReader`、`SetNativeClassicalIPLines`、`wireLoopWakes`、四个自己装自己）；修 `mosdns.downloadRule` 捕获问题 ✅ 完成 `11a1435f5`（实施记录：`repo.RecordHooks.RedactEasytierJSON` 保留为已弃用空字段至 W9 以免触碰 `internal/routers/repository_hooks_test.go`；`routersplit.SetSessionReader` 与 `api/agents.SetContentPrepare` 生产路径改为直接调用，暂留测试覆盖接缝至 W8/W10） | — | 低 | 受影响包测试；`lifecycle.Names()` 与启动步骤名单前后一致 | M（≈1 天） |
 | W1 | `server.New(ctx, Options)`：把 cmd 的启动步骤注册搬进 server、`NewApp()` 变成测试辅助对它的包装；行为不变 | W0 | 低 | `./internal/server/... ./cmd/...`；启动顺序测试 | S（≈0.5 天） |
 | W2 | `repo`：`Hooks`/`RecordHooks` 全局 → `repo.Options` 实例字段（`RegisterHooks`/`SetHooks` 删除）；`planDeletion` 下沉；导出脱敏用 `configexport.Exporter` 小接口；仓库 `Open` 由 server 传 Options | W1 | 中：导出脱敏/路由器作业锁走错实例会泄露凭据或绕过锁 | repo、configexport、api/nodes、webdav 测试；导出脱敏黄金；proddiff 导出类用例 | M（≈1 天） |
 | W3 | `lifecycle`：注册类函数（`RegisterPeriodic/Startup/Shutdown`、`Configure`）改成 `*Runtime` 方法，全局 `defaultRuntime` 删除；`Detach`/`Stopping(ctx)`/`SpawnerFrom(ctx)`/`BindRequest` 保留 ctx 形式（D8）；各包的注册暂时由各自 `Wire` 拿 server 传来的 rt 调用 | W1 | 中：关停顺序、首请求启动 | lifecycle、o3 关停测试 `-race`；`Names()` 顺序测试 | M（≈1 天） |

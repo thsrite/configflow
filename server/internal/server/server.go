@@ -51,7 +51,6 @@ import (
 	apistats "configflow/internal/api/stats"
 	apisubscriptions "configflow/internal/api/subscriptions"
 	apitasks "configflow/internal/api/tasks"
-	"configflow/internal/auth"
 	"configflow/internal/configexport"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
@@ -162,21 +161,11 @@ func defaultServerDomain() string {
 	return "http://" + localIP(net.Dial) + ":" + strconv.Itoa(port)
 }
 
-// NewApp builds the full application: wiring, every route package, the
-// authentication gate.
+// NewApp builds the full application via New with default Options (test helper
+// during the W1-W11 migration).
 func NewApp() *httpx.App {
-	for _, wire := range wirePackages {
-		wire()
-	}
-	app := httpx.New()
-	for _, register := range routePackages {
-		register(app.Router)
-	}
-	for _, register := range lateRoutePackages {
-		register(app.Router)
-	}
-	auth.Install(app)
-	return app
+	app, _ := New(context.Background(), Options{})
+	return app.HTTP
 }
 
 // BackendAddress is http_server.backend_address().
