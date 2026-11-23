@@ -50,7 +50,7 @@
   原样转发给面板 API 校验，以及把 API 结果转给 Agent，这两处本来就是开放 JSON）
 - [ ] 1.8 RouterOS Row → map[string]string；只读分析结构体
 - [ ] 1.8 iKuai 结构体
-- [ ] 1.7 OxiDNS Settings 等类型化
+- [~] 1.7 OxiDNS 类型化：第一轮完成（见下「1.7 进度」），路由 values 与原生编辑器读设置部分留作第二轮
 
 ## 做法要点（供续作）
 
@@ -135,6 +135,53 @@
   `devicepolicy.go`、`converter.go` 读设置部分、`adapter.go`（`Profile` 不再把规则/组/Agent 包成 Node 文档）。
   原生文档相关文件（`common.go`、`routing.go`、`updates.go`、`native_*.go`、`constraints_*.go`、`editor.go`）
   改为边界类型 `nativeDoc`。
+
+### 1.7 进度（2026-11-23，分支 go-o17-typed-oxidns，基于 go-o17-typed@1a2ed4324）
+
+提交（每个单独可编译、oxidns 测试通过）：
+
+| 提交 | 内容 |
+|---|---|
+| db4dbe3ec | `Profile` 不再把规则/组/Agent/系统设置重包成 Node 文档：规则项一律 `model.RuleConfig`（目录、路由、规则 DNS、下载），策略路由读 `model.ProxyGroup`，Agent 绑定/展示读 `model.Agent`，设备备注存 JSON；`Convertible`/`HasIPPart`/`FollowRoute` 改为 `model.RuleConfig` 签名，删 1.6 过渡的 `RuleConvertible`/`RuleHasIPPart`/`RuleFollowRoute`；`RulesetDownload.Behavior` 改为文本 |
+| 64ea042d9 | 模板模式设置解码成 `templateSettings`（`settings_template.go`）：`jsondecode.Member` 逐字段检查，原中文文案与检查顺序不变，取代 `checkTemplate`；模板生成读类型化值。固定上游链读类型化 `chainFeatures`（模板或原生文档） |
+| eb15dd56f | `RuleAction`（种类、来源、原样保留的原生上游条目）：`NormalizeAction`/`RouteKey`/辅助插件/固定上游链 |
+| 61c6bd727 | 设备策略行在包内为 `devicenotes.Policy`（`policyPlugin`/`patchPolicies`/`PatchDocument`）；`PolicyView.Policies` 的 JSON 形状不变（routers 在用，未改 routers） |
+| 5ac185785 | 边界类型 `nativeDoc`（注释写明：保留注释、键序、未知插件与参数）用于原生文档参数；清掉 `!(!isNone(x))`、`!(str(x) != "")`、`!(len(..) > 0)` 等机械翻译；`node.go` 的「指针身份即对象身份」注释改写 |
+| c1625058b | `ReadSettingsHead(model.Dynamic)` 取代 1.6 的 `SettingsText`/`SettingsStrings`：api/rules、api/proxygroups、api/rulelibrary 不再在设置树上取值 |
+
+| cb6b87fac | pyref `sources.json` 跟随新文件（`settings_template.go`、`jsondecode/member.go`、`rules/group_members.go`），删已移除的 `Profile.get`/`text`/`has`；oxidns 8 个、mosdns 5 个黄金文件只刷新元数据（逐个核对 entries 完全相同） |
+
+验证（全部在 .32，HEAD=cb6b87fac 之前的代码提交 + 该 pyref 提交）：
+- `gofmt -l` 无输出，`go vet ./...` 通过
+- `-race -p 6 -timeout 60m`：oxidns 及全部调用方（agents/dnsfollow、dnsha、rulesync，api/agents、clientdevices、config、generate、oxidns、
+  proxygroups、routers、rulelibrary、rules，clients、configgen、deploy、devicenotes、gateway/onboarding、ippresence、routers、setup、tools/proddiff）全部 ok
+- difftest（`CONFIGFLOW_DIFF=1`）：oxidns、mosdns(+difftest)、api/oxidns、api/rules、api/rulelibrary、api/proxygroups、api/config、
+  api/clientdevices、api/agents、api/generate、devicenotes、agents/dnsfollow、dnsha、rulesync、configgen、gateway/onboarding 全部 ok
+- `PYREF_MODE=check go test ./internal/oxidns ./internal/mosdns`：ok（boundary 参考：generate 501、downloads 113、custom_files 94 全部 identical）
+- fuzz 60 s：FuzzZoneValidation PASS（75.9 万次）、FuzzNativeYAMLRoundTrip PASS（50.5 万次）
+- `GATE_ONLY=proddiff server/scripts/gate.sh -p 6`：baseline new=0 stale=0，self_check PASS，GATE STAGE PASS
+- `/tmp/preflight.sh … -p 6`：PREFLIGHT PASS（两组 tag vet + 全量非 race，含 internal/server 的 R11）
+
+`get(` 调用（非测试文件）：1286 → 1004（审计时 1282；测试文件另计）。改动 43 个文件，+1486/−1155。
+
+**未知成员结论（storedProjection 与往返测试）**：存储的 OxiDNS 设置对象必须原样保留未知成员和存储顺序——
+`TestRuleDNSAssignmentOrder` 要求 `future` 成员保留，Python `_merge` 把用户未知键追加在默认键之后并保存；
+原生模式下模板字段不做类型检查，类型不对的值也原样保存并在 GET 时返回；`Revision`/ETag 是存储对象的规范化哈希。
+所以存储层仍是开放对象（`model.Dynamic` ↔ YAML 树，`storedProjection` 只在读取时做已批准的兼容投影、不改存储），
+类型化放在消费边界：模板生成入口 `decodeTemplate`、`RuleAction`、设备策略行、`ReadSettingsHead`。
+
+**保持不变**：生成配置语义（oxidns pyref check、boundary 参考测试 148 份最终配置比较）、原生编辑结果、API 字段/状态码/文案（difftest）。
+
+**第二轮（未做，建议单独一位 agent）**：
+- 路由 values（四个选择列表 + `rule_actions` + `rule_dns_follow` + `rule_dns_parked`）是 ConfigFlow 自己的 schema，
+  但在 `routing.go`（`routingState.values`、`assignStored`/`settle`/`takeOver`/`validateSelections`）、`ruledns_apply.go`、
+  `ruledns_state.go`（`storedRuleDNS`/`readRuleDNS`）、`editor.go`（`restoreParked`/`parkInactive`）里仍是 Node 映射；
+  应定义 `ruleDNSValues`（有序 `RuleAction` 映射 + `[]string`），`routingGroups`/`selected` 改收它。`get(` 约再降 150。
+- `common.go`（2300 行）常用参数编辑器、`updates.go`、`native_*.go`、`constraints_*.go` 主要在原生文档上工作（属 `nativeDoc` 边界），
+  其中读设置对象的部分（`config_mode`、`native_config`、`adguard`、`custom_hosts`、`_common_disabled`、`template_settings`）可用
+  一个宽松解码的设置视图（`Member` 语义 = 原 `str`/`isTrue`）替换。
+- `storedProjection`/`requestTypeError`（约 14 处 `get`）可改成 `Member` 解码；`WithoutRuleReferences` 仍收设置树（api/rules 删除规则时编辑存储对象）。
+- 外部仍收 Node 的入口：`ApplyPolicies`/`SavePolicyRows` 的行参数、`ApplyRouting`、`PrepareEditor`、`ReadCommonSettings` 等（调用方在 routers、clients、gateway、agents）。
 
 ## 功能差异（对外）
 
