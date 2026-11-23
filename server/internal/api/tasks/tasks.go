@@ -10,6 +10,30 @@ import (
 	"configflow/internal/tasks"
 )
 
+// Handler serves the /api/tasks routes backed by a tasks.Registry.
+type Handler struct {
+	Tasks *tasks.Registry
+}
+
+// NewHandler constructs a Handler for reg (nil falls back to tasks.Default).
+func NewHandler(reg *tasks.Registry) *Handler {
+	return &Handler{Tasks: reg}
+}
+
+func (h *Handler) registry() *tasks.Registry {
+	if h != nil && h.Tasks != nil {
+		return h.Tasks
+	}
+	return tasks.Default()
+}
+
+// Register adds the /api/tasks routes to r.
+func (h *Handler) Register(r *httpx.Router) {
+	r.GET("/api/tasks", "tasks.get_tasks", auth.Require(h.getTasks))
+	r.POST("/api/tasks/run", "tasks.run_task", auth.Require(h.runTask))
+	r.PUT("/api/tasks/interval", "tasks.set_interval", auth.Require(h.setInterval))
+}
+
 // Register always adds the routes; handlers report capability readiness.
 func Register(r *httpx.Router) {
 	RegisterAlways(r)
@@ -17,16 +41,15 @@ func Register(r *httpx.Router) {
 
 // RegisterAlways adds the routes regardless (tests with fake slots).
 func RegisterAlways(r *httpx.Router) {
-	r.GET("/api/tasks", "tasks.get_tasks", auth.Require(getTasks))
-	r.POST("/api/tasks/run", "tasks.run_task", auth.Require(runTask))
-	r.PUT("/api/tasks/interval", "tasks.set_interval", auth.Require(setInterval))
+	NewHandler(nil).Register(r)
 }
 
-func getTasks(c *httpx.Ctx) (*httpx.Response, error) {
-	if missing := tasks.Missing(); len(missing) > 0 {
+func (h *Handler) getTasks(c *httpx.Ctx) (*httpx.Response, error) {
+	reg := h.registry()
+	if missing := reg.Missing(); len(missing) > 0 {
 		return unavailable(missing), nil
 	}
-	list, err := tasks.List(c.Context())
+	list, err := reg.List(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -40,12 +63,12 @@ func message(status int, text string) *httpx.Response {
 	return httpx.Message(status, false, text)
 }
 
-func runTask(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) runTask(c *httpx.Ctx) (*httpx.Response, error) {
 	var body runRequest
 	if !c.BindSilent(&body) || body.Key == "" {
 		return message(400, msgSpecifyTask), nil
 	}
-	err := tasks.RunNow(c.Context(), body.Key)
+	err := h.registry().RunNow(c.Context(), body.Key)
 	var notReady *tasks.Unavailable
 	if errors.As(err, &notReady) {
 		return unavailable(notReady.Slots), nil
@@ -73,12 +96,12 @@ func runTask(c *httpx.Ctx) (*httpx.Response, error) {
 	return nil, err
 }
 
-func setInterval(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) setInterval(c *httpx.Ctx) (*httpx.Response, error) {
 	var body intervalRequest
 	if !c.BindSilent(&body) || !body.valid {
 		return message(400, msgSpecifyTaskInterval), nil
 	}
-	row, err := updateInterval(c.Context(), body)
+	row, err := updateIntervalOn(c.Context(), h.registry(), body)
 	var notReady *tasks.Unavailable
 	var invalid *tasks.Invalid
 	var missing *tasks.NotFound

@@ -39,7 +39,6 @@ import (
 	apilogs "configflow/internal/api/logs"
 	apimosdns "configflow/internal/api/mosdns"
 	apinodes "configflow/internal/api/nodes"
-	apinotifications "configflow/internal/api/notifications"
 	apioxidns "configflow/internal/api/oxidns"
 	apiprofiles "configflow/internal/api/profiles"
 	apiproxygroups "configflow/internal/api/proxygroups"
@@ -50,7 +49,6 @@ import (
 	apisetup "configflow/internal/api/setup"
 	apistats "configflow/internal/api/stats"
 	apisubscriptions "configflow/internal/api/subscriptions"
-	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
 	"configflow/internal/discovery"
@@ -90,12 +88,6 @@ var routePackages = []func(*httpx.Router){
 	apimosdns.Register,
 	apioxidns.Register,
 	apidiscovery.Register,
-}
-
-// lateRoutePackages register after everything else is wired.
-var lateRoutePackages = []func(*httpx.Router){
-	apitasks.Register,
-	apinotifications.Register,
 }
 
 // wirePackages run before the routes are registered (hooks, loops,

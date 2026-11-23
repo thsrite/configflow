@@ -13,8 +13,8 @@ import (
 	"configflow/internal/weburl"
 )
 
-func findRow(ctx context.Context, key, slot string) (*tasks.Task, error) {
-	rows, err := tasks.ForSlot(ctx, slot)
+func findRow(ctx context.Context, reg *tasks.Registry, key, slot string) (*tasks.Task, error) {
+	rows, err := reg.ForSlot(ctx, slot)
 	if err != nil {
 		return nil, err
 	}
@@ -27,6 +27,13 @@ func findRow(ctx context.Context, key, slot string) (*tasks.Task, error) {
 }
 
 func updateInterval(ctx context.Context, body intervalRequest) (*tasks.Task, error) {
+	return updateIntervalOn(ctx, tasks.Default(), body)
+}
+
+func updateIntervalOn(ctx context.Context, reg *tasks.Registry, body intervalRequest) (*tasks.Task, error) {
+	if reg == nil {
+		reg = tasks.Default()
+	}
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -39,14 +46,14 @@ func updateInterval(ctx context.Context, body intervalRequest) (*tasks.Task, err
 		return nil, &tasks.Invalid{Message: msgIntervalUnsupported}
 	}
 	slot, known := tasks.SlotFor(category)
-	if known && !tasks.HasRows(slot) {
+	if known && !reg.HasRows(slot) {
 		return nil, &tasks.Unavailable{Slots: []string{slot}}
 	}
 	if body.Key != tasks.MetricsTaskKey && category != tasks.SlotSubscriptions && category != tasks.SlotRuleSources {
 		return nil, &tasks.Invalid{Message: msgIntervalUnsupported}
 	}
 	if body.Key == tasks.MetricsTaskKey {
-		setter := tasks.IntervalEditorFor(body.Key)
+		setter := reg.IntervalEditorFor(body.Key)
 		if setter == nil {
 			return nil, &tasks.Unavailable{Slots: []string{tasks.SlotMetrics}}
 		}
@@ -95,7 +102,7 @@ func updateInterval(ctx context.Context, body intervalRequest) (*tasks.Task, err
 			return nil, err
 		}
 	}
-	row, err := findRow(ctx, body.Key, slot)
+	row, err := findRow(ctx, reg, body.Key, slot)
 	if err != nil {
 		// The commit succeeded. An unavailable presentation row must not make
 		// the response claim the interval save failed.

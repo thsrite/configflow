@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,47 +35,19 @@ type Inputs struct {
 	Summarize    func(*RouterReport, json.RawMessage) (*RouterSummary, error)
 }
 
-var (
-	sourcesMu sync.Mutex
-	inputs    Inputs
-)
+// SetInputs installs non-nil sources on the default Service.
+func SetInputs(s Inputs) func() { return Default().SetInputs(s) }
 
-// SetInputs installs nonnil sources and returns an isolated-test restoration.
-func SetInputs(s Inputs) func() {
-	sourcesMu.Lock()
-	defer sourcesMu.Unlock()
-	previous := inputs
-	if s.Rows != nil {
-		inputs.Rows = s.Rows
-	}
-	if s.MissingTasks != nil {
-		inputs.MissingTasks = s.MissingTasks
-	}
-	if s.Agents != nil {
-		inputs.Agents = s.Agents
-	}
-	if s.Summarize != nil {
-		inputs.Summarize = s.Summarize
-	}
-	return func() { sourcesMu.Lock(); inputs = previous; sourcesMu.Unlock() }
-}
+// ResetInputs clears source wiring on the default Service.
+func ResetInputs() { Default().ResetInputs() }
 
-// ResetInputs clears source wiring.
-func ResetInputs()          { sourcesMu.Lock(); inputs = Inputs{}; sourcesMu.Unlock() }
-func currentInputs() Inputs { sourcesMu.Lock(); defer sourcesMu.Unlock(); return inputs }
+func currentInputs() Inputs { return Default().currentInputs() }
 
-// Complete reports whether all source kinds are wired.
-func Complete() bool { s := currentInputs(); return s.Agents != nil }
+// Complete reports whether all source kinds are wired on the default Service.
+func Complete() bool { return Default().Complete() }
 
-// MissingSources lists required unwired sources.
-func MissingSources() []string {
-	s := currentInputs()
-	var missing []string
-	if s.Agents == nil {
-		missing = append(missing, "agents")
-	}
-	return missing
-}
+// MissingSources lists required unwired sources on the default Service.
+func MissingSources() []string { return Default().MissingSources() }
 
 // ErrSourceUnavailable identifies a source read failure (HTTP 503).
 var ErrSourceUnavailable = errors.New("notification source unavailable")
@@ -775,99 +746,18 @@ func (c *collectedObservations) apply(items *Items, retainUnseen bool) error {
 
 // SnapshotItems refreshes receipts and returns pending incidents in display order.
 func SnapshotItems(ctx context.Context, completedTask string) ([]*Item, error) {
-	return snapshot(lifecycle.Detach(ctx), completedTask, true, false)
+	return Default().SnapshotItems(ctx, completedTask)
 }
 
 // PreviewItems returns the projection without creating or rewriting receipts.
-func PreviewItems(ctx context.Context) ([]*Item, error) { return snapshot(ctx, "", false, false) }
-func snapshot(ctx context.Context, completedTask string, persist, partial bool) ([]*Item, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	s := currentInputs()
-	if s.Agents == nil {
-		return nil, ErrSourcesMissing
-	}
-	if s.Rows == nil {
-		s.Rows = tasks.Available
-		if s.MissingTasks == nil {
-			s.MissingTasks = tasks.Missing
-		}
-	}
-	retainUnseen := false
-	if s.MissingTasks != nil {
-		if missing := s.MissingTasks(); len(missing) > 0 {
-			if !partial {
-				return nil, &tasks.Unavailable{Slots: missing}
-			}
-			retainUnseen = true
-		}
-	}
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var ticket uint64
-	if persist {
-		ticket = observationSequence.Add(1)
-	}
-	collected, err := collect(ctx, repository, completedTask, s)
-	if err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	result := []*Item{}
-	err = transaction(ctx, repository.DataDir(), ticket, persist, func(items *Items, apply bool) error {
-		if apply {
-			if err := collected.apply(items, retainUnseen); err != nil {
-				return err
-			}
-		}
-		// Map iteration must not affect stable ties in display order.
-		for _, key := range items.Keys() {
-			item, _ := items.Get(key)
-			if item.State != "pending" {
-				continue
-			}
-			copy := *item
-			copy.Signature = nil
-			copy.Evidence = nil
-			result = append(result, &copy)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	rank := func(item *Item) int {
-		switch stringValue(item.Severity) {
-		case "error":
-			return 0
-		case "warning":
-			return 1
-		default:
-			return 2
-		}
-	}
-	sort.SliceStable(result, func(i, j int) bool { return stringValue(result[i].LastSeenAt) > stringValue(result[j].LastSeenAt) })
-	sort.SliceStable(result, func(i, j int) bool { return rank(result[i]) < rank(result[j]) })
-	return result, nil
-}
+func PreviewItems(ctx context.Context) ([]*Item, error) { return Default().PreviewItems(ctx) }
 
 // RefreshTasks observes known sources without retiring unobserved old incidents.
 func RefreshTasks(ctx context.Context, completedTask string) error {
-	if !Complete() {
-		return nil
-	}
-	_, err := snapshot(lifecycle.Detach(ctx), completedTask, true, true)
-	return err
+	return Default().RefreshTasks(ctx, completedTask)
 }
 
 // TaskStatus wires status commits to notification refresh after the leaf unlock.
 func TaskStatus(ctx context.Context, dataDir string) *taskstatus.Store {
-	store := taskstatus.New(dataDir)
-	store.OnRecord = func(key string) { Safely(func() error { return RefreshTasks(ctx, key) }) }
-	return store
+	return Default().TaskStatus(ctx, dataDir)
 }

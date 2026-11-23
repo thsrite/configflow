@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/notifications"
 )
 
 func TestNewRegistersStartupAndPeriodicNames(t *testing.T) {
@@ -20,8 +22,17 @@ func TestNewRegistersStartupAndPeriodicNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if app == nil || app.HTTP == nil || app.Runtime != rt {
+	if app == nil || app.HTTP == nil || app.Runtime != rt || app.Tasks == nil || app.Notifications == nil {
 		t.Fatal("New returned unexpected App")
+	}
+	if err := app.Tasks.Validate(); err != nil {
+		t.Fatalf("Tasks.Validate: %v", err)
+	}
+	if err := app.Notifications.Validate(); err != nil {
+		t.Fatalf("Notifications.Validate: %v", err)
+	}
+	if err := app.Notifications.SetAgents(func(context.Context) ([]model.Agent, error) { return nil, nil }); err != notifications.ErrServiceStarted {
+		t.Fatalf("SetAgents after New = %v, want ErrServiceStarted", err)
 	}
 
 	got := rt.Names()

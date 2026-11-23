@@ -19,12 +19,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
-	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
 
@@ -77,56 +75,22 @@ func (e *NotFound) Error() string { return e.Message }
 func (e *Invalid) Error() string  { return e.Message }
 func (e *Conflict) Error() string { return e.Message }
 
-var (
-	mu        sync.Mutex
-	rows      = map[string]BuildRows{SlotBackup: backupRows}
-	runners   = map[string]RunFunc{}
-	intervals = map[string]IntervalEditor{}
-)
+// SetRowBuilder installs the row builder of a slot on the default Registry.
+func SetRowBuilder(slot string, f BuildRows) func() { return Default().SetRowBuilder(slot, f) }
 
-// SetRowBuilder installs the row builder of a slot and returns its restoration.
-func SetRowBuilder(slot string, f BuildRows) func() {
-	mu.Lock()
-	previous := rows[slot]
-	rows[slot] = f
-	mu.Unlock()
-	return func() { mu.Lock(); rows[slot] = previous; mu.Unlock() }
-}
+// SetRunner installs the "run now" of a category on the default Registry.
+func SetRunner(category string, f RunFunc) func() { return Default().SetRunner(category, f) }
 
-// SetRunner installs the "run now" of a category (or of the exact key
-// "metrics_history_flush") and returns its restoration.
-func SetRunner(category string, f RunFunc) func() {
-	mu.Lock()
-	previous := runners[category]
-	runners[category] = f
-	mu.Unlock()
-	return func() { mu.Lock(); runners[category] = previous; mu.Unlock() }
-}
-
-// SetIntervalEditor installs an exact-key editor and returns its restoration.
+// SetIntervalEditor installs an exact-key editor on the default Registry.
 func SetIntervalEditor(key string, f IntervalEditor) func() {
-	mu.Lock()
-	previous := intervals[key]
-	intervals[key] = f
-	mu.Unlock()
-	return func() { mu.Lock(); intervals[key] = previous; mu.Unlock() }
+	return Default().SetIntervalEditor(key, f)
 }
 
-// Missing lists the slots nobody provides yet.
-func Missing() []string {
-	mu.Lock()
-	defer mu.Unlock()
-	var missing []string
-	for _, slot := range slotOrder {
-		if rows[slot] == nil {
-			missing = append(missing, slot)
-		}
-	}
-	return missing
-}
+// Missing lists the slots nobody provides yet on the default Registry.
+func Missing() []string { return Default().Missing() }
 
-// Complete reports whether every slot has rows.
-func Complete() bool { return len(Missing()) == 0 }
+// Complete reports whether every slot has rows on the default Registry.
+func Complete() bool { return Default().Complete() }
 
 // ErrIncomplete is returned by ListTasks while slots are missing.
 var ErrIncomplete = errors.New("task rows are not wired: " + "missing slots")
@@ -153,7 +117,7 @@ func IsBackground(key string) bool { return background.Held(key) }
 // background; a second start while it runs is Busy. Failures are recorded
 // by the work itself.
 func StartBackground(ctx context.Context, key string, work func(ctx context.Context) error) error {
-	return startBackground(ctx, key, work, lifecycle.DefaultSpawner{})
+	return Default().StartBackground(ctx, key, work)
 }
 
 func startBackground(ctx context.Context, key string, work func(context.Context) error, spawner lockx.Spawner) error {
@@ -177,97 +141,17 @@ func startBackground(ctx context.Context, key string, work func(context.Context)
 	return nil
 }
 
-func backupRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*Task, error) {
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	backup, err := repository.Backup(ctx)
-	if err != nil {
-		return nil, err
-	}
-	configured := backup.WebDAVURL != "" && backup.WebDAVUsername != "" && backup.WebDAVPassword != ""
-	if _, present := statuses[BackupTaskKey]; !configured && !present {
-		return nil, nil
-	}
-	history, err := ProjectHistory(statuses.Entry(BackupTaskKey))
-	if err != nil {
-		return nil, err
-	}
-	automatic := backup.AutoBackup != nil && *backup.AutoBackup
-	hint := ""
-	if !configured {
-		hint = msgBackupConfigure
-	}
-	manual := history.LastTrigger != nil && *history.LastTrigger == "manual"
-	return []*Task{{Key: BackupTaskKey, Category: SlotBackup, Name: msgBackupName, Enabled: automatic,
-		NotificationsEnabled: new(automatic || (configured && manual)), ScheduleText: msgBackupSchedule,
-		CanRun: configured, RunHint: hint, Running: IsBackground(BackupTaskKey), Link: new("/system-settings"), HistoryData: history}}, nil
-}
+// List is list_tasks() on the default Registry.
+func List(ctx context.Context) ([]*Task, error) { return Default().List(ctx) }
 
-// List is list_tasks().
-func List(ctx context.Context) ([]*Task, error) {
-	if !Complete() {
-		return nil, ErrIncomplete
-	}
-	return Available(ctx)
-}
+// Available projects receipts only for registered task owners on the default Registry.
+func Available(ctx context.Context) ([]*Task, error) { return Default().Available(ctx) }
 
-// Available projects receipts only for registered task owners. Callers
-// requiring a complete observation must check readiness or use ListTasks.
-func Available(ctx context.Context) ([]*Task, error) {
-	return availableRows(ctx, "")
-}
+// ForSlot returns only the selected provided slot on the default Registry.
+func ForSlot(ctx context.Context, slot string) ([]*Task, error) { return Default().ForSlot(ctx, slot) }
 
-// ForSlot returns only the selected provided slot, never a fake empty provider.
-func ForSlot(ctx context.Context, slot string) ([]*Task, error) {
-	if !HasRows(slot) {
-		return nil, &Unavailable{Slots: []string{slot}}
-	}
-	return availableRows(ctx, slot)
-}
+// Runner returns the run function of a category on the default Registry.
+func Runner(category string) RunFunc { return Default().Runner(category) }
 
-func availableRows(ctx context.Context, selected string) ([]*Task, error) {
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	statuses, err := taskstatus.New(repository.DataDir()).Read()
-	if err != nil {
-		return nil, err
-	}
-	mu.Lock()
-	builders := make([]BuildRows, 0, len(slotOrder))
-	for _, slot := range slotOrder {
-		if selected != "" && slot != selected {
-			continue
-		}
-		if build := rows[slot]; build != nil {
-			builders = append(builders, build)
-		}
-	}
-	mu.Unlock()
-	result := []*Task{}
-	for _, build := range builders {
-		part, err := build(ctx, statuses)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, part...)
-	}
-	return result, nil
-}
-
-// Runner returns the run function of a category.
-func Runner(category string) RunFunc {
-	mu.Lock()
-	defer mu.Unlock()
-	return runners[category]
-}
-
-// IntervalEditorFor returns the interval edit of a key.
-func IntervalEditorFor(key string) IntervalEditor {
-	mu.Lock()
-	defer mu.Unlock()
-	return intervals[key]
-}
+// IntervalEditorFor returns the interval edit of a key on the default Registry.
+func IntervalEditorFor(key string) IntervalEditor { return Default().IntervalEditorFor(key) }

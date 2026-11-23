@@ -20,6 +20,38 @@ import (
 	"configflow/internal/tasks"
 )
 
+// Handler serves the /api/notifications routes backed by explicit services.
+type Handler struct {
+	Tasks         *tasks.Registry
+	Notifications *notifications.Service
+	Repo          *repo.Repository
+}
+
+// NewHandler constructs a Handler; nil fields fall back to package defaults.
+func NewHandler(reg *tasks.Registry, svc *notifications.Service, r *repo.Repository) *Handler {
+	return &Handler{Tasks: reg, Notifications: svc, Repo: r}
+}
+
+func (h *Handler) taskRegistry() *tasks.Registry {
+	if h != nil && h.Tasks != nil {
+		return h.Tasks
+	}
+	return tasks.Default()
+}
+
+func (h *Handler) notifService() *notifications.Service {
+	if h != nil && h.Notifications != nil {
+		return h.Notifications
+	}
+	return notifications.Default()
+}
+
+// Register mounts the /api/notifications routes on r.
+func (h *Handler) Register(r *httpx.Router) {
+	r.GET("/api/notifications", "notifications.list_notifications", auth.Require(h.listNotifications))
+	r.POST("/api/notifications/read", "notifications.read_notifications", auth.Require(h.readNotifications))
+}
+
 // Register adds both routes regardless of source readiness.
 func Register(r *httpx.Router) {
 	RegisterAlways(r)
@@ -31,8 +63,7 @@ func ListComplete() bool { return notifications.Complete() && tasks.Complete() }
 
 // RegisterAlways adds both routes regardless of the sources (tests).
 func RegisterAlways(r *httpx.Router) {
-	r.GET("/api/notifications", "notifications.list_notifications", auth.Require(listNotifications))
-	r.POST("/api/notifications/read", "notifications.read_notifications", auth.Require(readNotifications))
+	NewHandler(nil, nil, nil).Register(r)
 }
 
 // isOSOrValueError is `except (OSError, ValueError)`: file system errors,
@@ -46,8 +77,10 @@ func isOSOrValueError(err error) bool {
 		errors.Is(err, repo.ErrRejected) || errors.Is(err, notifications.ErrSourceUnavailable)
 }
 
-func listNotifications(c *httpx.Ctx) (*httpx.Response, error) {
-	missing := append(tasks.Missing(), notifications.MissingSources()...)
+func (h *Handler) listNotifications(c *httpx.Ctx) (*httpx.Response, error) {
+	reg := h.taskRegistry()
+	svc := h.notifService()
+	missing := append(reg.Missing(), svc.MissingSources()...)
 	if len(missing) > 0 {
 		return httpx.JSONStatus(503, struct {
 			Success bool     `json:"success"`
@@ -58,9 +91,9 @@ func listNotifications(c *httpx.Ctx) (*httpx.Response, error) {
 	var items []*notifications.Item
 	var err error
 	if c.Request.Method == http.MethodHead {
-		items, err = notifications.PreviewItems(c.Context())
+		items, err = svc.PreviewItems(c.Context())
 	} else {
-		items, err = notifications.SnapshotItems(c.Context(), "")
+		items, err = svc.SnapshotItems(c.Context(), "")
 	}
 	if err != nil {
 		if isOSOrValueError(err) {
@@ -75,14 +108,18 @@ func listNotifications(c *httpx.Ctx) (*httpx.Response, error) {
 	}{true, items, notifications.Now()}).NoStore(), nil
 }
 
-func readNotifications(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) readNotifications(c *httpx.Ctx) (*httpx.Response, error) {
 	var body readRequest
 	if !c.BindSilent(&body) || !body.valid() {
 		return httpx.Message(400, false, msgSpecifyVersions), nil
 	}
-	repository, err := repo.GetRepository(c.Context())
-	if err != nil {
-		return nil, err
+	repository := h.Repo
+	if repository == nil {
+		var err error
+		repository, err = repo.GetRepository(c.Context())
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := notifications.Dismiss(c.Context(), repository.DataDir(), body.Versions); err != nil {
 		return nil, err

@@ -12,7 +12,9 @@ import (
 	"configflow/internal/agents/rulesync"
 	"configflow/internal/aggregations"
 	apiagents "configflow/internal/api/agents"
+	apinotifications "configflow/internal/api/notifications"
 	apirules "configflow/internal/api/rules"
+	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/configexport"
 	"configflow/internal/convert/mihomoenv"
@@ -22,10 +24,12 @@ import (
 	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/notifications"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	"configflow/internal/substore"
+	"configflow/internal/tasks"
 	"configflow/internal/webdav"
 )
 
@@ -38,14 +42,16 @@ type Options struct {
 
 // App owns the wired HTTP application and its core runtime dependencies.
 type App struct {
-	HTTP    *httpx.App
-	Repo    *repo.Repository
-	Runtime *lifecycle.Runtime
+	HTTP          *httpx.App
+	Repo          *repo.Repository
+	Runtime       *lifecycle.Runtime
+	Tasks         *tasks.Registry
+	Notifications *notifications.Service
 }
 
 // New wires the application, registers ordered startup steps and background
-// loops on the Runtime, mounts every route package, and installs the
-// authentication gate.
+// loops on the Runtime, mounts every route package, validates task and
+// notification slot completeness, and installs the authentication gate.
 func New(ctx context.Context, opts Options) (*App, error) {
 	rt := opts.Runtime
 	if rt == nil {
@@ -53,6 +59,10 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	} else if err := lifecycle.UseRuntime(rt); err != nil {
 		return nil, err
 	}
+	tk := tasks.NewRegistry(opts.Repo, rt)
+	nt := notifications.New(notifications.Options{Repo: opts.Repo, Tasks: tk})
+	tasks.UseRegistry(tk)
+	notifications.UseService(nt)
 	registerStartup(rt)
 	if opts.Repo != nil {
 		webdav.WireTasksAndStartupOn(rt)
@@ -64,18 +74,26 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		webdav.Wire()
 	}
 	wireSubsystems(rt)
+	if err := tk.Validate(); err != nil {
+		return nil, err
+	}
+	if err := nt.Validate(); err != nil {
+		return nil, err
+	}
+	nt.MarkStarted()
 	httpApp := httpx.New()
 	for _, register := range routePackages {
 		register(httpApp.Router)
 	}
-	for _, register := range lateRoutePackages {
-		register(httpApp.Router)
-	}
+	apitasks.NewHandler(tk).Register(httpApp.Router)
+	apinotifications.NewHandler(tk, nt, opts.Repo).Register(httpApp.Router)
 	auth.Install(httpApp)
 	return &App{
-		HTTP:    httpApp,
-		Repo:    opts.Repo,
-		Runtime: rt,
+		HTTP:          httpApp,
+		Repo:          opts.Repo,
+		Runtime:       rt,
+		Tasks:         tk,
+		Notifications: nt,
 	}, nil
 }
 
