@@ -75,24 +75,24 @@ func ProbeURL(host string, port int) string {
 	return "https://" + host + ":" + strconv.Itoa(port) + "/"
 }
 
-// PathStats holds active probe statistics for one path (direct or proxy).
+// PathStats holds active probe statistics for one path (direct or proxy). A
+// value of the wrong type reads as its zero value.
 type PathStats struct {
-	OK     model.Int            `json:"ok"`
-	Total  model.Int            `json:"total"`
-	Delays []float64            `json:"delays"`
-	Errors model.Map[model.Int] `json:"errors"`
-	Fields model.Fields
-	raw    model.Raw
+	OK     model.Int                   `json:"ok"`
+	Total  model.Int                   `json:"total"`
+	Delays []float64                   `json:"delays"`
+	Errors model.OrderedMap[model.Int] `json:"errors"`
 }
 
-// UnmarshalJSON decodes PathStats under model R5 rules.
+// UnmarshalJSON decodes reported statistics leniently.
 func (s *PathStats) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, s, &s.raw)
-}
-
-// MarshalJSON encodes PathStats preserving stored member order and raw bytes.
-func (s PathStats) MarshalJSON() ([]byte, error) {
-	return model.EncodeRecord(&s, &s.raw)
+	type wire PathStats
+	var decoded wire
+	if _, err := model.DecodeStored(data, &decoded, ""); err != nil {
+		return err
+	}
+	*s = PathStats(decoded)
+	return nil
 }
 
 func pathRate(stats *PathStats) (float64, bool) {
@@ -251,13 +251,18 @@ type Suggestion struct {
 	Confidence *model.Int      `json:"confidence"`
 	Reasons    json.RawMessage `json:"reasons"`
 	CheckedAt  NullableText    `json:"checked_at"`
-	Fields     model.Fields
-	raw        model.Raw
 }
 
-// UnmarshalJSON decodes Suggestion under model R5 rules.
+// UnmarshalJSON decodes a probe leniently: a member of the wrong type reads
+// as absent.
 func (s *Suggestion) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, s, &s.raw)
+	type wire Suggestion
+	var decoded wire
+	if _, err := model.DecodeStored(data, &decoded, ""); err != nil {
+		return err
+	}
+	*s = Suggestion(decoded)
+	return nil
 }
 
 // MarshalJSON encodes Suggestion with explicit null fields when unset.
@@ -286,19 +291,7 @@ func (s Suggestion) MarshalJSON() ([]byte, error) {
 
 // HostProbe holds an optional active probe record attached to a discovered host.
 type HostProbe struct {
-	Probe  json.RawMessage `json:"probe"`
-	Fields model.Fields
-	raw    model.Raw
-}
-
-// UnmarshalJSON decodes HostProbe under model R5 rules.
-func (h *HostProbe) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, h, &h.raw)
-}
-
-// MarshalJSON encodes HostProbe preserving stored member order.
-func (h HostProbe) MarshalJSON() ([]byte, error) {
-	return model.EncodeRecord(&h, &h.raw)
+	Probe json.RawMessage `json:"probe,omitzero"`
 }
 
 // DomainSuggestion picks the highest-confidence actionable probe among hosts,
@@ -362,47 +355,27 @@ func suggestionConfidence(s Suggestion) int64 {
 
 // ---------- store ----------
 
-// TimedRecord is a stored map entry timestamped by checked_at, retaining all
-// additional JSON fields verbatim.
-type TimedRecord struct {
-	CheckedAt StrictString `json:"checked_at"`
-	Fields    model.Fields
-	raw       model.Raw
+// TimedRecord is a stored probe or check result: the Agent's result members
+// in their order, timestamped by checked_at.
+type TimedRecord struct{ model.Fields }
+
+// CheckedAt is the text of checked_at ("" when absent or not text; such an
+// entry expires during pruning).
+func (r TimedRecord) CheckedAt() string {
+	raw, ok := r.Get("checked_at")
+	if !ok {
+		return ""
+	}
+	var stamp StrictString
+	if json.Unmarshal(raw, &stamp) != nil {
+		return ""
+	}
+	return string(stamp)
 }
 
-// UnmarshalJSON decodes TimedRecord while preserving unknown fields and order.
-func (r *TimedRecord) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, r, &r.raw)
-}
-
-// MarshalJSON encodes TimedRecord preserving stored member order and raw bytes.
-func (r TimedRecord) MarshalJSON() ([]byte, error) {
-	return model.EncodeRecord(&r, &r.raw)
-}
-
+// probeFile is one Agent's probe file: {"hosts": {...}}.
 type probeFile struct {
-	Hosts  model.Map[TimedRecord] `json:"hosts"`
-	Fields model.Fields
-	raw    model.Raw
-}
-
-func (f *probeFile) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, f, &f.raw)
-}
-
-func (f probeFile) MarshalJSON() ([]byte, error) {
-	return model.EncodeRecord(&f, &f.raw)
-}
-
-func isNullTimedMap(m model.Map[TimedRecord]) bool {
-	encoded, err := m.MarshalJSON()
-	return err == nil && bytes.Equal(bytes.TrimSpace(encoded), []byte("null"))
-}
-
-func newEmptyProbeFile() probeFile {
-	var file probeFile
-	_ = model.SetMemberJSON(&file, &file.raw, "hosts", json.RawMessage("{}"))
-	return file
+	Hosts model.OrderedMap[TimedRecord] `json:"hosts"`
 }
 
 var probeLock sync.Mutex
@@ -416,32 +389,27 @@ func NewProbeStore(dir string) *ProbeStore { return &ProbeStore{files: jsonstore
 // Path returns the JSON file path for agentID.
 func (s *ProbeStore) Path(agentID string) string { return s.files.Path(agentID) }
 
+// readFile reads an Agent's probe file. A file without a hosts object, or
+// with a host entry that is not an object, reads as empty: probe results are
+// a cache the next probe refills.
 func (s *ProbeStore) readFile(agentID string) probeFile {
-	var rawObj rawJSONObject
-	if !s.files.Read(agentID, &rawObj) || !rawObj.Fields.Has("hosts") {
-		return newEmptyProbeFile()
+	var object model.Fields
+	if !s.files.Read(agentID, &object) {
+		return probeFile{}
 	}
-	encoded, err := rawObj.MarshalJSON()
-	if err != nil {
-		return newEmptyProbeFile()
+	raw, ok := object.Get("hosts")
+	if !ok {
+		return probeFile{}
 	}
 	var file probeFile
-	if err := json.Unmarshal(encoded, &file); err != nil || hasRootIssue(file.raw.Issues(), "hosts") || isNullTimedMap(file.Hosts) {
-		return newEmptyProbeFile()
+	if !decodeClean(raw, &file.Hosts) {
+		return probeFile{}
 	}
 	return file
 }
 
-func validTimedRecords(records model.Map[TimedRecord]) bool {
-	raw, err := records.MarshalJSON()
-	if err != nil {
-		return false
-	}
-	var current model.Map[TimedRecord]
-	if json.Unmarshal(raw, &current) != nil || isNullTimedMap(current) || len(model.Issues(current)) > 0 {
-		return false
-	}
-	for _, entry := range current.All() {
+func validTimedRecords(records model.OrderedMap[TimedRecord]) bool {
+	for _, entry := range records.All() {
 		if !validTimestamp(entry) {
 			return false
 		}
@@ -450,15 +418,7 @@ func validTimedRecords(records model.Map[TimedRecord]) bool {
 }
 
 func validTimestamp(entry TimedRecord) bool {
-	raw, err := model.Marshal(entry)
-	if err != nil {
-		return false
-	}
-	var object rawJSONObject
-	if json.Unmarshal(raw, &object) != nil {
-		return false
-	}
-	value, present := object.Fields.Get("checked_at")
+	value, present := entry.Get("checked_at")
 	// Missing timestamps expire during pruning; an explicitly malformed one is invalid.
 	if !present {
 		return true
@@ -467,11 +427,11 @@ func validTimestamp(entry TimedRecord) bool {
 	return json.Unmarshal(value, &stamp) == nil
 }
 
-func pruneHosts(hosts *model.Map[TimedRecord], now time.Time) {
+func pruneHosts(hosts *model.OrderedMap[TimedRecord], now time.Time) {
 	bound := oldest(now, ProbeRetentionDays)
 	var expired []string
 	for host, entry := range hosts.All() {
-		if string(entry.CheckedAt) < bound {
+		if entry.CheckedAt() < bound {
 			expired = append(expired, host)
 		}
 	}
@@ -483,7 +443,7 @@ func pruneHosts(hosts *model.Map[TimedRecord], now time.Time) {
 		sort.SliceStable(ranked, func(i, j int) bool {
 			left, _ := hosts.Get(ranked[i])
 			right, _ := hosts.Get(ranked[j])
-			return string(left.CheckedAt) > string(right.CheckedAt)
+			return left.CheckedAt() > right.CheckedAt()
 		})
 		for _, host := range ranked[MaxProbedHosts:] {
 			hosts.Delete(host)
@@ -493,13 +453,13 @@ func pruneHosts(hosts *model.Map[TimedRecord], now time.Time) {
 
 // SaveEntries merges results into agentID's probe file, prunes expired/excess
 // entries relative to now (zero uses time.Now), and writes atomically.
-func (s *ProbeStore) SaveEntries(agentID string, results model.Map[TimedRecord], now time.Time) error {
+func (s *ProbeStore) SaveEntries(agentID string, results model.OrderedMap[TimedRecord], now time.Time) error {
 	return s.SaveEntriesContext(context.Background(), agentID, results, now)
 }
 
 // SaveEntriesContext merges probe entries, retaining the caller's owner lifetime
 // through lock acquisition and checking cancellation before file publication.
-func (s *ProbeStore) SaveEntriesContext(ctx context.Context, agentID string, results model.Map[TimedRecord], now time.Time) error {
+func (s *ProbeStore) SaveEntriesContext(ctx context.Context, agentID string, results model.OrderedMap[TimedRecord], now time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -508,11 +468,6 @@ func (s *ProbeStore) SaveEntriesContext(ctx context.Context, agentID string, res
 	}
 	if !validTimedRecords(results) {
 		return valueError(msgInvalidProbeEntry)
-	}
-	for _, entry := range results.All() {
-		if !validTimestamp(entry) {
-			return valueError(msgInvalidProbeEntry)
-		}
 	}
 
 	probeLock.Lock()
@@ -532,7 +487,7 @@ func (s *ProbeStore) SaveEntriesContext(ctx context.Context, agentID string, res
 
 // LoadEntries loads and prunes agentID's host probe entries relative to now
 // without writing back to disk.
-func (s *ProbeStore) LoadEntries(agentID string, now time.Time) model.Map[TimedRecord] {
+func (s *ProbeStore) LoadEntries(agentID string, now time.Time) model.OrderedMap[TimedRecord] {
 	if now.IsZero() {
 		now = time.Now()
 	}
@@ -563,8 +518,8 @@ func (s *ProbeStore) DeleteContext(ctx context.Context, agentID string) error {
 
 // LatestProbeEntries returns the newest probe entry per host across agentIDs,
 // annotated with agent_id.
-func LatestProbeEntries(agentIDs []string, store *ProbeStore) (model.Map[TimedRecord], error) {
-	var merged model.Map[TimedRecord]
+func LatestProbeEntries(agentIDs []string, store *ProbeStore) (model.OrderedMap[TimedRecord], error) {
+	var merged model.OrderedMap[TimedRecord]
 	// Collect first and build the Map once: a Set per host copies the whole
 	// Map, which made this quadratic in the number of probed hosts.
 	var order []string
@@ -577,7 +532,7 @@ func LatestProbeEntries(agentIDs []string, store *ProbeStore) (model.Map[TimedRe
 		hosts := store.LoadEntries(agentID, time.Time{})
 		for host, entry := range hosts.All() {
 			previous, seen := latest[host]
-			if seen && !(string(entry.CheckedAt) > string(previous.CheckedAt)) {
+			if seen && !(entry.CheckedAt() > previous.CheckedAt()) {
 				continue
 			}
 			copied := entry

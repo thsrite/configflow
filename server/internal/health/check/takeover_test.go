@@ -11,7 +11,7 @@ import (
 
 func TestServiceMapEncodesNativeConstructedResults(t *testing.T) {
 	status := model.Int(200)
-	var markers model.Map[NullableText]
+	var markers model.OrderedMap[NullableText]
 	markers.Set("consent", NullableText{Value: "yes", Valid: true})
 	verdicts, err := EvaluateServiceList([]RegionResult{{ID: "openai-compliance", Status: &status, Markers: markers}})
 	if err != nil {
@@ -39,11 +39,11 @@ func TestMalformedProbeTimestampDoesNotDiscardValidSiblings(t *testing.T) {
 		t.Fatalf("expected valid sibling only: %v", loaded.Keys())
 	}
 	valid, ok := loaded.Get("valid")
-	if !ok || valid.CheckedAt != "2030-01-01T00:00:00" {
+	if !ok || valid.CheckedAt() != "2030-01-01T00:00:00" {
 		t.Fatal("valid sibling lost")
 	}
-	var next model.Map[TimedRecord]
-	next.Set("new", TimedRecord{CheckedAt: "2030-01-02T00:00:00"})
+	var next model.OrderedMap[TimedRecord]
+	next.Set("new", timedAt("2030-01-02T00:00:00"))
 	if err := store.SaveEntries("synthetic", next, now); err != nil {
 		t.Fatal(err)
 	}
@@ -58,8 +58,10 @@ func TestMalformedProbeTimestampDoesNotDiscardValidSiblings(t *testing.T) {
 	if err := json.Unmarshal(bytes, &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved.Keep != "yes" || len(saved.Hosts) != 2 {
-		t.Fatal("save lost retained data")
+	// The malformed entry expired on load; an undeclared top-level member
+	// is not written back (O18 T1d).
+	if saved.Keep != "" || len(saved.Hosts) != 2 {
+		t.Fatalf("saved %s", bytes)
 	}
 }
 

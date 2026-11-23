@@ -9,18 +9,12 @@ import (
 	"configflow/internal/model"
 )
 
-type rawObject struct {
-	Fields model.Fields
-	raw    model.Raw
-}
+// rawObject is a JSON object read member by member.
+type rawObject struct{ Fields model.Fields }
 
-func (o *rawObject) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, o, &o.raw)
-}
+func (o *rawObject) UnmarshalJSON(data []byte) error { return o.Fields.UnmarshalJSON(data) }
 
-func (o rawObject) MarshalJSON() ([]byte, error) {
-	return model.EncodeRecord(&o, &o.raw)
-}
+func (o rawObject) MarshalJSON() ([]byte, error) { return o.Fields.MarshalJSON() }
 
 type strictString string
 

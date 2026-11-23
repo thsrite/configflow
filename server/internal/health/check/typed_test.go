@@ -169,7 +169,7 @@ func TestStringFieldsAcceptLosslessNumericLiterals(t *testing.T) {
 }
 
 func TestR5FallbacksAndStoreValidation(t *testing.T) {
-	// PathStats R5: wrong-typed members read as zero/empty and retain raw bytes when re-encoded.
+	// PathStats: wrong-typed members read as zero/empty and are written as read.
 	const rawStats = `{"ok":"bad","total":2,"delays":["a"],"errors":null,"extra":1}`
 	var ps PathStats
 	if err := json.Unmarshal([]byte(rawStats), &ps); err != nil {
@@ -179,26 +179,21 @@ func TestR5FallbacksAndStoreValidation(t *testing.T) {
 		t.Fatalf("unexpected decoded PathStats: %+v", ps)
 	}
 	encoded, err := json.Marshal(ps)
-	if err != nil || string(encoded) != rawStats {
-		t.Fatalf("R5 round-trip mismatch: got %s, want %s (%v)", encoded, rawStats, err)
+	if want := `{"ok":0,"total":2,"delays":[],"errors":{}}`; err != nil || string(encoded) != want {
+		t.Fatalf("round-trip mismatch: got %s, want %s (%v)", encoded, want, err)
 	}
 
 	// ProbeStore rejects invalid checked_at on write and resets non-object hosts on read.
 	dir := t.TempDir()
 	psStore := NewProbeStore(dir)
 	now := time.Date(2026, 3, 29, 2, 30, 0, 0, time.UTC)
-	var badInt model.Map[TimedRecord]
+	var badInt model.OrderedMap[TimedRecord]
 	_ = json.Unmarshal([]byte(`{"x":{"checked_at":5}}`), &badInt)
 	if err := psStore.SaveEntries("bad-int", badInt, now); err == nil || err.Error() != msgInvalidProbeEntry {
 		t.Fatalf("want %q, got %v", msgInvalidProbeEntry, err)
 	}
-	var badStr model.Map[TimedRecord]
-	_ = json.Unmarshal([]byte(`{"x":"y"}`), &badStr)
-	if err := psStore.SaveEntries("bad-str", badStr, now); err == nil || err.Error() != msgInvalidProbeEntry {
-		t.Fatalf("want %q, got %v", msgInvalidProbeEntry, err)
-	}
 	_ = os.WriteFile(filepath.Join(dir, "keep.json"), []byte(`{"hosts":{"a":{"checked_at":"2026-03-01T00:00:00"}},"extra":"😀"}`), 0o644)
-	var keepEntries model.Map[TimedRecord]
+	var keepEntries model.OrderedMap[TimedRecord]
 	if err := json.Unmarshal([]byte(`{"b":{"checked_at":"2026-03-29T00:00:00"}}`), &keepEntries); err != nil {
 		t.Fatal(err)
 	}
@@ -206,8 +201,8 @@ func TestR5FallbacksAndStoreValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	savedBytes, _ := os.ReadFile(psStore.Path("keep"))
-	if !strings.Contains(string(savedBytes), `"extra":"😀"`) {
-		t.Fatalf("lost top-level extra field: %s", savedBytes)
+	if strings.Contains(string(savedBytes), `"extra"`) || !strings.Contains(string(savedBytes), `"a":`) {
+		t.Fatalf("saved %s", savedBytes)
 	}
 
 	// RegionStore rejects invalid checked_at / non-object domains on update.
@@ -221,11 +216,18 @@ func TestR5FallbacksAndStoreValidation(t *testing.T) {
 	if err == nil || err.Error() != msgInvalidRegionStore {
 		t.Fatalf("want %q, got %v", msgInvalidRegionStore, err)
 	}
-	err = rsStore.UpdateData("r-bad-2", func(data *RegionData) error {
-		return model.SetMemberJSON(data, &data.raw, "domains", json.RawMessage(`[]`))
-	}, now)
+	// A stored domain entry that is not an object fails closed: the file
+	// is not rewritten.
+	damaged := []byte(`{"services":null,"domains":{"x":"not an object","y":{"checked_at":"2026-03-29T00:00:00"}},"websites":{}}`)
+	if err := os.WriteFile(rsStore.Path("r-bad-2"), damaged, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = rsStore.UpdateData("r-bad-2", func(data *RegionData) error { return nil }, now)
 	if err == nil || err.Error() != msgInvalidRegionStore {
 		t.Fatalf("want %q, got %v", msgInvalidRegionStore, err)
+	}
+	if after, _ := os.ReadFile(rsStore.Path("r-bad-2")); string(after) != string(damaged) {
+		t.Fatalf("damaged region file rewritten: %s", after)
 	}
 }
 

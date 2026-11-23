@@ -25,7 +25,7 @@ func TestNativeProbeAndRegionFilesInteroperateWithPython(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"checked_at":"2030-01-01T00:00:00","reasons":["中文 <>&"],"target":null}`), &entry); err != nil {
 		t.Fatal(err)
 	}
-	var results model.Map[TimedRecord]
+	var results model.OrderedMap[TimedRecord]
 	results.Set("example.com", entry)
 
 	if err := probe.SaveEntries("go", results, stamp); err != nil {

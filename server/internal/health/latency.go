@@ -329,56 +329,53 @@ func needsRemoteConversion(env *ProbeEnv, node CandidateNode) bool {
 	return env.Collaborators.NeedsRemoteConversion(node.ProxyString)
 }
 
-// LatencyEntry holds a stored or freshly measured node latency record,
-// retaining worker extension fields and member order.
+// LatencyEntry holds a stored or freshly measured node latency record: the
+// worker's measurement (latency, first_latency, error_code, error; name only
+// before it is stored), then method, tested_at, history and the test
+// settings, as node_latency.py stores them. latency is always written (null
+// for a failed test); the other members only when set.
 type LatencyEntry struct {
-	Name         string            `json:"name"`
-	Latency      *json.Number      `json:"latency"`
-	Error        json.RawMessage   `json:"error"`
-	ErrorCode    string            `json:"error_code"`
-	Method       string            `json:"method"`
-	TestedAt     string            `json:"tested_at"`
-	History      []json.RawMessage `json:"history"`
-	URL          string            `json:"url"`
-	TimeoutMS    model.Int         `json:"timeout_ms"`
-	DNSServers   []string          `json:"dns_servers"`
-	DNSBootstrap []string          `json:"dns_bootstrap"`
-	UnifiedDelay bool              `json:"unified_delay"`
-	Fields       model.Fields
-	raw          model.Raw
+	Name         string            `json:"name,omitzero"`
+	Latency      json.RawMessage   `json:"latency"`
+	FirstLatency json.RawMessage   `json:"first_latency,omitzero"`
+	ErrorCode    string            `json:"error_code,omitzero"`
+	Error        json.RawMessage   `json:"error,omitzero"`
+	Method       string            `json:"method,omitzero"`
+	TestedAt     string            `json:"tested_at,omitzero"`
+	History      []json.RawMessage `json:"history,omitzero"`
+	URL          *string           `json:"url,omitzero"`
+	TimeoutMS    *model.Int        `json:"timeout_ms,omitzero"`
+	DNSServers   []string          `json:"dns_servers,omitzero"`
+	DNSBootstrap []string          `json:"dns_bootstrap,omitzero"`
+	UnifiedDelay *bool             `json:"unified_delay,omitzero"`
+	// damagedSettings: a stored test setting had the wrong type, so the
+	// entry's history is never continued (Python compared the stored value).
+	damagedSettings bool
 }
 
-// UnmarshalJSON decodes typed latency attributes while retaining extension fields.
-func (e *LatencyEntry) UnmarshalJSON(data []byte) error { return model.DecodeRecord(data, e, &e.raw) }
-
-// MarshalJSON preserves stored member order and untouched R5 values.
-func (e LatencyEntry) MarshalJSON() ([]byte, error) { return model.EncodeRecord(&e, &e.raw) }
-
-func (e *LatencyEntry) set(field string, raw json.RawMessage) error {
-	return model.SetMemberJSON(e, &e.raw, field, raw)
-}
-
+// sameTestSettings reports whether the stored entry was measured with the
+// same test settings; its history is then continued.
 func (e LatencyEntry) sameTestSettings(settings ProbeSettings) bool {
-	for _, field := range []string{"url", "unified_delay", "dns_servers", "dns_bootstrap"} {
-		if model.IssueUnder(model.Issues(e), field) {
-			return false
-		}
-	}
 	// The flag is part of the history identity; absence must not equal false.
-	raw, err := model.Marshal(e)
-	if err != nil {
+	if e.damagedSettings || e.UnifiedDelay == nil || e.URL == nil {
 		return false
 	}
-	var record rawObject
-	if json.Unmarshal(raw, &record) != nil || !record.Fields.Has("unified_delay") {
-		return false
-	}
-	return e.URL == settings.URL && e.UnifiedDelay == settings.UnifiedDelay &&
+	return *e.URL == settings.URL && *e.UnifiedDelay == settings.UnifiedDelay &&
 		slices.Equal(e.DNSServers, settings.DNSServers) && slices.Equal(e.DNSBootstrap, settings.DNSBootstrap)
 }
 
-func runProbeFields(ctx context.Context, proxies []model.Fields, options ProbeSettings) (model.Map[LatencyEntry], error) {
-	var empty model.Map[LatencyEntry]
+// withSettings returns the entry with the test settings it was measured with.
+func (e LatencyEntry) withSettings(settings ProbeSettings) LatencyEntry {
+	timeout := model.Int(settings.TimeoutMS)
+	e.URL, e.TimeoutMS, e.UnifiedDelay = new(settings.URL), &timeout, new(settings.UnifiedDelay)
+	e.DNSServers = append([]string{}, settings.DNSServers...)
+	e.DNSBootstrap = append([]string{}, settings.DNSBootstrap...)
+	e.damagedSettings = false
+	return e
+}
+
+func runProbeFields(ctx context.Context, proxies []model.Fields, options ProbeSettings) (model.OrderedMap[LatencyEntry], error) {
+	var empty model.OrderedMap[LatencyEntry]
 	env := CurrentProbeEnv()
 	binary, err := env.probeBinary()
 	if err != nil {
@@ -466,8 +463,29 @@ func uniqueProxyNames(proxies []model.Fields) []string {
 	return names
 }
 
-func parseProbeResults(stdout string, proxies []model.Fields) (model.Map[LatencyEntry], error) {
-	var results model.Map[LatencyEntry]
+// checkLatency validates a worker result's latency: a positive integer, or
+// null together with an error text.
+func checkLatency(result model.Fields) error {
+	rawLatency, ok := result.Get("latency")
+	if !ok {
+		return errors.New("missing latency")
+	}
+	trimmedLatency := bytes.TrimSpace(rawLatency)
+	if bytes.Equal(trimmedLatency, []byte("null")) {
+		rawErr, hasErr := result.Get("error")
+		if !hasErr || !hasWorkerError(rawErr) {
+			return errors.New("null latency without error")
+		}
+		return nil
+	}
+	if _, valid := parsePositiveJSONInt(trimmedLatency); !valid {
+		return errors.New("invalid positive latency")
+	}
+	return nil
+}
+
+func parseProbeResults(stdout string, proxies []model.Fields) (model.OrderedMap[LatencyEntry], error) {
+	var results model.OrderedMap[LatencyEntry]
 	var top rawObject
 	if err := json.Unmarshal([]byte(stdout), &top); err != nil {
 		return results, err
@@ -492,12 +510,15 @@ func parseProbeResults(stdout string, proxies []model.Fields) (model.Map[Latency
 		if err := json.Unmarshal(rawName, &name); err != nil {
 			return results, errors.New("non-string result name")
 		}
+		if err := checkLatency(entry.Fields); err != nil {
+			return results, err
+		}
 		rawEntry, err := entry.MarshalJSON()
 		if err != nil {
 			return results, err
 		}
 		var typedEntry LatencyEntry
-		if err := json.Unmarshal(rawEntry, &typedEntry); err != nil {
+		if _, err := model.DecodeStored(rawEntry, &typedEntry, ""); err != nil {
 			return results, err
 		}
 		results.Set(string(name), typedEntry)
@@ -511,37 +532,12 @@ func parseProbeResults(stdout string, proxies []model.Fields) (model.Map[Latency
 			return results, errors.New("missing expected proxy result")
 		}
 	}
-	for _, entry := range results.All() {
-		rawEntry, err := model.Marshal(entry)
-		if err != nil {
-			return results, err
-		}
-		var original rawObject
-		if err := json.Unmarshal(rawEntry, &original); err != nil {
-			return results, err
-		}
-		rawLatency, ok := original.Fields.Get("latency")
-		if !ok {
-			return results, errors.New("missing latency")
-		}
-		trimmedLatency := bytes.TrimSpace(rawLatency)
-		if bytes.Equal(trimmedLatency, []byte("null")) {
-			rawErr, hasErr := original.Fields.Get("error")
-			if !hasErr || !hasWorkerError(rawErr) {
-				return results, errors.New("null latency without error")
-			}
-			continue
-		}
-		if _, valid := parsePositiveJSONInt(trimmedLatency); !valid {
-			return results, errors.New("invalid positive latency")
-		}
-	}
 	return results, nil
 }
 
 // LoadLatencyResults reads persisted node latency entries of the current probe Method.
-func LoadLatencyResults(ctx context.Context) model.Map[LatencyEntry] {
-	var out model.Map[LatencyEntry]
+func LoadLatencyResults(ctx context.Context) model.OrderedMap[LatencyEntry] {
+	var out model.OrderedMap[LatencyEntry]
 	env := CurrentProbeEnv()
 	if env.Collaborators.ReadLatencyFile == nil {
 		return out
@@ -555,9 +551,19 @@ func LoadLatencyResults(ctx context.Context) model.Map[LatencyEntry] {
 		return out
 	}
 	for name, rawEntry := range top.Fields.All() {
-		var entry LatencyEntry
-		if err := json.Unmarshal(rawEntry, &entry); err != nil {
+		// Python keeps only object entries of the current method.
+		if trimmed := bytes.TrimSpace(rawEntry); len(trimmed) == 0 || trimmed[0] != '{' {
 			continue
+		}
+		var entry LatencyEntry
+		issues, err := model.DecodeStored(rawEntry, &entry, "")
+		if err != nil {
+			continue
+		}
+		for _, field := range []string{"url", "unified_delay", "dns_servers", "dns_bootstrap"} {
+			if model.IssueUnder(issues, field) {
+				entry.damagedSettings = true
+			}
 		}
 		if entry.Method == Method {
 			out.Set(name, entry)
@@ -566,7 +572,7 @@ func LoadLatencyResults(ctx context.Context) model.Map[LatencyEntry] {
 	return out
 }
 
-func saveLatencyResults(ctx context.Context, results model.Map[LatencyEntry]) {
+func saveLatencyResults(ctx context.Context, results model.OrderedMap[LatencyEntry]) {
 	env := CurrentProbeEnv()
 	if env.Collaborators.WriteLatencyFile == nil {
 		latencyLog.Error(msgSaveLatencyFailed)
@@ -585,7 +591,7 @@ func saveLatencyResults(ctx context.Context, results model.Map[LatencyEntry]) {
 // TestOutcome is the API result of a RunLatencyTests execution.
 type TestOutcome struct {
 	TestedAt string                  `json:"tested_at"`
-	Results  model.Map[LatencyEntry] `json:"results"`
+	Results  model.OrderedMap[LatencyEntry] `json:"results"`
 	Missing  []string                `json:"missing"`
 	Settings ProbeSettings           `json:"settings"`
 }
@@ -617,12 +623,8 @@ func dedupeStrings(items []string) []string {
 }
 
 func buildFailedMeasurement() LatencyEntry {
-	var entry LatencyEntry
-	_ = entry.set("latency", json.RawMessage("null"))
-	_ = entry.set("error_code", json.RawMessage(`"config"`))
 	message, _ := jsonresp.Encode(msgNodeConversionFailed)
-	_ = entry.set("error", message)
-	return entry
+	return LatencyEntry{Latency: json.RawMessage("null"), ErrorCode: "config", Error: message}
 }
 
 func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutcome, error) {
@@ -696,16 +698,8 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 	if err != nil {
 		return TestOutcome{}, err
 	}
-	settingsBytes, err := jsonresp.Encode(settings)
-	if err != nil {
-		return TestOutcome{}, err
-	}
-	var settingsFields model.Fields
-	if err := json.Unmarshal(settingsBytes, &settingsFields); err != nil {
-		return TestOutcome{}, err
-	}
 
-	var measured model.Map[LatencyEntry]
+	var measured model.OrderedMap[LatencyEntry]
 	if len(wanted) > 0 {
 		if _, err := env.probeBinary(); err != nil {
 			return TestOutcome{}, err
@@ -768,14 +762,6 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 	}
 
 	stamp := isoUTC(env.Now())
-	stampJSON, err := jsonresp.Encode(stamp)
-	if err != nil {
-		return TestOutcome{}, err
-	}
-	methodJSON, err := jsonresp.Encode(Method)
-	if err != nil {
-		return TestOutcome{}, err
-	}
 
 	stored := LoadLatencyResults(ctx)
 	for key, m := range measured.All() {
@@ -789,37 +775,21 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 			history = append(history, previous...)
 		}
 		latencyRaw := json.RawMessage("null")
-		if m.Latency != nil {
-			latencyRaw = json.RawMessage(m.Latency.String())
+		if len(bytes.TrimSpace(m.Latency)) > 0 {
+			latencyRaw = m.Latency
 		}
 		history = append(history, latencyRaw)
-		historyJSON, err := jsonresp.Encode(history)
-		if err != nil {
-			return TestOutcome{}, err
-		}
 
-		record := m
-		if err := model.ClearMember(&record, &record.raw, "name"); err != nil {
-			return TestOutcome{}, err
-		}
-		if err := record.set("method", methodJSON); err != nil {
-			return TestOutcome{}, err
-		}
-		if err := record.set("tested_at", stampJSON); err != nil {
-			return TestOutcome{}, err
-		}
-		if err := record.set("history", historyJSON); err != nil {
-			return TestOutcome{}, err
-		}
-		for field, value := range settingsFields.All() {
-			if err := record.set(field, value); err != nil {
-				return TestOutcome{}, err
-			}
-		}
+		record := m.withSettings(settings)
+		record.Name = ""
+		record.Latency = latencyRaw
+		record.Method = Method
+		record.TestedAt = stamp
+		record.History = history
 		stored.Set(key, record)
 	}
 
-	var kept model.Map[LatencyEntry]
+	var kept model.OrderedMap[LatencyEntry]
 	for key, entry := range stored.All() {
 		if candidates.has(key) {
 			kept.Set(key, entry)
@@ -830,7 +800,7 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 	}
 	saveLatencyResults(ctx, kept)
 
-	var outcomeResults model.Map[LatencyEntry]
+	var outcomeResults model.OrderedMap[LatencyEntry]
 	for _, id := range identityIDs {
 		if entry, ok := kept.Get(identity[id]); ok {
 			outcomeResults.Set(id, entry)

@@ -172,7 +172,7 @@ func TestReviewN89RealWorkerLifetimeControlsPersistence(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				var stored model.Map[LatencyEntry]
+				var stored model.OrderedMap[LatencyEntry]
 				if err := json.Unmarshal(raw, &stored); err != nil {
 					t.Fatal(err)
 				}

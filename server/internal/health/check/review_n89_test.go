@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -51,8 +52,8 @@ func TestReviewN89StoreCommitLifetime(t *testing.T) {
 					t.Fatal(err)
 				}
 				now := time.Date(2030, 1, 2, 0, 0, 0, 0, time.UTC)
-				var results model.Map[check.TimedRecord]
-				results.Set("example.test", check.TimedRecord{CheckedAt: "2030-01-02T00:00:00"})
+				var results model.OrderedMap[check.TimedRecord]
+				results.Set("example.test", timedAt("2030-01-02T00:00:00"))
 				release := sync.OnceFunc(func() { close(ctx.release) })
 				defer release()
 				done := make(chan error, 1)
@@ -119,7 +120,7 @@ func TestReviewN89RegionTimestampRetainsSiblings(t *testing.T) {
 	}
 	data := store.LoadData("synthetic")
 	valid, ok := data.Domains.Get("valid")
-	if !ok || valid.CheckedAt != "2030-01-01T00:00:00" {
+	if !ok || valid.CheckedAt() != "2030-01-01T00:00:00" {
 		t.Fatal("valid domain lost")
 	}
 	if _, ok := data.Websites.Get("site"); !ok {
@@ -233,8 +234,8 @@ func TestReviewN89LeafCommitLifetime(t *testing.T) {
 				var err error
 				switch operation {
 				case "probe-save":
-					var entries model.Map[check.TimedRecord]
-					entries.Set("example.com", check.TimedRecord{CheckedAt: "2030-01-02T00:00:00"})
+					var entries model.OrderedMap[check.TimedRecord]
+					entries.Set("example.com", timedAt("2030-01-02T00:00:00"))
 					err = probe.SaveEntriesContext(ctx, "synthetic", entries, now)
 				case "region-update":
 					err = region.UpdateDataContext(ctx, "synthetic", func(data *check.RegionData) error { data.Services = json.RawMessage(`{"new":true}`); return nil }, now)
@@ -270,4 +271,11 @@ func TestReviewN89LeafCommitLifetime(t *testing.T) {
 			})
 		}
 	}
+}
+
+// timedAt is a result entry with only its checked_at.
+func timedAt(checkedAt string) check.TimedRecord {
+	var r check.TimedRecord
+	_ = r.Set("checked_at", []byte(strconv.Quote(checkedAt)))
+	return r
 }

@@ -111,24 +111,16 @@ func compactRaw(raw json.RawMessage) string {
 	return buf.String()
 }
 
-type rawJSONObject struct {
-	Fields model.Fields
-	raw    model.Raw
-}
+// rawJSONObject is a JSON object read member by member.
+type rawJSONObject struct{ Fields model.Fields }
 
-func (o *rawJSONObject) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, o, &o.raw)
-}
+func (o *rawJSONObject) UnmarshalJSON(data []byte) error { return o.Fields.UnmarshalJSON(data) }
 
-func (o rawJSONObject) MarshalJSON() ([]byte, error) {
-	return model.EncodeRecord(&o, &o.raw)
-}
+func (o rawJSONObject) MarshalJSON() ([]byte, error) { return o.Fields.MarshalJSON() }
 
-func hasRootIssue(issues []model.FieldIssue, path string) bool {
-	for _, issue := range issues {
-		if issue.Path == path {
-			return true
-		}
-	}
-	return false
+// decodeClean decodes stored or reported JSON into v leniently and reports
+// whether every value had its declared type.
+func decodeClean(data []byte, v any) bool {
+	issues, err := model.DecodeStored(data, v, "")
+	return err == nil && len(issues) == 0
 }

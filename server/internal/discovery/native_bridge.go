@@ -73,7 +73,7 @@ func legacySaveProbes(ctx context.Context, id string, ps map[string]Probe) error
 	if err != nil {
 		return err
 	}
-	var entries model.Map[check.TimedRecord]
+	var entries model.OrderedMap[check.TimedRecord]
 	if err := project(ps, &entries); err != nil {
 		return err
 	}
@@ -281,7 +281,7 @@ func legacyClassifyRegion(result *RegionResult, url string) (json.RawMessage, er
 	return json.Marshal(classified)
 }
 func legacySummarizeRegion(names []string, per map[string]json.RawMessage) (domainVerdict, error) {
-	var entries model.Map[check.TargetState]
+	var entries model.OrderedMap[check.TargetState]
 	for _, name := range names {
 		if raw, ok := per[name]; ok {
 			var entry check.TargetState

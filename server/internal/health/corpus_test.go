@@ -412,7 +412,7 @@ func TestReferenceCorpus(t *testing.T) {
 			if mapStr(row, "step") == "a" {
 				err := regionStore.UpdateData("r1", func(data *check.RegionData) error {
 					data.Services = json.RawMessage(`{"x":1}`)
-					setTimed := func(m *model.Map[check.TimedRecord], key, raw string) {
+					setTimed := func(m *model.OrderedMap[check.TimedRecord], key, raw string) {
 						var entry check.TimedRecord
 						_ = json.Unmarshal([]byte(raw), &entry)
 						m.Set(key, entry)
@@ -529,7 +529,7 @@ func saveProbeRaw(store *check.ProbeStore, agentID string, raw json.RawMessage, 
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || trimmed[0] != '{' {
 		return &check.ValueError{Message: "探测记录必须为对象且 checked_at 为字符串"}
 	}
-	var entries model.Map[check.TimedRecord]
+	var entries model.OrderedMap[check.TimedRecord]
 	if err := jsondecode.Unmarshal(trimmed, &entries); err != nil {
 		return err
 	}
@@ -609,7 +609,7 @@ func evalClassifyDomain(raw any, originalURL string) (any, error) {
 }
 
 func evalSummarizeDomain(raw any) (any, error) {
-	var typedTargets model.Map[check.TargetState]
+	var typedTargets model.OrderedMap[check.TargetState]
 	if raw != nil {
 		if err := decodeTypedArg(raw, &typedTargets); err != nil {
 			return nil, err

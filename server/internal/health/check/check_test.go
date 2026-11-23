@@ -19,7 +19,7 @@ func res(id string, status int64, finalURL string, redirects []string, markers m
 	if redirects == nil {
 		redirects = []string{}
 	}
-	var m model.Map[NullableText]
+	var m model.OrderedMap[NullableText]
 	for k, v := range markers {
 		m.Set(k, NullableText{Value: v, Valid: true})
 	}
@@ -182,7 +182,7 @@ func TestSummarizeDomain(t *testing.T) {
 		{[]string{"ok", "denied"}, "no_difference"},
 		{[]string{"error", "error"}, "unreachable"},
 	} {
-		var per model.Map[TargetState]
+		var per model.OrderedMap[TargetState]
 		for i, s := range c.states {
 			per.Set("t"+string(rune('0'+i)), TargetState{State: Text(s)})
 		}
@@ -262,7 +262,7 @@ func stats(okCount, total int64, delays ...float64) *PathStats {
 	} else {
 		list = append(list, delays...)
 	}
-	var errs model.Map[model.Int]
+	var errs model.OrderedMap[model.Int]
 	if total > okCount {
 		errs.Set("timeout", model.Int(total-okCount))
 	}
@@ -308,7 +308,7 @@ func TestJudge(t *testing.T) {
 }
 
 func TestJudgeExplainsMissingProxyPath(t *testing.T) {
-	var errs model.Map[model.Int]
+	var errs model.OrderedMap[model.Int]
 	errs.Set("no_path", 1)
 	out := JudgePath(stats(1, 1), &PathStats{OK: 0, Total: 1, Errors: errs}, DefaultJudgeOptions())
 	if out.Verdict != "incomplete" || !strings.Contains(out.Reasons[0], "部署配置") {
@@ -323,6 +323,13 @@ func TestProbeURLFollowsPort(t *testing.T) {
 	}
 }
 
+// timedAt is a result entry with only its checked_at.
+func timedAt(checkedAt string) TimedRecord {
+	var r TimedRecord
+	_ = r.Set("checked_at", []byte(strconv.Quote(checkedAt)))
+	return r
+}
+
 func mustTimedRecord(t *testing.T, raw string) TimedRecord {
 	t.Helper()
 	var r TimedRecord
@@ -335,13 +342,13 @@ func mustTimedRecord(t *testing.T, raw string) TimedRecord {
 func TestProbeStoreKeepsLatestAndExpires(t *testing.T) {
 	store := NewProbeStore(t.TempDir())
 	old := time.Date(2026, 8, 1, 0, 0, 0, 0, time.Local)
-	var oldEntries model.Map[TimedRecord]
+	var oldEntries model.OrderedMap[TimedRecord]
 	oldEntries.Set("old.com", mustTimedRecord(t, `{"checked_at":"`+NaiveISOSeconds(old)+`","verdict":"unreachable"}`))
 	if err := store.SaveEntries("a1", oldEntries, old); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 10, 10, 0, 0, 0, 0, time.Local)
-	var newEntries model.Map[TimedRecord]
+	var newEntries model.OrderedMap[TimedRecord]
 	newEntries.Set("new.com", mustTimedRecord(t, `{"checked_at":"`+NaiveISOSeconds(now)+`","verdict":"needs_proxy"}`))
 	if err := store.SaveEntries("a1", newEntries, now); err != nil {
 		t.Fatal(err)
@@ -378,13 +385,13 @@ func TestDomainSuggestionPrefersHighestConfidence(t *testing.T) {
 func TestProbeStoreKeepsTheNewest5000Hosts(t *testing.T) {
 	store := NewProbeStore(t.TempDir())
 	now := time.Date(2026, 10, 10, 12, 0, 0, 0, time.Local)
-	var results model.Map[TimedRecord]
+	var results model.OrderedMap[TimedRecord]
 	for i := 0; i < MaxProbedHosts+3; i++ {
 		checked := "2026-10-01T00:00:00"
 		if i < 3 {
 			checked = "2026-09-20T00:00:00"
 		}
-		results.Set("h"+strconv.Itoa(i), TimedRecord{CheckedAt: StrictString(checked)})
+		results.Set("h"+strconv.Itoa(i), timedAt(checked))
 	}
 	if err := store.SaveEntries("a", results, now); err != nil {
 		t.Fatal(err)
@@ -400,11 +407,11 @@ func TestProbeStoreKeepsTheNewest5000Hosts(t *testing.T) {
 func TestCacheExpiryAndBound(t *testing.T) {
 	store := NewRegionStore(t.TempDir())
 	now := time.Now()
-	iso := func(tm time.Time) StrictString { return StrictString(tm.Format("2006-01-02T15:04:05.000000")) }
+	iso := func(tm time.Time) string { return tm.Format("2006-01-02T15:04:05.000000") }
 	err := store.UpdateData("a", func(data *RegionData) error {
-		data.Websites.Set("old.test", TimedRecord{CheckedAt: iso(now.AddDate(0, 0, -31))})
+		data.Websites.Set("old.test", timedAt(iso(now.AddDate(0, 0, -31))))
 		for i := 0; i < 1001; i++ {
-			data.Websites.Set(strconv.Itoa(i)+".test", TimedRecord{CheckedAt: iso(now)})
+			data.Websites.Set(strconv.Itoa(i)+".test", timedAt(iso(now)))
 		}
 		return nil
 	}, now)

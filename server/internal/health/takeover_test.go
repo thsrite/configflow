@@ -112,23 +112,20 @@ func TestLatencyEntryTypedRoundTripAndExtensionRetention(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw), &entry); err != nil {
 		t.Fatal(err)
 	}
-	if entry.Latency == nil || entry.Latency.String() != "42" || entry.Method != Method || len(entry.DNSServers) != 0 {
+	if string(entry.Latency) != "42" || entry.Method != Method || len(entry.DNSServers) != 0 {
 		t.Fatal("typed attributes not decoded")
 	}
+	// Written as read (O18 T1d): the undeclared member and the wrong-typed
+	// setting are not kept.
 	before, err := model.Marshal(entry)
-	if err != nil || string(before) != raw {
+	if want := `{"latency":42,"method":"proxy_http_v2","history":[1.0,null]}`; err != nil || string(before) != want {
 		t.Fatalf("round trip: %s %v", before, err)
 	}
 	copy := entry
-	if err := copy.set("tested_at", json.RawMessage(`"2030-01-01T00:00:00Z"`)); err != nil {
-		t.Fatal(err)
-	}
-	after, err := model.Marshal(copy)
-	if err != nil || !strings.Contains(string(after), `"dns_servers":"bad"`) || !strings.Contains(string(after), `"number":1e2`) {
-		t.Fatalf("lost stored bytes: %s %v", after, err)
-	}
+	copy.TestedAt = "2030-01-01T00:00:00Z"
+	copy.History = append(copy.History, json.RawMessage(`3`))
 	unchanged, _ := model.Marshal(entry)
-	if string(unchanged) != raw {
+	if string(unchanged) != string(before) {
 		t.Fatal("copy mutation changed source")
 	}
 }

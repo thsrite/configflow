@@ -36,12 +36,12 @@ const (
 type PageRequest struct {
 	ID      string            `json:"id"`
 	URL     string            `json:"url"`
-	Headers model.Map[string] `json:"headers,omitzero"`
-	Markers model.Map[string] `json:"markers,omitzero"`
+	Headers model.OrderedMap[string] `json:"headers,omitzero"`
+	Markers model.OrderedMap[string] `json:"markers,omitzero"`
 }
 
-func stringMap(pairs ...string) model.Map[string] {
-	var m model.Map[string]
+func stringMap(pairs ...string) model.OrderedMap[string] {
+	var m model.OrderedMap[string]
 	for i := 0; i+1 < len(pairs); i += 2 {
 		m.Set(pairs[i], pairs[i+1])
 	}
@@ -153,15 +153,10 @@ type RegionResult struct {
 	Status    *model.Int              `json:"status"`
 	FinalURL  string                  `json:"final_url"`
 	Redirects []string                `json:"redirects"`
-	Markers   model.Map[NullableText] `json:"markers"`
+	Markers   model.OrderedMap[NullableText] `json:"markers"`
 	Error     string                  `json:"error"`
 	hasID     bool
 	empty     bool
-}
-
-func isNullMarkersMap(m model.Map[NullableText]) bool {
-	encoded, err := m.MarshalJSON()
-	return err == nil && bytes.Equal(bytes.TrimSpace(encoded), []byte("null"))
 }
 
 // UnmarshalJSON decodes a RegionResult, enforcing that a present id is a valid
@@ -202,8 +197,8 @@ func (r *RegionResult) UnmarshalJSON(data []byte) error {
 		}
 	}
 	if rawMarkers, ok := rawObj.Fields.Get("markers"); ok {
-		var markers model.Map[NullableText]
-		if err := json.Unmarshal(rawMarkers, &markers); err == nil && !isNullMarkersMap(markers) {
+		var markers model.OrderedMap[NullableText]
+		if decodeClean(rawMarkers, &markers) {
 			out.Markers = markers
 		}
 	}
@@ -574,8 +569,8 @@ func indexResultsByID(results []RegionResult) (map[string]RegionResult, error) {
 }
 
 // EvaluateServiceList evaluates every built-in Service against results.
-func EvaluateServiceList(results []RegionResult) (model.Map[ServiceVerdict], error) {
-	var out model.Map[ServiceVerdict]
+func EvaluateServiceList(results []RegionResult) (model.OrderedMap[ServiceVerdict], error) {
+	var out model.OrderedMap[ServiceVerdict]
 	index, err := indexResultsByID(results)
 	if err != nil {
 		return out, err
@@ -720,21 +715,10 @@ func ClassifyDomain(result *RegionResult, originalURL string) (DomainClassificat
 	}, nil
 }
 
-// TargetState holds the classified state of a domain on one target.
+// TargetState holds the classified state of a domain on one target; a state
+// of the wrong type reads as empty.
 type TargetState struct {
-	State  Text `json:"state"`
-	Fields model.Fields
-	raw    model.Raw
-}
-
-// UnmarshalJSON decodes TargetState under model R5 rules.
-func (s *TargetState) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, s, &s.raw)
-}
-
-// MarshalJSON encodes TargetState preserving stored member order.
-func (s TargetState) MarshalJSON() ([]byte, error) {
-	return model.EncodeRecord(&s, &s.raw)
+	State Text `json:"state"`
 }
 
 // DomainSummary summarizes domain availability differences across targets.
@@ -745,7 +729,7 @@ type DomainSummary struct {
 }
 
 // SummarizeTargets aggregates per-target classifications into a DomainSummary.
-func SummarizeTargets(perTarget model.Map[TargetState]) DomainSummary {
+func SummarizeTargets(perTarget model.OrderedMap[TargetState]) DomainSummary {
 	restricted := []string{}
 	usable := []string{}
 	total := 0
@@ -897,31 +881,15 @@ func ChooseTargets(targets []AvailableTarget, preferredGroup string) []RegionTar
 
 // ---------- store ----------
 
-// RegionData holds an Agent's stored service matrix, domain checks, and website identities.
+// RegionData holds an Agent's stored service matrix, domain checks, and
+// website identities. services is always written (null when absent).
 type RegionData struct {
-	Services json.RawMessage        `json:"services"`
-	Domains  model.Map[TimedRecord] `json:"domains"`
-	Websites model.Map[TimedRecord] `json:"websites"`
-	Fields   model.Fields
-	raw      model.Raw
-}
-
-// UnmarshalJSON decodes RegionData preserving extra members and order.
-func (d *RegionData) UnmarshalJSON(data []byte) error {
-	return model.DecodeRecord(data, d, &d.raw)
-}
-
-// MarshalJSON encodes RegionData preserving stored member order and raw bytes.
-func (d RegionData) MarshalJSON() ([]byte, error) {
-	return model.EncodeRecord(&d, &d.raw)
-}
-
-func newEmptyRegionData() RegionData {
-	var data RegionData
-	_ = model.SetMemberJSON(&data, &data.raw, "services", json.RawMessage("null"))
-	_ = model.SetMemberJSON(&data, &data.raw, "domains", json.RawMessage("{}"))
-	_ = model.SetMemberJSON(&data, &data.raw, "websites", json.RawMessage("{}"))
-	return data
+	Services json.RawMessage               `json:"services"`
+	Domains  model.OrderedMap[TimedRecord] `json:"domains"`
+	Websites model.OrderedMap[TimedRecord] `json:"websites"`
+	// damaged: a stored domain or website entry is not an object. The file
+	// is then not rewritten (UpdateData fails closed), as before O18 T1d.
+	damaged bool
 }
 
 var regionLock sync.Mutex
@@ -935,29 +903,29 @@ func NewRegionStore(dir string) *RegionStore { return &RegionStore{files: jsonst
 // Path returns the JSON file path for agentID.
 func (s *RegionStore) Path(agentID string) string { return s.files.Path(agentID) }
 
+// readData reads an Agent's region file. domains/websites that are missing,
+// null or not objects read as empty; an entry that is not an object marks
+// the data damaged.
 func (s *RegionStore) readData(agentID string) RegionData {
-	var rawObj rawJSONObject
-	if !s.files.Read(agentID, &rawObj) {
-		return newEmptyRegionData()
-	}
-	if !rawObj.Fields.Has("services") {
-		_ = rawObj.Fields.Set("services", json.RawMessage("null"))
-	}
-	hasDomains := rawObj.Fields.Has("domains")
-	hasWebsites := rawObj.Fields.Has("websites")
-	encoded, err := rawObj.MarshalJSON()
-	if err != nil {
-		return newEmptyRegionData()
+	var object model.Fields
+	if !s.files.Read(agentID, &object) {
+		return RegionData{}
 	}
 	var data RegionData
-	if err := json.Unmarshal(encoded, &data); err != nil {
-		return newEmptyRegionData()
+	if raw, ok := object.Get("services"); ok {
+		data.Services = raw
 	}
-	if !hasDomains || hasRootIssue(data.raw.Issues(), "domains") || isNullTimedMap(data.Domains) {
-		_ = model.SetMemberJSON(&data, &data.raw, "domains", json.RawMessage("{}"))
-	}
-	if !hasWebsites || hasRootIssue(data.raw.Issues(), "websites") || isNullTimedMap(data.Websites) {
-		_ = model.SetMemberJSON(&data, &data.raw, "websites", json.RawMessage("{}"))
+	for name, target := range map[string]*model.OrderedMap[TimedRecord]{"domains": &data.Domains, "websites": &data.Websites} {
+		raw, ok := object.Get(name)
+		if !ok {
+			continue
+		}
+		if trimmed := bytes.TrimSpace(raw); len(trimmed) == 0 || trimmed[0] != '{' {
+			continue
+		}
+		if !decodeClean(raw, target) {
+			data.damaged = true
+		}
 	}
 	return data
 }
@@ -969,18 +937,6 @@ func NaiveISOSeconds(t time.Time) string { return t.Format("2006-01-02T15:04:05"
 func oldest(now time.Time, days int) string {
 	wall := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), time.UTC)
 	return NaiveISOSeconds(wall.Add(-time.Duration(days) * 24 * time.Hour))
-}
-
-func hasEncodedMember(data *RegionData, name string) bool {
-	encoded, err := data.MarshalJSON()
-	if err != nil {
-		return false
-	}
-	var rawObj rawJSONObject
-	if err := json.Unmarshal(encoded, &rawObj); err != nil {
-		return false
-	}
-	return rawObj.Fields.Has(name)
 }
 
 // UpdateData mutates agentID's stored RegionData, prunes entries older than
@@ -1004,39 +960,20 @@ func (s *RegionStore) UpdateDataContext(ctx context.Context, agentID string, mut
 		return err
 	}
 	data := s.readData(agentID)
+	if data.damaged {
+		return valueError(msgInvalidRegionStore)
+	}
 	if err := mutate(&data); err != nil {
 		return err
 	}
-	encoded, err := model.Marshal(data)
-	if err != nil {
-		return err
-	}
-	var current RegionData
-	if err := json.Unmarshal(encoded, &current); err != nil {
-		return err
-	}
-	if hasRootIssue(model.Issues(current), "domains") || hasRootIssue(model.Issues(current), "websites") {
+	if !validTimedRecords(data.Domains) || !validTimedRecords(data.Websites) {
 		return valueError(msgInvalidRegionStore)
-	}
-
-	if !validTimedRecords(data.Domains) {
-		return valueError(msgInvalidRegionStore)
-	}
-	if !validTimedRecords(data.Websites) {
-		return valueError(msgInvalidRegionStore)
-	}
-	for _, records := range []model.Map[TimedRecord]{data.Domains, data.Websites} {
-		for _, record := range records.All() {
-			if !validTimestamp(record) {
-				return valueError(msgInvalidRegionStore)
-			}
-		}
 	}
 
 	bound := oldest(now, RegionRetentionDays)
-	var domains model.Map[TimedRecord]
+	var domains model.OrderedMap[TimedRecord]
 	for host, entry := range data.Domains.All() {
-		if string(entry.CheckedAt) >= bound {
+		if entry.CheckedAt() >= bound {
 			domains.Set(host, entry)
 		}
 	}
@@ -1046,43 +983,30 @@ func (s *RegionStore) UpdateDataContext(ctx context.Context, agentID string, mut
 	}
 	var entries []websitePair
 	for host, entry := range data.Websites.All() {
-		if string(entry.CheckedAt) >= bound {
+		if entry.CheckedAt() >= bound {
 			entries = append(entries, websitePair{host: host, entry: entry})
 		}
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
-		return string(entries[i].entry.CheckedAt) < string(entries[j].entry.CheckedAt)
+		return entries[i].entry.CheckedAt() < entries[j].entry.CheckedAt()
 	})
 	if len(entries) > 1000 {
 		entries = entries[len(entries)-1000:]
 	}
-	var websites model.Map[TimedRecord]
+	var websites model.OrderedMap[TimedRecord]
 	for _, pair := range entries {
 		websites.Set(pair.host, pair.entry)
 	}
 	if len(bytes.TrimSpace(data.Services)) == 0 {
-		_ = model.SetMemberJSON(&data, &data.raw, "services", json.RawMessage("null"))
-	} else if !hasEncodedMember(&data, "services") {
-		_ = model.SetMemberJSON(&data, &data.raw, "services", data.Services)
+		data.Services = nil
+	} else if err := model.ValidJSON(data.Services); err != nil {
+		return fmt.Errorf("encode region services: %w", err)
 	}
-	domainsJSON, err := domains.MarshalJSON()
-	if err != nil {
-		return fmt.Errorf("encode region domains: %w", err)
-	}
-	websitesJSON, err := websites.MarshalJSON()
-	if err != nil {
-		return fmt.Errorf("encode region websites: %w", err)
-	}
-	if err := model.SetMemberJSON(&data, &data.raw, "domains", domainsJSON); err != nil {
-		return fmt.Errorf("set region domains: %w", err)
-	}
-	if err := model.SetMemberJSON(&data, &data.raw, "websites", websitesJSON); err != nil {
-		return fmt.Errorf("set region websites: %w", err)
-	}
+	data.Domains, data.Websites = domains, websites
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = s.files.WriteContext(ctx, agentID, &data, false)
+	_, err := s.files.WriteContext(ctx, agentID, &data, false)
 	return err
 }
 

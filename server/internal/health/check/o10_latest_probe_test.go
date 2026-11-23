@@ -12,13 +12,13 @@ import (
 
 // latestProbeEntriesSequential is the pre-O10 algorithm (one Set per host),
 // kept as the reference for ordering and values.
-func latestProbeEntriesSequential(t *testing.T, agentIDs []string, store *ProbeStore) model.Map[TimedRecord] {
+func latestProbeEntriesSequential(t *testing.T, agentIDs []string, store *ProbeStore) model.OrderedMap[TimedRecord] {
 	t.Helper()
-	var merged model.Map[TimedRecord]
+	var merged model.OrderedMap[TimedRecord]
 	for _, agentID := range agentIDs {
 		hosts := store.LoadEntries(agentID, time.Time{})
 		for host, entry := range hosts.All() {
-			if previous, seen := merged.Get(host); seen && !(string(entry.CheckedAt) > string(previous.CheckedAt)) {
+			if previous, seen := merged.Get(host); seen && !(entry.CheckedAt() > previous.CheckedAt()) {
 				continue
 			}
 			copied := entry
@@ -33,7 +33,7 @@ func latestProbeEntriesSequential(t *testing.T, agentIDs []string, store *ProbeS
 
 func seedProbeHosts(t *testing.T, store *ProbeStore, agentID string, hosts []string, checked time.Time) {
 	t.Helper()
-	var entries model.Map[TimedRecord]
+	var entries model.OrderedMap[TimedRecord]
 	for _, host := range hosts {
 		entries.Set(host, mustTimedRecord(t, `{"checked_at":"`+NaiveISOSeconds(checked)+`","verdict":"both_ok"}`))
 	}
