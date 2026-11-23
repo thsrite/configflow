@@ -4,6 +4,7 @@ import (
 	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"configflow/internal/agents"
@@ -106,6 +107,55 @@ func wireSetupInstallation() {
 			return gatewayStatus(reply), nil
 		},
 	}})
+}
+
+// wireSetupRouter supplies C36's managed-router completion with the router
+// owner's read-only preview: the same inspection and release plan as
+// POST /api/routers/<id>/plan, so "synced" means that plan is empty and has no
+// blockers.
+func wireSetupRouter() {
+	setup.RegisterExternalOwners(setup.ExternalOwners{VerifyRouter: verifySetupRouter})
+}
+
+// verifySetupRouter inspects one router of the setup profile without writing to
+// the device or the Agents. Device and plan failures (*routers.RouterError)
+// become the wizard's 502 with the router's own message, as on the router page.
+func verifySetupRouter(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *routers.Router) (setup.RouterVerification, error) {
+	m, err := agents.Get(repo.WithRepository(ctx, r))
+	if err != nil {
+		return setup.RouterVerification{}, err
+	}
+	if err = router.ValidateForDevice(); err != nil {
+		return setup.RouterVerification{}, routerFailure(err)
+	}
+	d := routers.NewDriver(router)
+	if d == nil {
+		return setup.RouterVerification{}, fmt.Errorf("verify router: unsupported type %q", router.Type)
+	}
+	defer d.Close()
+	inspection, err := routers.Inspect(ctx, routers.InspectRequest{ProfileID: profileID, Config: config, Router: router, Driver: d, Agents: routers.ManagerAgentSource{Manager: m}, Repo: r})
+	if err != nil {
+		return setup.RouterVerification{}, routerFailure(err)
+	}
+	plan, err := routers.BuildPlan(ctx, router, inspection, d)
+	if err != nil {
+		return setup.RouterVerification{}, routerFailure(err)
+	}
+	return setup.RouterVerification{Blockers: plan.Blockers, Empty: plan.Empty}, nil
+}
+
+// routerFailure maps the router owner's public errors to wizard statuses and
+// keeps every other error (storage, cancellation) on the internal path.
+func routerFailure(err error) error {
+	var re *routers.RouterError
+	var invalid *routers.ValidationError
+	switch {
+	case errors.As(err, &invalid):
+		return &setup.Error{Message: err.Error(), Status: 400, Cause: err}
+	case errors.As(err, &re):
+		return &setup.Error{Message: err.Error(), Status: 502, Cause: err}
+	}
+	return err
 }
 
 // installationState reads A22's public view as Python's check does: Agent

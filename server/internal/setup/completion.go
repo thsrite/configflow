@@ -286,7 +286,7 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 			if s.owners.VerifyRouter == nil {
 				return unavailable()
 			}
-			verification, err := s.owners.VerifyRouter(ctx, s.repository, config, router)
+			verification, err := s.owners.VerifyRouter(ctx, s.repository, record.ProfileID, config, router)
 			if err != nil {
 				return err
 			}

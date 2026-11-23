@@ -229,13 +229,38 @@ func TestRouterDraftAttachmentAndManualManagedFinish(t *testing.T) {
 	if _, err := s.Action(ctx, testSessionID, "finish", finish, ""); err == nil || err.Error() != msgAwaitOwner {
 		t.Fatal("unregistered inspection owner succeeded", err)
 	}
-	s.owners.VerifyRouter = func(context.Context, *repo.Repository, json.RawMessage, *routers.Router) (RouterVerification, error) {
-		return RouterVerification{Empty: false}, nil
+	deviceFailure := &Error{Message: "synthetic device failure", Status: 502}
+	refusals := []struct {
+		name    string
+		result  RouterVerification
+		err     error
+		message string
+		status  int
+	}{
+		{name: "unsynced", result: RouterVerification{Empty: false}, message: msgRouterUnsynced, status: 409},
+		{name: "blockers", result: RouterVerification{Empty: true, Blockers: []string{"synthetic blocker"}}, message: msgRouterUnsynced, status: 409},
+		{name: "device failure", err: deviceFailure, message: deviceFailure.Message, status: 502},
 	}
-	if _, err := s.Action(ctx, testSessionID, "finish", finish, ""); err == nil || err.Error() != msgRouterUnsynced {
-		t.Fatal(err)
+	for _, tt := range refusals {
+		t.Run(tt.name, func(t *testing.T) {
+			s.owners.VerifyRouter = func(_ context.Context, _ *repo.Repository, profileID string, _ json.RawMessage, router *routers.Router) (RouterVerification, error) {
+				if profileID != record.ProfileID || router == nil || router.ID != draft.ID {
+					t.Errorf("verification got profile %q router %v", profileID, router)
+				}
+				return tt.result, tt.err
+			}
+			_, err := s.Action(ctx, testSessionID, "finish", finish, "")
+			var failure *Error
+			if !errors.As(err, &failure) || failure.Message != tt.message || failure.Status != tt.status {
+				t.Fatalf("finish = %v, want %d %q", err, tt.status, tt.message)
+			}
+			after, _ := storeFor(s.repository).read(ctx, testSessionID)
+			if text(after.RouterVerification) == "verified" {
+				t.Fatal("refused verification was recorded")
+			}
+		})
 	}
-	s.owners.VerifyRouter = func(context.Context, *repo.Repository, json.RawMessage, *routers.Router) (RouterVerification, error) {
+	s.owners.VerifyRouter = func(context.Context, *repo.Repository, string, json.RawMessage, *routers.Router) (RouterVerification, error) {
 		return RouterVerification{Empty: true}, nil
 	}
 	if _, err := s.Action(ctx, testSessionID, "finish", finish, ""); err != nil {

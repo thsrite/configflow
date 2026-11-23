@@ -87,7 +87,8 @@ type InstallationOwner struct {
 	GatewayStatus   func(context.Context, *repo.Repository, string, string) (GatewayStatus, error)
 }
 
-// RouterVerification is the router owner's read-only inspection/plan result.
+// RouterVerification is the router owner's read-only inspection/plan result:
+// the plan's blockers and whether publishing it would change nothing.
 type RouterVerification struct {
 	Blockers []string
 	Empty    bool
@@ -106,7 +107,9 @@ type ExternalOwners struct {
 	DNS              *DNSOwner
 	Installation     *InstallationOwner
 	ReadRouteContent func(context.Context, json.RawMessage, routers.RuleSet, *routers.LibraryRule, RouteReadOptions) (string, error)
-	VerifyRouter     func(context.Context, *repo.Repository, json.RawMessage, *routers.Router) (RouterVerification, error)
+	// VerifyRouter inspects the device read-only and plans a release for the
+	// setup profile. A device failure is a *Error with status 502.
+	VerifyRouter func(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *routers.Router) (RouterVerification, error)
 }
 
 var ownersState struct {
@@ -139,6 +142,10 @@ func copyOwners(owners ExternalOwners) ExternalOwners {
 	}
 	return owners
 }
+
+// RegisteredOwners returns a copy of the currently installed owners, so the
+// server can assert at startup and in tests that every owner is wired.
+func RegisteredOwners() ExternalOwners { return externalOwners() }
 
 func externalOwners() ExternalOwners {
 	ownersState.RLock()

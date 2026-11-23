@@ -149,6 +149,7 @@ var wirePackages = []func(){
 	wireSetupOnboarding,
 	installation.Wire,
 	wireSetupInstallation,
+	wireSetupRouter,   // config C36 ← routers: managed-router completion preview
 	apirules.Wire,     // config C32: shared source loader for gateway providers
 	gateway.Wire,      // agents A19: convert.MihomoHooks Linux gateway
 	setupflow.Wire,    // agents A20 / config C36: routersplit setup-session reader
