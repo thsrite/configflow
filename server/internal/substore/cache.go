@@ -13,11 +13,13 @@ import (
 	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -399,28 +401,45 @@ func decodeCacheFile(ctx context.Context, id, path string) (*Cache, error) {
 		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, err))
 		return nil, nil
 	}
+	return decodeCacheData(id, data), nil
+}
+
+// decodeCacheData decodes a stored cache file leniently; nil (with a warning)
+// when it is not a readable object.
+func decodeCacheData(id string, data []byte) *Cache {
 	if data = bytes.TrimSpace(data); len(data) == 0 || data[0] != '{' {
 		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, msgCacheRootShape))
-		return nil, nil
+		return nil
 	}
 	if !utf8.Valid(data) {
 		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, msgCacheRootShape))
-		return nil, nil
+		return nil
 	}
 	var cache Cache
 	data, _ = jsonresp.NormalizeNonFinite(data)
 	issues, err := model.DecodeStored(data, &cache, "")
 	if err != nil {
 		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, fmt.Errorf("decode stored JSON: %w", err)))
-		return nil, nil
+		return nil
 	}
-	cache.Issues = issues
 	var envelope struct {
-		Count json.RawMessage `json:"count"`
+		Count    json.RawMessage `json:"count"`
+		Nodes    jsontext.Value  `json:"nodes"`
+		Metadata jsontext.Value  `json:"metadata"`
 	}
 	if jsondecode.Unmarshal(data, &envelope) == nil {
 		cache.StoredCount = envelope.Count
+		issues = append(issues, nodeElementIssues(envelope.Nodes, issues)...)
+		if cache.Metadata != nil {
+			var metadata struct {
+				URL json.RawMessage `json:"url"`
+			}
+			if jsondecode.Unmarshal(envelope.Metadata, &metadata) == nil && metadata.URL == nil {
+				cache.Metadata.URLAbsent = true
+			}
+		}
 	}
+	cache.Issues = issues
 	if cache.Count == nil {
 		var envelope struct {
 			Nodes json.RawMessage `json:"nodes"`
@@ -434,7 +453,7 @@ func decodeCacheFile(ctx context.Context, id, path string) (*Cache, error) {
 			}
 		}
 	}
-	return &cache, nil
+	return &cache
 }
 
 // CacheSummary holds the lightweight envelope fields of a subscription node
@@ -551,4 +570,27 @@ func typeIssueUnder(issues []model.FieldIssue, path string) bool {
 		}
 	}
 	return false
+}
+
+// nodeElementIssues reports the elements of a stored node list that are not
+// objects and have no issue yet (a null element decodes as an empty node
+// without one); such a list is damaged (Cache.NodesDamaged), as before O18
+// T1d and as in Python, whose publication failed on the element.
+func nodeElementIssues(nodes jsontext.Value, issues []model.FieldIssue) []model.FieldIssue {
+	if nodes.Kind() != '[' {
+		return nil
+	}
+	var elements []jsontext.Value
+	if jsondecode.Unmarshal(nodes, &elements) != nil {
+		return nil
+	}
+	var out []model.FieldIssue
+	for i, element := range elements {
+		path := fmt.Sprintf("nodes[%d]", i)
+		if element.Kind() == '{' || slices.ContainsFunc(issues, func(issue model.FieldIssue) bool { return issue.Path == path }) {
+			continue
+		}
+		out = append(out, model.FieldIssue{Path: path, Kind: model.IssueType})
+	}
+	return out
 }

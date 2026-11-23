@@ -52,9 +52,10 @@ func resourceNodes(ctx context.Context, fields map[string]json.RawMessage, recor
 					return 0, nil, nil, err
 				}
 				if cache != nil {
-					// The cache metadata always records its source URL (null
-					// when the subscription had none).
-					if cache.Metadata != nil {
+					// The cache metadata records its source URL (null when
+					// the subscription had none); a legacy cache without the
+					// member is not checked (Python: .get('url', <current>)).
+					if cache.Metadata != nil && !cache.Metadata.URLAbsent {
 						url, err := json.Marshal(cache.Metadata.URL)
 						if err != nil {
 							return 0, nil, nil, err

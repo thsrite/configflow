@@ -28,6 +28,10 @@ type CacheMetadata struct {
 	Traffic          *Traffic          `json:"traffic,omitzero"`
 	Hosts            *subs.HostsData   `json:"hosts,omitzero"`
 	Dialers          *subs.DialersData `json:"dialers,omitzero"`
+	// URLAbsent: the stored metadata has no url member at all (a legacy
+	// cache); readers that compare the URL then skip the check, as Python's
+	// metadata.get('url', <current url>) did. A stored null is not absent.
+	URLAbsent bool `json:"-"`
 }
 
 // Cache is one subscription's nodes and source metadata
