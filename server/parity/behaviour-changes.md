@@ -3159,7 +3159,7 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   再用一个事务搬出状态成员（原字节，损坏值原样，无 id/重复 id/非对象条目整条留在配置行）。备份失败拒绝启动并写明原因；升级失败数据库不变、拒绝启动。
   升级改写了 `agents` 行时配置代号加一。
 - **系统 `_revision`** 只在配置编辑时推进；只改 Agent 状态的写入（部署进度、心跳上报版本、规则同步/联动/HA 进度）不再推进（Python 每次都推进）。
-- **导出与 WebDAV 备份只含配置**：完整导出不再带上述状态成员（脱敏导出本来就清空 Agent）。`DiagnosticExportJSON` 保留完整文档供诊断，不是备份格式。
+- **导出与 WebDAV 备份只含配置**：完整导出不再带上述状态成员（脱敏导出本来就清空 Agent），仅保留「启用 DNS 高可用失败且回滚失败、设备上可能仍有 keepalived/VIP」时的最小成员列表（`oxidns_ha_state` 仅含 `status:"failed"` 与 `members`，不含报错文本、时间或其它状态），以便恢复后停用高可用仍能清理设备；导入此类备份仍写恢复标记 `state_restored_at`。`DiagnosticExportJSON` 保留完整文档供诊断，不是备份格式。
 - **用不含运行记录的备份导入**：每台有 id 的 Agent 写恢复标记 `state_restored_at`（Agent 列表/详情多出这个只读成员）。标记存在时：受保护字段编辑、
   换绑、注册时改服务/端口/配置空间返回 409「运行记录未包含在备份里，请先重新发布此 Agent」；规则同步显示 blocked 并不推送；DNS 联动不以它为源或目标推送。
   已开启 DNS 高可用的配对仍由保留的 HA 设置锁定，发布照常成对进行。一次成功发布（含旧式推送）清除标记；删除 Agent 不受限。导入接口在写了标记时

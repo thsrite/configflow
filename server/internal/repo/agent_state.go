@@ -8,6 +8,7 @@ package repo
 
 import (
 	"bytes"
+	"encoding/json"
 	"slices"
 
 	"configflow/internal/model"
@@ -16,7 +17,10 @@ import (
 	"configflow/internal/store"
 )
 
-const agentsField = "agents"
+const (
+	agentsField       = "agents"
+	oxidnsHAStateKey  = "oxidns_ha_state"
+)
 
 func splitAgents(row []byte) ([]byte, []store.StateRow) { return staterows.Split(row) }
 
@@ -104,20 +108,65 @@ func agentStateOnly(before, after *model.System) (bool, error) {
 	return false, nil
 }
 
+// exportableHALeftoverRows returns the minimal oxidns_ha_state rows that full
+// exports and WebDAV backups keep for Agents left with keepalived/VIP on the
+// device after an HA enable failed and rollback also failed (M2). Only the
+// failed status and member list are kept; no error text, timestamp or other
+// runtime state is exported.
+func exportableHALeftoverRows(agents []model.Agent) ([]store.StateRow, error) {
+	seen := map[string]bool{}
+	var rows []store.StateRow
+	for i := range agents {
+		agent := &agents[i]
+		if agent.ID == "" || seen[agent.ID] {
+			continue
+		}
+		seen[agent.ID] = true
+		if agent.OxiDNSHA != nil && agent.OxiDNSHA.Enabled != nil && *agent.OxiDNSHA.Enabled {
+			continue
+		}
+		if agent.OxiDNSHAState == nil || agent.OxiDNSHAState.Status != "failed" || len(agent.OxiDNSHAState.Members) == 0 {
+			continue
+		}
+		raw, err := model.Marshal(model.HAState{Status: "failed", Members: slices.Clone(agent.OxiDNSHAState.Members)})
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, store.StateRow{Owner: agent.ID, Member: oxidnsHAStateKey, Value: raw})
+	}
+	return rows, nil
+}
+
+// isExportedHALeftover reports whether rows hold only the minimal HA leftover
+// marker kept in configuration-only exports (no other state, no error or
+// timestamp). Such an Agent was restored from a configuration-only backup and
+// still needs the restore marker.
+func isExportedHALeftover(rows []store.StateRow) bool {
+	if len(rows) != 1 || rows[0].Member != oxidnsHAStateKey {
+		return false
+	}
+	var state model.HAState
+	if err := json.Unmarshal(rows[0].Value, &state); err != nil {
+		return false
+	}
+	return state.Status == "failed" && len(state.Members) > 0 && state.Error == nil && state.UpdatedAt == 0
+}
+
 // markRestoredAgents marks every imported Agent whose record carries no state
-// member: a backup made since storage version 2 holds configuration only, so
-// what its device runs is unknown until the next publication
-// (design/o17-runtime-state.md 2.5.1). Records from an older backup that
-// carry their state are imported with it and stay unmarked.
+// member (or only the exported HA leftover marker): a backup made since
+// storage version 2 holds configuration only, so what its device runs is
+// unknown until the next publication (design/o17-runtime-state.md 2.5.1).
+// Records from an older backup that carry their state are imported with it
+// and stay unmarked.
 func markRestoredAgents(system *model.System, at string) error {
 	raw, present, err := model.EncodeMember(system, agentsField)
 	if err != nil || !present {
 		return err
 	}
 	_, rows := splitAgents(raw)
-	owners := map[string]bool{}
+	byOwner := map[string][]store.StateRow{}
 	for _, row := range rows {
-		owners[row.Owner] = true
+		byOwner[row.Owner] = append(byOwner[row.Owner], row)
 	}
 	seen := map[string]bool{}
 	for i := range system.Agents {
@@ -126,7 +175,8 @@ func markRestoredAgents(system *model.System, at string) error {
 			continue
 		}
 		seen[agent.ID] = true
-		if !owners[agent.ID] {
+		ownerRows := byOwner[agent.ID]
+		if len(ownerRows) == 0 || isExportedHALeftover(ownerRows) {
 			agent.StateRestoredAt = new(at)
 		}
 	}

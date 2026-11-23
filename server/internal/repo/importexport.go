@@ -206,11 +206,20 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 		return nil, err
 	}
 	// Exports and backups carry configuration only: Agent state and
-	// histories stay out (design/o17-runtime-state.md D3).
+	// histories stay out (design/o17-runtime-state.md D3), except the
+	// minimal member list of an HA enable failure whose rollback also
+	// failed so disabling HA after restore can still clean the device (M2).
 	if agents, present, err := model.EncodeMember(&document.System, agentsField); err != nil {
 		return nil, err
 	} else if present && !withState {
 		config, _ := splitAgents(agents)
+		leftover, err := exportableHALeftoverRows(document.System.Agents)
+		if err != nil {
+			return nil, err
+		}
+		if len(leftover) > 0 {
+			config = mergeAgents(config, leftover)
+		}
 		if err := document.System.SetJSON(agentsField, config); err != nil {
 			return nil, err
 		}

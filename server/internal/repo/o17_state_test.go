@@ -369,3 +369,83 @@ func TestO17CommitObserversByKind(t *testing.T) {
 		t.Fatalf("configuration commit after cancel: config %d state %d", config, state)
 	}
 }
+
+func TestO17FollowupExportKeepsHALeftoverMembersOnly(t *testing.T) {
+	r := newRepo(t)
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{
+			{
+				ID:          "leftover",
+				Name:        "Leftover",
+				Host:        "192.0.2.1",
+				Port:        model.Int(8080),
+				Token:       "tok-1",
+				ProfileID:   "default",
+				ServiceType: "oxidns",
+				Version:     "1.9.3",
+				LatestDeployment: &model.Deployment{
+					DeploymentID: "d1",
+					Status:       "succeeded",
+				},
+				OxiDNSHAState: &model.HAState{
+					Status:    "failed",
+					Error:     new("rollback failed"),
+					UpdatedAt: model.Int(1700000000),
+					Members:   []string{"secondary", "leftover"},
+				},
+			},
+			{
+				ID:          "enabled-pair",
+				Name:        "Enabled",
+				Host:        "192.0.2.2",
+				Port:        model.Int(8080),
+				Token:       "tok-2",
+				ProfileID:   "default",
+				ServiceType: "oxidns",
+				OxiDNSHA:    &model.HASettings{Enabled: new(true), GroupID: "g1", PeerID: "p2", VIP: "192.0.2.53", VRID: model.Int(51), Role: "primary"},
+				OxiDNSHAState: &model.HAState{
+					Status:    "failed",
+					Error:     new("transient"),
+					UpdatedAt: model.Int(1700000001),
+					Members:   []string{"enabled-pair", "p2"},
+				},
+			},
+		}
+		return nil
+	}))
+	exported := must(r.ExportAllJSON(bg, false))(t)
+	text := string(exported)
+	for _, forbidden := range []string{"latest_deployment", "rollback failed", "1700000000", "1.9.3", "transient"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("export leaked runtime state %q: %s", forbidden, text)
+		}
+	}
+	if !strings.Contains(text, `"oxidns_ha_state":{"status":"failed","members":["secondary","leftover"]}`) {
+		t.Fatalf("export missing minimal HA leftover members: %s", text)
+	}
+	// Enabled pair must not export oxidns_ha_state.
+	if strings.Count(text, `"oxidns_ha_state"`) != 1 {
+		t.Fatalf("expected oxidns_ha_state only for leftover agent: %s", text)
+	}
+	// Restoring into a fresh repository keeps the leftover members in
+	// agent_state AND still sets state_restored_at.
+	restored := newRepo(t)
+	must(restored.ImportAllJSON(bg, exported))(t)
+	agents := must(restored.System(bg))(t).Agents
+	if len(agents) != 2 {
+		t.Fatalf("restored agents = %d, want 2", len(agents))
+	}
+	a := agents[0]
+	if a.StateRestoredAt == nil {
+		t.Fatalf("restored leftover agent missing state_restored_at: %+v", a)
+	}
+	if a.OxiDNSHAState == nil || a.OxiDNSHAState.Status != "failed" || len(a.OxiDNSHAState.Members) != 2 || a.OxiDNSHAState.Members[0] != "secondary" || a.OxiDNSHAState.Members[1] != "leftover" {
+		t.Fatalf("restored leftover oxidns_ha_state = %+v", a.OxiDNSHAState)
+	}
+	if a.LatestDeployment != nil || a.Version != "" {
+		t.Fatalf("restored leftover agent should not have other runtime state: %+v", a)
+	}
+	if agents[1].OxiDNSHAState != nil || agents[1].StateRestoredAt == nil {
+		t.Fatalf("restored enabled pair unexpected state: %+v", agents[1])
+	}
+}
