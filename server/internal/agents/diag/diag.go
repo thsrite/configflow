@@ -6,6 +6,7 @@
 package diag
 
 import (
+	"configflow/internal/textx"
 	"net/url"
 	"regexp"
 	"sort"
@@ -269,7 +270,7 @@ func safeDiagnosticURL(match string) string {
 // hideBlockSecrets is _hide_block_secrets: hides a YAML block value without
 // swallowing the next diagnostic line.
 func hideBlockSecrets(text string) string {
-	lines := SplitLinesKeepEnds(text)
+	lines := textx.SplitLines(text, true)
 	var out strings.Builder
 	for index := 0; index < len(lines); {
 		line := lines[index]
@@ -291,30 +292,6 @@ func hideBlockSecrets(text string) string {
 		}
 	}
 	return out.String()
-}
-
-// SplitLinesKeepEnds is str.splitlines(keepends=True).
-func SplitLinesKeepEnds(text string) []string {
-	var lines []string
-	runes := []rune(text)
-	start := 0
-	for i := 0; i < len(runes); i++ {
-		switch runes[i] {
-		case '\r':
-			if i+1 < len(runes) && runes[i+1] == '\n' {
-				i++
-			}
-		case '\n', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
-		default:
-			continue
-		}
-		lines = append(lines, string(runes[start:i+1]))
-		start = i + 1
-	}
-	if start < len(runes) {
-		lines = append(lines, string(runes[start:]))
-	}
-	return lines
 }
 
 // EventText exposes the shared diagnostic visitor to typed notification producers.

@@ -1,6 +1,7 @@
 package installer
 
 import (
+	"configflow/internal/textx"
 	"errors"
 	"math"
 	"math/big"
@@ -307,7 +308,7 @@ fi
 	rendered := withCompensatingInstallOutput(text)
 	if o.PrepareDNSHA {
 		rendered = WithRootPrivileges(rendered)
-		lines := splitLines(rendered)
+		lines := textx.SplitLines(rendered, true)
 		head := lines
 		if len(head) > 2 {
 			head = lines[:2]

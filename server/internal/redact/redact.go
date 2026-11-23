@@ -12,6 +12,7 @@
 package redact
 
 import (
+	"configflow/internal/textx"
 	"context"
 	"encoding/json"
 	"math"
@@ -549,7 +550,7 @@ func redactText(text string, secrets Secrets) string {
 	ordered := slices.Clone([]string(secrets))
 	sort.SliceStable(ordered, func(i, j int) bool { return pyLen(ordered[i]) > pyLen(ordered[j]) })
 	var out strings.Builder
-	for _, line := range splitLinesKeepEnds(text) {
+	for _, line := range textx.SplitLines(text, true) {
 		for _, secret := range ordered {
 			for _, variant := range variants(secret) {
 				line = strings.ReplaceAll(line, variant, Redacted)
@@ -565,30 +566,6 @@ func redactText(text string, secrets Secrets) string {
 		out.WriteString(line)
 	}
 	return out.String()
-}
-
-// splitLinesKeepEnds is str.splitlines(keepends=True).
-func splitLinesKeepEnds(text string) []string {
-	var lines []string
-	start := 0
-	runes := []rune(text)
-	for i := 0; i < len(runes); i++ {
-		switch runes[i] {
-		case '\r':
-			if i+1 < len(runes) && runes[i+1] == '\n' {
-				i++
-			}
-		case '\n', '\v', '\f', 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029:
-		default:
-			continue
-		}
-		lines = append(lines, string(runes[start:i+1]))
-		start = i + 1
-	}
-	if start < len(runes) {
-		lines = append(lines, string(runes[start:]))
-	}
-	return lines
 }
 
 // Range is a [Start, End) span in code points.

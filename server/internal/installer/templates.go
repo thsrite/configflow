@@ -1,11 +1,11 @@
 package installer
 
 import (
+	"configflow/internal/textx"
 	"embed"
 	"strings"
 	"unicode/utf8"
 
-	"configflow/internal/agents/diag"
 	"unicode"
 )
 
@@ -100,9 +100,6 @@ func substitute(text string, values map[string]string) string {
 // trimScriptTail removes native Unicode whitespace from a generated script.
 func trimScriptTail(text string) string { return strings.TrimRightFunc(text, unicode.IsSpace) }
 
-// splitLines is str.splitlines(keepends=True).
-func splitLines(text string) []string { return diag.SplitLinesKeepEnds(text) }
-
 // hasControl is any(ord(c) < 32 or ord(c) == 127 for c in value).
 func hasControl(value string) bool {
 	for _, r := range value {
@@ -120,4 +117,4 @@ func codePoints(s string) int { return utf8.RuneCountInString(s) }
 func replaceOnce(s, old, replacement string) string { return strings.Replace(s, old, replacement, 1) }
 
 // SplitLines is str.splitlines(keepends=True) (exported for the routes).
-func SplitLines(text string) []string { return splitLines(text) }
+func SplitLines(text string) []string { return textx.SplitLines(text, true) }

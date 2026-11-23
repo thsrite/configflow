@@ -72,6 +72,10 @@ func TestFuzzCorpusMatchesPython(t *testing.T) {
 			}()
 			return renderCase(fn, k)
 		}()
+		if o17RareLineBreak(k.m) {
+			deliberate++ // O17: scripts break lines at \n, \r\n and \r only
+			continue
+		}
 		if handled, problem := n810ScalarMatch(record, output, err); handled {
 			if problem != "" {
 				failed++

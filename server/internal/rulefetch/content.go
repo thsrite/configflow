@@ -6,6 +6,7 @@ package rulefetch
 
 import (
 	"bytes"
+	"configflow/internal/textx"
 	"container/list"
 	"crypto/sha256"
 	"encoding/hex"
@@ -23,10 +24,11 @@ import (
 	"configflow/internal/rulesetfmt"
 	"configflow/internal/yamlx"
 	"encoding/json"
-	"gopkg.in/yaml.v3"
 	"slices"
 	"strconv"
 	"unicode/utf8"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ResultCache is the thread-safe LRU for pure results keyed by content
@@ -553,7 +555,7 @@ func domainEntries(content string, asYAML bool) ([]entry, error) {
 		return entries, nil
 	}
 	offset := 0
-	for number, raw := range splitLines(content, true) {
+	for number, raw := range textx.SplitLines(content, true) {
 		line := raw
 		if offset == 0 && strings.HasPrefix(raw, "\uFEFF") {
 			line = raw[len("\uFEFF"):]
@@ -771,7 +773,7 @@ type textEntry struct {
 
 // remoteTextEntries is _remote_text_entries.
 func remoteTextEntries(content, ruleFormat string) ([]textEntry, []Problem) {
-	sourceLines := splitLines(content, false)
+	sourceLines := textx.SplitLines(content, false)
 	var problems []Problem
 	problem := func(line int, message string) {
 		before := ""
@@ -902,7 +904,7 @@ func validateRemoteContent(content Content, rule model.RuleConfig, behavior, sel
 			offset += width
 		}
 		prefix := string(content.Data[:offset])
-		line := len(splitLines(prefix, false))
+		line := len(textx.SplitLines(prefix, false))
 		if prefix == "" || strings.ContainsRune(textLineBreakChars, []rune(prefix)[runeLen(prefix)-1]) {
 			line++
 		}
@@ -964,7 +966,7 @@ func validateRemoteContent(content Content, rule model.RuleConfig, behavior, sel
 // sequence node for comment-preserving edits) or the text lines (node nil).
 func ReadRulePayload(content string) ([]string, *yamlx.Node, error) {
 	if !rules.HasYAMLPayload(content) {
-		lines := splitLines(content, false)
+		lines := textx.SplitLines(content, false)
 		if lines == nil {
 			lines = []string{}
 		}
@@ -1051,7 +1053,7 @@ func RemoveRulePayload(content string, matches func(string) bool) (string, []str
 	}
 	if payload == nil {
 		var b strings.Builder
-		for _, raw := range splitLines(content, true) {
+		for _, raw := range textx.SplitLines(content, true) {
 			if !matches(pyStrip(raw)) {
 				b.WriteString(raw)
 			}
@@ -1088,4 +1090,4 @@ func payloadEditError(err error) error {
 
 // RuleLines splits text using the rule-source line separators accepted by the
 // shared parser, retaining blank lines for diagnostic line numbers.
-func RuleLines(content string) []string { return splitLines(content, false) }
+func RuleLines(content string) []string { return textx.SplitLines(content, false) }

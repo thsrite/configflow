@@ -129,8 +129,11 @@ func TestLargePolicyGroupAndDNSLimit(t *testing.T) {
 	w.call("PUT", "/api/rules/dns?profile=other", body(map[string]any{"routes": routes}), true)
 }
 
+// Rule text breaks lines at \n, \r\n and \r like the web editor. Since O17 the
+// other separators Python's str.splitlines broke at (\v, \f, \x1c-\x1e, U+0085,
+// U+2028/2029) stay inside a line on purpose (textx.TestSplitLines).
 func TestAcceptedSourceLineBoundaries(t *testing.T) {
-	for _, separator := range []string{"\n", "\r\n", "\r", "\v", "\f", "\x1c", "\x1d", "\x1e", "\u0085", "\u2028", "\u2029"} {
+	for _, separator := range []string{"\n", "\r\n", "\r"} {
 		t.Run(body(separator), func(t *testing.T) {
 			setup := func(ctx context.Context, r *repo.Repository) {
 				seed(t)(ctx, r)

@@ -1,6 +1,9 @@
 package installer
 
-import "strings"
+import (
+	"configflow/internal/textx"
+	"strings"
+)
 
 // Port of backend/agents/install_output.py.
 
@@ -14,7 +17,7 @@ var (
 // WithRootPrivileges is with_root_privileges(script): keep privilege handling
 // in the downloaded file, preserving stdin/args.
 func WithRootPrivileges(script string) string {
-	lines := splitLines(script)
+	lines := textx.SplitLines(script, true)
 	split := 1
 	for split < len(lines) && strings.HasPrefix(lines[split], "# ConfigFlow") {
 		split++
@@ -50,7 +53,7 @@ func withCompensatingInstallOutput(script string) string {
 }
 
 func withInstallOutput(script, beforeBody string) string {
-	lines := splitLines(script)
+	lines := textx.SplitLines(script, true)
 	header := ""
 	if len(lines) > 0 {
 		header = lines[0]

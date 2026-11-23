@@ -1,12 +1,12 @@
 package oxidns
 
 import (
+	"configflow/internal/textx"
 	"fmt"
 	"math/big"
 	"path"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 )
 
 // BlockQtypesExec answers blocked query types with a cacheable empty
@@ -310,7 +310,7 @@ func checkTemplate(s *Node) error {
 			matches = L()
 		}
 		if isStr(matches) {
-			matches = strs(splitLines(matches.Value, false))
+			matches = strs(textx.SplitLines(matches.Value, false))
 		}
 		if !isSeq(matches) || len(filter(matches.Content, func(m *Node) bool { return isStr(m) && strings.TrimSpace(m.Value) != "" })) == 0 {
 			return fail("启用的自定义匹配需要至少一个条件")
@@ -511,36 +511,6 @@ func checkTemplate(s *Node) error {
 		}
 	}
 	return nil
-}
-
-// splitLines is str.splitlines (keepEnds optional): Python's line boundaries.
-func splitLines(s string, keepEnds bool) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(s); {
-		r, width := utf8.DecodeRuneInString(s[i:])
-		end := i + width
-		switch r {
-		case '\r':
-			if end < len(s) && s[end] == '\n' {
-				end++
-			}
-		case '\n', '\v', '\f', '\x1c', '\x1d', '\x1e', '\u0085', '\u2028', '\u2029':
-		default:
-			i = end
-			continue
-		}
-		if keepEnds {
-			out = append(out, s[start:end])
-		} else {
-			out = append(out, s[start:i])
-		}
-		start, i = end, end
-	}
-	if start < len(s) {
-		out = append(out, s[start:])
-	}
-	return out
 }
 
 // posixParent and posixName are str(PurePosixPath(p).parent) / .name.

@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"configflow/internal/textx"
 	"errors"
 	"fmt"
 	"math"
@@ -400,7 +401,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 	case "any_match":
 		entries := items(args)
 		if isStr(args) {
-			entries = strs(splitLines(args.Value, false)).Content
+			entries = strs(textx.SplitLines(args.Value, false)).Content
 		}
 		if len(filter(entries, func(x *Node) bool { return trimmed(x) != "" })) == 0 {
 			errorAt(nil, "至少配置一个匹配表达式", "required")
@@ -639,7 +640,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 				domain(entry, P(key, j), true)
 				continue
 			}
-			for _, line := range splitLines(entry.Value, false) {
+			for _, line := range textx.SplitLines(entry.Value, false) {
 				domain(S(line), P(key, j), false)
 			}
 		}
@@ -665,7 +666,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 			if !isStr(raw) {
 				continue
 			}
-			for _, line := range splitLines(raw.Value, false) {
+			for _, line := range textx.SplitLines(raw.Value, false) {
 				if message, severity := adguardError(line); message != "" {
 					issue(P("rules", j), message, "adguard-rule", severity)
 				}
@@ -685,7 +686,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 			if !isStr(entry) {
 				continue
 			}
-			for _, line := range splitLines(entry.Value, false) {
+			for _, line := range textx.SplitLines(entry.Value, false) {
 				if token := strings.TrimSpace(strings.SplitN(line, "#", 2)[0]); token != "" {
 					ip(S(token), P("ips", j), true)
 				}
@@ -737,7 +738,7 @@ func collectPluginIssues(plugin *Node, index int) []Issue {
 				if !isStr(raw) || deferred(raw) {
 					continue
 				}
-				for _, line := range splitLines(raw.Value, false) {
+				for _, line := range textx.SplitLines(raw.Value, false) {
 					line = strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
 					if line == "" {
 						continue

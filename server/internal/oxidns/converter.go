@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"configflow/internal/textx"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -356,7 +357,7 @@ func HostsFileContent(text string) (string, error) {
 		return !digitsDots.MatchString(value) && legacyName.MatchString(value)
 	}
 	var out strings.Builder
-	for number, raw := range splitLines(text, true) {
+	for number, raw := range textx.SplitLines(text, true) {
 		line := strings.TrimRight(raw, "\r\n")
 		ending := raw[len(line):]
 		rule, comment, marker := strings.Cut(line, "#")

@@ -50,14 +50,19 @@ func TestComposeRejectsYAMLPolicyFailuresAtomically(t *testing.T) {
 		})
 	}
 }
+
+// Pasted rules break lines like the web editor: \n, \r\n and \r (O17);
+// other Unicode separators stay inside a line.
 func TestPasteUsesSharedLineFraming(t *testing.T) {
 	for _, separator := range []string{"\n", "\r\n", "\r", "\v", "\f", "\x1c", "\x1d", "\x1e", "\u0085", "\u2028", "\u2029"} {
 		rows, _, err := pasteRows(strings.Join([]string{"# comment", "first.example", "second.example", ""}, separator), "DOMAIN")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(rows, []pasteRow{{Line: 2, Kind: "DOMAIN", Value: "first.example"}, {Line: 3, Kind: "DOMAIN", Value: "second.example"}}) {
-			t.Fatalf("separator%q rows=%+v", separator, rows)
+		split := separator == "\n" || separator == "\r\n" || separator == "\r"
+		want := []pasteRow{{Line: 2, Kind: "DOMAIN", Value: "first.example"}, {Line: 3, Kind: "DOMAIN", Value: "second.example"}}
+		if split && !reflect.DeepEqual(rows, want) || !split && len(rows) != 0 {
+			t.Fatalf("separator %q rows=%+v", separator, rows)
 		}
 	}
 }

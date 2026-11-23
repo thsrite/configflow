@@ -1,6 +1,7 @@
 package oxidns
 
 import (
+	"configflow/internal/textx"
 	"errors"
 	"math/big"
 	"strconv"
@@ -453,7 +454,7 @@ func collectReferenceIssues(document *Node, graph *depGraph) []Issue {
 		case "any_match":
 			values := items(args)
 			if isStr(args) {
-				for _, line := range splitLines(args.Value, false) {
+				for _, line := range textx.SplitLines(args.Value, false) {
 					values = append(values, S(line))
 				}
 			}

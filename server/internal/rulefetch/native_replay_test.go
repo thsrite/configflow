@@ -23,6 +23,9 @@ type nativeReplayCase struct {
 
 func nativeReplayDifference(t *testing.T, suite, fn string, args any, got, want string) string {
 	t.Helper()
+	if hasRareLineBreak(args) {
+		return "O17 line breaks"
+	}
 	if category := nativeHTMLDifference(t, suite, fn, args, got); category != "" {
 		return category
 	}

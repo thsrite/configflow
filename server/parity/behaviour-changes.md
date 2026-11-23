@@ -3113,3 +3113,29 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
   `GET /api/nodes` 与回显的成员顺序由字典序变为声明顺序。
 - **聚合、订阅**（创建/修改）：`data` 的成员顺序按请求里的顺序，服务端补上的成员（`id`、时间、健康检查）在后（以前字典序）；值不变。
 - 同一请求里「成员类型错误」与其他错误同时出现时，报哪一条可能不同（单一错误的文案和状态码不变）。
+
+## O17 切换前清理（第一部分）— Python 异常名、重复小工具、原子写、三处裁定（2026-11-23）
+
+状态码和面向用户的中文提示不变，除非下面写明。
+
+- **日志里的错误类名**：`exception_type=` 不再出现 Python 类名：区间错误 `ValueError` → `IntervalError`，订阅源校验
+  `ValueError` → `SourceValidationError`，任务资源已删除 `LookupError` → `NotFound`，Basic 认证字符 `UnicodeEncodeError` →
+  `CredentialEncodingError`，CA 证书包 `OSError` → `CertificateBundleError`；mosdns 下载失败文案里的类名属于用户文案，未动。
+  流量记录写入失败（500 页、只进日志）的错误文本改为 `invalid traffic data: …` / `missing traffic member "rule"`
+  （以前照搬 Python 的 `unhashable type: 'list'`、`'rule'`、`sequence item 0: …`）。安装脚本接口失败日志里缺省参数写 `-`（以前 `None`）。
+- **Agent 版本比较**（`version.CompareAgent`，原 `agents.CompareVersions`）：每段只认 ASCII 数字且不超过 uint64；Python `int()`
+  才接受的写法（首尾空白、`+`、`_`、超过 64 位的数字）改按文本比较。**Sub-Store 版本**（`version.ParseRelease`）同理，这类段使版本无效。
+  所有真实版本号（Agent 更新日志里的全部版本、各功能最低版本、Sub-Store/Mihomo 版本形式）逐对与旧实现一致，见
+  `internal/version/compare_test.go`。
+- **MCP 安装工具**：布尔参数按 `true`/`false` 传给安装接口（以前是 Python 的 `True`/`False`）。`install_core`、`prepare_dns_ha`、
+  `ipv4_forwarding` 只认小写，以前经 MCP 传布尔值会得到 400，现在正常（Python 遗留问题修正）。
+- **原子写文件**：统一为 `internal/fsx`（临时文件 → fsync → rename → fsync 目录）。IPv6 校验记录、安装登记会话、autoupdate 清单和
+  `jsonstore` 以前不 fsync，现在 fsync；所有替换后都 fsync 目录。临时文件名模式、权限位、取消时返回的错误不变，不改属主。
+- **Docker 高可用安装向导（裁定）**：`vip`、`ha_gateway` 只接受字符串；JSON `true`/`false`/数字不再按 Python `IPv4Address(True)`
+  变成 `0.0.0.1` 等地址，返回 400「虚拟 IPv4 地址必须是文本」/「高可用网关地址必须是文本」（新增）。「没填」只指字段缺失或空字符串：
+  `container_name: null` 等非字符串返回 400「原容器名只能包含…」（以前 `null`、`false`、`0`、`[]`、`{}` 都当没填）；
+  `ha_gateway: null` 同样 400（以前当没填）。前端始终发字符串，不受影响。
+- **区域检测证据（裁定）**：没有 HTTP 状态码时写「无 HTTP 响应」，不再出现「HTTP None」。
+- **断行（裁定）**：规则内容的行号与诊断、OxiDNS 设置里的多行列表、安装脚本渲染、诊断文本脱敏、Agent 诊断文本只按 `\n`、`\r\n`、
+  `\r` 断行（`textx.SplitLines`），与前端 CodeMirror 6 默认的 `/\r\n?|\n/` 一致；`\v`、`\f`、`\x1c–\x1e`、U+0085、U+2028/2029 留在行内
+  （以前按 Python `str.splitlines`）。脱敏按行整体替换时，行只会变长，脱敏范围不会变窄。
