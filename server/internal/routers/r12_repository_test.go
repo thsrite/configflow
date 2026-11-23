@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -89,7 +90,7 @@ func TestR12LegacyRouterPublicationPreservesAbsentDefaults(t *testing.T) {
 		t.Fatal(e)
 	}
 	_, r, before := r12Config(t, db)
-	expected, e := releaseRouterRecord(r)
+	expected, e := spec.ReleaseRouterRecord(r)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -110,8 +111,8 @@ func TestR12LegacyRouterPublicationPreservesAbsentDefaults(t *testing.T) {
 		t.Fatal("last_release-only publication did not commit state or advanced config revision")
 	}
 	withDefault := *r
-	withDefault.source = nil
-	if sameReleaseRouter(r, &withDefault) {
+	withDefault.SetSource(nil)
+	if spec.SameReleaseRouter(r, &withDefault) {
 		t.Fatal("whole-record comparison ignored missing vs explicit default")
 	}
 }

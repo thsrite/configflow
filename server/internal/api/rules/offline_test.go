@@ -11,7 +11,7 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
+	routers "configflow/internal/routers/spec"
 	"configflow/internal/rulefetch"
 	shared "configflow/internal/rules"
 	"configflow/internal/testjson"

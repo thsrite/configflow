@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"encoding/json"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestX1RouterDecodeFallsBackPerMember(t *testing.T) {
 	if _, kept := r.Extra["future"]; kept {
 		t.Fatal("undeclared member kept", r.Extra)
 	}
-	stored, e := releaseRouterRecord(&r)
+	stored, e := spec.ReleaseRouterRecord(&r)
 	if e != nil || string(stored) != string(data) {
 		t.Fatalf("stored bytes not kept for CAS: %s %v", stored, e)
 	}
@@ -52,7 +53,7 @@ func TestX1RoutersOfLikePython(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var ids []string
-			for _, r := range routersOf(json.RawMessage(tt.config)) {
+			for _, r := range spec.RoutersOf(json.RawMessage(tt.config)) {
 				ids = append(ids, r.ID)
 			}
 			if len(ids) != len(tt.ids) || (len(ids) > 0 && (ids[0] != tt.ids[0] || ids[len(ids)-1] != tt.ids[len(tt.ids)-1])) {
@@ -65,7 +66,7 @@ func TestX1RoutersOfLikePython(t *testing.T) {
 // A malformed record next to the published router must not fail its release.
 func TestX1PublishWithMalformedNeighbour(t *testing.T) {
 	_, db, req, _ := r12ReviewSetup(t, nil)
-	good, e := releaseRouterRecord(req.Router)
+	good, e := spec.ReleaseRouterRecord(req.Router)
 	if e != nil {
 		t.Fatal(e)
 	}

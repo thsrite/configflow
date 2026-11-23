@@ -31,7 +31,7 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 			agent := r10Agent()
 			host := r10Host()
 			old := r08Desired(false)
-			old.IPv6CIDRs = []ProxyCIDR{{"2001:db8:10::/48", []string{"Synthetic"}}, {"2001:db8:20::/48", []string{"Synthetic"}}}
+			old.IPv6CIDRs = []ProxyCIDR{{CIDR: "2001:db8:10::/48", Sources: []string{"Synthetic"}}, {CIDR: "2001:db8:20::/48", Sources: []string{"Synthetic"}}}
 			if mode == "enrollment" {
 				old.IPv6CIDRs = []ProxyCIDR{}
 			}
@@ -56,7 +56,7 @@ func TestR14IPv6DeltaPython(t *testing.T) {
 			base := &RuleSyncBaseline{Control: "synthetic", Desired: old, Rules: map[string]*RuleSyncRecord{}, StaticResources: static, Policy: json.RawMessage("null")}
 			next := r08Desired(false)
 			next.ProxyCIDRs[1].CIDR = "203.0.113.0/24"
-			next.IPv6CIDRs = []ProxyCIDR{{"2001:db8:10::/48", []string{"Synthetic"}}, {"2001:db8:30::/48", []string{"Synthetic"}}}
+			next.IPv6CIDRs = []ProxyCIDR{{CIDR: "2001:db8:10::/48", Sources: []string{"Synthetic"}}, {CIDR: "2001:db8:30::/48", Sources: []string{"Synthetic"}}}
 			if mode == "next_hop" {
 				host.Addresses[1].Address = "fe80::9"
 			}

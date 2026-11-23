@@ -4,6 +4,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"net/netip"
@@ -277,7 +278,7 @@ func ipv6Document(config *model.Profile) (*yamlx.Node, error) {
 	// A stored base that is not text is refused, not read as an empty base
 	// (which would withdraw the managed IPv6 settings).
 	if raw == model.DamagedText {
-		return nil, device.Error(messageIPv6YAMLType)
+		return nil, device.Error(spec.MessageIPv6YAMLType)
 	}
 	if strings.TrimSpace(raw) == "" {
 		return yamlx.Map(), nil

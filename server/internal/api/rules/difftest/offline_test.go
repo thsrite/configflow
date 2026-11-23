@@ -9,7 +9,7 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
+	routers "configflow/internal/routers/spec"
 )
 
 func TestRouterOfflineMissingCacheMatchesPython(t *testing.T) {

@@ -1,4 +1,4 @@
-package routers
+package spec
 
 import (
 	"cmp"
@@ -69,7 +69,7 @@ func RuleSourceIssue(item *RuleSet, library *LibraryRule, requireLibrary bool) s
 func FakeIPNetwork(customConfig string) (netip.Prefix, error) {
 	// A stored base that is not text has no fake-ip range (not the default).
 	if customConfig == model.DamagedText {
-		return netip.Prefix{}, device.Error(messageIPv6YAMLType)
+		return netip.Prefix{}, device.Error(MessageIPv6YAMLType)
 	}
 	doc, err := yamlx.Parse([]byte(customConfig))
 	if err != nil && !errors.Is(err, yamlx.ErrSyntax) {
@@ -94,7 +94,7 @@ func FakeIPNetwork(customConfig string) (netip.Prefix, error) {
 // desiredYAMLError retains both the existing HTTP validation classification
 // and the native reason so callers can inspect D1/alias errors without parsing text.
 type desiredYAMLError struct {
-	validation *ValidationError
+	validation *device.ValidationError
 	cause      error
 }
 
@@ -152,7 +152,7 @@ type Desired struct {
 	IPv6CIDRs        []ProxyCIDR       `json:"ipv6_cidrs"`
 	Warnings         []string          `json:"warnings"`
 	BlockingWarnings []string          `json:"blocking_warnings"`
-	*DNSSettings
+	*device.DNSSettings
 }
 
 // ContentLoader returns a rule set's text (library nil: not from the shared
@@ -206,7 +206,7 @@ func ComputeDesired(ctx context.Context, profile json.RawMessage, gateway string
 	}
 	fakeIP, err := FakeIPNetwork(doc.Mihomo.CustomConfig)
 	if err != nil {
-		return nil, &desiredYAMLError{validation: &ValidationError{Message: fmt.Sprintf(messageDesiredYAML, doc.label(), err)}, cause: err}
+		return nil, &desiredYAMLError{validation: &device.ValidationError{Message: fmt.Sprintf(messageDesiredYAML, doc.label(), err)}, cause: err}
 	}
 	if loader == nil {
 		loader = func(item RuleSet, library *LibraryRule) (string, error) {

@@ -4,6 +4,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -83,7 +84,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	if gateway != nil && gateway.Agent != nil {
 		host = gateway.Host
 	}
-	desired, err := ComputeDesired(ctx, req.Config, host, r.StaticRuleSets(), req.Loader)
+	desired, err := spec.ComputeDesired(ctx, req.Config, host, r.StaticRuleSets(), req.Loader)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +340,7 @@ func returnCleanup(ctx context.Context, req InspectRequest, r *Router, a *Gatewa
 	if req.Repo == nil {
 		return nil, device.ErrNotPorted
 	}
-	profiles, err := routerProfiles(ctx, req.Repo)
+	profiles, err := spec.RouterProfiles(ctx, req.Repo)
 	if err != nil {
 		return nil, err
 	}
@@ -355,55 +356,7 @@ func returnCleanup(ctx context.Context, req InspectRequest, r *Router, a *Gatewa
 }
 func dnsGuardSettings(r *Router) DNSGuard {
 	if r.DNSGuard == nil {
-		return DefaultDNSGuard()
+		return spec.DefaultDNSGuard()
 	}
 	return *r.DNSGuard
-}
-
-// routersOf is Python's routers_of: a missing or non-object routers member or
-// a non-list items member means no routers, and non-object items (null
-// included) are skipped. Records decode with Router's R5 fallback, so one
-// malformed record only affects its own row.
-func routersOf(config json.RawMessage) []*Router {
-	var cfg struct {
-		Routers json.RawMessage `json:"routers"`
-	}
-	if jsondecode.Unmarshal(config, &cfg) != nil {
-		return nil
-	}
-	return routerRecords(cfg.Routers)
-}
-
-// storedRouters is routersOf for a profile's typed routers member. Only the
-// member is encoded, to the bytes it has inside the encoded configuration.
-func storedRouters(routers *model.Routers) ([]*Router, error) {
-	data, err := model.Marshal(routers)
-	if err != nil {
-		return nil, err
-	}
-	return routerRecords(data), nil
-}
-
-// routerRecords decodes the items of an encoded routers member like routersOf.
-func routerRecords(container json.RawMessage) []*Router {
-	var routers struct {
-		Items json.RawMessage `json:"items"`
-	}
-	var items []json.RawMessage
-	if jsondecode.Unmarshal(container, &routers) != nil || jsondecode.Unmarshal(routers.Items, &items) != nil {
-		return nil
-	}
-	out := make([]*Router, 0, len(items))
-	for _, item := range items {
-		var fields map[string]json.RawMessage
-		if json.Unmarshal(item, &fields) != nil || fields == nil {
-			continue
-		}
-		r := &Router{}
-		if json.Unmarshal(item, r) != nil {
-			continue
-		}
-		out = append(out, r)
-	}
-	return out
 }

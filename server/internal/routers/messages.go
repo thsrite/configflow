@@ -62,9 +62,6 @@ const (
 // Router and DHCP messages are kept here so boundary tests and drivers share
 // one source for user-visible Chinese text.
 const (
-	messageDesiredYAML    = "配置「%s」的 Mihomo 基础 YAML 无效：%v"
-	messageCurrentProfile = "当前配置"
-
 	messageROSPingNoResult = "RouterOS ping 没有返回结果"
 )
 
@@ -237,10 +234,4 @@ const (
 	messageNATRollbackPrefix   = "NAT 免转换回滚未完成："
 )
 
-const messageRouterFieldType = "路由器身份和凭据字段必须是文本"
-
-const (
-	messageIPSelectionType     = "IP 路由规则集必须是规则集 ID 列表"
-	messagePolicySelectionType = "策略路由规则集必须是规则集 ID 列表"
-	messageStoredGuardInvalid  = "路由器守卫设置字段类型无效，请先修正设置再预览或发布"
-)
+const ()

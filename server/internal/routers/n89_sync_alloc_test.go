@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/spec"
 	"bytes"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
@@ -297,4 +298,26 @@ func TestN89SyncWritePipelineAllocations(t *testing.T) {
 	if delta > 6<<20 {
 		t.Fatalf("write loop repeatedly decoded settings: delta=%d", delta)
 	}
+}
+
+func projectionRepository(t testing.TB, n, padding int) *repo.Repository {
+	t.Helper()
+	db, err := repo.Open(t.TempDir(), repo.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.UpdateProfile(context.Background(), "default", func(_ context.Context, p *model.Profile) error {
+		p.Mihomo.CustomConfig = strings.Repeat("x", padding)
+		for i := 0; i < n; i++ {
+			p.Routers.Items = append(p.Routers.Items, model.Router{ID: fmt.Sprintf("r%d", i), Name: "router", Type: "routeros", Endpoint: fmt.Sprintf("http://192.0.2.1:%d", 8000+i), Username: "operator", Password: "synthetic-password"})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = spec.RouterProfiles(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	return db
 }

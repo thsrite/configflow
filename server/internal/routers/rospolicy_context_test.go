@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"testing"
@@ -11,10 +12,10 @@ func TestROSPolicyDesiredPassesContextToDefaultContentLoader(t *testing.T) {
 	type contextKey struct{}
 	ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), contextKey{}, "request-scope"), time.Minute)
 	defer cancel()
-	previous := RulesetContent
-	t.Cleanup(func() { RulesetContent = previous })
+	previous := spec.RulesetContent
+	t.Cleanup(func() { spec.RulesetContent = previous })
 	calls := 0
-	RulesetContent = func(received context.Context, _ json.RawMessage, item RuleSet, _ *LibraryRule) (string, error) {
+	spec.RulesetContent = func(received context.Context, _ json.RawMessage, item RuleSet, _ *LibraryRule) (string, error) {
 		calls++
 		if received != ctx || received.Value(contextKey{}) != "request-scope" {
 			t.Fatal("policy inspection lost the caller's context")

@@ -1,4 +1,4 @@
-package routers
+package spec
 
 import (
 	"encoding/json"
@@ -36,7 +36,7 @@ func TestReviewO18T1cDamagedGuardSwitchFailsClosed(t *testing.T) {
 			if tt.blocked != (err != nil) {
 				t.Fatalf("blocked=%v, want %v (%v)", err != nil, tt.blocked, err)
 			}
-			if tt.blocked && err.Error() != messageStoredGuardInvalid {
+			if tt.blocked && err.Error() != MessageStoredGuardInvalid {
 				t.Fatalf("error %v", err)
 			}
 		})

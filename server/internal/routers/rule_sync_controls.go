@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -31,7 +32,7 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 	if err != nil {
 		return "", err
 	}
-	raw, err := releaseRouterRecord(r)
+	raw, err := spec.ReleaseRouterRecord(r)
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +72,7 @@ func (s *RuleSyncService) SyncControls(ctx context.Context, config json.RawMessa
 	if err = jsondecode.Unmarshal(config, &doc); err != nil {
 		return "", err
 	}
-	fake, err := FakeIPNetwork(doc.Mihomo.CustomConfig)
+	fake, err := spec.FakeIPNetwork(doc.Mihomo.CustomConfig)
 	if err != nil {
 		return "", err
 	}

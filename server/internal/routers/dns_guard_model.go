@@ -11,12 +11,6 @@ import (
 // DNSGuardSnapshot contains the four DNS guard tables; nil Netwatch means unreadable.
 type DNSGuardSnapshot map[string][]Row
 
-// DesiredDNSGuard binds the validated settings to the previous publication.
-type DesiredDNSGuard struct {
-	Settings DNSGuard        `json:"settings"`
-	Previous json.RawMessage `json:"previous"`
-}
-
 // DNSGuardSpec is the IPv4 LAN path and exemptions actually written to RouterOS.
 type DNSGuardSpec struct {
 	Agent     string    `json:"agent"`

@@ -7,7 +7,7 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/routers"
+	routers "configflow/internal/routers/spec"
 	"configflow/internal/routersplit"
 )
 

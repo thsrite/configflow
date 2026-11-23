@@ -169,7 +169,7 @@ func TestR14DeltaPython(t *testing.T) {
 			next.IPv6CIDRs = []ProxyCIDR{}
 			next.BlockingWarnings = []string{}
 			if policy {
-				next.ROSPolicy.CIDRs = []ProxyCIDR{{"203.0.113.0/24", []string{"Synthetic"}}}
+				next.ROSPolicy.CIDRs = []ProxyCIDR{{CIDR: "203.0.113.0/24", Sources: []string{"Synthetic"}}}
 			} else if mode != "unchanged" {
 				next.ProxyCIDRs[1].CIDR = "203.0.113.0/24"
 			}

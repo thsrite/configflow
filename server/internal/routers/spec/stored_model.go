@@ -1,4 +1,4 @@
-package routers
+package spec
 
 import (
 	"configflow/internal/model"
@@ -86,7 +86,7 @@ func routerFromModel(v model.Router) Router {
 
 // routerProfiles reads only the profile identity and router subtree. It never
 // copies unrelated nodes, YAML, or rule-library data per router.
-func routerProfiles(ctx context.Context, db *repo.Repository) ([]routerProfile, error) {
+func RouterProfiles(ctx context.Context, db *repo.Repository) ([]routerProfile, error) {
 	out := []routerProfile{}
 	err := db.View(ctx, func(d *model.Document) error {
 		for _, p := range d.Profiles {
@@ -121,25 +121,32 @@ func (r *Router) validateIdentity() error {
 				continue
 			}
 			if text, valid := device.RequestString(raw); !valid || text == model.DamagedText {
-				return device.Invalid(messageRouterFieldType)
+				return device.Invalid(MessageRouterFieldType)
 			}
 		}
 	}
 	for _, name := range []string{"ip_rule_sets", "ros_policy_rule_sets"} {
 		if raw, present := fields[name]; present {
 			if _, valid := idList(raw); !valid {
-				return device.Invalid(messageRouterFieldType)
+				return device.Invalid(MessageRouterFieldType)
 			}
 		}
 	}
 	return nil
 }
 
-func pendingProfiles(ctx context.Context, db *repo.Repository) ([]pendingProfile, error) {
-	out := []pendingProfile{}
+// PendingProfile identifies one stored profile for pending-router checks.
+type PendingProfile struct {
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Revision json.RawMessage `json:"revision"`
+}
+
+func PendingProfiles(ctx context.Context, db *repo.Repository) ([]PendingProfile, error) {
+	out := []PendingProfile{}
 	err := db.View(ctx, func(d *model.Document) error {
 		for _, p := range d.Profiles {
-			out = append(out, pendingProfile{ID: p.Key(), Name: p.Name, Revision: device.JSON(int64(p.Revision) + int64(d.Shared.Revision))})
+			out = append(out, PendingProfile{ID: p.Key(), Name: p.Name, Revision: device.JSON(int64(p.Revision) + int64(d.Shared.Revision))})
 		}
 		return nil
 	})
@@ -151,7 +158,7 @@ func pendingProfiles(ctx context.Context, db *repo.Repository) ([]pendingProfile
 // repairable and removable through the UI under the normal job lock.
 func (r *Router) ValidateForDevice() error {
 	if r == nil {
-		return device.Invalid(messageRouterFieldType)
+		return device.Invalid(MessageRouterFieldType)
 	}
 	if err := r.validateIdentity(); err != nil {
 		return err
@@ -164,7 +171,7 @@ func (r *Router) ValidateForDevice() error {
 	// Python (`or {}`); anything else is unknown settings: fail closed.
 	for _, stored := range []json.RawMessage{dnsGuardStored(r.stored.DNSGuard), pdGuardStored(r.stored.IPv6PDGuard)} {
 		if stored != nil && device.HasStoredState(stored) {
-			return device.Invalid(messageStoredGuardInvalid)
+			return device.Invalid(MessageStoredGuardInvalid)
 		}
 	}
 	return nil

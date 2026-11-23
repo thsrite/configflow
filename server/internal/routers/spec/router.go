@@ -1,4 +1,4 @@
-package routers
+package spec
 
 import (
 	"bytes"
@@ -352,7 +352,7 @@ func Normalize(body []byte, existing *Router) (*Router, error) {
 	for _, key := range []string{"type", "endpoint", "username", "password", "proxy_gateway_agent_id", "dns_agent_id"} {
 		if raw, present := payload[key]; present {
 			if _, valid := device.RequestString(raw); !valid {
-				return nil, device.Invalid(messageRouterFieldType)
+				return nil, device.Invalid(MessageRouterFieldType)
 			}
 		}
 	}
@@ -367,7 +367,7 @@ func Normalize(body []byte, existing *Router) (*Router, error) {
 		var ok bool
 		r.VerifyTLS, ok = boolField(m, "verify_tls", true)
 		if !ok {
-			return nil, device.Invalid(messageRouterFieldType)
+			return nil, device.Invalid(MessageRouterFieldType)
 		}
 		_ = raw
 	}

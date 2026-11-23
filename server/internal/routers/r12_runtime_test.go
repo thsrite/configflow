@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -51,7 +52,7 @@ func r12Config(t *testing.T, db *repo.Repository) (json.RawMessage, *Router, mod
 	if e != nil {
 		t.Fatal(e)
 	}
-	items := routersOf(raw)
+	items := spec.RoutersOf(raw)
 	if len(items) != 1 {
 		t.Fatal(string(raw))
 	}

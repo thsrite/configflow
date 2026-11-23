@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -45,7 +46,7 @@ func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *Router) {
 		t.Fatal(err)
 	}
 	r.Endpoint = http.URL
-	r.source = nil
+	r.SetSource(nil)
 	raw := device.JSON(map[string]any{"routers": map[string]any{"items": []*Router{&r}}, "rule_library": []any{map[string]any{"id": "lib", "name": "Synthetic", "source_type": "url", "url": "https://example.com/ips", "behavior": "classical", "enabled": true}}, "rule_configs": []any{map[string]any{"id": "remote", "itemType": "ruleset", "library_rule_id": "lib", "enabled": true, "policy": "PROXY"}}})
 	db, err := repo.Open(t.TempDir(), repo.Options{InitialSettings: func() *model.Config {
 		cfg, err := model.DecodeConfig(raw)
@@ -62,7 +63,7 @@ func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *Router) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := findSyncRouter(cfg, r.ID)
+	router := spec.FindSyncRouter(cfg, r.ID)
 	sources, err := selectedSyncSources(cfg, router)
 	if err != nil {
 		t.Fatal(err)
@@ -329,7 +330,7 @@ func TestO17FollowupCaptureWakesRuleSyncLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := findSyncRouter(cfg, r.ID)
+	router := spec.FindSyncRouter(cfg, r.ID)
 	_, records, err := loadSyncSources(ctx, cfg, router, nil)
 	if err != nil {
 		t.Fatal(err)

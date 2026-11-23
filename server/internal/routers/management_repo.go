@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 
@@ -40,7 +41,7 @@ func managementTransaction(ctx context.Context, db *repo.Repository, profile str
 	return err
 }
 func saveManagementSettings(ctx context.Context, db *repo.Repository, profile string, old, next *Router) error {
-	expected, err := releaseRouterRecord(old)
+	expected, err := spec.ReleaseRouterRecord(old)
 	if err != nil {
 		return err
 	}

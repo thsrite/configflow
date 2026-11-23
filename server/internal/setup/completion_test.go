@@ -14,7 +14,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
+	routers "configflow/internal/routers/spec"
 )
 
 func installedOwner() *InstallationOwner {

@@ -5,6 +5,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 )
@@ -12,7 +13,7 @@ import (
 // Wire installs native notifications, the shared publication lock and scheduler.
 func Wire() {
 	wireRuleSync()
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{RedactRoutersJSON: func(raw json.RawMessage) (json.RawMessage, error) { return RedactRouters(raw) }, JobLockRecord: jobLockHook}})
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{RedactRoutersJSON: func(raw json.RawMessage) (json.RawMessage, error) { return spec.RedactRouters(raw) }, JobLockRecord: jobLockHook}})
 	notifications.SetInputs(notifications.Inputs{Summarize: pendingSummary})
 }
 
@@ -41,7 +42,7 @@ func recordPendingNotice(ctx context.Context, db *repo.Repository, profileID str
 		return
 	}
 	notifications.Safely(func() error {
-		raw, err := releaseRouterRecord(r)
+		raw, err := spec.ReleaseRouterRecord(r)
 		if err != nil {
 			return err
 		}

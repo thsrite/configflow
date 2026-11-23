@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -56,7 +57,7 @@ func (s *ManagementService) Records(ctx context.Context, profile string) (*Confi
 	if err != nil {
 		return nil, err
 	}
-	routers, err := storedRouters(&stored.Routers)
+	routers, err := spec.StoredRouters(&stored.Routers)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +71,7 @@ func (s *ManagementService) ConfigRecords(ctx context.Context, profile string) (
 	if err != nil {
 		return nil, err
 	}
-	routers, err := storedRouters(&config.Profile.Routers)
+	routers, err := spec.StoredRouters(&config.Profile.Routers)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +98,7 @@ func (s *ManagementService) Create(ctx context.Context, profile string, body jso
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r, err := Normalize(body, nil)
+	r, err := spec.Normalize(body, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +173,7 @@ func (s *ManagementService) lockedFor(ctx context.Context, profile string, old *
 	view, err := s.Records(held, profile)
 	if err == nil {
 		for _, r := range view.Routers {
-			if r.ID == old.ID && sameReleaseRouter(r, old) {
+			if r.ID == old.ID && spec.SameReleaseRouter(r, old) {
 				return held, release, r, nil
 			}
 		}
@@ -197,7 +198,7 @@ func (s *ManagementService) Save(ctx context.Context, profile string, old *Route
 			}
 		}
 	} else {
-		next, err = Normalize(body, r)
+		next, err = spec.Normalize(body, r)
 		if err != nil {
 			return nil, err
 		}
@@ -285,11 +286,11 @@ func (s *ManagementService) Probe(ctx context.Context, profile string, r *Router
 		return result, err
 	}
 	err = managementTransaction(ctx, s.Repo, profile, func(work context.Context, current json.RawMessage) (json.RawMessage, error) {
-		live := findSyncRouter(current, r.ID)
-		if live == nil || !sameReleaseRouter(live, r) {
+		live := spec.FindSyncRouter(current, r.ID)
+		if live == nil || !spec.SameReleaseRouter(live, r) {
 			return nil, device.KindError(KindConflict, messageManagementChanged)
 		}
-		raw, e := releaseRouterRecord(live)
+		raw, e := spec.ReleaseRouterRecord(live)
 		if e != nil {
 			return nil, e
 		}
@@ -400,15 +401,15 @@ func (s *ManagementService) SaveSyncSettings(ctx context.Context, profile string
 	}
 	defer release()
 	return managementTransaction(work, s.Repo, profile, func(held context.Context, current json.RawMessage) (json.RawMessage, error) {
-		live := findSyncRouter(current, r.ID)
+		live := spec.FindSyncRouter(current, r.ID)
 		if live == nil {
 			return nil, device.Invalid(messageManagementMissing)
 		}
-		normalized, err := Normalize(body, live)
+		normalized, err := spec.Normalize(body, live)
 		if err != nil {
 			return nil, err
 		}
-		raw, err := releaseRouterRecord(live)
+		raw, err := spec.ReleaseRouterRecord(live)
 		if err != nil {
 			return nil, err
 		}
@@ -421,7 +422,7 @@ func (s *ManagementService) SaveSyncSettings(ctx context.Context, profile string
 }
 
 // ManagementRouters exposes the shared R5 decoder for a frozen HTTP snapshot.
-func ManagementRouters(config json.RawMessage) []*Router { return routersOf(config) }
+func ManagementRouters(config json.RawMessage) []*Router { return spec.RoutersOf(config) }
 
 // PolicyObjects reads under the same L2 and complete stored-record guard as
 // writes. R5 display defaults never erase changes from the optimistic proof.

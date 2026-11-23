@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,7 +24,7 @@ import (
 // user message compare by message; Python-internal exceptions (TypeError …)
 // only require Go to reject the input too.
 func TestR01Corpus(t *testing.T) {
-	NewRouterID = func() string { return "router_GEN" }
+	spec.NewRouterID = func() string { return "router_GEN" }
 	file, err := os.Open("testdata/r01_corpus.jsonl.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -178,14 +179,14 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 		if string(args.Existing) != "null" {
 			existing = decode[*Router](t, args.Existing)
 		}
-		return Normalize(args.Payload, existing)
+		return spec.Normalize(args.Payload, existing)
 	case "public_view":
 		r := decode[Router](t, in)
 		return r.View(), nil
 	case "stored":
 		return decode[Router](t, in), nil
 	case "redact_routers":
-		out, err := RedactRouters(in)
+		out, err := spec.RedactRouters(in)
 		return json.RawMessage(out), err
 	case "compute_desired":
 		args := decode[struct {
@@ -194,7 +195,7 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 			RuleSets []string `json:"rule_sets"`
 			Contents map[string]string
 		}](t, in)
-		return ComputeDesired(context.Background(), args.Profile, args.Gateway, args.RuleSets, func(item RuleSet, _ *LibraryRule) (string, error) {
+		return spec.ComputeDesired(context.Background(), args.Profile, args.Gateway, args.RuleSets, func(item RuleSet, _ *LibraryRule) (string, error) {
 			return args.Contents[item.ID], nil
 		})
 	case "dns_agent_settings":

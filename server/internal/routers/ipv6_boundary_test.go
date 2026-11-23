@@ -39,7 +39,7 @@ func r10State() routerfake.State {
 func r10Wanted(n int) *Desired {
 	d := &Desired{ProxyCIDRs: []ProxyCIDR{}, Warnings: []string{}, IPv6CIDRs: []ProxyCIDR{}, BlockingWarnings: []string{}}
 	for i := 0; i < n; i++ {
-		d.IPv6CIDRs = append(d.IPv6CIDRs, ProxyCIDR{fmt.Sprintf("2001:db8:%x::/48", i+10), []string{"Synthetic"}})
+		d.IPv6CIDRs = append(d.IPv6CIDRs, ProxyCIDR{CIDR: fmt.Sprintf("2001:db8:%x::/48", i+10), Sources: []string{"Synthetic"}})
 	}
 	return d
 }

@@ -4,6 +4,7 @@ import (
 	"configflow/internal/devhttp"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -30,31 +31,6 @@ var policyNamePatterns = []string{"CF_Source_Proxy_IP_[0-9]+", "CF_Destination_P
 
 // ROSPolicySnapshot contains complete raw configuration and runtime evidence.
 type ROSPolicySnapshot map[string][]Row
-
-// ROSPolicyDesired separates selected destinations from ordinary static routes.
-type ROSPolicyDesired struct {
-	Selected       []string        `json:"selected"`
-	Sources        []string        `json:"sources"`
-	CIDRs          []ProxyCIDR     `json:"cidrs"`
-	Error          string          `json:"error"`
-	Owner          string          `json:"owner"`
-	Previous       json.RawMessage `json:"previous"`
-	Warnings       []string        `json:"warnings,omitempty"`
-	SourceRevision string          `json:"source_revision,omitempty"`
-}
-
-// MarshalJSON keeps the selected-policy empty warnings array; a withdrawn
-// policy has no source_revision or warnings member, as in the inspection API.
-func (d ROSPolicyDesired) MarshalJSON() ([]byte, error) {
-	type plain ROSPolicyDesired
-	if d.SourceRevision != "" {
-		return json.Marshal(struct {
-			plain
-			Warnings []string `json:"warnings"`
-		}{plain(d), append([]string{}, d.Warnings...)})
-	}
-	return json.Marshal(plain(d))
-}
 
 // ROSPolicySpec records the exact scope of one deployed bundle.
 type ROSPolicySpec struct {
@@ -269,7 +245,7 @@ func InspectROSPolicyDesired(ctx context.Context, config json.RawMessage, router
 	if len(result.Selected) == 0 {
 		return result, nil
 	}
-	policy, err := ComputeDesired(ctx, config, desired.ProxyGateway, result.Selected, loader)
+	policy, err := spec.ComputeDesired(ctx, config, desired.ProxyGateway, result.Selected, loader)
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -131,7 +132,7 @@ func captureRouter(r *Router, d Driver) *Router {
 	}
 	m := holder.Manifests()
 	out := *r
-	out.source = nil
+	out.ClearSource()
 	out.Extra = maps.Clone(r.Extra)
 	if out.Extra == nil {
 		out.Extra = map[string]json.RawMessage{}
@@ -192,13 +193,13 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 		return PublishOutcome{Err: err}
 	}
 	current := (*Router)(nil)
-	for _, r := range routersOf(config) {
+	for _, r := range spec.RoutersOf(config) {
 		if r.ID == req.RouterID {
 			current = r
 			break
 		}
 	}
-	if current == nil || !sameReleaseRouter(current, req.Router) {
+	if current == nil || !spec.SameReleaseRouter(current, req.Router) {
 		return PublishOutcome{Status: PublishRouterChanged, Message: messageRouterChangedWaiting}
 	}
 	factory := req.NewDriver
@@ -258,7 +259,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 		outcome.Err = err
 		return outcome
 	}
-	expected, err := releaseRouterRecord(current)
+	expected, err := spec.ReleaseRouterRecord(current)
 	if err != nil {
 		outcome.Err = err
 		return outcome
@@ -402,27 +403,4 @@ func abortPublicationResult(result *Result, err error) {
 	result.Aborted = true
 	result.FailedStage = &stage
 	result.Log = append(result.Log, ReleaseEntry{Stage: stage, Summary: messageReleaseAborted, Status: "failed"})
-}
-
-// releaseRouterRecord preserves missing stored connection fields for the repo
-// CAS. Native defaults are runtime values, not an edit to the stored record.
-func releaseRouterRecord(r *Router) (json.RawMessage, error) {
-	if len(r.source) > 0 {
-		var original Router
-		if err := json.Unmarshal(r.source, &original); err != nil {
-			return nil, err
-		}
-		if device.JSONEqual(r, &original) {
-			return slices.Clone(r.source), nil
-		}
-	}
-	return json.Marshal(r)
-}
-func sameReleaseRouter(a, b *Router) bool {
-	left, e := releaseRouterRecord(a)
-	if e != nil {
-		return false
-	}
-	right, e := releaseRouterRecord(b)
-	return e == nil && device.JSONEqual(left, right)
 }

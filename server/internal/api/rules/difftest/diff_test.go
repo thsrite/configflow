@@ -31,7 +31,7 @@ import (
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
+	routers "configflow/internal/routers/spec"
 	shared "configflow/internal/rules"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"

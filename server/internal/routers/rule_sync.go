@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -87,7 +88,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 		if err != nil {
 			return err
 		}
-		current := findSyncRouter(latest, r.ID)
+		current := spec.FindSyncRouter(latest, r.ID)
 		if current == nil {
 			return device.Error(messageSyncCaptureChanged)
 		}
@@ -98,7 +99,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 		if liveSignature != signature {
 			return device.Error(messageSyncCaptureChanged)
 		}
-		pinned, err := ComputeDesired(work, config, desired.ProxyGateway, r.StaticRuleSets(), syncIPLoader(records))
+		pinned, err := spec.ComputeDesired(work, config, desired.ProxyGateway, r.StaticRuleSets(), syncIPLoader(records))
 		if err != nil {
 			return err
 		}
@@ -106,7 +107,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 			return device.Error(messageSyncCaptureCache)
 		}
 		if len(r.RosPolicyRuleSets) > 0 {
-			expected, err := ComputeDesired(work, config, desired.ProxyGateway, r.RosPolicyRuleSets, syncIPLoader(records))
+			expected, err := spec.ComputeDesired(work, config, desired.ProxyGateway, r.RosPolicyRuleSets, syncIPLoader(records))
 			if err != nil {
 				return err
 			}
@@ -155,7 +156,7 @@ func (s *RuleSyncService) saveManifest(ctx context.Context, profile string, r *R
 	if err != nil {
 		return err
 	}
-	current := findSyncRouter(latest, r.ID)
+	current := spec.FindSyncRouter(latest, r.ID)
 	publication := repo.RouterPublicationJSON{}
 	if current == nil || !device.JSONEqual(syncNull(current.State("ros_policy_state")), syncNull(d.PolicyManifest())) {
 		publication.Manifest = repo.JSONUpdate{Set: true, Value: d.PolicyManifest()}
@@ -166,7 +167,7 @@ func (s *RuleSyncService) saveManifest(ctx context.Context, profile string, r *R
 	if !publication.Manifest.Set && !publication.IPv6Routes.Set {
 		return nil
 	}
-	expected, err := releaseRouterRecord(r)
+	expected, err := spec.ReleaseRouterRecord(r)
 	if err != nil {
 		return err
 	}
@@ -208,7 +209,7 @@ func (s *RuleSyncService) Sync(ctx context.Context, profile, id, trigger string)
 	if err != nil {
 		return RuleSyncStatus{}, err
 	}
-	connection := findSyncRouter(config, id)
+	connection := spec.FindSyncRouter(config, id)
 	held, release, lockErr := RouterJobLock(work, profile, id, connection)
 	if lockErr != nil {
 		var conflict *RouterError
@@ -226,7 +227,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 	if err != nil {
 		return RuleSyncStatus{}, err
 	}
-	r := findSyncRouter(config, id)
+	r := spec.FindSyncRouter(config, id)
 	if r == nil || r.Type != "routeros" || !r.AutoRuleSync {
 		return RuleSyncStatus{}, device.Error(messageSyncEnable)
 	}
@@ -327,7 +328,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 			if err != nil {
 				return err
 			}
-			item := findSyncRouter(latest, id)
+			item := spec.FindSyncRouter(latest, id)
 			if item == nil || !item.AutoRuleSync {
 				return device.Error(messageSyncCurrent)
 			}
@@ -528,7 +529,7 @@ func (s *RuleSyncService) RunRound(ctx context.Context) error {
 	ruleSyncLoop.commits.Follow(s.Repo, repo.ChangeConfig, ruleSyncLoop.wake.Notify)
 	next := RuleSyncMaxPause
 	defer func() { ruleSyncLoop.pause.Store(int64(next)) }()
-	profiles, err := routerProfiles(held, s.Repo)
+	profiles, err := spec.RouterProfiles(held, s.Repo)
 	if err != nil {
 		next = RuleSyncPause
 		return err
@@ -591,7 +592,7 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 	if err != nil {
 		return err
 	}
-	r := findSyncRouter(config, id)
+	r := spec.FindSyncRouter(config, id)
 	job, unlock, lockErr := RouterJobLock(held, profile, id, r)
 	if lockErr != nil {
 		return lockErr

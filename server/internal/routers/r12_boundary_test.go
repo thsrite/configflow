@@ -121,7 +121,7 @@ func r12PlanComparable(t *testing.T, p any) any {
 	return m
 }
 func r12Desired() *Desired {
-	return &Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: "192.0.2.4", ProxyCIDRs: []ProxyCIDR{{"198.18.0.0/16", []string{"fake-ip"}}, {"198.51.100.0/25", []string{"Synthetic"}}}, IPv6CIDRs: []ProxyCIDR{}, Warnings: []string{}, BlockingWarnings: []string{}, DNSSettings: &DNSSettings{}}
+	return &Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: "192.0.2.4", ProxyCIDRs: []ProxyCIDR{{CIDR: "198.18.0.0/16", Sources: []string{"fake-ip"}}, {CIDR: "198.51.100.0/25", Sources: []string{"Synthetic"}}}, IPv6CIDRs: []ProxyCIDR{}, Warnings: []string{}, BlockingWarnings: []string{}, DNSSettings: &DNSSettings{}}
 }
 func TestR12PythonWholePlanAndExecution(t *testing.T) {
 	for _, vendor := range []string{"routeros", "ikuai"} {

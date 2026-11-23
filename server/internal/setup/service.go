@@ -20,7 +20,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
+	routers "configflow/internal/routers/spec"
 	"configflow/internal/routersplit"
 )
 

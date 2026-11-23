@@ -8,7 +8,7 @@ import (
 
 	"configflow/internal/gateway/onboarding"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
+	routers "configflow/internal/routers/spec"
 	"configflow/internal/yamlx"
 )
 

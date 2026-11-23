@@ -1,4 +1,4 @@
-package routers
+package spec
 
 import (
 	"bytes"
@@ -28,7 +28,7 @@ func projectionRepository(t testing.TB, n, padding int) *repo.Repository {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = routerProfiles(context.Background(), db); err != nil {
+	if _, err = RouterProfiles(context.Background(), db); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -44,7 +44,7 @@ func BenchmarkRouterProjection(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
-					rows, err := routerProfiles(context.Background(), db)
+					rows, err := RouterProfiles(context.Background(), db)
 					if err != nil || len(rows) != 1 || len(rows[0].Routers) != n {
 						b.Fatal(err)
 					}
@@ -64,7 +64,7 @@ func TestN89RouterProjectionAllocations(t *testing.T) {
 			db.SetViewGuard(nil)
 			result := testing.Benchmark(func(b *testing.B) {
 				for b.Loop() {
-					if _, err := routerProfiles(context.Background(), db); err != nil {
+					if _, err := RouterProfiles(context.Background(), db); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -144,7 +144,7 @@ func TestN89StoredIdentityCannotOpenDevice(t *testing.T) {
 						if err != nil {
 							t.Fatal("null optional link rejected", err)
 						}
-					} else if err == nil || err.Error() != messageRouterFieldType {
+					} else if err == nil || err.Error() != MessageRouterFieldType {
 						t.Fatalf("round %d: invalid identity allowed device access: %v", round, err)
 					}
 					if raw, err = model.Marshal(&stored); err != nil {
@@ -263,7 +263,7 @@ func TestN89MalformedActiveGuardBlocksDeviceAccess(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || err.Error() != messageStoredGuardInvalid {
+			if err == nil || err.Error() != MessageStoredGuardInvalid {
 				t.Fatalf("malformed enabled guard not blocked: %v", err)
 			}
 		})

@@ -4,6 +4,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 )
 
 // Temporary type and constant aliases for R1–R9; removed in R10.
@@ -64,6 +65,19 @@ type (
 	GroupState      = ikuai.GroupState
 	GroupUser       = ikuai.GroupUser
 	IkuaiGroup      = ikuai.IkuaiGroup
+
+	ContentLoader    = spec.ContentLoader
+	DNSGuard         = spec.DNSGuard
+	Desired          = spec.Desired
+	DesiredDNSGuard  = spec.DesiredDNSGuard
+	LibraryRule      = spec.LibraryRule
+	PDGuard          = spec.PDGuard
+	ProxyCIDR        = spec.ProxyCIDR
+	ROSPolicyDesired = spec.ROSPolicyDesired
+	Router           = spec.Router
+	RouterSettings   = spec.RouterSettings
+	RouterView       = spec.RouterView
+	RuleSet          = spec.RuleSet
 )
 
 const (

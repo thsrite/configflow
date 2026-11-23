@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"encoding/json"
 
 	"configflow/internal/model"
@@ -83,7 +84,7 @@ func WorkspaceRevision(config json.RawMessage, r *Router) (string, error) {
 // workspaceRevision digests the router record with the OxiDNS settings
 // revision oxidnsRevision.
 func workspaceRevision(oxidnsRevision string, r *Router) (string, error) {
-	raw, err := releaseRouterRecord(r)
+	raw, err := spec.ReleaseRouterRecord(r)
 	if err != nil {
 		return "", err
 	}
@@ -160,7 +161,7 @@ func workspaceRuleSets(profile *model.Profile) ([]WorkspaceRule, error) {
 // SaveWorkspace changes the router and optional source policies atomically in
 // the caller's transaction document. Unknown configuration fields are retained.
 func SaveWorkspace(config json.RawMessage, id string, body WorkspaceRequest) (json.RawMessage, error) {
-	r := findSyncRouter(config, id)
+	r := spec.FindSyncRouter(config, id)
 	if r == nil || r.Type != "routeros" {
 		return nil, device.KindError(KindConflict, messageWorkspaceStale)
 	}
@@ -179,7 +180,7 @@ func SaveWorkspace(config json.RawMessage, id string, body WorkspaceRequest) (js
 	if rev != body.Revision || body.Policies != nil && names != body.NamesRevision {
 		return nil, device.KindError(KindConflict, messageWorkspaceStale)
 	}
-	updated, err := Normalize(body.Router, r)
+	updated, err := spec.Normalize(body.Router, r)
 	if err != nil {
 		return nil, err
 	}

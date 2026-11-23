@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/spec"
 	"testing"
 
 	"configflow/internal/model"
@@ -12,10 +13,10 @@ import (
 func TestReviewO18T1dDamagedCustomConfigRefused(t *testing.T) {
 	profile := &model.Profile{}
 	profile.Mihomo.CustomConfig = model.DamagedText
-	if _, err := ipv6Document(profile); err == nil || err.Error() != messageIPv6YAMLType {
+	if _, err := ipv6Document(profile); err == nil || err.Error() != spec.MessageIPv6YAMLType {
 		t.Fatalf("ipv6Document: %v", err)
 	}
-	if _, err := FakeIPNetwork(model.DamagedText); err == nil || err.Error() != messageIPv6YAMLType {
+	if _, err := spec.FakeIPNetwork(model.DamagedText); err == nil || err.Error() != spec.MessageIPv6YAMLType {
 		t.Fatalf("FakeIPNetwork: %v", err)
 	}
 	if _, err := ipv6Document(&model.Profile{}); err != nil {

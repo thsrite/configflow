@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -36,13 +37,8 @@ type PendingResponse struct {
 	Cached         bool           `json:"cached"`
 	CheckedAt      string         `json:"checked_at"`
 }
-type pendingProfile struct {
-	ID       string          `json:"id"`
-	Name     string          `json:"name"`
-	Revision json.RawMessage `json:"revision"`
-}
 type pendingTarget struct {
-	profile pendingProfile
+	profile spec.PendingProfile
 	config  json.RawMessage
 	router  *Router
 }
@@ -76,7 +72,7 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 	if err != nil {
 		return nil, "", "", err
 	}
-	list, err := pendingProfiles(ctx, req.Repo)
+	list, err := spec.PendingProfiles(ctx, req.Repo)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -97,7 +93,7 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 		if err != nil {
 			return nil, "", "", err
 		}
-		routers, err := storedRouters(&stored.Routers)
+		routers, err := spec.StoredRouters(&stored.Routers)
 		if err != nil {
 			return nil, "", "", err
 		}
@@ -113,11 +109,11 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 			return nil, "", "", err
 		}
 		linked := []json.RawMessage{}
-		for _, r := range routersOf(data) {
+		for _, r := range spec.RoutersOf(data) {
 			if !pendingLinked(r, req.AgentID) {
 				continue
 			}
-			original, err := releaseRouterRecord(r)
+			original, err := spec.ReleaseRouterRecord(r)
 			if err != nil {
 				return nil, "", "", err
 			}

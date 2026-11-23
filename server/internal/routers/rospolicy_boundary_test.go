@@ -36,14 +36,14 @@ func r08State() routerfake.State {
 }
 
 func r08Desired(selected bool) *Desired {
-	d := &Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: r08Gateway, ProxyCIDRs: []ProxyCIDR{{"198.18.0.0/16", []string{"fake-ip"}}}, Warnings: []string{}}
+	d := &Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: r08Gateway, ProxyCIDRs: []ProxyCIDR{{CIDR: "198.18.0.0/16", Sources: []string{"fake-ip"}}}, Warnings: []string{}}
 	p := &ROSPolicyDesired{Selected: []string{}, Sources: []string{}, CIDRs: []ProxyCIDR{}, Owner: "cf-ros-policy-test"}
 	if selected {
 		p.Selected = []string{"synthetic"}
 		p.Sources = []string{"192.0.2.101/32"}
-		p.CIDRs = []ProxyCIDR{{r08Target, []string{"Synthetic"}}}
+		p.CIDRs = []ProxyCIDR{{CIDR: r08Target, Sources: []string{"Synthetic"}}}
 	} else {
-		d.ProxyCIDRs = append(d.ProxyCIDRs, ProxyCIDR{r08Target, []string{"Synthetic"}})
+		d.ProxyCIDRs = append(d.ProxyCIDRs, ProxyCIDR{CIDR: r08Target, Sources: []string{"Synthetic"}})
 	}
 	d.ROSPolicy = p
 	return d
@@ -442,7 +442,7 @@ func r08Cases() []r08Case {
 			{Action: "publish", Desired: r08Desired(true)},
 			{Action: "publish", Desired: func() *Desired {
 				d := r08Desired(true)
-				d.ROSPolicy.CIDRs = append(d.ROSPolicy.CIDRs, ProxyCIDR{"203.0.113.0/24", []string{"Second"}})
+				d.ROSPolicy.CIDRs = append(d.ROSPolicy.CIDRs, ProxyCIDR{CIDR: "203.0.113.0/24", Sources: []string{"Second"}})
 				return d
 			}()},
 			{Action: "view"},
@@ -523,7 +523,7 @@ func r08Cases() []r08Case {
 	}
 	for _, path := range []string{ros.PathAddresses + "/*65", ros.PathTables + "/*68", ros.PathRoutes + "/*69", ros.PathMangle + "/*6C"} {
 		desired := r08Desired(true)
-		desired.ROSPolicy.CIDRs = []ProxyCIDR{{"203.0.113.0/24", []string{"Replacement"}}}
+		desired.ROSPolicy.CIDRs = []ProxyCIDR{{CIDR: "203.0.113.0/24", Sources: []string{"Replacement"}}}
 		mutation := &routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: path, Count: 1, Status: 400}}}
 		cases = append(cases, r08Case{"old_delete_failure_" + path, r08State(), []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "publish", Desired: desired, Mutation: mutation}}})
 	}
@@ -595,7 +595,7 @@ func r08Cases() []r08Case {
 		desired := r08Desired(true)
 		desired.ROSPolicy.CIDRs = []ProxyCIDR{}
 		for i := range count {
-			desired.ROSPolicy.CIDRs = append(desired.ROSPolicy.CIDRs, ProxyCIDR{fmt.Sprintf("198.18.%d.%d/32", i/256, i%256), []string{"Synthetic"}})
+			desired.ROSPolicy.CIDRs = append(desired.ROSPolicy.CIDRs, ProxyCIDR{CIDR: fmt.Sprintf("198.18.%d.%d/32", i/256, i%256), Sources: []string{"Synthetic"}})
 		}
 		cases = append(cases, r08Case{fmt.Sprintf("large_bundle_%d", count), r08State(), []r08Step{{Action: "rollback", Desired: desired}}})
 	}

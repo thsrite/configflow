@@ -1,7 +1,6 @@
 package routers
 
 const (
-	messageIPv6YAMLType                = "基础 YAML 必须是文本"
 	messageIPv6YAMLObject              = "基础 YAML 必须是对象"
 	messageIPv6DNSObject               = "dns 必须是对象"
 	messageIPv6Bool                    = "ipv6 必须填写 true 或 false"

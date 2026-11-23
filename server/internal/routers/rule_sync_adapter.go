@@ -179,11 +179,3 @@ func syncConfig(ctx context.Context, db *repo.Repository, id string) (json.RawMe
 	}
 	return json.Marshal(config)
 }
-func findSyncRouter(config json.RawMessage, id string) *Router {
-	for _, r := range routersOf(config) {
-		if r.ID == id {
-			return r
-		}
-	}
-	return nil
-}

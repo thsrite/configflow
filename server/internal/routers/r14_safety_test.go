@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -40,7 +41,7 @@ func TestR14ManifestRollbackPersistsLatestState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !effectful(findSyncRouter(cfg, r.ID).State("ros_policy_state")) {
+	if !effectful(spec.FindSyncRouter(cfg, r.ID).State("ros_policy_state")) {
 		t.Fatal("new ownership not persisted")
 	}
 	d.SetPolicyManifest(nil)
@@ -51,7 +52,7 @@ func TestR14ManifestRollbackPersistsLatestState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if effectful(findSyncRouter(cfg, r.ID).State("ros_policy_state")) {
+	if effectful(spec.FindSyncRouter(cfg, r.ID).State("ros_policy_state")) {
 		t.Fatal("rollback to original null was compared to stale initial record")
 	}
 }
@@ -238,7 +239,7 @@ func TestR14SourceSelectionAndCacheIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r = findSyncRouter(config, r.ID)
+	r = spec.FindSyncRouter(config, r.ID)
 	sources, err := selectedSyncSources(config, r)
 	if err != nil || len(sources) != 2 {
 		t.Fatal(err, sources)

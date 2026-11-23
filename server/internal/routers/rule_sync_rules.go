@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -250,7 +251,7 @@ func selectedSyncSources(config json.RawMessage, r *Router) ([]syncSource, error
 		if found {
 			sp = &source
 		}
-		if issue := RuleSourceIssue(ip, sp, true); issue != "" {
+		if issue := spec.RuleSourceIssue(ip, sp, true); issue != "" {
 			return nil, device.Error(fmt.Sprintf(messageSyncSourceIssue, issue))
 		}
 		v := syncSource{Item: item, Library: source}

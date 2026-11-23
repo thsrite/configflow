@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -49,7 +50,7 @@ func ruleSyncTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.
 	if err != nil {
 		return nil, err
 	}
-	profiles, err := routerProfiles(ctx, db)
+	profiles, err := spec.RouterProfiles(ctx, db)
 	if err != nil {
 		return nil, err
 	}

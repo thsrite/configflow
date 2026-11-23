@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routerdoc"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"time"
@@ -23,8 +24,4 @@ type ClientReader interface {
 
 // FromConfig returns owned router records, ignoring malformed container/items
 // as the existing inspection service does. Unknown record fields are retained.
-func FromConfig(config json.RawMessage) []*Router { return routersOf(config) }
-
-// StoredRecord returns retained stored fields (including malformed legacy
-// members) when settings are unchanged; otherwise it encodes the edited record.
-func (r *Router) StoredRecord() (json.RawMessage, error) { return releaseRouterRecord(r) }
+func FromConfig(config json.RawMessage) []*Router { return spec.RoutersOf(config) }

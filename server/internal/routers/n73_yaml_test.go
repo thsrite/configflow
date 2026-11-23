@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,12 +23,12 @@ func TestN73FakeIPYAMLGraphs(t *testing.T) {
 		if _, err := yamlx.Parse([]byte(input)); err == nil {
 			t.Fatal("unsafe graph accepted by facade")
 		}
-		if got, err := FakeIPNetwork(input); err == nil || got.IsValid() {
+		if got, err := spec.FakeIPNetwork(input); err == nil || got.IsValid() {
 			t.Fatalf("unsafe document used for routing: %s %v", got, err)
 		}
 	}
 	input := "dns: &dns {fake-ip-range: 198.19.0.0/16}\nother: *dns\n"
-	if got, err := FakeIPNetwork(input); err != nil || got.String() != "198.19.0.0/16" {
+	if got, err := spec.FakeIPNetwork(input); err != nil || got.String() != "198.19.0.0/16" {
 		t.Fatalf("ordinary shared mapping: %s %v", got, err)
 	}
 }
@@ -36,7 +37,7 @@ func FuzzFakeIPYAML(f *testing.F) {
 	f.Add("dns: {fake-ip-range: 198.19.0.0/16}")
 	f.Add("x: &x [*x]")
 	f.Fuzz(func(t *testing.T, text string) {
-		network, err := FakeIPNetwork(text)
+		network, err := spec.FakeIPNetwork(text)
 		if err == nil && !network.IsValid() {
 			t.Fatal("invalid desired prefix")
 		}
@@ -50,7 +51,7 @@ func FuzzFakeIPYAML(f *testing.F) {
 		if marshalErr != nil {
 			t.Fatal(marshalErr)
 		}
-		plan, planErr := ComputeDesired(context.Background(), profile, "192.0.2.1", nil, nil)
+		plan, planErr := spec.ComputeDesired(context.Background(), profile, "192.0.2.1", nil, nil)
 		if planErr != nil && plan != nil || planErr == nil && plan == nil {
 			t.Fatalf("inconsistent plan/error: %#v %v", plan, planErr)
 		}
@@ -64,7 +65,7 @@ func TestN73PlainDepthBoundary(t *testing.T) {
 		t.Run(fmt.Sprint(depth), func(t *testing.T) {
 			nested := strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
 			started := time.Now()
-			network, err := FakeIPNetwork("dns: {fake-ip-range: 198.19.0.0/16}\nextra: " + nested)
+			network, err := spec.FakeIPNetwork("dns: {fake-ip-range: 198.19.0.0/16}\nextra: " + nested)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"testing"
@@ -39,7 +40,7 @@ func TestO10R6ReviewStoredRoutersMatchEncodedConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := routersOf(encoded)
+	before := spec.RoutersOf(encoded)
 	s := &ManagementService{Repo: r}
 	for _, read := range []struct {
 		name string
@@ -63,15 +64,15 @@ func TestO10R6ReviewStoredRoutersMatchEncodedConfig(t *testing.T) {
 				if string(a) != string(b) {
 					t.Fatalf("%s: view %s, before %s", old.ID, a, b)
 				}
-				ra, err := releaseRouterRecord(after)
+				ra, err := spec.ReleaseRouterRecord(after)
 				if err != nil {
 					t.Fatal(err)
 				}
-				rb, err := releaseRouterRecord(old)
+				rb, err := spec.ReleaseRouterRecord(old)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !device.JSONEqual(ra, rb) || !sameReleaseRouter(after, old) {
+				if !device.JSONEqual(ra, rb) || !spec.SameReleaseRouter(after, old) {
 					t.Fatalf("%s: release record %s, before %s", old.ID, ra, rb)
 				}
 				wa, err := WorkspaceRevision(encoded, after)
