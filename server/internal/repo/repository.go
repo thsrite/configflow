@@ -446,12 +446,20 @@ func (r *Repository) setCache(entry storedEntry) {
 	r.cacheMu.Lock()
 	r.documentCache = &entry
 	r.cacheMu.Unlock()
+	// cachedAgentRecords prefers documentCache when heads match; drop any
+	// superseded standalone agentSnapshot so only one generation stays live.
+	r.agentsCacheMu.Lock()
+	r.agentsCache = nil
+	r.agentsCacheMu.Unlock()
 }
 
 func (r *Repository) dropCache() {
 	r.cacheMu.Lock()
 	r.documentCache = nil
 	r.cacheMu.Unlock()
+	r.agentsCacheMu.Lock()
+	r.agentsCache = nil
+	r.agentsCacheMu.Unlock()
 }
 
 // loadEntry is _load_entry: head and rows from one snapshot; the cached
