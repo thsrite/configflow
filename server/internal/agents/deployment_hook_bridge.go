@@ -12,7 +12,7 @@ func (m *Manager) candidateReceiptMatches(a *model.Agent, state *model.Deploymen
 	if m.receiptMatches != nil {
 		return m.receiptMatches(a, state), nil
 	}
-	hook := currentHooks().ReceiptMatches
+	hook := m.legacyHooks().ReceiptMatches
 	if hook == nil {
 		return false, nil
 	}
@@ -32,7 +32,7 @@ func (m *Manager) checkpointCandidate(ctx context.Context, agentID, id string, p
 		}
 		return m.publication.PublicationCheckpoint(ctx, m, agentID, id, sha)
 	}
-	hook := currentHooks().PublicationCheckpoint
+	hook := m.legacyHooks().PublicationCheckpoint
 	if hook == nil {
 		return nil
 	}

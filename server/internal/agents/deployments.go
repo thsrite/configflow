@@ -84,7 +84,7 @@ func (m *Manager) publicationComplete(ctx context.Context, agentID, deploymentID
 	if m.publication != nil {
 		return m.publication.PublicationComplete(ctx, m, agentID, deploymentID, status)
 	}
-	if hook := currentHooks().PublicationComplete; hook != nil {
+	if hook := m.legacyHooks().PublicationComplete; hook != nil {
 		return hook(ctx, m, agentID, deploymentID, status)
 	}
 	return nil

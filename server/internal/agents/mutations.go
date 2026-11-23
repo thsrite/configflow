@@ -314,7 +314,7 @@ func (m *Manager) DeleteAgent(ctx context.Context, id string) (bool, error) {
 		_ = m.metrics.DeleteMetricsHistory(ctx, m, id) // The history owner logs ordinary file failures.
 		cleanupErr = m.metrics.DeleteTrafficHistory(ctx, m, id)
 	} else {
-		h := currentHooks()
+		h := m.legacyHooks()
 		if h.DeleteMetricsHistoryContext != nil {
 			_ = h.DeleteMetricsHistoryContext(ctx, m, id) // The history owner logs ordinary file failures.
 		}

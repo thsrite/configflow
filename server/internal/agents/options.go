@@ -80,6 +80,21 @@ func (m *Manager) MarkStarted() {
 	m.optsMu.Unlock()
 }
 
+// legacyHooks returns the package-level Hooks fallback for Managers built
+// outside server assembly (agents.Get/Init and tests). A Manager sealed by
+// MarkStarted is wired only through its Options and two-phase setters: it
+// never consults the global hooks, so a nil PairPublisher stays fail closed
+// (ErrHAOwnerMissing) even if some package installed a global HA owner.
+func (m *Manager) legacyHooks() Hooks {
+	m.optsMu.RLock()
+	sealed := m.started
+	m.optsMu.RUnlock()
+	if sealed {
+		return Hooks{}
+	}
+	return currentHooks()
+}
+
 func (m *Manager) pairPublisher() PairPublisher {
 	m.optsMu.RLock()
 	defer m.optsMu.RUnlock()

@@ -27,7 +27,7 @@ func (m *Manager) GetDeploymentModel(ctx context.Context, agentID, id string) (*
 	if pair := m.pairPublisher(); pair != nil {
 		return pair.PairDeployment(ctx, agentID, id)
 	}
-	if hook := currentHooks().HADeployment; hook != nil {
+	if hook := m.legacyHooks().HADeployment; hook != nil {
 		return hook(ctx, m, agentID, id)
 	}
 	return m.defaultHADeploymentModel(ctx, agentID, id)
@@ -42,7 +42,7 @@ func (m *Manager) ActivateDeploymentModel(ctx context.Context, agentID, id strin
 	if pair := m.pairPublisher(); pair != nil {
 		return pair.ActivatePair(ctx, agentID, id)
 	}
-	if hook := currentHooks().HAActivate; hook != nil {
+	if hook := m.legacyHooks().HAActivate; hook != nil {
 		return hook(ctx, m, agentID, id)
 	}
 	return m.defaultHAActivateModel(ctx, agentID, id)
