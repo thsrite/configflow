@@ -118,6 +118,12 @@ In review: batch-46 routers 1.8 (5ccafbc4; step ③ evidence typing ruled out �
 batch-47 cache budget (1aee2413; perf numbers on PVE CT 240 only — maintainer), batch-48 typed-rest (82d5be78),
 batch-49 oxidns round 1 (7c6a7e21), batch-50 runtime state (502fd2a4). Running: oxidns round 2 Neon 0fca7fe8
 (stacked on round 1), L6 prep e99bba11. Queued: router last_release → agent_state after batch-50; O17 前-1 dead code.
+batch-46 MERGED (routers 1.8 + review fixes 50a77a404: 3 block→allow regressions fixed; + L6 prep: arm64 Agent build
+fix fe126f1ca (syscall.Dup2), lab runbook server/parity/lab/l6-runbook.md, guests CT 250–257 + VM 256/258/259 on cfgt,
+images in lab registry 10.97.0.151:5000; + gate cross-build stage dfba21fcb). Gate note: agent/routes
+TestManualRollbackRestoresCurrentRevisionOnlyAndKeepsState timed out once at 12 s under load; 10× rerun + agent
+stage rerun PASS → flaky under load, watch. L6 rulings: snapshot fetched read-only by the coordinator at soak
+start; Python final = v2.2.0; gateways keep egress during soak; CT 251 and the cfgt DNS redirect live/die together.
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
