@@ -116,7 +116,8 @@ func xcDump(t *testing.T, directory string) *testObj {
 }
 
 // xcVersionOne shows a storage-version-2 dump as the version-1 rows Python
-// keeps (O17, D5): the agent_state rows merged into system.agents, the state
+// keeps (O17, D5): the agent_state rows merged into system.agents and the
+// router state rows (last_release) into each profile's routers, the state
 // counters left out and storage_version 1.
 func xcVersionOne(t *testing.T, db *sql.DB, dump *testObj) *testObj {
 	t.Helper()
@@ -131,8 +132,8 @@ func xcVersionOne(t *testing.T, db *sql.DB, dump *testObj) *testObj {
 		var row store.StateRow
 		var value string
 		noError(t, rows.Scan(&row.Owner, &row.Member, &value))
-		if row.Member == "state_restored_at" {
-			continue // Go's restore marker after importing a backup without run records (O17); Python has none
+		if row.Member == "state_restored_at" || row.Member == staterows.RouterStateMemberPrefix+"state_restored_at" {
+			continue // Go's restore markers after importing a backup without run records (O17); Python has none
 		}
 		row.Value = json.RawMessage(value)
 		state = append(state, row)
@@ -153,8 +154,11 @@ func xcVersionOne(t *testing.T, db *sql.DB, dump *testObj) *testObj {
 	dump.Set("meta", meta)
 	for _, row := range dump.Value("fields").([]any) {
 		values := row.([]any)
-		if values[0] == "system" && values[1] == "" && values[2] == "agents" {
+		switch {
+		case values[0] == "system" && values[1] == "" && values[2] == "agents":
 			values[4] = string(staterows.Merge([]byte(values[4].(string)), state))
+		case values[0] == "profile" && values[2] == "routers":
+			values[4] = string(staterows.MergeRouters(values[1].(string), []byte(values[4].(string)), state))
 		}
 	}
 	return dump

@@ -290,6 +290,59 @@ def execute_c04(repository, op, variables, arg):
     return _UNKNOWN
 
 
+def stored_state(directory):
+    connection = sqlite3.connect(Path(directory) / 'configflow.sqlite3')
+    meta = dict(connection.execute('SELECT key, value FROM meta').fetchall())
+    sections = connection.execute('SELECT * FROM sections ORDER BY scope, owner').fetchall()
+    fields = {(scope, owner, field): (value, revision) for scope, owner, field, value, revision in
+              connection.execute('SELECT scope, owner, field, value, revision FROM fields')}
+    connection.close()
+    return meta, sections, fields
+
+
+def without_last_release(text):
+    routers = json.loads(text)
+    for item in routers.get('items', []) if isinstance(routers, dict) else []:
+        if isinstance(item, dict):
+            item.pop('last_release', None)
+    return routers
+
+
+def align_state_only_publication(repository, directory, op, before):
+    """Accepted Go change (O17, parity/behaviour-changes.md, router last_release
+    in agent_state): a save_router_publication that changes no configuration
+    member (only last_release, or nothing) advances neither the generation nor
+    the profile _revision/updated_at; Python always does. When Python's commit
+    changed exactly those counters and at most last_release in the profile's
+    routers row, they are put back so both sides continue from the same
+    configuration state. Any other change is left for the comparison."""
+    after = stored_state(directory)
+    (meta_before, sections_before, fields_before), (meta_after, sections_after, fields_after) = before, after
+    if sections_before != sections_after or set(fields_before) != set(fields_after):
+        return
+    if {key for key in meta_before.keys() | meta_after.keys()
+            if meta_before.get(key) != meta_after.get(key)} != {'generation', 'commit_id'}:
+        return
+    profile = op['id']
+    counters = {('profile', profile, '_revision'), ('profile', profile, 'updated_at')}
+    routers = ('profile', profile, 'routers')
+    for key in fields_after:
+        if key in counters or fields_before[key][0] == fields_after[key][0]:
+            continue
+        if key != routers or without_last_release(fields_before[key][0]) != without_last_release(fields_after[key][0]):
+            return
+    connection = sqlite3.connect(Path(directory) / 'configflow.sqlite3')
+    with connection:
+        for key in ('generation', 'commit_id'):
+            connection.execute('UPDATE meta SET value=? WHERE key=?', (meta_before[key], key))
+        for scope, owner, field in counters:
+            value, revision = fields_before[(scope, owner, field)]
+            connection.execute('UPDATE fields SET value=?, revision=? WHERE scope=? AND owner=? AND field=?',
+                               (value, revision, scope, owner, field))
+    connection.close()
+    repository._drop_cache()
+
+
 def run(directory, mode, operations):
     repository = open_repository(directory, mode)
     config_module.set_repository(repository)
@@ -297,11 +350,14 @@ def run(directory, mode, operations):
     records = []
     for op in operations:
         record = {'op': op['op']}
+        before = stored_state(directory) if op['op'] == 'save_router_publication' else None
         try:
             if op['op'] == 'reopen':
                 repository = open_repository(directory, mode)
                 config_module.set_repository(repository)
             result = execute(repository, op, variables)
+            if before is not None:
+                align_state_only_publication(repository, directory, op, before)
             if 'save' in op:
                 variables[op['save']] = copy.deepcopy(result)
             record['result'] = result
