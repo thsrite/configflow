@@ -137,15 +137,6 @@ func (c *candidateSet) has(key string) bool {
 	return ok
 }
 
-func hasFieldIssue(issues []model.FieldIssue, field string) bool {
-	for _, issue := range issues {
-		if issue.Path == field {
-			return true
-		}
-	}
-	return false
-}
-
 // CollectCandidateNodes gathers enabled manual and cached subscription nodes
 // keyed by canonical JSON source identifiers.
 func CollectCandidateNodes(ctx context.Context) ([]CandidateNode, error) {

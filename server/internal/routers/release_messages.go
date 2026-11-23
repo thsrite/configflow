@@ -52,7 +52,6 @@ var releaseSkippedMessages = map[string]string{
 
 const messageNATNotRequiredVerified = "回读确认无需额外 NAT 免转换"
 const (
-	messageMalformedManifest    = "%s 归属记录格式不完整，请人工核对后重新预览"
 	messageIkuaiIPv6Skipped     = "所选规则集含 %d 个 IPv6 网段；iKuai 只发布 IPv4 路由，IPv6 网段未处理"
 	messageDHCPReadFailed       = "无法读取 DHCP DNS 配置：%s"
 	messageIPv6ForeignGateway   = "代理网关不属于当前配置空间，请重新关联后预览。"
