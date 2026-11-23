@@ -2,6 +2,7 @@ package clients
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/oplock"
 	"context"
 	"encoding/json"
@@ -92,9 +93,9 @@ func NormalizeFixedIPRequest(raw json.RawMessage) (json.RawMessage, FixedIPInten
 
 // FixedIPPlanned binds one preview to its complete router connection revision.
 type FixedIPPlanned struct {
-	RouterID   string                    `json:"router_id"`
-	Connection string                    `json:"connection"`
-	Op         *routers.FixedIPOperation `json:"op"`
+	RouterID   string             `json:"router_id"`
+	Connection string             `json:"connection"`
+	Op         *fixedip.Operation `json:"op"`
 }
 
 // FixedIPAction is the human-readable preview, without connection credentials.
@@ -139,7 +140,7 @@ func fixedApprovalProofs(operations []FixedIPPlanned) ([]string, error) {
 // GuardSetup must be wired to C36; a missing collaborator fails closed.
 type FixedIPService struct {
 	Repo       *repo.Repository
-	Open       func(*routers.Router) routers.FixedIPDriver
+	Open       func(*routers.Router) fixedip.Device
 	GuardSetup func(context.Context, *repo.Repository, string) error
 	Signer     *FixedIPToken
 	Cache      *DiscoveryCache
@@ -178,13 +179,13 @@ func fixedRouter(config json.RawMessage, id string) (*routers.Router, error) {
 	}
 	return nil, fixedError(routers.KindConflict, messageFixedRouter)
 }
-func fixedBindings(config json.RawMessage) map[string]*routers.FixedIPBinding {
+func fixedBindings(config json.RawMessage) map[string]*fixedip.Binding {
 	var doc struct {
-		Bindings map[string]*routers.FixedIPBinding `json:"client_fixed_ips"`
+		Bindings map[string]*fixedip.Binding `json:"client_fixed_ips"`
 	}
 	_ = jsondecode.Unmarshal(config, &doc)
 	if doc.Bindings == nil {
-		doc.Bindings = map[string]*routers.FixedIPBinding{}
+		doc.Bindings = map[string]*fixedip.Binding{}
 	}
 	return doc.Bindings
 }
@@ -200,8 +201,8 @@ func fixedIDs(intent FixedIPIntent) []string {
 	slices.Sort(ids)
 	return ids
 }
-func (s *FixedIPService) open(config json.RawMessage, intent FixedIPIntent) (map[string]routers.FixedIPDriver, func(), error) {
-	drivers := map[string]routers.FixedIPDriver{}
+func (s *FixedIPService) open(config json.RawMessage, intent FixedIPIntent) (map[string]fixedip.Device, func(), error) {
+	drivers := map[string]fixedip.Device{}
 	ids := fixedIDs(intent)
 	close := func() {
 		for i := len(ids) - 1; i >= 0; i-- {
@@ -220,11 +221,11 @@ func (s *FixedIPService) open(config json.RawMessage, intent FixedIPIntent) (map
 			close()
 			return nil, nil, fixedError(routers.KindConflict, err.Error())
 		}
-		var d routers.FixedIPDriver
+		var d fixedip.Device
 		if s.Open != nil {
 			d = s.Open(r)
 		} else {
-			d, _ = routers.NewDriver(r).(routers.FixedIPDriver)
+			d = fixedip.Open(r)
 		}
 		if d == nil || !d.SupportsWrite() {
 			if d != nil {
@@ -237,7 +238,7 @@ func (s *FixedIPService) open(config json.RawMessage, intent FixedIPIntent) (map
 	}
 	return drivers, close, nil
 }
-func (s *FixedIPService) plan(ctx context.Context, config json.RawMessage, intent FixedIPIntent, drivers map[string]routers.FixedIPDriver) ([]FixedIPPlanned, error) {
+func (s *FixedIPService) plan(ctx context.Context, config json.RawMessage, intent FixedIPIntent, drivers map[string]fixedip.Device) ([]FixedIPPlanned, error) {
 	bindings := fixedBindings(config)
 	result := []FixedIPPlanned{}
 	for _, item := range intent.Devices {
@@ -246,7 +247,7 @@ func (s *FixedIPService) plan(ctx context.Context, config json.RawMessage, inten
 			return nil, err
 		}
 		d := drivers[item.RouterID]
-		var op *routers.FixedIPOperation
+		var op *fixedip.Operation
 		if intent.Operation == "add" {
 			seen, err := d.SeenFixedIP(ctx, item.IP, item.MAC)
 			if err != nil {
@@ -266,7 +267,7 @@ func (s *FixedIPService) plan(ctx context.Context, config json.RawMessage, inten
 				if e != nil {
 					return nil, e
 				}
-				state := routers.InspectFixedIP(snapshot, item.IP, item.MAC)
+				state := fixedip.Inspect(snapshot, item.IP, item.MAC)
 				if state.Owned && state.Binding != nil {
 					copy := *state.Binding
 					copy.RouterID = item.RouterID
@@ -338,7 +339,7 @@ func (s *FixedIPService) Preview(ctx context.Context, profile string, intent Fix
 	token, err := s.signer().Sign(raw)
 	return FixedIPPreview{token, actions}, err
 }
-func fixedPublic(b *routers.FixedIPBinding, id string) *routers.FixedIPBinding {
+func fixedPublic(b *fixedip.Binding, id string) *fixedip.Binding {
 	out := *b
 	out.RouterID = id
 	out.Undo = nil
@@ -374,7 +375,7 @@ func fixedRouterEqual(a, b *routers.Router) bool {
 	_ = json.Unmarshal(y, &right)
 	return fixedEqual(left, right)
 }
-func fixedWriteBindings(current json.RawMessage, bindings map[string]*routers.FixedIPBinding) (json.RawMessage, error) {
+func fixedWriteBindings(current json.RawMessage, bindings map[string]*fixedip.Binding) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(current, &fields); err != nil {
 		return nil, err
@@ -503,18 +504,18 @@ func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err 
 	beforeBindings := fixedBindings(config)
 	type finished struct {
 		item    FixedIPDevice
-		driver  routers.FixedIPDriver
-		receipt *routers.FixedIPBinding
+		driver  fixedip.Device
+		receipt *fixedip.Binding
 	}
 	completed := []finished{}
-	results := map[string]*routers.FixedIPBinding{}
+	results := map[string]*fixedip.Binding{}
 	err = func() error {
 		for i, item := range approved.Intent.Devices {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			d := drivers[item.RouterID]
-			var b *routers.FixedIPBinding
+			var b *fixedip.Binding
 			var err error
 			if approved.Intent.Operation == "add" {
 				b, err = d.ApplyFixedIP(ctx, operations[i].Op)
@@ -570,7 +571,7 @@ func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err 
 		return ctx.Err()
 	} // No post-shutdown device I/O or metadata commits.
 	failures := []string{}
-	restored := map[string]*routers.FixedIPBinding{}
+	restored := map[string]*fixedip.Binding{}
 	dynamic := false
 	for i := len(completed) - 1; i >= 0; i-- {
 		step := completed[i]
@@ -578,7 +579,7 @@ func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err 
 		if approved.Intent.Operation == "add" {
 			undoErr = step.driver.RollbackFixedIP(ctx, step.receipt)
 		} else {
-			var b *routers.FixedIPBinding
+			var b *fixedip.Binding
 			b, undoErr = step.driver.RestoreDeletedFixedIP(ctx, step.receipt)
 			if b != nil {
 				restored[step.item.IP] = fixedPublic(b, step.item.RouterID)
@@ -639,9 +640,9 @@ func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err 
 // EnrichFixedIP reads controls with the same reader as discovery. Failed evidence
 // disables reservation actions without hiding healthy client sightings.
 func EnrichFixedIP(ctx context.Context, reader routers.ClientReader, reading *routerdoc.Reading, routerID string) {
-	d, ok := reader.(routers.FixedIPDriver)
+	d, ok := reader.(fixedip.Device)
 	var err error
-	var snapshot *routers.FixedIPSnapshot
+	var snapshot *fixedip.Snapshot
 	if !ok || !d.SupportsWrite() {
 		err = fixedError(routers.KindRouter, messageFixedEnrichWrite)
 	} else {
@@ -649,12 +650,12 @@ func EnrichFixedIP(ctx context.Context, reader routers.ClientReader, reading *ro
 	}
 	for ip, sighting := range reading.Sightings {
 		value := struct {
-			Eligible bool                    `json:"eligible"`
-			Reason   string                  `json:"reason"`
-			Status   string                  `json:"status"`
-			Owned    bool                    `json:"owned"`
-			RouterID string                  `json:"router_id"`
-			Binding  *routers.FixedIPBinding `json:"binding,omitempty"`
+			Eligible bool             `json:"eligible"`
+			Reason   string           `json:"reason"`
+			Status   string           `json:"status"`
+			Owned    bool             `json:"owned"`
+			RouterID string           `json:"router_id"`
+			Binding  *fixedip.Binding `json:"binding,omitempty"`
 		}{Status: "none", RouterID: routerID}
 		if err != nil {
 			value.Reason = messageFixedRead
@@ -663,7 +664,7 @@ func EnrichFixedIP(ctx context.Context, reader routers.ClientReader, reading *ro
 				value.Reason = re.Message
 			}
 		} else {
-			state := routers.InspectFixedIP(snapshot, ip, sighting.MAC)
+			state := fixedip.Inspect(snapshot, ip, sighting.MAC)
 			value.Eligible = state.Eligible
 			value.Reason = state.Reason
 			value.Owned = state.Owned

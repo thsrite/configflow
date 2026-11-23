@@ -8,6 +8,8 @@ import (
 	"configflow/internal/routers/routerfake"
 )
 
+const fixedROSLeases = "/ip/dhcp-server/lease"
+
 var _ FixedIPDriver = (*RouterOS)(nil)
 var _ FixedIPDriver = (*Ikuai)(nil)
 
@@ -102,7 +104,7 @@ func TestR17MissingScopeCannotProveOwnership(t *testing.T) {
 				srv := httptest.NewServer(fake)
 				defer srv.Close()
 				driver = NewRouterOS(srv.URL, "synthetic-user", "synthetic-pass", false)
-				binding = &FixedIPBinding{Vendor: vendor, ID: "*10", IP: "192.0.2.21", MAC: "02:00:00:00:00:21", Comment: "cf-client:Synthetic", Server: fixedPointer("")}
+				binding = &FixedIPBinding{Vendor: vendor, ID: "*10", IP: "192.0.2.21", MAC: "02:00:00:00:00:21", Comment: "cf-client:Synthetic", Server: new("")}
 			} else {
 				seed := r17IKState()
 				seed.Tables["dhcp_static"] = []routerfake.Row{{"id": 10, "enabled": "yes", "tagname": "cfip_synthetic", "interface": "", "mac": "02:00:00:00:00:21", "gateway": "", "dns1": "", "dns2": "", "ip_addr": "192.0.2.21", "comment": "cf-client:Synthetic"}}
@@ -110,7 +112,7 @@ func TestR17MissingScopeCannotProveOwnership(t *testing.T) {
 				srv := httptest.NewServer(fake)
 				defer srv.Close()
 				driver = NewIkuai(srv.URL, routerfake.IkuaiUser, routerfake.IkuaiPassword, false)
-				binding = &FixedIPBinding{Vendor: vendor, ID: "10", IP: "192.0.2.21", MAC: "02:00:00:00:00:21", Comment: "cf-client:Synthetic", Interface: fixedPointer(""), Gateway: fixedPointer("")}
+				binding = &FixedIPBinding{Vendor: vendor, ID: "10", IP: "192.0.2.21", MAC: "02:00:00:00:00:21", Comment: "cf-client:Synthetic", Interface: new(""), Gateway: new("")}
 			}
 			defer driver.Close()
 			if _, err := driver.PreviewDeleteFixedIP(t.Context(), binding); err == nil {

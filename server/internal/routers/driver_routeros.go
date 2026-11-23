@@ -14,6 +14,7 @@ import (
 	"configflow/internal/netipx"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
+	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/routeedit"
 )
@@ -386,4 +387,44 @@ func (d *RouterOS) ReadRoutes(ctx context.Context) ([]*EditableRoute, error) {
 // MutateRoute implements routeedit.RouteEditor for RouterOS.
 func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (*RouteMutation, error) {
 	return routeedit.MutateROSRoute(ctx, d.Client, action, expected, values)
+}
+
+// ReadFixedIP implements fixedip.Device for RouterOS.
+func (d *RouterOS) ReadFixedIP(ctx context.Context) (*FixedIPSnapshot, error) {
+	return fixedip.NewROS(d.Client).ReadFixedIP(ctx)
+}
+
+// PreviewFixedIP implements fixedip.Device for RouterOS.
+func (d *RouterOS) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*FixedIPOperation, error) {
+	return fixedip.NewROS(d.Client).PreviewFixedIP(ctx, ip, mac, name)
+}
+
+// ApplyFixedIP implements fixedip.Device for RouterOS.
+func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (*FixedIPBinding, error) {
+	return fixedip.NewROS(d.Client).ApplyFixedIP(ctx, op)
+}
+
+// RollbackFixedIP implements fixedip.Device for RouterOS.
+func (d *RouterOS) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error {
+	return fixedip.NewROS(d.Client).RollbackFixedIP(ctx, b)
+}
+
+// PreviewDeleteFixedIP implements fixedip.Device for RouterOS.
+func (d *RouterOS) PreviewDeleteFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPOperation, error) {
+	return fixedip.NewROS(d.Client).PreviewDeleteFixedIP(ctx, b)
+}
+
+// DeleteFixedIP implements fixedip.Device for RouterOS.
+func (d *RouterOS) DeleteFixedIP(ctx context.Context, op *FixedIPOperation) (*FixedIPBinding, error) {
+	return fixedip.NewROS(d.Client).DeleteFixedIP(ctx, op)
+}
+
+// RestoreDeletedFixedIP implements fixedip.Device for RouterOS.
+func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPBinding, error) {
+	return fixedip.NewROS(d.Client).RestoreDeletedFixedIP(ctx, b)
+}
+
+// SeenFixedIP implements fixedip.Device for RouterOS.
+func (d *RouterOS) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error) {
+	return fixedip.NewROS(d.Client).SeenFixedIP(ctx, ip, mac)
 }

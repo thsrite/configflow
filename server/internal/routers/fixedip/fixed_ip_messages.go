@@ -1,4 +1,5 @@
-package routers
+// Package fixedip implements ownership-safe RouterOS and iKuai DHCP fixed-IP reservations.
+package fixedip
 
 const (
 	messageFixedIPv4                 = "固定 IP 仅支持单个 IPv4 地址"

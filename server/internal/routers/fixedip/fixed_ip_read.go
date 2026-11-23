@@ -1,4 +1,4 @@
-package routers
+package fixedip
 
 import (
 	"configflow/internal/jsondecode"
@@ -17,11 +17,11 @@ import (
 
 var fixedROSRuntime = device.StringSet(".id", "dynamic", "status", "last-seen", "expires-after", "host-name", "age", "class-id", "active-address", "active-mac-address", "active-client-id", "active-server", "active-agent-circuit-id", "active-agent-remote-id", "agent-circuit-id", "agent-remote-id", "radius", "blocked")
 
-func fixedROSFields(row Row) Row {
+func fixedROSFields(row ros.Row) ros.Row {
 	if row == nil {
 		return nil
 	}
-	out := Row{}
+	out := ros.Row{}
 	for key, value := range row {
 		if !fixedROSRuntime[key] && !strings.HasPrefix(key, ".") {
 			out[key] = value
@@ -44,16 +44,16 @@ func fixedROSID(value string) error {
 	}
 	return nil
 }
-func fixedROSBinding(row Row) (*FixedIPBinding, error) {
+func fixedROSBinding(row ros.Row) (*Binding, error) {
 	if err := fixedROSID(row.ID()); err != nil {
 		return nil, err
 	}
-	return &FixedIPBinding{Vendor: "routeros", ID: row.ID(), IP: routerdoc.IPv4(row.Text("address")), MAC: fixedMAC(row.Text("mac-address")), Comment: row.Text("comment"), Server: fixedPointer(row.Text("server"))}, nil
+	return &Binding{Vendor: "routeros", ID: row.ID(), IP: routerdoc.IPv4(row.Text("address")), MAC: fixedMAC(row.Text("mac-address")), Comment: row.Text("comment"), Server: fixedPointer(row.Text("server"))}, nil
 }
-func fixedROSMatches(row Row, b *FixedIPBinding) bool {
+func fixedROSMatches(row ros.Row, b *Binding) bool {
 	return row != nil && b != nil && b.ID != "" && b.IP != "" && b.MAC != "" && b.Server != nil && *b.Server != "" && row.ID() == b.ID && !row.Flag("dynamic") && routerdoc.IPv4(row.Text("address")) == b.IP && fixedMAC(row.Text("mac-address")) == b.MAC && row.Text("comment") == b.Comment && row.Text("server") == fixedText(b.Server)
 }
-func fixedROSCheck(row Row, b *FixedIPBinding, disabled bool) error {
+func fixedROSCheck(row ros.Row, b *Binding, disabled bool) error {
 	if !fixedROSMatches(row, b) || row.Flag("disabled") != disabled {
 		return device.Error(messageFixedROSCheck)
 	}
@@ -61,12 +61,12 @@ func fixedROSCheck(row Row, b *FixedIPBinding, disabled bool) error {
 }
 
 // ReadFixedIP reads complete RouterOS write evidence, refusing missing or duplicate IDs.
-func (d *RouterOS) ReadFixedIP(ctx context.Context) (*FixedIPSnapshot, error) {
-	out := &FixedIPSnapshot{Vendor: "routeros"}
+func (d rosDevice) ReadFixedIP(ctx context.Context) (*Snapshot, error) {
+	out := &Snapshot{Vendor: "routeros"}
 	var err error
 	for _, item := range []struct {
 		path   string
-		target *[]Row
+		target *[]ros.Row
 	}{{ros.PathDHCPServers, &out.Servers}, {ros.PathDHCPNetworks, &out.Networks}, {"/ip/address", &out.Addresses}, {"/ip/dhcp-server/lease", &out.Leases}} {
 		*item.target, err = d.List(ctx, item.path)
 		if err != nil {
@@ -96,7 +96,7 @@ type fixedROSScope struct {
 	Connected string `json:"connected"`
 }
 
-func fixedROSScopes(s *FixedIPSnapshot, ip string) []fixedROSScope {
+func fixedROSScopes(s *Snapshot, ip string) []fixedROSScope {
 	address, _ := netip.ParseAddr(ip)
 	candidates := []fixedROSScope{}
 	prefix := -1
@@ -131,11 +131,11 @@ func fixedROSScopes(s *FixedIPSnapshot, ip string) []fixedROSScope {
 	return slices.DeleteFunc(candidates, func(v fixedROSScope) bool { p, _ := netip.ParsePrefix(v.Network); return p.Bits() != prefix })
 }
 
-// InspectFixedIP derives reservation controls without changing the snapshot.
-func InspectFixedIP(s *FixedIPSnapshot, ip, mac string) FixedIPState {
-	out := FixedIPState{}
+// Inspect derives reservation controls without changing the snapshot.
+func Inspect(s *Snapshot, ip, mac string) State {
+	out := State{}
 	ip, mac = routerdoc.IPv4(ip), fixedMAC(mac)
-	deny := func(message string) FixedIPState { out.Reason = message; return out }
+	deny := func(message string) State { out.Reason = message; return out }
 	if ip == "" {
 		return deny(messageFixedIPv4)
 	}
@@ -148,7 +148,7 @@ func InspectFixedIP(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 	if s.Vendor == "ikuai" {
 		return inspectFixedIK(s, ip, mac)
 	}
-	sameMAC, sameIP := []Row{}, []Row{}
+	sameMAC, sameIP := []ros.Row{}, []ros.Row{}
 	for _, row := range s.Leases {
 		if row.Flag("dynamic") {
 			continue
@@ -166,7 +166,7 @@ func InspectFixedIP(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 		}
 	}
 	if len(sameMAC) > 0 {
-		exact := []Row{}
+		exact := []ros.Row{}
 		for _, row := range sameMAC {
 			if routerdoc.IPv4(row.Text("address")) == ip {
 				exact = append(exact, row)
@@ -190,7 +190,7 @@ func InspectFixedIP(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 			return deny(messageFixedRouterAddress)
 		}
 	}
-	dynamic := []Row{}
+	dynamic := []ros.Row{}
 	for _, row := range s.Leases {
 		if row.Flag("dynamic") && (routerdoc.IPv4(row.Text("address")) == ip || fixedMAC(row.Text("mac-address")) == mac) {
 			if routerdoc.IPv4(row.Text("address")) != ip || fixedMAC(row.Text("mac-address")) != mac {
@@ -202,7 +202,7 @@ func InspectFixedIP(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 	if len(dynamic) > 1 {
 		return deny(messageFixedDynamicDuplicate)
 	}
-	var lease Row
+	var lease ros.Row
 	if len(dynamic) > 0 {
 		lease = dynamic[0]
 	}
@@ -227,12 +227,12 @@ func InspectFixedIP(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 }
 
 // PreviewFixedIP reads and previews one RouterOS reservation, without I/O writes.
-func (d *RouterOS) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*FixedIPOperation, error) {
+func (d rosDevice) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*Operation, error) {
 	snapshot, err := d.ReadFixedIP(ctx)
 	if err != nil {
 		return nil, err
 	}
-	state := InspectFixedIP(snapshot, ip, mac)
+	state := Inspect(snapshot, ip, mac)
 	if !state.Eligible {
 		return nil, device.Error(state.Reason)
 	}
@@ -243,7 +243,7 @@ func (d *RouterOS) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*F
 	}
 	var scope fixedROSScope
 	_ = jsondecode.Unmarshal(state.Scope, &scope)
-	op := &FixedIPOperation{Kind: "add", IP: ip, MAC: mac, Name: fixedPointer(name), Comment: fixedIPPrefix + name, Server: fixedPointer(scope.Server), Scope: state.Scope, ID: fixedPointer(""), Summary: fmt.Sprintf(messageFixedROSAddSummary, scope.Server, ip, mac)}
+	op := &Operation{Kind: "add", IP: ip, MAC: mac, Name: fixedPointer(name), Comment: fixedIPPrefix + name, Server: fixedPointer(scope.Server), Scope: state.Scope, ID: fixedPointer(""), Summary: fmt.Sprintf(messageFixedROSAddSummary, scope.Server, ip, mac)}
 	if state.Lease != nil {
 		op.Kind = "make_static"
 		op.ID = fixedPointer(state.Lease.ID())
@@ -254,7 +254,7 @@ func (d *RouterOS) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*F
 }
 
 // SeenFixedIP rechecks the discovery MAC against fresh RouterOS lease/ARP evidence.
-func (d *RouterOS) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error) {
+func (d rosDevice) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error) {
 	for _, path := range []string{"/ip/dhcp-server/lease", "/ip/arp"} {
 		rows, err := d.List(ctx, path)
 		if err != nil {

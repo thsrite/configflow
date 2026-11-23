@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/routeedit"
 )
@@ -97,4 +98,44 @@ func (d *Ikuai) ReadRoutes(ctx context.Context) ([]*EditableRoute, error) {
 // MutateRoute implements routeedit.RouteEditor for iKuai.
 func (d *Ikuai) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (*RouteMutation, error) {
 	return routeedit.MutateIkuaiRoute(ctx, d.Client, action, expected, values)
+}
+
+// ReadFixedIP implements fixedip.Device for iKuai.
+func (d *Ikuai) ReadFixedIP(ctx context.Context) (*FixedIPSnapshot, error) {
+	return fixedip.NewIkuai(d.Client).ReadFixedIP(ctx)
+}
+
+// PreviewFixedIP implements fixedip.Device for iKuai.
+func (d *Ikuai) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*FixedIPOperation, error) {
+	return fixedip.NewIkuai(d.Client).PreviewFixedIP(ctx, ip, mac, name)
+}
+
+// ApplyFixedIP implements fixedip.Device for iKuai.
+func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (*FixedIPBinding, error) {
+	return fixedip.NewIkuai(d.Client).ApplyFixedIP(ctx, op)
+}
+
+// RollbackFixedIP implements fixedip.Device for iKuai.
+func (d *Ikuai) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error {
+	return fixedip.NewIkuai(d.Client).RollbackFixedIP(ctx, b)
+}
+
+// PreviewDeleteFixedIP implements fixedip.Device for iKuai.
+func (d *Ikuai) PreviewDeleteFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPOperation, error) {
+	return fixedip.NewIkuai(d.Client).PreviewDeleteFixedIP(ctx, b)
+}
+
+// DeleteFixedIP implements fixedip.Device for iKuai.
+func (d *Ikuai) DeleteFixedIP(ctx context.Context, op *FixedIPOperation) (*FixedIPBinding, error) {
+	return fixedip.NewIkuai(d.Client).DeleteFixedIP(ctx, op)
+}
+
+// RestoreDeletedFixedIP implements fixedip.Device for iKuai.
+func (d *Ikuai) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPBinding, error) {
+	return fixedip.NewIkuai(d.Client).RestoreDeletedFixedIP(ctx, b)
+}
+
+// SeenFixedIP implements fixedip.Device for iKuai.
+func (d *Ikuai) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error) {
+	return fixedip.NewIkuai(d.Client).SeenFixedIP(ctx, ip, mac)
 }

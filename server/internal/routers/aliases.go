@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
+	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/routeedit"
@@ -114,6 +115,13 @@ type (
 	DNSGuardReport   = dnsguard.Report
 	DNSGuardPlan     = dnsguard.Plan
 	DNSGuardCheck    = dnsguard.Check
+
+	FixedIPBinding   = fixedip.Binding
+	FixedIPUndo      = fixedip.Undo
+	FixedIPOperation = fixedip.Operation
+	FixedIPSnapshot  = fixedip.Snapshot
+	FixedIPState     = fixedip.State
+	FixedIPDriver    = fixedip.Device
 )
 
 const (

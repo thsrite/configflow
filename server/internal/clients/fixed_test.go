@@ -2,6 +2,7 @@ package clients
 
 import (
 	"bytes"
+	"configflow/internal/routers/fixedip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -181,14 +182,14 @@ func TestR17RollbackAfterConcurrentDraftEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := s.Open
-	s.Open = func(r *routers.Router) routers.FixedIPDriver {
-		var d routers.FixedIPDriver
+	s.Open = func(r *routers.Router) fixedip.Device {
+		var d fixedip.Device
 		if original != nil {
 			d = original(r)
 		} else {
-			d = routers.NewDriver(r).(routers.FixedIPDriver)
+			d = fixedip.Open(r)
 		}
-		return &fixedAfterWrite{FixedIPDriver: d, after: func() {
+		return &fixedAfterWrite{Device: d, after: func() {
 			_, err := s.Repo.UpdateProfile(t.Context(), "default", func(_ context.Context, current *model.Profile) error {
 				return current.SetJSON("device_notes", json.RawMessage(`{"192.0.2.21":"outside edit"}`))
 			})
@@ -210,12 +211,12 @@ func TestR17RollbackAfterConcurrentDraftEdit(t *testing.T) {
 }
 
 type fixedAfterWrite struct {
-	routers.FixedIPDriver
+	fixedip.Device
 	after func()
 }
 
-func (d *fixedAfterWrite) ApplyFixedIP(ctx context.Context, op *routers.FixedIPOperation) (*routers.FixedIPBinding, error) {
-	value, err := d.FixedIPDriver.ApplyFixedIP(ctx, op)
+func (d *fixedAfterWrite) ApplyFixedIP(ctx context.Context, op *fixedip.Operation) (*fixedip.Binding, error) {
+	value, err := d.Device.ApplyFixedIP(ctx, op)
 	if err == nil {
 		d.after()
 	}
@@ -285,7 +286,7 @@ func TestR17RuntimeDuringDeviceIO(t *testing.T) {
 		f.ServeHTTP(w, r)
 	}))
 	defer blocking.Close()
-	s.Open = func(r *routers.Router) routers.FixedIPDriver {
+	s.Open = func(r *routers.Router) fixedip.Device {
 		return routers.NewRouterOS(blocking.URL, r.Username, r.Password, r.VerifyTLS)
 	}
 	rt := testRuntime(t)
@@ -329,8 +330,8 @@ func TestR17RuntimeAfterDeviceWrite(t *testing.T) {
 			ctx := rt.BindRequest(request)
 			reached := false
 			callsAtStop := 0
-			s.Open = func(r *routers.Router) routers.FixedIPDriver {
-				return &fixedAfterWrite{FixedIPDriver: routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS), after: func() {
+			s.Open = func(r *routers.Router) fixedip.Device {
+				return &fixedAfterWrite{Device: routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS), after: func() {
 					reached = true
 					if mode == "disconnect" {
 						cancel()
@@ -373,8 +374,8 @@ func TestR17DeleteRollbackRemapsMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Open = func(r *routers.Router) routers.FixedIPDriver {
-		return &fixedAfterDelete{FixedIPDriver: routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS), after: func() {
+	s.Open = func(r *routers.Router) fixedip.Device {
+		return &fixedAfterDelete{Device: routers.NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS), after: func() {
 			_, err := s.Repo.UpdateProfile(t.Context(), "default", func(_ context.Context, current *model.Profile) error {
 				current.DeviceNotes.Set("192.0.2.21", "outside edit")
 				return nil
@@ -395,12 +396,12 @@ func TestR17DeleteRollbackRemapsMetadata(t *testing.T) {
 }
 
 type fixedAfterDelete struct {
-	routers.FixedIPDriver
+	fixedip.Device
 	after func()
 }
 
-func (d *fixedAfterDelete) DeleteFixedIP(ctx context.Context, op *routers.FixedIPOperation) (*routers.FixedIPBinding, error) {
-	receipt, err := d.FixedIPDriver.DeleteFixedIP(ctx, op)
+func (d *fixedAfterDelete) DeleteFixedIP(ctx context.Context, op *fixedip.Operation) (*fixedip.Binding, error) {
+	receipt, err := d.Device.DeleteFixedIP(ctx, op)
 	if err == nil {
 		d.after()
 	}

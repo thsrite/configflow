@@ -1,9 +1,10 @@
-package routers
+package fixedip
 
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,7 +18,7 @@ import (
 	"configflow/internal/routerdoc"
 )
 
-func fixedIKFields(row ikuai.Row) (Row, error) {
+func fixedIKFields(row ikuai.Row) (ros.Row, error) {
 	if row == nil {
 		return nil, device.Error(messageFixedIKFields)
 	}
@@ -29,7 +30,7 @@ func fixedIKFields(row ikuai.Row) (Row, error) {
 	if id, ok := ikuai.JSONInt(row["id"]); !ok || id < 1 {
 		return nil, device.Error(messageFixedIKFields)
 	}
-	result := Row{}
+	result := ros.Row{}
 	for _, key := range ikuai.IkuaiDHCPStaticFields {
 		if key == "id" {
 			continue
@@ -46,7 +47,7 @@ func fixedIKFields(row ikuai.Row) (Row, error) {
 	result["mac"] = fixedMAC(result.Text("mac"))
 	return result, nil
 }
-func (d *Ikuai) fixedStatic(ctx context.Context) ([]ikuai.Row, error) {
+func (d ikuaiDevice) fixedStatic(ctx context.Context) ([]ikuai.Row, error) {
 	rows, err := d.ListAll(ctx, "dhcp_static", "static_", true, "")
 	if err != nil {
 		return nil, err
@@ -65,7 +66,7 @@ func (d *Ikuai) fixedStatic(ctx context.Context) ([]ikuai.Row, error) {
 }
 
 // ReadFixedIP reads the full static_ allocation view, never the live lease view.
-func (d *Ikuai) ReadFixedIP(ctx context.Context) (*FixedIPSnapshot, error) {
+func (d ikuaiDevice) ReadFixedIP(ctx context.Context) (*Snapshot, error) {
 	servers, err := d.ListAll(ctx, "dhcp_server", "", false, "")
 	if err != nil {
 		return nil, err
@@ -81,7 +82,7 @@ func (d *Ikuai) ReadFixedIP(ctx context.Context) (*FixedIPSnapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &FixedIPSnapshot{Vendor: "ikuai", ikuaiServers: servers, ikuaiStatic: static, ikuaiLeases: leases}, nil
+	return &Snapshot{Vendor: "ikuai", ikuaiServers: servers, ikuaiStatic: static, ikuaiLeases: leases}, nil
 }
 
 type fixedIKScope struct {
@@ -93,7 +94,7 @@ type fixedIKScope struct {
 	Netmask   string          `json:"netmask"`
 }
 
-func fixedIKScopes(s *FixedIPSnapshot, ip string) []fixedIKScope {
+func fixedIKScopes(s *Snapshot, ip string) []fixedIKScope {
 	address, _ := netip.ParseAddr(ip)
 	out := []fixedIKScope{}
 	for _, row := range s.ikuaiServers {
@@ -117,15 +118,15 @@ func fixedIKScopes(s *FixedIPSnapshot, ip string) []fixedIKScope {
 	}
 	return out
 }
-func fixedIKBinding(row ikuai.Row) *FixedIPBinding {
-	return &FixedIPBinding{Vendor: "ikuai", ID: fixedIKIDText(row["id"]), IP: row.Text("ip_addr"), MAC: fixedMAC(row.Text("mac")), Comment: row.Text("comment"), Interface: fixedPointer(row.Text("interface")), Gateway: fixedPointer(row.Text("gateway"))}
+func fixedIKBinding(row ikuai.Row) *Binding {
+	return &Binding{Vendor: "ikuai", ID: fixedIKIDText(row["id"]), IP: row.Text("ip_addr"), MAC: fixedMAC(row.Text("mac")), Comment: row.Text("comment"), Interface: fixedPointer(row.Text("interface")), Gateway: fixedPointer(row.Text("gateway"))}
 }
-func fixedIKMatches(row ikuai.Row, b *FixedIPBinding) bool {
-	return row != nil && b != nil && b.ID != "" && b.IP != "" && b.MAC != "" && fixedText(b.Interface) != "" && fixedText(b.Gateway) != "" && device.JSONEqual(fixedIKBinding(row), &FixedIPBinding{Vendor: b.Vendor, ID: b.ID, IP: b.IP, MAC: b.MAC, Comment: b.Comment, Interface: b.Interface, Gateway: b.Gateway})
+func fixedIKMatches(row ikuai.Row, b *Binding) bool {
+	return row != nil && b != nil && b.ID != "" && b.IP != "" && b.MAC != "" && fixedText(b.Interface) != "" && fixedText(b.Gateway) != "" && device.JSONEqual(fixedIKBinding(row), &Binding{Vendor: b.Vendor, ID: b.ID, IP: b.IP, MAC: b.MAC, Comment: b.Comment, Interface: b.Interface, Gateway: b.Gateway})
 }
-func inspectFixedIK(s *FixedIPSnapshot, ip, mac string) FixedIPState {
-	out := FixedIPState{}
-	deny := func(message string) FixedIPState { out.Reason = message; return out }
+func inspectFixedIK(s *Snapshot, ip, mac string) State {
+	out := State{}
+	deny := func(message string) State { out.Reason = message; return out }
 	sameMAC := []ikuai.Row{}
 	for _, row := range s.ikuaiStatic {
 		if routerdoc.IPv4(row.Text("ip_addr")) == ip && fixedMAC(row.Text("mac")) != mac {
@@ -175,14 +176,14 @@ func inspectFixedIK(s *FixedIPSnapshot, ip, mac string) FixedIPState {
 }
 
 // PreviewFixedIP previews an iKuai reservation with intentionally empty DNS.
-func (d *Ikuai) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*FixedIPOperation, error) {
+func (d ikuaiDevice) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*Operation, error) {
 	snapshot, err := d.ReadFixedIP(ctx)
 	if err != nil {
 		return nil, err
 	}
-	state := InspectFixedIP(snapshot, ip, mac)
+	state := Inspect(snapshot, ip, mac)
 	if !state.Eligible {
-		return nil, device.KindError(KindConflict, state.Reason)
+		return nil, device.KindError(device.KindConflict, state.Reason)
 	}
 	ip, mac = routerdoc.IPv4(ip), fixedMAC(mac)
 	name = strings.TrimSpace(device.OrText(name, ip))
@@ -191,11 +192,11 @@ func (d *Ikuai) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*Fixe
 	}
 	var scope fixedIKScope
 	_ = jsondecode.Unmarshal(state.Scope, &scope)
-	return &FixedIPOperation{Kind: "add", IP: ip, MAC: mac, Name: fixedPointer(name), Scope: state.Scope, Comment: fixedIPPrefix + name, Summary: fmt.Sprintf(messageFixedIKAddSummary, scope.Interface, ip, mac)}, nil
+	return &Operation{Kind: "add", IP: ip, MAC: mac, Name: fixedPointer(name), Scope: state.Scope, Comment: fixedIPPrefix + name, Summary: fmt.Sprintf(messageFixedIKAddSummary, scope.Interface, ip, mac)}, nil
 }
 
 // SeenFixedIP verifies the discovery identity against the iKuai device tables.
-func (d *Ikuai) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error) {
+func (d ikuaiDevice) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error) {
 	for _, path := range []string{"dhcp_lease", "monitor_lanip"} {
 		rows, err := d.ListAll(ctx, path, "", false, "")
 		if err != nil {

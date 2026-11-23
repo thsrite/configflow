@@ -1,4 +1,4 @@
-package routers
+package fixedip
 
 import (
 	"configflow/internal/routers/device"
@@ -14,12 +14,12 @@ import (
 
 const fixedROSLeases = "/ip/dhcp-server/lease"
 
-func (d *RouterOS) fixedLease(ctx context.Context, id string) (Row, error) {
+func (d rosDevice) fixedLease(ctx context.Context, id string) (ros.Row, error) {
 	if err := fixedROSID(id); err != nil {
 		return nil, err
 	}
 	value, err := d.Get(ctx, fixedROSLeases+"/"+ros.EscapePathID(id), ros.Timeout)
-	if device.RouterErrorKind(err) == KindMissingResource {
+	if device.RouterErrorKind(err) == device.KindMissingResource {
 		return nil, nil
 	}
 	if err != nil {
@@ -31,7 +31,7 @@ func (d *RouterOS) fixedLease(ctx context.Context, id string) (Row, error) {
 	}
 	return row, nil
 }
-func (d *RouterOS) removeFixedLease(ctx context.Context, b *FixedIPBinding, expected Row) error {
+func (d rosDevice) removeFixedLease(ctx context.Context, b *Binding, expected ros.Row) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ func (d *RouterOS) removeFixedLease(ctx context.Context, b *FixedIPBinding, expe
 		return device.Error(messageFixedROSExternal)
 	}
 	_, failure := d.Request(ctx, "DELETE", fixedROSLeases+"/"+ros.EscapePathID(b.ID), nil, ros.Timeout)
-	if failure != nil && device.RouterErrorKind(failure) != KindUncertainWrite {
+	if failure != nil && device.RouterErrorKind(failure) != device.KindUncertainWrite {
 		return failure
 	}
 	remaining, readError := d.fixedLease(ctx, b.ID)
@@ -70,7 +70,7 @@ func (d *RouterOS) removeFixedLease(ctx context.Context, b *FixedIPBinding, expe
 
 // ApplyFixedIP detaches a client disconnect, rechecks the preview, and retains
 // exact proof for compensation. Runtime shutdown still cancels every device I/O.
-func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (binding *FixedIPBinding, err error) {
+func (d rosDevice) ApplyFixedIP(ctx context.Context, op *Operation) (binding *Binding, err error) {
 	ctx = lifecycle.Detach(ctx)
 	if err = ctx.Err(); err != nil {
 		return nil, err
@@ -92,8 +92,8 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 	}
 	expected.Comment += ":" + nonce
 	original := maps.Clone(op.Expected)
-	var acquired *FixedIPBinding
-	var acquiredFields Row
+	var acquired *Binding
+	var acquiredFields ros.Row
 	conversionPending := false
 	defer func() {
 		if err == nil || ctx.Err() != nil {
@@ -120,7 +120,7 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 				if current.Text("address") != expected.IP || fixedMAC(current.Text("mac-address")) != expected.MAC || current.Text("server") != fixedText(expected.Server) || (current.Text("comment") != comment && current.Text("comment") != expected.Comment) || !ros.SameRow(fixedROSFields(current), fields) {
 					e = device.Error(messageFixedRollbackChanged)
 				} else {
-					var b *FixedIPBinding
+					var b *Binding
 					b, e = fixedROSBinding(current)
 					if e == nil {
 						e = d.removeFixedLease(ctx, b, fields)
@@ -136,9 +136,9 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 		}
 	}()
 	if op.Kind == "make_static" {
-		_, err = d.Request(ctx, "POST", fixedROSLeases+"/make-static", Row{".id": fixedText(op.ID)}, ros.Timeout)
+		_, err = d.Request(ctx, "POST", fixedROSLeases+"/make-static", ros.Row{".id": fixedText(op.ID)}, ros.Timeout)
 		if err != nil {
-			if device.RouterErrorKind(err) == KindUncertainWrite {
+			if device.RouterErrorKind(err) == device.KindUncertainWrite {
 				conversionPending = true
 				row, e := d.fixedLease(ctx, fixedText(op.ID))
 				if e != nil {
@@ -174,7 +174,7 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 			acquired = nil
 			return nil, device.RollbackError(messageFixedROSConversionTarget)
 		}
-		if _, err = d.Request(ctx, "PATCH", fixedROSLeases+"/"+ros.EscapePathID(expected.ID), Row{"comment": expected.Comment}, ros.Timeout); err != nil {
+		if _, err = d.Request(ctx, "PATCH", fixedROSLeases+"/"+ros.EscapePathID(expected.ID), ros.Row{"comment": expected.Comment}, ros.Timeout); err != nil {
 			return nil, err
 		}
 	} else {
@@ -183,7 +183,7 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 			return nil, e
 		}
 		known := ros.RowIDs(rows)
-		values := Row{"mac-address": op.MAC, "address": op.IP, "server": fixedText(op.Server), "comment": expected.Comment, "disabled": "false"}
+		values := ros.Row{"mac-address": op.MAC, "address": op.IP, "server": fixedText(op.Server), "comment": expected.Comment, "disabled": "false"}
 		var response json.RawMessage
 		response, err = d.Request(ctx, "PUT", fixedROSLeases, values, ros.Timeout)
 		row := ros.AsRow(response)
@@ -192,10 +192,10 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 			newID = row.ID()
 		}
 		if err == nil && (!ros.IDPattern.MatchString(newID) || known[newID]) {
-			err = device.KindError(KindUncertainWrite, messageFixedROSNewID)
+			err = device.KindError(device.KindUncertainWrite, messageFixedROSNewID)
 		}
 		if err != nil {
-			if device.RouterErrorKind(err) != KindUncertainWrite {
+			if device.RouterErrorKind(err) != device.KindUncertainWrite {
 				return nil, err
 			}
 			cause := err
@@ -203,7 +203,7 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 			if e != nil {
 				return nil, device.RollbackError(fmt.Sprintf(messageFixedKeepScene, cause, e))
 			}
-			matches := []Row{}
+			matches := []ros.Row{}
 			for _, r := range rows {
 				candidate := *expected
 				candidate.ID = r.ID()
@@ -243,12 +243,12 @@ func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (bind
 	if err = fixedROSCheck(row, expected, false); err != nil {
 		return nil, err
 	}
-	expected.Undo = &FixedIPUndo{Kind: op.Kind, Expected: fixedROSFields(row), Original: original}
+	expected.Undo = &Undo{Kind: op.Kind, Expected: fixedROSFields(row), Original: original}
 	return expected, nil
 }
 
 // RollbackFixedIP removes only the proven reservation created by this job.
-func (d *RouterOS) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error {
+func (d rosDevice) RollbackFixedIP(ctx context.Context, b *Binding) error {
 	ctx = lifecycle.Detach(ctx)
 	if b == nil || !strings.HasPrefix(b.Comment, fixedIPPrefix) || b.Undo == nil || b.Undo.Expected == nil {
 		return device.Error(messageFixedROSProof)
@@ -257,7 +257,7 @@ func (d *RouterOS) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error
 }
 
 // PreviewDeleteFixedIP captures the complete stable before-image for deletion.
-func (d *RouterOS) PreviewDeleteFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPOperation, error) {
+func (d rosDevice) PreviewDeleteFixedIP(ctx context.Context, b *Binding) (*Operation, error) {
 	if b == nil || b.Vendor != "routeros" || !strings.HasPrefix(b.Comment, fixedIPPrefix) {
 		return nil, device.Error(messageFixedROSDeleteOwn)
 	}
@@ -272,7 +272,7 @@ func (d *RouterOS) PreviewDeleteFixedIP(ctx context.Context, b *FixedIPBinding) 
 }
 
 // DeleteFixedIP re-proves the approved lease and reconciles lost delete replies.
-func (d *RouterOS) DeleteFixedIP(ctx context.Context, op *FixedIPOperation) (*FixedIPBinding, error) {
+func (d rosDevice) DeleteFixedIP(ctx context.Context, op *Operation) (*Binding, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -291,12 +291,12 @@ func (d *RouterOS) DeleteFixedIP(ctx context.Context, op *FixedIPOperation) (*Fi
 	if err = d.removeFixedLease(ctx, b, op.Expected); err != nil {
 		return nil, err
 	}
-	b.Undo = &FixedIPUndo{Kind: "delete", Expected: maps.Clone(op.Expected)}
+	b.Undo = &Undo{Kind: "delete", Expected: maps.Clone(op.Expected)}
 	return b, nil
 }
 
 // RestoreDeletedFixedIP refuses ID reuse and conflicting IP/MAC allocations.
-func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPBinding, error) {
+func (d rosDevice) RestoreDeletedFixedIP(ctx context.Context, b *Binding) (*Binding, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err

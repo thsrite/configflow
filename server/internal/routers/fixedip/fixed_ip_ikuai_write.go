@@ -1,4 +1,4 @@
-package routers
+package fixedip
 
 import (
 	"configflow/internal/jsondecode"
@@ -13,7 +13,7 @@ import (
 	"configflow/internal/lifecycle"
 )
 
-func (d *Ikuai) fixedAllocation(ctx context.Context, id string) (ikuai.Row, error) {
+func (d ikuaiDevice) fixedAllocation(ctx context.Context, id string) (ikuai.Row, error) {
 	rows, err := d.fixedStatic(ctx)
 	if err != nil {
 		return nil, err
@@ -25,14 +25,14 @@ func (d *Ikuai) fixedAllocation(ctx context.Context, id string) (ikuai.Row, erro
 	}
 	return nil, nil
 }
-func fixedIKExpected(payload Row) Row {
+func fixedIKExpected(payload ros.Row) ros.Row {
 	out := maps.Clone(payload)
 	for _, key := range []string{"id", "termname", "ip_addr_int", "hostname"} {
 		delete(out, key)
 	}
 	return out
 }
-func (d *Ikuai) fixedNewAllocation(ctx context.Context, known map[string]bool, payload Row) (ikuai.Row, error) {
+func (d ikuaiDevice) fixedNewAllocation(ctx context.Context, known map[string]bool, payload ros.Row) (ikuai.Row, error) {
 	rows, err := d.fixedStatic(ctx)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func (d *Ikuai) fixedNewAllocation(ctx context.Context, known map[string]bool, p
 	}
 	return matches[0], nil
 }
-func (d *Ikuai) removeFixedAllocation(ctx context.Context, b *FixedIPBinding, expected Row) error {
+func (d ikuaiDevice) removeFixedAllocation(ctx context.Context, b *Binding, expected ros.Row) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -71,10 +71,10 @@ func (d *Ikuai) removeFixedAllocation(ctx context.Context, b *FixedIPBinding, ex
 		return err
 	}
 	if !strings.HasPrefix(b.Comment, fixedIPPrefix) || !fixedIKMatches(current, b) || !ros.SameRow(fields, expected) {
-		return device.KindError(KindConflict, messageFixedIKExternal)
+		return device.KindError(device.KindConflict, messageFixedIKExternal)
 	}
 	if _, err = d.WriteForm(ctx, "dhcp_static", "del", ikuai.Row{"id": b.ID}, 0); err != nil {
-		if device.RouterErrorKind(err) == KindRejected {
+		if device.RouterErrorKind(err) == device.KindRejected {
 			return err
 		}
 		remaining, readErr := d.fixedAllocation(ctx, b.ID)
@@ -98,7 +98,7 @@ func (d *Ikuai) removeFixedAllocation(ctx context.Context, b *FixedIPBinding, ex
 
 // ApplyFixedIP uses the firmware's unique short tag and full static_ view to
 // prove a new allocation, including the intentionally inherited DNS settings.
-func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (binding *FixedIPBinding, err error) {
+func (d ikuaiDevice) ApplyFixedIP(ctx context.Context, op *Operation) (binding *Binding, err error) {
 	ctx = lifecycle.Detach(ctx)
 	if err = ctx.Err(); err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (binding
 		return nil, err
 	}
 	if !device.JSONEqual(preview, op) {
-		return nil, device.KindError(KindConflict, messageFixedIKPreview)
+		return nil, device.KindError(device.KindConflict, messageFixedIKPreview)
 	}
 	rows, err := d.fixedStatic(ctx)
 	if err != nil {
@@ -129,10 +129,10 @@ func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (binding
 	if err != nil {
 		return nil, err
 	}
-	payload := Row{"interface": scope.Interface, "gateway": scope.Gateway, "ip_addr": op.IP, "mac": op.MAC, "dns1": "", "dns2": "", "enabled": "yes", "hostname": "", "comment": op.Comment, "tagname": "cfip_" + nonce[:10]}
+	payload := ros.Row{"interface": scope.Interface, "gateway": scope.Gateway, "ip_addr": op.IP, "mac": op.MAC, "dns1": "", "dns2": "", "enabled": "yes", "hostname": "", "comment": op.Comment, "tagname": "cfip_" + nonce[:10]}
 	var acquired ikuai.Row
 	defer func() {
-		if err == nil || ctx.Err() != nil || device.RouterErrorKind(err) == KindRejected {
+		if err == nil || ctx.Err() != nil || device.RouterErrorKind(err) == device.KindRejected {
 			return
 		}
 		var e error
@@ -182,12 +182,12 @@ func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (binding
 		return nil, device.Error(messageFixedIKIDCheck)
 	}
 	binding = fixedIKBinding(actual)
-	binding.Undo = &FixedIPUndo{Expected: fixedIKExpected(payload)}
+	binding.Undo = &Undo{Expected: fixedIKExpected(payload)}
 	return binding, nil
 }
 
 // RollbackFixedIP deletes only the unchanged allocation proved by this job.
-func (d *Ikuai) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error {
+func (d ikuaiDevice) RollbackFixedIP(ctx context.Context, b *Binding) error {
 	ctx = lifecycle.Detach(ctx)
 	if b == nil || b.Undo == nil || b.Undo.Expected == nil {
 		return device.Error(messageFixedIKProof)
@@ -196,16 +196,16 @@ func (d *Ikuai) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error {
 }
 
 // PreviewDeleteFixedIP never adopts a foreign or changed allocation.
-func (d *Ikuai) PreviewDeleteFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPOperation, error) {
+func (d ikuaiDevice) PreviewDeleteFixedIP(ctx context.Context, b *Binding) (*Operation, error) {
 	if b == nil || b.Vendor != "ikuai" || !strings.HasPrefix(b.Comment, fixedIPPrefix) {
-		return nil, device.KindError(KindConflict, messageFixedIKDeleteOwn)
+		return nil, device.KindError(device.KindConflict, messageFixedIKDeleteOwn)
 	}
 	current, err := d.fixedAllocation(ctx, b.ID)
 	if err != nil {
 		return nil, err
 	}
 	if !fixedIKMatches(current, b) {
-		return nil, device.KindError(KindConflict, messageFixedIKDeleteChanged)
+		return nil, device.KindError(device.KindConflict, messageFixedIKDeleteChanged)
 	}
 	expected, err := fixedIKFields(current)
 	if err != nil {
@@ -215,7 +215,7 @@ func (d *Ikuai) PreviewDeleteFixedIP(ctx context.Context, b *FixedIPBinding) (*F
 }
 
 // DeleteFixedIP reconciles an uncertain delete before allowing metadata removal.
-func (d *Ikuai) DeleteFixedIP(ctx context.Context, op *FixedIPOperation) (*FixedIPBinding, error) {
+func (d ikuaiDevice) DeleteFixedIP(ctx context.Context, op *Operation) (*Binding, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -229,10 +229,10 @@ func (d *Ikuai) DeleteFixedIP(ctx context.Context, op *FixedIPOperation) (*Fixed
 		return nil, err
 	}
 	if !device.JSONEqual(latest, op) {
-		return nil, device.KindError(KindConflict, messageFixedIKDeletePreview)
+		return nil, device.KindError(device.KindConflict, messageFixedIKDeletePreview)
 	}
 	if err = d.removeFixedAllocation(ctx, binding, op.Expected); err != nil {
-		if device.RouterErrorKind(err) == KindRejected || ctx.Err() != nil {
+		if device.RouterErrorKind(err) == device.KindRejected || ctx.Err() != nil {
 			return nil, err
 		}
 		remaining, readErr := d.fixedAllocation(ctx, binding.ID)
@@ -243,12 +243,12 @@ func (d *Ikuai) DeleteFixedIP(ctx context.Context, op *FixedIPOperation) (*Fixed
 			return nil, err
 		}
 	}
-	binding.Undo = &FixedIPUndo{Kind: "delete", Expected: maps.Clone(op.Expected)}
+	binding.Undo = &Undo{Kind: "delete", Expected: maps.Clone(op.Expected)}
 	return binding, nil
 }
 
 // RestoreDeletedFixedIP rejects reused IDs and competing IP, MAC or tag claims.
-func (d *Ikuai) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPBinding, error) {
+func (d ikuaiDevice) RestoreDeletedFixedIP(ctx context.Context, b *Binding) (*Binding, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -283,7 +283,7 @@ func (d *Ikuai) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*
 	payload := maps.Clone(b.Undo.Expected)
 	payload["hostname"] = ""
 	_, err = d.WriteForm(ctx, "dhcp_static", "add", payload, 0)
-	if device.RouterErrorKind(err) == KindRejected || ctx.Err() != nil {
+	if device.RouterErrorKind(err) == device.KindRejected || ctx.Err() != nil {
 		return nil, err
 	}
 	restored, readErr := d.fixedNewAllocation(ctx, known, b.Undo.Expected)
