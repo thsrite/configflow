@@ -180,31 +180,21 @@ func publish(ctx context.Context, agg model.Aggregation, config *model.Config, m
 func Wire() { provider.SetAggregationRenderer(RenderProvider) }
 
 // LoadCatalog reads an owned shared snapshot for SaveCatalog.
-func LoadCatalog(ctx context.Context) (json.RawMessage, error) {
+func LoadCatalog(ctx context.Context) (*model.Shared, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	document, err := repo.SharedConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(document)
+	return repo.SharedConfig(ctx)
 }
 
-// SaveCatalog commits an edit against its request-scoped repository baseline.
-func SaveCatalog(ctx context.Context, raw json.RawMessage) error {
+// SaveCatalog commits an edited catalog against its request-scoped repository baseline.
+func SaveCatalog(ctx context.Context, document *model.Shared) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	// The edited catalog is input: a member of the wrong JSON type is refused
-	// with Python's validation message (O18 T1c).
-	var document model.Shared
-	if err := model.DecodeInput("shared", raw, &document); err != nil {
-		return repo.InputError(err)
-	}
-	return repo.SaveSharedRecord(ctx, &document, nil)
+	return repo.SaveSharedRecord(ctx, document, nil)
 }
 
 // AppendCatalog adds an aggregation in one shared repository transaction.

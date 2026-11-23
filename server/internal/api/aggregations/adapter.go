@@ -13,9 +13,7 @@ import (
 	generation "configflow/internal/aggregations"
 	"configflow/internal/auth"
 	"configflow/internal/convert"
-	"configflow/internal/health/check"
 	"configflow/internal/httpx"
-	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
@@ -32,105 +30,68 @@ import (
 
 type proxy = generation.Proxy
 
-func stored(value any, target any) error {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	return jsondecode.Unmarshal(raw, target)
-}
-func sharedConfig(ctx context.Context) (record, error) {
-	raw, err := generation.LoadCatalog(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var out record
-	err = json.Unmarshal(raw, &out)
-	return out, err
-}
-func saveShared(ctx context.Context, document record) error {
-	raw, err := json.Marshal(document)
-	if err != nil {
-		return err
-	}
-	return generation.SaveCatalog(ctx, raw)
-}
-func appendAggregation(ctx context.Context, body record) error {
-	raw, err := json.Marshal(body)
+func appendAggregation(ctx context.Context, body *aggregationFields) error {
+	raw, err := body.MarshalJSON()
 	if err != nil {
 		return err
 	}
 	return generation.AppendCatalog(ctx, raw)
 }
-func initialize(body record) error {
-	var fields model.Fields
-	if err := stored(body, &fields); err != nil {
+
+// replaceAggregation stores the catalog with items[index] replaced by an
+// aggregation as sent.
+func replaceAggregation(ctx context.Context, shared *model.Shared, index int, body *aggregationFields) error {
+	list := make([]json.RawMessage, len(shared.Aggregations))
+	for i, item := range shared.Aggregations {
+		data, err := model.Marshal(item)
+		if i == index {
+			data, err = body.MarshalJSON()
+		}
+		if err != nil {
+			return err
+		}
+		list[i] = data
+	}
+	raw, err := json.Marshal(list)
+	if err != nil {
 		return err
 	}
-	if err := check.InitProviderHealth(&fields); err != nil {
-		return err
+	var decoded model.Shared
+	if err := decoded.SetJSON("subscription_aggregations", raw); err != nil {
+		return repo.InputError(err)
 	}
-	return stored(fields, &body)
+	shared.Aggregations = decoded.Aggregations
+	return generation.SaveCatalog(ctx, shared)
 }
-func readBody(c *httpx.Ctx) (record, error) {
+func readBody(c *httpx.Ctx) (*aggregationFields, error) {
 	var raw json.RawMessage
 	if err := bindBody(c, &raw); err != nil {
 		return nil, err
 	}
-	var out record
-	if json.Unmarshal(raw, &out) != nil {
+	if len(raw) == 0 || raw[0] != '{' {
+		return nil, nil
+	}
+	out := &aggregationFields{}
+	if err := out.UnmarshalJSON(raw); err != nil {
 		return nil, nil
 	}
 	return out, nil
 }
-func readOrderBody(c *httpx.Ctx) (record, error) {
+
+// readOrderBody returns a reorder object; a falsy scalar reads as {}.
+func readOrderBody(c *httpx.Ctx) (json.RawMessage, error) {
 	var raw json.RawMessage
 	if err := bindBody(c, &raw); err != nil {
 		return nil, err
 	}
 	switch string(raw) {
 	case "null", "false", "0", `""`, "[]":
-		return record{}, nil
+		return json.RawMessage("{}"), nil
 	}
-	var out record
-	if err := json.Unmarshal(raw, &out); err != nil {
+	if len(raw) == 0 || raw[0] != '{' {
 		return nil, errors.New("reorder document must be an object")
 	}
-	return out, nil
-}
-func enabled(item record) bool {
-	raw, present := item["enabled"]
-	if !present {
-		return true
-	}
-	return model.Switch(raw, true)
-}
-func resourceConfig(ctx context.Context, id string) (record, record, error) {
-	ctx = lifecycle.Detach(ctx)
-	if err := ctx.Err(); err != nil {
-		return nil, nil, err
-	}
-	profileID, err := repo.ResolveProfileID(ctx, "")
-	if err != nil {
-		return nil, nil, err
-	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	value, err := r.Config(ctx, profileID, repo.ResourceRoots{"subscription_aggregations": []string{id}})
-	if err != nil {
-		return nil, nil, err
-	}
-	var config record
-	if err := stored(value, &config); err != nil {
-		return nil, nil, err
-	}
-	items, err := config.list("subscription_aggregations")
-	if err != nil {
-		return nil, nil, err
-	}
-	return config, find(items, id), nil
+	return raw, nil
 }
 
 // providerResource is resourceConfig for the provider download: the typed
@@ -195,17 +156,6 @@ func authorize(c *httpx.Ctx) (*httpx.Response, error) {
 	return nil, nil
 }
 
-func render(ctx context.Context, agg, config record, format string) (*generation.Result, error) {
-	a, err := json.Marshal(agg)
-	if err != nil {
-		return nil, err
-	}
-	c, err := json.Marshal(config)
-	if err != nil {
-		return nil, err
-	}
-	return generation.Generate(ctx, a, c, generation.Options{Persist: true, Format: format})
-}
 func serve(c *httpx.Ctx, config *model.Config, head *store.Head, id string, render provider.Render) (*httpx.Response, error) {
 	return provider.Serve(c, "aggregation", id, config.ProfileID, head, render)
 }
@@ -231,21 +181,25 @@ func alternative(format string, proxies []proxy, filters *[2]string) (string, er
 	}
 	return convert.ClientProxyText(graph.Content, substore.ProxyNodes, format)
 }
-func resolveOrder(items []record, body record) ([]record, string, error) {
-	ids, err := rules.OrderIDs(body, "aggregations")
+func resolveOrder(items []model.Aggregation, body json.RawMessage) ([]model.Aggregation, string) {
+	request, err := rules.DecodeOrder(body, "aggregations")
 	if err != nil {
-		quoted := "'" + strings.ReplaceAll(strings.ReplaceAll(err.Error(), `\`, `\\`), "'", `\'`) + "'"
-		return nil, fmt.Sprintf(msgMissingOrder, "["+quoted+"]"), nil
+		return nil, fmt.Sprintf(msgMissingOrder, "["+quoteID(err.Error())+"]")
 	}
-	ordered, missing := rules.Reorder(items, ids, position(body), func(item record) string { return item.text("id") })
+	ordered, missing := rules.Reorder(items, request.IDs, request.Position, func(item model.Aggregation) string { return item.ID })
 	if len(missing) > 0 {
 		quoted := make([]string, len(missing))
 		for i, id := range missing {
-			quoted[i] = "'" + strings.ReplaceAll(strings.ReplaceAll(id, `\`, `\\`), "'", `\'`) + "'"
+			quoted[i] = quoteID(id)
 		}
-		return nil, fmt.Sprintf(msgMissingOrder, "["+strings.Join(quoted, ", ")+"]"), nil
+		return nil, fmt.Sprintf(msgMissingOrder, "["+strings.Join(quoted, ", ")+"]")
 	}
-	return ordered, "", nil
+	return ordered, ""
+}
+
+// quoteID is a single-quoted identifier as the missing-order message shows it.
+func quoteID(id string) string {
+	return "'" + strings.ReplaceAll(strings.ReplaceAll(id, "\\", "\\\\"), "'", "\\'") + "'"
 }
 func failure(err error, message string) *httpx.Response {
 	var nonfinite *nonfiniteBodyError
@@ -315,20 +269,10 @@ func (n *numericCount) raw() (json.RawMessage, error) {
 	}
 	return json.RawMessage(n.integer.String()), nil
 }
-func cachedCount(ctx context.Context, shared, aggregation record) (countReply, error) {
+func cachedCount(ctx context.Context, shared *model.Shared, aggregation model.Aggregation) (countReply, error) {
 	result := countReply{Success: true, Subscriptions: map[string]json.RawMessage{}}
-	var ids []string
-	if raw := aggregation["subscriptions"]; len(raw) > 0 && string(raw) != "null" {
-		if err := json.Unmarshal(raw, &ids); err != nil {
-			return result, err
-		}
-	}
-	subscriptions, err := shared.list("subscriptions")
-	if err != nil {
-		return result, err
-	}
 	var total numericCount
-	for _, id := range ids {
+	for _, id := range aggregation.Subscriptions {
 		cache, err := substore.LoadCache(ctx, id)
 		if err != nil {
 			return result, err
@@ -339,9 +283,10 @@ func cachedCount(ctx context.Context, shared, aggregation record) (countReply, e
 		var count json.RawMessage
 		if !cache.NodesDamaged() && cache.Nodes != nil {
 			var sub model.Subscription
-			if item := find(subscriptions, id); item != nil {
-				if err := stored(item, &sub); err != nil {
-					return result, err
+			for _, item := range shared.Subscriptions {
+				if item.ID == id {
+					sub = item
+					break
 				}
 			}
 			count, _ = json.Marshal(len(subs.FilterNodes(sub, cache.Nodes)))
@@ -360,23 +305,13 @@ func cachedCount(ctx context.Context, shared, aggregation record) (countReply, e
 		}
 		result.Subscriptions[id] = count
 	}
-	ids = nil
-	if raw := aggregation["nodes"]; len(raw) > 0 && string(raw) != "null" {
-		if err := json.Unmarshal(raw, &ids); err != nil {
-			return result, err
-		}
-	}
 	selected := map[string]bool{}
-	for _, id := range ids {
+	for _, id := range aggregation.Nodes {
 		selected[id] = true
 	}
-	nodes, err := shared.list("nodes")
-	if err != nil {
-		return result, err
-	}
 	manual := 0
-	for _, node := range nodes {
-		if selected[node.text("id")] && enabled(node) {
+	for _, node := range shared.Nodes {
+		if selected[node.ID] && model.Flag(node.Enabled, true) {
 			manual++
 		}
 	}
@@ -384,15 +319,9 @@ func cachedCount(ctx context.Context, shared, aggregation record) (countReply, e
 	if err := total.add(raw); err != nil {
 		return result, err
 	}
+	var err error
 	result.Total, err = total.raw()
 	return result, err
-}
-
-func position(body record) string {
-	if _, present := body["position"]; !present {
-		return "top"
-	}
-	return body.text("position")
 }
 
 // nonfiniteBodyError marks only the native JSON syntax change; malformed

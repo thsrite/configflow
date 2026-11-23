@@ -13,45 +13,40 @@ import (
 
 	generation "configflow/internal/aggregations"
 	"configflow/internal/auth"
+	"configflow/internal/health/check"
 	"configflow/internal/httpx"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
 )
 
-type record map[string]json.RawMessage
+// aggregationFields is an aggregation as sent: its members in order, as
+// JSON. The catalog decodes it strictly, so a member of another type is
+// refused with the repository's message for the resulting list.
+type aggregationFields struct{ model.Fields }
 
-func (r record) text(key string) string { var s string; _ = json.Unmarshal(r[key], &s); return s }
-func (r record) set(key string, v any) error {
+func (f *aggregationFields) set(key string, v any) error {
 	raw, err := json.Marshal(v)
-	if err == nil {
-		r[key] = raw
+	if err != nil {
+		return err
 	}
-	return err
+	return f.Set(key, raw)
 }
-func (r record) list(key string) ([]record, error) {
-	values := []record{}
-	if raw := r[key]; len(raw) > 0 {
-		if err := json.Unmarshal(raw, &values); err != nil {
-			return nil, err
+
+// stripStats drops the display statistics list responses add.
+func stripStats(item *aggregationFields) {
+	for _, key := range []string{"node_count", "total_node_count", "subscription_node_counts", "loading_count"} {
+		item.Delete(key)
+	}
+}
+
+func find(items []model.Aggregation, id string) int {
+	for i := range items {
+		if items[i].ID == id {
+			return i
 		}
 	}
-	return values, nil
-}
-func find(items []record, id string) record {
-	for _, item := range items {
-		if item.text("id") == id {
-			return item
-		}
-	}
-	return nil
-}
-func stripStats(item record, loading bool) {
-	for _, key := range []string{"node_count", "total_node_count", "subscription_node_counts"} {
-		delete(item, key)
-	}
-	if loading {
-		delete(item, "loading_count")
-	}
+	return -1
 }
 
 // Register installs all eleven aggregation routes, including the public alias.
@@ -68,16 +63,12 @@ func Register(r *httpx.Router) {
 
 func collection(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
-	shared, err := sharedConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	items, err := shared.list("subscription_aggregations")
-	if err != nil {
-		return nil, err
-	}
 	if c.Method() == http.MethodGet {
-		return httpx.JSON(items), nil
+		shared, err := generation.LoadCatalog(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return httpx.JSON(aggregationsOf(shared)), nil
 	}
 	if c.Method() != http.MethodPost {
 		return nil, errors.New("unsupported aggregation collection method")
@@ -89,7 +80,7 @@ func collection(c *httpx.Ctx) (*httpx.Response, error) {
 	if body == nil {
 		return httpx.Message(400, false, msgObject), nil
 	}
-	if err := initialize(body); err != nil {
+	if err := check.InitProviderHealth(&body.Fields); err != nil {
 		return nil, err
 	}
 	var entropy [4]byte
@@ -105,23 +96,26 @@ func collection(c *httpx.Ctx) (*httpx.Response, error) {
 	if err := body.set("updated_at", time.Now().Format("2006-01-02T15:04:05.000000")); err != nil {
 		return nil, err
 	}
-	stripStats(body, true)
+	stripStats(body)
 	if err := appendAggregation(ctx, body); err != nil {
 		return nil, err
 	}
 	return httpx.JSON(struct {
-		Success bool   `json:"success"`
-		Data    record `json:"data"`
+		Success bool               `json:"success"`
+		Data    *aggregationFields `json:"data"`
 	}{true, body}), nil
+}
+
+func aggregationsOf(shared *model.Shared) []model.Aggregation {
+	if shared.Aggregations == nil {
+		return []model.Aggregation{}
+	}
+	return shared.Aggregations
 }
 
 func item(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
-	shared, err := sharedConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	items, err := shared.list("subscription_aggregations")
+	shared, err := generation.LoadCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -129,30 +123,28 @@ func item(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, errors.New("unsupported aggregation item method")
 	}
 	id := c.Param("agg_id")
-	current := find(items, id)
+	items := shared.Aggregations
+	index := find(items, id)
 	if c.Method() == http.MethodGet {
-		if current == nil {
+		if index < 0 {
 			return httpx.Message(404, false, "Aggregation not found"), nil
 		}
-		stripStats(current, false)
-		return httpx.JSON(current), nil
+		return httpx.JSON(items[index]), nil
 	}
 	if c.Method() == http.MethodDelete {
-		kept := make([]record, 0, len(items))
+		kept := make([]model.Aggregation, 0, len(items))
 		for _, a := range items {
-			if a.text("id") != id {
+			if a.ID != id {
 				kept = append(kept, a)
 			}
 		}
-		if err := shared.set("subscription_aggregations", kept); err != nil {
-			return nil, err
-		}
-		if err := saveShared(ctx, shared); err != nil {
+		shared.Aggregations = kept
+		if err := generation.SaveCatalog(ctx, shared); err != nil {
 			return nil, err
 		}
 		return httpx.JSON(map[string]bool{"success": true}), nil
 	}
-	if current == nil {
+	if index < 0 {
 		return httpx.Message(404, false, "Aggregation not found"), nil
 	}
 	body, err := readBody(c)
@@ -168,25 +160,16 @@ func item(c *httpx.Ctx) (*httpx.Response, error) {
 	if err := body.set("updated_at", time.Now().Format("2006-01-02T15:04:05.000000")); err != nil {
 		return nil, err
 	}
-	stripStats(body, true)
-	for i, a := range items {
-		if a.text("id") == id {
-			items[i] = body
-			break
-		}
-	}
-	if err := shared.set("subscription_aggregations", items); err != nil {
-		return nil, err
-	}
-	if err := saveShared(ctx, shared); err != nil {
+	stripStats(body)
+	if err := replaceAggregation(ctx, shared, index, body); err != nil {
 		if errors.Is(err, repo.ErrRepository) {
 			return nil, err
 		}
 		return failure(err, msgOperationFailed), nil
 	}
 	return httpx.JSON(struct {
-		Success bool   `json:"success"`
-		Data    record `json:"data"`
+		Success bool               `json:"success"`
+		Data    *aggregationFields `json:"data"`
 	}{true, body}), nil
 }
 
@@ -194,19 +177,15 @@ func healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
 	return resourceUsage(c.Context(), c.Param("resource_id"))
 }
 func count(c *httpx.Ctx) (*httpx.Response, error) {
-	shared, err := sharedConfig(c.Context())
+	shared, err := generation.LoadCatalog(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	items, err := shared.list("subscription_aggregations")
-	if err != nil {
-		return failure(err, msgCountFailed), nil
-	}
-	agg := find(items, c.Param("agg_id"))
-	if agg == nil {
+	index := find(shared.Aggregations, c.Param("agg_id"))
+	if index < 0 {
 		return httpx.Message(404, false, "Aggregation not found"), nil
 	}
-	result, err := cachedCount(c.Context(), shared, agg)
+	result, err := cachedCount(c.Context(), shared, shared.Aggregations[index])
 	if err != nil {
 		return failure(err, msgCountFailed), nil
 	}
@@ -214,14 +193,14 @@ func count(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func preview(c *httpx.Ctx) (*httpx.Response, error) {
-	config, agg, err := resourceConfig(c.Context(), c.Param("agg_id"))
+	config, agg, _, err := providerResource(c.Context(), c.Param("agg_id"))
 	if err != nil {
 		return nil, err
 	}
 	if agg == nil {
 		return httpx.Message(404, false, "Aggregation not found"), nil
 	}
-	result, err := render(c.Context(), agg, config, "")
+	result, err := generation.GenerateConfig(c.Context(), *agg, config, generation.Options{Persist: true})
 	if err != nil {
 		return renderFailure(err), nil
 	}
@@ -280,7 +259,7 @@ func renderFailure(err error) *httpx.Response {
 
 func reorder(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
-	shared, err := sharedConfig(ctx)
+	shared, err := generation.LoadCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -288,21 +267,12 @@ func reorder(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return failure(err, msgOperationFailed), nil
 	}
-	items, err := shared.list("subscription_aggregations")
-	if err != nil {
-		return failure(err, msgOperationFailed), nil
-	}
-	ordered, missing, err := resolveOrder(items, body)
-	if err != nil {
-		return failure(err, msgOperationFailed), nil
-	}
+	ordered, missing := resolveOrder(shared.Aggregations, body)
 	if missing != "" {
 		return httpx.Message(404, false, missing), nil
 	}
-	if err := shared.set("subscription_aggregations", ordered); err != nil {
-		return nil, err
-	}
-	if err := saveShared(ctx, shared); err != nil {
+	shared.Aggregations = ordered
+	if err := generation.SaveCatalog(ctx, shared); err != nil {
 		if errors.Is(err, repo.ErrRepository) {
 			return nil, err
 		}
@@ -314,7 +284,7 @@ func reorder(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	ids := make([]string, 0, len(ordered))
 	for _, item := range ordered {
-		ids = append(ids, item.text("id"))
+		ids = append(ids, item.ID)
 	}
 	return httpx.JSON(struct {
 		Success bool     `json:"success"`

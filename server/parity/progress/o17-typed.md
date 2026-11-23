@@ -25,7 +25,9 @@
   `CheckCandidateMembers`/`CheckFilterMembers` 的 `map[string]json.RawMessage`。**例外**：策略组新增/修改的补丁保留为
   `groupFields`（包了 `model.Fields`）——按类型清理时不论类型都要丢掉的成员太多，且 repo 的输入文案（与整份导入共用）
   定义在结果列表的 JSON 上；只有这一个组以 JSON 进入 `SetJSON("proxy_groups")`，其余组都是类型化值）
-- [ ] 1.6 api/aggregations
+- [x] 1.6 api/aggregations（共享目录类型化读写：`generation.LoadCatalog/SaveCatalog` 改为 `*model.Shared`；计数、预览、排序类型化；
+  预览改用 `GenerateConfig`（与下载同一路径）。聚合新增/修改请求同 proxygroups 保留为 `aggregationFields` 边界；
+  删除 `enabled(record)` 回归测试——节点的 `enabled` 已是 `*bool`）
 - [ ] 1.6 api/subscriptions
 - [ ] 1.6 api/rulelibrary
 - [ ] 1.6 mcp/invoker
