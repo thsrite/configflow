@@ -104,6 +104,12 @@ Agent-side atomic writes + remaining duplicate helpers (5482a67e, go-o17-agent-s
 (9147b51a), O17 1.8 routers (bbc72553), O17 1.7 oxidns (16ef226d), batch-43 review (30344bdc); batch-44 (O17 1.6)
 gating. Queued: remaining model.Fields → typed in proxygroups/aggregations/subscriptions/rulelibrary (after batch-44),
 O17 前-1 dead code (after the structural branches land).
+batch-44 MERGED 2026-11-23 (595972901, O17 1.6 CRUD bodies typed; core+compare PASS, review report
+server/parity/review-batch-44.md). Started same day: Neon 7e5f49de go-o17-typed-rest (remaining api Fields →
+typed in proxygroups/aggregations/subscriptions/rulelibrary + one readBody), Neon 92a9c596 go-o14-checklist
+(O14 checklist consolidation, docs only), Opus e99bba11 go-l6-prep (L6 lab guests/images/runbook on PVE .6
+cfgt; prod snapshot fetch left to the coordinator, no soak yet). batch-43 rebased on 595972901 (doc conflict
+in behaviour-changes.md, both sections kept) → 07112374a, gating. 16ef226d told to rebase on 595972901.
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
