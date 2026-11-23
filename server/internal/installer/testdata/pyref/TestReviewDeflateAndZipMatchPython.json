@@ -595,7 +595,7 @@
       "server/internal/installer/archive_native_test.go": "884d6d044e1dd40042e30df2c5fa723f2650194cfbbbb40f8cf1902cccd74b9f",
       "server/internal/installer/core_harness_test.go": "8404df48de001877c3ce6a3ae471251f4321ddaa2fa47b0f301052a0ecf5f49d",
       "server/internal/installer/core_install_test.go": "01c570a3317f0335e7476fd70b6cb3930277a176deffe0d4564471944de44557",
-      "server/internal/installer/docker_ha_recorded_test.go": "e662ef438275df38852760cb247f91af943afa972a0f393873e709c517c312bb",
+      "server/internal/installer/docker_ha_recorded_test.go": "4f2d0ba3ab760b1409e1fb6824191d1730500f4bc1572b38db90d1d7dddd00fd",
       "server/internal/installer/gateway_core_test.go": "f96acedc021213860ea2d7267a97116478f0be52dc4bf7aaaed3c62e80ec0c20",
       "server/internal/installer/guide_legacy_test.go": "c6ddaa669d302b8c3555aab0551471a65ad38dbedb0626e7c14bc6148eb04340",
       "server/internal/installer/harness_test.go": "952d5ace7f690d587fb6d7a801bccaeb847ebe691fea07f2f0d1a6ffc034efd4",
