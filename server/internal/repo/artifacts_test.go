@@ -122,7 +122,7 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 	}
 }
 
-func TestNodeDeletionGoesThroughThePlanHook(t *testing.T) {
+func TestNodeDeletionPreviewAndCommit(t *testing.T) {
 	r := newRepo(t)
 	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
 		return shared.SetJSON("nodes", []byte(`[{"id": "n1", "name": "N1"}, {"id": "n2", "name": "N2"}]`))
@@ -130,55 +130,18 @@ func TestNodeDeletionGoesThroughThePlanHook(t *testing.T) {
 	_, _, err := r.SaveProfileFieldsJSON(bg, "default", []byte(`{"proxy_groups": [{"id": "g", "name": "G", "type": "select", "manual_nodes": ["n1", "n2"]}]}`), nil)
 	noError(t, err)
 
-	defer SetHooks(SetHooks(Hooks{}))
-	_, err = r.PreviewNodeDeletionIDs(bg, []string{"n1"})
-	wantError(t, err, ErrRepository, "PlanNodeDeletion")
-
-	confirmation := strings.Repeat("a", 64)
-	detach := true
-	SetHooks(Hooks{RecordHooks: RecordHooks{PlanNodeDeletionRecords: func(document *model.Document, nodeIDs []string) (*NodeDeletionPreview, *model.Document, error) {
-		candidate, err := copyRecord(document)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := candidate.Shared.SetJSON("nodes", []byte(`[{"id": "n2", "name": "N2"}]`)); err != nil {
-			return nil, nil, err
-		}
-		if detach {
-			nodes := []string{"n2"}
-			profileByKey(candidate, "default").ProxyGroups[0].ManualNodes = &nodes
-		}
-		preview := &NodeDeletionPreview{
-			Nodes:        []DeletionNode{{ID: "n1", Name: "N1"}},
-			Usages:       []DeletionUsage{},
-			Groups:       []DeletionGroup{{ID: "g", Name: "G", ProfileID: "default", ProfileName: "默认配置"}},
-			Blockers:     []string{},
-			EmptySources: []string{},
-			Confirmation: confirmation,
-		}
-		return preview, candidate, nil
-	}}})
+	preview := must(r.PreviewNodeDeletionIDs(bg, []string{"n1"}))(t)
+	if len(preview.Blockers) != 0 || preview.Confirmation == "" {
+		t.Fatalf("unexpected preview: %+v", preview)
+	}
 	_, err = r.DeleteNodesWithReferencesIDs(bg, []string{"n1"}, "not-a-digest")
 	wantError(t, err, ErrValidation, "请先查看并确认删除影响")
 	_, err = r.DeleteNodesWithReferencesIDs(bg, []string{"n1"}, strings.Repeat("b", 64))
 	wantError(t, err, ErrNodeDeletionChanged, "节点或引用关系已变化")
 	wantError(t, err, ErrInUse, "")
 
-	// A candidate that does not validate becomes a blocker of the preview.
-	detach = false
-	preview := must(r.PreviewNodeDeletionIDs(bg, []string{"n1"}))(t)
-	if len(preview.Blockers) != 1 || !strings.Contains(preview.Blockers[0], "引用的共享资源不存在：nodes/n1") {
-		t.Fatalf("blockers %v", preview.Blockers)
-	}
-	_, err = r.DeleteNodesWithReferencesIDs(bg, []string{"n1"}, confirmation)
-	wantError(t, err, ErrInUse, "无法删除：")
-	if got := len(must(r.Shared(bg))(t).Nodes); got != 2 {
-		t.Fatalf("nodes=%d, want 2", got)
-	}
-
-	detach = true
 	revision := must(r.ConfigRevision(bg, "default"))(t)
-	must(r.DeleteNodesWithReferencesIDs(bg, []string{"n1"}, confirmation))(t)
+	must(r.DeleteNodesWithReferencesIDs(bg, []string{"n1"}, preview.Confirmation))(t)
 	wantJSONEqual(t, must(r.Shared(bg))(t).Nodes, json.RawMessage(`[{"id": "n2", "name": "N2"}]`))
 	wantJSONEqual(t, *must(r.Profile(bg, "default"))(t).ProxyGroups[0].ManualNodes, []string{"n2"})
 	// One commit: the profile and the shared section each advance once.
@@ -225,31 +188,6 @@ func TestExportSanitizerUsesExportRepositorySnapshot(t *testing.T) {
 	full := parseJSONObj(t, must(r.ExportAllJSON(WithRepository(bg, other), false))(t))
 	if called || len(full.GetObject("system").GetList("agents")) != 1 {
 		t.Fatal("full restorable export was sanitized")
-	}
-}
-
-func TestN811TypedHooksRunOnceWithReviewedInputs(t *testing.T) {
-	r := newRepo(t)
-	noError(t, r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
-		shared.Nodes = []model.Node{{ID: "n", Name: "Node"}}
-		return nil
-	}))
-	calls := 0
-	preview := &NodeDeletionPreview{Nodes: []DeletionNode{{ID: "n", Name: "Node"}}, Usages: []DeletionUsage{}, Groups: []DeletionGroup{}, Blockers: []string{}, EmptySources: []string{}, Confirmation: strings.Repeat("a", 64)}
-	defer SetHooks(SetHooks(Hooks{
-		RecordHooks: RecordHooks{PlanNodeDeletionRecords: func(document *model.Document, ids []string) (*NodeDeletionPreview, *model.Document, error) {
-			calls++
-			if len(ids) != 1 || ids[0] != "n" || len(document.Shared.Nodes) != 1 {
-				t.Fatal("planner inputs changed")
-			}
-			document.Shared.Nodes = []model.Node{}
-			return preview, document, nil
-		}},
-	}))
-	must(r.PreviewNodeDeletionIDs(bg, []string{"n"}))(t)
-	must(r.DeleteNodesWithReferencesIDs(bg, []string{"n"}, preview.Confirmation))(t)
-	if calls != 2 {
-		t.Fatalf("planner calls=%d, want one per operation", calls)
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 )
 
 func TestReviewedDeletionAndConcurrentChanges(t *testing.T) {
-	nodes.Wire()
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register)})
 	ctx := srv.Context()
 	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, s *model.Shared) error {

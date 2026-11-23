@@ -46,8 +46,6 @@ type RecordHooks struct {
 	// ConfigurationCommittedRecords observes immutable native generations after commit.
 	ConfigurationCommittedRecords func(*Repository, *model.Document, *model.Document)
 
-	// PlanNodeDeletionRecords returns an owned preview and candidate without I/O.
-	PlanNodeDeletionRecords func(*model.Document, []string) (*NodeDeletionPreview, *model.Document, error)
 	// SanitizeExternalDocument receives a redacted candidate and original settings.
 	SanitizeExternalDocument func(context.Context, *model.Document, model.SystemConfig) (*model.Document, error)
 	// RedactOxidnsJSON redacts schema-free OxiDNS settings.

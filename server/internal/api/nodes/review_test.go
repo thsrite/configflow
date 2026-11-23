@@ -17,7 +17,6 @@ import (
 
 func deletionServer(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	nodes.Wire()
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register)})
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 		if err := s.SetJSON("nodes", json.RawMessage(`[{"id":"remove","name":"Remove"},{"id":"keep","name":"Keep"}]`)); err != nil {

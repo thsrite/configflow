@@ -36,9 +36,6 @@ func RegisterHooks(h Hooks) {
 	if h.ConfigurationCommittedRecords != nil {
 		hooks.ConfigurationCommittedRecords = h.ConfigurationCommittedRecords
 	}
-	if h.PlanNodeDeletionRecords != nil {
-		hooks.PlanNodeDeletionRecords = h.PlanNodeDeletionRecords
-	}
 	if h.SanitizeExternalDocument != nil {
 		hooks.SanitizeExternalDocument = h.SanitizeExternalDocument
 	}

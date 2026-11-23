@@ -1,4 +1,4 @@
-package nodes
+package repo
 
 import (
 	"bytes"
@@ -9,10 +9,48 @@ import (
 	"sort"
 	"strings"
 
-	"configflow/internal/httpx"
+	"configflow/internal/convert"
 	"configflow/internal/model"
-	"configflow/internal/repo"
+	"configflow/internal/yamlx"
 )
+
+func planNodeDeletion(document *model.Document, ids []string) (*NodeDeletionPreview, *model.Document, error) {
+	usages := map[string][]string{}
+	for _, profile := range document.Profiles {
+		view, err := ConfigFrom(document, profile.Key(), nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, node := range view.Nodes {
+			usages[profile.Key()] = append(usages[profile.Key()], node.ID)
+		}
+	}
+	dialers := map[string]string{}
+	for _, node := range document.Shared.Nodes {
+		target, err := convert.NodeDialer(node)
+		if err != nil {
+			return nil, nil, convert.DialerFailure(err)
+		}
+		target = yamlx.Resolve(target)
+		if target != nil && target.ShortTag() == "!!str" {
+			dialers[node.ID] = target.Value
+		}
+	}
+	// Plan on a copy: request snapshots stay immutable, even for previews.
+	data, err := model.Marshal(document)
+	if err != nil {
+		return nil, nil, err
+	}
+	candidate, err := model.DecodeDocument(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	preview, err := planDeletion(candidate, ids, usages, dialers)
+	if err != nil {
+		return nil, nil, err
+	}
+	return preview, candidate, nil
+}
 
 func removeIDs(values []string, ids map[string]bool) []string {
 	out := []string{}
@@ -39,14 +77,14 @@ func builtin(name string) bool {
 // the document) and the references editors can drop: aggregation members and
 // group candidates. Chains, rule policies and dialers that use a node block
 // the deletion. The preview's confirmation digests what is removed.
-func planDeletion(candidate *model.Document, nodeIDs []string, profileNodes map[string][]string, dialers map[string]string) (*repo.NodeDeletionPreview, error) {
+func planDeletion(candidate *model.Document, nodeIDs []string, profileNodes map[string][]string, dialers map[string]string) (*NodeDeletionPreview, error) {
 	if len(nodeIDs) == 0 {
-		return nil, repo.NewValidationError(msgSelectNodes)
+		return nil, validationError(msgSelectNodes)
 	}
 	ids := map[string]bool{}
 	for _, id := range nodeIDs {
 		if strings.TrimSpace(id) == "" {
-			return nil, repo.NewValidationError(msgSelectNodes)
+			return nil, validationError(msgSelectNodes)
 		}
 		ids[id] = true
 	}
@@ -54,7 +92,7 @@ func planDeletion(candidate *model.Document, nodeIDs []string, profileNodes map[
 	var selected []json.RawMessage
 	kept := []model.Node{}
 	names := map[string]bool{}
-	preview := &repo.NodeDeletionPreview{Nodes: []repo.DeletionNode{}, Usages: []repo.DeletionUsage{}, Groups: []repo.DeletionGroup{}, Blockers: []string{}, EmptySources: []string{}}
+	preview := &NodeDeletionPreview{Nodes: []DeletionNode{}, Usages: []DeletionUsage{}, Groups: []DeletionGroup{}, Blockers: []string{}, EmptySources: []string{}}
 	for _, node := range shared.Nodes {
 		if !ids[node.ID] {
 			kept = append(kept, node)
@@ -68,10 +106,10 @@ func planDeletion(candidate *model.Document, nodeIDs []string, profileNodes map[
 		if !builtin(node.Name) {
 			names[node.Name] = true
 		}
-		preview.Nodes = append(preview.Nodes, repo.DeletionNode{ID: node.ID, Name: node.Name})
+		preview.Nodes = append(preview.Nodes, DeletionNode{ID: node.ID, Name: node.Name})
 	}
 	if len(selected) != len(ids) {
-		return nil, &httpx.HTTPError{Code: 404, Description: msgNodesGone}
+		return nil, notFound(msgNodesGone)
 	}
 	originals := []json.RawMessage{}
 	for i := range shared.Aggregations {
@@ -84,7 +122,7 @@ func planDeletion(candidate *model.Document, nodeIDs []string, profileNodes map[
 			return nil, err
 		}
 		originals = append(originals, original)
-		preview.Usages = append(preview.Usages, repo.DeletionUsage{Kind: "aggregation", ID: agg.ID, Name: agg.Name})
+		preview.Usages = append(preview.Usages, DeletionUsage{Kind: "aggregation", ID: agg.ID, Name: agg.Name})
 		agg.Nodes = removeIDs(agg.Nodes, ids)
 		if len(agg.Nodes) == 0 && len(agg.Subscriptions) == 0 {
 			preview.EmptySources = append(preview.EmptySources, fmt.Sprintf(msgAggregationLabel, agg.Name))
@@ -93,7 +131,7 @@ func planDeletion(candidate *model.Document, nodeIDs []string, profileNodes map[
 	for _, profile := range candidate.Profiles {
 		profileID := profile.Key()
 		if intersects(profileNodes[profileID], ids) {
-			preview.Usages = append(preview.Usages, repo.DeletionUsage{Kind: "profile", ID: profileID, Name: profile.Name})
+			preview.Usages = append(preview.Usages, DeletionUsage{Kind: "profile", ID: profileID, Name: profile.Name})
 		}
 		for i := range profile.ProxyGroups {
 			group := &profile.ProxyGroups[i]
@@ -133,7 +171,7 @@ func planDeletion(candidate *model.Document, nodeIDs []string, profileNodes map[
 				return nil, err
 			}
 			originals = append(originals, entry)
-			preview.Groups = append(preview.Groups, repo.DeletionGroup{ID: group.ID, Name: group.Name, ProfileID: profileID, ProfileName: profile.Name})
+			preview.Groups = append(preview.Groups, DeletionGroup{ID: group.ID, Name: group.Name, ProfileID: profileID, ProfileName: profile.Name})
 			if !hasCandidates(group) {
 				preview.EmptySources = append(preview.EmptySources, label)
 			}
@@ -157,9 +195,9 @@ func planDeletion(candidate *model.Document, nodeIDs []string, profileNodes map[
 	// The confirmation is an existing storage/API protocol: sorted UTF-8 JSON,
 	// separators comma-space and colon-space, hashed before confirmation is added.
 	signature := struct {
-		Nodes     []json.RawMessage         `json:"nodes"`
-		Originals []json.RawMessage         `json:"originals"`
-		Preview   *repo.NodeDeletionPreview `json:"preview"`
+		Nodes     []json.RawMessage    `json:"nodes"`
+		Originals []json.RawMessage    `json:"originals"`
+		Preview   *NodeDeletionPreview `json:"preview"`
 	}{selected, originals, preview}
 	digest, err := confirmationDigest(signature)
 	if err != nil {

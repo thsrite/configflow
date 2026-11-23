@@ -162,7 +162,6 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
 	t.Cleanup(provider.SetLocations(deploy.Locations{}))
-	nodes.Wire()
 	mihomoenv.Wire()
 	previousClock := notifications.Clock
 	notifications.Clock = fixedClock{}.Now

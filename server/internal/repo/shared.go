@@ -109,11 +109,7 @@ func (r *Repository) CreateRuleLibraryRecord(ctx context.Context, item model.Rul
 var confirmationPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func (r *Repository) nodeDeletionRecords(document *model.Document, ids []string) (*NodeDeletionPreview, *model.Document, error) {
-	plan := recordHooks().PlanNodeDeletionRecords
-	if plan == nil {
-		return nil, nil, repositoryError(msgDeletionHookMissing)
-	}
-	preview, candidate, err := plan(document, ids)
+	preview, candidate, err := planNodeDeletion(document, ids)
 	if err != nil {
 		return nil, nil, err
 	}

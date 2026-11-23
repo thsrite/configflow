@@ -109,7 +109,6 @@ var wirePackages = []func(){
 	apiagents.WireContentSync,
 	wireCore,
 	webdav.Wire,
-	apinodes.Wire,
 	aggregations.Wire,
 	agents.Wire,
 	dnsfollow.Register,

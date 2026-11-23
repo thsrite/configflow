@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"slices"
 
-	"configflow/internal/convert"
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -98,45 +97,4 @@ func reviewedDeletion(ctx context.Context, ids []string, confirmation string, pr
 		Success bool     `json:"success"`
 		IDs     []string `json:"deleted_ids"`
 	}{true, idsOut}), nil
-}
-
-// Wire installs the node deletion planner. It does no I/O inside repo's lock.
-func Wire() {
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{PlanNodeDeletionRecords: func(document *model.Document, ids []string) (*repo.NodeDeletionPreview, *model.Document, error) {
-		usages := map[string][]string{}
-		for _, profile := range document.Profiles {
-			view, err := repo.ConfigFrom(document, profile.Key(), nil)
-			if err != nil {
-				return nil, nil, err
-			}
-			for _, node := range view.Nodes {
-				usages[profile.Key()] = append(usages[profile.Key()], node.ID)
-			}
-		}
-		dialers := map[string]string{}
-		for _, node := range document.Shared.Nodes {
-			target, err := convert.NodeDialer(node)
-			if err != nil {
-				return nil, nil, convert.DialerFailure(err)
-			}
-			target = yamlx.Resolve(target)
-			if target != nil && target.ShortTag() == "!!str" {
-				dialers[node.ID] = target.Value
-			}
-		}
-		// Plan on a copy: request snapshots stay immutable, even for previews.
-		data, err := model.Marshal(document)
-		if err != nil {
-			return nil, nil, err
-		}
-		candidate, err := model.DecodeDocument(data)
-		if err != nil {
-			return nil, nil, err
-		}
-		preview, err := planDeletion(candidate, ids, usages, dialers)
-		if err != nil {
-			return nil, nil, err
-		}
-		return preview, candidate, nil
-	}}})
 }
