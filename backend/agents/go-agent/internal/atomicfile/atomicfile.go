@@ -5,6 +5,7 @@ package atomicfile
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -127,16 +128,25 @@ func WriteFrom(path string, r io.Reader, perm os.FileMode, opts Options) error {
 }
 
 // SyncDir opens dir and calls Sync on it to persist directory entry updates.
+// File systems that cannot sync a directory (EINVAL, ENOTSUP) count as
+// synced, as in the server's fsx.SyncDir.
 func SyncDir(dir string) error {
 	f, err := os.Open(dir)
 	if err != nil {
 		return fmt.Errorf("open directory: %w", err)
 	}
 	defer f.Close()
-	if err := f.Sync(); err != nil {
+	if err := syncUnsupportedOK(f.Sync()); err != nil {
 		return fmt.Errorf("sync directory: %w", err)
 	}
 	return nil
+}
+
+func syncUnsupportedOK(err error) error {
+	if errors.Is(err, syscall.EINVAL) || errors.Is(err, syscall.ENOTSUP) {
+		return nil
+	}
+	return err
 }
 
 func createTemp(dir string, opts Options) (*os.File, error) {

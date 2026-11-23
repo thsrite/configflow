@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -229,4 +230,26 @@ func TestWriteFailuresCleanTemp(t *testing.T) {
 			t.Fatal("expected error for missing parent directory")
 		}
 	})
+}
+
+func TestSyncUnsupportedOK(t *testing.T) {
+	other := errors.New("disk failure")
+	tests := []struct {
+		name string
+		err  error
+		want error
+	}{
+		{"nil", nil, nil},
+		{"EINVAL", &os.PathError{Op: "sync", Path: "d", Err: syscall.EINVAL}, nil},
+		{"ENOTSUP", &os.PathError{Op: "sync", Path: "d", Err: syscall.ENOTSUP}, nil},
+		{"EIO", syscall.EIO, syscall.EIO},
+		{"other", other, other},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := syncUnsupportedOK(tc.err); !errors.Is(got, tc.want) || (got == nil) != (tc.want == nil) {
+				t.Fatalf("syncUnsupportedOK(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
 }
