@@ -1,11 +1,12 @@
 package installer
 
 import (
+	"encoding/json"
 	"path"
 	"strconv"
 	"strings"
 
-	"encoding/json"
+	"configflow/internal/weburl"
 )
 
 // Port of backend/agents/go_install_script.py, generate_go_aio_install_script:
@@ -143,7 +144,7 @@ func RenderAIOInstall(o AIOInstallOptions) (string, error) {
 	}
 	var paths []string
 	for _, value := range []string{o.MihomoConfigPath, o.OxidnsConfigPath} {
-		bad := !strings.HasPrefix(value, "/") || hasControl(value) || purePosixStr(value) == "/" || strings.HasSuffix(value, "/")
+		bad := !strings.HasPrefix(value, "/") || weburl.HasControl(value) || purePosixStr(value) == "/" || strings.HasSuffix(value, "/")
 		for _, part := range pathParts(value) {
 			if part == ".." {
 				bad = true
@@ -217,7 +218,7 @@ cf_step_done "TUN 准备完成（具体处理结果见日志）"`),
 		if unit == "" || strings.HasPrefix(unit, "configflow-") {
 			return "", invalidInput("Core service unit must not be a ConfigFlow Agent unit")
 		}
-		if s.binary == "" || hasControl(s.binary) {
+		if s.binary == "" || weburl.HasControl(s.binary) {
 			return "", invalidInput("Invalid core service binary")
 		}
 		if strings.HasPrefix(s.binary, "/") && insideAgentDirectory(s.binary) {

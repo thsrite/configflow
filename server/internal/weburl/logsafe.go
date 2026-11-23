@@ -37,7 +37,9 @@ func SafeForLog(raw string) string {
 	return out
 }
 
-func hasControl(s string) bool {
+// HasControl reports whether s contains an ASCII control character
+// (code point < 32 or == 127).
+func HasControl(s string) bool {
 	return strings.ContainsFunc(s, func(r rune) bool { return r < 32 || r == 127 })
 }
 
@@ -58,7 +60,7 @@ func decodeLayers(value string, plus bool) (string, error) {
 		decode = UnquotePlus
 	}
 	for range maxLayers {
-		if hasControl(value) || badEscape(value) {
+		if HasControl(value) || badEscape(value) {
 			return "", errUnsafe
 		}
 		decoded := decode(value)
@@ -67,7 +69,7 @@ func decodeLayers(value string, plus bool) (string, error) {
 		}
 		value = decoded
 	}
-	if decode(value) != value || hasControl(value) || badEscape(value) {
+	if decode(value) != value || HasControl(value) || badEscape(value) {
 		return "", errUnsafe
 	}
 	return value, nil
@@ -122,7 +124,7 @@ func sanitizeValue(value string, depth int) (string, error) {
 }
 
 func safeURL(value string, depth int) (string, error) {
-	if value == "" || hasControl(value) || badEscape(value) {
+	if value == "" || HasControl(value) || badEscape(value) {
 		return "", errUnsafe
 	}
 	// The user information is cut before anything is decoded: an encoded

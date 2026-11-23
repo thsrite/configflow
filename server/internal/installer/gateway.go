@@ -84,7 +84,7 @@ func LocalAgentChecksums() (map[string]string, error) {
 
 // httpURL is _http_url(value, name).
 func httpURL(value, name string) (string, error) {
-	if hasControl(value) {
+	if weburl.HasControl(value) {
 		return "", invalidInput(name + " must be an HTTP(S) URL")
 	}
 	parsed, err := weburl.Parse(value)

@@ -100,16 +100,6 @@ func substitute(text string, values map[string]string) string {
 // trimScriptTail removes native Unicode whitespace from a generated script.
 func trimScriptTail(text string) string { return strings.TrimRightFunc(text, unicode.IsSpace) }
 
-// hasControl is any(ord(c) < 32 or ord(c) == 127 for c in value).
-func hasControl(value string) bool {
-	for _, r := range value {
-		if r < 32 || r == 127 {
-			return true
-		}
-	}
-	return false
-}
-
 // codePoints is len(str) of a Python str.
 func codePoints(s string) int { return utf8.RuneCountInString(s) }
 

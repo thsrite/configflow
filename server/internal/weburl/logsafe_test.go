@@ -45,3 +45,30 @@ func TestSafeErrorDetailsClass(t *testing.T) {
 		})
 	}
 }
+
+func TestHasControl(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"empty", "", false},
+		{"printable ascii", "https://example.com/path?a=1", false},
+		{"space", "hello world", false},
+		{"unicode", "中文配置", false},
+		{"nul", "a\x00b", true},
+		{"newline", "a\nb", true},
+		{"cr", "a\rb", true},
+		{"tab", "a\tb", true},
+		{"unit separator 0x1f", "a\x1fb", true},
+		{"del 0x7f", "a\x7fb", true},
+		{"c1 control 0x80 not ascii", "a\u0080b", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := weburl.HasControl(tt.in); got != tt.want {
+				t.Fatalf("HasControl(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
