@@ -68,14 +68,11 @@ func readBody(c *httpx.Ctx) (*aggregationFields, error) {
 	if err := bindBody(c, &raw); err != nil {
 		return nil, err
 	}
-	if len(raw) == 0 || raw[0] != '{' {
+	out, ok, err := httpx.DecodeObject[aggregationFields](raw)
+	if err != nil || !ok {
 		return nil, nil
 	}
-	out := &aggregationFields{}
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return nil, nil
-	}
-	return out, nil
+	return &out, nil
 }
 
 // readOrderBody returns a reorder object; a falsy scalar reads as {}.

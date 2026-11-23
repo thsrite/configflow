@@ -401,16 +401,10 @@ func saveInstallCommand(c *httpx.Ctx, script string) *httpx.Response {
 	return httpx.JSON(map[string]any{"success": true, "script": script, "download_path": "/api/agents/i/" + token, "expires_at": expiresAt}).NoStore()
 }
 
-// readBody reads a bounded JSON request through the native HTTP binder.
-func readBody(c *httpx.Ctx, maxLength int64, invalid string) (json.RawMessage, *httpx.Response, error) {
-	payload, failed := readBoundJSON(c, maxLength, invalid)
-	return payload, failed, nil
-}
-
 func createInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
-	payload, failed, err := readBody(c, 32*1024, "安装参数无效")
-	if err != nil || failed != nil {
-		return failed, err
+	payload, failed := readBoundJSON(c, 32*1024, "安装参数无效")
+	if failed != nil {
+		return failed, nil
 	}
 	params, err := installCommandParams(payload)
 	if err != nil {
@@ -438,9 +432,9 @@ func createInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func createCoreInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
-	payload, failed, err := readBody(c, 1024, "核心安装参数无效")
-	if err != nil || failed != nil {
-		return failed, err
+	payload, failed := readBoundJSON(c, 1024, "核心安装参数无效")
+	if failed != nil {
+		return failed, nil
 	}
 	var object map[string]json.RawMessage
 	target := ""

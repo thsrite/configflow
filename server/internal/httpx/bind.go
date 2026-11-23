@@ -41,6 +41,38 @@ func (c *Ctx) BindSilent(dst any) bool {
 	return c.bind(dst) == nil
 }
 
+// DecodeObject decodes raw as a JSON object into T (for example
+// map[string]json.RawMessage or model.Fields). Empty input or non-object JSON
+// values (null, arrays, scalars) return (zero, false, nil).
+func DecodeObject[T any](raw json.RawMessage) (T, bool, error) {
+	var zero T
+	if len(raw) == 0 || raw[0] != '{' {
+		return zero, false, nil
+	}
+	var out T
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return zero, false, err
+	}
+	return out, true, nil
+}
+
+// BindObject binds a JSON request body and decodes it as a JSON object into T.
+// When silent is true, non-JSON media types and malformed bodies return
+// (zero, false, nil); otherwise Bind's HTTP error (415/400) is returned.
+// Valid non-object JSON values return (zero, false, nil).
+func BindObject[T any](c *Ctx, silent bool) (T, bool, error) {
+	var zero T
+	var raw json.RawMessage
+	if silent {
+		if !c.BindSilent(&raw) {
+			return zero, false, nil
+		}
+	} else if err := c.Bind(&raw); err != nil {
+		return zero, false, err
+	}
+	return DecodeObject[T](raw)
+}
+
 func clearBinding(dst any) {
 	v := reflect.ValueOf(dst)
 	if v.IsValid() && v.Kind() == reflect.Pointer && !v.IsNil() && v.Elem().CanSet() {

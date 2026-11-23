@@ -61,14 +61,11 @@ func readBody(c *httpx.Ctx) (*subscriptionFields, error) {
 	if err := c.Bind(&raw); err != nil {
 		return nil, err
 	}
-	if len(raw) == 0 || raw[0] != '{' {
+	out, ok, err := httpx.DecodeObject[subscriptionFields](raw)
+	if err != nil || !ok {
 		return nil, nil
 	}
-	out := &subscriptionFields{}
-	if err := out.UnmarshalJSON(raw); err != nil {
-		return nil, nil
-	}
-	return out, nil
+	return &out, nil
 }
 
 // readRequestObject rejects every non-object, including null and empty arrays,

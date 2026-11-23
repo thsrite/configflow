@@ -178,3 +178,76 @@ func TestBindingRetainsScalarLexemesAfterNativeTokens(t *testing.T) {
 		wantJSON(t, srv.Post("/api/bind", httpxtest.Body([]byte(source), "application/json")).WantStatus(200), map[string]any{"raw": literal})
 	}
 }
+
+func TestDecodeObject(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     json.RawMessage
+		wantOK  bool
+		wantKey string
+		wantErr bool
+	}{
+		{"object", json.RawMessage(`{"a":1}`), true, "a", false},
+		{"empty object", json.RawMessage(`{}`), true, "", false},
+		{"empty input", nil, false, "", false},
+		{"null", json.RawMessage(`null`), false, "", false},
+		{"array", json.RawMessage(`[1,2]`), false, "", false},
+		{"scalar", json.RawMessage(`"str"`), false, "", false},
+		{"malformed object", json.RawMessage(`{"a":`), false, "", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok, err := httpx.DecodeObject[map[string]json.RawMessage](tc.raw)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if ok != tc.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
+			}
+			if tc.wantKey != "" {
+				if _, present := got[tc.wantKey]; !present {
+					t.Fatalf("expected key %q in %v", tc.wantKey, got)
+				}
+			}
+		})
+	}
+}
+
+func TestBindObject(t *testing.T) {
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
+		r.POST("/api/obj", "test.obj", func(c *httpx.Ctx) (*httpx.Response, error) {
+			silent := c.ArgDefault("silent", "") == "1"
+			obj, ok, err := httpx.BindObject[map[string]json.RawMessage](c, silent)
+			if err != nil {
+				return nil, err
+			}
+			return httpx.JSON(map[string]any{"ok": ok, "keys": len(obj)}), nil
+		})
+	})})
+
+	tests := []struct {
+		name       string
+		path       string
+		body       string
+		mime       string
+		wantStatus int
+		wantOK     bool
+		wantKeys   float64
+	}{
+		{"valid object", "/api/obj", `{"x":1,"y":2}`, "application/json", 200, true, 2},
+		{"non-object array", "/api/obj", `[1,2]`, "application/json", 200, false, 0},
+		{"null", "/api/obj", `null`, "application/json", 200, false, 0},
+		{"non-json strict 415", "/api/obj", `{"x":1}`, "text/plain", 415, false, 0},
+		{"malformed strict 400", "/api/obj", `{bad`, "application/json", 400, false, 0},
+		{"non-json silent", "/api/obj?silent=1", `{"x":1}`, "text/plain", 200, false, 0},
+		{"malformed silent", "/api/obj?silent=1", `{bad`, "application/json", 200, false, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := srv.Post(tc.path, httpxtest.Body([]byte(tc.body), tc.mime)).WantStatus(tc.wantStatus)
+			if tc.wantStatus == 200 {
+				wantJSON(t, res, map[string]any{"ok": tc.wantOK, "keys": tc.wantKeys})
+			}
+		})
+	}
+}

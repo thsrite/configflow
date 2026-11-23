@@ -26,16 +26,7 @@ import (
 type jsonValue = json.RawMessage
 
 func readBody(c *httpx.Ctx) (record, bool, error) {
-	var raw json.RawMessage
-	if err := c.Bind(&raw); err != nil {
-		return record{}, false, err
-	}
-	if len(raw) == 0 || raw[0] != '{' {
-		return record{}, false, nil
-	}
-	var out record
-	err := json.Unmarshal(raw, &out)
-	return out, true, err
+	return httpx.BindObject[record](c, false)
 }
 func sharedConfig(ctx context.Context) (*model.Shared, error) {
 	r, err := repo.GetRepository(ctx)
