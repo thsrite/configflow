@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/model"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
 	"context"
 	"errors"
 	"os"
@@ -30,14 +31,14 @@ func TestO36bJobLockConnectionIdentity(t *testing.T) {
 		{"different-type", "profile", "router", &Router{RouterSettings: RouterSettings{Type: "ikuai", Endpoint: "http://192.0.2.1"}}, false},
 		{"missing-record", "profile", "router", nil, false},
 	}
-	_, release, err := RouterJobLock(t.Context(), "profile", "router", jobConnection("http://192.0.2.1/"))
+	_, release, err := oplock.RouterJobLock(t.Context(), "profile", "router", jobConnection("http://192.0.2.1/"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer release()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, unlock, err := RouterJobLock(t.Context(), tt.profile, tt.id, tt.connection)
+			_, unlock, err := oplock.RouterJobLock(t.Context(), tt.profile, tt.id, tt.connection)
 			if unlock != nil {
 				defer unlock()
 			}
@@ -53,7 +54,7 @@ func TestO36bJobLockConnectionIdentity(t *testing.T) {
 	}
 	release()
 	release()
-	_, unlock, err := RouterJobLock(t.Context(), "other", "alias", jobConnection("http://192.0.2.1"))
+	_, unlock, err := oplock.RouterJobLock(t.Context(), "other", "alias", jobConnection("http://192.0.2.1"))
 	if err != nil {
 		t.Fatal("released key stayed busy", err)
 	}
@@ -61,14 +62,14 @@ func TestO36bJobLockConnectionIdentity(t *testing.T) {
 }
 
 func TestO36bMissingRouterJobLockAndTryOnly(t *testing.T) {
-	_, release, err := RouterJobLock(t.Context(), "missing-profile", "missing-router", nil)
+	_, release, err := oplock.RouterJobLock(t.Context(), "missing-profile", "missing-router", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer release()
 	done := make(chan error, 1)
 	go func() {
-		_, unlock, err := RouterJobLock(t.Context(), "missing-profile", "missing-router", nil)
+		_, unlock, err := oplock.RouterJobLock(t.Context(), "missing-profile", "missing-router", nil)
 		if unlock != nil {
 			unlock()
 		}
@@ -84,7 +85,7 @@ func TestO36bMissingRouterJobLockAndTryOnly(t *testing.T) {
 		t.Fatal("L1 waited instead of trying")
 	}
 	for _, pair := range [][2]string{{"missing-profile", "other"}, {"other", "missing-router"}} {
-		_, unlock, err := RouterJobLock(t.Context(), pair[0], pair[1], nil)
+		_, unlock, err := oplock.RouterJobLock(t.Context(), pair[0], pair[1], nil)
 		if err != nil {
 			t.Fatal("independent missing record conflicted", err)
 		}
@@ -109,7 +110,7 @@ func TestO36bJobLockRuntimeBoundary(t *testing.T) {
 			} else {
 				cancel()
 			}
-			_, release, err := RouterJobLock(request, "runtime", name, nil)
+			_, release, err := oplock.RouterJobLock(request, "runtime", name, nil)
 			if shutdown {
 				if !errors.Is(err, context.Canceled) || release != nil {
 					t.Fatal("stopped Runtime admitted a job", err)
@@ -164,7 +165,7 @@ func TestO36bJobHookInsideRepositoryAndLegacySentinel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, free, err := RouterJobLock(repo.WithRepository(t.Context(), repository), "sentinel", "r", nil)
+	_, free, err := oplock.RouterJobLock(repo.WithRepository(t.Context(), repository), "sentinel", "r", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

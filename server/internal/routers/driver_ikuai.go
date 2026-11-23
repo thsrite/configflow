@@ -6,6 +6,7 @@ import (
 
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/routeedit"
 )
 
 // Ikuai is the composed iKuai 4.x driver: it embeds the low-level client and adds ReadState.
@@ -86,4 +87,14 @@ func (d *Ikuai) ReadState(ctx context.Context) (*RouterState, error) {
 	state.IkuaiGroups = ikuai.ReadGroupRules(groups, ikuai.DecodeRows(natRows), policyRows)
 	state.ActiveRoutes = d.ActiveRoutes(ctx)
 	return state, nil
+}
+
+// ReadRoutes implements routeedit.RouteEditor for iKuai.
+func (d *Ikuai) ReadRoutes(ctx context.Context) ([]*EditableRoute, error) {
+	return routeedit.ReadIkuaiRoutes(ctx, d.Client)
+}
+
+// MutateRoute implements routeedit.RouteEditor for iKuai.
+func (d *Ikuai) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (*RouteMutation, error) {
+	return routeedit.MutateIkuaiRoute(ctx, d.Client, action, expected, values)
 }

@@ -2,6 +2,8 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/routeedit"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
@@ -156,7 +158,7 @@ func refreshRelease(ctx context.Context) {
 func publishError(r *Router, err error) PublishOutcome {
 	var re *RouterError
 	if errors.As(err, &re) {
-		safe := routeSafeError(err, r.Endpoint, r.Password)
+		safe := routeedit.SafeError(err, r.Endpoint, r.Password)
 		releaseLogger.Warningf(messagePublishStopped, releaseLabel(r), safe)
 		return PublishOutcome{Status: PublishDeviceError, Message: safe.Error()}
 	}
@@ -172,7 +174,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 	if req.Router == nil || req.Repo == nil {
 		return PublishOutcome{Err: device.Error(device.MessageOperationFormat)}
 	}
-	held, release, err := RouterOperationLock(work, *req.Router, true)
+	held, release, err := oplock.RouterOperationLock(work, *req.Router, true)
 	if err != nil {
 		if work.Err() != nil {
 			return PublishOutcome{Err: work.Err()}

@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/devhttp"
+	"configflow/internal/routers/routeedit"
 	"context"
 	"encoding/json"
 	"errors"
@@ -264,7 +265,7 @@ func TestR06PythonBoundary(t *testing.T) {
 			goResult := r06Run(tc, endpoint)
 			goCalls, goTables := snapshot()
 			if tc.DuplicateName {
-				if goResult.Error == nil || goResult.Error.Class != "RouterConflictError" || goResult.Error.Message != messageEditIKUniqueName {
+				if goResult.Error == nil || goResult.Error.Class != "RouterConflictError" || goResult.Error.Message != routeedit.MessageEditIKUniqueName {
 					t.Fatalf("duplicate-name safety difference not observed: Python=%#v Go=%#v", py.Error, goResult.Error)
 				}
 				pythonWrote := false
@@ -348,7 +349,7 @@ func r06Run(tc r06Case, endpoint string) r06Outcome {
 	var result any
 	var err error
 	if tc.Action == "normalize" {
-		result, err = NormalizeRouteRequest(tc.Payload)
+		result, err = routeedit.NormalizeRouteRequest(tc.Payload)
 	} else {
 		var rows []*EditableRoute
 		rows, err = editor.ReadRoutes(context.Background())
@@ -357,7 +358,7 @@ func r06Run(tc r06Case, endpoint string) r06Outcome {
 			case "read":
 				result = rows
 			case "checked_read":
-				result, err = ReadRoutes(context.Background(), driver)
+				result, err = routeedit.ReadRoutes(context.Background(), driver)
 			case "plan":
 				var payload map[string]any
 				_ = json.Unmarshal(tc.Payload, &payload)
@@ -365,7 +366,7 @@ func r06Run(tc r06Case, endpoint string) r06Outcome {
 					payload["id"] = rows[0].ID
 					payload["revision"] = rows[0].Public().Revision
 				}
-				result, err = BuildRoutePlan(tc.Router, rows, r06JSON(payload))
+				result, err = routeedit.BuildRoutePlan(tc.Router, rows, r06JSON(payload))
 			default:
 				var expected *EditableRoute
 				if tc.Action != "add" {
@@ -377,7 +378,7 @@ func r06Run(tc r06Case, endpoint string) r06Outcome {
 					}
 				}
 				if d, ok := driver.(*Ikuai); ok {
-					result, err = d.mutateRoute(context.Background(), tc.Action, expected, tc.Values, "RT0123456789abc")
+					result, err = routeedit.MutateIkuaiRouteNamed(context.Background(), d.Client, tc.Action, expected, tc.Values, "RT0123456789abc")
 				} else {
 					result, err = editor.MutateRoute(context.Background(), tc.Action, expected, tc.Values)
 				}

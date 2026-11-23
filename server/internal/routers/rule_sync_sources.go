@@ -6,6 +6,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/routeedit"
 	"configflow/internal/rulefetch"
 	"context"
 	"encoding/json"
@@ -47,7 +48,7 @@ func withSyncEnvironment(ctx context.Context, raw json.RawMessage) (context.Cont
 			return nil, err
 		}
 	}
-	return context.WithValue(ctx, syncEnvironmentKey{}, &syncEnvironment{cfg, routeDigest(input.System)}), nil
+	return context.WithValue(ctx, syncEnvironmentKey{}, &syncEnvironment{cfg, routeedit.Digest(input.System)}), nil
 }
 
 func syncEnvironmentConfig(ctx context.Context, raw json.RawMessage) (*rulefetch.SourceConfig, error) {

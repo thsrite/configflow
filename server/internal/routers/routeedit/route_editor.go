@@ -1,8 +1,12 @@
-package routers
+// Package routeedit implements conservative manual IPv4 static-route editing
+// for RouterOS and iKuai devices.
+package routeedit
 
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,11 +17,9 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"configflow/internal/lifecycle"
-	"configflow/internal/lockx"
 	"configflow/internal/netipx"
 	"configflow/internal/redact"
 )
@@ -32,7 +34,7 @@ type EditableRoute struct {
 // RouteSnapshot is the vendor's complete route record (a RouterOS or an
 // iKuai row); it encodes as that record.
 type RouteSnapshot struct {
-	ros   Row
+	ros   ros.Row
 	ikuai ikuai.Row
 }
 
@@ -70,7 +72,7 @@ func (r *EditableRoute) Public() *PublicRoute {
 	if r == nil {
 		return nil
 	}
-	return &PublicRoute{r.RouteFields, routeDigest(struct {
+	return &PublicRoute{r.RouteFields, Digest(struct {
 		Fields   RouteFields   `json:"fields"`
 		Snapshot RouteSnapshot `json:"snapshot"`
 	}{r.RouteFields, r.Snapshot})}
@@ -140,7 +142,7 @@ type RouteEditor interface {
 }
 
 // ReadRoutes reads a complete list and refuses ambiguous identities.
-func ReadRoutes(ctx context.Context, driver Driver) ([]*EditableRoute, error) {
+func ReadRoutes(ctx context.Context, driver any) ([]*EditableRoute, error) {
 	editor, ok := driver.(RouteEditor)
 	if !ok {
 		return nil, device.Error(messageEditUnsupported)
@@ -159,7 +161,7 @@ func ReadRoutes(ctx context.Context, driver Driver) ([]*EditableRoute, error) {
 	return rows, nil
 }
 
-func routeDigest(value any) string {
+func Digest(value any) string {
 	data, _ := json.Marshal(value) // all callers contain JSON-safe records read from the device
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
@@ -247,7 +249,7 @@ func routeJSONString(data []byte, target *string) bool {
 }
 
 // BuildRoutePlan builds a preview without device writes or repository mutations.
-func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) (*RoutePlan, error) {
+func BuildRoutePlan(router spec.Router, rows []*EditableRoute, data json.RawMessage) (*RoutePlan, error) {
 	intent, err := NormalizeRouteRequest(data)
 	if err != nil {
 		return nil, err
@@ -256,20 +258,20 @@ func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) 
 	if intent.Action != "add" {
 		current = editableByID(rows, intent.ID)
 		if current == nil {
-			return nil, device.KindError(KindConflict, messageEditMissing)
+			return nil, device.KindError(device.KindConflict, messageEditMissing)
 		}
 		if current.Public().Revision != intent.Revision {
-			return nil, device.KindError(KindConflict, messageEditDrift)
+			return nil, device.KindError(device.KindConflict, messageEditDrift)
 		}
 		if !current.Editable {
-			return nil, device.KindError(KindConflict, device.FirstNonEmpty(current.Reason, messageEditReadonly))
+			return nil, device.KindError(device.KindConflict, device.FirstNonEmpty(current.Reason, messageEditReadonly))
 		}
 	}
 	v := intent.Values
 	if v != nil {
 		for _, row := range rows {
 			if row.CIDR == v.CIDR && row.Table == "main" && (current == nil || row.ID != current.ID) {
-				return nil, device.KindError(KindConflict, fmt.Sprintf(messageEditDuplicate, v.CIDR))
+				return nil, device.KindError(device.KindConflict, fmt.Sprintf(messageEditDuplicate, v.CIDR))
 			}
 		}
 	}
@@ -308,7 +310,7 @@ func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) 
 		VerifyTLS bool   `json:"verify_tls"`
 	}
 	connection := routeConnection{router.ID, router.Type, router.Endpoint, router.Username, router.VerifyTLS}
-	plan.Fingerprint = routeDigest(struct {
+	plan.Fingerprint = Digest(struct {
 		Protocol   int             `json:"protocol"`
 		Connection routeConnection `json:"connection"`
 		Intent     RouteIntent     `json:"intent"`
@@ -320,7 +322,7 @@ func BuildRoutePlan(router Router, rows []*EditableRoute, data json.RawMessage) 
 
 // ExecuteRoutePlan completes an edit and all its readbacks/compensation even if the request disconnects.
 // Callers own the connection lock and rebuild the plan from fresh rows before calling.
-func ExecuteRoutePlan(ctx context.Context, driver Driver, rows []*EditableRoute, plan *RoutePlan) (*RouteResult, error) {
+func ExecuteRoutePlan(ctx context.Context, driver any, rows []*EditableRoute, plan *RoutePlan) (*RouteResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -361,37 +363,13 @@ func routeIdentityEqual(a, b *EditableRoute) bool {
 	return a != nil && b != nil && a.ID == b.ID && a.CIDR == b.CIDR && a.Gateway == b.Gateway && a.Enabled == b.Enabled && a.Comment == b.Comment && a.Table == b.Table && reflect.DeepEqual(a.Snapshot, b.Snapshot)
 }
 
-// L2: shared by publish, manual edits, previews and fixed-IP operations.
-var routeLocks = lockx.NewKeyed[[2]string](lockx.LevelDevice, "router-operation")
-
-// RouterOperationLock serializes read-modify-write operations on a connection.
-// Read callers retain cancellation; write callers detach from client disconnects
-// and wait at most ten minutes, bounded by Runtime shutdown cancellation.
-// Do not acquire recursively: pass the returned context down under the same lock.
-func RouterOperationLock(ctx context.Context, router Router, write bool) (context.Context, func(), error) {
-	limit := time.Duration(0)
-	if write {
-		ctx = lifecycle.Detach(ctx)
-		if err := ctx.Err(); err != nil {
-			return ctx, nil, err
-		}
-		limit = 10 * time.Minute
-	}
-	key := [2]string{router.Type, strings.TrimRight(router.Endpoint, "/")}
-	held, release, err := routeLocks.Lock(ctx, key, limit)
-	if err != nil && write && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-		return ctx, nil, device.KindError(KindConflict, device.MessageEditBusy)
-	}
-	return held, release, err
-}
-
 // A device may echo the password in its own error text. Keep the error kind but
 // never expose that text, including encoded passwords from URL userinfo.
 // Usernames are not secrets (the router form shows them) and often equal words
 // of the fixed diagnostics, such as a RouterOS user named "api". The RouterOS
 // transport already replaces a device detail echoing the password with
 // redact.Redacted (safeDeviceText); such an error is hidden the same way.
-func routeSafeError(err error, endpoint, password string) error {
+func SafeError(err error, endpoint, password string) error {
 	if err == nil {
 		return nil
 	}
@@ -405,15 +383,15 @@ func routeSafeError(err error, endpoint, password string) error {
 	if !redact.ContainsEncodedSecret(text, redact.NewSecrets(secrets)) && !strings.Contains(text, redact.Redacted) {
 		return err
 	}
-	kind := KindRouter
-	if e, ok := errors.AsType[*RouterError](err); ok {
+	kind := device.KindRouter
+	if e, ok := errors.AsType[*device.RouterError](err); ok {
 		kind = e.Kind
 	}
-	message := messageEditSecret
-	if kind == KindRollback {
+	message := MessageEditSecret
+	if kind == device.KindRollback {
 		message = messageEditSecretRollback
 	}
-	if kind == KindUncertainWrite {
+	if kind == device.KindUncertainWrite {
 		message = messageEditSecretUncertain
 	}
 	return device.KindError(kind, message)

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
 	"context"
 	"encoding/json"
 	"errors"
@@ -59,7 +60,7 @@ func TestR14ReviewPreResponseTimeoutIsTransient(t *testing.T) {
 // itself says "请稍后再试". The text reaches the task page as a 409 message.
 func TestR14ReviewStartJobBusyMessage(t *testing.T) {
 	s, _, r := r14Fixture(t)
-	_, release, lockErr := RouterJobLock(t.Context(), "default", r.ID, r)
+	_, release, lockErr := oplock.RouterJobLock(t.Context(), "default", r.ID, r)
 	if lockErr != nil {
 		t.Fatal("job lock not free")
 	}

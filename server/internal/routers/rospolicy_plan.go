@@ -4,6 +4,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/routeedit"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -183,7 +184,7 @@ func BuildROSPolicy(desired *Desired, state *RouterState) *ROSPolicyPlan {
 			continue
 		}
 		if device.IsManaged(row.Text("comment")) && !strings.HasPrefix(row.Text("comment"), ROSPolicyPrefix) && row.Is("gateway", desired.ProxyGateway) && policyOnlyOverlap(prefix) && !row.Flag("dynamic") {
-			if editROSEntry(row, nil).Editable {
+			if routeedit.EditROSEntry(row, nil).Editable {
 				migrations = append(migrations, ros.NewResource(ros.PathRoutes, row))
 				continue
 			}

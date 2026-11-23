@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
 	"context"
 	"encoding/json"
 	"errors"
@@ -205,7 +206,7 @@ func TestR12ReviewStartPublishPanicIsLogged(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("owner did not finish")
 	}
-	if _, release, e := RouterOperationLock(t.Context(), *r, false); e != nil {
+	if _, release, e := oplock.RouterOperationLock(t.Context(), *r, false); e != nil {
 		t.Fatal("L2 leaked", e)
 	} else {
 		release()

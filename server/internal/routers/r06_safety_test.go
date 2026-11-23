@@ -2,7 +2,8 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
-	"configflow/internal/routers/ros"
+	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/routeedit"
 	"context"
 	"errors"
 	"net/http/httptest"
@@ -143,7 +144,7 @@ func TestR06ConnectionLock(t *testing.T) {
 	violations := lockx.Violations()
 	type scopeKey struct{}
 	root := context.WithValue(context.Background(), scopeKey{}, "repo-scope")
-	ctx, release, err := RouterOperationLock(root, tc.Router, true)
+	ctx, release, err := oplock.RouterOperationLock(root, tc.Router, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +156,7 @@ func TestR06ConnectionLock(t *testing.T) {
 	}
 	read, cancel := context.WithCancel(root)
 	cancel()
-	if _, unlock, err := RouterOperationLock(read, other, false); !errors.Is(err, context.Canceled) {
+	if _, unlock, err := oplock.RouterOperationLock(read, other, false); !errors.Is(err, context.Canceled) {
 		if unlock != nil {
 			unlock()
 		}
@@ -165,7 +166,7 @@ func TestR06ConnectionLock(t *testing.T) {
 	finished := make(chan error, 1)
 	go func() {
 		close(ready)
-		c, u, e := RouterOperationLock(read, other, true)
+		c, u, e := oplock.RouterOperationLock(read, other, true)
 		if e == nil {
 			defer u()
 			if c.Err() != nil {
@@ -185,7 +186,7 @@ func TestR06ConnectionLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	release() // release is idempotent
-	if routeLocks.Held([2]string{tc.Router.Type, tc.Router.Endpoint}) {
+	if oplock.OperationLockHeld(tc.Router) {
 		t.Fatal("connection lock still held")
 	}
 	if lockx.Violations() != violations {
@@ -195,50 +196,50 @@ func TestR06ConnectionLock(t *testing.T) {
 
 func TestR06PreviewBindsFullSnapshotAndConnection(t *testing.T) {
 	tc := r06Base("routeros", "read")
-	row := editROSEntry(deviceRow(tc.ROS.Tables["/ip/route"][0]), nil)
+	row := routeedit.EditROSEntry(deviceRow(tc.ROS.Tables["/ip/route"][0]), nil)
 	payload := r06JSON(map[string]any{"action": "update", "id": row.ID, "revision": row.Public().Revision, "values": tc.Values})
-	original, err := BuildRoutePlan(tc.Router, []*EditableRoute{row}, payload)
+	original, err := routeedit.BuildRoutePlan(tc.Router, []*EditableRoute{row}, payload)
 	if err != nil {
 		t.Fatal(err)
 	}
 	password := tc.Router
 	password.Password = "changed-secret"
-	same, err := BuildRoutePlan(password, []*EditableRoute{row}, payload)
+	same, err := routeedit.BuildRoutePlan(password, []*EditableRoute{row}, payload)
 	if err != nil || original.Fingerprint != same.Fingerprint {
 		t.Fatal("password changed fingerprint")
 	}
 	endpoint := tc.Router
 	endpoint.Endpoint = "http://other.example.com"
-	changed, _ := BuildRoutePlan(endpoint, []*EditableRoute{row}, payload)
+	changed, _ := routeedit.BuildRoutePlan(endpoint, []*EditableRoute{row}, payload)
 	if changed.Fingerprint == original.Fingerprint {
 		t.Fatal("connection omitted from fingerprint")
 	}
 	other := *row
 	other.ID = "*99"
 	other.CIDR = "192.0.2.0/24"
-	same, err = BuildRoutePlan(tc.Router, []*EditableRoute{row, &other}, payload)
+	same, err = routeedit.BuildRoutePlan(tc.Router, []*EditableRoute{row, &other}, payload)
 	if err != nil || same.Fingerprint != original.Fingerprint {
 		t.Fatal("unrelated route changed fingerprint")
 	}
-	changedRow := *row
-	changedRow.Snapshot = RouteSnapshot{ros: ros.CloneRow(row.Snapshot.ros)}
-	changedRow.Snapshot.ros["distance"] = "99"
-	if _, err := BuildRoutePlan(tc.Router, []*EditableRoute{&changedRow}, payload); device.RouterErrorKind(err) != KindConflict {
+	drifted := deviceRow(tc.ROS.Tables["/ip/route"][0])
+	drifted["distance"] = "99"
+	changedRow := routeedit.EditROSEntry(drifted, nil)
+	if _, err := routeedit.BuildRoutePlan(tc.Router, []*EditableRoute{changedRow}, payload); device.RouterErrorKind(err) != KindConflict {
 		t.Fatal("advanced drift not rejected")
 	}
 	for _, field := range []string{"active", "inactive", "immediate-gw"} {
 		runtime := deviceRow(tc.ROS.Tables["/ip/route"][0])
 		runtime[field] = "different"
-		if editROSEntry(runtime, nil).Public().Revision != row.Public().Revision {
+		if routeedit.EditROSEntry(runtime, nil).Public().Revision != row.Public().Revision {
 			t.Fatalf("runtime %s altered revision", field)
 		}
 	}
 	noop := &RouteValues{CIDR: row.CIDR, Gateway: row.Gateway, Enabled: row.Enabled, Comment: row.Comment}
-	plan, err := BuildRoutePlan(tc.Router, []*EditableRoute{row}, r06JSON(map[string]any{"action": "update", "id": row.ID, "revision": row.Public().Revision, "values": noop}))
+	plan, err := routeedit.BuildRoutePlan(tc.Router, []*EditableRoute{row}, r06JSON(map[string]any{"action": "update", "id": row.ID, "revision": row.Public().Revision, "values": noop}))
 	if err != nil || !plan.Empty {
 		t.Fatal("no-op not recognized")
 	}
-	result, err := ExecuteRoutePlan(context.Background(), nil, nil, plan)
+	result, err := routeedit.ExecuteRoutePlan(context.Background(), nil, nil, plan)
 	if err != nil || result.Changed {
 		t.Fatal("no-op contacted driver")
 	}
@@ -269,7 +270,7 @@ func TestR06DeviceCredentialEchoIsHidden(t *testing.T) {
 				editor = d
 			}
 			_, err := editor.MutateRoute(context.Background(), "add", nil, tc.Values)
-			if e, ok := errors.AsType[*RouterError](err); !ok || e.Message != messageEditSecret {
+			if e, ok := errors.AsType[*RouterError](err); !ok || e.Message != routeedit.MessageEditSecret {
 				t.Fatalf("device echo leaked: %v", err)
 			}
 		})
@@ -278,7 +279,7 @@ func TestR06DeviceCredentialEchoIsHidden(t *testing.T) {
 
 func TestR06SecretRedactionKeepsRecoveryStatus(t *testing.T) {
 	for _, kind := range []ErrorKind{KindRollback, KindUncertainWrite} {
-		err := routeSafeError(device.KindError(kind, "device echoes synthetic-secret"), "http://example.com", "synthetic-secret")
+		err := routeedit.SafeError(device.KindError(kind, "device echoes synthetic-secret"), "http://example.com", "synthetic-secret")
 		e, ok := errors.AsType[*RouterError](err)
 		if !ok || e.Kind != kind || strings.Contains(e.Message, "synthetic-secret") {
 			t.Fatal("unsafe redaction", err)

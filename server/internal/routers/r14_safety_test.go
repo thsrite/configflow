@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
@@ -19,7 +20,7 @@ import (
 func TestR14ManifestRollbackPersistsLatestState(t *testing.T) {
 	s, _, r := r14Fixture(t)
 	ctx := repo.WithRepository(t.Context(), s.Repo)
-	held, unlock, lockErr := RouterJobLock(ctx, "default", r.ID, r)
+	held, unlock, lockErr := oplock.RouterJobLock(ctx, "default", r.ID, r)
 	if lockErr != nil {
 		t.Fatal("busy")
 	}

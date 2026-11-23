@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/oplock"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,7 +26,7 @@ func TestO36bOperationWaitRuntimeBoundary(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			violations := lockx.Violations()
 			device := *jobConnection("http://192.0.2.70")
-			_, release, err := RouterOperationLock(t.Context(), device, false)
+			_, release, err := oplock.RouterOperationLock(t.Context(), device, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -33,7 +34,7 @@ func TestO36bOperationWaitRuntimeBoundary(t *testing.T) {
 			runtime, request, disconnect := o36bRuntime(t)
 			done := make(chan error, 1)
 			go func() {
-				_, unlock, err := RouterOperationLock(request, device, true)
+				_, unlock, err := oplock.RouterOperationLock(request, device, true)
 				if unlock != nil {
 					unlock()
 				}

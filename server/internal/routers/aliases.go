@@ -4,6 +4,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/routeedit"
 	"configflow/internal/routers/spec"
 )
 
@@ -78,6 +79,18 @@ type (
 	RouterSettings   = spec.RouterSettings
 	RouterView       = spec.RouterView
 	RuleSet          = spec.RuleSet
+
+	EditableRoute = routeedit.EditableRoute
+	RouteSnapshot = routeedit.RouteSnapshot
+	RouteFields   = routeedit.RouteFields
+	PublicRoute   = routeedit.PublicRoute
+	RouteValues   = routeedit.RouteValues
+	RouteIntent   = routeedit.RouteIntent
+	RoutePlan     = routeedit.RoutePlan
+	PlannedRoute  = routeedit.PlannedRoute
+	RouteMutation = routeedit.RouteMutation
+	RouteResult   = routeedit.RouteResult
+	RouteEditor   = routeedit.RouteEditor
 )
 
 const (

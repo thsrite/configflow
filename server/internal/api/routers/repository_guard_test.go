@@ -1,6 +1,7 @@
 package routers_test
 
 import (
+	"configflow/internal/routers/oplock"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -43,7 +44,7 @@ func TestR15OwnedRecordCredentialRepairUsesRepositoryGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	held, release, lockErr := core.RouterJobLock(s.Context(), "default", "router-one", records.Routers[0])
+	held, release, lockErr := oplock.RouterJobLock(s.Context(), "default", "router-one", records.Routers[0])
 	if lockErr != nil {
 		t.Fatal("L1 unavailable")
 	}

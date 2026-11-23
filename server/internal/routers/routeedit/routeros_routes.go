@@ -1,4 +1,4 @@
-package routers
+package routeedit
 
 import (
 	"configflow/internal/routers/device"
@@ -24,8 +24,8 @@ var editROSFlags = func() map[string]bool {
 	}
 	return v
 }()
-var editROSDefaults = func() Row {
-	v := Row{"routing-table": "main", "disabled": "false", "comment": "", "distance": "1", "scope": "30", "target-scope": "10", "check-gateway": "none", "pref-src": "", "vrf-interface": "", "suppress-hw-offload": "false", "dynamic": "false", "static": "true"}
+var editROSDefaults = func() ros.Row {
+	v := ros.Row{"routing-table": "main", "disabled": "false", "comment": "", "distance": "1", "scope": "30", "target-scope": "10", "check-gateway": "none", "pref-src": "", "vrf-interface": "", "suppress-hw-offload": "false", "dynamic": "false", "static": "true"}
 	for k := range editROSSpecial {
 		v[k] = "false"
 	}
@@ -41,14 +41,14 @@ func editROSFlag(value string) (bool, bool) {
 	}
 	return false, false
 }
-func editROSSnapshot(row Row) Row {
+func editROSSnapshot(row ros.Row) ros.Row {
 	out := ros.CloneRow(row)
 	for k := range editROSRuntime {
 		delete(out, k)
 	}
 	return out
 }
-func editROSEntry(row Row, duplicates map[string]bool) *EditableRoute {
+func EditROSEntry(row ros.Row, duplicates map[string]bool) *EditableRoute {
 	reasons := []string{}
 	id := row[".id"]
 	if !ros.IDPattern.MatchString(id) {
@@ -128,7 +128,7 @@ func editROSEntry(row Row, duplicates map[string]bool) *EditableRoute {
 	}
 	return &EditableRoute{RouteFields: RouteFields{ID: id, CIDR: cidr, Gateway: gateway, Enabled: valid && !disabled, Comment: comment, Table: table, Editable: len(reasons) == 0, Reason: strings.Join(device.Unique(reasons), "；"), Managed: device.IsManaged(comment)}, Snapshot: RouteSnapshot{ros: editROSSnapshot(row)}}
 }
-func editROSEntries(rows []Row) []*EditableRoute {
+func editROSEntries(rows []ros.Row) []*EditableRoute {
 	seen, duplicates := map[string]bool{}, map[string]bool{}
 	for _, r := range rows {
 		if id, ok := r[".id"]; ok {
@@ -140,21 +140,21 @@ func editROSEntries(rows []Row) []*EditableRoute {
 	}
 	out := make([]*EditableRoute, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, editROSEntry(r, duplicates))
+		out = append(out, EditROSEntry(r, duplicates))
 	}
 	return out
 }
 
 // ReadRoutes reads manual route snapshots, retaining read-only rows for display.
-func (d *RouterOS) ReadRoutes(ctx context.Context) (result []*EditableRoute, err error) {
-	defer func() { err = routeSafeError(err, d.Endpoint(), d.Password()) }()
+func (d *rosDevice) ReadRoutes(ctx context.Context) (result []*EditableRoute, err error) {
+	defer func() { err = SafeError(err, d.Endpoint(), d.Password()) }()
 	rows, err := d.List(ctx, ros.PathRoutes)
 	if err != nil {
 		return nil, err
 	}
 	return editROSEntries(rows), nil
 }
-func editROSCanonical(row Row, ignoreID bool) Row {
+func editROSCanonical(row ros.Row, ignoreID bool) ros.Row {
 	out := maps.Clone(editROSDefaults)
 	maps.Copy(out, editROSSnapshot(row))
 	if ignoreID {
@@ -178,11 +178,11 @@ func editROSCanonical(row Row, ignoreID bool) Row {
 	}
 	return out
 }
-func editROSSame(a, b Row, ignoreID bool) bool {
+func editROSSame(a, b ros.Row, ignoreID bool) bool {
 	return ros.SameRow(editROSCanonical(a, ignoreID), editROSCanonical(b, ignoreID))
 }
-func editROSFind(rows []Row, id string) (Row, error) {
-	var found Row
+func editROSFind(rows []ros.Row, id string) (ros.Row, error) {
+	var found ros.Row
 	for _, row := range rows {
 		if row[".id"] == id {
 			if found != nil {
@@ -193,12 +193,12 @@ func editROSFind(rows []Row, id string) (Row, error) {
 	}
 	return found, nil
 }
-func editROSNoDuplicate(rows []Row, cidr, id string, before bool) error {
+func editROSNoDuplicate(rows []ros.Row, cidr, id string, before bool) error {
 	for _, r := range editROSEntries(rows) {
 		if r.Table == "main" && r.CIDR == cidr && r.ID != id {
-			kind := KindRouter
+			kind := device.KindRouter
 			if before {
-				kind = KindConflict
+				kind = device.KindConflict
 			}
 			return device.KindError(kind, fmt.Sprintf(messageEditROSDuplicate, cidr))
 		}
@@ -219,8 +219,8 @@ func editValues(values *RouteValues, message string) (netip.Prefix, string, erro
 func editResource(id string) string { return ros.PathRoutes + "/" + ros.EscapePathID(id) }
 
 // MutateRoute edits one route, proving ownership again before every compensation.
-func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (result *RouteMutation, err error) {
-	defer func() { err = routeSafeError(err, d.Endpoint(), d.Password()) }()
+func (d *rosDevice) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (result *RouteMutation, err error) {
+	defer func() { err = SafeError(err, d.Endpoint(), d.Password()) }()
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -228,7 +228,7 @@ func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *Edi
 	if action != "add" && action != "update" && action != "delete" {
 		return nil, device.Error(messageEditVendorAction)
 	}
-	var desired Row
+	var desired ros.Row
 	if action != "delete" {
 		p, g, err := editValues(values, messageEditROSValues)
 		if err != nil {
@@ -238,14 +238,14 @@ func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *Edi
 		if !values.Enabled {
 			disabled = "true"
 		}
-		desired = Row{"dst-address": p.String(), "gateway": g, "disabled": disabled, "comment": values.Comment}
+		desired = ros.Row{"dst-address": p.String(), "gateway": g, "disabled": disabled, "comment": values.Comment}
 	}
 	previous, err := d.List(ctx, ros.PathRoutes)
 	if err != nil {
 		return nil, err
 	}
 	var before *EditableRoute
-	var after Row
+	var after ros.Row
 	id := ""
 	if action == "add" {
 		if expected != nil {
@@ -257,14 +257,14 @@ func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *Edi
 		desired["routing-table"] = "main"
 	} else {
 		if expected == nil || expected.Snapshot.ros == nil || expected.ID == "" {
-			return nil, device.KindError(KindConflict, messageEditROSSnapshot)
+			return nil, device.KindError(device.KindConflict, messageEditROSSnapshot)
 		}
 		before = editableByID(editROSEntries(previous), expected.ID)
 		if !reflect.DeepEqual(before, expected) {
-			return nil, device.KindError(KindConflict, messageEditROSDrift)
+			return nil, device.KindError(device.KindConflict, messageEditROSDrift)
 		}
 		if !before.Editable {
-			return nil, device.KindError(KindConflict, device.FirstNonEmpty(before.Reason, messageEditReadonly))
+			return nil, device.KindError(device.KindConflict, device.FirstNonEmpty(before.Reason, messageEditReadonly))
 		}
 		id = before.ID
 		if action == "update" {
@@ -286,7 +286,7 @@ func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *Edi
 	}
 	return nil, err
 }
-func (d *RouterOS) editROSWrite(ctx context.Context, action string, desired Row, previous []Row, id *string, after *Row) (*RouteMutation, error) {
+func (d *rosDevice) editROSWrite(ctx context.Context, action string, desired ros.Row, previous []ros.Row, id *string, after *ros.Row) (*RouteMutation, error) {
 	if action == "add" {
 		response, err := d.Request(ctx, "PUT", ros.PathRoutes, desired, ros.Timeout)
 		if err != nil {
@@ -295,7 +295,7 @@ func (d *RouterOS) editROSWrite(ctx context.Context, action string, desired Row,
 		row := ros.AsRow(response)
 		candidate := row[".id"]
 		if !ros.IDPattern.MatchString(candidate) || ros.FindRow(previous, candidate) != nil {
-			return nil, device.KindError(KindUncertainWrite, messageEditROSCreateID)
+			return nil, device.KindError(device.KindUncertainWrite, messageEditROSCreateID)
 		}
 		*id = candidate
 		*after = ros.MergeRows(desired, editROSSnapshot(row))
@@ -333,7 +333,7 @@ func (d *RouterOS) editROSWrite(ctx context.Context, action string, desired Row,
 	if current == nil || !editROSSame(current, *after, false) {
 		return nil, device.Error(messageEditROSReadMismatch)
 	}
-	entry := editROSEntry(current, nil)
+	entry := EditROSEntry(current, nil)
 	if !entry.Editable {
 		return nil, device.Error(messageEditROSAfterReadonly + entry.Reason)
 	}
@@ -342,7 +342,7 @@ func (d *RouterOS) editROSWrite(ctx context.Context, action string, desired Row,
 	}
 	return &RouteMutation{Changed: true, Entry: entry}, nil
 }
-func (d *RouterOS) editROSRestore(ctx context.Context, method, path string, values Row, verify func([]Row, any) bool) error {
+func (d *rosDevice) editROSRestore(ctx context.Context, method, path string, values ros.Row, verify func([]ros.Row, any) bool) error {
 	response, writeErr := d.Request(ctx, method, path, values, ros.Timeout)
 	rows, err := d.List(ctx, ros.PathRoutes)
 	if err != nil {
@@ -357,14 +357,14 @@ func (d *RouterOS) editROSRestore(ctx context.Context, method, path string, valu
 	}
 	return nil
 }
-func (d *RouterOS) editROSCompensate(ctx context.Context, action string, previous []Row, before *EditableRoute, id string, after Row) error {
+func (d *rosDevice) editROSCompensate(ctx context.Context, action string, previous []ros.Row, before *EditableRoute, id string, after ros.Row) error {
 	rows, err := d.List(ctx, ros.PathRoutes)
 	if err != nil {
 		return err
 	}
 	if action == "add" {
 		if id == "" {
-			old, now := []Row{}, []Row{}
+			old, now := []ros.Row{}, []ros.Row{}
 			for _, r := range previous {
 				old = append(old, editROSCanonical(r, false))
 			}
@@ -386,7 +386,7 @@ func (d *RouterOS) editROSCompensate(ctx context.Context, action string, previou
 		if !editROSSame(current, after, false) {
 			return device.Error(messageEditROSAddChanged)
 		}
-		return d.editROSRestore(ctx, "DELETE", editResource(id), nil, func(latest []Row, _ any) bool { r, e := editROSFind(latest, id); return e == nil && r == nil })
+		return d.editROSRestore(ctx, "DELETE", editResource(id), nil, func(latest []ros.Row, _ any) bool { r, e := editROSFind(latest, id); return e == nil && r == nil })
 	}
 	current, err := editROSFind(rows, before.ID)
 	if err != nil {
@@ -402,7 +402,7 @@ func (d *RouterOS) editROSCompensate(ctx context.Context, action string, previou
 		if err := editROSNoDuplicate(rows, before.CIDR, before.ID, false); err != nil {
 			return err
 		}
-		original := Row{}
+		original := ros.Row{}
 		for _, k := range []string{"dst-address", "gateway", "disabled", "comment"} {
 			v, ok := before.Snapshot.ros[k]
 			if !ok {
@@ -410,7 +410,7 @@ func (d *RouterOS) editROSCompensate(ctx context.Context, action string, previou
 			}
 			original[k] = v
 		}
-		return d.editROSRestore(ctx, "PATCH", editResource(before.ID), original, func(latest []Row, _ any) bool {
+		return d.editROSRestore(ctx, "PATCH", editResource(before.ID), original, func(latest []ros.Row, _ any) bool {
 			r, e := editROSFind(latest, before.ID)
 			return e == nil && r != nil && editROSSame(r, before.Snapshot.ros, false)
 		})
@@ -422,8 +422,8 @@ func (d *RouterOS) editROSCompensate(ctx context.Context, action string, previou
 		return err
 	}
 	prior := ros.RowIDs(rows)
-	return d.editROSRestore(ctx, "PUT", ros.PathRoutes, ros.Payload(ros.PathRoutes, before.Snapshot.ros), func(latest []Row, response any) bool {
-		candidates := []Row{}
+	return d.editROSRestore(ctx, "PUT", ros.PathRoutes, ros.Payload(ros.PathRoutes, before.Snapshot.ros), func(latest []ros.Row, response any) bool {
+		candidates := []ros.Row{}
 		for _, r := range latest {
 			if ros.IDPattern.MatchString(r.Text(".id")) && !prior[r.Text(".id")] && editROSSame(r, before.Snapshot.ros, true) {
 				candidates = append(candidates, r)
@@ -441,4 +441,16 @@ func (d *RouterOS) editROSCompensate(ctx context.Context, action string, previou
 		}
 		return len(candidates) == 1 && (candidate == "" || candidates[0][".id"] == candidate)
 	})
+}
+
+type rosDevice struct{ *ros.Client }
+
+// ReadROSRoutes reads editable static routes from a RouterOS client.
+func ReadROSRoutes(ctx context.Context, c *ros.Client) ([]*EditableRoute, error) {
+	return (&rosDevice{c}).ReadRoutes(ctx)
+}
+
+// MutateROSRoute applies one conservative static-route edit on a RouterOS client.
+func MutateROSRoute(ctx context.Context, c *ros.Client, action string, expected *EditableRoute, values *RouteValues) (*RouteMutation, error) {
+	return (&rosDevice{c}).MutateRoute(ctx, action, expected, values)
 }

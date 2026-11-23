@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/oplock"
 	"context"
 	"encoding/json"
 	"errors"
@@ -63,12 +64,12 @@ func o36bRouterCommit(ctx context.Context, r *repo.Repository, connection model.
 		return jobUpdate(r, ctx, strings.TrimPrefix(operation, "generic-"), connection)
 	}
 	device := jobConnection(connection.Endpoint)
-	held, release, err := RouterJobLock(ctx, "live", "router", device)
+	held, release, err := oplock.RouterJobLock(ctx, "live", "router", device)
 	if err != nil {
 		return err
 	}
 	defer release()
-	held, unlock, err := RouterOperationLock(held, *device, true)
+	held, unlock, err := oplock.RouterOperationLock(held, *device, true)
 	if err != nil {
 		return err
 	}
@@ -186,7 +187,7 @@ func TestO36bRepositoryRuntimeCommitBoundary(t *testing.T) {
 						}
 						o36bCheckRouterCommit(t, r, base, operation)
 					}
-					_, unlock, err := RouterJobLock(base, "live", "router", jobConnection(connection.Endpoint))
+					_, unlock, err := oplock.RouterJobLock(base, "live", "router", jobConnection(connection.Endpoint))
 					if err != nil {
 						t.Fatal("finished commit retained its job lease", err)
 					}

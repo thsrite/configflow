@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"configflow/internal/routers/oplock"
 	"context"
 	"errors"
 	"testing"
@@ -69,7 +70,7 @@ func TestReviewR17ShutdownWhileWaitingForDeviceLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, unlock, err := routers.RouterOperationLock(t.Context(), *r, true)
+	_, unlock, err := oplock.RouterOperationLock(t.Context(), *r, true)
 	if err != nil {
 		t.Fatal(err)
 	}

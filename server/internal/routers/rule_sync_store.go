@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/fsx"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/routeedit"
 	"context"
 	"encoding/json"
 	"errors"
@@ -125,7 +126,7 @@ var syncReceiptLocks = lockx.NewLeafKeyed[string]("router-sync-receipt")
 type RuleSyncStore struct{ DataDir string }
 
 func (s RuleSyncStore) path(profile, id string) string {
-	return filepath.Join(s.DataDir, "router-rule-sync", routeDigest([]string{profile, id})+".json")
+	return filepath.Join(s.DataDir, "router-rule-sync", routeedit.Digest([]string{profile, id})+".json")
 }
 
 // Read treats corrupt or unreadable receipts as paused; an absent receipt is waiting.

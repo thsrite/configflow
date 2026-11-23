@@ -2,6 +2,8 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/routeedit"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
@@ -144,7 +146,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 	message := messageSyncCaptureIO
 	var device *RouterError
 	if errors.As(err, &device) {
-		message = routeSafeError(err, r.Endpoint, r.Password).Error()
+		message = routeedit.SafeError(err, r.Endpoint, r.Password).Error()
 	}
 	return s.store().Write(work, profile, r.ID, RuleSyncReceipt{Status: "waiting", Message: messageSyncCapturePrefix + message, CheckedAt: &timestamp})
 }
@@ -210,7 +212,7 @@ func (s *RuleSyncService) Sync(ctx context.Context, profile, id, trigger string)
 		return RuleSyncStatus{}, err
 	}
 	connection := spec.FindSyncRouter(config, id)
-	held, release, lockErr := RouterJobLock(work, profile, id, connection)
+	held, release, lockErr := oplock.RouterJobLock(work, profile, id, connection)
 	if lockErr != nil {
 		var conflict *RouterError
 		if errors.As(lockErr, &conflict) && conflict.Kind == KindConflict {
@@ -301,7 +303,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 		if err = checkSyncUpdates(base.Rules, records); err != nil {
 			return err
 		}
-		held, unlock, err := RouterOperationLock(ctx, *r, true)
+		held, unlock, err := oplock.RouterOperationLock(ctx, *r, true)
 		if err != nil {
 			return err
 		}
@@ -462,7 +464,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 			receipt.Status = "paused"
 		}
 		if isRouter {
-			receipt.Message = routeSafeError(err, r.Endpoint, r.Password).Error()
+			receipt.Message = routeedit.SafeError(err, r.Endpoint, r.Password).Error()
 		} else {
 			receipt.Message = weburl.SafeErrorDetails(err)
 		}
@@ -593,7 +595,7 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 		return err
 	}
 	r := spec.FindSyncRouter(config, id)
-	job, unlock, lockErr := RouterJobLock(held, profile, id, r)
+	job, unlock, lockErr := oplock.RouterJobLock(held, profile, id, r)
 	if lockErr != nil {
 		return lockErr
 	}

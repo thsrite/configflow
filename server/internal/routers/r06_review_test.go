@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/routeedit"
 	"context"
 	"errors"
 	"io"
@@ -180,7 +181,7 @@ func TestR06RedactionHidesOnlySecrets(t *testing.T) {
 	}{
 		{"username in permission help", "api", "", 403, ros.MessageROSForbidden + ros.PermissionHelp},
 		{"username echoed by device", "synthetic-admin", "synthetic-admin", 400, ""},
-		{"password echoed by device", "api", "synthetic-secret", 400, messageEditSecret},
+		{"password echoed by device", "api", "synthetic-secret", 400, routeedit.MessageEditSecret},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -200,7 +201,7 @@ func TestR06RedactionHidesOnlySecrets(t *testing.T) {
 			if tt.want != "" && e.Message != tt.want {
 				t.Fatalf("message = %q, want %q", e.Message, tt.want)
 			}
-			if tt.want == "" && (e.Message == messageEditSecret || !strings.Contains(e.Message, tt.echo)) {
+			if tt.want == "" && (e.Message == routeedit.MessageEditSecret || !strings.Contains(e.Message, tt.echo)) {
 				t.Fatalf("message = %q, want the device text %q", e.Message, tt.echo)
 			}
 		})

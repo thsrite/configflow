@@ -5,6 +5,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/routeedit"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -25,7 +26,7 @@ func syncStaticResources(ctx context.Context, d *RouterOS, desired *Desired) ([]
 		if row.TextOr("routing-table", "main") != "main" || !wanted[row.Text("dst-address")] || !row.Is("gateway", desired.ProxyGateway) || !device.IsManaged(row.Text("comment")) {
 			continue
 		}
-		entry := editROSEntry(row, map[string]bool{})
+		entry := routeedit.EditROSEntry(row, map[string]bool{})
 		if !entry.Editable || !entry.Enabled {
 			return nil, device.Error(messageSyncStaticSpecial)
 		}

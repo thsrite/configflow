@@ -14,6 +14,7 @@ import (
 	"configflow/internal/netipx"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/routeedit"
 )
 
 // RouterOS is the composed RouterOS 7 driver: it embeds the low-level REST
@@ -374,4 +375,14 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 		}
 	}
 	return state, nil
+}
+
+// ReadRoutes implements routeedit.RouteEditor for RouterOS.
+func (d *RouterOS) ReadRoutes(ctx context.Context) ([]*EditableRoute, error) {
+	return routeedit.ReadROSRoutes(ctx, d.Client)
+}
+
+// MutateRoute implements routeedit.RouteEditor for RouterOS.
+func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (*RouteMutation, error) {
+	return routeedit.MutateROSRoute(ctx, d.Client, action, expected, values)
 }

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
 	"context"
 	"errors"
 	"testing"
@@ -33,7 +34,7 @@ func TestO36bR12TrackedPublicationUsesSharedJobLock(t *testing.T) {
 	}()
 	factory := req.NewDriver
 	req.NewDriver = func(r *Router) Driver { close(entered); <-resume; return factory(r) }
-	held, unlock, err := RouterJobLock(repo.WithRepository(runtime.BindRequest(t.Context()), db), req.ProfileID, req.RouterID, req.Router)
+	held, unlock, err := oplock.RouterJobLock(repo.WithRepository(runtime.BindRequest(t.Context()), db), req.ProfileID, req.RouterID, req.Router)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +49,7 @@ func TestO36bR12TrackedPublicationUsesSharedJobLock(t *testing.T) {
 		t.Fatal("publisher did not reach L2")
 	}
 	for i := 0; i < 24; i++ {
-		_, free, err := RouterJobLock(t.Context(), "alias-profile", "alias-router", req.Router)
+		_, free, err := oplock.RouterJobLock(t.Context(), "alias-profile", "alias-router", req.Router)
 		var conflict *RouterError
 		if !errors.As(err, &conflict) || conflict.Kind != KindConflict || free != nil {
 			t.Fatalf("competing publisher admitted: %v", err)
@@ -73,12 +74,12 @@ func TestO36bR12TrackedPublicationUsesSharedJobLock(t *testing.T) {
 	if after.Revision != before.Revision+1 || stored.Password != req.Router.Password {
 		t.Fatalf("publication/competing edit revision %d -> %d", before.Revision, after.Revision)
 	}
-	_, free, err := RouterJobLock(t.Context(), "alias-profile", "alias-router", req.Router)
+	_, free, err := oplock.RouterJobLock(t.Context(), "alias-profile", "alias-router", req.Router)
 	if err != nil {
 		t.Fatal("result delivered before L1 release", err)
 	}
 	free()
-	_, free, err = RouterOperationLock(context.Background(), *req.Router, false)
+	_, free, err = oplock.RouterOperationLock(context.Background(), *req.Router, false)
 	if err != nil {
 		t.Fatal("L2 leaked", err)
 	}

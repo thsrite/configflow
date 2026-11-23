@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/spec"
 	"context"
@@ -139,7 +140,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 			previous := repo.SetHooks(repo.Hooks{})
 			defer repo.SetHooks(previous)
 			Wire()
-			held, unlock, e := RouterJobLock(repo.WithRepository(ctx, db), "default", r.ID, r)
+			held, unlock, e := oplock.RouterJobLock(repo.WithRepository(ctx, db), "default", r.ID, r)
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -225,12 +226,12 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 			if lockx.Violations() != 0 {
 				t.Fatalf("lock order violations: %d", lockx.Violations())
 			}
-			_, free, e := RouterJobLock(t.Context(), "alias-profile", "alias-router", r)
+			_, free, e := oplock.RouterJobLock(t.Context(), "alias-profile", "alias-router", r)
 			if e != nil {
 				t.Fatal("L1 leaked", e)
 			}
 			free()
-			held, release, e := RouterOperationLock(t.Context(), *r, false)
+			held, release, e := oplock.RouterOperationLock(t.Context(), *r, false)
 			_ = held
 			if e != nil {
 				t.Fatal("L2 leaked", e)

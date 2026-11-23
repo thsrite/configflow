@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
@@ -28,7 +29,7 @@ func r14Hook(t *testing.T) {
 		JobLockRecord: func(ctx context.Context, profile, id string, raw model.Router) (func(), bool) {
 			var r Router
 			_ = json.Unmarshal(device.JSON(raw), &r)
-			_, release, lockErr := RouterJobLock(ctx, profile, id, &r)
+			_, release, lockErr := oplock.RouterJobLock(ctx, profile, id, &r)
 			return release, lockErr == nil
 		},
 	}})
@@ -359,7 +360,7 @@ func TestO17FollowupBusySyncRetriesWithin30Seconds(t *testing.T) {
 	service, _, r := r14Fixture(t)
 	ctx := repo.WithRepository(t.Context(), service.Repo)
 	// Hold the router job lock to simulate a round racing with an in-flight publish.
-	_, release, err := RouterJobLock(ctx, "default", r.ID, r)
+	_, release, err := oplock.RouterJobLock(ctx, "default", r.ID, r)
 	if err != nil {
 		t.Fatal(err)
 	}

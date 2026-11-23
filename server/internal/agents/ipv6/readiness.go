@@ -4,6 +4,7 @@ import (
 	"configflow/internal/fsx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
+	"configflow/internal/routers/oplock"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -206,7 +207,7 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 				continue
 			}
 			seen[key] = true
-			_, unlock, lockErr := routers.RouterJobLock(ctx, profile, r.ID, r)
+			_, unlock, lockErr := oplock.RouterJobLock(ctx, profile, r.ID, r)
 			if lockErr != nil {
 				var conflict *routers.RouterError
 				if errors.As(lockErr, &conflict) && conflict.Kind == routers.KindConflict {
@@ -216,7 +217,7 @@ func (s *Service) Prepare(ctx context.Context, id, profile string, body json.Raw
 			}
 			jobs = append(jobs, unlock)
 		}
-		ctx, unlock, e := routers.RouterOperationLocks(ctx, rs, true)
+		ctx, unlock, e := oplock.RouterOperationLocks(ctx, rs, true)
 		if e != nil {
 			return e
 		}

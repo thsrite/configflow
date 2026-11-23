@@ -1,6 +1,7 @@
-package routers
+package oplock
 
 import (
+	"configflow/internal/routers/spec"
 	"context"
 	"errors"
 	"os"
@@ -14,12 +15,12 @@ import (
 )
 
 func TestOperationKeys(t *testing.T) {
-	a := &Router{RouterSettings: RouterSettings{Type: "routeros", Endpoint: "https://router.example/"}}
-	b := &Router{RouterSettings: RouterSettings{Type: "ikuai", Endpoint: "https://other.example"}}
+	a := &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", Endpoint: "https://router.example/"}}
+	b := &spec.Router{RouterSettings: spec.RouterSettings{Type: "ikuai", Endpoint: "https://other.example"}}
 	clone := *a
 	clone.Endpoint = "https://router.example"
 	want := [][2]string{{"ikuai", b.Endpoint}, {"routeros", clone.Endpoint}}
-	for _, rows := range [][]*Router{{a, b, &clone, nil}, {&clone, b, a}} {
+	for _, rows := range [][]*spec.Router{{a, b, &clone, nil}, {&clone, b, a}} {
 		if got := operationKeys(rows); !reflect.DeepEqual(got, want) {
 			t.Fatalf("keys=%v", got)
 		}
@@ -27,8 +28,8 @@ func TestOperationKeys(t *testing.T) {
 }
 
 func TestRouterOperationGroupCancellation(t *testing.T) {
-	a := &Router{RouterSettings: RouterSettings{Type: "routeros", Endpoint: "https://a.example"}}
-	b := &Router{RouterSettings: RouterSettings{Type: "routeros", Endpoint: "https://b.example"}}
+	a := &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", Endpoint: "https://a.example"}}
+	b := &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", Endpoint: "https://b.example"}}
 	_, unlock, err := RouterOperationLock(context.Background(), *b, false)
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +39,7 @@ func TestRouterOperationGroupCancellation(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, release, err := RouterOperationLocks(ctx, []*Router{b, a}, false)
+		_, release, err := RouterOperationLocks(ctx, []*spec.Router{b, a}, false)
 		if release != nil {
 			release()
 		}
@@ -46,7 +47,7 @@ func TestRouterOperationGroupCancellation(t *testing.T) {
 	}()
 	deadline := time.NewTimer(time.Second)
 	defer deadline.Stop()
-	for !routeLocks.Held(operationKeys([]*Router{a})[0]) {
+	for !routeLocks.Held(operationKeys([]*spec.Router{a})[0]) {
 		select {
 		case <-deadline.C:
 			t.Fatal("first lock not held")
@@ -58,19 +59,19 @@ func TestRouterOperationGroupCancellation(t *testing.T) {
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("err=%v", err)
 	}
-	if routeLocks.Held(operationKeys([]*Router{a})[0]) {
+	if routeLocks.Held(operationKeys([]*spec.Router{a})[0]) {
 		t.Fatal("partial group leaked")
 	}
 }
 
 func TestRouterOperationGroupOppositeOrder(t *testing.T) {
-	a := &Router{RouterSettings: RouterSettings{Type: "routeros", Endpoint: "https://a.example"}}
-	b := &Router{RouterSettings: RouterSettings{Type: "routeros", Endpoint: "https://b.example"}}
+	a := &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", Endpoint: "https://a.example"}}
+	b := &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", Endpoint: "https://b.example"}}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	before := lockx.Violations()
 	var wg sync.WaitGroup
-	for _, rows := range [][]*Router{{a, b}, {b, a}} {
+	for _, rows := range [][]*spec.Router{{a, b}, {b, a}} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -100,9 +101,9 @@ func TestRouterOperationGroupNestingNegativeControl(t *testing.T) {
 		return
 	}
 	// Isolate the deliberate violation so normal publication tests keep asserting zero.
-	a := &Router{RouterSettings: RouterSettings{Type: "routeros", Endpoint: "https://a.example"}}
-	b := &Router{RouterSettings: RouterSettings{Type: "routeros", Endpoint: "https://b.example"}}
-	held, release, err := RouterOperationLocks(t.Context(), []*Router{a}, false)
+	a := &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", Endpoint: "https://a.example"}}
+	b := &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", Endpoint: "https://b.example"}}
+	held, release, err := RouterOperationLocks(t.Context(), []*spec.Router{a}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

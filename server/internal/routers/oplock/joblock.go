@@ -1,4 +1,6 @@
-package routers
+// Package oplock provides the L1 router publication job lock and L2 per-device
+// operation locks.
+package oplock
 
 import (
 	"configflow/internal/routers/device"
@@ -7,6 +9,7 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
+	"configflow/internal/routers/spec"
 )
 
 // One L1 lock table serves repository commit guards and every publication owner.
@@ -14,7 +17,7 @@ import (
 // connection must not publish concurrently.
 var routerJobs = lockx.NewKeyed[string](lockx.LevelJob, "router-job")
 
-func routerJobKey(profileID, routerID string, router *Router) string {
+func routerJobKey(profileID, routerID string, router *spec.Router) string {
 	if router != nil {
 		return router.Type + "\n" + strings.TrimRight(router.Endpoint, "/")
 	}
@@ -26,9 +29,9 @@ func routerJobKey(profileID, routerID string, router *Router) string {
 // routerID, allowing callers to take the lock before lookup/validation.
 // It ignores client disconnects but retains Runtime shutdown cancellation.
 // Pass the returned context into RouterOperationLock and repository writes,
-// and release exactly once. A busy device returns KindConflict; this lock is
+// and release exactly once. A busy device returns device.KindConflict; this lock is
 // not reentrant, including calls that already hold the same device's job lock.
-func RouterJobLock(ctx context.Context, profileID, routerID string, router *Router) (context.Context, func(), error) {
+func RouterJobLock(ctx context.Context, profileID, routerID string, router *spec.Router) (context.Context, func(), error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return ctx, nil, err
@@ -39,7 +42,7 @@ func RouterJobLock(ctx context.Context, profileID, routerID string, router *Rout
 		if err := ctx.Err(); err != nil {
 			return ctx, nil, err
 		}
-		return ctx, nil, device.KindError(KindConflict, device.MessageEditBusy)
+		return ctx, nil, device.KindError(device.KindConflict, device.MessageEditBusy)
 	}
 	if err := held.Err(); err != nil {
 		release()

@@ -2,6 +2,7 @@ package clients
 
 import (
 	"configflow/internal/jsondecode"
+	"configflow/internal/routers/oplock"
 	"context"
 	"encoding/json"
 	"errors"
@@ -441,7 +442,7 @@ func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err 
 			continue
 		}
 		connections[key] = true
-		held, release, lockErr := routers.RouterJobLock(ctx, profile, id, r)
+		held, release, lockErr := oplock.RouterJobLock(ctx, profile, id, r)
 		if lockErr != nil {
 			var conflict *routers.RouterError
 			if errors.As(lockErr, &conflict) && conflict.Kind == routers.KindConflict {
@@ -453,7 +454,7 @@ func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err 
 		lockRouters = append(lockRouters, r)
 		ctx = held
 	}
-	held, release, err := routers.RouterOperationLocks(ctx, lockRouters, true)
+	held, release, err := oplock.RouterOperationLocks(ctx, lockRouters, true)
 	if err != nil {
 		return err
 	}

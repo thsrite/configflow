@@ -3,6 +3,8 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/routeedit"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
@@ -166,7 +168,7 @@ func (s *ManagementService) lockedFor(ctx context.Context, profile string, old *
 	if err := ctx.Err(); err != nil {
 		return ctx, nil, nil, err
 	}
-	held, release, err := RouterOperationLock(ctx, *old, write)
+	held, release, err := oplock.RouterOperationLock(ctx, *old, write)
 	if err != nil {
 		return ctx, nil, nil, err
 	}
@@ -337,7 +339,7 @@ func replaceManagementRawRouter(config json.RawMessage, id string, fields map[st
 
 // EditRoute validates, locks, rebuilds and optionally applies a manual route plan.
 func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *Router, body json.RawMessage, apply bool) (*RoutePlan, *RouteResult, error) {
-	if _, err := NormalizeRouteRequest(body); err != nil {
+	if _, err := routeedit.NormalizeRouteRequest(body); err != nil {
 		return nil, nil, err
 	}
 	work, release, current, err := s.locked(ctx, profile, r)
@@ -350,11 +352,11 @@ func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *Ro
 		return nil, nil, err
 	}
 	defer d.Close()
-	rows, err := ReadRoutes(work, d)
+	rows, err := routeedit.ReadRoutes(work, d)
 	if err != nil {
 		return nil, nil, err
 	}
-	plan, err := BuildRoutePlan(*current, rows, body)
+	plan, err := routeedit.BuildRoutePlan(*current, rows, body)
 	if err != nil || !apply {
 		return plan, nil, err
 	}
@@ -365,7 +367,7 @@ func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *Ro
 	if confirmation.Fingerprint == "" || confirmation.Fingerprint != plan.Fingerprint {
 		return plan, nil, device.KindError(KindConflict, messageRoutePreviewStale)
 	}
-	result, err := ExecuteRoutePlan(work, d, rows, plan)
+	result, err := routeedit.ExecuteRoutePlan(work, d, rows, plan)
 	if err != nil {
 		managementLogger.Warningf(messageManagementRouteFailed, s.safeLog(work, profile, current, device.OrText(current.Name, current.ID)), s.safeLog(work, profile, current, err.Error()))
 		return plan, result, err

@@ -1,6 +1,7 @@
 package routers_test
 
 import (
+	"configflow/internal/routers/oplock"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -62,7 +63,7 @@ func TestR15JobLockPrecedesValidation(t *testing.T) {
 	cfg, _ := s.Repo.Config(s.Context(), "default", repo.ResourceRoots{})
 	raw, _ := json.Marshal(cfg)
 	r := core.ManagementRouters(raw)[0]
-	_, release, lockErr := core.RouterJobLock(s.Context(), "default", id, r)
+	_, release, lockErr := oplock.RouterJobLock(s.Context(), "default", id, r)
 	if lockErr != nil {
 		t.Fatal("lock")
 	}

@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/oplock"
 	"context"
 	"encoding/json"
 	"errors"
@@ -262,7 +263,7 @@ func TestR14JobAndScheduler(t *testing.T) {
 	if err := s.StartJob(t.Context(), "missing", "missing"); err == nil || err.Error() != messageSyncWorkerBusy {
 		t.Fatalf("worker lock must precede lookup %v", err)
 	}
-	_, release, lockErr := RouterJobLock(t.Context(), "other-profile", "clone", r)
+	_, release, lockErr := oplock.RouterJobLock(t.Context(), "other-profile", "clone", r)
 	if lockErr == nil {
 		release()
 		t.Fatal("connection clone escaped job lock")
@@ -300,7 +301,7 @@ func TestR14JobAndScheduler(t *testing.T) {
 	if downloads != 1 {
 		t.Fatal("orphan queued receipt not resumed")
 	}
-	_, release, lockErr = RouterJobLock(t.Context(), "default", r.ID, r)
+	_, release, lockErr = oplock.RouterJobLock(t.Context(), "default", r.ID, r)
 	if lockErr != nil {
 		t.Fatal("job lock leaked")
 	}

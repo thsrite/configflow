@@ -3,6 +3,8 @@
 package routers
 
 import (
+	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/routeedit"
 	"context"
 	"encoding/json"
 	"errors"
@@ -173,7 +175,7 @@ func (h *handler) job(next httpx.HandlerFunc) httpx.HandlerFunc {
 		if err != nil {
 			return nil, err
 		}
-		held, release, lockErr := core.RouterJobLock(ctx, c.ProfileID, c.Param("router_id"), r)
+		held, release, lockErr := oplock.RouterJobLock(ctx, c.ProfileID, c.Param("router_id"), r)
 		if lockErr != nil {
 			var conflict *core.RouterError
 			if !errors.As(lockErr, &conflict) || conflict.Kind != core.KindConflict {
@@ -407,7 +409,7 @@ func (h *handler) routes(c *httpx.Ctx) (*httpx.Response, error) {
 		return httpx.Message(502, false, messageMissing), nil
 	}
 	defer d.Close()
-	rows, err := core.ReadRoutes(c.Context(), d)
+	rows, err := routeedit.ReadRoutes(c.Context(), d)
 	if err != nil {
 		return failure(c, cfg, err, 0, false)
 	}

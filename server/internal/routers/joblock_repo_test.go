@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/oplock"
 	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
@@ -101,7 +102,7 @@ func TestO36bRepositorySharesPublicationKey(t *testing.T) {
 			r, ctx, connection := jobRepository(t)
 			Wire()
 			violations := lockx.Violations()
-			_, release, err := RouterJobLock(ctx, "other-profile", "alias", jobConnection("http://192.0.2.40"))
+			_, release, err := oplock.RouterJobLock(ctx, "other-profile", "alias", jobConnection("http://192.0.2.40"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -133,12 +134,12 @@ func TestO36bCallerHeldSettingsAndPublication(t *testing.T) {
 	Wire()
 	violations := lockx.Violations()
 	device := jobConnection("http://192.0.2.40")
-	held, release, err := RouterJobLock(ctx, "live", "router", device)
+	held, release, err := oplock.RouterJobLock(ctx, "live", "router", device)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer release()
-	held, unlock, err := RouterOperationLock(held, *device, true)
+	held, unlock, err := oplock.RouterOperationLock(held, *device, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,12 +196,12 @@ func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		done <- func() result {
-			held, release, err := RouterJobLock(base, "live", "router", jobConnection(server.URL))
+			held, release, err := oplock.RouterJobLock(base, "live", "router", jobConnection(server.URL))
 			if err != nil {
 				return result{err: err}
 			}
 			defer release()
-			held, unlock, err := RouterOperationLock(held, *jobConnection(server.URL), true)
+			held, unlock, err := oplock.RouterOperationLock(held, *jobConnection(server.URL), true)
 			if err != nil {
 				return result{err: err}
 			}
@@ -226,7 +227,7 @@ func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
 	for range rivals {
 		go func() {
 			<-start
-			_, release, err := RouterJobLock(base, "alias-profile", "alias-router", jobConnection(server.URL+"/"))
+			_, release, err := oplock.RouterJobLock(base, "alias-profile", "alias-router", jobConnection(server.URL+"/"))
 			if release != nil {
 				release()
 			}
@@ -259,12 +260,12 @@ func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
 		t.Fatal("publisher did not finish")
 	}
 	r.Store().BeforeCommit = nil
-	held, release, err := RouterJobLock(base, "live", "router", jobConnection(server.URL))
+	held, release, err := oplock.RouterJobLock(base, "live", "router", jobConnection(server.URL))
 	if err != nil {
 		t.Fatal("finished publisher retained its job lock", err)
 	}
 	defer release()
-	held, unlock, err := RouterOperationLock(held, *jobConnection(server.URL), true)
+	held, unlock, err := oplock.RouterOperationLock(held, *jobConnection(server.URL), true)
 	if err != nil {
 		t.Fatal(err)
 	}
