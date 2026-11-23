@@ -78,6 +78,54 @@
 - 守住：routerdiff、`internal/routers` 的 difftest（`CONFIGFLOW_DIFF`）、`FuzzRouterOS*`/iKuai 现有 fuzz、proddiff；
   审计建议跟 PVE 实验室回归一起做。
 
+### 1.8 进度（分支 go-o17-typed-ros，2026-11-23）
+
+**状态：① ② 完成；③ 未做（理由见下，交协调者定）。** 提交（rebase 到 `go@d8286168b`）：
+`11fcae95a` step 0（iKuai 拆出 `ikuaiRow`）、`c286b9430` step 1（RouterOS `Row map[string]string`）、
+`d335b32c4` step 2（iKuai 新建表单结构体）。
+
+做法：
+- `Row map[string]string`（`rosnat.go`）：`UnmarshalJSON` 在读设备回复/存储时解码一次——数字保留字面文本、布尔
+  `"true"/"false"`、数组/对象紧凑 JSON 文本（仍按值比较）、**null 成员丢弃（=缺失）**（协调者裁定方案 A）。
+  拒绝 null 的读取点（IPv6 ND/IPv4 地址的 disabled/invalid/dynamic 与 DNS 列表、DHCP 的 dhcp-option/
+  dhcp-option-set/options/dns-server/dns-none、`/routing/settings policy-rules`）用 `strictList`/`markNulls`
+  把 null 保留为 `nullMarker`（`"{}"`，任何标志/列表/名称读取都不接受），沿原解析路径给原文案、保持 fail closed。
+- 删除 `rosText`/`rosTextDefault`/`firstText`/`rosTruthy`/`clientTrue`/`valueOr`/`cloneAddressRow` 及全部 `any`
+  分支；`request` 返回原始回复，`asRow`/`asRows` 解码；`/print` 查询体为 `rosPrint` 结构体（字节不变）。
+  列表字段统一 `textList`（逗号文本或 JSON 数组文本），`structuredText` 判断原回复里的数组/对象。
+- 对外 JSON 不变的两处专门类型：IPv6 预览证据 `IPv6EvidenceSet`/`IPv6EvidenceRow`（路由 `active` 仍是 JSON 布尔）；
+  路由编辑快照 `RouteSnapshot`（RouterOS 行或 iKuai 行，编码为原记录）。iKuai 固定 IP 的 expected 字段为文本 `Row`
+  （本来全是字符串）。`agents/ipv6` 的连接证据改读文本。
+- iKuai：新建 NAT 免转换、端口分流、静态路由为 `ikuaiNATForm`/`ikuaiPolicyForm`/`ikuaiRouteForm`（整数为 `int`，
+  地址/端口/时间为 `ikuaiAddressSet`/`ikuaiSchedule`）；`add`/`staticWrite` 接 `ikuaiForm` 接口。**修改/恢复仍发开放的
+  设备记录 `ikuaiRow`**：必须把设备返回的全部字段（含未知字段、设备给的原值类型）原样写回，结构体会丢字段或改值类型。
+  `truthyValue` → `ikuaiRow.filled`。iKuai 读取行仍是 `ikuaiRow`（`map[string]any`），DHCP 读取按字段逐个做类型校验
+  并给中文阻断文案，这正是开放记录的语义。
+
+未做 ③（NatContext 等只读分析改结构体）的理由：NAT 免转换评估、路由/策略证据的语义就是「行里出现了哪些字段」
+（`exemptionFields` 判断未知匹配条件、`rosRouteEvidence` 选字段、R03/R09 语料喂任意字段），改成结构体会丢掉未知字段，
+把 fail closed 变成放行。固定字段的小读取（`/system/resource`、ping 回复）用 `Row` 已足够。建议 ③ 撤销或改为只针对
+确有固定形状的读取点。
+
+功能差异（设备不会发的输入，均为 Python 边界/语料用例）：
+- RouterOS 回复里的非文本值按文本读：数字 `30` 与 `"30"`、布尔 `true` 与 `"true"` 不再区分（路由快照、预览证据
+  里显示为文本）；数组/对象为其 JSON 文本，形如 `[..]`/`{..}` 且是合法 JSON 的文本值按结构化值处理（只会走更保守的分支）。
+- null 成员视为缺失（拒绝 null 的读取点除外，见上）。测试里对应用例改为按文本解码后比较（`sameTextRow`、
+  `r08TextEvidence`、R06 快照归一），登记为「O17 1.8 接受」。
+
+验证（rebase 到 `go@d8286168b` 后，代码提交 `d335b32c4`）：
+- `-race -timeout 60m` + `CONFIGFLOW_DIFF=1`（.32）：routers/...、agents/...（含 dnsfollow/dnsha difftest）、api/clientdevices、
+  api/config、api/routers/...、api/rules/...（含 difftest）、clients/...、notifications、routersplit/...、setup，全部 ok
+  （routers 1027 s）。
+- fuzz 各 60 s（.64）：routers 13 个现有 Fuzz（R07/R08/R09×3/R10/R11×2/R12/R14/N89/FakeIPYAML/ClientDuration）
+  + routersplit FuzzRouterSplitYAML，全部 PASS。
+- `GATE_ONLY=proddiff server/scripts/gate.sh -p 6`（.64）：baseline new=0 stale=0，self_check PASS，GATE STAGE PASS。
+- server 包 R11（`-run TestO10`，含分配上限与整记录编码边界）ok；`/tmp/preflight.sh … -p 6`（.32）：PREFLIGHT PASS（两组 tag 的 vet + 全量非 race）。
+- routerdiff 抽跑（.64，auth-off-release/auth-off-fixed/return-protocol2/return-rollback/policy-view/dhcp-ikuai-write-*/
+  native-owned-*，159 个配方）：与基线 `go@d8286168b` 同样抽样逐条对比，差异路径/类别集合相同（都是已知的 CORS 头、
+  nonce、令牌等），仅时间戳类字段（`last_release/at`、`generated_at`）随机出入，无新增差异。
+- 行数（相对 `go@d8286168b`）：非测试 +1038/−947，测试 +173/−62（含 iKuai `Row→ikuaiRow` 改名行、新类型）。
+
 ### 1.7 OxiDNS
 
 - 裁定见上。本轮已把 `api/*` 调用方都改成从 `*model.Config` 进入（`NewTypedProfile`），并留了 5 个过渡接口
