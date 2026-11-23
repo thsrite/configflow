@@ -127,6 +127,19 @@ start; Python final = v2.2.0; gateways keep egress during soak; CT 251 and the c
 batch-47 MERGED (O10 cache budget; PVE CT 240 before/after: post-load live-heap growth +11.4 → +5.8 MB, settled RSS
 92.9 → 78.2 MB, idle CPU flat 0.5%, 19-route CPU 394 → 406 ms (+3%, /api/routers single-run noise suspected — recheck in
 final acceptance); author's CPU/latency gains not reproduced; review-batch-47.md).
+batch-48+49+50 MERGED together (combined gate; fixes on top: be0d2dbb4 pathExists→pathx after batch-45,
+9bfd3bd05 gateway/installation Python oracle reads a v1 copy, 70f60f2ed pyref sources digest/pathx/logx + 17 goldens
+re-recorded metadata-only, 15ae7cb3c gate compare stage now runs PYREF_MODE=check — check mode had been broken on go
+since batch-45 because the gate never ran it). Contents: typed-rest (review: 3 paths restored to stored-member
+conversion, 463-request before/after identical), oxidns round 1, runtime state S1–S7 (storage v2, agent_state,
+restore marker, Waker; review M1 backup fingerprint/reuse fixed; PVE idle CPU 0.42% vs 1.05%, RSS 54 vs 90 MB).
+Rulings 2026-11-23: batch-50 M2 → option a (export keeps the failed-HA leftover member list); L2/L3/L4 + router
+last_release → agent_state in go-o17-state-followup (Neon 4a9551f6). Maintainer: remaining O17 items 1.13 weburl
+(Neon 4cd7215f), 3.8 Agent style + flaky TestManualRollback fix (Neon bc808bfa), 3.7+1.5 design first (Opus 7af365d4,
+server/design/o17-wiring.md; implement after state-followup merges) all before the switch. Also started: switch
+rehearsal branch go-switch-rehearsal (Neon 6e3ab5c6; full no-Python gate scheduled by the coordinator), release prep
+go-release-prep (Neon 5416bcf1). batch-52 oxidns round 2 reviewed (14c4ed80, 4 medium fixed), rebasing on go.
+Coordinator note: paseo completion notifications were missed several times today → a background poll watches agents.
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
