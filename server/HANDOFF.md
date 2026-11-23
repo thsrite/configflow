@@ -140,6 +140,15 @@ server/design/o17-wiring.md; implement after state-followup merges) all before t
 rehearsal branch go-switch-rehearsal (Neon 6e3ab5c6; full no-Python gate scheduled by the coordinator), release prep
 go-release-prep (Neon 5416bcf1). batch-52 oxidns round 2 reviewed (14c4ed80, 4 medium fixed), rebasing on go.
 Coordinator note: paseo completion notifications were missed several times today → a background poll watches agents.
+2026-11-24: release prep merged (d8a803340: release.yml prerelease for -rc tags, doc/guide/upgrade-v3.md, 7 manuals;
+screenshots pending in L6), wiring plan merged (server/design/o17-wiring.md; 22 steps all before switch; 3 full gates:
+after R line, after W6, after W11), batch-52 MERGED (oxidns round 2, 4 medium fixed), batches 53+54+55+setup-verify-router
+MERGED together (runtime-state follow-up incl. router last_release → agent_state (already-v2 DBs migrate on first commit),
+M2 HA leftover kept in exports; Agent style + log redaction + flaky deployment waits; weburl on net/url, 0 request diffs;
+D9 setup VerifyRouter was never wired — fixed with Python parity). Gate fix 38b94f163: C04 Python cross-check merges
+router state rows and resyncs counters after state-only publishes. Switch rehearsal go-switch-rehearsal: first full
+no-Python gate PASS after 3 test-only fixes (Agent forwarding script path, cache-flush corpus, frontend template path).
+Next: recompute routers deps on new go, then dispatch R line + W line per o17-wiring.md.
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
