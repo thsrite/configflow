@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // Program returns the command of a program: the argv override written by
@@ -53,7 +55,9 @@ func Exec(stateDir, name string) error {
 		return fmt.Errorf("record %s pid: %w", name, err)
 	}
 	if Specs[name].Logged {
-		if err := syscall.Dup2(1, 2); err != nil {
+		// unix.Dup2, not syscall.Dup2: linux/arm64 has no dup2 system call
+		// (the panel image cross-builds this Agent for arm64 and armv7).
+		if err := unix.Dup2(1, 2); err != nil {
 			return fmt.Errorf("redirect %s stderr: %w", name, err)
 		}
 	}
