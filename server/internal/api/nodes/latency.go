@@ -40,16 +40,30 @@ const (
 	msgCheckDNS      = "请提供待检测的 DNS 设置"
 )
 
-func stringList(value json.RawMessage) ([]string, bool) {
-	var raw []json.RawMessage
-	if json.Unmarshal(value, &raw) != nil || raw == nil {
+// latencyRequest selects test candidates by name or key (neither: all).
+type latencyRequest struct {
+	Names member[[]*string] `json:"names"`
+	Keys  member[[]*string] `json:"keys"`
+}
+
+// dnsSettingsRequest carries a DNS setting for the health owner to validate:
+// dns as stored, or (older clients) a dns_servers list.
+type dnsSettingsRequest struct {
+	DNS        json.RawMessage `json:"dns"`
+	DNSServers json.RawMessage `json:"dns_servers"`
+}
+
+// stringList is a list of text values, none null.
+func stringList(sent member[[]*string]) ([]string, bool) {
+	if !sent.OK {
 		return nil, false
 	}
-	out := make([]string, len(raw))
-	for i, value := range raw {
-		if string(value) == "null" || json.Unmarshal(value, &out[i]) != nil {
+	out := make([]string, len(sent.Value))
+	for i, value := range sent.Value {
+		if value == nil {
 			return nil, false
 		}
+		out[i] = *value
 	}
 	return out, true
 }
@@ -63,27 +77,27 @@ func nodeLatency(c *httpx.Ctx) (*httpx.Response, error) {
 			Results any  `json:"results"`
 		}{true, health.LoadLatencyResults(ctx)}), nil
 	}
-	object, err := readObject(c, true)
+	body, err := decodeObject[latencyRequest](c, true)
 	if err != nil {
 		return nil, err
 	}
-	if object == nil {
+	if body == nil {
 		// Missing, malformed and null bodies select every candidate, as before.
 		var raw json.RawMessage
 		if c.BindSilent(&raw) && string(raw) != "null" {
 			return failure(400, msgLatencyObject), nil
 		}
-		object = record{}
+		body = &latencyRequest{}
 	}
 	var ok bool
 	var names, keys []string
-	if value := object["names"]; len(value) > 0 && string(value) != "null" {
-		if names, ok = stringList(value); !ok {
+	if !body.Names.Null() {
+		if names, ok = stringList(body.Names); !ok {
 			return failure(400, msgLatencyNames), nil
 		}
 	}
-	if value := object["keys"]; len(value) > 0 && string(value) != "null" {
-		if keys, ok = stringList(value); !ok {
+	if !body.Keys.Null() {
+		if keys, ok = stringList(body.Keys); !ok {
 			return failure(400, msgLatencyKeys), nil
 		}
 	}
@@ -117,7 +131,7 @@ func nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
 		if c.Request.Method == "GET" {
 			return health.DescribeDNSSettingsJSON(ctx, nil)
 		}
-		payload, err := readObject(c, true)
+		payload, err := decodeObject[dnsSettingsRequest](c, true)
 		if err != nil {
 			return health.DNSSettingsView{}, err
 		}
@@ -125,10 +139,10 @@ func nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
 			return health.DNSSettingsView{}, &health.ValueError{Message: msgLatencyDNS}
 		}
 		var value json.RawMessage
-		if raw, present := payload["dns"]; present {
-			value = raw
-		} else if raw, present := payload["dns_servers"]; present {
-			servers, err := health.NormalizeDNSServersJSON(raw, false)
+		if payload.DNS != nil {
+			value = payload.DNS
+		} else if payload.DNSServers != nil {
+			servers, err := health.NormalizeDNSServersJSON(payload.DNSServers, false)
 			if err != nil {
 				return health.DNSSettingsView{}, err
 			}
@@ -159,14 +173,14 @@ func nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
 
 // nodeDNSCheck is POST /api/nodes/latency/dns/check.
 func nodeDNSCheck(c *httpx.Ctx) (*httpx.Response, error) {
-	payload, err := readObject(c, true)
+	payload, err := decodeObject[dnsSettingsRequest](c, true)
 	if err != nil {
 		return nil, err
 	}
-	if _, present := payload["dns"]; !present {
+	if payload == nil || payload.DNS == nil {
 		return failure(400, msgCheckDNS), nil
 	}
-	result, err := health.CheckDNSSettingsJSON(c.Context(), payload["dns"])
+	result, err := health.CheckDNSSettingsJSON(c.Context(), payload.DNS)
 	if err != nil {
 		var unavailable *health.ProbeUnavailable
 		switch {

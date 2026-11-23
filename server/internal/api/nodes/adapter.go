@@ -4,6 +4,7 @@ package nodes
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"configflow/internal/convert"
 	"configflow/internal/httpx"
@@ -15,7 +16,7 @@ import (
 	"configflow/internal/yamlx"
 )
 
-func sharedNodes(ctx context.Context) ([]record, error) {
+func sharedNodes(ctx context.Context) ([]model.Node, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
@@ -24,15 +25,9 @@ func sharedNodes(ctx context.Context) ([]record, error) {
 	if err != nil {
 		return nil, err
 	}
-	var result []record
-	raw, err := json.Marshal(shared.Nodes)
-	if err != nil {
-		return nil, err
-	}
-	err = json.Unmarshal(raw, &result)
-	return result, err
+	return shared.Nodes, nil
 }
-func mutateNodes(ctx context.Context, mutate func([]record) ([]record, error)) error {
+func mutateNodes(ctx context.Context, mutate func([]model.Node) ([]model.Node, error)) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -42,43 +37,32 @@ func mutateNodes(ctx context.Context, mutate func([]record) ([]record, error)) e
 		return err
 	}
 	return r.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
-		raw, err := json.Marshal(shared.Nodes)
-		if err != nil {
-			return err
-		}
-		var nodes []record
-		if err := json.Unmarshal(raw, &nodes); err != nil {
-			return err
-		}
-		nodes, err = mutate(nodes)
-		if err != nil {
-			return err
-		}
-		raw, err = json.Marshal(nodes)
+		nodes, err := mutate(slices.Clone(shared.Nodes))
 		if err != nil {
 			return err
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		return json.Unmarshal(raw, &shared.Nodes)
+		shared.Nodes = nodes
+		return nil
 	})
 }
-func reorderNodesStored(ctx context.Context, body record) ([]string, []string, error) {
-	ids, err := rules.OrderIDs(body, "nodes")
+func reorderNodesStored(ctx context.Context, body json.RawMessage) ([]string, []string, error) {
+	request, err := rules.DecodeOrder(body, "nodes")
 	if err != nil {
 		return nil, nil, httpx.BadRequest(err.Error())
 	}
 	var order, missing []string
-	err = mutateNodes(ctx, func(nodes []record) ([]record, error) {
-		list, absent := rules.Reorder(nodes, ids, position(body), func(node record) string { return node.text("id") })
+	err = mutateNodes(ctx, func(nodes []model.Node) ([]model.Node, error) {
+		list, absent := rules.Reorder(nodes, request.IDs, request.Position, func(node model.Node) string { return node.ID })
 		missing = absent
 		if len(missing) > 0 {
 			return nil, &missingOrderError{missing}
 		}
 		order = make([]string, len(list))
 		for i, item := range list {
-			order[i] = item.text("id")
+			order[i] = item.ID
 		}
 		return list, nil
 	})
@@ -119,14 +103,6 @@ func reviewedDeletion(ctx context.Context, ids []string, confirmation string, pr
 // Wire installs the node deletion planner. It does no I/O inside repo's lock.
 func Wire() {
 	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{PlanNodeDeletionRecords: func(document *model.Document, ids []string) (*repo.NodeDeletionPreview, *model.Document, error) {
-		data, err := model.Marshal(document)
-		if err != nil {
-			return nil, nil, err
-		}
-		var doc record
-		if err := json.Unmarshal(data, &doc); err != nil {
-			return nil, nil, err
-		}
 		usages := map[string][]string{}
 		for _, profile := range document.Profiles {
 			view, err := repo.ConfigFrom(document, profile.Key(), nil)
@@ -148,31 +124,19 @@ func Wire() {
 				dialers[node.ID] = target.Value
 			}
 		}
-		plan, candidate, err := planDeletion(doc, ids, usages, dialers)
+		// Plan on a copy: request snapshots stay immutable, even for previews.
+		data, err := model.Marshal(document)
 		if err != nil {
 			return nil, nil, err
 		}
-		data, err = json.Marshal(plan)
+		candidate, err := model.DecodeDocument(data)
 		if err != nil {
 			return nil, nil, err
 		}
-		var preview repo.NodeDeletionPreview
-		if err := json.Unmarshal(data, &preview); err != nil {
-			return nil, nil, err
-		}
-		data, err = json.Marshal(candidate)
+		preview, err := planDeletion(candidate, ids, usages, dialers)
 		if err != nil {
 			return nil, nil, err
 		}
-		docOut, err := model.DecodeDocument(data)
-		return &preview, docOut, err
+		return preview, candidate, nil
 	}}})
-
-}
-
-func position(body record) string {
-	if _, present := body["position"]; !present {
-		return "top"
-	}
-	return body.text("position")
 }

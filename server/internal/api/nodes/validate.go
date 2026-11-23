@@ -23,28 +23,23 @@ import (
 // reject only the other control and line-separator characters. Surge/Loon
 // generation folds any remaining line break to a space, so a multi-line value
 // can never add a line to those single-line formats (review batch-20).
-func validateNodeLineFields(body record) error {
-	for _, field := range []string{"name", "type", "server", "port"} {
-		raw, exists := body[field]
-		if !exists {
-			continue
-		}
-		var text string
-		if json.Unmarshal(raw, &text) == nil && convert.HasClientControlChar(text) {
-			return fmt.Errorf(msgNodeControlChar, field)
+func validateNodeLineFields(body *nodeRequest) error {
+	for _, field := range []struct {
+		name string
+		sent member[string]
+	}{{"name", body.Name}, {"type", body.Type}, {"server", body.Server}, {"port", body.Port}} {
+		if field.sent.OK && convert.HasClientControlChar(field.sent.Value) {
+			return fmt.Errorf(msgNodeControlChar, field.name)
 		}
 	}
-	if raw, exists := body["params"]; exists {
-		if err := validateJSONControlChars(raw, "params", false); err != nil {
+	if params := body.node.Params.JSON(); params != nil {
+		if err := validateJSONControlChars(params, "params", false); err != nil {
 			return err
 		}
 	}
-	if raw, exists := body["proxy_string"]; exists {
-		var text string
-		if json.Unmarshal(raw, &text) == nil && text != "" {
-			if err := validateProxyStringFields(text); err != nil {
-				return err
-			}
+	if body.ProxyString.OK && body.ProxyString.Value != "" {
+		if err := validateProxyStringFields(body.ProxyString.Value); err != nil {
+			return err
 		}
 	}
 	return nil

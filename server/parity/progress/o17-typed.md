@@ -20,7 +20,7 @@
 ## 状态
 
 - [x] 1.6 api/rules（请求 DTO + 直接编辑 `*model.Config`；`rulefetch.Declaration` 校验类型化；`oxidns.RuleConvertible`/`WithoutRuleReferences`/`SettingsText`、`repo.HydratedRuleset` 为过渡接口）
-- [ ] 1.6 api/nodes
+- [x] 1.6 api/nodes（请求 DTO；节点 CRUD 直接改 `[]model.Node`；删除规划器在 `*model.Document` 副本上做，确认摘要协议不变；`rules.DecodeOrder` 取代 `OrderIDs`）
 - [ ] 1.6 api/proxygroups
 - [ ] 1.6 api/aggregations
 - [ ] 1.6 api/subscriptions
@@ -34,4 +34,5 @@
 
 - `api/rules` 创建/修改规则、批量添加的响应 `data`/`rules`：不再回显未声明的成员（它们本来就不会被保存）；
   成员顺序由字典序变为声明顺序。批量添加未传 `policy` 时回显 `""`（存储里一直就是空引用），原来回显 `null`。
+- `GET /api/nodes` 与节点创建/修改的 `data`：成员顺序由字典序变为声明顺序（存储顺序的协议参数仍按存储顺序）。
 - 同一请求里「成员类型错误」与其他错误同时出现时，报哪一条可能不同（单一错误的文案和状态码不变）。

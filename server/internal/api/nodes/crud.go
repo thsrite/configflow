@@ -6,38 +6,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
-// record preserves fields unknown to this route when editing shared resources.
-type record map[string]json.RawMessage
+// member is one request member; see jsondecode.Member.
+type member[T any] = jsondecode.Member[T]
 
-func (r record) text(key string) string {
-	var value string
-	_ = json.Unmarshal(r[key], &value)
-	return value
-}
-func (r record) object(key string) record {
-	var value record
-	_ = json.Unmarshal(r[key], &value)
-	return value
-}
-func (r record) list(key string) []record {
-	var value []record
-	_ = json.Unmarshal(r[key], &value)
-	return value
-}
-func (r record) strings(key string) []string {
-	var value []string
-	_ = json.Unmarshal(r[key], &value)
-	return value
-}
-func (r record) put(key string, value any) { r[key], _ = json.Marshal(value) }
 func nativeJSON(status int, value any) *httpx.Response {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -45,7 +27,9 @@ func nativeJSON(status int, value any) *httpx.Response {
 	}
 	return httpx.RawJSON(status, data)
 }
-func readObject(c *httpx.Ctx, silent bool) (record, error) {
+
+// requestObject returns the sent JSON object, or nil for any other body.
+func requestObject(c *httpx.Ctx, silent bool) (json.RawMessage, error) {
 	var raw json.RawMessage
 	if silent {
 		// Keep the route's forgiving syntax behavior, but Bind still prevents
@@ -66,12 +50,61 @@ func readObject(c *httpx.Ctx, silent bool) (record, error) {
 	} else if err := c.Bind(&raw); err != nil {
 		return nil, err
 	}
-	var object record
-	if json.Unmarshal(raw, &object) != nil {
+	if len(raw) == 0 || raw[0] != '{' {
 		return nil, nil
 	}
-	return object, nil
+	return raw, nil
 }
+
+// decodeObject decodes an object body into a request DTO; nil for no object.
+func decodeObject[T any](c *httpx.Ctx, silent bool) (*T, error) {
+	raw, err := requestObject(c, silent)
+	if err != nil || raw == nil {
+		return nil, err
+	}
+	out := new(T)
+	if err := jsondecode.Unmarshal(raw, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// nodeRequest is a node as sent: the stored record (flat protocol settings
+// included) and the members checked as sent before it is stored.
+type nodeRequest struct {
+	node model.Node
+	ID   member[string]
+	// Identity members spliced into single-line client configurations.
+	Name, Type, Server, Port member[string]
+	ProxyString              member[string]
+	DialerRef                member[json.RawMessage]
+}
+
+func decodeNode(c *httpx.Ctx) (*nodeRequest, error) {
+	raw, err := requestObject(c, false)
+	if err != nil || raw == nil {
+		return nil, err
+	}
+	var checks struct {
+		ID          member[string]          `json:"id"`
+		Name        member[string]          `json:"name"`
+		Type        member[string]          `json:"type"`
+		Server      member[string]          `json:"server"`
+		Port        member[string]          `json:"port"`
+		ProxyString member[string]          `json:"proxy_string"`
+		DialerRef   member[json.RawMessage] `json:"dialer_ref"`
+	}
+	if err := jsondecode.Unmarshal(raw, &checks); err != nil {
+		return nil, err
+	}
+	out := &nodeRequest{ID: checks.ID, Name: checks.Name, Type: checks.Type, Server: checks.Server, Port: checks.Port, ProxyString: checks.ProxyString, DialerRef: checks.DialerRef}
+	// The stored record's own decoding: a member of another type is dropped.
+	if err := json.Unmarshal(raw, &out.node); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func registerCRUD(r *httpx.Router) {
 	r.Handle([]string{"GET", "POST"}, "/api/nodes", "nodes.handle_nodes", auth.Require(handleNodes))
 	r.Handle([]string{"DELETE", "PUT"}, "/api/nodes/<node_id>", "nodes.handle_node", auth.Require(handleNode))
@@ -89,46 +122,46 @@ func handleNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Request.Method != "POST" {
 		return nil, errors.New("unsupported method")
 	}
-	body, err := readObject(c, false)
+	body, err := decodeNode(c)
 	if err != nil {
 		return nil, err
 	}
 	if body == nil {
 		return httpx.Message(400, false, msgNodeObject), nil
 	}
-	if _, exists := body["id"]; !exists {
+	if !body.ID.Present() {
 		var bytes [4]byte
 		if _, err := rand.Read(bytes[:]); err != nil {
 			return nil, fmt.Errorf("create node ID: %w", err)
 		}
-		body.put("id", "node_"+hex.EncodeToString(bytes[:]))
+		body.node.ID = "node_" + hex.EncodeToString(bytes[:])
 	}
-	if _, exists := body["dialer_ref"]; exists {
+	if body.DialerRef.Present() {
 		return httpx.Message(400, false, msgSharedDialer), nil
 	}
 	if err := validateNodeLineFields(body); err != nil {
 		return httpx.Message(400, false, err.Error()), nil
 	}
-	err = mutateNodes(ctx, func(list []record) ([]record, error) { return append(list, body), nil })
+	err = mutateNodes(ctx, func(list []model.Node) ([]model.Node, error) { return append(list, body.node), nil })
 	return nativeJSON(200, struct {
-		Success bool   `json:"success"`
-		Data    record `json:"data"`
-	}{true, body}), err
+		Success bool       `json:"success"`
+		Data    model.Node `json:"data"`
+	}{true, body.node}), err
 }
 func handleNode(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
 	deleting := c.Request.Method == "DELETE"
-	var body record
+	var body *nodeRequest
 	if !deleting {
 		var err error
-		body, err = readObject(c, false)
+		body, err = decodeNode(c)
 		if err != nil {
 			return nil, err
 		}
 		if body == nil {
 			return httpx.Message(400, false, msgNodeNonNull), nil
 		}
-		if _, exists := body["dialer_ref"]; exists {
+		if body.DialerRef.Present() {
 			return httpx.Message(400, false, msgSharedDialer), nil
 		}
 		if err := validateNodeLineFields(body); err != nil {
@@ -136,22 +169,19 @@ func handleNode(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 	}
 	id := c.Param("node_id")
-	err := mutateNodes(ctx, func(list []record) ([]record, error) {
+	err := mutateNodes(ctx, func(list []model.Node) ([]model.Node, error) {
 		for i, node := range list {
-			if node.text("id") != id {
+			if node.ID != id {
 				continue
 			}
 			if deleting {
-				return append(list[:i], list[i+1:]...), nil
+				return slices.Delete(list, i, i+1), nil
 			}
-			if raw, ok := body["id"]; ok && string(raw) != "null" && body.text("id") != id {
+			if body.ID.Present() && (body.ID.Null() || body.ID.Value != id) {
 				return nil, repo.NewValidationError(msgImmutableID)
 			}
-			if raw, ok := body["id"]; ok && string(raw) == "null" {
-				return nil, repo.NewValidationError(msgImmutableID)
-			}
-			body.put("id", id)
-			list[i] = body
+			body.node.ID = id
+			list[i] = body.node
 			return list, nil
 		}
 		return nil, &httpx.HTTPError{Code: 404, Description: "Node not found"}
@@ -169,27 +199,21 @@ func handleNode(c *httpx.Ctx) (*httpx.Response, error) {
 		}{true}), nil
 	}
 	return nativeJSON(200, struct {
-		Success bool   `json:"success"`
-		Data    record `json:"data"`
-	}{true, body}), nil
+		Success bool       `json:"success"`
+		Data    model.Node `json:"data"`
+	}{true, body.node}), nil
 }
 func parseLines(c *httpx.Ctx) (*httpx.Response, error) {
-	body, err := readObject(c, true)
+	body, err := decodeObject[struct {
+		Lines member[[]*string] `json:"lines"`
+	}](c, true)
 	if err != nil {
 		return nil, err
 	}
-	var lines []string
-	if body == nil || json.Unmarshal(body["lines"], &lines) != nil || string(body["lines"]) == "null" {
+	if body == nil || !body.Lines.OK || slices.Contains(body.Lines.Value, nil) {
 		return httpx.Message(400, false, msgLines), nil
 	}
-	// null elements are accepted by encoding/json into strings; reject them explicitly.
-	var raw []json.RawMessage
-	_ = json.Unmarshal(body["lines"], &raw)
-	for _, item := range raw {
-		if string(item) == "null" {
-			return httpx.Message(400, false, msgLines), nil
-		}
-	}
+	lines := body.Lines.Value
 	if len(lines) > 500 {
 		return httpx.Message(400, false, msgLinesLimit), nil
 	}
@@ -200,8 +224,8 @@ func parseLines(c *httpx.Ctx) (*httpx.Response, error) {
 	results := make([]result, len(lines))
 	ctx := c.Context()
 	for i, line := range lines {
-		if line = strings.TrimSpace(line); line != "" {
-			results[i].Proxy = parseLine(ctx, line)
+		if text := strings.TrimSpace(*line); text != "" {
+			results[i].Proxy = parseLine(ctx, text)
 		}
 		if len(results[i].Proxy) == 0 {
 			results[i].Error = msgUnknownNode
@@ -224,7 +248,7 @@ func quotedIDs(ids []string) string {
 	return "[" + strings.Join(values, ", ") + "]"
 }
 func reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
-	body, err := readObject(c, false)
+	body, err := requestObject(c, false)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +273,10 @@ func reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	}{true, order}), nil
 }
 func deleteNodes(c *httpx.Ctx) (*httpx.Response, error) {
-	body, err := readObject(c, true)
+	body, err := decodeObject[struct {
+		IDs          member[[]string] `json:"ids"`
+		Confirmation member[string]   `json:"confirmation"`
+	}](c, true)
 	if err != nil {
 		return nil, err
 	}
@@ -259,11 +286,7 @@ func deleteNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	// A non-list or non-string member becomes an empty selection, which the
 	// planner rejects with msgSelectNodes. The repository checks confirmation
 	// first, so /delete keeps Python's order of the two 400 messages.
-	var ids []string
-	if !strings.HasPrefix(strings.TrimSpace(string(body["ids"])), "[") || json.Unmarshal(body["ids"], &ids) != nil {
-		ids = nil
-	}
-	response, err := reviewedDeletion(c.Context(), ids, body.text("confirmation"), strings.HasSuffix(c.Path(), "/delete-preview"))
+	response, err := reviewedDeletion(c.Context(), body.IDs.Value, body.Confirmation.Value, strings.HasSuffix(c.Path(), "/delete-preview"))
 	if errors.Is(err, repo.ErrNodeDeletionChanged) {
 		return nativeJSON(409, struct {
 			Success bool   `json:"success"`
