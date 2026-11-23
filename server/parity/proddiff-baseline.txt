@@ -28,6 +28,7 @@ GET /api/agents/<agent_id>/deployments/<deployment_id>	body.config_revision	miss
 GET /api/agents/<agent_id>/dns-follow	body.state.target_deployment_id	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
 GET /api/agents/<agent_id>/ipv6-readiness/verify	body.verification.client_fingerprint	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
 GET /api/agents/<agent_id>/ipv6-readiness/verify	body.verification.deployment_id	missing-in-go	O18 T1b：存储里的 null 读作缺失、改写后不再写出（快照中该路径的值均为 null），见 behaviour-changes O18 T1b
+GET /api/config/export	body.profiles.default.routers.items[0].last_release	missing-in-go	O17：完整导出与 WebDAV 备份只含配置，路由器上次发布记录 last_release（状态成员）不再导出，见 behaviour-changes O17
 GET /api/config/export	body.system.agents[0].has_update	missing-in-go	O18 T1b：未声明成员 has_update（Python 接口算出后误写进存储）读取时丢弃，见 behaviour-changes O18 T1b
 GET /api/config/export	body.system.agents[0].applied_content	missing-in-go	O17：完整导出与 WebDAV 备份只含配置，Agent 运行记录（状态成员）不再导出，见 behaviour-changes O17
 GET /api/config/export	body.system.agents[0].config_revision	missing-in-go	O17：完整导出与 WebDAV 备份只含配置，Agent 运行记录（状态成员）不再导出，见 behaviour-changes O17
