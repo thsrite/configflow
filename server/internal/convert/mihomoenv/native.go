@@ -65,5 +65,6 @@ func NativeEnv() convert.MihomoEnvironment {
 		return err
 	}
 	env.LoadSubscriptionCache = substore.LoadCacheJSON
+	env.LoadSubscriptionCacheTyped = substore.LoadSubscriptionCacheShared
 	return env
 }

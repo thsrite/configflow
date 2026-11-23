@@ -360,6 +360,31 @@ func LoadCacheShared(ctx context.Context, id string) (*Cache, error) {
 	return cache, nil
 }
 
+// LoadSubscriptionCacheShared returns a read-only subs.SubscriptionCache view
+// sharing the cached file's decoded Nodes slice without JSON round-tripping.
+// The returned value and its slices must not be modified by the caller.
+func LoadSubscriptionCacheShared(ctx context.Context, id string) (*subs.SubscriptionCache, error) {
+	cache, err := LoadCacheShared(ctx, id)
+	if err != nil || cache == nil {
+		return nil, err
+	}
+	var metadata *subs.SourceMetadata
+	if cache.Metadata != nil {
+		metadata = &subs.SourceMetadata{
+			Hosts:         cache.Metadata.Hosts,
+			Dialers:       cache.Metadata.Dialers,
+			DialersStored: cache.Metadata.Dialers != nil,
+		}
+		if cache.Metadata.URL != nil {
+			metadata.URL = *cache.Metadata.URL
+		}
+	}
+	return &subs.SubscriptionCache{
+		Nodes:    cache.Nodes,
+		Metadata: metadata,
+	}, nil
+}
+
 // LoadCacheJSON is the model encoding of LoadCache's record (nil when there
 // is none), reused while the file is unchanged; the caller owns the bytes.
 func LoadCacheJSON(ctx context.Context, id string) (json.RawMessage, error) {

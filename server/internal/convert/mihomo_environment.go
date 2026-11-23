@@ -6,11 +6,16 @@ import (
 	"sync"
 
 	"configflow/internal/model"
+	"configflow/internal/subs"
 	"configflow/internal/yamlx"
 )
 
 // CacheReader loads a subscription cache as opaque JSON. Its owner migrates in N8-9.
 type CacheReader func(context.Context, string) (json.RawMessage, error)
+
+// TypedCacheReader loads a read-only decoded subscription cache directly from
+// its owner without JSON round-tripping. Callers must not mutate the result.
+type TypedCacheReader func(context.Context, string) (*subs.SubscriptionCache, error)
 
 // InlineNode pairs a typed source node with its emitted proxy.
 type InlineNode struct {
@@ -24,6 +29,7 @@ type HostsResult struct{ Report, Merged *yamlx.Node }
 // DialerCollaborators supplies typed cache/conversion collaborators to the owner.
 type DialerCollaborators struct {
 	LoadCache      CacheReader
+	LoadCacheTyped TypedCacheReader
 	Convert        func(context.Context, model.Node) (*yamlx.Node, error)
 	DownloadedText func(context.Context, string) (string, bool)
 }
@@ -32,23 +38,24 @@ type DialerCollaborators struct {
 // Each callback has one implementation in its owning package. Legacy adapters
 // only translate its parameters/results; missing callbacks never skip a step.
 type MihomoEnvironment struct {
-	Clients               ClientCollaborators
-	Converter             NodeConverter
-	ProviderInterval      func(model.MihomoSettings) (int64, error)
-	LoadSubscriptionCache CacheReader
-	DownloadedText        func(context.Context, string) (string, bool)
-	Preflight             func(context.Context, *model.Config, *yamlx.Node) error
-	LowerChains           func(*model.Config) (*model.Config, error)
-	RenderMembers         func(model.ProxyGroup, *model.Config) (*yamlx.Node, error)
-	ProviderHealth        func(*model.ProviderHealthCheck) (*yamlx.Node, error)
-	FilterGroups          func(*model.Config, *yamlx.Node) error
-	ChainProviders        func(*model.Config, *yamlx.Node) error
-	MergeHosts            func(context.Context, *yamlx.Node, *model.Config, []string, []string, []InlineNode, CacheReader) (*HostsResult, error)
-	NodeDNS               func(*yamlx.Node, *yamlx.Node, string) (*yamlx.Node, error)
-	LogHosts              func(string, *yamlx.Node) error
-	DialerGroups          func(context.Context, *yamlx.Node, *model.Config, DialerCollaborators) (*yamlx.Node, error)
-	ValidateRules         func(*model.Config, []string, string) error
-	ValidateListeners     func(*yamlx.Node) error
+	Clients                    ClientCollaborators
+	Converter                  NodeConverter
+	ProviderInterval           func(model.MihomoSettings) (int64, error)
+	LoadSubscriptionCache      CacheReader
+	LoadSubscriptionCacheTyped TypedCacheReader
+	DownloadedText             func(context.Context, string) (string, bool)
+	Preflight                  func(context.Context, *model.Config, *yamlx.Node) error
+	LowerChains                func(*model.Config) (*model.Config, error)
+	RenderMembers              func(model.ProxyGroup, *model.Config) (*yamlx.Node, error)
+	ProviderHealth             func(*model.ProviderHealthCheck) (*yamlx.Node, error)
+	FilterGroups               func(*model.Config, *yamlx.Node) error
+	ChainProviders             func(*model.Config, *yamlx.Node) error
+	MergeHosts                 func(context.Context, *yamlx.Node, *model.Config, []string, []string, []InlineNode, CacheReader) (*HostsResult, error)
+	NodeDNS                    func(*yamlx.Node, *yamlx.Node, string) (*yamlx.Node, error)
+	LogHosts                   func(string, *yamlx.Node) error
+	DialerGroups               func(context.Context, *yamlx.Node, *model.Config, DialerCollaborators) (*yamlx.Node, error)
+	ValidateRules              func(*model.Config, []string, string) error
+	ValidateListeners          func(*yamlx.Node) error
 }
 
 var environmentState = struct {

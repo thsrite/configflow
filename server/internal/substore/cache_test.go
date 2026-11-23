@@ -292,3 +292,45 @@ func TestNodeCountChangeIsLogged(t *testing.T) {
 		t.Fatalf("log:\n%s", logs.text())
 	}
 }
+
+// O10 cache budget: LoadSubscriptionCacheShared matches LoadCacheJSON without
+// populating the encoded JSON cache field.
+func TestLoadSubscriptionCacheSharedMatchesJSON(t *testing.T) {
+	ctx, _ := sharedRepo(t)
+	url := "https://feed.example.com/sub"
+	airport := "proxies:\n  - {name: HK 01, type: socks5, server: jp-node.example.net, port: 1080}\n" +
+		"hosts:\n  jp-node.example.net: jp-entry.example.org\n"
+	metadata := &CacheMetadata{
+		SubscriptionName: "Air",
+		URL:              &url,
+		Hosts:            subs.ExtractHosts(airport),
+	}
+	proxies := must[[]*yamlx.Node](t)(ParseProxyNodes(airport))
+	nodes := must[[]model.Node](t)(ProxyNodes(proxies))
+	must[*Cache](t)(SaveCache(ctx, "shared-view", nodes, metadata))
+
+	path := must[string](t)(CachePath(ctx, "shared-view"))
+	memoForget(path)
+
+	shared := must[*subs.SubscriptionCache](t)(LoadSubscriptionCacheShared(ctx, "shared-view"))
+	if shared == nil || len(shared.Nodes) != 1 || shared.Metadata == nil || shared.Metadata.URL != url || shared.Metadata.Hosts == nil {
+		t.Fatalf("unexpected shared cache: %+v", shared)
+	}
+	key, ok := statCacheFile(path)
+	if !ok {
+		t.Fatal("cache file missing")
+	}
+	if entry := memoLookup(path, key); entry.encoded != nil {
+		t.Fatal("LoadSubscriptionCacheShared unexpectedly populated encoded JSON bytes")
+	}
+	raw := must[json.RawMessage](t)(LoadCacheJSON(ctx, "shared-view"))
+	var decoded subs.SubscriptionCache
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Nodes) != len(shared.Nodes) || decoded.Nodes[0].Name != shared.Nodes[0].Name ||
+		decoded.Metadata.URL != shared.Metadata.URL || decoded.Metadata.DialersStored != shared.Metadata.DialersStored ||
+		decoded.Metadata.Hosts.Entries.Len() != shared.Metadata.Hosts.Entries.Len() {
+		t.Fatalf("shared %+v != decoded %+v", shared, decoded)
+	}
+}

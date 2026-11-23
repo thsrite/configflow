@@ -711,7 +711,12 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	if err := env.ChainProviders(config, document); err != nil {
 		return nil, err
 	}
-	hosts, err := env.MergeHosts(ctx, document, config, userHostKeys, mosdnsHostKeys, inline, env.LoadSubscriptionCache)
+	var hosts *HostsResult
+	if env.LoadSubscriptionCacheTyped != nil {
+		hosts, err = mergeHostsWithReader(ctx, document, config, userHostKeys, mosdnsHostKeys, inline, env.LoadSubscriptionCacheTyped, env.LoadSubscriptionCache)
+	} else {
+		hosts, err = env.MergeHosts(ctx, document, config, userHostKeys, mosdnsHostKeys, inline, env.LoadSubscriptionCache)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -737,7 +742,7 @@ func MihomoDocument(ctx context.Context, logical *model.Config, options MihomoOp
 	if options.Report != nil {
 		options.Report.SubscriptionHosts = hosts.Report
 	}
-	dialers, err := env.DialerGroups(ctx, document, config, DialerCollaborators{LoadCache: env.LoadSubscriptionCache, Convert: func(ctx context.Context, node model.Node) (*yamlx.Node, error) {
+	dialers, err := env.DialerGroups(ctx, document, config, DialerCollaborators{LoadCache: env.LoadSubscriptionCache, LoadCacheTyped: env.LoadSubscriptionCacheTyped, Convert: func(ctx context.Context, node model.Node) (*yamlx.Node, error) {
 		return NodeProxy(ctx, node, env.Converter)
 	}, DownloadedText: env.DownloadedText})
 	if err != nil {
