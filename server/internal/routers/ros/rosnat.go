@@ -479,7 +479,7 @@ func SelectorMatches(value, iface string, ctx *NatContext, isList bool) match {
 // simulated); not_required needs no possible translation or a proven egress mismatch.
 func AssessNAT(cidr, gateway string, ctx *NatContext, policyRouting bool, ix *RouteEgressIndex) NatAssessment {
 	if ctx == nil {
-		return NatAssessment{Status: "unknown", Detail: "缺少 Client NAT 判断依据，无法确认是否需要免 NAT"}
+		return NatAssessment{Status: "unknown", Detail: "缺少 RouterOS NAT 判断依据，无法确认是否需要免 NAT"}
 	}
 	if !RowsOK(ctx.Rules) {
 		return NatAssessment{Status: "unknown", Detail: "无法读取完整 NAT 规则，无法确认是否需要免 NAT"}
