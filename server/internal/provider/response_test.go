@@ -29,6 +29,9 @@ type serveFixture struct {
 	kind   string
 	// renderFor builds the render from the request (the routes' closures).
 	renderFor func(c *httpx.Ctx) Render
+	// keyFor overrides the item id and head the request renders (nil: the
+	// fixture's fixed ones).
+	keyFor func(c *httpx.Ctx) (itemID string, head *store.Head)
 }
 
 func newServeFixture(t *testing.T, seconds float64) *serveFixture {
@@ -36,14 +39,18 @@ func newServeFixture(t *testing.T, seconds float64) *serveFixture {
 	f.srv = httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 		r.GET("/provider", "test.provider", func(c *httpx.Ctx) (*httpx.Response, error) {
 			f.mu.Lock()
-			render, kind := f.render, f.kind
+			render, kind, keyFor := f.render, f.kind, f.keyFor
 			if f.renderFor != nil {
 				render = f.renderFor(c)
 			}
 			f.mu.Unlock()
 			profile := c.ArgDefault("profile", "alpha")
+			itemID := map[string]string{"aggregation": "agg-1", "subscription": "feed"}[kind]
 			head := &store.Head{StoreID: "serve-fixture", Generation: 1}
-			return Serve(c, kind, map[string]string{"aggregation": "agg-1", "subscription": "feed"}[kind], profile, head, render)
+			if keyFor != nil {
+				itemID, head = keyFor(c)
+			}
+			return Serve(c, kind, itemID, profile, head, render)
 		})
 	})})
 	ctx := f.srv.Context()
