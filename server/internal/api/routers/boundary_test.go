@@ -204,6 +204,11 @@ func normalizedBoundary(t *testing.T, value any, path string) any {
 					item = "<native revision>"
 				}
 			}
+			if key == "config_revision" && (strings.HasSuffix(path, ".workspace") || strings.HasSuffix(path, ".preview")) {
+				if _, ok := item.(float64); ok {
+					item = "<profile revision>"
+				}
+			}
 			if key == "id" {
 				if text, ok := item.(string); ok && generatedRouterID.MatchString(text) {
 					item = "<generated router id>"
@@ -283,6 +288,14 @@ func compareStoredBoundary(t *testing.T, left, right any) {
 	var a, b any
 	if json.Unmarshal(rawA, &a) != nil || json.Unmarshal(rawB, &b) != nil {
 		t.Fatal("bad comparison JSON")
+	}
+	// O17: router last_release is stored in agent_state and no longer advances
+	// profile _revision, whereas Python incremented _revision on every release.
+	if m, ok := a.(map[string]any); ok {
+		delete(m, "_revision")
+	}
+	if m, ok := b.(map[string]any); ok {
+		delete(m, "_revision")
 	}
 	compareBoundary(t, testjson.WithoutEmptyMembers(a), testjson.WithoutEmptyMembers(b))
 }

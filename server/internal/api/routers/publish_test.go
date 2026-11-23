@@ -145,6 +145,7 @@ func TestR15PublishHTTPDisconnectAndShutdownAfterWrite(t *testing.T) {
 			}
 			req.Header.Set("Content-Type", "application/json")
 			before, _ := s.Repo.ConfigRevision(s.Context(), "default")
+			headBefore, _ := s.Repo.Head(s.Context())
 			arm.Store(true)
 			result := make(chan int, 1)
 			go func() {
@@ -192,12 +193,16 @@ func TestR15PublishHTTPDisconnectAndShutdownAfterWrite(t *testing.T) {
 			}
 			status := <-result
 			after, _ := s.Repo.ConfigRevision(s.Context(), "default")
-			expectedRevision := before + 1
-			if mode == "shutdown_before" {
-				expectedRevision = before
+			headAfter, _ := s.Repo.Head(s.Context())
+			if after != before {
+				t.Fatalf("last_release-only publication advanced config revision: %d/%d", before, after)
 			}
-			if after != expectedRevision {
-				t.Fatalf("publication missing: %d/%d", before, after)
+			expectedState := headBefore.State + 1
+			if mode == "shutdown_before" {
+				expectedState = headBefore.State
+			}
+			if headAfter.State != expectedState {
+				t.Fatalf("publication state generation: %d -> %d (want %d)", headBefore.State, headAfter.State, expectedState)
 			}
 			profile, _ := s.Repo.Profile(s.Context(), "default")
 			record := profile.Routers.Items[0]
