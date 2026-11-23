@@ -3,6 +3,7 @@ package oxidns
 import (
 	"configflow/internal/model"
 	"errors"
+	"slices"
 	"strings"
 )
 
@@ -29,8 +30,8 @@ func (p *Profile) ruleIDs() (map[string]*model.RuleConfig, map[string]bool) {
 // restoreParked: template inputs route disabled rules again (generation
 // skips them itself); rule_actions ids leave the selector lists.
 func restoreParked(inputs *Node, p *Profile) *Node {
-	parked, actions := get(inputs, "rule_dns_parked"), get(inputs, "rule_actions")
-	if !isMap(parked) || !isMap(actions) {
+	parkedNode, actionsNode := get(inputs, "rule_dns_parked"), get(inputs, "rule_actions")
+	if !isMap(parkedNode) || !isMap(actionsNode) {
 		return inputs
 	}
 	for _, key := range resourceLists {
@@ -42,31 +43,65 @@ func restoreParked(inputs *Node, p *Profile) *Node {
 	if p != nil {
 		known, _ = p.ruleIDs()
 	}
-	pairs(parked, func(identity string, action *Node) bool {
-		route := get(action, "action")
+	values := ruleDNSFromSettings(inputs)
+	// Preserve any non-string entries in selector lists so normalization still rejects them.
+	allStrLists := true
+	for _, key := range resourceLists {
+		if has(inputs, key) && !allStrings(get(inputs, key)) {
+			allStrLists = false
+			break
+		}
+	}
+	touched := map[string]bool{}
+	for _, key := range resourceLists {
+		if has(inputs, key) {
+			touched[key] = true
+		}
+	}
+	pairs(parkedNode, func(identity string, actionNode *Node) bool {
+		route := get(actionNode, "action")
 		switch {
 		case isOneOf(route, "direct", "proxy"):
 			suffix := "rules"
 			if item := known[identity]; item != nil {
 				suffix = suffixOf(*item)
-			} else if containsStr(get(inputs, route.Value+"_rulesets"), identity) {
+			} else if values.hasInSelector(route.Value+"_rulesets", identity) {
 				suffix = "rulesets"
 			}
 			other := map[string]string{"direct": "proxy", "proxy": "direct"}[route.Value] + "_" + suffix
-			set(inputs, other, seqOf(filter(items(get(inputs, other)), func(v *Node) bool { return !equal(v, S(identity)) })))
-			list := setDefault(inputs, route.Value+"_"+suffix, L())
-			if !containsStr(list, identity) {
-				list.Content = append(list.Content, S(identity))
+			target := route.Value + "_" + suffix
+			touched[other], touched[target] = true, true
+			if allStrLists {
+				values.setSelector(other, filterStrings(values.selector(other), func(v string) bool { return v != identity }))
+				if !values.hasInSelector(target, identity) {
+					values.appendSelector(target, identity)
+				}
+			} else {
+				set(inputs, other, seqOf(filter(items(get(inputs, other)), func(v *Node) bool { return !equal(v, S(identity)) })))
+				list := setDefault(inputs, target, L())
+				if !containsStr(list, identity) {
+					list.Content = append(list.Content, S(identity))
+				}
 			}
-		case !isNone(route) && isMap(action):
-			setDefault(actions, identity, action)
+		case !isNone(route) && isMap(actionNode):
+			setDefault(actionsNode, identity, actionNode)
+			values.Actions.setDefault(identity, actionOf(actionNode))
 		}
 		return true
 	})
 	set(inputs, "rule_dns_parked", M())
-	for _, key := range resourceLists {
-		if has(inputs, key) {
-			set(inputs, key, seqOf(filter(items(get(inputs, key)), func(v *Node) bool { return !isStr(v) || !has(actions, v.Value) })))
+	if allStrLists {
+		for _, key := range resourceLists {
+			if touched[key] {
+				values.setSelector(key, filterStrings(values.selector(key), func(v string) bool { return !values.Actions.has(v) }))
+				set(inputs, key, strs(values.selector(key)))
+			}
+		}
+	} else {
+		for _, key := range resourceLists {
+			if has(inputs, key) {
+				set(inputs, key, seqOf(filter(items(get(inputs, key)), func(v *Node) bool { return !isStr(v) || !has(actionsNode, v.Value) })))
+			}
 		}
 	}
 	return inputs
@@ -89,25 +124,26 @@ func TemplateInputs(settings *Node, p *Profile) *Node {
 // parked (selector lists stay a retained catalog).
 func parkInactive(settings *Node, p *Profile) {
 	known, active := p.ruleIDs()
-	follow := get(settings, "rule_dns_follow")
-	parked := get(settings, "rule_dns_parked")
-	actions := get(settings, "rule_actions")
-	for _, identity := range keys(actions) {
+	values := ruleDNSFromSettings(settings)
+	for _, identity := range values.Actions.keys() {
 		if active[identity] {
 			continue
 		}
-		action := del(actions, identity)
-		if known[identity] != nil && !containsStr(follow, identity) {
-			setDefault(parked, identity, action)
+		action, _ := values.Actions.delete(identity)
+		if known[identity] != nil && !slices.Contains(values.Follow, identity) {
+			values.Parked.setDefault(identity, action)
 		}
 	}
 	for _, key := range resourceLists {
-		for _, identity := range items(get(settings, key)) {
-			if known[identity.Value] != nil && !active[identity.Value] && !contains(follow, identity) {
-				setDefault(parked, identity.Value, M("action", strings.Split(key, "_")[0]))
+		route := routePrefix(key)
+		for _, identity := range values.selector(key) {
+			if known[identity] != nil && !active[identity] && !slices.Contains(values.Follow, identity) {
+				values.Parked.setDefault(identity, RuleAction{Action: route})
 			}
 		}
 	}
+	set(settings, "rule_actions", values.Actions.node())
+	set(settings, "rule_dns_parked", values.Parked.node())
 }
 
 // renderTemplate is _template: normalized template settings, generated

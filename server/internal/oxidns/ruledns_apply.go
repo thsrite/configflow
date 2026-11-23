@@ -189,79 +189,90 @@ func sameDependencies(a, b []ruleDependency) bool {
 	return slices.EqualFunc(a, b, ruleDependency.equal)
 }
 
-func pruneDNSFields(values *Node, rules map[string]model.RuleConfig) *Node {
-	out := M()
-	for _, key := range ruleDNSFields {
-		value := get(values, key)
-		if isMap(value) {
-			kept := M()
-			pairs(value, func(id string, action *Node) bool {
-				if _, ok := rules[id]; ok {
-					set(kept, id, clone(action))
-				}
-				return true
-			})
-			set(out, key, kept)
-		} else {
-			set(out, key, seqOf(filter(items(value), func(id *Node) bool {
-				_, ok := rules[id.Value]
-				return isStr(id) && ok
-			})))
+func pruneDNSFields(values *ruleDNSValues, rules map[string]model.RuleConfig) *ruleDNSValues {
+	out := newRuleDNSValues()
+	for _, id := range values.Actions.order {
+		if _, ok := rules[id]; ok {
+			a := values.Actions.items[id]
+			if a.Upstream != nil {
+				a.Upstream = clone(a.Upstream)
+			}
+			out.Actions.set(id, a)
 		}
 	}
+	for _, id := range values.Parked.order {
+		if _, ok := rules[id]; ok {
+			a := values.Parked.items[id]
+			if a.Upstream != nil {
+				a.Upstream = clone(a.Upstream)
+			}
+			out.Parked.set(id, a)
+		}
+	}
+	out.Follow = filterStrings(values.Follow, func(id string) bool {
+		_, ok := rules[id]
+		return ok
+	})
 	return out
 }
 
-func dirtyDNSField(settings, stored *Node, key string) bool {
+func dirtyDNSField(settings *Node, stored *ruleDNSValues, key string) bool {
 	value := get(settings, key)
-	return !isNone(value) && !equal(value, get(stored, key))
+	return !isNone(value) && !equal(value, stored.fieldNode(key))
 }
 
-func installDNSFields(settings, values *Node, fields []string) {
+func installDNSFields(settings *Node, values *ruleDNSValues, fields []string) {
 	for _, key := range fields {
-		set(settings, key, clone(get(values, key)))
+		set(settings, key, values.fieldNode(key))
 	}
 }
 
-func placeDNSChoice(values *Node, item model.RuleConfig, action *Node) {
+func placeDNSChoice(values *ruleDNSValues, item model.RuleConfig, action *RuleAction) {
 	id := item.ID
 	for _, key := range Selectors {
-		set(values, key, seqOf(filter(items(get(values, key)), func(value *Node) bool { return !isOneOf(value, id) })))
+		values.setSelector(key, filterStrings(values.selector(key), func(value string) bool { return value != id }))
 	}
-	del(get(values, "rule_actions"), id)
-	del(get(values, "rule_dns_parked"), id)
+	values.Actions.delete(id)
+	values.Parked.delete(id)
 	if action == nil {
 		return
 	}
-	if route := str(get(action, "action")); isListRoute(route) {
-		key := route + "_" + suffixOf(item)
-		list := get(values, key)
-		list.Content = append(list.Content, S(id))
+	if isListRoute(action.Action) {
+		key := action.Action + "_" + suffixOf(item)
+		values.appendSelector(key, id)
 	} else {
-		set(get(values, "rule_actions"), id, clone(action))
+		copied := *action
+		if copied.Upstream != nil {
+			copied.Upstream = clone(copied.Upstream)
+		}
+		values.Actions.set(id, copied)
 	}
 }
 
-func resolveDNSChoice(choice string, item model.RuleConfig, values *Node, catalog []UpstreamCandidate, routes map[string]string) (*Node, error) {
+func resolveDNSChoice(choice string, item model.RuleConfig, values *ruleDNSValues, catalog []UpstreamCandidate, routes map[string]string) (*RuleAction, error) {
 	switch choice {
 	case "default":
 		return nil, nil
 	case "follow":
 		if route := followRoute(item, routes); route != "" {
-			return M("action", route), nil
+			return &RuleAction{Action: route}, nil
 		}
 		return nil, nil
 	}
 	if !strings.HasPrefix(choice, "upstream:") {
-		return M("action", choice), nil
+		return &RuleAction{Action: choice}, nil
 	}
 	id := item.ID
-	current := get(get(values, "rule_actions"), id)
-	if current == nil {
-		current = get(get(values, "rule_dns_parked"), id)
+	current, ok := values.Actions.get(id)
+	if !ok {
+		current, ok = values.Parked.get(id)
 	}
-	if current != nil && RouteKey(current) == choice {
-		return clone(current), nil
+	if ok && current.Key() == choice {
+		copied := current
+		if copied.Upstream != nil {
+			copied.Upstream = clone(copied.Upstream)
+		}
+		return &copied, nil
 	}
 	for _, candidate := range catalog {
 		if candidate.Key != choice[9:] {
@@ -274,7 +285,7 @@ func resolveDNSChoice(choice string, item model.RuleConfig, values *Node, catalo
 		if err != nil {
 			return nil, fmt.Errorf("decode upstream candidate: %w", err)
 		}
-		return M("action", "upstream", "source", candidate.Source, "upstream", entry), nil
+		return &RuleAction{Action: "upstream", Source: candidate.Source, Upstream: entry}, nil
 	}
 	return nil, fail(messageDNSStaleUpstream)
 }
@@ -373,7 +384,7 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 	beforeRoutes, afterRoutes := policyDNSRoutes(before), policyDNSRoutes(after)
 	if len(order) == 0 && sameDependencies(routingDependencies(before, beforeRoutes), routingDependencies(after, afterRoutes)) {
 		for _, key := range ruleDNSFields {
-			if !equal(get(pruned, key), get(stored, key)) || dirtyDNSField(settings, stored, key) {
+			if !pruned.fieldEqual(stored, key) || dirtyDNSField(settings, stored, key) {
 				installDNSFields(out, pruned, ruleDNSFields)
 				break
 			}
@@ -395,20 +406,20 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 	if native && view.Document == nil {
 		return locked(view.Reason)
 	}
-	values := clone(view.Values)
+	values := view.Values.clone()
 	for _, key := range Selectors {
-		set(values, key, seqOf(filter(items(get(values, key)), func(id *Node) bool {
-			_, ok := rules[str(id)]
+		values.setSelector(key, filterStrings(values.selector(key), func(id string) bool {
+			_, ok := rules[id]
 			return ok
-		})))
+		}))
 	}
-	for _, id := range keys(get(values, "rule_actions")) {
+	for _, id := range values.Actions.keys() {
 		if _, ok := rules[id]; !ok {
-			del(get(values, "rule_actions"), id)
+			values.Actions.delete(id)
 		}
 	}
-	set(values, "rule_dns_follow", clone(get(pruned, "rule_dns_follow")))
-	set(values, "rule_dns_parked", clone(get(pruned, "rule_dns_parked")))
+	values.Follow = slices.Clone(pruned.Follow)
+	values.Parked = pruned.Parked.clone()
 	catalog := []UpstreamCandidate{}
 	for _, id := range order {
 		if strings.HasPrefix(choices[id], "upstream:") {
@@ -419,7 +430,6 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 			break
 		}
 	}
-	follow := get(values, "rule_dns_follow")
 	for _, id := range order {
 		choice := choices[id]
 		action, err := resolveDNSChoice(choice, rules[id], values, catalog, afterRoutes)
@@ -428,14 +438,14 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 		}
 		placeDNSChoice(values, rules[id], action)
 		if choice == "follow" {
-			if !contains(follow, S(id)) {
-				follow.Content = append(follow.Content, S(id))
+			if !slices.Contains(values.Follow, id) {
+				values.Follow = append(values.Follow, id)
 			}
 		} else {
-			follow.Content = filter(follow.Content, func(value *Node) bool { return !isOneOf(value, id) })
+			values.Follow = filterStrings(values.Follow, func(value string) bool { return value != id })
 		}
 	}
-	for _, id := range ruleDNSIDs(follow) {
+	for _, id := range values.Follow {
 		_, assigned := choices[id]
 		_, existed := previous[id]
 		if _, exists := rules[id]; assigned || !existed || !exists {
@@ -443,21 +453,21 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 		}
 		route := followRoute(rules[id], afterRoutes)
 		if route != followRoute(previous[id], beforeRoutes) {
-			var action *Node
+			var action *RuleAction
 			if route != "" {
-				action = M("action", route)
+				action = &RuleAction{Action: route}
 			}
 			placeDNSChoice(values, rules[id], action)
 		}
 	}
 	fields := append(append([]string{}, Selectors...), ruleDNSFields...)
 	if !native {
-		if err := normalizeRuleDNS(values); err != nil {
+		if err := validateRuleDNS(values); err != nil {
 			return RuleDNSUpdate{}, err
 		}
 		for _, key := range fields {
-			if !equal(get(values, key), get(stored, key)) || dirtyDNSField(settings, stored, key) {
-				set(out, key, clone(get(values, key)))
+			if !values.fieldEqual(stored, key) || dirtyDNSField(settings, stored, key) {
+				set(out, key, values.fieldNode(key))
 			}
 		}
 		return finish([]string{}), nil
@@ -466,7 +476,7 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 	for _, item := range after.activeItems() {
 		active[item.ID] = true
 	}
-	for _, id := range ruleDNSIDs(follow) {
+	for _, id := range values.Follow {
 		if !active[id] {
 			placeDNSChoice(values, rules[id], nil)
 		}
@@ -492,7 +502,9 @@ func ApplyRuleDNS(before, after *Profile, assignments []DNSAssignment, options R
 			return RuleDNSUpdate{}, err
 		}
 	}
-	installDNSFields(out, resultSettings, fields)
+	for _, key := range fields {
+		set(out, key, clone(get(resultSettings, key)))
+	}
 	return finish([]string{}), nil
 }
 

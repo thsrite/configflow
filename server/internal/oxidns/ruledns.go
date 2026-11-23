@@ -73,6 +73,7 @@ type RuleAction struct {
 	Action   string
 	Source   string
 	Upstream *Node
+	raw      *Node
 }
 
 // actionOf reads a stored action; members of the wrong type read as empty.
@@ -90,6 +91,9 @@ func (a RuleAction) Key() string {
 
 // node is the canonical stored form of a normalized action.
 func (a RuleAction) node() *Node {
+	if a.raw != nil {
+		return clone(a.raw)
+	}
 	if a.Action != "upstream" {
 		return M("action", a.Action)
 	}
@@ -214,15 +218,21 @@ func upstreamChain(action RuleAction, features chainFeatures) []*Node {
 // first-use order; actions (rule_actions) supply pinned upstreams, features
 // the china_dns hooks copied into local chains.
 func HelperPlugins(routes []string, actions *Node, features chainFeatures) ([]*Node, error) {
+	return helperPlugins(routes, actionMapFromNode(actions), features)
+}
+
+func helperPlugins(routes []string, actions *actionMap, features chainFeatures) ([]*Node, error) {
 	pinned := map[string]RuleAction{}
-	pairs(actions, func(_ string, node *Node) bool {
-		if action := actionOf(node); action.Action == "upstream" {
-			if _, seen := pinned[action.Key()]; !seen {
-				pinned[action.Key()] = action
+	if actions != nil {
+		for _, id := range actions.order {
+			action := actions.items[id]
+			if action.Action == "upstream" {
+				if _, seen := pinned[action.Key()]; !seen {
+					pinned[action.Key()] = action
+				}
 			}
 		}
-		return true
-	})
+	}
 	var result []*Node
 	seen := map[string]bool{}
 	for _, route := range routes {
@@ -445,19 +455,28 @@ func parseExec(value *Node, part string, plugins map[string]*Node) string {
 	return ""
 }
 
-// pinnedAction is the stored action of a recognized goto cf_dns_up_<key>.
-func pinnedAction(key string, plugins map[string]*Node) *Node {
+// pinnedRuleAction is the typed action of a recognized goto cf_dns_up_<key>.
+func pinnedRuleAction(key string, plugins map[string]*Node) (RuleAction, bool) {
 	route := parseExec(S("goto "+UpstreamPrefix+key), "domain", plugins)
 	if route == "" || isInvalid(route) {
-		return nil
+		return RuleAction{}, false
 	}
 	entry, sources := pinnedChain(key, plugins)
 	for _, item := range sources {
 		if "upstream:"+EntryKey(entry, item) == route {
-			return M("action", "upstream", "source", item, "upstream", clone(entry))
+			return RuleAction{Action: "upstream", Source: item, Upstream: clone(entry)}, true
 		}
 	}
-	return nil
+	return RuleAction{}, false
+}
+
+// pinnedAction is the stored action of a recognized goto cf_dns_up_<key>.
+func pinnedAction(key string, plugins map[string]*Node) *Node {
+	action, ok := pinnedRuleAction(key, plugins)
+	if !ok {
+		return nil
+	}
+	return action.node()
 }
 
 // policyDNSRoutes maps each proxy group to the DNS route of its configured

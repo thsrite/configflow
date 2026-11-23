@@ -108,14 +108,6 @@ func suffixOf(item model.RuleConfig) string {
 	return "rules"
 }
 
-// inSelector is `identity in selector` for a selector list (or mapping).
-func inSelector(selector *Node, identity string) bool {
-	if isMap(selector) {
-		return has(selector, identity)
-	}
-	return containsStr(selector, identity)
-}
-
 type selection struct {
 	item  model.RuleConfig
 	route string
@@ -123,8 +115,7 @@ type selection struct {
 
 // selected is _selected: (item, route) for the routed candidates; a rule DNS
 // action wins over the selector lists. candidates nil means every active rule.
-func (p *Profile) selected(settings *Node, candidates []model.RuleConfig) ([]selection, error) {
-	actions := get(settings, "rule_actions")
+func (p *Profile) selected(values *ruleDNSValues, candidates []model.RuleConfig) ([]selection, error) {
 	if candidates == nil {
 		candidates = p.activeItems()
 	}
@@ -132,11 +123,12 @@ func (p *Profile) selected(settings *Node, candidates []model.RuleConfig) ([]sel
 	for _, item := range candidates {
 		suffix := suffixOf(item)
 		switch {
-		case has(actions, item.ID):
-			out = append(out, selection{item, RouteKey(get(actions, item.ID))})
-		case inSelector(get(settings, "direct_"+suffix), item.ID):
+		case values.Actions.has(item.ID):
+			action, _ := values.Actions.get(item.ID)
+			out = append(out, selection{item, action.Key()})
+		case values.hasInSelector("direct_"+suffix, item.ID):
 			out = append(out, selection{item, "direct"})
-		case inSelector(get(settings, "proxy_"+suffix), item.ID):
+		case values.hasInSelector("proxy_"+suffix, item.ID):
 			out = append(out, selection{item, "proxy"})
 		}
 	}
@@ -242,16 +234,8 @@ func rulesetDownloads(settings *Node, p *Profile, baseURL string) ([]RulesetDown
 			candidates = append(candidates, selection{item: item})
 		}
 	} else {
-		selections := M()
-		pairs(settings, func(key string, value *Node) bool {
-			if !isSeq(value) && !isMap(value) {
-				value = L()
-			}
-			set(selections, key, value)
-			return true
-		})
 		var err error
-		if candidates, err = p.selected(selections, nil); err != nil {
+		if candidates, err = p.selected(ruleDNSFromSettings(settings), nil); err != nil {
 			return nil, err
 		}
 	}
@@ -433,9 +417,9 @@ func (g *routingGroups) all() []*ruleGroup {
 
 // routingGroups is _routing_groups: managed domain groups, or the historical
 // IP shapes (legacy) used to recognize native documents.
-func (p *Profile) routingGroups(settings *Node, legacy legacyMode, candidates []model.RuleConfig) (*routingGroups, error) {
+func (p *Profile) routingGroups(values *ruleDNSValues, aggregate bool, legacy legacyMode, candidates []model.RuleConfig) (*routingGroups, error) {
 	groups := &routingGroups{}
-	selected, err := p.selected(settings, candidates)
+	selected, err := p.selected(values, candidates)
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +469,7 @@ func (p *Profile) routingGroups(settings *Node, legacy legacyMode, candidates []
 		}
 		for _, e := range entries {
 			target := groups.part(e.part)
-			if n := len(*target); isTrue(get(settings, "aggregate_rules")) && n > 0 && (*target)[n-1].Route == route {
+			if n := len(*target); aggregate && n > 0 && (*target)[n-1].Route == route {
 				last := (*target)[n-1]
 				pairs(e.args, func(key string, values *Node) bool {
 					list := setDefault(last.Args, key, L())
@@ -659,7 +643,8 @@ func templateDocument(s *templateSettings, p *Profile, baseURL string) (*Node, e
 	add := func(tag, kind string, args *Node) {
 		plugins.Content = append(plugins.Content, M("tag", tag, "type", kind, "args", args))
 	}
-	groups, err := p.routingGroups(s.node, legacyNone, nil)
+	ruleDNS := ruleDNSFromSettings(s.node)
+	groups, err := p.routingGroups(ruleDNS, s.AggregateRules, legacyNone, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -808,7 +793,7 @@ func templateDocument(s *templateSettings, p *Profile, baseURL string) (*Node, e
 	for _, g := range groups.all() {
 		routes = append(routes, g.Route)
 	}
-	helpers, err := HelperPlugins(routes, get(s.node, "rule_actions"), s.features())
+	helpers, err := helperPlugins(routes, ruleDNS.Actions, s.features())
 	if err != nil {
 		return nil, err
 	}

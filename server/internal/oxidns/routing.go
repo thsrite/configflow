@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -212,10 +213,9 @@ func (p *Profile) catalog() *ruleCatalog {
 			continue
 		}
 		suffix := suffixOf(item)
-		settings := selectorSettings()
-		set(settings, "aggregate_rules", B(false))
-		set(settings, "direct_"+suffix, L(id))
-		groups, err := p.routingGroups(settings, legacyAll, same[id+"\x00"+suffix])
+		values := newRuleDNSValues()
+		values.setSelector("direct_"+suffix, []string{id})
+		groups, err := p.routingGroups(values, false, legacyAll, same[id+"\x00"+suffix])
 		if err != nil {
 			continue
 		}
@@ -284,7 +284,7 @@ type recGroup struct {
 	args     *Node
 	entry    *Node
 	provider *Node
-	action   *Node
+	action   *RuleAction
 }
 
 type recGroups struct{ Domain, IP []*recGroup }
@@ -299,7 +299,7 @@ func (g *recGroups) part(name string) *[]*recGroup {
 func (g *recGroups) all() []*recGroup { return append(append([]*recGroup{}, g.Domain...), g.IP...) }
 
 type routingState struct {
-	values        *Node
+	values        *routingValues
 	caps          map[string]Capability
 	full          bool
 	plugins       map[string]*Node
@@ -332,16 +332,16 @@ func (p *Profile) knownRules() (map[string]*model.RuleConfig, []string) {
 	return known, order
 }
 
-func storedFollow(settings *Node, p *Profile) *Node {
+func storedFollow(settings *Node, p *Profile) []string {
 	follow := get(settings, "rule_dns_follow")
 	known, _ := p.knownRules()
-	out := L()
+	out := []string{}
 	if !isSeq(follow) {
 		return out
 	}
-	for _, id := range unique(seqOf(filter(follow.Content, isStr))).Content {
-		if known[id.Value] != nil {
-			out.Content = append(out.Content, id)
+	for _, id := range uniqueStrings(ruleDNSIDs(follow)) {
+		if known[id] != nil {
+			out = append(out, id)
 		}
 	}
 	return out
@@ -402,15 +402,6 @@ func uniqueAtoms(part string, provider *Node, c *ruleCatalog) bool {
 
 var providerMatch = regexp.MustCompile(`^(qname|resp_ip) \$(\S+)$`)
 
-func newRoutingValues(settings *Node, p *Profile) *Node {
-	values := selectorSettings()
-	for _, kv := range [][2]any{{"aggregate_rules", nil}, {"default_forward", nil}, {"custom_matches", L()},
-		{"custom_match_position", nil}, {"rule_actions", M()}, {"rule_dns_follow", storedFollow(settings, p)}} {
-		set(values, kv[0].(string), val(kv[1]))
-	}
-	return values
-}
-
 func (p *Profile) recognize(document *nativeDoc, settings *Node, claim bool, catalog func() *ruleCatalog) *routingState {
 	state := &routingState{values: newRoutingValues(settings, p), caps: map[string]Capability{}}
 	for _, key := range RoutingFields {
@@ -437,7 +428,7 @@ func (p *Profile) recognize(document *nativeDoc, settings *Node, claim bool, cat
 	if get(final, "exec").Value == "goto china_dns" {
 		defaultForward = "forward_local"
 	}
-	set(values, "default_forward", S(defaultForward))
+	values.DefaultForward = strPtr(defaultForward)
 	caps["default_forward"] = routingCap(true, "")
 	records := catalog()
 	var pluginList []*Node
@@ -484,7 +475,9 @@ func (p *Profile) recognize(document *nativeDoc, settings *Node, claim bool, cat
 						invalid = route[1:]
 					}
 				} else if strings.HasPrefix(route, "upstream:") {
-					group.action = pinnedAction(strings.TrimPrefix(exec, "goto "+UpstreamPrefix), plugins)
+					if action, ok := pinnedRuleAction(strings.TrimPrefix(exec, "goto "+UpstreamPrefix), plugins); ok {
+						group.action = &action
+					}
 				}
 				*groups.part(part) = append(*groups.part(part), group)
 				if part == "ip" {
@@ -560,9 +553,12 @@ func (p *Profile) recognize(document *nativeDoc, settings *Node, claim bool, cat
 			customValid = false
 		}
 	}
-	set(values, "custom_matches", clone(seqOf(custom)))
+	values.CustomMatches = make([]*Node, len(custom))
+	for i, c := range custom {
+		values.CustomMatches[i] = clone(c)
+	}
 	if customValid && len(custom) > 0 {
-		set(values, "custom_match_position", S(position))
+		values.CustomMatchPosition = strPtr(position)
 	}
 	if customValid {
 		caps["custom_matches"] = routingCap(true, "")
@@ -586,16 +582,16 @@ func (p *Profile) recognize(document *nativeDoc, settings *Node, claim bool, cat
 	assigned := map[string]map[string]string{}
 	var assignedOrder []string
 	var orphans [][2]string
-	actions := map[string]*Node{}
+	actions := map[string]RuleAction{}
 	for _, part := range []string{"domain", "ip"} {
 		for _, g := range *groups.part(part) {
 			if isInvalid(g.route) {
 				continue
 			}
 			if !isListRoute(g.route) {
-				action := g.action
-				if action == nil {
-					action = M("action", g.route)
+				action := RuleAction{Action: g.route}
+				if g.action != nil {
+					action = *g.action
 				}
 				actions[g.route] = action
 			}
@@ -661,34 +657,36 @@ func (p *Profile) recognize(document *nativeDoc, settings *Node, claim bool, cat
 		}
 		route := only(routes)
 		if isListRoute(route) {
-			list := get(values, route+"_"+record.suffix)
-			list.Content = append(list.Content, S(identity))
+			values.appendSelector(route+"_"+record.suffix, identity)
 		} else {
-			set(get(values, "rule_actions"), identity, clone(actions[route]))
+			action := actions[route]
+			if action.Upstream != nil {
+				action.Upstream = clone(action.Upstream)
+			}
+			values.Actions.set(identity, action)
 		}
 	}
 	for _, key := range Selectors {
-		selected := get(values, key)
-		ordered := L()
+		selected := values.selector(key)
+		ordered := make([]string, 0, len(selected))
 		for _, identity := range records.order {
-			if containsStr(selected, identity) {
-				ordered.Content = append(ordered.Content, S(identity))
+			if slices.Contains(selected, identity) {
+				ordered = append(ordered, identity)
 			}
 		}
-		set(values, key, ordered)
+		values.setSelector(key, ordered)
 	}
-	ruleActions := get(values, "rule_actions")
-	orderedActions := M()
+	orderedActions := newActionMap()
 	for _, identity := range records.order {
-		if action := get(ruleActions, identity); action != nil {
-			set(orderedActions, identity, action)
+		if action, ok := values.Actions.get(identity); ok {
+			orderedActions.set(identity, action)
 		}
 	}
-	set(values, "rule_actions", orderedActions)
+	values.Actions = orderedActions
 	var matches []bool
 	if recognized {
 		for _, aggregate := range []bool{true, false} {
-			expected := p.observedLegacyGroups(values, assigned, records, aggregate)
+			expected := p.observedLegacyGroups(&values.ruleDNSValues, assigned, records, aggregate)
 			ok := true
 			for _, part := range []string{"domain", "ip"} {
 				got, want := *groups.part(part), *expected.part(part)
@@ -705,7 +703,7 @@ func (p *Profile) recognize(document *nativeDoc, settings *Node, claim bool, cat
 	}
 	if recognized {
 		if len(matches) == 1 {
-			set(values, "aggregate_rules", B(matches[0]))
+			values.AggregateRules = boolPtr(matches[0])
 		}
 		for _, key := range append(append([]string{}, Selectors...), RuleDNSFields...) {
 			caps[key] = routingCap(true, "")
@@ -745,10 +743,8 @@ func (p *Profile) recognize(document *nativeDoc, settings *Node, claim bool, cat
 }
 
 // observedLegacyGroups validates old per-rule parts against the catalog.
-func (p *Profile) observedLegacyGroups(values *Node, assigned map[string]map[string]string, c *ruleCatalog, aggregate bool) *routingGroups {
-	settings := shallow(values)
-	set(settings, "aggregate_rules", B(false))
-	raw, err := p.routingGroups(settings, legacyAll, nil)
+func (p *Profile) observedLegacyGroups(values *ruleDNSValues, assigned map[string]map[string]string, c *ruleCatalog, aggregate bool) *routingGroups {
+	raw, err := p.routingGroups(values, false, legacyAll, nil)
 	expected := &routingGroups{}
 	if err != nil {
 		return expected
@@ -942,11 +938,11 @@ func (p *Profile) aliasedCustomState(document *nativeDoc, settings *Node) (*rout
 		mainTag = t
 	}
 	if state.full {
-		custom := L()
+		custom := make([]*Node, 0, len(state.customIndices))
 		for _, index := range state.customIndices {
-			custom.Content = append(custom.Content, clone(items(get(plugins[mainTag], "args"))[index]))
+			custom = append(custom, clone(items(get(plugins[mainTag], "args"))[index]))
 		}
-		set(state.values, "custom_matches", custom)
+		state.values.CustomMatches = custom
 	}
 	for _, field := range customFields {
 		c := state.caps[field]
@@ -963,16 +959,23 @@ type RoutingView struct {
 	Capabilities map[string]Capability
 }
 
-// ReadRouting reads the recognized routing values and what can be edited.
-func ReadRouting(document *nativeDoc, settings *Node, p *Profile) (RoutingView, error) {
+func (p *Profile) readRouting(document *nativeDoc, settings *Node) (*routingValues, map[string]Capability, error) {
 	state := p.analyzeRouting(document, settings)
 	aliased, err := p.aliasedCustomState(document, settings)
 	if err != nil {
-		return RoutingView{}, err
+		return nil, nil, err
 	}
 	if aliased != nil {
+		state.values.CustomMatches = make([]*Node, len(aliased.values.CustomMatches))
+		for i, c := range aliased.values.CustomMatches {
+			state.values.CustomMatches[i] = clone(c)
+		}
+		if aliased.values.CustomMatchPosition != nil {
+			state.values.CustomMatchPosition = strPtr(*aliased.values.CustomMatchPosition)
+		} else {
+			state.values.CustomMatchPosition = nil
+		}
 		for _, field := range customFields {
-			set(state.values, field, get(aliased.values, field))
 			state.caps[field] = aliased.caps[field]
 		}
 	}
@@ -980,7 +983,16 @@ func ReadRouting(document *nativeDoc, settings *Node, p *Profile) (RoutingView, 
 	for k, v := range state.caps {
 		caps[k] = v
 	}
-	return RoutingView{clone(state.values), caps}, nil
+	return state.values.clone(), caps, nil
+}
+
+// ReadRouting reads the recognized routing values and what can be edited.
+func ReadRouting(document *nativeDoc, settings *Node, p *Profile) (RoutingView, error) {
+	values, caps, err := p.readRouting(document, settings)
+	if err != nil {
+		return RoutingView{}, err
+	}
+	return RoutingView{values.node(), caps}, nil
 }
 
 // MigrateDomainOnlyRouting renders old managed IP routing as domain-only
@@ -1058,19 +1070,14 @@ func RemoveRule(settings *Node, p *Profile, identity, baseURL string) (*Node, er
 	state := p.analyzeRouting(document, settings)
 	changes := M()
 	for _, key := range Selectors {
-		if list := get(state.values, key); containsStr(list, identity) {
-			set(changes, key, seqOf(filter(list.Content, func(v *Node) bool { return !equal(v, S(identity)) })))
+		if state.values.hasInSelector(key, identity) {
+			set(changes, key, strs(filterStrings(state.values.selector(key), func(v string) bool { return v != identity })))
 		}
 	}
-	if actions := get(state.values, "rule_actions"); has(actions, identity) {
-		kept := M()
-		pairs(actions, func(k string, v *Node) bool {
-			if k != identity {
-				set(kept, k, v)
-			}
-			return true
-		})
-		set(changes, "rule_actions", kept)
+	if state.values.Actions.has(identity) {
+		kept := state.values.Actions.clone()
+		kept.delete(identity)
+		set(changes, "rule_actions", kept.node())
 	}
 	editable := true
 	for _, key := range keys(changes) {
@@ -1365,10 +1372,10 @@ func replaceDownloadEntries(download *Node, entries []*Node) {
 
 // ownHelpers creates, keeps, refreshes or removes the owned helper plugins.
 // entries are the rule group entries just written (not "elsewhere").
-func ownHelpers(document *nativeDoc, routes []string, actions *Node, entries []*Node) error {
+func ownHelpers(document *nativeDoc, routes []string, actions *actionMap, entries []*Node) error {
 	list := get(document, "plugins")
 	byTag := pluginMap(document)
-	desired, err := HelperPlugins(routes, actions, documentFeatures(byTag))
+	desired, err := helperPlugins(routes, actions, documentFeatures(byTag))
 	if err != nil {
 		return err
 	}
@@ -1485,7 +1492,7 @@ func ownHelpers(document *nativeDoc, routes []string, actions *Node, entries []*
 
 type ownedChain struct {
 	tag    string
-	action *Node
+	action RuleAction
 }
 
 func ownedChainList(document *nativeDoc) []ownedChain {
@@ -1497,7 +1504,7 @@ func ownedChainList(document *nativeDoc) []ownedChain {
 			continue
 		}
 		key := tag[len(UpstreamPrefix):]
-		if action := pinnedAction(key, plugins); action != nil && RouteKey(action) == "upstream:"+key {
+		if action, ok := pinnedRuleAction(key, plugins); ok && action.Key() == "upstream:"+key {
 			out = append(out, ownedChain{tag, action})
 		}
 	}
@@ -1509,7 +1516,7 @@ func ownedChainList(document *nativeDoc) []ownedChain {
 func OwnedChains(document *nativeDoc) map[string]*Node {
 	out := map[string]*Node{}
 	for _, c := range ownedChainList(document) {
-		out[c.tag] = c.action
+		out[c.tag] = c.action.node()
 	}
 	return out
 }
@@ -1521,11 +1528,11 @@ func RefreshRuleHelpers(document *nativeDoc) error {
 	if len(chains) == 0 {
 		return nil
 	}
-	actions := M()
+	actions := newActionMap()
 	var routes []string
 	for _, c := range chains {
-		set(actions, c.tag, c.action)
-		routes = append(routes, RouteKey(c.action))
+		actions.set(c.tag, c.action)
+		routes = append(routes, c.action.Key())
 	}
 	return ownHelpers(document, routes, actions, nil)
 }
@@ -1616,52 +1623,43 @@ func (p *Profile) syncUpdates(document *nativeDoc, settings *Node, oldGroups []*
 func routeLabel(route string) string { return RouteLabels[strings.SplitN(route, ":", 2)[0]] }
 
 // assignStored routes one active rule by a stored choice.
-func assignStored(values *Node, item model.RuleConfig, action *Node) error {
-	action, err := NormalizeAction(action, true)
+func assignStored(values *ruleDNSValues, item model.RuleConfig, action RuleAction) error {
+	normalized, err := normalizeAction(action.node(), true)
 	if err != nil {
 		return err
 	}
-	if kind := str(get(action, "action")); isListRoute(kind) {
-		list := get(values, kind+"_"+suffixOf(item))
-		list.Content = append(list.Content, S(item.ID))
+	if isListRoute(normalized.Action) {
+		values.appendSelector(normalized.Action+"_"+suffixOf(item), item.ID)
 	} else {
-		set(get(values, "rule_actions"), item.ID, action)
+		values.Actions.set(item.ID, normalized)
 	}
 	return nil
 }
 
-func routeOf(values *Node, identity string) string {
-	if action := get(get(values, "rule_actions"), identity); action != nil {
-		return RouteKey(action)
-	}
-	for _, route := range ListRoutes {
-		if containsStr(get(values, route+"_rules"), identity) || containsStr(get(values, route+"_rulesets"), identity) {
-			return route
-		}
-	}
-	return ""
-}
-
-func validateSelections(values, changes *Node, known map[string]*model.RuleConfig) error {
+func validateSelections(values *routingValues, changes *Node, known map[string]*model.RuleConfig) error {
 	for _, key := range Selectors {
-		if !allStrings(get(values, key)) {
-			return fail(key + " 必须为规则 ID 列表")
-		}
-		set(values, key, unique(get(values, key)))
-		suffix := "rules"
-		if strings.HasSuffix(key, "rulesets") {
-			suffix = "rulesets"
-		}
 		if has(changes, key) {
-			for _, id := range get(values, key).Content {
-				if known[id.Value] == nil || suffixOf(*known[id.Value]) != suffix {
+			raw := get(changes, key)
+			if !allStrings(raw) {
+				return fail(key + " 必须为规则 ID 列表")
+			}
+			ids := uniqueStrings(ruleDNSIDs(raw))
+			suffix := "rules"
+			if strings.HasSuffix(key, "rulesets") {
+				suffix = "rulesets"
+			}
+			for _, id := range ids {
+				if known[id] == nil || suffixOf(*known[id]) != suffix {
 					return fail(missingRule)
 				}
 			}
+			values.setSelector(key, ids)
+		} else {
+			values.setSelector(key, uniqueStrings(values.selector(key)))
 		}
 	}
 	if has(changes, "rule_actions") {
-		actions := get(values, "rule_actions")
+		actions := get(changes, "rule_actions")
 		if !isMap(actions) {
 			return fail("rule_actions 必须为以规则 ID 为键的对象")
 		}
@@ -1670,38 +1668,43 @@ func validateSelections(values, changes *Node, known map[string]*model.RuleConfi
 				return fail(missingRule)
 			}
 		}
-		normalized := M()
+		normalized := newActionMap()
 		var err error
 		pairs(actions, func(id string, action *Node) bool {
 			if !isNone(action) {
-				var n *Node
-				if n, err = NormalizeAction(action, false); err != nil {
+				var n RuleAction
+				if n, err = normalizeAction(action, false); err != nil {
 					return false
 				}
-				set(normalized, id, n)
+				if n.Upstream != nil {
+					n.Upstream = clone(n.Upstream)
+				}
+				normalized.set(id, n)
 			}
 			return true
 		})
 		if err != nil {
 			return err
 		}
-		set(values, "rule_actions", normalized)
+		values.Actions = normalized
 	}
 	if has(changes, "rule_dns_follow") {
-		follow := get(values, "rule_dns_follow")
+		follow := get(changes, "rule_dns_follow")
 		if !allStrings(follow) {
 			return fail("rule_dns_follow 必须为规则 ID 数组")
 		}
-		for _, id := range follow.Content {
-			if known[id.Value] == nil {
+		ids := ruleDNSIDs(follow)
+		for _, id := range ids {
+			if known[id] == nil {
 				return fail(missingRule)
 			}
 		}
-		set(values, "rule_dns_follow", unique(follow))
+		values.Follow = uniqueStrings(ids)
 	}
 	for _, suffix := range []string{"rules", "rulesets"} {
-		for _, id := range get(values, "direct_"+suffix).Content {
-			if contains(get(values, "proxy_"+suffix), id) {
+		proxy := values.selector("proxy_" + suffix)
+		for _, id := range values.selector("direct_" + suffix) {
+			if slices.Contains(proxy, id) {
 				return fail("同一规则不能同时选择直连和代理。")
 			}
 		}
@@ -1709,45 +1712,40 @@ func validateSelections(values, changes *Node, known map[string]*model.RuleConfi
 	return nil
 }
 
-func takeOver(values *Node, current *routingState, changes *Node, known map[string]*model.RuleConfig, notices *[]string) error {
+func takeOver(values *routingValues, current *routingState, changes *Node, known map[string]*model.RuleConfig, notices *[]string) error {
 	old := current.values
 	type taken struct{ identity, before, after string }
 	var moved []taken
 	if has(changes, "rule_actions") {
-		var err error
-		pairs(get(values, "rule_actions"), func(identity string, action *Node) bool {
-			if has(get(old, "rule_actions"), identity) {
-				return true
+		for _, identity := range values.Actions.order {
+			if old.Actions.has(identity) {
+				continue
 			}
+			action := values.Actions.items[identity]
 			for _, key := range Selectors {
-				if list := get(values, key); containsStr(list, identity) {
+				if values.hasInSelector(key, identity) {
 					if has(changes, key) {
-						err = fail("同一规则不能同时选择多种 DNS 处理。")
-						return false
+						return fail("同一规则不能同时选择多种 DNS 处理。")
 					}
-					list.Content = filterOnce(list.Content, identity)
-					moved = append(moved, taken{identity, strings.Split(key, "_")[0], RouteKey(action)})
+					values.removeSelector(key, identity)
+					moved = append(moved, taken{identity, routePrefix(key), action.Key()})
 				}
 			}
-			return true
-		})
-		if err != nil {
-			return err
 		}
 	}
 	for _, key := range Selectors {
 		if !has(changes, key) {
 			continue
 		}
-		for _, id := range get(values, key).Content {
-			if containsStr(get(old, key), id.Value) || !has(get(values, "rule_actions"), id.Value) {
+		for _, id := range values.selector(key) {
+			if old.hasInSelector(key, id) || !values.Actions.has(id) {
 				continue
 			}
 			if has(changes, "rule_actions") {
 				return fail("同一规则不能同时选择多种 DNS 处理。")
 			}
-			action := del(get(values, "rule_actions"), id.Value)
-			moved = append(moved, taken{id.Value, RouteKey(action), strings.Split(key, "_")[0]})
+			action, _ := values.Actions.delete(id)
+			moved = append(moved, taken{id, action.Key(), routePrefix(key)})
 		}
 	}
 	if notices != nil {
@@ -1756,16 +1754,6 @@ func takeOver(values *Node, current *routingState, changes *Node, known map[stri
 		}
 	}
 	return nil
-}
-
-// filterOnce is list.remove(value) for a string.
-func filterOnce(list []*Node, value string) []*Node {
-	for i, v := range list {
-		if equal(v, S(value)) {
-			return append(append([]*Node{}, list[:i]...), list[i+1:]...)
-		}
-	}
-	return list
 }
 
 // ruleName is the label of a rule: its name, else its value, else its id.
@@ -1782,92 +1770,99 @@ func ruleName(item *model.RuleConfig) string {
 }
 
 // settle keeps only active rules in the selections; returns (parked, follow).
-func settle(values, settings, changes *Node, current *routingState, known map[string]*model.RuleConfig, active *ruleCatalog, routes map[string]string) (*Node, *Node, error) {
+func settle(values *routingValues, settings, changes *Node, current *routingState, known map[string]*model.RuleConfig, active *ruleCatalog, routes map[string]string) (*actionMap, []string, error) {
 	followGiven := has(changes, "rule_dns_follow")
-	follow := seqOf(filter(get(values, "rule_dns_follow").Content, func(v *Node) bool { return known[v.Value] != nil }))
-	parked := M()
+	follow := filterStrings(values.Follow, func(id string) bool { return known[id] != nil })
+	parked := newActionMap()
 	pairs(get(settings, "rule_dns_parked"), func(id string, action *Node) bool {
 		if known[id] != nil {
-			set(parked, id, clone(action))
+			if a, err := normalizeAction(action, true); err == nil {
+				if a.Upstream != nil {
+					a.Upstream = clone(a.Upstream)
+				}
+				parked.set(id, a)
+			} else {
+				parked.set(id, RuleAction{raw: clone(action)})
+			}
 		}
 		return true
 	})
 	assigned := map[string]bool{}
 	for _, key := range Selectors {
 		if has(changes, key) {
-			for _, id := range get(values, key).Content {
-				assigned[id.Value] = true
+			for _, id := range values.selector(key) {
+				assigned[id] = true
 			}
 		}
 	}
 	if has(changes, "rule_actions") {
-		for _, id := range keys(get(values, "rule_actions")) {
+		for _, id := range values.Actions.order {
 			assigned[id] = true
 		}
 	}
-	leaving := M()
+	leaving := newActionMap()
 	for _, key := range Selectors {
-		list := get(values, key)
-		for _, id := range list.Content {
-			if active.records[id.Value] == nil {
-				set(leaving, id.Value, M("action", strings.Split(key, "_")[0]))
+		list := values.selector(key)
+		for _, id := range list {
+			if active.records[id] == nil {
+				leaving.set(id, RuleAction{Action: routePrefix(key)})
 			}
 		}
-		set(values, key, seqOf(filter(list.Content, func(v *Node) bool { return active.records[v.Value] != nil })))
+		values.setSelector(key, filterStrings(list, func(id string) bool { return active.records[id] != nil }))
 	}
-	kept := M()
-	pairs(get(values, "rule_actions"), func(id string, action *Node) bool {
+	kept := newActionMap()
+	for _, id := range values.Actions.order {
+		action := values.Actions.items[id]
 		if active.records[id] == nil {
-			set(leaving, id, action)
+			leaving.set(id, action)
 		} else {
-			set(kept, id, action)
+			kept.set(id, action)
 		}
-		return true
-	})
-	set(values, "rule_actions", kept)
-	pairs(leaving, func(id string, action *Node) bool {
-		if known[id] != nil && (!containsStr(follow, id) || assigned[id]) {
-			set(parked, id, action)
-			if containsStr(follow, id) && !followGiven {
-				follow.Content = filterOnce(follow.Content, id)
+	}
+	values.Actions = kept
+	for _, id := range leaving.order {
+		action := leaving.items[id]
+		if known[id] != nil && (!slices.Contains(follow, id) || assigned[id]) {
+			parked.set(id, action)
+			if slices.Contains(follow, id) && !followGiven {
+				follow = removeString(follow, id)
 			}
 		}
-		return true
-	})
+	}
 	before := current.records
 	for _, id := range active.order {
 		record := active.records[id]
 		switch {
-		case routeOf(values, id) != "":
-			del(parked, id)
-		case has(parked, id):
-			if err := assignStored(values, record.item, del(parked, id)); err != nil {
+		case values.routeOf(id) != "":
+			parked.delete(id)
+		case parked.has(id):
+			stored, _ := parked.delete(id)
+			if err := assignStored(&values.ruleDNSValues, record.item, stored); err != nil {
 				return nil, nil, err
 			}
-		case containsStr(follow, id) && (before == nil || before.records[id] == nil):
+		case slices.Contains(follow, id) && (before == nil || before.records[id] == nil):
 			if route := followRoute(record.item, routes); route != "" {
-				if err := assignStored(values, record.item, M("action", route)); err != nil {
+				if err := assignStored(&values.ruleDNSValues, record.item, RuleAction{Action: route}); err != nil {
 					return nil, nil, err
 				}
 			}
 		}
 	}
 	if !followGiven {
-		follow = seqOf(filter(follow.Content, func(v *Node) bool {
-			id := v.Value
-			if has(get(values, "rule_actions"), id) {
+		follow = filterStrings(follow, func(id string) bool {
+			if values.Actions.has(id) {
 				return false
 			}
 			return !(before != nil && before.records[id] != nil && active.records[id] != nil &&
-				routeOf(current.values, id) != routeOf(values, id))
-		}))
+				current.values.routeOf(id) != values.routeOf(id))
+		})
 	}
-	for _, v := range follow.Content {
-		if action := get(get(values, "rule_actions"), v.Value); action != nil {
-			return nil, nil, fail("规则 " + v.Value + " 已设置 DNS 处理「" + RouteLabels[str(get(action, "action"))] + "」，不能同时跟随策略")
+	for _, id := range follow {
+		if action, ok := values.Actions.get(id); ok {
+			return nil, nil, fail("规则 " + id + " 已设置 DNS 处理「" + RouteLabels[action.Action] + "」，不能同时跟随策略")
 		}
-		if has(parked, v.Value) {
-			return nil, nil, fail("规则 " + v.Value + " 已暂存停用前的 DNS 处理，不能同时跟随策略")
+		if parked.has(id) {
+			return nil, nil, fail("规则 " + id + " 已暂存停用前的 DNS 处理，不能同时跟随策略")
 		}
 	}
 	return parked, follow, nil
@@ -1912,8 +1907,8 @@ func applyAliasedCustom(document *nativeDoc, settings *Node, state *routingState
 		}
 	}
 	position := "tail"
-	if v := get(state.values, "custom_match_position"); str(v) != "" {
-		position = str(v)
+	if state.values.CustomMatchPosition != nil && *state.values.CustomMatchPosition != "" {
+		position = *state.values.CustomMatchPosition
 	}
 	if has(changes, "custom_match_position") {
 		position = str(get(changes, "custom_match_position"))
@@ -1921,12 +1916,16 @@ func applyAliasedCustom(document *nativeDoc, settings *Node, state *routingState
 			return nil, nil, fail("自定义匹配位置必须为 head 或 tail。")
 		}
 	}
-	custom := clone(get(state.values, "custom_matches"))
+	custom := make([]*Node, len(state.values.CustomMatches))
+	for i, c := range state.values.CustomMatches {
+		custom[i] = clone(c)
+	}
 	if has(changes, "custom_matches") {
-		var err error
-		if custom, err = normalizeCustomMatches(get(changes, "custom_matches")); err != nil {
+		normalized, err := normalizeCustomMatches(get(changes, "custom_matches"))
+		if err != nil {
 			return nil, nil, err
 		}
+		custom = normalized.Content
 	}
 	result := clone(document)
 	main := pluginMap(result)[state.actualMainTag]
@@ -1937,7 +1936,7 @@ func applyAliasedCustom(document *nativeDoc, settings *Node, state *routingState
 	for _, g := range state.groups.Domain {
 		domain = append(domain, args[g.index])
 	}
-	set(main, "args", seqOf(assemble(args[:prefix], custom.Content, domain, position, args[middle:])))
+	set(main, "args", seqOf(assemble(args[:prefix], custom, domain, position, args[middle:])))
 	return result, clone(settings), nil
 }
 
@@ -2006,16 +2005,24 @@ func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node
 	if rebuild && !current.caps["direct_rules"].Editable {
 		return nil, nil, fail(current.caps["direct_rules"].Reason)
 	}
-	values := clone(current.values)
-	pairs(changes, func(key string, value *Node) bool { set(values, key, clone(value)); return true })
-	defaultForward := get(values, "default_forward")
-	if !isOneOf(defaultForward, "forward_local", "forward_remote") {
+	values := current.values.clone()
+	defaultForward := ""
+	if has(changes, "default_forward") {
+		df := get(changes, "default_forward")
+		if !isOneOf(df, "forward_local", "forward_remote") {
+			return nil, nil, fail("默认转发目标无效。")
+		}
+		defaultForward = df.Value
+		values.DefaultForward = strPtr(defaultForward)
+	} else if values.DefaultForward != nil && (*values.DefaultForward == "forward_local" || *values.DefaultForward == "forward_remote") {
+		defaultForward = *values.DefaultForward
+	} else {
 		return nil, nil, fail("默认转发目标无效。")
 	}
 	migrateIP := len(current.groups.IP) > 0 && current.caps["direct_rules"].Editable
 	onlyDefault := len(changes.Content) == 2 && has(changes, "default_forward")
 	if !rebuild && !migrateIP && (onlyDefault || len(changes.Content) == 0) {
-		return switchDefault(document, settings, current, defaultForward.Value)
+		return switchDefault(document, settings, current, defaultForward)
 	}
 	known, _ := p.knownRules()
 	records := current.records
@@ -2039,18 +2046,26 @@ func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node
 	if err != nil {
 		return nil, nil, err
 	}
-	if has(changes, "aggregate_rules") && !isBool(get(values, "aggregate_rules")) {
-		return nil, nil, fail("合并相邻规则必须为布尔值。")
+	if has(changes, "aggregate_rules") {
+		agg := get(changes, "aggregate_rules")
+		if !isBool(agg) {
+			return nil, nil, fail("合并相邻规则必须为布尔值。")
+		}
+		values.AggregateRules = boolPtr(agg.Value == "true")
 	}
-	if has(changes, "custom_match_position") && !isOneOf(get(values, "custom_match_position"), "head", "tail") {
-		return nil, nil, fail("自定义匹配执行顺序必须为 head 或 tail。")
+	if has(changes, "custom_match_position") {
+		pos := get(changes, "custom_match_position")
+		if !isOneOf(pos, "head", "tail") {
+			return nil, nil, fail("自定义匹配执行顺序必须为 head 或 tail。")
+		}
+		values.CustomMatchPosition = strPtr(pos.Value)
 	}
 	if has(changes, "custom_matches") {
-		custom, err := normalizeCustomMatches(get(values, "custom_matches"))
+		custom, err := normalizeCustomMatches(get(changes, "custom_matches"))
 		if err != nil {
 			return nil, nil, err
 		}
-		set(values, "custom_matches", custom)
+		values.CustomMatches = custom.Content
 	}
 	result, resultSettings := clone(document), clone(settings)
 	main := pluginMap(result)["sequence_main"]
@@ -2060,15 +2075,16 @@ func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node
 	}
 	var groups *routingGroups
 	if routingChanged {
-		if isNone(get(values, "aggregate_rules")) {
-			set(values, "aggregate_rules", B(true))
+		aggregate := true
+		if values.AggregateRules != nil {
+			aggregate = *values.AggregateRules
 		}
-		expected, err := p.routingGroups(values, legacyNone, nil)
+		expected, err := p.routingGroups(&values.ruleDNSValues, aggregate, legacyNone, nil)
 		if err != nil {
 			return nil, nil, err
 		}
 		old := current.groups.all()
-		outside := []*Node{withoutPlugins(document), get(values, "custom_matches")}
+		outside := []*Node{withoutPlugins(document), seqOf(values.CustomMatches)}
 		inside := items(get(result, "plugins"))
 		external := map[string]bool{}
 		for _, g := range old {
@@ -2093,15 +2109,15 @@ func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node
 			if isSeq(previous) {
 				list = clone(previous)
 			}
-			for _, id := range get(values, key).Content {
-				if !contains(list, id) {
-					list.Content = append(list.Content, id)
+			for _, id := range values.selector(key) {
+				if !containsStr(list, id) {
+					list.Content = append(list.Content, S(id))
 				}
 			}
 			set(resultSettings, key, list)
 		}
-		set(resultSettings, "rule_actions", clone(get(values, "rule_actions")))
-		set(resultSettings, "rule_dns_parked", parked)
+		set(resultSettings, "rule_actions", values.Actions.node())
+		set(resultSettings, "rule_dns_parked", parked.node())
 	} else {
 		groups = &routingGroups{}
 		for _, g := range current.groups.Domain {
@@ -2112,12 +2128,15 @@ func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node
 		}
 	}
 	if routingChanged || has(changes, "rule_dns_follow") {
-		set(resultSettings, "rule_dns_follow", follow)
+		set(resultSettings, "rule_dns_follow", strs(follow))
 	}
-	custom := clone(get(values, "custom_matches"))
+	custom := make([]*Node, len(values.CustomMatches))
+	for i, c := range values.CustomMatches {
+		custom[i] = clone(c)
+	}
 	position := "tail"
-	if v := get(values, "custom_match_position"); str(v) != "" {
-		position = str(v)
+	if values.CustomMatchPosition != nil && *values.CustomMatchPosition != "" {
+		position = *values.CustomMatchPosition
 	}
 	entryFor := func(part string, index int, g *ruleGroup, recognized []*recGroup) (*Node, error) {
 		if !routingChanged {
@@ -2152,7 +2171,7 @@ func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node
 	routes = append(routes, ipRoutes...)
 	final := clone(current.final)
 	finalExec := "goto proxy_dns_seq"
-	if defaultForward.Value == "forward_local" {
+	if defaultForward == "forward_local" {
 		finalExec = "goto china_dns"
 	}
 	set(final, "exec", S(finalExec))
@@ -2160,8 +2179,8 @@ func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node
 	for _, d := range current.dynamic {
 		suffix = append(suffix, clone(d))
 	}
-	probe := probeNeeded(ipRoutes, defaultForward.Value)
-	suffix = append(suffix, ipSuffix(ip, defaultForward.Value, probe)...)
+	probe := probeNeeded(ipRoutes, defaultForward)
+	suffix = append(suffix, ipSuffix(ip, defaultForward, probe)...)
 	var affected []*Node
 	if has(changes, "default_forward") {
 		affected = append(affected, final)
@@ -2171,7 +2190,7 @@ func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node
 	}
 	if len(ip) > 0 && probe && (routingChanged || has(changes, "default_forward")) {
 		affected = append(affected, M("exec", "jump local_probe"))
-		if defaultForward.Value == "forward_local" {
+		if defaultForward == "forward_local" {
 			affected = append(affected, M("exec", "goto default_direct_ip"))
 		}
 	}
@@ -2189,9 +2208,9 @@ func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes *Node
 	for i, e := range current.prefix {
 		prefix[i] = clone(e)
 	}
-	set(main, "args", seqOf(assemble(prefix, custom.Content, domain, position, append(suffix, final))))
+	set(main, "args", seqOf(assemble(prefix, custom, domain, position, append(suffix, final))))
 	if routingChanged {
-		if err := ownHelpers(result, routes, get(values, "rule_actions"), append(append([]*Node{}, domain...), ip...)); err != nil {
+		if err := ownHelpers(result, routes, values.Actions, append(append([]*Node{}, domain...), ip...)); err != nil {
 			return nil, nil, err
 		}
 		var before *ruleCatalog

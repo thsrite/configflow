@@ -4,6 +4,7 @@ import (
 	"configflow/internal/model"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -259,33 +260,40 @@ func UpstreamCatalog(settings, document *nativeDoc, bindings []DNSBinding) ([]Up
 	return out, nil
 }
 
-func storedRuleDNS(settings *Node) *Node {
-	values := M()
+func storedRuleDNS(settings *Node) *ruleDNSValues {
+	values := newRuleDNSValues()
 	for _, key := range Selectors {
-		set(values, key, strs(ruleDNSIDs(get(settings, key))))
+		values.setSelector(key, ruleDNSIDs(get(settings, key)))
 	}
 	for _, key := range ruleDNSFields[:2] {
-		actions := M()
+		actions := newActionMap()
 		pairs(get(settings, key), func(id string, value *Node) bool {
-			if action, err := NormalizeAction(value, key == "rule_dns_parked"); err == nil {
-				set(actions, id, action)
+			if action, err := normalizeAction(value, key == "rule_dns_parked"); err == nil {
+				if action.Upstream != nil {
+					action.Upstream = clone(action.Upstream)
+				}
+				actions.set(id, action)
 			}
 			return true
 		})
-		set(values, key, actions)
+		if key == "rule_actions" {
+			values.Actions = actions
+		} else {
+			values.Parked = actions
+		}
 	}
-	set(values, "rule_dns_follow", unique(strs(ruleDNSIDs(get(settings, "rule_dns_follow")))))
+	values.Follow = uniqueStrings(ruleDNSIDs(get(settings, "rule_dns_follow")))
 	return values
 }
 
 var ruleDNSFields = []string{"rule_actions", "rule_dns_parked", "rule_dns_follow"}
 
 type ruleDNSView struct {
-	Values   *Node
+	Values   *ruleDNSValues
 	Editable bool
 	Reason   string
 	Document *Node
-	Routing  *Node
+	Routing  *routingValues
 }
 
 func readRuleDNS(p *Profile, settings *Node) (ruleDNSView, error) {
@@ -299,31 +307,23 @@ func readRuleDNS(p *Profile, settings *Node) (ruleDNSView, error) {
 		view.Reason = err.Error()
 		return view, nil
 	}
-	routing, err := ReadRouting(document, settings, p)
+	routing, caps, err := p.readRouting(document, settings)
 	if err != nil {
 		return view, err
 	}
-	for _, key := range append(append([]string{}, Selectors...), "rule_actions", "rule_dns_follow") {
-		set(view.Values, key, clone(get(routing.Values, key)))
+	for _, key := range Selectors {
+		view.Values.setSelector(key, slices.Clone(routing.selector(key)))
 	}
-	capability := routing.Capabilities["direct_rules"]
-	view.Document, view.Routing = document, routing.Values
+	view.Values.Actions = routing.Actions.clone()
+	view.Values.Follow = slices.Clone(routing.Follow)
+	capability := caps["direct_rules"]
+	view.Document, view.Routing = document, routing
 	view.Editable, view.Reason = capability.Editable, capability.Reason
 	return view, nil
 }
 
-func ruleRoute(values *Node, id string) string {
-	if action := get(get(values, "rule_actions"), id); action != nil {
-		return RouteKey(action)
-	}
-	for _, route := range ListRoutes {
-		for _, suffix := range []string{"rules", "rulesets"} {
-			if contains(get(values, route+"_"+suffix), S(id)) {
-				return route
-			}
-		}
-	}
-	return ""
+func ruleRoute(values *ruleDNSValues, id string) string {
+	return values.routeOf(id)
 }
 
 func nullableRoute(route string) *string {
@@ -391,16 +391,18 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 			continue
 		}
 		route := ruleRoute(view.Values, id)
-		action := get(get(view.Values, "rule_actions"), id)
-		follow := contains(get(view.Values, "rule_dns_follow"), S(id))
+		action, hasAction := view.Values.Actions.get(id)
+		follow := slices.Contains(view.Values.Follow, id)
 		entry := RuleDNSRule{State: "explicit"}
 		switch {
 		case !active[id]:
 			if follow {
-				route, action = followRoute(item, routes), nil
-			} else if native && has(get(view.Values, "rule_dns_parked"), id) {
-				action = get(get(view.Values, "rule_dns_parked"), id)
-				route = RouteKey(action)
+				route, action, hasAction = followRoute(item, routes), RuleAction{}, false
+			} else if native {
+				if parked, ok := view.Values.Parked.get(id); ok {
+					action, hasAction = parked, true
+					route = parked.Key()
+				}
 			}
 			entry.State, entry.Follow = "disabled", follow
 		case follow:
@@ -413,24 +415,21 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 			continue
 		}
 		entry.Route = nullableRoute(route)
-		if isOneOf(get(action, "action"), "upstream") {
-			entry.UpstreamLabel = upstreamLabel(str(get(action, "source")), str(at(action, "upstream", "addr")))
+		if hasAction && action.Action == "upstream" {
+			entry.UpstreamLabel = upstreamLabel(action.Source, str(get(action.Upstream, "addr")))
 		}
-		if !native && has(get(view.Values, "rule_actions"), id) {
+		if !native && view.Values.Actions.has(id) {
 			for _, key := range Selectors {
-				entry.InLists = entry.InLists || contains(get(stored, key), S(id))
+				entry.InLists = entry.InLists || stored.hasInSelector(key, id)
 			}
 		}
 		state.Rules[id] = entry
 	}
 	engine := RuleDNSEngine{Mode: str(orDefault(settings, "config_mode", S("template"))), Editable: view.Editable, Reason: view.Reason,
 		DefaultForward: str(orDefault(settings, "default_forward", S("forward_remote"))), PolicyRoutes: map[string]*string{}, PreferIPv4: !same(get(settings, "prefer_ipv4"), B(false)),
-		InUse: native, Warnings: []string{}, Agents: []RuleDNSAgent{}}
+		InUse: native || stored.hasAny(), Warnings: []string{}, Agents: []RuleDNSAgent{}}
 	for name, route := range routes {
 		engine.PolicyRoutes[name] = nullableRoute(route)
-	}
-	for _, key := range append(append([]string{}, Selectors...), ruleDNSFields...) {
-		engine.InUse = engine.InUse || (len(items(get(stored, key))) > 0 || isMap(get(stored, key)) && mapSize(get(stored, key)) > 0)
 	}
 	var steps []*Node
 	for _, plugin := range items(get(view.Document, "plugins")) {
@@ -446,8 +445,8 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 			engine.LocalProbeActive = engine.LocalProbeActive || isOneOf(get(step, "exec"), "jump local_probe")
 		}
 	}
-	if forward := get(view.Routing, "default_forward"); str(forward) != "" {
-		engine.DefaultForward = str(forward)
+	if view.Routing != nil && view.Routing.DefaultForward != nil && *view.Routing.DefaultForward != "" {
+		engine.DefaultForward = *view.Routing.DefaultForward
 	}
 	engine.Warnings = cacheWarnings(settings, view)
 	for _, agent := range agents {
@@ -490,10 +489,14 @@ func ReadRuleDNS(p *Profile, options RuleDNSReadOptions) (RuleDNSState, error) {
 }
 
 func cacheWarnings(settings *Node, view ruleDNSView) []string {
-	matches, position := get(settings, "custom_matches"), str(get(settings, "custom_match_position"))
+	matches, position := items(get(settings, "custom_matches")), str(get(settings, "custom_match_position"))
 	types := map[string]string{"lazy_cache": "cache", "local_probe_cache": "cache"}
 	if view.Routing != nil {
-		matches, position = get(view.Routing, "custom_matches"), str(get(view.Routing, "custom_match_position"))
+		matches = view.Routing.CustomMatches
+		position = ""
+		if view.Routing.CustomMatchPosition != nil {
+			position = *view.Routing.CustomMatchPosition
+		}
 		types = map[string]string{}
 		for _, plugin := range items(get(view.Document, "plugins")) {
 			if isMap(plugin) {
@@ -502,7 +505,7 @@ func cacheWarnings(settings *Node, view ruleDNSView) []string {
 		}
 	}
 	if position == "head" {
-		for _, entry := range items(matches) {
+		for _, entry := range matches {
 			for _, word := range strings.Fields(str(get(entry, "exec"))) {
 				if types[strings.TrimLeft(word, "$")] == "cache" {
 					return []string{messageDNSCachedHead}
@@ -522,12 +525,12 @@ func ExplicitRuleDNS(p *Profile, id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if contains(get(view.Values, "rule_dns_follow"), S(id)) {
+	if slices.Contains(view.Values.Follow, id) {
 		return "", nil
 	}
 	route := ruleRoute(view.Values, id)
-	if parked := get(get(view.Values, "rule_dns_parked"), id); route == "" && parked != nil {
-		route = RouteKey(parked)
+	if parked, ok := view.Values.Parked.get(id); route == "" && ok {
+		route = parked.Key()
 	}
 	return route, nil
 }

@@ -590,7 +590,7 @@ func call(t *testing.T, r row, a []*Node) (*Node, error, bool) {
 	case "owned_chains":
 		out := M()
 		for _, c := range ownedChainList(a[0]) {
-			set(out, c.tag, c.action)
+			set(out, c.tag, c.action.node())
 		}
 		return out, nil, true
 	case "refresh_rule_helpers":
