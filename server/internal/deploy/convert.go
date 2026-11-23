@@ -22,6 +22,11 @@ type conversionValue struct {
 	data []byte
 }
 
+const (
+	conversionsCacheMaxBytes   = 1 << 20
+	conversionsCacheMaxItemLen = 512 << 10
+)
+
 // L5: conversion cache contains immutable bytes only; never held over parsing.
 var conversions = struct {
 	sync.Mutex
@@ -49,9 +54,9 @@ func ConvertMosDNSRules(content []byte, ruleType string, mixed bool) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	if len(out) <= 16<<20 {
+	if len(out) <= conversionsCacheMaxItemLen {
 		conversions.Lock()
-		for len(conversions.values) > 0 && (len(conversions.values) >= 256 || conversions.bytes+len(out) > 16<<20) {
+		for len(conversions.values) > 0 && (len(conversions.values) >= 256 || conversions.bytes+len(out) > conversionsCacheMaxBytes) {
 			conversions.bytes -= len(conversions.values[0].data)
 			conversions.values = conversions.values[1:]
 		}

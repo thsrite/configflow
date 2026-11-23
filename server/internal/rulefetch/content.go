@@ -108,9 +108,14 @@ func (c *ResultCache) Clear() {
 
 func dataDigest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
+const (
+	normalizedCacheMaxBytes   = 1 * 1024 * 1024
+	normalizedCacheMaxItemLen = 512 * 1024
+)
+
 var (
 	validatedCache  = NewResultCache(1024, 0)
-	normalizedCache = NewResultCache(256, 16*1024*1024)
+	normalizedCache = NewResultCache(256, normalizedCacheMaxBytes)
 )
 
 // ClearRuleContentCaches is clear_rule_content_caches.
@@ -343,7 +348,9 @@ func NormalizeRuleset(content, behavior, ruleFormat string) (string, []Problem, 
 	if err != nil {
 		return "", nil, err
 	}
-	normalizedCache.Put(key, normalized{result, cloneProblems(warnings)}, runeLen(result))
+	if len(result) <= normalizedCacheMaxItemLen {
+		normalizedCache.Put(key, normalized{result, cloneProblems(warnings)}, len(result))
+	}
 	return result, warnings, nil
 }
 
