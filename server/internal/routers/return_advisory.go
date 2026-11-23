@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"errors"
 	"fmt"
@@ -272,7 +273,7 @@ func ReturnAdvisoryWarnings(ctx context.Context, desired *Desired, state *Router
 			}
 		}
 	}
-	sources := SubtractNetworks([]netip.Prefix{network}, []netip.Prefix{netip.PrefixFrom(gateway, 32)})
+	sources := rospolicy.SubtractNetworks([]netip.Prefix{network}, []netip.Prefix{netip.PrefixFrom(gateway, 32)})
 	iface, _ := ros.NewRouteEgressIndex(&context).GatewayEgress(gateway)
 	if iface != "" && slices.ContainsFunc(rows, func(r Row) bool { return r.Set("in-interface-list") || r.Set("out-interface-list") }) {
 		for _, item := range []struct {

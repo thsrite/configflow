@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
@@ -32,7 +33,7 @@ func TestROSPolicyDesiredPassesContextToDefaultContentLoader(t *testing.T) {
 	}
 	config := json.RawMessage(`{"rule_configs":[{"id":"selected","itemType":"ruleset","name":"Synthetic","behavior":"classical","policy":"PROXY","enabled":true}]}`)
 	router := &Router{RouterSettings: RouterSettings{ID: "synthetic-router", RosPolicyRuleSets: []string{"selected"}}}
-	out, err := InspectROSPolicyDesired(ctx, config, router, &Desired{ProxyGateway: "192.0.2.1"}, nil)
+	out, err := rospolicy.InspectROSPolicyDesired(ctx, config, router, &Desired{ProxyGateway: "192.0.2.1"}, nil)
 	if err != nil || out == nil || calls != 1 {
 		t.Fatalf("context-aware inspection: %+v, calls=%d, err=%v", out, calls, err)
 	}

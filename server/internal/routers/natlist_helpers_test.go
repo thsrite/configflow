@@ -1,6 +1,7 @@
 package routers_test
 
 import (
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -81,25 +82,25 @@ func runR07Helper(tc boundaryCase, endpoint string) boundaryOutcome {
 	var err error
 	switch p.Function {
 	case "removals":
-		nat, route := routers.NATRemovalsFirst(r07TypedOps(p.NATOps), r07TypedOps(p.RouteOps), p.Gateway)
+		nat, route := rospolicy.NATRemovalsFirst(r07TypedOps(p.NATOps), r07TypedOps(p.RouteOps), p.Gateway)
 		out.Result = []any{nat, route}
 	case "restrict":
-		blocker := routers.RestrictNATEgress(&p.Sync, &p.Check, p.Interface)
+		blocker := rospolicy.RestrictNATEgress(&p.Sync, &p.Check, p.Interface)
 		out.Result = map[string]any{"blocker": blocker, "sync": p.Sync, "check": p.Check}
 	case "member":
-		out.Result = routers.NATMemberUpdate(r07TypedStages(p.Stages), p.Baseline)
+		out.Result = rospolicy.NATMemberUpdate(r07TypedStages(p.Stages), p.Baseline)
 	case "migration":
-		merged, stale := routers.NATMigration(r07TypedStages(p.Stages))
+		merged, stale := rospolicy.NATMigration(r07TypedStages(p.Stages))
 		out.Result = []int{merged, stale}
 	case "policy_migrations":
-		out.Result, err = routers.NATPolicyMigrations(p.Row, p.Addresses, p.Exclusions)
+		out.Result, err = rospolicy.NATPolicyMigrations(p.Row, p.Addresses, p.Exclusions)
 	case "baseline":
-		out.Result, err = d.NATResources(ctx)
+		out.Result, err = rospolicy.NATResources(ctx, d.Client)
 	case "verify":
 		var state *routers.RouterState
 		state, err = d.ReadState(ctx)
 		if err == nil {
-			err = routers.VerifyNATLists(ctx, &p.Check, state.NatContext, &state.NATLists, &state.NATListsReader)
+			err = rospolicy.VerifyNATLists(ctx, &p.Check, state.NatContext, &state.NATLists, &state.NATListsReader)
 		}
 	case "locate":
 		out.Result, err = d.LocateAddresses(ctx, p.IDs)

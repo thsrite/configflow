@@ -18,6 +18,7 @@ import (
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/routeedit"
 	"time"
 )
@@ -70,40 +71,40 @@ func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMess
 	}
 	switch head.Kind {
 	case "ros_policy_replace":
-		var op policyWrite
+		var op rospolicy.PolicyWrite
 		if devhttp.DecodeJSON(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		undo, err := d.applyPolicy(ctx, op)
+		undo, err := rospolicy.ApplyPolicyWrite(ctx, d.Client, d.readPolicyState, op)
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(undo)
 	case "ros_policy_restore":
-		var undo ROSPolicyUndo
+		var undo rospolicy.ROSPolicyUndo
 		if devhttp.DecodeJSON(raw, &undo) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		if err := d.RestoreROSPolicy(ctx, undo); err != nil {
+		if err := rospolicy.RestoreROSPolicy(ctx, d.Client, undo); err != nil {
 			return nil, err
 		}
 		return json.RawMessage(`{}`), nil
 	case "nat_list_sync":
-		var op NATListSync
+		var op rospolicy.NATListSync
 		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		undo, err := d.ApplyNATLists(ctx, op)
+		undo, err := rospolicy.ApplyNATLists(ctx, d.Client, op)
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(undo)
 	case "nat_list_restore":
-		var op NATListUndo
+		var op rospolicy.NATListUndo
 		if jsondecode.Unmarshal(raw, &op) != nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
-		if err := d.RestoreNATLists(ctx, op); err != nil {
+		if err := rospolicy.RestoreNATLists(ctx, d.Client, op); err != nil {
 			return nil, err
 		}
 		return json.RawMessage(`{}`), nil
@@ -241,14 +242,14 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 		}
 	}
 	if slices.Contains(listNames, NATSrcList) || slices.Contains(listNames, NATDstList) || d.NATListTouched() {
-		state.NATLists, _ = d.stateNATLists(ctx, nats, listRows, mangleRows)
+		state.NATLists, _ = rospolicy.StateNATLists(ctx, d.Client, nats, listRows, mangleRows)
 	} else {
 		state.NATListsReader = func(ctx context.Context) (*NATLists, error) {
 			rows, err := d.ReadAddresses(ctx, []string{NATSrcList, NATDstList})
 			if err != nil {
 				return nil, err
 			}
-			return d.stateNATLists(ctx, nats, rows, mangleRows)
+			return rospolicy.StateNATLists(ctx, d.Client, nats, rows, mangleRows)
 		}
 	}
 
@@ -440,4 +441,12 @@ func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*ro
 // ReadConnections delegates RouterOS firewall connection reads to clientlist.
 func (d *RouterOS) ReadConnections(ctx context.Context, q ConnectionQuery, timeout time.Duration) ([]Row, bool, error) {
 	return clientlist.ReadConnections(ctx, d.Client, q, timeout)
+}
+
+func (d *RouterOS) readPolicyState(ctx context.Context) (*device.State, *ros.NatContext, error) {
+	state, err := d.ReadState(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &state.State, state.NatContext, nil
 }

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/spec"
 	"encoding/json"
 
@@ -100,7 +101,7 @@ func workspaceRevision(oxidnsRevision string, r *Router) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return ROSPolicyDigest(data)
+	return rospolicy.ROSPolicyDigest(data)
 }
 
 // ReadWorkspace reads policy metadata without contacting the router. config

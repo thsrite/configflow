@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/dnsguard"
+	"configflow/internal/routers/rospolicy"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
@@ -13,7 +14,7 @@ import (
 func TestR09ReportPreservesPolicyAndDNSGuard(t *testing.T) {
 	ctx := t.Context()
 	tc := r09Base("combined_report")
-	for _, path := range policyPaths {
+	for _, path := range rospolicy.Paths() {
 		if _, ok := tc.State.Tables[path]; !ok {
 			tc.State.Tables[path] = []routerfake.Row{}
 		}
@@ -27,7 +28,7 @@ func TestR09ReportPreservesPolicyAndDNSGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.ROSPolicy, err = SnapshotROSPolicy(ctx, d)
+	state.ROSPolicy, err = rospolicy.SnapshotROSPolicy(ctx, d.Client)
 	if err != nil {
 		t.Fatal(err)
 	}

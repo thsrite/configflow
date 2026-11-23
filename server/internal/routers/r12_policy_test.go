@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"net/http/httptest"
 	"slices"
 	"testing"
@@ -60,7 +61,7 @@ func TestR12PolicyReplacementPython(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			owned, e := OwnedROSPolicyRows(r.State("ros_policy_state"), state.ROSPolicy)
+			owned, e := rospolicy.OwnedROSPolicyRows(r.State("ros_policy_state"), state.ROSPolicy)
 			if e != nil {
 				owned = nil
 			}

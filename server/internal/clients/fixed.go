@@ -7,6 +7,7 @@ import (
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/oplock"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
@@ -131,7 +132,7 @@ func fixedApprovalProofs(operations []FixedIPPlanned) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		proof, err := routers.ROSPolicyDigest(raw)
+		proof, err := rospolicy.ROSPolicyDigest(raw)
 		if err != nil {
 			return nil, err
 		}
@@ -290,7 +291,7 @@ func (s *FixedIPService) plan(ctx context.Context, config json.RawMessage, inten
 		if err != nil {
 			return nil, err
 		}
-		digest, err := routers.ROSPolicyDigest(record)
+		digest, err := rospolicy.ROSPolicyDigest(record)
 		if err != nil {
 			return nil, err
 		}

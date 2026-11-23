@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
 	"errors"
@@ -39,15 +40,15 @@ func TestO36bNATAndEmptyOwnerRuntimeBoundary(t *testing.T) {
 				case "addresses-delete":
 					err = d.DeleteAddresses(request, nil, &journal)
 				case "nat-delete":
-					err = d.DeleteNATRules(request, nil, &journal)
+					err = rospolicy.DeleteNATRules(request, d.Client, nil, &journal)
 				case "nat-apply":
 					var undo *NATListUndo
-					undo, err = d.ApplyNATLists(request, r07NewSync())
+					undo, err = rospolicy.ApplyNATLists(request, d.Client, r07NewSync())
 					if err == nil {
-						err = d.RestoreNATLists(request, *undo)
+						err = rospolicy.RestoreNATLists(request, d.Client, *undo)
 					}
 				case "nat-restore":
-					err = d.RestoreNATLists(request, NATListUndo{Kind: "nat_list_restore"})
+					err = rospolicy.RestoreNATLists(request, d.Client, NATListUndo{Kind: "nat_list_restore"})
 				case "empty-restore":
 					_, err = d.Apply(request, json.RawMessage(`{"kind":"ros_restore","changes":[]}`))
 				case "empty-apply-many":

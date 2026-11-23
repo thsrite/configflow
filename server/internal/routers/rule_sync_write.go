@@ -5,6 +5,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/routeedit"
 	"context"
 	"encoding/json"
@@ -45,7 +46,7 @@ func restrictSyncPlan(plan *Plan, baseline *RuleSyncBaseline) ([]Op, error) {
 	if len(plan.Blockers) > 0 {
 		return nil, device.Error(strings.Join(plan.Blockers, "；"))
 	}
-	merged, stale := NATMigration(plan.Stages)
+	merged, stale := rospolicy.NATMigration(plan.Stages)
 	if merged > 0 || stale > 0 {
 		details := []string{}
 		if merged > 0 {
@@ -56,7 +57,7 @@ func restrictSyncPlan(plan *Plan, baseline *RuleSyncBaseline) ([]Op, error) {
 		}
 		return nil, device.Error(fmt.Sprintf(messageSyncMigrate, strings.Join(details, "，")))
 	}
-	nat := NATMemberUpdate(plan.Stages, baseline.NATList)
+	nat := rospolicy.NATMemberUpdate(plan.Stages, baseline.NATList)
 	var routes *Stage
 	for i := range plan.Stages {
 		stage := &plan.Stages[i]
@@ -91,7 +92,7 @@ func restrictSyncPlan(plan *Plan, baseline *RuleSyncBaseline) ([]Op, error) {
 			if len(v.Migrations) > 0 {
 				return nil, device.Error(messageSyncPolicyMigration)
 			}
-			previous, err := policyManifest(v.Previous)
+			previous, err := rospolicy.ParseManifest(v.Previous)
 			if err != nil {
 				return nil, err
 			}
@@ -140,7 +141,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 	}
 	defer d.ReuseAddressReads()()
 	previous := slices.Clone(d.PolicyManifest())
-	livePtr, err := d.snapshotPolicy(ctx, false)
+	livePtr, err := rospolicy.SnapshotLive(ctx, d.Client, false)
 	if err != nil {
 		return out, err
 	}
@@ -148,12 +149,12 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 	if err = syncGuardResources(live, baseline.StaticResources); err != nil {
 		return out, err
 	}
-	nat := NATMemberUpdate(plan.Stages, baseline.NATList)
+	nat := rospolicy.NATMemberUpdate(plan.Stages, baseline.NATList)
 	retainedNAT := []ROSResource{}
 	if nat != nil {
 		enrolled := baseline.NATList
 		for _, item := range append([]ROSResource{enrolled.Rule}, enrolled.Src...) {
-			if err = guardPolicyIn(live, item); err != nil {
+			if err = rospolicy.GuardIn(live, item); err != nil {
 				return out, err
 			}
 		}
@@ -197,22 +198,22 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 			return out, device.Error(messageSyncForeignRoute)
 		}
 	}
-	manifest, err := policyManifest(previous)
+	manifest, err := rospolicy.ParseManifest(previous)
 	if err != nil {
 		return out, err
 	}
 	if manifest != nil {
-		owned, e := OwnedROSPolicyRows(previous, livePtr)
+		owned, e := rospolicy.OwnedROSPolicyRows(previous, livePtr)
 		if e != nil {
 			return out, e
 		}
 		if len(owned) != len(manifest.Resources) {
 			return out, device.Error(messageSyncPolicyMissingObjects)
 		}
-		if e = checkPolicyReferences(owned, live); e != nil {
+		if e = rospolicy.CheckReferences(owned, live); e != nil {
 			return out, e
 		}
-		if e = VerifyROSPolicy(ctx, d, &ROSPolicyCheck{Spec: manifest.Spec, Previous: previous}); e != nil {
+		if e = rospolicy.VerifyROSPolicy(ctx, d.Client, d.readPolicyState, &ROSPolicyCheck{Spec: manifest.Spec, Previous: previous}); e != nil {
 			return out, e
 		}
 	}
@@ -265,10 +266,10 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		next.Spec = check.Spec
 	}
 	if next != nil {
-		removed := policyKeys(removals)
+		removed := rospolicy.PolicyKeys(removals)
 		next.Resources = slices.DeleteFunc(next.Resources, func(item ROSResource) bool { return removed[[2]string{item.Path, item.ID}] })
 	}
-	ids, journal := policyIDs(live), []NATStep{}
+	ids, journal := rospolicy.PolicyIDs(live), []NATStep{}
 	var undo6 *IPv6RoutesUndo
 	out.Log = []RuleSyncLog{}
 	if ensure == nil {
@@ -299,7 +300,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		if manifest != nil {
 			retained = append(slices.Clone(manifest.Resources), retained...)
 		}
-		if e := d.RestoreROSPolicy(ctx, ROSPolicyUndo{Steps: steps, Previous: previous, Retained: retained}); e != nil {
+		if e := rospolicy.RestoreROSPolicy(ctx, d.Client, ROSPolicyUndo{Steps: steps, Previous: previous, Retained: retained}); e != nil {
 			problems = append(problems, e.Error())
 		}
 		if len(problems) > 0 {
@@ -327,7 +328,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 				return
 			}
 		}
-		if _, err = d.createResource(ctx, item.Path, item.Config, &journal, ids, false); err != nil {
+		if _, err = rospolicy.CreateResource(ctx, d.Client, item.Path, item.Config, &journal, ids, false); err != nil {
 			return
 		}
 		out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncAdded, item.Config.Text("dst-address"))})
@@ -390,7 +391,7 @@ func ApplyRuleSyncDelta(ctx context.Context, d *RouterOS, desired *Desired, plan
 		if err = checkCurrent(false); err != nil {
 			return
 		}
-		if err = d.deleteResource(ctx, item, &journal); err != nil {
+		if err = rospolicy.DeleteResource(ctx, d.Client, item, &journal); err != nil {
 			return
 		}
 		out.Log = append(out.Log, RuleSyncLog{"ok", fmt.Sprintf(messageSyncDeleted, item.Config.Text("dst-address"))})
@@ -521,7 +522,7 @@ func syncGuardResources(live ROSPolicySnapshot, items []ROSResource) error {
 			return device.Error(device.MessageOperationFormat)
 		}
 		seen[key] = true
-		if err := guardPolicyIn(ROSPolicySnapshot{item.Path: rows[key]}, item); err != nil {
+		if err := rospolicy.GuardIn(ROSPolicySnapshot{item.Path: rows[key]}, item); err != nil {
 			return err
 		}
 	}

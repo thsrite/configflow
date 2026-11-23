@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,7 +28,7 @@ func TestR08ReviewNATListRollbackKeepsMovedMember(t *testing.T) {
 	d := NewRouterOS(server.URL, "synthetic-user", "synthetic-password", false)
 	defer d.Close()
 	ctx := context.Background()
-	undo, err := d.ApplyNATLists(ctx, r07NewSync())
+	undo, err := rospolicy.ApplyNATLists(ctx, d.Client, r07NewSync())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +42,7 @@ func TestR08ReviewNATListRollbackKeepsMovedMember(t *testing.T) {
 		t.Fatal("no fresh destination member")
 	}
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathAddresses: {moved: {"list": "user-list"}}}}})
-	err = d.RestoreNATLists(ctx, *undo)
+	err = rospolicy.RestoreNATLists(ctx, d.Client, *undo)
 	if err == nil {
 		t.Fatal("rollback reported success while a fresh member survived in another list")
 	}
@@ -71,7 +72,7 @@ func TestR08ReviewSubtractNetworksFamilies(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := []string{}
-			for _, prefix := range SubtractNetworks(tt.from, tt.minus) {
+			for _, prefix := range rospolicy.SubtractNetworks(tt.from, tt.minus) {
 				got = append(got, prefix.String())
 			}
 			if !slices.Equal(got, tt.want) {
@@ -112,7 +113,7 @@ func TestR08ReviewPrepareStaticPresence(t *testing.T) {
 			if fields["kind"] == nil || fields["summary"] == nil || fields["static_checks"] == nil {
 				t.Fatalf("op head or static checks lost: %s", data)
 			}
-			var write policyWrite
+			var write rospolicy.PolicyWrite
 			if err = json.Unmarshal(data, &write); err != nil || len(write.PrepareStatic) != len(tt.prepare) {
 				t.Fatalf("driver contract decode: %v %d", err, len(write.PrepareStatic))
 			}
@@ -127,7 +128,7 @@ func TestR08ReviewViewRolesIgnoreEmptyLists(t *testing.T) {
 		{"path":"/ip/firewall/mangle","id":"*A1","config":{"chain":"prerouting","action":"jump","src-address-list":"S"}},
 		{"path":"/ip/firewall/address-list","id":"*A2","config":{"address":"192.0.2.1"}},
 		{"path":"/ip/firewall/address-list","id":"*A3","config":{"list":"S","address":"192.0.2.2"}}]}`)
-	objects, err := ReadPolicyObjects(context.Background(), d, manifest)
+	objects, err := rospolicy.ReadPolicyObjects(context.Background(), d.Client, manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,11 +155,11 @@ func TestR08ReviewRestoredRouteVanished(t *testing.T) {
 	// The fake numbers new rows from *65: the second restored route vanishes
 	// right after the console batch reported it.
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "POST", Path: "/execute", AfterCommit: true, RemoveIDs: map[string][]string{ros.PathRoutes: {"*66"}}}}})
-	err := d.RestoreROSPolicy(context.Background(), ROSPolicyUndo{Kind: "ros_policy_restore", Steps: steps, Previous: json.RawMessage(`null`)})
+	err := rospolicy.RestoreROSPolicy(context.Background(), d.Client, ROSPolicyUndo{Kind: "ros_policy_restore", Steps: steps, Previous: json.RawMessage(`null`)})
 	if err == nil {
 		t.Fatal("vanished route accepted")
 	}
-	want := messagePolicyRollbackPrefix + fmt.Sprintf(messagePolicyConfirm, ros.PathRoutes, messagePolicyMissingDetail)
+	want := rospolicy.MessageRollbackPrefix + fmt.Sprintf(rospolicy.MessageConfirm, ros.PathRoutes, rospolicy.MessageMissingDetail)
 	if err.Error() != want {
 		t.Fatalf("error %q, want %q", err, want)
 	}

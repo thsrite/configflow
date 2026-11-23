@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"fmt"
 	"net/http"
@@ -39,7 +40,7 @@ func TestNATListWriteAndRollbackFinishAfterCancellation(t *testing.T) {
 	defer srv.Close()
 	d := NewRouterOS(srv.URL, "synthetic-user", "synthetic-password", false)
 	defer d.Close()
-	undo, err := d.ApplyNATLists(ctx, r07NewSync())
+	undo, err := rospolicy.ApplyNATLists(ctx, d.Client, r07NewSync())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +50,7 @@ func TestNATListWriteAndRollbackFinishAfterCancellation(t *testing.T) {
 	if len(f.Snapshot().Tables[ros.PathNAT]) != 2 {
 		t.Fatal("accepted update abandoned")
 	}
-	if err = d.RestoreNATLists(ctx, *undo); err != nil {
+	if err = rospolicy.RestoreNATLists(ctx, d.Client, *undo); err != nil {
 		t.Fatal(err)
 	}
 	state := f.Snapshot()
@@ -122,14 +123,14 @@ func TestAddressProofCacheOwnsCopies(t *testing.T) {
 
 func TestNATRestoreStopsDeletingAfterOwnershipFailure(t *testing.T) {
 	d, f := newFakeRouterOS(t, r07FakeState())
-	undo, err := d.ApplyNATLists(context.Background(), r07NewSync())
+	undo, err := rospolicy.ApplyNATLists(context.Background(), d.Client, r07NewSync())
 	if err != nil {
 		t.Fatal(err)
 	}
 	state := f.Snapshot()
 	rule := state.Tables[ros.PathNAT][0]
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathNAT: {fmt.Sprint(rule[".id"]): {"protocol": "tcp"}}}}})
-	err = d.RestoreNATLists(context.Background(), *undo)
+	err = rospolicy.RestoreNATLists(context.Background(), d.Client, *undo)
 	if err == nil {
 		t.Fatal("externally changed rule was treated as owned")
 	}
@@ -194,7 +195,7 @@ func TestDeviceDiagnosticsRedactPassword(t *testing.T) {
 
 func TestInvalidNATUndoCannotWriteOtherTables(t *testing.T) {
 	d, f := newFakeRouterOS(t, r07FakeState())
-	err := d.RestoreNATLists(context.Background(), NATListUndo{Steps: []NATStep{{Action: "delete", Path: "/system/script", ID: "*3", Config: Row{}}}})
+	err := rospolicy.RestoreNATLists(context.Background(), d.Client, NATListUndo{Steps: []NATStep{{Action: "delete", Path: "/system/script", ID: "*3", Config: Row{}}}})
 	if err == nil || len(f.Calls()) > 0 {
 		t.Fatal("wrong-table undo reached device")
 	}

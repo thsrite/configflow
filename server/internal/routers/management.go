@@ -4,6 +4,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/routeedit"
 	"configflow/internal/routers/spec"
 	"context"
@@ -443,7 +444,7 @@ func (s *ManagementService) PolicyObjects(ctx context.Context, profile string, r
 	if !ok {
 		return nil, device.Invalid(messageManagementPolicyOnly)
 	}
-	return ReadPolicyObjects(work, ros, current.Extra["ros_policy_state"])
+	return rospolicy.ReadPolicyObjects(work, ros.Client, current.Extra["ros_policy_state"])
 }
 
 func (s *ManagementService) safeLog(ctx context.Context, profile string, r *Router, value string) string {

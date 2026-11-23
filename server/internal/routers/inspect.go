@@ -5,6 +5,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
@@ -123,15 +124,15 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		}
 	}
 	if policy {
-		desired.ROSPolicy, err = InspectROSPolicyDesired(ctx, req.Config, r, desired, req.Loader)
+		desired.ROSPolicy, err = rospolicy.InspectROSPolicyDesired(ctx, req.Config, r, desired, req.Loader)
 		if err != nil {
 			return nil, err
 		}
-		state.ROSPolicy, err = SnapshotROSPolicy(ctx, rosDriver)
+		state.ROSPolicy, err = rospolicy.SnapshotROSPolicy(ctx, rosDriver.Client)
 		if err != nil {
 			return nil, err
 		}
-		owned, e := OwnedROSPolicyRows(r.State("ros_policy_state"), state.ROSPolicy)
+		owned, e := rospolicy.OwnedROSPolicyRows(r.State("ros_policy_state"), state.ROSPolicy)
 		if e != nil {
 			owned = nil
 		}

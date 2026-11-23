@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
 	"errors"
@@ -55,7 +56,7 @@ func r08Plan(ctx context.Context, d *RouterOS, desired *Desired) (*ROSPolicyPlan
 	if err != nil {
 		return nil, err
 	}
-	return BuildROSPolicy(desired, state.NatContext, state.ROSPolicy), nil
+	return rospolicy.BuildROSPolicy(desired, state.NatContext, state.ROSPolicy), nil
 }
 
 func r08InspectState(ctx context.Context, d *RouterOS) (*RouterState, error) {
@@ -63,7 +64,7 @@ func r08InspectState(ctx context.Context, d *RouterOS) (*RouterState, error) {
 	if err != nil {
 		return nil, err
 	}
-	state.ROSPolicy, err = SnapshotROSPolicy(ctx, d)
+	state.ROSPolicy, err = rospolicy.SnapshotROSPolicy(ctx, d.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +137,7 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 		case "legacy":
 			var fields map[string]json.RawMessage
 			_ = json.Unmarshal(d.PolicyManifest(), &fields)
-			manifest, _ := policyManifest(d.PolicyManifest())
+			manifest, _ := rospolicy.ParseManifest(d.PolicyManifest())
 			rename := map[string]string{"CF_Source_Proxy_IP_01": "cfp_0123456789abcdef_src", "CF_Destination_Proxy_IP_01": "cfp_0123456789abcdef_dst", "CF_Bypass_IP_01": "cfp_0123456789abcdef_bypass", "CF_Proxy_Routing_01": "cfp_0123456789abcdef"}
 			patches := map[string]map[string]routerfake.Row{}
 			for i, item := range manifest.Resources {
@@ -171,24 +172,24 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 			f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: patches}})
 		case "sources":
 			var value []string
-			value, err = SmartROSPolicySources(step.Rows, step.Gateway)
+			value, err = rospolicy.SmartROSPolicySources(step.Rows, step.Gateway)
 			if err == nil {
 				appendResult(value)
 			}
 		case "inspect":
 			var value *ROSPolicyDesired
-			value, err = InspectROSPolicyDesired(ctx, step.Config, step.Router, step.Desired, func(item RuleSet, _ *LibraryRule) (string, error) { return step.Contents[item.ID], nil })
+			value, err = rospolicy.InspectROSPolicyDesired(ctx, step.Config, step.Router, step.Desired, func(item RuleSet, _ *LibraryRule) (string, error) { return step.Contents[item.ID], nil })
 			if err == nil {
 				appendResult(value)
 			}
 		case "view":
 			var value []ROSPolicyObject
-			value, err = ReadPolicyObjects(ctx, d, d.PolicyManifest())
+			value, err = rospolicy.ReadPolicyObjects(ctx, d.Client, d.PolicyManifest())
 			if err == nil {
 				appendResult(value)
 			}
 		case "undo":
-			err = d.RestoreROSPolicy(ctx, *undo)
+			err = rospolicy.RestoreROSPolicy(ctx, d.Client, *undo)
 			if err == nil {
 				appendResult(Row{})
 			}
@@ -203,23 +204,23 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 				continue
 			}
 			raw, _ := json.Marshal(plan.Ops[0])
-			var write policyWrite
+			var write rospolicy.PolicyWrite
 			_ = json.Unmarshal(raw, &write)
 			if len(step.Prepare) > 0 {
 				if err = json.Unmarshal(step.Prepare, &write); err != nil {
 					t.Fatal(err)
 				}
 			}
-			undo, err = d.applyPolicy(ctx, write)
+			undo, err = rospolicy.ApplyPolicyWrite(ctx, d.Client, d.readPolicyState, write)
 			if err != nil {
 				break
 			}
 			appendResult(undo)
 			if step.Action == "publish" {
-				err = VerifyROSPolicy(ctx, d, plan.Check)
+				err = rospolicy.VerifyROSPolicy(ctx, d.Client, d.readPolicyState, plan.Check)
 			}
 			if step.Action == "rollback" {
-				err = d.RestoreROSPolicy(ctx, *undo)
+				err = rospolicy.RestoreROSPolicy(ctx, d.Client, *undo)
 				if err == nil {
 					appendResult(Row{})
 				}
@@ -470,12 +471,12 @@ func r08Cases() []r08Case {
 	}
 	for _, order := range []any{nil, "main,mangle", "user,mangle,main", "mangle,mangle,main", "mangle,unknown,main", []string{"mangle", "main"}, []any{"mangle", true, "main"}} {
 		state := r08State()
-		state.Tables[rosSettings] = []routerfake.Row{{"policy-rules": order}}
+		state.Tables[rospolicy.SettingsPath] = []routerfake.Row{{"policy-rules": order}}
 		cases = append(cases, r08Case{fmt.Sprintf("order_%v", order), state, []r08Step{{Action: "plan", Desired: r08Desired(true)}}})
 	}
 	for _, missing := range []string{"7.21.2", "7.24.5", ""} {
 		state := r08State()
-		state.Tables[rosSettings] = []routerfake.Row{{}}
+		state.Tables[rospolicy.SettingsPath] = []routerfake.Row{{}}
 		if missing != "" {
 			state.Faults = []routerfake.Fault{{Method: "GET", Path: "/system/resource", Status: 200, Body: routerfake.Row{"version": missing}}}
 		} else {

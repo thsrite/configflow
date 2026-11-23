@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -98,7 +99,7 @@ func r14Plan(t *testing.T, ctx context.Context, d *RouterOS, r *Router, desired 
 	if err != nil {
 		t.Fatal(err)
 	}
-	owned, err := OwnedROSPolicyRows(d.PolicyManifest(), state.ROSPolicy)
+	owned, err := rospolicy.OwnedROSPolicyRows(d.PolicyManifest(), state.ROSPolicy)
 	if err != nil {
 		owned = nil
 	}
@@ -160,7 +161,7 @@ func TestR14DeltaPython(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			nat, err := d.NATResources(t.Context())
+			nat, err := rospolicy.NATResources(t.Context(), d.Client)
 			if err != nil {
 				t.Fatal(err)
 			}

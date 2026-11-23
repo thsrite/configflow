@@ -12,6 +12,7 @@ import (
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"encoding/json"
 	"net/netip"
 	"slices"
@@ -263,9 +264,9 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 		parts = append(parts, dnsguard.ReportPart(p))
 	}
 	if desired.ROSPolicy != nil {
-		plan := BuildROSPolicy(desired, state.NatContext, state.ROSPolicy)
+		plan := rospolicy.BuildROSPolicy(desired, state.NatContext, state.ROSPolicy)
 		state.ROSPolicyPlan = plan
-		part, natRetiring := policyReportPart(desired, plan)
+		part, natRetiring := rospolicy.ReportPart(desired, plan)
 		state.PolicyNATRetiring = natRetiring
 		parts = append(parts, part)
 	}

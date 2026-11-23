@@ -6,6 +6,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
 	"errors"
@@ -145,7 +146,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 			if !ok {
 				return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, stage))
 			}
-			if err := VerifyROSPolicy(ctx, ros, checks.ROSPolicy); err != nil {
+			if err := rospolicy.VerifyROSPolicy(ctx, ros.Client, ros.readPolicyState, checks.ROSPolicy); err != nil {
 				return nil, err
 			}
 		}
@@ -185,11 +186,11 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 			}
 		}
 	} else if stage == StageNATBypass {
-		if err := VerifyNAT(ctx, checks.NATChecks, &state.State, state.NatContext); err != nil {
+		if err := rospolicy.VerifyNAT(ctx, checks.NATChecks, &state.State, state.NatContext); err != nil {
 			return nil, err
 		}
 		if checks.NATList != nil {
-			if err := VerifyNATLists(ctx, checks.NATList, state.NatContext, &state.NATLists, &state.NATListsReader); err != nil {
+			if err := rospolicy.VerifyNATLists(ctx, checks.NATList, state.NatContext, &state.NATLists, &state.NATListsReader); err != nil {
 				return nil, err
 			}
 		}

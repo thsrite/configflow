@@ -2,6 +2,7 @@ package routers_test
 
 import (
 	"bytes"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -81,7 +82,7 @@ func TestNATListWriteBoundary(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					plan := routers.PlanNATLists(context.Background(), report.Routes, report.NatBypass, &state.State, state.NatContext, &state.NATLists, &state.NATListsReader, state.ROSPolicyPlan, "192.0.2.3", nil)
+					plan := rospolicy.PlanNATLists(context.Background(), report.Routes, report.NatBypass, &state.State, state.NatContext, &state.NATLists, &state.NATListsReader, state.ROSPolicyPlan, "192.0.2.3", nil)
 					d.Close()
 					if plan == nil || len(plan.Blockers) > 0 || len(plan.Ops) != 1 {
 						t.Fatalf("bad fixture plan %#v", plan)
@@ -217,7 +218,7 @@ func r07PlannedOperation(t *testing.T, initial routerfake.State, count int) map[
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := routers.PlanNATLists(context.Background(), report.Routes, report.NatBypass, &state.State, state.NatContext, &state.NATLists, &state.NATListsReader, state.ROSPolicyPlan, "192.0.2.3", nil)
+	plan := rospolicy.PlanNATLists(context.Background(), report.Routes, report.NatBypass, &state.State, state.NatContext, &state.NATLists, &state.NATListsReader, state.ROSPolicyPlan, "192.0.2.3", nil)
 	if plan == nil || len(plan.Blockers) > 0 || len(plan.Ops) != 1 {
 		t.Fatalf("bad fixture plan %#v", plan)
 	}

@@ -9,6 +9,7 @@ import (
 	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/routeedit"
 	"configflow/internal/routers/spec"
 )
@@ -129,6 +130,25 @@ type (
 	ClientReadOptions = clientlist.ReadOptions
 	ClientReader      = clientlist.Reader
 	ConnectionQuery   = clientlist.ConnectionQuery
+
+	NATBaseline       = rospolicy.NATBaseline
+	NATListCheck      = rospolicy.NATListCheck
+	NATListEvidence   = rospolicy.NATListEvidence
+	NATListMembers    = rospolicy.NATListMembers
+	NATListPlan       = rospolicy.NATListPlan
+	NATListSync       = rospolicy.NATListSync
+	NATListUndo       = rospolicy.NATListUndo
+	NATLists          = rospolicy.NATLists
+	ROSPolicyCheck    = rospolicy.ROSPolicyCheck
+	ROSPolicyItem     = rospolicy.ROSPolicyItem
+	ROSPolicyManifest = rospolicy.ROSPolicyManifest
+	ROSPolicyObject   = rospolicy.ROSPolicyObject
+	ROSPolicyPlan     = rospolicy.ROSPolicyPlan
+	ROSPolicyReplace  = rospolicy.ROSPolicyReplace
+	ROSPolicySnapshot = rospolicy.ROSPolicySnapshot
+	ROSPolicySpec     = rospolicy.ROSPolicySpec
+	ROSPolicyUndo     = rospolicy.ROSPolicyUndo
+	ROSReplacement    = rospolicy.ROSReplacement
 )
 
 // FromConfig returns owned router records; temporary alias removed in R10.

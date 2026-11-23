@@ -1,6 +1,7 @@
 package routers_test
 
 import (
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -131,7 +132,7 @@ func TestNATListPlanBoundary(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					result := routers.PlanNATLists(context.Background(), report.Routes, report.NatBypass, &state.State, state.NatContext, &state.NATLists, &state.NATListsReader, state.ROSPolicyPlan, "192.0.2.3", nil)
+					result := rospolicy.PlanNATLists(context.Background(), report.Routes, report.NatBypass, &state.State, state.NatContext, &state.NATLists, &state.NATListsReader, state.ROSPolicyPlan, "192.0.2.3", nil)
 					a, b := r07Comparable(t, py.Result), r07Comparable(t, result)
 					if !reflect.DeepEqual(a, b) {
 						t.Errorf("plan %s", jsonDiff(a, b))

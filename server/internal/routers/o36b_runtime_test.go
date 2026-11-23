@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/routeedit"
 	"context"
 	"encoding/json"
@@ -169,7 +170,7 @@ func TestO36bPolicyRestoreCommitRuntimeBoundary(t *testing.T) {
 			runtime, request, disconnect := o36bRuntime(t)
 			stopped := false
 			d.SetHTTP(&r09AfterReadHTTP{DeviceHTTP: d.HTTP(), after: func(method, target string) {
-				if method == "GET" && target == d.Endpoint()+"/rest"+rosSettings {
+				if method == "GET" && target == d.Endpoint()+"/rest"+rospolicy.SettingsPath {
 					stopped = true
 					if shutdown {
 						runtime.Shutdown(context.Background())
@@ -179,7 +180,7 @@ func TestO36bPolicyRestoreCommitRuntimeBoundary(t *testing.T) {
 				}
 			}})
 			before, _ := json.Marshal(fake.Snapshot().Tables)
-			err := d.RestoreROSPolicy(request, ROSPolicyUndo{Kind: "ros_policy_restore", Previous: json.RawMessage(`null`)})
+			err := rospolicy.RestoreROSPolicy(request, d.Client, ROSPolicyUndo{Kind: "ros_policy_restore", Previous: json.RawMessage(`null`)})
 			after, _ := json.Marshal(fake.Snapshot().Tables)
 			if !stopped || !bytes.Equal(before, after) {
 				t.Fatal("fixture did not hit manifest-only restore", stopped)

@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/routeedit"
 	"configflow/internal/routers/spec"
 	"context"
@@ -54,7 +55,7 @@ func (s *RuleSyncService) baseline(ctx context.Context, config json.RawMessage, 
 	if err != nil {
 		return nil, err
 	}
-	nat, err := d.NATResources(ctx)
+	nat, err := rospolicy.NATResources(ctx, d.Client)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +114,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 			if err != nil {
 				return err
 			}
-			manifest, err := policyManifest(d.PolicyManifest())
+			manifest, err := rospolicy.ParseManifest(d.PolicyManifest())
 			if err != nil {
 				return err
 			}
@@ -126,7 +127,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 			if manifest == nil || manifest.Spec == nil || !maps.Equal(destinations, device.StringSet(manifest.Spec.Destinations...)) {
 				return device.Error(messageSyncCapturePolicy)
 			}
-			if err = VerifyROSPolicy(work, d, &ROSPolicyCheck{Spec: manifest.Spec, Previous: d.PolicyManifest()}); err != nil {
+			if err = rospolicy.VerifyROSPolicy(work, d.Client, d.readPolicyState, &ROSPolicyCheck{Spec: manifest.Spec, Previous: d.PolicyManifest()}); err != nil {
 				return err
 			}
 		}

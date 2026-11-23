@@ -1,4 +1,4 @@
-package routers
+package rospolicy
 
 import (
 	"configflow/internal/routers/device"
@@ -10,7 +10,7 @@ import (
 
 // restorePolicyRoutes uses the shared bounded console writer, but retains
 // original-to-new identities for updating the private policy manifest.
-func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids ROSIDs, remapped map[[2]string]string, failures *[]string) {
+func (d rosDevice) restorePolicyRoutes(ctx context.Context, steps []ros.NATStep, ids ros.ROSIDs, remapped map[[2]string]string, failures *[]string) {
 	requested := []string{}
 	for _, step := range steps {
 		requested = append(requested, step.ID)
@@ -36,7 +36,7 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 		if len(chunk) == 0 {
 			return
 		}
-		values := []Row{}
+		values := []ros.Row{}
 		for _, i := range chunk {
 			values = append(values, steps[i].Values)
 		}
@@ -66,7 +66,7 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 				if pointer == nil {
 					// Written under a proven fresh ID, then gone: the read-back
 					// mismatch is reported like any other missing object.
-					_, err := d.confirmResource(ctx, ros.PathRoutes, steps[i].Values, "", &NATStep{}, nil)
+					_, err := d.confirmResource(ctx, ros.PathRoutes, steps[i].Values, "", &ros.NATStep{}, nil)
 					errors[i] = err.Error()
 					continue
 				}
@@ -95,7 +95,7 @@ func (d *RouterOS) restorePolicyRoutes(ctx context.Context, steps []NATStep, ids
 	}
 	for i, step := range steps {
 		if present[step.ID] {
-			if err := guardPolicyIn(live, ROSResource{Path: step.Path, ID: step.ID, Config: step.Config}); err != nil {
+			if err := GuardIn(live, ros.Resource{Path: step.Path, ID: step.ID, Config: step.Config}); err != nil {
 				errors[i] = err.Error()
 			}
 			continue

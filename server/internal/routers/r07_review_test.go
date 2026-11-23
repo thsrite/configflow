@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
 	"errors"
@@ -56,7 +57,7 @@ func TestR07RedactionHidesOnlyPassword(t *testing.T) {
 			if tt.console {
 				_, err = d.OccupiedAddressNames(context.Background(), []string{"cf-.*"}, nil)
 			} else {
-				_, err = d.NATResources(context.Background())
+				_, err = rospolicy.NATResources(context.Background(), d.Client)
 			}
 			e, ok := errors.AsType[*RouterError](err)
 			if !ok {
@@ -105,11 +106,11 @@ func TestR07RequestsKeepTimeoutAndRawBodies(t *testing.T) {
 	defer d.Close()
 	ctx := context.Background()
 
-	undo, err := d.ApplyNATLists(ctx, r07NewSync())
+	undo, err := rospolicy.ApplyNATLists(ctx, d.Client, r07NewSync())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = d.RestoreNATLists(ctx, *undo); err != nil {
+	if err = rospolicy.RestoreNATLists(ctx, d.Client, *undo); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := d.List(ctx, nat)
@@ -123,11 +124,11 @@ func TestR07RequestsKeepTimeoutAndRawBodies(t *testing.T) {
 		}
 	}
 	journal := []NATStep{}
-	if err = d.DeleteNATRules(ctx, legacy, &journal); err != nil {
+	if err = rospolicy.DeleteNATRules(ctx, d.Client, legacy, &journal); err != nil {
 		t.Fatal(err)
 	}
 	slices.Reverse(journal)
-	if err = d.RestoreNATLists(ctx, NATListUndo{Kind: "nat_list_restore", Steps: journal, Keep: []string{}}); err != nil {
+	if err = rospolicy.RestoreNATLists(ctx, d.Client, NATListUndo{Kind: "nat_list_restore", Steps: journal, Keep: []string{}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = d.LocateAddresses(ctx, []string{"*1"}); err != nil {
@@ -232,11 +233,11 @@ func TestR07VerifyComparesMemberSets(t *testing.T) {
 	id := "*5"
 	check := &NATListCheck{Rule: &id, Sources: []string{"192.0.2.128/25"}, Destinations: []string{"198.51.100.0/24"}, Removed: []string{},
 		Members: NATListMembers{Src: []string{"192.0.2.128/25"}, Dst: []string{"198.51.100.0/24", "198.51.100.0/24"}}}
-	if err := VerifyNATLists(context.Background(), check, state.NatContext, &state.NATLists, &state.NATListsReader); err != nil {
+	if err := rospolicy.VerifyNATLists(context.Background(), check, state.NatContext, &state.NATLists, &state.NATListsReader); err != nil {
 		t.Fatal(err)
 	}
 	check.Members.Dst = []string{"198.51.100.0/24", "203.0.113.0/24"}
-	if err := VerifyNATLists(context.Background(), check, state.NatContext, &state.NATLists, &state.NATListsReader); err == nil {
+	if err := rospolicy.VerifyNATLists(context.Background(), check, state.NatContext, &state.NATLists, &state.NATListsReader); err == nil {
 		t.Fatal("missing planned member accepted")
 	}
 }
@@ -253,7 +254,7 @@ func TestR07NATKeyKeepsRanges(t *testing.T) {
 		{"2001:db8::/32", "2001:db8::/32"},
 	}
 	for _, tt := range tests {
-		if got := natKey(tt.in); got != tt.want {
+		if got := rospolicy.NATKey(tt.in); got != tt.want {
 			t.Errorf("natKey(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
@@ -272,10 +273,10 @@ func TestR07PrefixOverlapMatchesPairwise(t *testing.T) {
 		for i := range exclusions {
 			exclusions[i] = random()
 		}
-		overlaps := prefixOverlap(exclusions)
+		overlaps := rospolicy.PrefixOverlap(exclusions)
 		for range 50 {
 			n := random()
-			if got, want := overlaps(n), overlapsAny(n, exclusions); got != want {
+			if got, want := overlaps(n), rospolicy.OverlapsAny(n, exclusions); got != want {
 				t.Fatalf("round %d: %s against %v = %v, want %v", round, n, exclusions, got, want)
 			}
 		}

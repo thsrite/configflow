@@ -6,6 +6,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -226,7 +227,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 				next = append(next, v.CIDR)
 			}
 		}
-		replacements := SubtractNetworks(device.Networks(old), device.Networks(next))
+		replacements := rospolicy.SubtractNetworks(device.Networks(old), device.Networks(next))
 		if rosPolicy.Check != nil {
 			for _, v := range rosPolicy.Check.Migrations {
 				if v.Path == ros.PathRoutes {
@@ -234,7 +235,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 				}
 			}
 		}
-		overlaps := ROSPolicyNetworkOverlap(replacements)
+		overlaps := rospolicy.ROSPolicyNetworkOverlap(replacements)
 		for _, n := range device.Networks(skipped) {
 			if overlaps(n) {
 				*blockers = append(*blockers, messagePolicyWithdrawConflict)
@@ -345,7 +346,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 						}
 						check := *listed.Check
 						listed.Check = &check
-						if problem := RestrictNATEgress(&copy, listed.Check, iface); problem != "" {
+						if problem := rospolicy.RestrictNATEgress(&copy, listed.Check, iface); problem != "" {
 							*blockers = append(*blockers, problem)
 						}
 						natOps[i] = &copy
@@ -371,7 +372,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		natOps = []Op{}
 	}
 	if listed != nil && listed.Check != nil && len(natOps) > 0 {
-		natOps, routeOps = NATRemovalsFirst(natOps, routeOps, gateway)
+		natOps, routeOps = rospolicy.NATRemovalsFirst(natOps, routeOps, gateway)
 	}
 	returnOps := []Op{}
 	var spec *ReturnSpec

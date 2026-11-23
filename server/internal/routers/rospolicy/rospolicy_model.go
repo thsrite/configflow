@@ -1,4 +1,4 @@
-package routers
+package rospolicy
 
 import (
 	"configflow/internal/devhttp"
@@ -30,7 +30,7 @@ var policyPaths = []string{ros.PathAddresses, ros.PathTables, ros.PathMangle, ro
 var policyNamePatterns = []string{"CF_Source_Proxy_IP_[0-9]+", "CF_Destination_Proxy_IP_[0-9]+", "CF_Bypass_IP_[0-9]+"}
 
 // ROSPolicySnapshot contains complete raw configuration and runtime evidence.
-type ROSPolicySnapshot map[string][]Row
+type ROSPolicySnapshot map[string][]ros.Row
 
 // ROSPolicySpec records the exact scope of one deployed bundle.
 type ROSPolicySpec struct {
@@ -46,31 +46,31 @@ type ROSPolicySpec struct {
 // ROSPolicyManifest is the private proof of ownership, including device defaults.
 type ROSPolicyManifest struct {
 	Spec      *ROSPolicySpec `json:"spec"`
-	Resources []ROSResource  `json:"resources"`
+	Resources []ros.Resource `json:"resources"`
 }
 
 // ROSPolicyCheck is the post-release proof, including migrated old objects.
 type ROSPolicyCheck struct {
 	Spec         *ROSPolicySpec   `json:"spec"`
 	Previous     json.RawMessage  `json:"previous"`
-	Migrations   []ROSResource    `json:"migrations"`
+	Migrations   []ros.Resource   `json:"migrations"`
 	Replacements []ROSReplacement `json:"replacements"`
 }
 
 // ROSPolicyReplace prepares a new bundle before retiring the old entry point.
 // PrepareStatic is supplied by the release planner, never decoded client input.
 type ROSPolicyReplace struct {
-	OpHead
-	Bundle          []ROSReplacement  `json:"bundle"`
-	Previous        json.RawMessage   `json:"previous"`
-	Owned           []ROSResource     `json:"owned"`
-	Migrations      []ROSResource     `json:"migrations"`
-	Replacements    []ROSReplacement  `json:"replacements"`
-	Spec            *ROSPolicySpec    `json:"spec"`
-	Evidence        ROSPolicySnapshot `json:"evidence"`
-	StaticChecks    []CIDRGateway     `json:"static_checks"`
-	PrepareStatic   []Op              `json:"prepare_static,omitempty"`
-	StaticNATChecks *NATChecks        `json:"static_nat_checks,omitempty"`
+	device.OpHead
+	Bundle          []ROSReplacement     `json:"bundle"`
+	Previous        json.RawMessage      `json:"previous"`
+	Owned           []ros.Resource       `json:"owned"`
+	Migrations      []ros.Resource       `json:"migrations"`
+	Replacements    []ROSReplacement     `json:"replacements"`
+	Spec            *ROSPolicySpec       `json:"spec"`
+	Evidence        ROSPolicySnapshot    `json:"evidence"`
+	StaticChecks    []device.CIDRGateway `json:"static_checks"`
+	PrepareStatic   []device.Op          `json:"prepare_static,omitempty"`
+	StaticNATChecks *device.NATChecks    `json:"static_nat_checks,omitempty"`
 }
 
 // MarshalJSON emits prepare_static whenever the planner set it, including an
@@ -83,13 +83,13 @@ func (op ROSPolicyReplace) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(struct {
 		plain
-		PrepareStatic []Op `json:"prepare_static"`
+		PrepareStatic []device.Op `json:"prepare_static"`
 	}{plain(op), op.PrepareStatic})
 }
 
 // ROSPolicyItem is one destination shown in the report.
 type ROSPolicyItem struct {
-	ProxyCIDR
+	spec.ProxyCIDR
 	Status   string   `json:"status"`
 	Detail   string   `json:"detail"`
 	RouteIDs []string `json:"route_ids"`
@@ -98,7 +98,7 @@ type ROSPolicyItem struct {
 
 // ROSPolicyPlan is the guarded operation and its complete preview evidence.
 type ROSPolicyPlan struct {
-	Ops      []Op            `json:"ops"`
+	Ops      []device.Op     `json:"ops"`
 	Blockers []string        `json:"blockers"`
 	Warnings []string        `json:"warnings"`
 	Items    []ROSPolicyItem `json:"items"`
@@ -123,11 +123,11 @@ func ROSPolicyDigest(value json.RawMessage) (string, error) {
 }
 
 // ROSPolicyConfigRow copies configuration fields, preserving unknown matchers.
-func ROSPolicyConfigRow(row Row) Row { return ros.ConfigROSRow(row) }
+func ROSPolicyConfigRow(row ros.Row) ros.Row { return ros.ConfigROSRow(row) }
 
 // ROSPolicyNetworkOverlap reuses the shared collapsed, binary-search index.
 func ROSPolicyNetworkOverlap(networks []netip.Prefix) func(netip.Prefix) bool {
-	return prefixOverlap(networks)
+	return PrefixOverlap(networks)
 }
 
 // SubtractNetworks removes sorted disjoint exclusions with a sweep. No
@@ -233,7 +233,7 @@ func SmartROSPolicySources(rows json.RawMessage, gateway string) ([]string, erro
 
 // InspectROSPolicyDesired reads only explicitly selected sets and saved device
 // policies. Missing content blocks replacing an existing working bundle.
-func InspectROSPolicyDesired(ctx context.Context, config json.RawMessage, router *Router, desired *Desired, loader ContentLoader) (*ROSPolicyDesired, error) {
+func InspectROSPolicyDesired(ctx context.Context, config json.RawMessage, router *spec.Router, desired *spec.Desired, loader spec.ContentLoader) (*spec.ROSPolicyDesired, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -241,7 +241,7 @@ func InspectROSPolicyDesired(ctx context.Context, config json.RawMessage, router
 	if err != nil {
 		return nil, err
 	}
-	result := &ROSPolicyDesired{Selected: append([]string{}, router.RosPolicyRuleSets...), Sources: []string{}, CIDRs: []ProxyCIDR{}, Owner: ROSPolicyPrefix + owner[:12], Previous: router.State("ros_policy_state")}
+	result := &spec.ROSPolicyDesired{Selected: append([]string{}, router.RosPolicyRuleSets...), Sources: []string{}, CIDRs: []spec.ProxyCIDR{}, Owner: ROSPolicyPrefix + owner[:12], Previous: router.State("ros_policy_state")}
 	if len(result.Selected) == 0 {
 		return result, nil
 	}
