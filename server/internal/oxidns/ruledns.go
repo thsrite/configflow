@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"math/big"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -65,14 +66,38 @@ func EntryKey(upstream *Node, source string) string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// RouteKey is the route of a stored action.
-func RouteKey(action *Node) string {
-	kind := str(get(action, "action"))
-	if kind == "upstream" {
-		return "upstream:" + EntryKey(get(action, "upstream"), str(get(action, "source")))
-	}
-	return kind
+// RuleAction is one stored rule DNS action: its kind and, for a pinned
+// upstream, the upstream list it was picked from and the native forward
+// upstream entry, kept as written (unknown members included).
+type RuleAction struct {
+	Action   string
+	Source   string
+	Upstream *Node
 }
+
+// actionOf reads a stored action; members of the wrong type read as empty.
+func actionOf(n *Node) RuleAction {
+	return RuleAction{Action: str(get(n, "action")), Source: str(get(n, "source")), Upstream: get(n, "upstream")}
+}
+
+// Key is the route of the action.
+func (a RuleAction) Key() string {
+	if a.Action == "upstream" {
+		return "upstream:" + EntryKey(a.Upstream, a.Source)
+	}
+	return a.Action
+}
+
+// node is the canonical stored form of a normalized action.
+func (a RuleAction) node() *Node {
+	if a.Action != "upstream" {
+		return M("action", a.Action)
+	}
+	return M("action", "upstream", "source", a.Source, "upstream", clone(a.Upstream))
+}
+
+// RouteKey is the route of a stored action.
+func RouteKey(action *Node) string { return actionOf(action).Key() }
 
 // RouteExec is the sequence_main exec of a rule group.
 func RouteExec(route, part string) (string, error) {
@@ -92,28 +117,35 @@ func RouteExec(route, part string) (string, error) {
 // NormalizeAction validates one rule_actions (or, parked, rule_dns_parked)
 // value and returns its canonical copy.
 func NormalizeAction(value *Node, parked bool) (*Node, error) {
+	action, err := normalizeAction(value, parked)
+	if err != nil {
+		return nil, err
+	}
+	return action.node(), nil
+}
+
+func normalizeAction(value *Node, parked bool) (RuleAction, error) {
 	allowed := Actions
 	if parked {
 		allowed = append(append([]string{}, ListRoutes...), Actions...)
 	}
-	kind := get(value, "action")
-	if !isMap(value) || !isOneOf(kind, allowed...) {
-		return nil, fail("规则 DNS 处理无效：" + strings.Join(allowed, "、"))
+	action := actionOf(value)
+	if !isMap(value) || !slices.Contains(allowed, action.Action) {
+		return RuleAction{}, fail("规则 DNS 处理无效：" + strings.Join(allowed, "、"))
 	}
-	if kind.Value != "upstream" {
+	if action.Action != "upstream" {
 		if mapSize(value) != 1 {
-			return nil, fail("规则 DNS 处理「" + RouteLabels[kind.Value] + "」不能包含其他参数")
+			return RuleAction{}, fail("规则 DNS 处理「" + RouteLabels[action.Action] + "」不能包含其他参数")
 		}
-		return M("action", kind.Value), nil
+		return RuleAction{Action: action.Action}, nil
 	}
-	if mapSize(value) != 3 || !has(value, "source") || !has(value, "upstream") || !isOneOf(get(value, "source"), UpstreamSources...) {
-		return nil, fail("指定上游需要 source（local、remote 或 fallback）和 upstream")
+	if mapSize(value) != 3 || !has(value, "source") || !has(value, "upstream") || !slices.Contains(UpstreamSources, action.Source) {
+		return RuleAction{}, fail("指定上游需要 source（local、remote 或 fallback）和 upstream")
 	}
-	upstream := get(value, "upstream")
-	if !isMap(upstream) || strings.TrimSpace(str(get(upstream, "addr"))) == "" {
-		return nil, fail("指定上游需要非空的 addr 地址")
+	if !isMap(action.Upstream) || strings.TrimSpace(str(get(action.Upstream, "addr"))) == "" {
+		return RuleAction{}, fail("指定上游需要非空的 addr 地址")
 	}
-	return M("action", "upstream", "source", get(value, "source").Value, "upstream", clone(upstream)), nil
+	return action, nil
 }
 
 // chainFeatures are the china_dns response hooks and the cache and TTL
@@ -149,10 +181,10 @@ func (s *templateSettings) features() chainFeatures {
 }
 
 // upstreamChain is forward + optional cache + sequence behind one pinned upstream.
-func upstreamChain(action *Node, features chainFeatures) []*Node {
-	source := str(get(action, "source"))
-	key := EntryKey(get(action, "upstream"), source)
-	plugins := []*Node{M("tag", ForwardPrefix+key, "type", "forward", "args", M("upstreams", L(clone(get(action, "upstream")))))}
+func upstreamChain(action RuleAction, features chainFeatures) []*Node {
+	source := action.Source
+	key := action.Key()[len("upstream:"):]
+	plugins := []*Node{M("tag", ForwardPrefix+key, "type", "forward", "args", M("upstreams", L(clone(action.Upstream))))}
 	steps := L(M("exec", "drop_resp"))
 	if source == "local" {
 		for _, name := range RealWrappers {
@@ -182,11 +214,11 @@ func upstreamChain(action *Node, features chainFeatures) []*Node {
 // first-use order; actions (rule_actions) supply pinned upstreams, features
 // the china_dns hooks copied into local chains.
 func HelperPlugins(routes []string, actions *Node, features chainFeatures) ([]*Node, error) {
-	pinned := map[string]*Node{}
-	pairs(actions, func(_ string, action *Node) bool {
-		if str(get(action, "action")) == "upstream" {
-			if key := RouteKey(action); pinned[key] == nil {
-				pinned[key] = action
+	pinned := map[string]RuleAction{}
+	pairs(actions, func(_ string, node *Node) bool {
+		if action := actionOf(node); action.Action == "upstream" {
+			if _, seen := pinned[action.Key()]; !seen {
+				pinned[action.Key()] = action
 			}
 		}
 		return true
@@ -201,10 +233,11 @@ func HelperPlugins(routes []string, actions *Node, features chainFeatures) ([]*N
 		if route == "blackhole" {
 			result = append(result, clone(blackholeNode))
 		} else if strings.HasPrefix(route, "upstream:") {
-			if pinned[route] == nil {
+			action, ok := pinned[route]
+			if !ok {
 				return nil, fail("指定上游缺少上游地址，请重新选择")
 			}
-			result = append(result, upstreamChain(pinned[route], features)...)
+			result = append(result, upstreamChain(action, features)...)
 		}
 	}
 	return result, nil
