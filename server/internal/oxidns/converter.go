@@ -943,8 +943,12 @@ func templateDocument(s *templateSettings, p *Profile, baseURL string) (*Node, e
 		tags[tag.Value] = true
 	}
 	set(result, "plugins", plugins)
-	if policies := get(s.node, "device_policies"); len(items(policies)) > 0 {
-		return PatchDocument(result, L(), policies, nil)
+	policies, err := parsePolicies(get(s.node, "device_policies"))
+	if err != nil {
+		return nil, err
+	}
+	if len(policies) > 0 {
+		return PatchDocument(result, nil, policies, nil)
 	}
 	return result, nil
 }

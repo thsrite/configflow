@@ -48,11 +48,28 @@ func NormalizeClientRange(raw *Node) (string, error) {
 
 // NormalizePolicies validates device policy rows ({ip, name, mode}).
 func NormalizePolicies(value *Node) (*Node, error) {
+	rows, err := parsePolicies(value)
+	if err != nil {
+		return nil, err
+	}
+	return policyRowsNode(rows), nil
+}
+
+// parsePolicies validates device policy rows into typed rows.
+func parsePolicies(value *Node) ([]devicenotes.Policy, error) {
 	rows, err := devicenotes.ParsePolicies(ToJSON(value))
 	if err != nil {
 		return nil, fail(err.Error())
 	}
-	return policyRowsNode(rows), nil
+	return rows, nil
+}
+
+// storedRows are the validated device_policies of settings ([] when absent).
+func storedRows(settings *Node) ([]devicenotes.Policy, error) {
+	if !has(settings, "device_policies") {
+		return []devicenotes.Policy{}, nil
+	}
+	return parsePolicies(get(settings, "device_policies"))
 }
 
 func keyNodes(m *Node) []*Node {
@@ -69,14 +86,13 @@ func Revision(settings *Node) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func policyPlugin(rows *Node) *Node {
+func policyPlugin(rows []devicenotes.Policy) *Node {
 	var direct []string
 	cidr := false
-	for _, row := range items(rows) {
-		ip := str(get(row, "ip"))
-		cidr = cidr || strings.Contains(ip, "/")
-		if str(get(row, "mode")) == "direct" {
-			direct = append(direct, ip)
+	for _, row := range rows {
+		cidr = cidr || strings.Contains(row.IP, "/")
+		if row.Mode == "direct" {
+			direct = append(direct, row.IP)
 		}
 	}
 	if len(direct) == 0 {
@@ -87,9 +103,9 @@ func policyPlugin(rows *Node) *Node {
 			M("matches", L("client_ip "+strings.Join(direct, " ")), "exec", "goto "+DirectTag), M("exec", "return")))
 	}
 	// More specific ranges override broader ones.
-	sorted := append([]*Node{}, rows.Content...)
-	key := func(row *Node) netip.Prefix {
-		p, _ := netipx.ParseNetwork(str(get(row, "ip")), true)
+	sorted := slices.Clone(rows)
+	key := func(row devicenotes.Policy) netip.Prefix {
+		p, _ := netipx.ParseNetwork(row.IP, true)
 		return p
 	}
 	sort.SliceStable(sorted, func(i, j int) bool {
@@ -105,10 +121,10 @@ func policyPlugin(rows *Node) *Node {
 	args := L()
 	for _, row := range sorted {
 		exec := "return"
-		if str(get(row, "mode")) == "direct" {
+		if row.Mode == "direct" {
 			exec = "goto " + DirectTag
 		}
-		args.Content = append(args.Content, M("matches", L("client_ip "+str(get(row, "ip"))), "exec", exec))
+		args.Content = append(args.Content, M("matches", L("client_ip "+row.IP), "exec", exec))
 	}
 	args.Content = append(args.Content, M("exec", "return"))
 	return M("tag", PolicyTag, "type", "sequence", "args", args)
@@ -509,7 +525,7 @@ func orderedPlugins(document *Node) (map[string]*Node, []string) {
 	return plugins, order
 }
 
-func patchPolicies(document, previous, rows *Node, p *Profile) (*Node, EntryReport, error) {
+func patchPolicies(document *Node, previous, rows []devicenotes.Policy, p *Profile) (*Node, EntryReport, error) {
 	document = clone(document)
 	plugins, order := orderedPlugins(document)
 	if err := checkMain(document, plugins); err != nil {
@@ -556,12 +572,12 @@ func patchPolicies(document, previous, rows *Node, p *Profile) (*Node, EntryRepo
 
 // PatchDocument owns exactly two plugins and one hook in sequence_main;
 // altered or ambiguous chains are refused. previous/rows are policy rows.
-func PatchDocument(document, previous, rows *Node, p *Profile) (*Node, error) {
+func PatchDocument(document *Node, previous, rows []devicenotes.Policy, p *Profile) (*Node, error) {
 	doc, _, err := patchPolicies(document, previous, rows, p)
 	return doc, err
 }
 
-// PolicyView is read_policies' answer.
+// PolicyView is read_policies' answer; Policies are the rows as policy objects.
 type PolicyView struct {
 	Policies    *Node       `json:"-"`
 	Editable    bool        `json:"editable"`
@@ -576,20 +592,16 @@ func ReadPolicies(settings *Node, p *Profile) (PolicyView, error) {
 	if err != nil {
 		return PolicyView{}, err
 	}
-	stored := get(settings, "device_policies")
-	if !has(settings, "device_policies") {
-		stored = L()
-	}
-	rows, err := NormalizePolicies(stored)
+	rows, err := storedRows(settings)
 	if err != nil {
 		return PolicyView{}, err
 	}
-	for _, row := range rows.Content {
-		if name, ok := names[str(get(row, "ip"))]; ok {
-			set(row, "name", S(name))
+	for i, row := range rows {
+		if name, ok := names[row.IP]; ok {
+			rows[i].Name = name
 		}
 	}
-	view := PolicyView{Policies: rows, SideEntries: []SideEntry{}}
+	view := PolicyView{Policies: policyRowsNode(rows), SideEntries: []SideEntry{}}
 	current, err := PrepareEditor(settings, p, "")
 	if err == nil {
 		var doc *Node
@@ -609,8 +621,8 @@ func ReadPolicies(settings *Node, p *Profile) (PolicyView, error) {
 }
 
 // ApplyPolicies stores new rows and patches the native draft.
-func ApplyPolicies(settings *Node, p *Profile, rows *Node, baseURL string) (*Node, error) {
-	rows, err := NormalizePolicies(rows)
+func ApplyPolicies(settings *Node, p *Profile, value *Node, baseURL string) (*Node, error) {
+	rows, err := parsePolicies(value)
 	if err != nil {
 		return nil, err
 	}
@@ -618,11 +630,7 @@ func ApplyPolicies(settings *Node, p *Profile, rows *Node, baseURL string) (*Nod
 	if err != nil {
 		return nil, err
 	}
-	stored := get(current, "device_policies")
-	if !has(current, "device_policies") {
-		stored = L()
-	}
-	previous, err := NormalizePolicies(stored)
+	previous, err := storedRows(current)
 	if err != nil {
 		return nil, err
 	}
@@ -636,9 +644,9 @@ func ApplyPolicies(settings *Node, p *Profile, rows *Node, baseURL string) (*Nod
 	if err := setNativeConfig(current, document); err != nil {
 		return nil, err
 	}
-	set(current, "device_policies", rows)
+	set(current, "device_policies", policyRowsNode(rows))
 	if template := get(current, "template_settings"); isMap(template) {
-		set(template, "device_policies", clone(rows))
+		set(template, "device_policies", policyRowsNode(rows))
 	}
 	return current, nil
 }

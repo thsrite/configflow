@@ -24,6 +24,7 @@ import (
 	"testing"
 	"unicode"
 
+	"configflow/internal/devicenotes"
 	"configflow/internal/model"
 	"configflow/internal/testgolden"
 	"configflow/internal/yamlx"
@@ -646,7 +647,14 @@ func call(t *testing.T, r row, a []*Node) (*Node, error, bool) {
 		report, err := InspectEntries(a[0], plugins, order, profileOf(arg(1)))
 		return toNode(report), err, true
 	case "patch_document":
-		n, err := PatchDocument(a[0], a[1], a[2], profileOrNil(arg(3)))
+		var previous, rows []devicenotes.Policy
+		if err := json.Unmarshal(ToJSON(a[1]), &previous); err != nil {
+			return nil, err, true
+		}
+		if err := json.Unmarshal(ToJSON(a[2]), &rows); err != nil {
+			return nil, err, true
+		}
+		n, err := PatchDocument(a[0], previous, rows, profileOrNil(arg(3)))
 		return n, err, true
 	case "template_inputs":
 		return TemplateInputs(a[0], profileOrNil(arg(1))), nil, true
