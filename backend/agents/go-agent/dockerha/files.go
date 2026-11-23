@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"unicode/utf8"
+
+	"agent/internal/atomicfile"
 )
 
 // Failure is a refusal shown to the user verbatim; the command exits 1.
@@ -159,54 +161,17 @@ func writeJSON(path, prefix string, fields []field, replace bool) error {
 	if err != nil {
 		return fmt.Errorf("encode %s: %w", filepath.Base(path), err)
 	}
-	dir := filepath.Dir(path)
-	temp, err := createTemp(dir, prefix)
-	if err != nil {
-		return err
-	}
-	name := temp.Name()
-	defer os.Remove(name)
-	if err := writeSynced(temp, data); err != nil {
-		return err
-	}
-	if replace {
-		err = os.Rename(name, path)
-	} else {
-		err = os.Link(name, path)
-	}
-	if err != nil {
+	if err := atomicfile.WriteWith(path, data, 0o600, atomicfile.Options{
+		CreateTemp: func(dir string) (*os.File, error) { return createTemp(dir, prefix) },
+		Exclusive:  !replace,
+	}); err != nil {
 		return fmt.Errorf("publish %s: %w", filepath.Base(path), err)
-	}
-	return syncDir(dir)
-}
-
-func writeSynced(file *os.File, data []byte) error {
-	err := file.Chmod(0o600)
-	if err == nil {
-		_, err = file.Write(data)
-	}
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return fmt.Errorf("write %s: %w", filepath.Base(file.Name()), err)
 	}
 	return nil
 }
 
 func syncDir(dir string) error {
-	handle, err := os.Open(dir)
-	if err != nil {
-		return fmt.Errorf("open directory: %w", err)
-	}
-	defer handle.Close()
-	if err := handle.Sync(); err != nil {
-		return fmt.Errorf("sync directory: %w", err)
-	}
-	return nil
+	return atomicfile.SyncDir(dir)
 }
 
 // sameValue is equality of two decoded JSON values (nil for a missing key).

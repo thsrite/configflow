@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"agent/internal/atomicfile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -364,12 +365,13 @@ func saveReturnState(cfg *Config, state *returnRoutingState) error {
 	if err != nil {
 		return err
 	}
-	data, _ := json.MarshalIndent(state, "", "  ")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	return atomicfile.WriteWith(path, data, 0o600, atomicfile.Options{
+		Pattern: ".return-state-*",
+	})
 }
 
 // returnRoutingTools names every missing host tool at once, with install commands.

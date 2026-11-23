@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"agent/internal/atomicfile"
 	"agent/svc"
 )
 
@@ -147,33 +148,9 @@ func AtomicWrite(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".configflow-write-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if err = f.Chmod(mode); err == nil {
-		_, err = f.Write(data)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	closeErr := f.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(f.Name(), path); err != nil {
-		return err
-	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return atomicfile.WriteWith(path, data, mode, atomicfile.Options{
+		Pattern: ".configflow-write-*",
+	})
 }
 
 func Restore(snapshots []Snapshot) error {

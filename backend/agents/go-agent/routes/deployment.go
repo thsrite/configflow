@@ -3,6 +3,7 @@ package routes
 // A deployment is a write-ahead transaction. Nothing in the live directory is
 // changed before the backup is durable, and success is durable before cleanup.
 import (
+	"agent/internal/atomicfile"
 	"agent/upgrade"
 	"archive/tar"
 	"compress/gzip"
@@ -170,40 +171,14 @@ func durableWrite(name string, data []byte, mode os.FileMode) error {
 	if err := durableMkdirAll(filepath.Dir(name), 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(name), ".write-")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if err = f.Chmod(mode); err == nil {
-		_, err = f.Write(data)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	closeErr := f.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(tmp, name); err != nil {
-		return err
-	}
-	return syncDirectory(filepath.Dir(name))
+	return atomicfile.WriteWith(name, data, mode, atomicfile.Options{
+		Pattern: ".write-*",
+		SyncDir: syncDirectory,
+	})
 }
 
 // syncDirectory is a variable so tests can count directory flushes.
-var syncDirectory = func(name string) error {
-	f, e := os.Open(name)
-	if e != nil {
-		return e
-	}
-	defer f.Close()
-	return f.Sync()
-}
+var syncDirectory = atomicfile.SyncDir
 
 // syncDirectories flushes each directory of a batch of renames once.
 func syncDirectories(dirs map[string]bool) error {
@@ -780,36 +755,13 @@ func copyFileOwned(src, dst string, mode os.FileMode, uid, gid int) error {
 		return e
 	}
 	defer in.Close()
-	out, e := os.CreateTemp(filepath.Dir(dst), ".configflow-copy-")
-	if e != nil {
-		return e
-	}
-	tmp := out.Name()
-	defer os.Remove(tmp)
-	if uid >= 0 && gid >= 0 {
-		if info, statErr := out.Stat(); statErr != nil {
-			e = statErr
-		} else if oldUID, oldGID := fileOwnership(info); oldUID != uid || oldGID != gid {
-			e = out.Chown(uid, gid)
-		}
-	}
-	if e == nil {
-		e = out.Chmod(mode)
-	}
-	if e == nil {
-		_, e = io.Copy(out, in)
-	}
-	if e == nil {
-		e = out.Sync()
-	}
-	ce := out.Close()
-	if e == nil {
-		e = ce
-	}
-	if e != nil {
-		return e
-	}
-	return os.Rename(tmp, dst)
+	return atomicfile.WriteFrom(dst, in, mode, atomicfile.Options{
+		Pattern:     ".configflow-copy-*",
+		SetOwner:    uid >= 0 && gid >= 0,
+		UID:         uid,
+		GID:         gid,
+		SkipDirSync: true,
+	})
 }
 func managedPaths(cfg *Config, s *DeploymentState) ([]string, error) {
 	set := map[string]bool{}

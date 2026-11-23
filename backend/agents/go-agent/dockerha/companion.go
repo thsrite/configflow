@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"agent/internal/atomicfile"
 )
 
 // CompanionPaths are the files ha-companion-check reads and writes. The
@@ -303,18 +305,12 @@ func writeEvidence(paths CompanionPaths, identity []byte) error {
 	if err != nil {
 		return fmt.Errorf("encode evidence: %w", err)
 	}
-	temp := filepath.Join(dir, ".companion-"+strconv.Itoa(os.Getpid()))
-	file, err := os.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return fmt.Errorf("create evidence: %w", err)
-	}
-	if err := writeSynced(file, data); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, filepath.Join(dir, "companion.json")); err != nil {
+	if err := atomicfile.WriteWith(filepath.Join(dir, "companion.json"), data, 0o600, atomicfile.Options{
+		Pattern: ".companion-*",
+	}); err != nil {
 		return fmt.Errorf("publish evidence: %w", err)
 	}
-	return syncDir(dir)
+	return nil
 }
 
 func effectiveCapabilities(path string) (string, error) {

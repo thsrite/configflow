@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"syscall"
 	"unicode/utf8"
+
+	"agent/internal/atomicfile"
 )
 
 // The Compose installation without the bundle (install_method
@@ -200,20 +202,18 @@ func createHostIdentity(dir, path string) error {
 	if _, err := rand.Read(random[:]); err != nil {
 		return fmt.Errorf("random host identity: %w", err)
 	}
-	temp, err := createTemp(dir, ".host-id-")
-	if err != nil {
-		return err
-	}
-	name := temp.Name()
-	defer os.Remove(name)
-	if err := writeSynced(temp, []byte(hex.EncodeToString(random[:])+"\n")); err != nil {
-		return err
-	}
 	// Another project may have initialized this shared Docker volume.
-	if err := os.Link(name, path); err != nil && !errors.Is(err, os.ErrExist) {
+	err := atomicfile.WriteWith(path, []byte(hex.EncodeToString(random[:])+"\n"), 0o600, atomicfile.Options{
+		CreateTemp: func(d string) (*os.File, error) { return createTemp(d, ".host-id-") },
+		Exclusive:  true,
+	})
+	if errors.Is(err, os.ErrExist) {
+		return syncDir(dir)
+	}
+	if err != nil {
 		return fmt.Errorf("publish host identity: %w", err)
 	}
-	return syncDir(dir)
+	return nil
 }
 
 // PrepareDirect is `ha-compose prepare` in the init container.

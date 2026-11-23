@@ -6,6 +6,7 @@ package routes
 // reinstalling. The installers and this file must produce identical artifacts:
 // the shared sysctl.d file, the boot hook and the in-place patched Agent service.
 import (
+	"agent/internal/atomicfile"
 	"agent/preflight"
 	"agent/upgrade"
 	"context"
@@ -688,32 +689,18 @@ func persistAIOForwarding(cfg *Config, prepareTUN bool) (result map[string]inter
 
 // The hard link is an atomic commit that refuses a file created concurrently.
 func aioCommitForwardingConfig(target string) error {
-	file, err := os.CreateTemp(aioSysctlDir, ".configflow-aio-forward.")
-	if err != nil {
-		return fmt.Errorf("IPv4 转发持久化目录不可写：%w", err)
-	}
-	temp := file.Name()
-	defer os.Remove(temp)
-	_, err = file.WriteString(aioForwardingContent)
+	err := atomicfile.WriteWith(target, []byte(aioForwardingContent), 0o644, atomicfile.Options{
+		Pattern:   ".configflow-aio-forward.*",
+		Exclusive: true,
+		SyncDir:   syncDirectory,
+	})
 	if err == nil {
-		err = file.Chmod(0644)
+		return nil
 	}
-	if err == nil {
-		err = file.Sync()
+	if errors.Is(err, os.ErrExist) && aioForwardingConfigManaged() {
+		return nil
 	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return fmt.Errorf("无法写入 IPv4 转发持久化文件：%w", err)
-	}
-	if err := os.Link(temp, target); err != nil {
-		if aioForwardingConfigManaged() {
-			return nil
-		}
-		return fmt.Errorf("无法提交 IPv4 转发持久化配置：%w", err)
-	}
-	return syncDirectory(aioSysctlDir)
+	return fmt.Errorf("无法提交 IPv4 转发持久化配置：%w", err)
 }
 
 func aioSysctlBootNotice(boot preflight.SysctlBootState) string {

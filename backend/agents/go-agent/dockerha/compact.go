@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"agent/internal/atomicfile"
 )
 
 // The compact Compose installation (the panel's default, install_method
@@ -367,19 +369,13 @@ func openCompactLock(path string) (*os.File, error) {
 
 // writeIdentity exclusively publishes the installation identity file.
 func writeIdentity(path, value, owner string) error {
-	temp, err := createTemp(filepath.Dir(path), ownerTempPrefix(owner))
-	if err != nil {
-		return err
-	}
-	name := temp.Name()
-	defer os.Remove(name)
-	if err := writeSynced(temp, []byte(value+"\n")); err != nil {
-		return err
-	}
-	if err := os.Link(name, path); err != nil {
+	if err := atomicfile.WriteWith(path, []byte(value+"\n"), 0o600, atomicfile.Options{
+		CreateTemp: func(dir string) (*os.File, error) { return createTemp(dir, ownerTempPrefix(owner)) },
+		Exclusive:  true,
+	}); err != nil {
 		return fmt.Errorf("publish installation identity: %w", err)
 	}
-	return syncDir(filepath.Dir(path))
+	return nil
 }
 
 // RunCompact verifies or claims the installation and enrolls the Agent.

@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"agent/internal/atomicfile"
 	"agent/svc"
 )
 
@@ -167,37 +168,13 @@ func encode(members []member) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// replaceFile writes path.tmp (0600), syncs it, renames it over path and
-// syncs the directory.
+// replaceFile atomically writes path (0600), syncs it, renames it over path
+// and syncs the directory.
 func replaceFile(path string, data []byte) error {
-	temp := path + ".tmp"
-	file, err := os.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", filepath.Base(temp), err)
-	}
-	err = file.Chmod(0o600)
-	if err == nil {
-		_, err = file.Write(data)
-	}
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return fmt.Errorf("write %s: %w", filepath.Base(temp), err)
-	}
-	if err := os.Rename(temp, path); err != nil {
+	if err := atomicfile.WriteWith(path, data, 0o600, atomicfile.Options{
+		Pattern: "." + filepath.Base(path) + "-*.tmp",
+	}); err != nil {
 		return fmt.Errorf("replace %s: %w", filepath.Base(path), err)
-	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return fmt.Errorf("open directory: %w", err)
-	}
-	defer dir.Close()
-	if err := dir.Sync(); err != nil {
-		return fmt.Errorf("sync directory: %w", err)
 	}
 	return nil
 }
