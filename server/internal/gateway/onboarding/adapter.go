@@ -201,6 +201,11 @@ func SetAdoptOwnedWrite(fn AdoptOwnedWrite) func() {
 	adoptHook.Unlock()
 	return func() { adoptHook.Lock(); adoptHook.fn = previous; adoptHook.Unlock() }
 }
+
+// RegisteredAdoptOwnedWrite returns the package-level owner installed by
+// server wiring (wiring checks; removed with the hook in W11).
+func RegisteredAdoptOwnedWrite() AdoptOwnedWrite { return currentAdopter() }
+
 func currentAdopter() AdoptOwnedWrite {
 	adoptHook.RLock()
 	defer adoptHook.RUnlock()

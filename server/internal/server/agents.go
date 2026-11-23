@@ -52,6 +52,9 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 		gen.deploy = newDeployService(deploy.Options{})
 		agents.RegisterHooks(agents.Hooks{ReceiptMatches: deploy.ReceiptMatches})
 		rulesync.WireOn(rt)
+		// Finished rule-source refreshes wake the package rule-sync loop, on
+		// this App's refresh Service (no once-only subscription).
+		gen.refresh.OnRulesRefreshed(rulesync.WakeLoop)
 		dnsfollow.RegisterOn(rt)
 		dnsha.RegisterOn(rt)
 		metrics.WireOn(rt)

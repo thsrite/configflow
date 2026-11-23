@@ -96,6 +96,11 @@ func applyMihomoIntegrations(dst *MihomoIntegrations, hooks MihomoIntegrations) 
 		dst.FullTun = hooks.FullTun
 	}
 }
+
+// CurrentMihomoIntegrations returns a snapshot of the installed integrations
+// (wiring checks; transitional with the package-level state, O17 D2).
+func CurrentMihomoIntegrations() MihomoIntegrations { return currentIntegrations() }
+
 func currentIntegrations() MihomoIntegrations {
 	integrationState.RLock()
 	defer integrationState.RUnlock()

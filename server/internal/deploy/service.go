@@ -65,6 +65,19 @@ func UseService(svc *Service) {
 	defaultSvcMu.Unlock()
 }
 
+// Validate reports a required collaborator that server wiring left unset: the
+// HA pair publisher (without it every HA member fails closed) and the IPv6
+// enrollment (without it publications silently skip IPv6 readiness).
+func (s *Service) Validate() error {
+	if s.pairPublisher() == nil {
+		return ErrPairPublisherMissing
+	}
+	if s.ipv6Enroller() == nil {
+		return ErrIPv6EnrollerMissing
+	}
+	return nil
+}
+
 func (s *Service) pairPublisher() PairPublisher {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

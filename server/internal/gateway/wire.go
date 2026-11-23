@@ -12,7 +12,7 @@ import (
 
 // Wire registers the gateway functions the Mihomo generator and its base
 // settings checks call (convert.MihomoHooks: ApplyLinuxGateway,
-// GatewayEnabled, FakeIPNetworkError, MihomoDNSLoop). Listed in server.wirePackages.
+// GatewayEnabled, FakeIPNetworkError, MihomoDNSLoop). Production wiring installs Hooks() from server.New; Wire is for tests.
 func Wire() {
 	if err := convert.SetMihomoIntegrations(Hooks()); err != nil && !errors.Is(err, convert.ErrMihomoIntegrationsAlreadySet) {
 		panic(err)

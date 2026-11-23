@@ -35,9 +35,7 @@ func wireRuleSource(rs *rulesource.Service) {
 	gateway.SetRuleSourceReader(rs.ReadGateway)
 }
 
-// wireSetupContent joins the shared rulesource owner for setup route reads.
-func wireSetupContent() { wireSetupContentWith(rulesource.Default()) }
-
+// wireSetupContentWith joins the shared rulesource owner for setup route reads.
 func wireSetupContentWith(rs *rulesource.Service) {
 	if rs == nil {
 		rs = rulesource.Default()

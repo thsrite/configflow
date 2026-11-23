@@ -7,7 +7,6 @@ import (
 	"configflow/internal/routers"
 	"context"
 	"net/http/httptest"
-	"reflect"
 	"slices"
 	"testing"
 
@@ -55,7 +54,7 @@ func TestIPv6RouterHostOwnerRegistration(t *testing.T) {
 		t.Fatal(e)
 	}
 	names := lifecycle.Names()
-	if !slices.Contains(names, "ipv6-verification-scheduler") || reflect.ValueOf(wirePackages[len(wirePackages)-1]).Pointer() != reflect.ValueOf(wireIPv6).Pointer() {
-		t.Fatal("A23 scheduler not registered last", names)
+	if !slices.Contains(names, "ipv6-verification-scheduler") {
+		t.Fatal("A23 scheduler not registered", names)
 	}
 }

@@ -3,7 +3,6 @@ package rulesync
 import (
 	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
-	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"context"
 	"sync"
@@ -42,17 +41,15 @@ var loop = agents.NewWaker(PollInterval, IdleFallback)
 // refreshed and the shared rule files may have changed.
 func WakeLoop() { loop.Wake() }
 
-var wakeOnce sync.Once
-
 // Wire registers rule sync on the default lifecycle runtime.
 func Wire() { WireOn(lifecycle.Current()) }
 
-// WireOn registers rule sync on rt.
+// WireOn registers rule sync on rt. The server subscribes WakeLoop to its
+// refresh Service's OnRulesRefreshed event.
 func WireOn(rt *lifecycle.Runtime) {
 	if rt == nil {
 		rt = lifecycle.Current()
 	}
-	wakeOnce.Do(func() { refresh.OnRulesRefreshed(WakeLoop) })
 	rt.RegisterPeriodic(lifecycle.Periodic{Name: "agent-rule-sync", Start: lifecycle.AfterFirstRequest, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
 		s, e := Get(ctx)
 		if e != nil {

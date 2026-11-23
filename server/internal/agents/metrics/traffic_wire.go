@@ -75,7 +75,7 @@ func deleteTrafficStore(ctx context.Context, agentID string) error {
 	return store.DeleteContext(ctx, agentID)
 }
 
-// WireTraffic is A05's entry in internal/server wirePackages: the registry
+// WireTraffic is A05's entry in the server wiring (server.New): the registry
 // hook that drops an Agent's traffic history (AgentManager.delete_agent) and
 // the per-Agent traffic store the DELETE route clears. The traffic history has
 // no loop or task row of its own.

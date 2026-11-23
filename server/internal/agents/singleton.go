@@ -95,8 +95,8 @@ func SnapshotAgents(ctx context.Context, manager *Manager) ([]model.Agent, error
 	return records, nil
 }
 
-// Wire is the registry's entry in internal/server wirePackages: the
-// notification list's Agent source.
+// Wire is the registry's entry in the legacy NewApp wiring: the notification
+// list's Agent source (server.New passes Manager.NotificationAgents instead).
 func Wire() {
 	notifications.SetInputs(notifications.Inputs{Agents: NotificationAgents})
 }

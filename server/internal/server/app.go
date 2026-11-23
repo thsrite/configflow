@@ -100,6 +100,9 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if err := wireOtherSubsystems(rt, tk, gen, rs); err != nil {
 		return nil, err
 	}
+	if err := gen.deploy.Validate(); err != nil {
+		return nil, err
+	}
 	if err := tk.Validate(); err != nil {
 		return nil, err
 	}

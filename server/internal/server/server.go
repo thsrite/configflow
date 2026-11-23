@@ -5,9 +5,9 @@
 // Adding a route package: append its Register to routePackages (in the
 // position of its blueprint in backend/routes/__init__.py; tasks and the
 // notification list stay last because they only register once every
-// provider is wired). Adding a background loop or a repository hook: do it
-// from the package's own Register/Wire function with lifecycle.Loop or
-// repo.RegisterHooks; list that function in wirePackages.
+// provider is wired). Adding a background loop or a cross-package callback:
+// construct or register it in New (app.go) on the App's Runtime and service
+// instances, in the order wireSubsystems documents.
 package server
 
 import (
@@ -18,14 +18,6 @@ import (
 	"strconv"
 	"strings"
 
-	"configflow/internal/agents"
-	"configflow/internal/agents/dnsfollow"
-	"configflow/internal/agents/dnsha"
-	agentipv6 "configflow/internal/agents/ipv6"
-	"configflow/internal/agents/metrics"
-	"configflow/internal/agents/monitor"
-	"configflow/internal/agents/rulesync"
-	"configflow/internal/aggregations"
 	apiagents "configflow/internal/api/agents"
 	apiaggregations "configflow/internal/api/aggregations"
 	apiauth "configflow/internal/api/auth"
@@ -49,17 +41,9 @@ import (
 	apisetup "configflow/internal/api/setup"
 	apistats "configflow/internal/api/stats"
 	apisubscriptions "configflow/internal/api/subscriptions"
-	"configflow/internal/convert/mihomoenv"
-	"configflow/internal/deploy"
-	"configflow/internal/discovery"
-	"configflow/internal/gateway"
-	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/mcp"
-	"configflow/internal/refresh"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
-	"configflow/internal/substore"
 )
 
 // routePackages are the Register functions of the ported blueprints.
@@ -90,48 +74,6 @@ var routePackages = []func(*httpx.Router){
 	apidiscovery.Register,
 }
 
-// wirePackages run before the routes are registered (hooks, loops,
-// providers).
-var wirePackages = []func(){
-	deploy.Wire,
-	rulesync.Wire,
-	apiagents.WireContentSync,
-	aggregations.Wire,
-	agents.Wire,
-	dnsfollow.Register,
-	dnsha.Register,
-	metrics.Wire,
-	metrics.WireTraffic,
-	monitor.Wire,
-	substore.Wire,
-	refresh.Wire,
-	health.Wire,
-	discovery.Wire,
-	mihomoenv.Wire,
-	routers.Wire, // routers R01: repo.Hooks.RedactRouters
-	wireSetupContent,
-	wireSetupOnboarding,
-	wireSetupInstallation,
-	wireSetupRouter, // config C36 ← routers: managed-router completion preview
-	apirules.Wire,   // config C32: shared source loader for gateway providers
-	gateway.Wire,    // agents A19: convert.MihomoHooks Linux gateway
-	wireIPv6,        // A23 Manager-init hook is registered last
-}
-
-func wireIPv6() {
-	agentipv6.Wire(apiagents.ContentChecker)
-	routers.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (routers.IPv6Host, error) {
-		m, err := agents.Get(ctx)
-		if err != nil {
-			return routers.IPv6Host{}, err
-		}
-		if agent == nil {
-			return (&agentipv6.Service{Manager: m}).Host(ctx, nil)
-		}
-		return (&agentipv6.Service{Manager: m}).Host(ctx, agent.Agent)
-	}
-}
-
 func wireCore() {
 	repo.RegisterHooks(repo.Hooks{DefaultServerDomain: defaultServerDomain})
 }
@@ -150,7 +92,10 @@ func defaultServerDomain() string {
 // NewApp builds the full application via New with default Options (test helper
 // during the W1-W11 migration).
 func NewApp() *httpx.App {
-	app, _ := New(context.Background(), Options{})
+	app, err := New(context.Background(), Options{})
+	if err != nil {
+		panic("server.NewApp: " + err.Error())
+	}
 	return app.HTTP
 }
 

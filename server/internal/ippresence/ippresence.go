@@ -12,10 +12,9 @@
 // returns nil, and callers then keep the previous assumption that a
 // classical set has IP lines.
 //
-// Nobody imports this package: internal/oxidns reaches PeekTypedClassicalIPLines
-// through oxidns.SetNativeClassicalIPLines, registered by Wire (listed in
-// server.wirePackages), which also registers routers R02's
-// convert.MihomoIntegrations.FullTun.
+// internal/oxidns imports this package and calls PeekTypedClassicalIPLines
+// directly (O17 W0); routers R02's convert.MihomoIntegrations.FullTun is
+// installed by internal/gateway.
 package ippresence
 
 import (
