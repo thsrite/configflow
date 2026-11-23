@@ -490,3 +490,8 @@ deadcode 以 `cmd/configflow`、`cmd/configflow-autoupdate` 为入口；只被�
 未做（留给后续）：前-1 死代码（等 T1d）；`hasControl`×4、`pathExists`×4、`contains`×5、sha256 `digest`×5、`readBody`×6（不在本次指派范围）；
 `metrics.naiveNow` 本地时间冒充 UTC（1.12 后半）；go-agent 的 11 份原子写；`store.Install`/`autoupdate.replaceFile`/Sub-Store 依赖目录
 的整目录换名（不是「写字节」型原子写）。
+
+### 1.5 + 3.7 设计（分支 `go-o17-wiring-plan`，2026-11-23）
+
+方案见 `design/o17-wiring.md`（routers 拆 13 个包、显式组装、R1–R10 + W0–W11 共 22 步，裁定点 D1–D14）；逐项清单在
+`design/o17-wiring/inventory.md`。等「运行状态收尾」合入后实施。

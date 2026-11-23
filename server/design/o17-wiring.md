@@ -27,10 +27,12 @@
    「运行中替换仓库」的语义。`internal/server` 改成 `server.New(Deps)` 一次性构造全部服务对象，依赖经结构体字段/构造参数传下去；
    跨包回调改成**在使用方定义的小接口**，由 server 把实现方的对象塞进去。`wirePackages`、各包 `Wire()`/`Register()`、
    `repo.RegisterHooks`/`agents.RegisterHooks`、`Set*`/`Reset*` 测试钩子全部删除；每个测试自己 `New(...)` 一份实例。
-3. **分步**（第 3 节）：R0–R9（拆 routers，10 步）+ W0–W11（组装，12 步），共 22 步，每步单独可编译、可测、可复核、能过 gate。
-   R 线和 W 线前半段改的是不同的包，**可以两位 agent 并行**；W 线里按子系统分的步骤（W3–W8）在 W2 之后也可以并行。
-4. **需裁定**（第 4 节）：包名、`ros` 包导出面偏大（约 150 个导出名）、`api/*` 全部改成 `Handler` 结构体（380 个路由的处理函数
-   变成方法）是否在切换前做、`lifecycle` 全局运行时是否一并改成实例、测试钩子迁移的取舍。
+3. **分步**（第 3 节）：R1–R10（拆 routers，10 步）+ W0–W11（组装，12 步），共 22 步，另有可选的 W12（convert 生成环境显式传参）。
+   每步单独可编译、可测、可复核、能过 gate。R 线和 W0–W8 改的是不同的包，**可以两位 agent 并行**；W4 之后 W5/W6、W7、W8 再分给
+   第三位 agent；W10（api 处理器）可三路并行。合计约 27–29 个 agent 工作日，2–3 位 agent 约 2–2.5 周。
+4. **需裁定**（第 4 节，D1–D14）：最要紧的是 D1（Manager↔dnsha 双向依赖用两阶段 setter）、D2（convert 生成环境是否显式传参，
+   23 个测试文件）、D9（`setup.VerifyRouter` 生产里从未注册，是漏接还是有意）、D14（api 包全部改 `Handler` 结构体放切换前），
+   其余是包名、`ros` 导出面、临时别名、`auth`/`lifecycle` 的保留范围。
 
 ---
 
@@ -221,3 +223,266 @@ JSON：`encoding/json` 把嵌入结构体的字段摊平在嵌入的位置，所
 - pyref：`tools/pyref/sources.json` 的作用域目前不含 `internal/routers`（含 `routersplit`），R 线预计不需要重录；W 线改到作用域内的包
   （mosdns、oxidns、provider、deploy、discovery、routersplit）时，**必须同步 `sources.json` 并只重录 metadata**（batch-45/46 的教训，
   见 `70f60f2ed`）。
+
+---
+
+## 2. 显式组装（1.5）
+
+逐项清单（35 个 wire 条目、68 个 `Set*/Reset*/Register*/On*`、127 个含函数的包级变量、12 个 `init()`、服务定位器调用量）在
+**附录 B `o17-wiring/inventory.md`**，每行写了：谁填、谁用、为什么当初用钩子（逐个用 import 闭包核实有没有环）、改成什么、在哪个构造步骤提供、测试影响。
+本节只写规则和结论。
+
+### 2.1 事实（决定方案的前提）
+
+- **生产里每个服务对象都只有一份。** `repo.SetRepository` 只在 `cmd/configflow/service.go` 启动时调一次；导入、恢复、WebDAV 都在同一个
+  `*Repository` 上提交事务，没有运行中换仓库的路径。`agents.Init` 只在启动步骤 `agent-manager-init` 跑一次，「仓库变了就重建 Manager」
+  只有测试会走到（每个测试给 ctx 绑不同仓库）。所以 `repo.Repository`、`agents.Manager`、`substore.Service`、`webdav.Service`、
+  `lifecycle.Runtime`、规则同步/DNS 联动/HA/IPv6 服务都可以由 server 构造一次，按 Manager 或数据目录建的 map（dnsfollow、dnsha、
+  contentChecks、metrics、monitor、traffic）退化成单个字段。
+- **定位器调用量**：`repo.GetRepository` 158 处/46 包；`agents.Get` 56 处/13 包（api/agents 36）；`substore.Default` 10 处/7 包；
+  隐式取默认仓库的 `repo.ResolveProfileID` 等约 34 处；另有 `trafficstore.GetNative`、`health.GetProbeStore`、`notifications.TaskStatus`、
+  `rulesync.Get`、`metrics.For`、`dnsfollow/dnsha.ForManager` 等按 ctx/目录取实例的小定位器。
+- **钩子分四种**（附录 B 0 节）：
+  1. **其实没有环，可以直接 import/直接调用**（当初是照 Python 晚绑定或注释过时）：`RedactEasytierJSON`（repo 早已 import convert）、
+     `notifications` 的 `Rows/MissingTasks`（notifications 早已 import tasks）、`agents.Hooks` 里 agents 自己从不读的 5 个字段
+     （`PinnedWithheld`、`Address*`、`Installation*`，读的是 api 包）、`PublicationCheckpoint` 在 deploy 侧的读取、`deploy.SetGatewayGuards`、
+     `routersplit.SetSessionReader`、`oxidns.SetNativeClassicalIPLines`、`wireLoopWakes`、setup.go 的三个 `RegisterExternalOwners`；
+  2. **自己装自己**（同包，无需钩子）：`metrics.trafficFlush`、`monitor.historyFactory`、`api/agents.contentPrepare`、`discovery.collaboration`、
+     routers 的 `CaptureManual`/`ReportParts`/`RegisterRouterOSHandler`；
+  3. **死代码或重复**：`repo.Hooks.InitAgentManager`（`LoadConfig` 没有生产调用方）、`FullTun` 被 ippresence 和 gateway 各装一份（后者覆盖）、
+     metrics/substore 的 `RegisterStartup` 各注册两次（靠按名字去重才没事）；`setup.VerifyRouter` 生产里从未注册（裁定 D9）；
+     `mosdns.downloadRule` 在 init 时捕获 `rulefetch.DefaultClient`，测试替换对它无效（小 bug）；
+  4. **真环，必须注入**：`agents` ← metrics/monitor/dnsha/deploy/installation；`repo` ← configexport/routers/webdav/server；
+     `convert` ← mihomoenv/gateway/subs；`provider` ← deploy/aggregations；`tasks`/`notifications` 的行与运行器；
+     dnsha ↔ Manager/deploy/rulesync/monitor 双向。
+- 测试接缝（C 类）74 个，绝大多数是 `now`/`clock`/`randomHex`/`replaceFile` 一类，测试里约 150 处「改全局 → defer 恢复」。
+
+### 2.2 规则（W 线每一步都按这几条做）
+
+1. **构造参数优先**：每个有状态的包导出 `type Service struct{…}` + `func New(…) (*Service, error)`（或已有的类型名，如 `agents.Manager`），
+   依赖是必需参数；可选依赖放 `Options` 结构体，**nil 的含义必须和现在钩子未装时一样**（例如 HA 未接时成对发布 fail closed 返回
+   `ErrHAOwnerMissing`，安装注册未接时 501，`ReceiptMatches` 未接时 false）。不能因为改成构造参数而把 fail closed 变成 panic 或 fail open。
+2. **小接口定义在使用方**：`agents` 需要 HA 的三个动作，就在 `agents` 里定义 `type PairPublisher interface{ PairDeployment(…); ActivatePair(…); ServiceOperation(…) }`，
+   由 `*dnsha.Service` 实现；不在提供方定义「给别人用的接口」。
+3. **真双向依赖用两阶段，且只在 server 里**：`m.SetPairPublisher(ha)` 这类 setter 只允许在 `Start` 之前调用一次（第二次或启动后调用返回错误并
+   记日志，测试断言）；不是全局，是实例字段。用于：Manager↔dnsha、monitor↔dnsha、notifications↔Manager（Agent 列表）、provider↔aggregations、
+   settings↔weblistener（裁定 D5、D6）。
+4. **能直接 import 就直接 import**：上面第 1、2 种钩子直接删掉，不换成接口。
+5. **后台循环/启动/关停由 server 注册**：服务提供 `Loop() lifecycle.Periodic`、`Startup() lifecycle.Startup`、`Close(ctx)`，server 依次
+   `rt.RegisterPeriodic(svc.Loop())`；包里不再自己调全局 `lifecycle.RegisterPeriodic`。启动步骤顺序在 server 里写死一处（现在分散在 cmd 与各 Wire，
+   靠「按名字原地替换」维持顺序）。
+6. **任务页与通知用实例注册表**：`tasks.Registry`、`notifications.Service`；行构建器/运行器/间隔编辑器由服务构造时注册到实例上。
+   「late route」不再需要，改成构造完成后 `registry.Validate()` 检查槽位齐全。
+7. **请求作用域留在 ctx**：`repo.WithScope`（请求内快照缓存）、`lifecycle.Detach`/`Stopping(ctx)`/`SpawnerFrom(ctx)`（请求/任务生命周期）是
+   正当的 context 用法，保留；被删除的是「从 ctx 或全局里**找服务对象**」。`repo.ResolveProfileID(ctx, …)` 等改成 `(*Repository)` 的方法。
+8. **测试接缝**：`now`/`clock` 改成服务字段（`internal/clock` 已有接口），随机源、文件替换同理；只给测试用的 `Set*ForTest`/`Reset*` 删除，
+   测试自己 `New` 一份带 fake 的实例。确实只能在包级的（纯 memo 缓存、反射缓存、编译期常量函数，附录 B 的 D 类 34 项）保留（裁定 D10）。
+9. **`logx` 保留单例**（Logger 只是名字句柄），`auth` 的配置保留为只读单例或改成 `*auth.Gate` 由 server 传入（裁定 D7）。
+
+### 2.3 每个 wire 条目的去向（摘要；明细见附录 B 第 1 节 W01–W35）
+
+| 现在 | 改成 | W 步 |
+|---|---|---|
+| `wireCore`：notifications 输入、`DefaultServerDomain`、`RedactEasytierJSON` | 直接调用 `tasks`；`repo.Options{DefaultServerDomain}`；repo 直接调 convert | W0、W2 |
+| `deploy.Wire`、`aggregations.Wire` | `provider.New(Options{Locations, Aggregations})`（aggregations 两阶段，D6） | W7 |
+| `configexport.Wire`、`apinodes.Wire`、`routers.Wire` 的 repo 部分、`webdav.Wire` 的提交回调 | `repo.Options{Export: configexport.Exporter{…}, RouterJobLock: …}`；`planDeletion` 下沉到 repo；WebDAV 用 `r.OnCommit`（运行状态任务已加） | W2 |
+| `agents.Wire`、`rulesync.Wire`、`dnsfollow.Register`、`dnsha.Register`、`metrics.Wire/WireTraffic`、`monitor.Wire`、`upgrades.Wire`、`health.Wire`、`installation.Wire`、`wireIPv6` 的 agents 部分 | `agents.New(ctx, r, agents.Options{Runtime, Notifications, Metrics, Publication, Receipts, DeletedStores, …})`；HA 两阶段 `SetPairPublisher`；任务行由 `agenttasks` 组装；`upgrades`/`installation`/`PinnedWithheld` 改为 api 处理器直接调用；各服务 `New` + server 注册循环 | W5、W6 |
+| `substore.Wire`、`refresh.Wire`、`wireLoopWakes`、`mihomoenv.Wire`、`gateway.Wire`、`ippresence.Wire` | `substore.NewService`、`refresh.New`（`OnRulesRefreshed` 实例事件，`rulesync.New` 订阅）；convert 环境见 D2；`FullTun` 只留 gateway 一份；oxidns 直接 import ippresence | W0、W7 |
+| `wireSetupContent`、`apirules.Wire`（`routers.RulesetContent`、`gateway.SetRuleSourceReader`） | 规则内容读取从 `api/rules` 抽到新的领域包 `internal/rulesource`，`setup`/`gateway`/`routers`/`api/rules` 共用（spec 的 `ContentLoader` 参数由它提供） | W8 |
+| `wireSetupOnboarding`、`wireSetupInstallation`、`setupflow.Wire`、`wireGatewayGuards` | setup 直接 import onboarding（D4）；`setup.New(r, Options{Installation, Gateway})`；routersplit 直接调 setupflow；deploy 直接用 `host.Bridge` | W0、W8 |
+| routers：`IPv6HostRequest`、`CaptureManual`、`notifications.SetInputs{Summarize}`、tasks 行/运行器、`router-rule-sync` 循环、`NewRouterID` | `routers.New(r, Options{IPv6Hosts: ip /* *agentipv6.Service */, Rules: rs, ManualBaseline: rsync})`；`rulesync.New(...)`；`NewRouterID` → 服务字段 | W9 |
+| `apisettings.SetWebListener` | `settings.Handler` 的两阶段字段（D5） | W10 |
+| `routePackages`/`lateRoutePackages` | 每个 api 包 `New(Deps) *Handler` + `h.Register(r)`；顺序保持 | W10 |
+| cmd 的 `registerStartup` | server 里一处按序注册 | W1 |
+
+### 2.4 server 的新构造顺序
+
+```
+cmd/configflow.run
+  instance.Acquire → logx.Setup → auth.Configure（D7）
+  r  := repo.Open(dataDir, repo.Options{Export, RouterJobLock, DefaultServerDomain})        S1
+  rt := lifecycle.NewRuntime(...)                                                             S2
+  app, err := server.New(ctx, server.Options{Repo: r, Runtime: rt, Clock: clock.Real{}})
+server.New
+  S3  tk := tasks.NewRegistry(r, rt); nt := notifications.New(r, tk, …)
+  S4  subs 的共享拨号器作为值传入（替代 convert/subscription_dialers.go 的 init）
+  S5  sub := substore.NewService(env); rf := refresh.New(r, sub, rt, tk)
+  S6  pv := provider.New(r, sub, rf, …); agg := aggregations.New(pv, …); pv.SetAggregations(agg)   （D6）
+      cenv := mihomoenv.New(r, sub, rf, pv) + gateway 集成                                    （D2）
+  S6b rs := rulesource.New(r, rulefetch client)
+  S7  ts := trafficstore.New(dataDir); mon := monitor.New(dataDir, rt, …); mt := metrics.New(dataDir, rt, tk, ts)
+      hl := health.NewStores(dataDir); wd := webdav.New(r, rt, tk, nt)
+  S8  m := agents.New(ctx, r, agents.Options{Runtime: rt, Notifications: nt, Metrics: mt, Publication: mon,
+                       Receipts: deploy.ReceiptMatches, DeletedStores: […]}); nt.SetAgents(m)
+  S9  ha := dnsha.New(m, rt); m.SetPairPublisher(ha); mon.SetHARules(ha); follow := dnsfollow.New(m, rt, tk)
+  S10 dp := deploy.New(m, deploy.Options{Pair: ha, Guards: host.Bridge{…}, Monitor: mon})
+      cs := contentsync.New(m, dp); sub.OnContentChange(cs.Invalidate)
+      ip := agentipv6.New(m, cs, rt); rsync := rulesync.New(m, rt, tk, rulesync.Options{Pair: ha, Refresh: rf})
+      rr := routerrulesync.New(...); rtr := routers.New(r, routers.Options{IPv6Hosts: ip, Rules: rs, ManualBaseline: rr})
+      dc := discovery.New(r, m, ts, rt, tk)
+  S10b inst := installation.New(r, m); st := setup.New(r, setup.Options{Rules: rs, Installation: inst, Gateway: host.Bridge{…}})
+  S11 app := httpx.New(); 26 个 apiX.New(Deps{…}).Register(app.Router)（Flask blueprint 顺序）; tk.Validate(); auth.Install(app)
+  S12 rt.RegisterStartup(load-config, subscription-cache-prune, agent-load, metrics-load-history, webdav-worker-init)
+      rt.RegisterPeriodic(各服务 Loop())，顺序 = 现在 lifecycle.Names() 的顺序（测试断言）
+cmd：weblistener 建好后 settings 两阶段注入（D5）→ rt.RunStartup → Listen → rt.Start
+```
+
+每一步只接收已经构造好的实例；按附录 B 第 8 节的现有 import 分层逐步核过无环（`o17-wiring/reach2.py`）。
+
+### 2.5 测试怎么变
+
+- 现在 29 个测试文件用 `server.NewApp()`：改成 `server.New(ctx, server.Options{Repo: repotest.Open(t), Runtime: lifecycletest.New(t), …})`，
+  保留一个测试辅助 `servertest.New(t, opts…)`。
+- `repo.SetHooks`、`agents.ResetHooks/ResetRuntime`、`*.SetDefault`、`notifications.ResetInputs`、`lifecycle.Configure`（50 处）、
+  `SetMihomoEnvironment`（23 个文件，取决于 D2）等约 150 处「改全局再恢复」消失；测试可以 `t.Parallel()`。
+- `httpxtest` 现在靠「每个测试给 ctx 绑一个仓库」隔离；W11 后改成每个测试构造自己的 `server.App`。
+- 新增两个回归测试：`lifecycle` 循环/启动步骤名单与顺序和改造前一致；任务页行顺序与通知来源顺序一致（JSON 黄金）。
+
+---
+
+## 3. 分步计划
+
+### 3.0 每步通用验证（agent 自己跑，全部用 `rt` 在 .32/.64）
+
+- `gofmt -l` 无输出、`go vet ./...`（及 gate 里的两种 tag 组合）、`go build ./...`；
+- 本步改到的包及其直接导入方 `go test`（写设备、锁、并发、生命周期相关的包加 `-race`）；
+- 本步搬动了 pyref 作用域内包（mosdns、oxidns、provider、deploy、discovery、routersplit）的代码：更新 `tools/pyref/sources.json`，
+  `go run ./tools/pyref -check` 通过，只允许 metadata 变化；
+- 不跑全量 gate（协调者批量跑）。R 线开工前在 rebase 后的树上记一次 routerdiff `--allow-incomplete` 与 proddiff 基线（R0，不改代码），
+  之后的抽样都和它比「有没有新增差异」。
+- 复核（Opus）对「纯搬家」提交用 `git diff -M --stat` + `git diff -M` 确认只有包名/导出改名；对改签名/改分发/两阶段 setter 的提交逐行审。
+
+### 3.1 R 线：拆 `routers`（10 步，按顺序）
+
+通用做法（每步都一样）：`git mv` 文件到新目录、改 `package` 行、`goimports`；编译错误逐个按 1.3 表处理；未导出名被别的包用到时按 Go 习惯导出
+（`gofmt -r 'uniqueStrings(a) -> device.Unique(a)' -w` 批量改调用点）。**允许临时类型别名**：为了让 `api/routers`、`clients`、`agents/ipv6`
+等外部包在中间步骤不用跟着改，搬走的导出类型在 `routers` 里留 `type RouteEntry = device.RouteEntry` 这类别名（集中在一个
+`routers/aliases.go`，注释写「R10 删除」）；函数不留转发包装。R10 统一删除别名并改外部导入。
+
+| 步 | 内容 | 依赖 | 风险 | 验证（除通用项外） | 量 |
+|---|---|---|---|---|---|
+| R1 | 建 `routers/device`：搬 `model.go`（`RouterState`、`Driver`、`PolicyRoute`、`RetirePolicyRoutes`、`StaleRoutes`、`StaleRouteWarning` 暂留）、`plan_model`、`staticindex`、`dhcpdns`；1.3 第一行的小工具下沉；`messages.go` 里 11 条共用消息搬过去，其余暂留 | — | 低：纯搬家 | 无额外 | M（≈0.5 天） |
+| R2 | 建 `routers/ros`：`ros.Client` = 原 `RouterOS` 的连接/原语部分；`Row`、路径常量、批量、恢复、NAT 上下文、地址列表原语、脚本值、脱敏、`ros.Ownership`；1.3 第二行下沉。`routers` 里暂留 `type RouterOS struct{ *ros.Client }`，功能方法（72 个）先留在 `routers` 并把 `d.list(` 改成 `d.List(` 等；`ReadState` 与 `Apply` 分发移到 `routers/driver_routeros.go`，**删除 `RegisterRouterOSHandler` 和 6 个 `init()`**（分发改 `switch`） | R1 | 中：驱动是写设备的路径；`Apply` 分发改写、manifest 搬家 | routers 全部测试 `-race`；routerdiff 抽样（RouterOS 发布/回滚/恢复配方各 2 个）；`switch` 覆盖 13 种操作的表驱动测试（旧注册表的种类全集） | L（≈1–1.5 天） |
+| R3 | 建 `routers/ikuai`：`ikuai.Client` + 表单/批量/DHCP/IP 分组；`routers` 里暂留 `type Ikuai struct{ *ikuai.Client }`；`ReadState` 移到 `driver_ikuai.go`；`GroupReportSection`/`VerifyGroups` 收窄；`device.PolicyRoute(routes, comment)` | R1（与 R2 无冲突文件，**可并行**） | 中：iKuai 写路径 | routers 测试 `-race`；routerdiff iKuai 配方抽样 | M（≈1 天） |
+| R4 | 建 `routers/spec`：`router`、`stored_model`、`desired` + `DesiredDNSGuard`/`ROSPolicyDesired` 类型 + `routersOf`/`releaseRouterRecord`/`pendingProfile`/`findSyncRouter`；`setup`、`api/rules` 改 import（它们只用 spec 的东西） | R1 | 低 | `./internal/setup/... ./internal/api/rules/...` 测试 | M（≈0.5 天） |
+| R5 | 建 `routers/oplock`（`joblock`、`operation_group`、`routeLocks`、`RouterOperationLock`）和 `routers/routeedit`（`route_editor`、`routeros_routes`、`ikuai_routes`）；`routeedit.Device` 小接口代替 `Driver` | R2、R3、R4 | 中：锁层级（L1/L2）不能变 | `lockx.Violations()` 断言为空的现有测试；`-race` | M（≈0.5 天） |
+| R6 | `RouterState` 拆成 `device.State` + 编排包里的 `RouterState`（1.4）；1.4 表里的函数全部收窄；`ReportParts` 变量与 `init` 删除，`BuildReport` 显式调用各功能的报告段；`RoutesReport`/`NatReport`/`NatItem` 下沉 | R2–R5 | 中：JSON 成员顺序、报告段顺序 | 带 state 的接口 JSON 逐字节比对（现有黄金 + 新增 1 条覆盖 `dns_guard`/`ros_policy`/`nat_context` 都在的样本）；proddiff `/api/routers` GET；routerdiff 检查/待推送配方抽样 | M（≈1 天） |
+| R7 | 建 `routers/dnsguard`、`routers/fixedip`、`routers/clientlist`：功能方法改成包内 `type device struct{ *ros.Client }` 包装 + 导出入口函数（1.3「方法改函数」）；`fixedip.Device` 小接口；`clients` 改 import | R6 | 中 | 三个包与 `clients` 测试 `-race`；routerdiff DNS 守卫/固定 IP 配方抽样 | M（≈1 天；三包可在同一 agent 内分三个提交） |
+| R8 | 建 `routers/rospolicy`（策略路由 + NAT 地址列表 8 个文件） | R6 | 中–高：策略/NAT 写入、读回、恢复最复杂 | rospolicy 全部测试 `-race`；routerdiff 策略/NAT 列表配方抽样（含失败回滚）；R12 安全测试（`r12_safety`、`rospolicy_safety`）必须原样通过 | M–L（≈1 天） |
+| R9 | 建 `routers/ipv6`（18 个文件）；`ForwardInputs`；`agents/ipv6` 改 import，确认它不再 import 编排包（`go list -deps` 断言） | R8 | 中 | ipv6 测试 `-race`；`./internal/agents/ipv6/...`；routerdiff IPv6 配方抽样 | M（≈1 天） |
+| R10 | 建 `routers/rulesync`（10 个文件，在编排包之上）；`CaptureManual` 变量 → 编排服务字段（暂由 `routers` 的现有构造路径填，W 线再挪到 server）；删除 `aliases.go`，改 `api/routers`、`clients`、`agents/ipv6`、`api/clientdevices`、`server` 的导入；`messages.go` 拆完；新增 `routers/layers_test.go`（用 `go/parser` 读各包 import，按 1.2 的允许表断言，不 exec `go`）；更新 `ARCHITECTURE.md` 2.3/3.3/3.5 | R9 | 低–中：机械但面广 | 全部 routers 子包 + 外部导入方测试 `-race`；proddiff；routerdiff 一轮 `--allow-incomplete` 全量（只看与 R0 基线相比有无新增差异） | M（≈1 天） |
+
+R 线合计约 8–9 个工作日（单 agent 顺序）。R2/R3 可并行；R7 的三个包互相独立但都改 `driver_routeros.go` 的分发 `switch`，建议同一 agent 顺序做。
+
+### 3.2 W 线：显式组装（12 步 + 1 个可选）
+
+| 步 | 内容 | 依赖 | 风险 | 验证（除 3.0 外） | 量 |
+|---|---|---|---|---|---|
+| W0 | **先清理，不改结构**：删 `InitAgentManager`、ippresence 那份 `FullTun`、重复 `RegisterStartup`；2.1 第 1、2 种钩子改直接调用（`RedactEasytierJSON`、notifications 的 tasks 输入、agents.Hooks 不读的 5 个字段、`SetGatewayGuards`、`SetSessionReader`、`SetNativeClassicalIPLines`、`wireLoopWakes`、四个自己装自己）；修 `mosdns.downloadRule` 捕获问题 | — | 低 | 受影响包测试；`lifecycle.Names()` 与启动步骤名单前后一致 | M（≈1 天） |
+| W1 | `server.New(ctx, Options)`：把 cmd 的启动步骤注册搬进 server、`NewApp()` 变成测试辅助对它的包装；行为不变 | W0 | 低 | `./internal/server/... ./cmd/...`；启动顺序测试 | S（≈0.5 天） |
+| W2 | `repo`：`Hooks`/`RecordHooks` 全局 → `repo.Options` 实例字段（`RegisterHooks`/`SetHooks` 删除）；`planDeletion` 下沉；导出脱敏用 `configexport.Exporter` 小接口；仓库 `Open` 由 server 传 Options | W1 | 中：导出脱敏/路由器作业锁走错实例会泄露凭据或绕过锁 | repo、configexport、api/nodes、webdav 测试；导出脱敏黄金；proddiff 导出类用例 | M（≈1 天） |
+| W3 | `lifecycle`：注册类函数（`RegisterPeriodic/Startup/Shutdown`、`Configure`）改成 `*Runtime` 方法，全局 `defaultRuntime` 删除；`Detach`/`Stopping(ctx)`/`SpawnerFrom(ctx)`/`BindRequest` 保留 ctx 形式（D8）；各包的注册暂时由各自 `Wire` 拿 server 传来的 rt 调用 | W1 | 中：关停顺序、首请求启动 | lifecycle、o3 关停测试 `-race`；`Names()` 顺序测试 | M（≈1 天） |
+| W4 | `tasks.Registry`、`notifications.Service` 实例化（行构建器/运行器/间隔编辑器/输入改为实例方法；late route 改 `Validate()`） | W3 | 低–中：任务页行顺序 | 任务页 JSON 黄金、通知列表黄金；api/tasks、api/notifications 测试 | M（≈1 天） |
+| W5 | `agents.Manager`：`Hooks` → `agents.Options` + 两阶段 `SetPairPublisher`（D1）；`singleton`/`Get`/`Init`/`ResetRuntime`/`ResetHooks`/`OnManagerInit`/`OnAgentDeleted`/`SetRuleSyncRow`/`SetDNSFollowRow` 删除，Agent 任务行拼装搬到 `agents/agenttasks`；**`agents.Get` 暂时保留为读 server 注入的那个实例的薄函数**（W11 删） | W4 | **高**：部署状态机、HA fail closed、心跳路径 | agents 全部测试 `-race`；api/agents difftest；HA 未接时 fail closed 的负对照（1 条） | L（≈2 天） |
+| W6 | Agent 子领域：metrics、trafficstore、monitor、upgrades、dnsfollow、dnsha、rulesync、ipv6 各 `New`，按 Manager 的 map 变字段，循环由 server 注册 | W5 | **高**：HA 成对发布、规则同步、DNS 联动的唤醒 | 各包 `-race`；o17 运行状态任务新增的唤醒测试；api/agents difftest | L（≈2–3 天；可拆 W6a 指标/流量/监控/升级 与 W6b 联动/HA/规则同步/IPv6 两个 agent 并行） |
+| W7 | 生成链路：substore、refresh（实例事件 `OnRulesRefreshed`）、provider、aggregations、deploy、contentsync、mihomoenv（convert 环境按 D2 的决定）| W4 | 中：生成结果、provider 回退 | proddiff 生成类全量；config/subscriptions/aggregations difftest；pyref check（provider、deploy、mosdns、oxidns 在作用域内） | M–L（≈2 天） |
+| W8 | 新包 `internal/rulesource`（从 api/rules 抽出规则内容读取）；setup/setupflow/routersplit/gateway/onboarding/installation/host 的钩子改构造参数或直接调用（D4） | W4 | 中：向导、网关安装 | setup、gateway 系列、api/gatewayonboarding、api/linuxgateway difftest | M（≈1.5 天） |
+| W9 | routers 组装：`routers.New(Options{IPv6Hosts, Rules, ManualBaseline, …})`、`rulesync`（路由器）`New`，循环/任务行/通知摘要由 server 注册；`IPv6HostRequest`/`RulesetContent`/`NewRouterID` 变量删除 | R10、W5、W8 | 中 | routers 子包 `-race`；routerdiff 抽样 | M（≈1 天） |
+| W10 | api 包全部改 `Handler` 结构体（26 个入口，213 个路由注册，约 200 个处理函数）；可拆 W10a `api/agents`（66 条，按现有 `registerXxx` 分成几个子 Handler）、W10b routers/rules/rulelibrary/config/profiles/generate/mosdns/oxidns、W10c 其余，**三个 agent 并行** | W5–W9 | 中：面广但机械；鉴权门禁按 endpoint 名，不能改 endpoint 名 | 全部 difftest；proddiff；`routes.tsv` 380 条全部注册的现有测试；MCP 经 `App.Invoke` 的测试 | L（≈3 天，并行约 1–1.5 天） |
+| W11 | 删除定位器：`GetRepository`/`SetRepository`/`WithRepository`（D11）、`agents.Get`、`substore.Default/SetDefault`、`webdav.Default/SetDefault`、`trafficstore.GetNative`、`health.Get*Store`、`notifications.TaskStatus(ctx,dir)` 等；`repo` 包级 scope 函数改方法；`httpxtest`/`servertest` 改为每测试构造 App；所有 `Set*ForTest`/`Reset*` 删除；`ARCHITECTURE.md` 2.x/2.4、`AGENT-BRIEF.md` 更新 | W10 | 中：测试改动最多（约 150 处） | `go test ./...`（非 race）+ 受影响包 `-race`；随后协调者全量 gate | L（≈2 天） |
+| W12（可选，D2） | convert 生成环境显式传参：`convert` 入口改成 `convert.Env` 的方法，删除 `SetMihomoEnvironment`/`SetMihomoIntegrations` | W7 | 中 | 生成类全部黄金 + proddiff | L（≈2–3 天） |
+
+W 线合计约 18–20 个工作日（不含 W12）。
+
+### 3.3 并行与顺序
+
+```
+R1 ─┬─ R2 ─┐
+    ├─ R3 ─┼─ R5 ─ R6 ─ R7 ─ R8 ─ R9 ─ R10 ───────────────┐
+    └─ R4 ─┘                                                ├─ W9 ─┐
+W0 ─ W1 ─ W2 ─ W3 ─ W4 ─┬─ W5 ─ W6(a‖b) ────────────────────┘      ├─ W10(a‖b‖c) ─ W11
+                        ├─ W7 ───────────────────────────────────────┤
+                        └─ W8 ───────────────────────────────────────┘
+```
+
+- **R 线与 W0–W8 可以两位 agent 并行**：W0–W8 不碰 `internal/routers`（W0 若顺手碰到 routers 的钩子，留给 W9）。两线都改 `server/server.go`，
+  冲突小：W 线把组装拆到 `server/agents.go`、`server/generate.go`、`server/setup.go` 等按子系统的文件里，R 线只改 `routers` 那几行。
+- W7、W8 与 W5/W6 改不同的包，W4 之后可以并行（第三位 agent）。
+- 建议批次（协调者 gate）：批 1 = R1–R4 + W0–W1；批 2 = R5–R6 + W2–W4；批 3 = R7–R9 + W5；批 4 = R10 + W6–W8；批 5 = W9–W10；批 6 = W11（+W12）。
+  每批前 rebase 到最新 `go`。
+
+### 3.4 合计
+
+22 步（R1–R10、W0–W11）+ 1 个可选（W12）。工作量约 27–29 个 agent 工作日；按上面的并行（2–3 位 agent）约 2–2.5 周墙钟时间，
+不含 gate 排队与复核往返。HR（需要 Opus 对抗复核）：R2、R8（写设备）、W5、W6（Agent 状态机/HA）；其余普通复核。
+
+---
+
+## 4. 风险与需要裁定的点
+
+### 4.1 需裁定（协调者审，必要时问维护者）
+
+| 编号 | 问题 | 建议 |
+|---|---|---|
+| **D1** | Manager ↔ dnsha（以及 monitor↔dnsha）真双向依赖的处理（附录 B J1） | 两阶段 setter，只在 server、`Start` 前调一次；比「闭包前向引用」显式，比「把 HA 塞进 Manager」改动小 |
+| **D2** | convert 的生成环境：显式传参（W12，改所有生成入口和 23 个测试文件）还是保留「server 构造期设一次、之后只读」的包级环境 | 切换前做 W0–W11，W12 排在最后视时间决定；若不做，`SetMihomoEnvironment` 改成只能调用一次（第二次返回错误），去掉 restore |
+| **D3** | routers 新包名：`device`、`ros`、`ikuai`、`spec`、`oplock`、`routeedit`、`dnsguard`、`ipv6`、`fixedip`、`clientlist`、`rospolicy`、`rulesync` | 同意或改名；注意 `routers/ipv6` 与 `agents/ipv6`、`routers/rulesync` 与 `agents/rulesync` 同名（导入时要起别名，但各自目录语义清楚）。备选：`rosipv6`、`routersync` |
+| **D4** | setup 与 onboarding 谁 import 谁（两者现在互不 import） | setup → onboarding（DNS 纯函数直接调用），onboarding 的 `AdoptOwnedWrite` 用构造参数 |
+| **D5** | api/settings 与 weblistener 的晚绑定 | 保留一个两阶段字段（`settings.Handler.SetWebListener`），只在 cmd 建好 listener 后调一次 |
+| **D6** | provider ↔ aggregations、notifications ↔ Manager 的先后 | 两阶段 setter + 「已启动后不得再设」断言 |
+| **D7** | `auth`（29 个导入方，`auth.Require` 中间件到处用）改实例还是保留只读单例 | 保留只读单例：`Configure` 只能调用一次；不在本批改 |
+| **D8** | `lifecycle` 的 ctx 形式 API（`Detach` 289 处、`Stopping`、`SpawnerFrom`、`BindRequest`）保留 | 保留（context 承载生命周期是地道 Go）；只删全局注册与 `Configure` |
+| **D9** | `setup.ExternalOwners.VerifyRouter` 生产里从未注册，向导走到那一步一律「不可用」 | 需要确认：是漏接还是有意未移植。若漏接，W8 里由 routers 服务提供（单独登记行为变化） |
+| **D10** | 纯 memo/反射缓存（附录 B D 类 34 项）是否允许保留为包级变量 | 允许：键不含实例身份、内容不可变、无测试替换 |
+| **D11** | `repo.WithRepository`（httpxtest 依赖它隔离测试）是否随定位器一起删 | 一起删（W11），测试改为每测试构造 App |
+| **D12** | `ros` 包导出面约 150 个名字（其中约 100 个是为功能包导出的原语和路径常量） | 接受：它是 RouterOS REST 工具箱，6 个功能包都要用；可在 R10 后把行工具改成 `Row` 方法再收一轮 |
+| **D13** | R 线中间步骤允许临时类型别名（`aliases.go`，R10 删） | 允许：让每步小、外部包在中间步骤不跟着改 |
+| **D14** | api 包全部改 `Handler` 结构体（W10）放在切换前 | 维护者已要求 O17 结构项全部切换前完成；W10 是 1.5 的必要部分（处理函数是定位器的主要用户），建议做 |
+
+### 4.2 风险
+
+| 风险 | 触发 | 防护 |
+|---|---|---|
+| 钩子变构造参数后 fail closed 变 fail open（nil 被当成「允许」） | W2、W5、W6、W8 | 规则 2.2-1；每个「未接时拒绝」的钩子保留一条负对照测试（附录 B 标了哪些是 fail closed） |
+| 启动步骤/循环/任务行/通知来源的顺序变了 | W0、W1、W3、W4 | 名单与顺序黄金测试；现在靠「按名字原地替换」的隐式顺序改成 server 一处显式列表 |
+| `RouterState` JSON 成员顺序或报告段顺序变化 | R6 | 1.4 的字段顺序；带 state 接口逐字节比对；`BuildReport` 段顺序测试 |
+| `Apply` 分发漏掉一种操作 | R2 | 13 种操作的表驱动测试；`switch` 的 `default` 仍走 `c.Apply` 且对未知功能种类返回原来的错误文案 |
+| 锁层级（L1/L2/L3）在搬家后被打乱 | R5、W5 | `lockx.Violations()` 为空的现有测试；`-race` |
+| 两阶段 setter 在启动后被调用 / 漏调 | W5、W6、W7、W10 | setter 内断言 + 测试；server 构造完成后 `Validate()` 检查必需的两阶段依赖都已设置 |
+| 与「运行状态收尾」任务冲突（它改 routers `last_release` 和 agents 循环/启动） | 全部 | 它合入后再开工；R0 重新跑附录 A 脚本，数字有变化就更新本文 1.2/1.3 再动手 |
+| pyref 元数据失配（批 45/46 的教训） | W7、W8 及任何搬动作用域包的步骤 | 3.0 的 pyref 规则 |
+| `o10_r11_gate_test.go` 源码门禁扫描范围漏了新包 | R1–R10 | 每步跑 `./internal/server`；R10 核对门禁的包列表 |
+| 大 diff 难复核，复核者漏看语义变化 | R2、R6、W5、W10 | 纯搬家与改语义分提交；复核用 `git diff -M`；纯搬家提交里出现非改名改动即退回 |
+| 测试大改（约 150 处）时把测试改弱 | W11 | 复核规则：测试只允许把「改全局」换成「构造实例」，断言不得删减；`go test -count=1` 前后测试数对比 |
+
+---
+
+## 5. 工作量汇总
+
+| 线 | 步 | 量 | 合计 |
+|---|---|---|---|
+| R | R1 M、R2 L、R3 M、R4 M、R5 M、R6 M、R7 M、R8 M–L、R9 M、R10 M | 0.5/1.5/1/0.5/0.5/1/1/1/1/1 天 | ≈ 9 天 |
+| W | W0 M、W1 S、W2 M、W3 M、W4 M、W5 L、W6 L、W7 M–L、W8 M、W9 M、W10 L、W11 L | 1/0.5/1/1/1/2/2.5/2/1.5/1/3/2 天 | ≈ 18.5 天 |
+| W12（可选） | L | 2–3 天 | |
+
+---
+
+## 附录 A：分析脚本与原始数据（`design/o17-wiring/`）
+
+| 文件 | 用途 |
+|---|---|
+| `filedeps.go.txt` | 类型检查一个包目录，输出每个文件定义的顶层符号和文件间引用边（`go run` 前改名为 `.go` 并放到模块外的目录；第二个参数 `tests` 时包含测试文件） |
+| `globals.go.txt` | 全部非测试包里含函数的包级变量及写入/读取位置（输出即 `globals.txt`） |
+| `fields.go.txt` | 每个函数用到的 `RouterState`/`Desired`/`Report`/`Router` 字段（1.4 的来源） |
+| `routers-filedeps.txt`、`routers_files.txt` | 104 个非测试文件的依赖边与行数（batch-48 分支 `15ae7cb3c`） |
+| `layer.py` + `a4.py` | 按 1.2 的分配与允许表检查跨包引用；`python3 server/design/o17-wiring/layer.py server/design/o17-wiring/a4.py`（在仓库根目录跑）。当前输出剩 14 组「违规」，**全部**是 1.3/1.4 里要靠改签名、上移 `ReadState`、小接口、删 `ReportParts`/`CaptureManual` 消掉的（脚本不模拟签名修改），没有别的 |
+| `imports.json`、`hooks.txt`、`files.py`、`imports.py`、`reach.py`、`reach2.py` | 包级 import 表与「T 能否直接 import F」的闭包检查（附录 B 用） |
+
+重跑方法（.64，`RT_HOST` 固定）：把 `*.go.txt` 复制到服务器 `~/cfwire/*.go`，在 `server/` 下
+`go run ~/cfwire/filedeps.go internal/routers > routers-filedeps.txt`。
+
+## 附录 B：钩子/全局变量/定位器逐项清单
+
+见 `design/o17-wiring/inventory.md`（W01–W35、init 12 个、`repo.Hooks`/`agents.Hooks` 逐字段、68 个 `Set*/Reset*/Register*/On*`、
+127 个包级变量逐项分类、定位器调用量、api 包形状、现有依赖表、构造顺序 S0–S13、裁定点 J1–J12；本文 D1–D11 与 J1–J12 的对应：
+D1=J1、D2=J2、D6=J3、D4=J4、D5=J5、D7=J6、logx=J7（保留单例）、J8 并入 W0（`mosdns.downloadRule`）与 W7（HTTP 客户端注入）、D10=J9、D9=J10、D11=J11、J12=W0）。
