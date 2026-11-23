@@ -688,19 +688,35 @@ func persistAIOForwarding(cfg *Config, prepareTUN bool) (result map[string]inter
 }
 
 // The hard link is an atomic commit that refuses a file created concurrently.
+// Each stage keeps its own message: the panel shows them to the user.
 func aioCommitForwardingConfig(target string) error {
+	var created, written, linked bool
 	err := atomicfile.WriteWith(target, []byte(aioForwardingContent), 0o644, atomicfile.Options{
-		Pattern:   ".configflow-aio-forward.*",
-		Exclusive: true,
-		SyncDir:   syncDirectory,
+		CreateTemp: func(dir string) (*os.File, error) {
+			file, err := os.CreateTemp(dir, ".configflow-aio-forward.")
+			created = err == nil
+			return file, err
+		},
+		Exclusive:    true,
+		BeforeCommit: func() error { written = true; return nil },
+		SyncDir:      func(dir string) error { linked = true; return syncDirectory(dir) },
 	})
-	if err == nil {
+	switch {
+	case err == nil:
 		return nil
+	case !created:
+		return fmt.Errorf("IPv4 转发持久化目录不可写：%w", err)
+	case !written:
+		return fmt.Errorf("无法写入 IPv4 转发持久化文件：%w", err)
+	case !linked:
+		// Any link failure is fine when a managed file is already in place.
+		if aioForwardingConfigManaged() {
+			return nil
+		}
+		return fmt.Errorf("无法提交 IPv4 转发持久化配置：%w", err)
+	default:
+		return err
 	}
-	if errors.Is(err, os.ErrExist) && aioForwardingConfigManaged() {
-		return nil
-	}
-	return fmt.Errorf("无法提交 IPv4 转发持久化配置：%w", err)
 }
 
 func aioSysctlBootNotice(boot preflight.SysctlBootState) string {
