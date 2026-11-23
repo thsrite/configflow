@@ -98,6 +98,14 @@ invalid-UTF-8 test fix (core race PASS, compare PASS live 45/45, all fuzz PASS a
 Maintainer 2026-11-21: O10 acceptance numbers come from an LXC on PVE .6 (real host the panel will run on): Opus
 e44edb00, branch go-o10-pve, CT on cfgt, 2 cores/2 GB/cpuunits 50, no egress, Go and Python measured one after the
 other → server/parity/o10-pve-baseline.md + server/tools/o10perf/pve.sh.
+Maintainer 2026-11-23: O17 structural items ALL before the switch ("以后改起来费劲还不如现在就一次弄好"):
+② runtime state/history out of the config document + ① polling loops → change notifications (Opus 9147b51a,
+go-o17-runtime-state; DESIGN FIRST server/design/o17-runtime-state.md, coordinator rules before code); ③ typed
+structures for OxiDNS (1282 get()), RouterOS/iKuai rows, 6 CRUD request bodies (Opus 0616a4b0, go-o17-typed).
+O17 small pre-switch cleanup (Opus d26c4875, go-o17-pre): Python exception names, duplicate helpers, one atomic
+write with fsync, installer IPv4 bool/int → 400, no "HTTP None", splitlines → \n/\r\n/\r. Dead-code removal
+(前-1) after T1d merges. T1d review batch-42 (8a0b9b03): M3 ruling custom_config non-text → restrict, fail closed.
+
 batch-40 MERGED (O18 T8 metrics/rankings: database/sql transactions, sentinels; review: failed rollbacks logged,
 connection closed on open panic). R13 MERGED (shared PSL trie + o10perf memory breakdown). batch-41 MERGED 2026-11-23
 (O18 T2 provider flight key, T3 jsondecode on encoding/json/v2 (old/new differential fuzz equal), T4 repo sentinels,
