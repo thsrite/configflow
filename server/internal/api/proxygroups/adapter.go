@@ -86,13 +86,14 @@ func edit(ctx context.Context, id string, fn func(context.Context, *model.Config
 	})
 }
 
-// snapshot is an independent copy of config, unaffected by later edits.
-func snapshot(config *model.Config) (*model.Config, error) {
-	raw, err := model.Marshal(config)
-	if err != nil {
-		return nil, err
-	}
-	return model.DecodeConfig(raw)
+// profileBefore is the profile as it is before an edit. Group edits replace the
+// profile's members (new slices, new settings) instead of writing into them,
+// so a copy of the profile record is enough.
+func profileBefore(config *model.Config) *model.Config {
+	copy := *config
+	profile := *config.Profile
+	copy.Profile = &profile
+	return &copy
 }
 
 // fieldsOf is a stored group as sent members.

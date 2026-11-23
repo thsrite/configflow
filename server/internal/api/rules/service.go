@@ -88,17 +88,15 @@ func normalized(in *ruleInput, previous *model.RuleConfig, config *model.Config)
 	return nil
 }
 
-// profileView is the DNS view of a copy of config, unaffected by later edits.
+// profileView is the DNS view of config as it is before an edit. Rule edits
+// replace the profile's members (new slices, new settings) instead of writing
+// into them, and the view reads the rest when it is built, so a copy of the
+// profile record is enough.
 func profileView(config *model.Config) (*oxidns.Profile, error) {
-	raw, err := model.Marshal(config)
-	if err != nil {
-		return nil, err
-	}
-	snapshot, err := model.DecodeConfig(raw)
-	if err != nil {
-		return nil, err
-	}
-	return dnsProfile(snapshot)
+	copy := *config
+	profile := *config.Profile
+	copy.Profile = &profile
+	return dnsProfile(&copy)
 }
 func (s *Service) pinned(ctx context.Context, id string, ids []string) *bool {
 	resolved, err := repo.ResolveProfileID(ctx, id)

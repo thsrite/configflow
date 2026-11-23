@@ -68,10 +68,7 @@ func (s *Service) Create(ctx context.Context, id string, sent model.Fields, base
 		return out, err
 	}
 	err = edit(ctx, id, func(ctx context.Context, config *model.Config) error {
-		before, err := snapshot(config)
-		if err != nil {
-			return err
-		}
+		before := profileBefore(config)
 		groups := config.Profile.ProxyGroups
 		if err := validate(ctx, group, groups, nil); err != nil {
 			return err
@@ -95,10 +92,7 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, sent model.Fie
 		return out, err
 	}
 	err := edit(ctx, id, func(ctx context.Context, config *model.Config) error {
-		before, err := snapshot(config)
-		if err != nil {
-			return err
-		}
+		before := profileBefore(config)
 		groups := slices.Clone(config.Profile.ProxyGroups)
 		index := find(groups, groupID)
 		if index < 0 {
