@@ -269,6 +269,10 @@ func policyInterfaceBounded(s *PolicySnapshot, iface *string, name string, visit
 	visited[name] = true
 	defer delete(visited, name)
 	listMatch := func(key string) PolicyMatch {
+		// A null (nullMarker) or non-text list is unknown, never empty.
+		if structuredText(definition[key]) {
+			return PolicyUnknown
+		}
 		out := PolicyNoMatch
 		for _, nested := range strings.Split(definition.text(key), ",") {
 			if nested != "" {
@@ -308,6 +312,11 @@ func MatchPolicyRule(s *PolicySnapshot, row Row, p PolicyPacket) PolicyMatch {
 	out := PolicyMatches
 	for key, value := range row {
 		if policyMeta[key] || value == "" {
+			continue
+		}
+		if structuredText(value) {
+			// A non-text selector (JSON array or object) is unknown.
+			out = policyAnd(out, PolicyUnknown)
 			continue
 		}
 		v := value

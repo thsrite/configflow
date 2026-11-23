@@ -239,21 +239,18 @@ func markNulls(row Row, raw json.RawMessage, fields []string) {
 	}
 }
 
+// rosNullFields are the fields whose null every list read keeps as
+// nullMarker: a reader of the table refused that null before rows were text,
+// including the write paths (payload) that read rows through list.
+var rosNullFields = map[string][]string{
+	rosIPv6ND:         {"disabled", "dynamic", "invalid"},
+	rosDHCPNetworks:   {"dns-none"},
+	"/interface/list": {"include", "exclude"},
+}
+
 // strictList is list for a table whose readers refuse a null in fields.
 func (d *RouterOS) strictList(ctx context.Context, path string, fields ...string) ([]Row, error) {
-	value, err := d.get(ctx, path, rosTimeout)
-	if err != nil {
-		return nil, err
-	}
-	rows, ok := asRows(value)
-	var items []json.RawMessage
-	if !ok || jsondecode.Unmarshal(value, &items) != nil || len(items) != len(rows) {
-		return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
-	}
-	for i, item := range items {
-		markNulls(rows[i], item, fields)
-	}
-	return rows, nil
+	return d.listMarked(ctx, path, fields)
 }
 
 // replyKind is the first byte of a JSON value.
@@ -272,6 +269,12 @@ func (d *RouterOS) get(ctx context.Context, path string, timeout time.Duration) 
 }
 
 func (d *RouterOS) list(ctx context.Context, path string) ([]Row, error) {
+	return d.listMarked(ctx, path, nil)
+}
+
+// listMarked reads a table, keeping a null in fields (and in the table's
+// rosNullFields) as nullMarker.
+func (d *RouterOS) listMarked(ctx context.Context, path string, fields []string) ([]Row, error) {
 	value, err := d.get(ctx, path, rosTimeout)
 	if err != nil {
 		return nil, err
@@ -279,6 +282,16 @@ func (d *RouterOS) list(ctx context.Context, path string) ([]Row, error) {
 	rows, ok := asRows(value)
 	if !ok {
 		return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
+	}
+	table, _, _ := strings.Cut(path, "?")
+	if fields = append(slices.Clone(fields), rosNullFields[table]...); len(fields) > 0 {
+		var items []json.RawMessage
+		if jsondecode.Unmarshal(value, &items) != nil || len(items) != len(rows) {
+			return nil, routerError(fmt.Sprintf(messageROSListFormat, path))
+		}
+		for i, item := range items {
+			markNulls(rows[i], item, fields)
+		}
 	}
 	if path == rosFilter {
 		d.forwardFilterRows = rows
