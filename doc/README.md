@@ -22,6 +22,7 @@
 | 文档 | 解决什么问题 |
 | --- | --- |
 | [安装面板](guide/install.md) | Docker / NAS 的部署文件怎么填，账号、端口、保存目录是什么 |
+| [v3.0.0 升级说明](guide/upgrade-v3.md) | 从 v2.x（Python 版）升级到 Go 版的要求、存储 v2 注意事项、备份变化与操作步骤 |
 | [首次使用向导](guide/first-run.md) | 两种使用方式怎么选，每一步填什么，何时开始影响设备 |
 | [设备安装组合](guide/agent-install.md) | Shell / Docker、单服务 / 同机、安装核心 / 使用已有程序，各个勾选有什么结果 |
 | [RouterOS 容器安装](guide/routeros-install.md) | 用 WinBox 或命令行安装两个容器，接入面板、发布配置和恢复网络 |
@@ -83,6 +84,7 @@
 - [规则、订阅或安装文件下载失败](guide/troubleshooting.md#下载或更新失败)
 - [高可用没有切换，或两台显示异常](guide/oxidns-ha.md)
 - [备份、迁移与升级](manual/system-settings.md#备份与升级)
+- [从 v2.x 升级到 v3.0.0（Python → Go）](guide/upgrade-v3.md)
 
 ## 看懂文档里的提醒
 
