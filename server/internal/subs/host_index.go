@@ -13,6 +13,10 @@ type SourceMetadata struct {
 	URL     string       `json:"url"`
 	Hosts   *HostsData   `json:"hosts,omitzero"`
 	Dialers *DialersData `json:"dialers,omitzero"`
+	// DialersStored: the stored metadata has a dialers member (even null or
+	// damaged): the source's dialer decision is stored and the download is
+	// not consulted again (SourceDialers).
+	DialersStored bool `json:"-"`
 	// hostsDamaged: the stored hosts record has no entries object, so there
 	// is no host index (a missing map is not an empty valid one).
 	hostsDamaged bool
@@ -26,9 +30,14 @@ func (m *SourceMetadata) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	var members struct {
-		Hosts json.RawMessage `json:"hosts"`
+		Hosts   json.RawMessage `json:"hosts"`
+		Dialers json.RawMessage `json:"dialers"`
 	}
-	if jsondecode.Unmarshal(b, &members) != nil || m.Hosts == nil {
+	if jsondecode.Unmarshal(b, &members) != nil {
+		return nil
+	}
+	m.DialersStored = members.Dialers != nil
+	if m.Hosts == nil {
 		return nil
 	}
 	var hosts struct {

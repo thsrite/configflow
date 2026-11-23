@@ -1,6 +1,8 @@
 package subs
 
 import (
+	"encoding/json"
+
 	"configflow/internal/model"
 )
 
@@ -22,18 +24,20 @@ type HostsData struct {
 
 // DialerTarget is a supported subscription policy group and its flattened
 // members. type and members are always written; the health-check settings
-// only when the subscription's group had them.
+// only when the subscription's group had them, as the scalar the
+// subscription wrote (Python stores them as given). Generation reads them
+// typed and leaves out a value of another type (dialerSettings).
 type DialerTarget struct {
-	Type           string     `json:"type"`
-	Members        []string   `json:"members"`
-	URL            *string    `json:"url,omitzero"`
-	Interval       *model.Int `json:"interval,omitzero"`
-	Tolerance      *model.Int `json:"tolerance,omitzero"`
-	Lazy           *bool      `json:"lazy,omitzero"`
-	Timeout        *model.Int `json:"timeout,omitzero"`
-	ExpectedStatus *string    `json:"expected-status,omitzero"`
-	Strategy       *string    `json:"strategy,omitzero"`
-	MaxFailedTimes *model.Int `json:"max-failed-times,omitzero"`
+	Type           string          `json:"type"`
+	Members        []string        `json:"members"`
+	URL            json.RawMessage `json:"url,omitzero"`
+	Interval       json.RawMessage `json:"interval,omitzero"`
+	Tolerance      json.RawMessage `json:"tolerance,omitzero"`
+	Lazy           json.RawMessage `json:"lazy,omitzero"`
+	Timeout        json.RawMessage `json:"timeout,omitzero"`
+	ExpectedStatus json.RawMessage `json:"expected-status,omitzero"`
+	Strategy       json.RawMessage `json:"strategy,omitzero"`
+	MaxFailedTimes json.RawMessage `json:"max-failed-times,omitzero"`
 }
 
 // DialersData is the bounded subscription dialer metadata stored beside nodes.

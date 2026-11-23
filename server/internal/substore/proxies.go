@@ -85,9 +85,10 @@ func ProxyNodes(proxies []*yamlx.Node) ([]model.Node, error) {
 		if err != nil {
 			return nil, err
 		}
+		// A name, server or port of the wrong type reads as its zero value
+		// (accepted O18 T1c difference; Python kept the value).
 		var source model.Node
-		issues, err := model.DecodeStored(data, &source, "")
-		if err != nil {
+		if _, err := model.DecodeStored(data, &source, ""); err != nil {
 			return nil, err
 		}
 		if yamlx.Get(proxy, "name") == nil {
@@ -116,18 +117,6 @@ func ProxyNodes(proxies []*yamlx.Node) ([]model.Node, error) {
 		portJSON, err := jsonresp.Encode(source.Port)
 		if err != nil {
 			return nil, err
-		}
-		for _, field := range []struct {
-			name   string
-			target *[]byte
-		}{{"name", &nameJSON}, {"server", &serverJSON}, {"port", &portJSON}} {
-			if model.IssueUnder(issues, field.name) {
-				raw, err := yamlx.ToJSON(yamlx.Get(proxy, field.name))
-				if err != nil {
-					return nil, err
-				}
-				*field.target = raw
-			}
 		}
 		encoded, err := jsonresp.Encode(struct {
 			Name   json.RawMessage `json:"name"`

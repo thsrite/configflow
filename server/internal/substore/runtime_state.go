@@ -25,17 +25,25 @@ func (e *RuntimeStateError) Error() string {
 }
 
 // runtimeState is state.json: the members the runtime wrote (Python merges
-// each write into the previous file). invalidLastUsed: last_used is null or
-// not a number, which stops idle handling (RuntimeStateError).
+// each write into the previous file). error is kept as stored (Python wrote
+// it as given); invalidLastUsed: last_used is null or not a number, which
+// stops idle handling (RuntimeStateError); stored: the file had a member.
 type runtimeState struct {
-	State           *string  `json:"state,omitzero"`
-	Error           *string  `json:"error,omitzero"`
-	LastUsed        *float64 `json:"last_used,omitzero"`
+	State           *string         `json:"state,omitzero"`
+	Error           json.RawMessage `json:"error,omitzero"`
+	LastUsed        *float64        `json:"last_used,omitzero"`
 	invalidLastUsed bool
+	stored          bool
 }
 
-// errorText is the stored error ("" when absent).
-func (r *runtimeState) errorText() string { return model.TextValue(r.Error) }
+// errorText is the stored error as text ("" when absent or not text).
+func (r *runtimeState) errorText() string {
+	var text model.String
+	if len(r.Error) == 0 || json.Unmarshal(r.Error, &text) != nil {
+		return ""
+	}
+	return string(text)
+}
 
 type runtimePatch struct {
 	State    *string  `json:"state"`
@@ -79,16 +87,22 @@ func (r *Runtime) loadState() (*runtimeState, error) {
 	if err != nil {
 		return &runtimeState{}, nil
 	}
-	var members struct {
-		LastUsed json.RawMessage `json:"last_used"`
+	var members map[string]json.RawMessage
+	if jsondecode.Unmarshal(raw, &members) == nil {
+		state.stored = len(members) > 0
+		if lastUsed, ok := members["last_used"]; ok && bytes.Equal(bytes.TrimSpace(lastUsed), []byte("null")) {
+			state.invalidLastUsed = true
+		}
 	}
-	if model.IssueUnder(issues, "last_used") || (jsondecode.Unmarshal(raw, &members) == nil && bytes.Equal(bytes.TrimSpace(members.LastUsed), []byte("null"))) {
+	if model.IssueUnder(issues, "last_used") {
 		state.invalidLastUsed = true
 	}
 	return &state, nil
 }
+
+// empty reports a state file without members (Python: `if not state`).
 func (r *runtimeState) empty() bool {
-	return r.State == nil && r.Error == nil && r.LastUsed == nil && !r.invalidLastUsed
+	return !r.stored && r.State == nil && r.Error == nil && r.LastUsed == nil
 }
 
 // writeState is called under the existing control lease. Rename is its commit.
@@ -111,7 +125,11 @@ func (r *Runtime) writeStateUsing(ctx context.Context, patch runtimePatch, befor
 		state.State = new(*patch.State)
 	}
 	if patch.Error != nil {
-		state.Error = new(*patch.Error)
+		data, err := json.Marshal(*patch.Error)
+		if err != nil {
+			return err
+		}
+		state.Error = data
 	}
 	if patch.LastUsed != nil {
 		state.LastUsed = new(*patch.LastUsed)

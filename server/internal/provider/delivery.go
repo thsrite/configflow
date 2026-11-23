@@ -20,6 +20,7 @@ import (
 	"configflow/internal/substore"
 	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -347,6 +348,9 @@ func DialerRecord(ctx context.Context, sub model.Subscription) (*subs.DialersDat
 			if err := json.Unmarshal(raw, &metadata); err != nil {
 				return nil, err
 			}
+			// A stored dialers member of the wrong type is a stored decision
+			// too (it read as none).
+			metadata.DialersStored = metadata.DialersStored || model.IssueUnder(cache.Issues, "metadata.dialers")
 			view.Metadata = &metadata
 		}
 	}

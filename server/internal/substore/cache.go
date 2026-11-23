@@ -411,7 +411,7 @@ func decodeCacheFile(ctx context.Context, id, path string) (*Cache, error) {
 	data, _ = jsonresp.NormalizeNonFinite(data)
 	issues, err := model.DecodeStored(data, &cache, "")
 	if err != nil {
-		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, err))
+		cacheLog.Warning(fmt.Sprintf(msgCacheRead, id, fmt.Errorf("decode stored JSON: %w", err)))
 		return nil, nil
 	}
 	cache.Issues = issues

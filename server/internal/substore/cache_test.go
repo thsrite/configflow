@@ -196,7 +196,7 @@ func TestSavedCacheBytes(t *testing.T) {
 	want := "{\n  \"subscription_id\": \"keep\",\n  \"updated_at\": \"2026-11-15T08:00:00Z\",\n  \"count\": 1,\n  \"nodes\": [\n    {\n" +
 		"      \"id\": \"n\",\n      \"name\": \"HK\",\n      \"type\": \"ss\",\n      \"server\": \"192.0.2.1\",\n      \"port\": 443,\n" +
 		"      \"cipher\": \"aes-128-gcm\",\n      \"password\": \"secret\"\n    }\n  ],\n  \"metadata\": {\n" +
-		"    \"subscription_name\": \"机场\",\n    \"url\": \"https://example.test/keep\"\n  }\n}\n"
+		"    \"subscription_name\": \"机场\",\n    \"url\": \"https://example.test/keep\",\n    \"fetched_at\": null\n  }\n}\n"
 	if string(data) != want {
 		t.Fatalf("file:\n%s", data)
 	}

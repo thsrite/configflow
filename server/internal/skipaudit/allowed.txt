@@ -61,7 +61,6 @@ internal/httpx/difftest/diff_test.go:TestDifferentialAgainstFlask
 internal/httpx/difftest/n8_7_jwt_test.go:TestN87JWTBoundaryAgainstFlask
 internal/mcp/difftest/diff_test.go:TestRealFlaskHTTP
 internal/model/hr_test.go:TestHRPythonWriters
-internal/model/review_n84ef_test.go:TestHRSnapshotSchema
 internal/model/types_test.go:TestTypesPrivateSnapshot
 internal/model/types_test.go:TestTypesPythonRoundTrip
 internal/mosdns/difftest/diff_test.go:TestDifferentialMosDNSRoutes

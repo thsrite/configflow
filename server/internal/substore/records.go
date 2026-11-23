@@ -7,12 +7,13 @@ import (
 	"strings"
 )
 
-// Traffic is the arbitrary-precision usage reported by the subscription source.
+// Traffic is the arbitrary-precision usage reported by the subscription
+// source; only the numbers it reported are present (parse_userinfo).
 type Traffic struct {
-	Upload   *json.Number `json:"upload"`
-	Download *json.Number `json:"download"`
-	Total    *json.Number `json:"total"`
-	Expire   *json.Number `json:"expire"`
+	Upload   *json.Number `json:"upload,omitzero"`
+	Download *json.Number `json:"download,omitzero"`
+	Total    *json.Number `json:"total,omitzero"`
+	Expire   *json.Number `json:"expire,omitzero"`
 }
 
 // CacheMetadata records only data learned from the same subscription response

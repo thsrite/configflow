@@ -129,7 +129,7 @@ func TestN8PersistedIdentitiesAtConsumerMigration(t *testing.T) {
 	}
 
 	var item notifications.Item
-	if err := json.Unmarshal([]byte(`{"source":"notice","title":"中文","message":"message","severity":"warning","status_label":"pending","target":{"id":"router"},"evidence":["a","b"]}`), &item); err != nil {
+	if err := json.Unmarshal([]byte(`{"source":"notice","title":"中文","message":"message","severity":"warning","status_label":"pending","target":{"path":"/routers","query":{"router":"r"},"label":"查看"},"evidence":["a","b"]}`), &item); err != nil {
 		t.Fatal(err)
 	}
 	fingerprint, err := notifications.IncidentFingerprint("notice", &item)
@@ -141,7 +141,10 @@ func TestN8PersistedIdentitiesAtConsumerMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	tests := []struct{ name, got, want string }{
-		{"notification fingerprint", fingerprint, "0267bf46778074b7eeb98037dc5d72c1d23748a3309dd1832c5d53fac18f1ebe" /* Python: 796d41c65fccf7be4c1f6905927f38f7f68e19ff85cd21bbda74bc5b0b851228 */},
+		// A target as notifications write it (path, query, label): the same
+		// identity before and after O18 T1d (a target's undeclared members
+		// are no longer part of it).
+		{"notification fingerprint", fingerprint, "f34c9223a6344ec2eeda74d69e8f2d261543a2f75ae43d4687920fe00628594a" /* Python: f66f1d92e123d818f61d7bf339bf5e549dfb3c50db65d75d5b89261a0261d6cd */},
 		{"router signature", routerSig, "17da2ce6aa800a88b9437370d51348e25d8ec354edcc9a68f494a480f401cbfa" /* Python: 7d96d6c8c83a86b93be94139573ba2f7dd84d73d69229b31d424e377f9e38239 */},
 		{"rule cache filename", rules.CacheFilename(testjson.Decode[model.RuleConfig](t, map[string]any{"id": "rule-中文", "url": "https://example.com/rules", "behavior": "domain", "format": "yaml"})), "by-source/e2364080e064f144014eb27e7dee12c0a88691411bbd10e8fb11fe2d4ae2883a.list" /* Python: by-source/4426c62b307f4cf12000498eb551a75eb9f77bec2df4f934d1069ff52488381b.list */},
 		{"hosts digest", hostsDigest, "203f1eaef2b304a1972e5313ea3d41d096aeddeee5ae1c45623154fd11fa6aef" /* Python: b8cb494707314c3de1a4489ad0b63c0dfbdfe553d368ebcd7bfa7446c9919d48 */},

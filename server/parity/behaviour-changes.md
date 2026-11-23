@@ -3061,3 +3061,33 @@ Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.Ser
 - 回滚本身失败时不再用回滚错误顶替原错误：返回原错误，回滚失败写一条告警日志（HR 复核补上日志）。
 - OxiDNS 排行的存槽和整理从第一条语句起就持有写锁（`BEGIN IMMEDIATE`，以前在第一条写语句前隐式 `BEGIN`）；只读查询不开事务，与以前相同。
   存储内容不变：生产快照私有副本上同一组操作改前改后结果哈希、行数一致。
+
+## O18 T1d — model 包外的记录改为普通结构体，删除旧 R5 编解码
+
+协调任务 O18 T1d（2026-11-23），沿用 T1a–T1c 裁定（宽松读存储、严格输入、未知成员丢弃、只写变化的部分、开关错类型按真值/关、安全相关失败即关）。
+
+- **范围**：DATA_DIR 文件和 Agent/设备回复里的记录——通知（`notifications.json` 与路由器报告视图）、订阅缓存（`subscribes/*.json`，含 hosts/dialers 元数据）、
+  订阅健康历史、下载回执、任务状态（`task-status.json`）、Sub-Store 运行状态（`state.json`）与 GitHub 发布信息、配置向导会话、节点测速结果、
+  域名探测/区域检测存储、概览历史、客户端节点选项视图、主路由分流的会话视图、MosDNS/OxiDNS 投影。
+  删除 `model.DecodeRecord/EncodeRecord/SetMemberJSON/ClearMember/Raw/Map/Raw.MemberJSON/Issues/JSONHasContent/JSONSwitchEnabled` 和保原字节的 JSON 解析
+  （`record.go/map.go/member.go/fields.go/json.go/switch.go/content.go`）；`model.Fields` 换成不保原片段的普通有序对象（`object.go`），编码器（`encode.go`）
+  可直接写出没有编解码方法的结构体。JSON 真值判断统一为 `model.Truthy`/`model.Switch`。`_revision` 改为 `int64`（输入仍接受 `60.0` 这样的整数写法，不接受文本）。
+- **未声明成员丢弃**：上述文件第一次被 Go 重写时，不认识的成员不再写回（例如通知记录、区域/探测文件、Sub-Store 状态、向导会话里的扩展成员，
+  测速结果里节点测速组件以外的成员）。Python 写的这些文件实际只有已声明成员。
+- **存储里的 `null`**：可选文本/对象成员存成 `null` 读作缺失，重写时不写（例如通知记录的 `title: null`、`target: null`；任务回执的 `null` 成员）。
+  例外：通知记录的 `profile_id/profile_name/checked_at/failure_count/evidence` 保留原 JSON（任务通知按 Python 写 `null`）。
+  通知记录的 `occurrences` 为 `null`/非有限数时读作缺失（以前保留 `null`；Python 两种情况都无法再计数）。类型不对的计数读作 0。
+- **类型不对的值**：读作零值并在下次重写该条目时写成读到的值（以前保留原字节）。只影响该条目本身的重写：任务状态、订阅健康历史按条目重写，
+  其它条目原样保留。
+- **失败即关（不删用户数据）**：区域检测文件里 domains/websites 的条目不是对象时，`UpdateData` 拒绝写入（文件不改，与以前相同，以前靠 R5 证据）；
+  订阅缓存的节点列表不是列表或含非对象元素时，发布/provider 路径照旧拒绝（`NodesDamaged`），汇总接口照旧略过节点；缓存的 `metadata` 不是对象或 `url` 不是文本时
+  不认领该缓存；`updated_at` 不是文本时不当作缓存时间；下载回执的 `text/fetched_at` 不是文本时不用；向导会话成员类型不对时整份拒绝（`ErrCorruptRecord`）；
+  节点测速记录里测试设置（url/unified_delay/dns 列表）类型不对时不续接历史。通知文件不是 `{"items":{...}}` 或有非对象条目时照旧拒绝。
+- **客户端节点开关**（`udp/udp-relay/tls/skip-cert-verify/reuse/tfo/udp-over-tcp`）：只认 JSON 布尔，其它类型或 `null` 读作缺失并告警（与以前相同）。
+- **Agent 注册表行**：按需加载 `system.agents` 时与整份加载同样宽松解码并告警（以前严格解码、告警分支不可达）。
+- **节点测速 DNS 设置**：`system_config` 整体损坏时读写节点测速 DNS 设置报「已保存的系统配置无效」（以前该检查在普通记录上不可达）。
+- 删除了在普通记录上永不触发的检查：IPv6 路由的「基础 YAML 必须是文本」、发布检查的「归属记录格式不完整」（T1c 起清单损坏整份保留、失败即关）、
+  节点测速的「节点 name 必须是字符串」、convert 节点端口的原值回读。
+- **修复**：`Fields` 读取成员名时用到已失效的 token（新实现）；`OrderedMap` 自引用时无限递归，现在报 `ErrJSON`。
+- 测试：语料测试按名字接受 Python 合成夹具里的未声明成员（`keep`/`extra`/`name2`）被丢弃、健康历史里非对象 `traffic` 被丢弃；
+  o10t2 参考语料删去旧编解码的行，唯一变化的行是 `marshal-struct`（没有编解码方法的结构体现在可以写出）。

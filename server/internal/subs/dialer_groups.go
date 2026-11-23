@@ -2,7 +2,6 @@ package subs
 
 import (
 	"bytes"
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,7 @@ import (
 
 	"configflow/internal/model"
 	"configflow/internal/yamlx"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -50,20 +50,8 @@ func SourceDialers(ctx context.Context, sub model.Subscription, cache *Subscript
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if cache != nil && cache.Metadata != nil {
-		data, err := model.Marshal(cache.Metadata)
-		if err != nil {
-			return nil, err
-		}
-		var presence struct {
-			Dialers json.RawMessage `json:"dialers"`
-		}
-		if err := jsondecode.Unmarshal(data, &presence); err != nil {
-			return nil, err
-		}
-		if presence.Dialers != nil {
-			return cache.Metadata.Dialers, nil
-		}
+	if cache != nil && cache.Metadata != nil && (cache.Metadata.Dialers != nil || cache.Metadata.DialersStored) {
+		return cache.Metadata.Dialers, nil
 	}
 	if sub.URL == "" || downloaded == nil {
 		return nil, nil
@@ -79,30 +67,29 @@ func SourceDialers(ctx context.Context, sub model.Subscription, cache *Subscript
 }
 func dialerSettings(entry DialerTarget) *yamlx.Node {
 	group := yamlx.Map()
-	if entry.URL != nil {
-		yamlx.Set(group, "url", yamlx.Str(*entry.URL))
+	text := func(name string, raw json.RawMessage) {
+		var value model.String
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &value) == nil {
+			yamlx.Set(group, name, yamlx.Str(string(value)))
+		}
 	}
-	if entry.Interval != nil {
-		yamlx.Set(group, "interval", yamlx.Int(int64(*entry.Interval)))
+	integer := func(name string, raw json.RawMessage) {
+		var value model.Int
+		if len(raw) > 0 && json.Unmarshal(raw, &value) == nil {
+			yamlx.Set(group, name, yamlx.Int(int64(value)))
+		}
 	}
-	if entry.Tolerance != nil {
-		yamlx.Set(group, "tolerance", yamlx.Int(int64(*entry.Tolerance)))
+	text("url", entry.URL)
+	integer("interval", entry.Interval)
+	integer("tolerance", entry.Tolerance)
+	var lazy bool
+	if len(entry.Lazy) > 0 && json.Unmarshal(entry.Lazy, &lazy) == nil && string(entry.Lazy) != "null" {
+		yamlx.Set(group, "lazy", yamlx.Bool(lazy))
 	}
-	if entry.Lazy != nil {
-		yamlx.Set(group, "lazy", yamlx.Bool(*entry.Lazy))
-	}
-	if entry.Timeout != nil {
-		yamlx.Set(group, "timeout", yamlx.Int(int64(*entry.Timeout)))
-	}
-	if entry.ExpectedStatus != nil {
-		yamlx.Set(group, "expected-status", yamlx.Str(*entry.ExpectedStatus))
-	}
-	if entry.Strategy != nil {
-		yamlx.Set(group, "strategy", yamlx.Str(*entry.Strategy))
-	}
-	if entry.MaxFailedTimes != nil {
-		yamlx.Set(group, "max-failed-times", yamlx.Int(int64(*entry.MaxFailedTimes)))
-	}
+	integer("timeout", entry.Timeout)
+	text("expected-status", entry.ExpectedStatus)
+	text("strategy", entry.Strategy)
+	integer("max-failed-times", entry.MaxFailedTimes)
 	return group
 }
 func ownedSequence(main *yamlx.Node, field string) (*yamlx.Node, error) {

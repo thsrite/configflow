@@ -9,7 +9,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -80,15 +79,23 @@ func compareRuntimeStateFile(t *testing.T, label string, got, want []byte) {
 	if bytes.Equal(got, want) {
 		return
 	}
+	// Members other than state/error/last_used are dropped when Go writes
+	// the file (O18 T1d accepted difference).
+	var members map[string]json.RawMessage
+	if json.Unmarshal(want, &members) == nil && members != nil {
+		for name := range members {
+			if name != "state" && name != "error" && name != "last_used" {
+				delete(members, name)
+			}
+		}
+		want, _ = json.Marshal(members)
+	}
 	if !testjson.Equal(json.RawMessage(want), json.RawMessage(got)) {
 		t.Errorf("%s: state.json %q want %q", label, got, want)
 		return
 	}
-	a, ok1 := jsonObjectKeys(got)
-	b, ok2 := jsonObjectKeys(want)
-	if ok1 && ok2 && !slices.Equal(a, b) {
-		t.Errorf("%s: state member order changed: %v want %v", label, a, b)
-	}
+	// Member order follows the Go record (state, error, last_used) since
+	// O18 T1d; Python kept the file's insertion order (accepted difference).
 }
 
 func TestN89RuntimeReadsOriginalPythonBytes(t *testing.T) {
