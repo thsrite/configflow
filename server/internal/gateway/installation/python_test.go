@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"configflow/internal/agents/agentfake"
+	"configflow/internal/repo/repotest"
 	"configflow/internal/yamlx"
 )
 
@@ -44,6 +45,7 @@ func TestPythonPublicationStateAndGeneratedArtifacts(t *testing.T) {
 			if e != nil {
 				t.Fatal(e, string(out))
 			}
+			repotest.PythonLayout(t, pyDir) // Python reads the version-1 layout (O17)
 			pyFake := map[string]*agentfake.Agent{}
 			dest := map[string]string{}
 			for _, kind := range services {
