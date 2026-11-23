@@ -1032,9 +1032,8 @@
     "product_members": [
       "configflow/internal/gateway/gwbase.LinuxGatewayError",
       "configflow/internal/model.Agent",
-      "configflow/internal/model.DecodeRecord",
+      "configflow/internal/model.DecodeLenient",
       "configflow/internal/model.Profile",
-      "configflow/internal/model.Raw",
       "configflow/internal/model.String"
     ]
   },
@@ -1137,9 +1136,8 @@
     "product_members": [
       "configflow/internal/gateway/gwbase.LinuxGatewayError",
       "configflow/internal/model.Agent",
-      "configflow/internal/model.DecodeRecord",
+      "configflow/internal/model.DecodeLenient",
       "configflow/internal/model.Profile",
-      "configflow/internal/model.Raw",
       "configflow/internal/model.String"
     ]
   },
@@ -1242,9 +1240,8 @@
     "product_members": [
       "configflow/internal/gateway/gwbase.LinuxGatewayError",
       "configflow/internal/model.Agent",
-      "configflow/internal/model.DecodeRecord",
+      "configflow/internal/model.DecodeLenient",
       "configflow/internal/model.Profile",
-      "configflow/internal/model.Raw",
       "configflow/internal/model.String"
     ]
   },
