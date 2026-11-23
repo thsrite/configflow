@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math/big"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -14,9 +15,9 @@ import (
 
 func TestC27ReviewHelperOwnership(t *testing.T) {
 	t.Parallel()
-	features := M("cache_enabled", true, "cache_lazy_ttl", 300)
+	features := chainFeatures{cache: true, lazyTTL: big.NewInt(300)}
 	action := M("action", "upstream", "source", "local", "upstream", M("addr", "udp://192.0.2.53"))
-	before := ToJSON(features)
+	before := features.lazyTTL.String()
 	plugins, err := HelperPlugins([]string{RouteKey(action)}, M("rule", action), features)
 	if err != nil {
 		t.Fatal(err)
@@ -26,7 +27,7 @@ func TestC27ReviewHelperOwnership(t *testing.T) {
 			at(plugin, "args", "lazy_cache_ttl").Value = "0"
 		}
 	}
-	if !bytes.Equal(before, ToJSON(features)) {
+	if before != features.lazyTTL.String() {
 		t.Fatal("editing a returned helper changed caller-owned settings")
 	}
 }

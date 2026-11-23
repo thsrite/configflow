@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"configflow/internal/model"
@@ -587,16 +588,20 @@ func generate(s *Node, p *Profile, baseURL string) (string, error) {
 		}
 		return dump(deliveryNode(document))
 	}
-	result, err := templateDocument(s, p, baseURL)
+	t, err := decodeTemplate(s)
+	if err != nil {
+		return "", err
+	}
+	result, err := templateDocument(t, p, baseURL)
 	if err != nil {
 		return "", err
 	}
 	return dump(deliveryNode(result))
 }
 
-func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
+func templateDocument(s *templateSettings, p *Profile, baseURL string) (*Node, error) {
 	custom := M()
-	if text := str(get(s, "custom_config")); strings.TrimSpace(text) != "" {
+	if text := s.CustomConfig; strings.TrimSpace(text) != "" {
 		parsed, ok, err := safeLoad(text)
 		if err != nil {
 			return nil, err
@@ -628,35 +633,33 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 	if isMap(runtime) {
 		merged = shallow(runtime)
 	}
-	set(merged, "worker_threads", get(s, "worker_threads"))
+	set(merged, "worker_threads", I(s.WorkerThreads))
 	set(result, "runtime", merged)
 	del(result, "api")
-	if api := get(s, "api"); isTrue(get(api, "enabled")) {
-		http := M("listen", get(api, "listen"))
-		if str(get(api, "username")) != "" {
-			set(http, "auth", M("type", "basic", "username", get(api, "username"), "password", get(api, "password")))
+	if api := s.API; api.Enabled {
+		http := M("listen", api.Listen)
+		if api.Username != "" {
+			set(http, "auth", M("type", "basic", "username", api.Username, "password", api.Password))
 		}
-		if str(get(api, "webui_root")) != "" {
-			set(http, "webui", M("root", get(api, "webui_root"), "index", "index.html"))
+		if api.WebUIRoot != "" {
+			set(http, "webui", M("root", api.WebUIRoot, "index", "index.html"))
 		}
-		if isMap(get(api, "ssl")) && mapSize(get(api, "ssl")) > 0 {
-			set(http, "ssl", clone(get(api, "ssl")))
+		if isMap(api.SSL) && mapSize(api.SSL) > 0 {
+			set(http, "ssl", clone(api.SSL))
 		}
 		set(result, "api", M("http", http))
 	}
-	log := get(s, "log")
-	logOut := M("level", get(log, "level"))
-	if str(get(log, "file")) != "" {
-		set(logOut, "file", get(log, "file"))
-		set(logOut, "rotation", M("type", get(log, "rotation"), "max_files", get(log, "max_files")))
+	logOut := M("level", s.Log.Level)
+	if s.Log.File != "" {
+		set(logOut, "file", S(s.Log.File))
+		set(logOut, "rotation", M("type", s.Log.Rotation, "max_files", s.Log.MaxFiles))
 	}
 	set(result, "log", logOut)
 	plugins := L()
 	add := func(tag, kind string, args *Node) {
 		plugins.Content = append(plugins.Content, M("tag", tag, "type", kind, "args", args))
 	}
-	enabled := func(name string) bool { return isTrue(get(get(s, name), "enabled")) }
-	groups, err := p.routingGroups(s, legacyNone, nil)
+	groups, err := p.routingGroups(s.node, legacyNone, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -666,62 +669,65 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 	for _, g := range groups.IP {
 		add(g.Tag, "ip_set", g.Args)
 	}
-	hosts := str(get(s, "custom_hosts"))
+	hosts := s.CustomHosts
 	if strings.TrimSpace(hosts) != "" {
 		if _, err := HostsFileContent(hosts); err != nil {
 			return nil, err
 		}
 		add("custom_hosts", "hosts", M("files", L("./rules/custom_hosts.txt")))
 	}
-	if isTrue(get(s, "cache_enabled")) {
-		cache := M("size", get(s, "cache_size"))
-		if lazy, _ := ratOf(get(s, "cache_lazy_ttl")); lazy.Sign() > 0 {
-			set(cache, "lazy_cache_ttl", get(s, "cache_lazy_ttl"))
+	if s.CacheEnabled {
+		cache := M("size", s.CacheSize)
+		if s.CacheLazyTTL > 0 {
+			set(cache, "lazy_cache_ttl", I(s.CacheLazyTTL))
 		}
 		set(cache, "short_circuit", B(true))
-		if isTrue(get(s, "cache_dump_enabled")) {
-			set(cache, "dump_file", get(s, "cache_dump_file"))
-			set(cache, "dump_interval", get(s, "cache_dump_interval"))
+		if s.CacheDumpEnabled {
+			set(cache, "dump_file", S(s.CacheDumpFile))
+			set(cache, "dump_interval", I(s.CacheDumpInterval))
 		}
 		add("lazy_cache", "cache", cache)
 	}
-	if isTrue(get(s, "probe_cache_enabled")) {
-		add("local_probe_cache", "cache", M("size", get(s, "probe_cache_size"), "short_circuit", false))
+	if s.ProbeCacheEnabled {
+		add("local_probe_cache", "cache", M("size", s.ProbeCacheSize, "short_circuit", false))
 	}
-	fallback, err := fallbackUpstreams(str(get(s, "fallback_dns")))
+	fallback, err := fallbackUpstreams(s.FallbackDNS)
 	if err != nil {
 		return nil, err
 	}
-	for _, name := range []string{"local", "remote"} {
-		defaults := LocalDNSDefaults
-		if name == "remote" {
-			defaults = RemoteDNSDefaults
-		}
-		upstreams, err := forwardUpstreams(str(get(s, name+"_dns")), defaults)
+	for _, forward := range []struct {
+		name       string
+		text       string
+		defaults   []string
+		concurrent int64
+	}{{"local", s.LocalDNS, LocalDNSDefaults, s.LocalConcurrent}, {"remote", s.RemoteDNS, RemoteDNSDefaults, s.RemoteConcurrent}} {
+		upstreams, err := forwardUpstreams(forward.text, forward.defaults)
 		if err != nil {
 			return nil, err
 		}
-		add("forward_"+name, "forward", M("concurrent", get(s, name+"_concurrent"), "upstreams", upstreams))
+		add("forward_"+forward.name, "forward", M("concurrent", forward.concurrent, "upstreams", upstreams))
 	}
 	hasFallback := len(fallback.Content) > 0
 	if hasFallback {
-		add("forward_fallback", "forward", M("concurrent", get(s, "fallback_concurrent"), "upstreams", fallback))
+		add("forward_fallback", "forward", M("concurrent", s.FallbackConcurrent, "upstreams", fallback))
 	}
-	dynamic := get(s, "dynamic_domain_set")
-	dynamicOn, learn := isTrue(get(dynamic, "enabled")), (isTrue(get(dynamic, "learn")))
+	dynamic := s.DynamicDomainSet
+	dynamicOn, learn := dynamic.Enabled, dynamic.Learn
 	if dynamicOn {
-		add("dynamic_domains", "dynamic_domain_set", clone(get(dynamic, "args")))
+		add("dynamic_domains", "dynamic_domain_set", clone(dynamic.Args))
 		if learn {
-			args := clone(get(dynamic, "learn_args"))
+			args := clone(dynamic.LearnArgs)
 			set(args, "provider", S("dynamic_domains"))
 			add("learn_classified_domain", "learn_domain", args)
 		}
 	}
+	sections := map[string]pluginSection{"query_recorder": s.QueryRecorder, "ip_selector": s.IPSelector, "ros_address_list": s.ROSAddressList, "ros_route": s.ROSRoute}
+	enabled := func(name string) bool { return sections[name].Enabled }
 	for _, name := range []string{"query_recorder", "ip_selector", "ros_address_list", "ros_route"} {
 		if !enabled(name) {
 			continue
 		}
-		args := clone(get(get(s, name), "args"))
+		args := clone(sections[name].Args)
 		if name == "ros_route" {
 			kept := M()
 			pairs(args, func(key string, value *Node) bool {
@@ -734,18 +740,18 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 		}
 		add(name, name, args)
 	}
-	adguard := get(s, "adguard")
-	adguardOn := isTrue(get(adguard, "enabled"))
+	adguard := s.AdGuard
+	adguardOn := adguard.Enabled
 	if adguardOn {
 		paths := L()
-		if strings.TrimSpace(str(get(adguard, "content"))) != "" {
+		if strings.TrimSpace(adguard.Content) != "" {
 			paths.Content = append(paths.Content, S("./rules/adguard-custom.txt"))
 		}
-		for _, url := range items(get(adguard, "urls")) {
-			paths.Content = append(paths.Content, S("./rules/"+TagFor("adguard", url)+".txt"))
+		for _, url := range adguard.URLs {
+			paths.Content = append(paths.Content, S("./rules/"+tagForString("adguard", url)+".txt"))
 		}
 		add("adguard_rules", "adguard_rule", M("files", paths))
-		add("adguard_block", "black_hole", M("mode", get(adguard, "mode")))
+		add("adguard_block", "black_hole", M("mode", adguard.Mode))
 		add("adguard_reject", "sequence", L(M("exec", "$adguard_block"), M("exec", "accept")))
 	}
 	wrappers := func() *Node {
@@ -758,26 +764,26 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 		return out
 	}
 	direct := wrappers()
-	if isTrue(get(s, "cache_enabled")) {
+	if s.CacheEnabled {
 		direct.Content = append(direct.Content, M("exec", "$lazy_cache"))
 	}
 	direct.Content = append(direct.Content, M("exec", "$forward_local"), M("matches", L("!has_resp"), "exec", "reject 3"))
 	add("china_dns", "sequence", direct)
 	probe := L()
-	if isTrue(get(s, "probe_cache_enabled")) {
+	if s.ProbeCacheEnabled {
 		probe.Content = append(probe.Content, M("exec", "$local_probe_cache"))
 	}
 	probe.Content = append(probe.Content, M("matches", L("!has_resp"), "exec", "$forward_local"), M("exec", "return"))
 	add("local_probe", "sequence", probe)
 	remote := L(M("exec", "$forward_remote"), M("matches", L("!has_resp"), "exec", "reject 3"))
-	if ttl := get(s, "remote_ttl"); positive(ttl) {
-		remote.Content = append(remote.Content, M("exec", "ttl "+ttl.Value))
+	if s.RemoteTTL > 0 {
+		remote.Content = append(remote.Content, M("exec", "ttl "+strconv.FormatInt(s.RemoteTTL, 10)))
 	}
 	add("remote_dns", "sequence", remote)
 	if hasFallback {
 		add("fallback_dns", "sequence", L(M("exec", "$forward_fallback"), M("matches", L("!has_resp"), "exec", "reject 3")))
 		add("fallback", "fallback", M("primary", "remote_dns", "secondary", "fallback_dns",
-			"threshold", get(s, "fallback_threshold"), "always_standby", get(s, "always_standby")))
+			"threshold", s.FallbackThreshold, "always_standby", s.AlwaysStandby))
 		add("proxy_dns_seq", "sequence", L(M("exec", "$fallback"), M("exec", "accept")))
 	} else {
 		add("proxy_dns_seq", "sequence", L(M("exec", "goto remote_dns")))
@@ -788,7 +794,7 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 	defaultDirect.Content = append(defaultDirect.Content, M("exec", "accept"))
 	add("default_direct_ip", "sequence", defaultDirect)
 	if dynamicOn && learn {
-		if equal(get(dynamic, "route"), S("direct")) {
+		if dynamic.Route == "direct" {
 			directIP.Content = append(directIP.Content, M("exec", "$learn_classified_domain"))
 		} else {
 			requery.Content = append(requery.Content, M("exec", "$learn_classified_domain"))
@@ -802,26 +808,26 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 	for _, g := range groups.all() {
 		routes = append(routes, g.Route)
 	}
-	helpers, err := HelperPlugins(routes, get(s, "rule_actions"), s)
+	helpers, err := HelperPlugins(routes, get(s.node, "rule_actions"), s.features())
 	if err != nil {
 		return nil, err
 	}
 	plugins.Content = append(plugins.Content, helpers...)
 
 	main := L()
-	if isTrue(get(s, "metrics_enabled")) {
+	if s.MetricsEnabled {
 		main.Content = append(main.Content, M("exec", "metrics_collector metrics"))
 	}
 	if enabled("query_recorder") {
 		main.Content = append(main.Content, M("exec", "$query_recorder"))
 	}
-	if isTrue(get(s, "prefer_ipv4")) {
+	if s.PreferIPv4 {
 		main.Content = append(main.Content, M("exec", "prefer_ipv4"))
 	}
-	if blocked := items(get(s, "block_qtypes")); len(blocked) > 0 {
+	if blocked := s.BlockQtypes; len(blocked) > 0 {
 		codes := make([]string, len(blocked))
-		for i, v := range blocked {
-			codes[i] = v.Value
+		for i, code := range blocked {
+			codes[i] = strconv.FormatInt(code, 10)
 		}
 		main.Content = append(main.Content, M("matches", L("qtype "+strings.Join(codes, " ")), "exec", BlockQtypesExec))
 	}
@@ -831,11 +837,11 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 	if adguardOn {
 		main.Content = append(main.Content, M("matches", L("question $adguard_rules"), "exec", "goto adguard_reject"))
 	}
-	matches, err := parseCustomMatches(get(s, "custom_matches"))
+	matches, err := parseCustomMatches(s.CustomMatches)
 	if err != nil {
 		return nil, err
 	}
-	head := str(get(s, "custom_match_position")) == "head"
+	head := s.CustomMatchPosition == "head"
 	if head {
 		main.Content = append(main.Content, matches.Content...)
 	}
@@ -846,28 +852,28 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 		}
 		main.Content = append(main.Content, M("matches", L("qname $"+g.Tag), "exec", exec))
 	}
-	if str(get(s, "custom_match_position")) == "tail" {
+	if s.CustomMatchPosition == "tail" {
 		main.Content = append(main.Content, matches.Content...)
 	}
 	if dynamicOn {
 		target := "goto proxy_dns_seq"
-		if equal(get(dynamic, "route"), S("direct")) {
+		if dynamic.Route == "direct" {
 			target = "goto china_dns"
 		}
 		main.Content = append(main.Content, M("matches", L("qname $dynamic_domains"), "exec", target))
 	}
 	final := "goto proxy_dns_seq"
-	if str(get(s, "default_forward")) == "forward_local" {
+	if s.DefaultForward == "forward_local" {
 		final = "goto china_dns"
 	}
 	main.Content = append(main.Content, M("exec", final))
 	add("sequence_main", "sequence", main)
-	add("server_udp", "udp_server", M("listen", get(s, "listen"), "entry", "sequence_main"))
-	if isTrue(get(s, "tcp_enabled")) {
-		add("server_tcp", "tcp_server", M("listen", get(s, "listen"), "entry", "sequence_main"))
+	add("server_udp", "udp_server", M("listen", s.Listen, "entry", "sequence_main"))
+	if s.TCPEnabled {
+		add("server_tcp", "tcp_server", M("listen", s.Listen, "entry", "sequence_main"))
 	}
 
-	downloads, err := rulesetDownloads(s, p, baseURL)
+	downloads, err := rulesetDownloads(s.node, p, baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -876,8 +882,8 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 		customUpdates = customUpdates || isMap(plugin) && (isOneOf(get(plugin, "type"), "download", "reload_provider") ||
 			isOneOf(get(plugin, "tag"), "rules_download", "rules_reload", "rules_refresh"))
 	}
-	update := get(s, "rule_update")
-	updateOn := isTrue(get(update, "enabled"))
+	update := s.RuleUpdate
+	updateOn := update.Enabled
 	if updateOn && customUpdates {
 		return nil, fail("已有自定义下载或重载插件，请在高级 YAML 中配置规则定时更新，不能自动创建第二条维护链")
 	}
@@ -885,7 +891,7 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 		return nil, fail("定时更新需要至少一个规则订阅")
 	}
 	if len(downloads) > 0 && !customUpdates {
-		updateArgs := get(update, "args")
+		updateArgs := update.Args
 		args := M()
 		_, catalog := schemas()
 		var issues []Issue
@@ -937,7 +943,7 @@ func templateDocument(s *Node, p *Profile, baseURL string) (*Node, error) {
 		tags[tag.Value] = true
 	}
 	set(result, "plugins", plugins)
-	if policies := get(s, "device_policies"); len(items(policies)) > 0 {
+	if policies := get(s.node, "device_policies"); len(items(policies)) > 0 {
 		return PatchDocument(result, L(), policies, nil)
 	}
 	return result, nil

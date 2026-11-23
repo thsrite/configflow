@@ -3,11 +3,14 @@ package oxidns
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"configflow/internal/model"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Per-rule DNS handling (backend/common/rule_dns.py, the parts generation and
@@ -113,36 +116,63 @@ func NormalizeAction(value *Node, parked bool) (*Node, error) {
 	return M("action", "upstream", "source", get(value, "source").Value, "upstream", clone(upstream)), nil
 }
 
-func sectionEnabled(settings *Node, name string) bool {
-	return isTrue(get(get(settings, name), "enabled"))
+// chainFeatures are the china_dns response hooks and the cache and TTL
+// settings a pinned upstream chain copies (from template settings, or read
+// back from a native document's plugins).
+type chainFeatures struct {
+	hooks     map[string]bool // enabled RealWrappers
+	cache     bool
+	lazyTTL   *big.Int // lazy_cache_ttl when positive
+	remoteTTL string   // positive remote TTL digits, "" for none
 }
 
-// upstreamChain is forward + optional cache + sequence behind one pinned
-// upstream; features is a settings-shaped mapping (see chainFeatures).
-func upstreamChain(action, features *Node) []*Node {
+func (f chainFeatures) anyHook() bool {
+	for _, name := range RealWrappers {
+		if f.hooks[name] {
+			return true
+		}
+	}
+	return false
+}
+
+// features are the template's chain features.
+func (s *templateSettings) features() chainFeatures {
+	f := chainFeatures{hooks: map[string]bool{"ip_selector": s.IPSelector.Enabled, "ros_address_list": s.ROSAddressList.Enabled, "ros_route": s.ROSRoute.Enabled},
+		cache: s.CacheEnabled}
+	if s.CacheLazyTTL > 0 {
+		f.lazyTTL = big.NewInt(s.CacheLazyTTL)
+	}
+	if s.RemoteTTL > 0 {
+		f.remoteTTL = strconv.FormatInt(s.RemoteTTL, 10)
+	}
+	return f
+}
+
+// upstreamChain is forward + optional cache + sequence behind one pinned upstream.
+func upstreamChain(action *Node, features chainFeatures) []*Node {
 	source := str(get(action, "source"))
 	key := EntryKey(get(action, "upstream"), source)
 	plugins := []*Node{M("tag", ForwardPrefix+key, "type", "forward", "args", M("upstreams", L(clone(get(action, "upstream")))))}
 	steps := L(M("exec", "drop_resp"))
 	if source == "local" {
 		for _, name := range RealWrappers {
-			if sectionEnabled(features, name) {
+			if features.hooks[name] {
 				steps.Content = append(steps.Content, M("exec", "$"+name))
 			}
 		}
 	}
-	if isTrue(get(features, "cache_enabled")) {
+	if features.cache {
 		cache := M("size", upstreamCacheSize)
-		if lazy, ok := ratOf(get(features, "cache_lazy_ttl")); ok && lazy.Sign() > 0 {
-			set(cache, "lazy_cache_ttl", clone(get(features, "cache_lazy_ttl")))
+		if features.lazyTTL != nil {
+			set(cache, "lazy_cache_ttl", &Node{Kind: yaml.ScalarNode, Tag: tagInt, Value: features.lazyTTL.String()})
 		}
 		set(cache, "short_circuit", B(true))
 		plugins = append(plugins, M("tag", CachePrefix+key, "type", "cache", "args", cache))
 		steps.Content = append(steps.Content, M("exec", "$"+CachePrefix+key))
 	}
 	steps.Content = append(steps.Content, M("exec", "$"+ForwardPrefix+key), M("matches", L("!has_resp"), "exec", "reject 3"))
-	if ttl := get(features, "remote_ttl"); source != "local" && (positive(ttl)) {
-		steps.Content = append(steps.Content, M("exec", "ttl "+ttl.Value))
+	if source != "local" && features.remoteTTL != "" {
+		steps.Content = append(steps.Content, M("exec", "ttl "+features.remoteTTL))
 	}
 	steps.Content = append(steps.Content, M("exec", "accept"))
 	return append(plugins, M("tag", UpstreamPrefix+key, "type", "sequence", "args", steps))
@@ -151,7 +181,7 @@ func upstreamChain(action, features *Node) []*Node {
 // HelperPlugins are the owned plugins the given group routes need, in
 // first-use order; actions (rule_actions) supply pinned upstreams, features
 // the china_dns hooks copied into local chains.
-func HelperPlugins(routes []string, actions, features *Node) ([]*Node, error) {
+func HelperPlugins(routes []string, actions *Node, features chainFeatures) ([]*Node, error) {
 	pinned := map[string]*Node{}
 	pairs(actions, func(_ string, action *Node) bool {
 		if str(get(action, "action")) == "upstream" {
@@ -194,32 +224,26 @@ func pluginMap(document *Node) map[string]*Node {
 	return result
 }
 
-// chainFeatures reads the china_dns / remote_dns features a pinned chain
+// documentFeatures reads the china_dns / remote_dns features a pinned chain
 // copies from a native document's plugins.
-func chainFeatures(plugins map[string]*Node) *Node {
+func documentFeatures(plugins map[string]*Node) chainFeatures {
 	args := func(tag string) *Node { return get(plugins[tag], "args") }
 	steps := func(tag string) []*Node {
 		return filter(items(args(tag)), isMap)
 	}
 	china := seqOf(steps("china_dns"))
-	result := M()
+	result := chainFeatures{hooks: map[string]bool{}}
 	for _, name := range RealWrappers {
-		set(result, name, M("enabled", contains(china, M("exec", "$"+name))))
+		result.hooks[name] = contains(china, M("exec", "$"+name))
 	}
 	cache := plugins["lazy_cache"]
-	set(result, "cache_enabled", B(contains(china, M("exec", "$lazy_cache")) && isMap(cache) && equal(get(cache, "type"), S("cache"))))
-	lazy := get(args("lazy_cache"), "lazy_cache_ttl")
-	if v, ok := int64Of(lazy); ok && v > 0 {
-		set(result, "cache_lazy_ttl", lazy)
-	} else if big, ok := intOf(lazy); ok && big.Sign() > 0 {
-		set(result, "cache_lazy_ttl", lazy)
-	} else {
-		set(result, "cache_lazy_ttl", I(0))
+	result.cache = contains(china, M("exec", "$lazy_cache")) && isMap(cache) && equal(get(cache, "type"), S("cache"))
+	if lazy, ok := intOf(get(args("lazy_cache"), "lazy_cache_ttl")); ok && lazy.Sign() > 0 {
+		result.lazyTTL = lazy
 	}
-	set(result, "remote_ttl", I(0))
 	for _, item := range steps("remote_dns") {
 		if exec := get(item, "exec"); isStr(exec) && ttlExecRE.MatchString(exec.Value) {
-			set(result, "remote_ttl", &Node{Kind: exec.Kind, Tag: tagInt, Value: strings.TrimPrefix(exec.Value, "ttl ")})
+			result.remoteTTL = strings.TrimPrefix(exec.Value, "ttl ")
 			break
 		}
 	}
@@ -315,14 +339,11 @@ func pinnedSource(key string, entry *Node, sources []string, plugins map[string]
 		return sources[0]
 	}
 	if containsString(sources, "local") {
-		features := chainFeatures(plugins)
-		hooks := false
-		for _, name := range RealWrappers {
-			hooks = hooks || sectionEnabled(features, name)
-		}
+		features := documentFeatures(plugins)
+		hooks := features.anyHook()
 		var kept []string
 		for _, item := range sources {
-			if !(item == "local" && hooks || item != "local" && (positive(get(features, "remote_ttl")))) {
+			if !(item == "local" && hooks || item != "local" && features.remoteTTL != "") {
 				kept = append(kept, item)
 			}
 		}

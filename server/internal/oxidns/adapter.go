@@ -221,14 +221,12 @@ func parseUpstreams(text string) (*Node, error) {
 	}
 	return seqOf(nodes), nil
 }
-func parseCustomMatches(list *Node) (*Node, error) {
-	var settings model.MosDNSSettings
-	data := append([]byte(`{"custom_matches":`), ToJSON(list)...)
-	data = append(data, '}')
-	if err := json.Unmarshal(data, &settings); err != nil {
+func parseCustomMatches(list json.RawMessage) (*Node, error) {
+	var matches []model.MosDNSMatch
+	if err := json.Unmarshal(list, &matches); err != nil {
 		return nil, err
 	}
-	return seqOf(mosdns.MatchEntries(settings.CustomMatches)), nil
+	return seqOf(mosdns.MatchEntries(matches)), nil
 }
 func (p *Profile) renderMembers(group model.ProxyGroup) *Node {
 	return rules.RenderGroupDocument(group, rules.GroupResources(p.source))

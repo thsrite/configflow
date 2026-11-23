@@ -1368,7 +1368,7 @@ func replaceDownloadEntries(download *Node, entries []*Node) {
 func ownHelpers(document *Node, routes []string, actions *Node, entries []*Node) error {
 	list := get(document, "plugins")
 	byTag := pluginMap(document)
-	desired, err := HelperPlugins(routes, actions, chainFeatures(byTag))
+	desired, err := HelperPlugins(routes, actions, documentFeatures(byTag))
 	if err != nil {
 		return err
 	}
