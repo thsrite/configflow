@@ -87,49 +87,19 @@ func missingAggregationProvider(context.Context, model.Aggregation, *model.Confi
 	return nil, ErrAggregationProviderMissing
 }
 
-var (
-	hooksMu             sync.RWMutex
-	locations           Locations           = PassthroughLocations{}
-	aggregationProvider AggregationRenderer = missingAggregationProvider
-)
+// SetLocations registers A11's deployment_locations on the default service;
+// nil restores the default. It returns a function restoring the previous value.
+func SetLocations(l Locations) (restore func()) { return Default().setLocations(l) }
 
-// SetLocations registers A11's deployment_locations; nil restores the
-// default. It returns a function restoring the previous value (tests).
-func SetLocations(l Locations) (restore func()) {
-	if l == nil {
-		l = PassthroughLocations{}
-	}
-	hooksMu.Lock()
-	previous := locations
-	locations = l
-	hooksMu.Unlock()
-	return func() { SetLocations(previous) }
-}
-
-// SetAggregationRenderer registers the aggregation owner;
+// SetAggregationRenderer registers the aggregation owner on the default service;
 // nil restores the fail-closed default. It returns a restore function.
 func SetAggregationRenderer(fn AggregationRenderer) (restore func()) {
-	if fn == nil {
-		fn = missingAggregationProvider
-	}
-	hooksMu.Lock()
-	previous := aggregationProvider
-	aggregationProvider = fn
-	hooksMu.Unlock()
-	return func() { SetAggregationRenderer(previous) }
+	return Default().setAggregationRenderer(fn)
 }
 
-func currentLocations() Locations {
-	hooksMu.RLock()
-	defer hooksMu.RUnlock()
-	return locations
-}
+func currentLocations() Locations { return Default().Locations() }
 
-func currentAggregationRenderer() AggregationRenderer {
-	hooksMu.RLock()
-	defer hooksMu.RUnlock()
-	return aggregationProvider
-}
+func currentAggregationRenderer() AggregationRenderer { return Default().AggregationRenderer() }
 
 // DeliveryEnv supplies typed source and node conversion collaborators.
 type DeliveryEnv struct {
@@ -182,46 +152,11 @@ func DefaultDeliveryEnv() *DeliveryEnv {
 	return &DeliveryEnv{Fetch: defaultFetch, SubscriptionFetch: defaultFetch, AggregationFetch: defaultFetch, NodeID: randomNodeID}
 }
 
-var (
-	envMu sync.Mutex
-	env   *DeliveryEnv
-)
+// SetDeliveryEnv replaces the environment on the default service
+// (nil = DefaultDeliveryEnv) and returns a restore function.
+func SetDeliveryEnv(e *DeliveryEnv) (restore func()) { return Default().setDeliveryEnv(e) }
 
-// SetDeliveryEnv replaces the environment (nil = DefaultDeliveryEnv) and returns a restore
-// function. Missing fields fall back to the defaults.
-func SetDeliveryEnv(e *DeliveryEnv) (restore func()) {
-	envMu.Lock()
-	previous := env
-	env = e
-	envMu.Unlock()
-	return func() {
-		envMu.Lock()
-		env = previous
-		envMu.Unlock()
-	}
-}
-
-func currentDeliveryEnv() *DeliveryEnv {
-	envMu.Lock()
-	defer envMu.Unlock()
-	e := DefaultDeliveryEnv()
-	if env != nil {
-		if env.Fetch != nil {
-			e.Fetch = env.Fetch
-		}
-		if env.SubscriptionFetch != nil {
-			e.SubscriptionFetch = env.SubscriptionFetch
-		}
-		if env.AggregationFetch != nil {
-			e.AggregationFetch = env.AggregationFetch
-		}
-		e.Converter = env.Converter
-		if env.NodeID != nil {
-			e.NodeID = env.NodeID
-		}
-	}
-	return e
-}
+func currentDeliveryEnv() *DeliveryEnv { return Default().DeliveryEnv() }
 
 func (e *DeliveryEnv) converter() convert.NodeConverter {
 	if e.Converter != nil {

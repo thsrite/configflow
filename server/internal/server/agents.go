@@ -19,7 +19,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
-	"configflow/internal/refresh"
 	"configflow/internal/routers"
 	"configflow/internal/tasks"
 )
@@ -41,12 +40,15 @@ type agentServices struct {
 // (PairPublisher on Manager, HARules on monitor.Service), connects
 // notifications.Service (D6), registers the SlotAgents task row builder via
 // agenttasks, and registers the Agent-domain loops on rt.
-func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *notifications.Service) (*agentServices, error) {
-	deploy.Wire()
-	apiagents.WireContentSyncOn(rt)
+func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *notifications.Service, gen *generateServices) (*agentServices, error) {
+	apiagents.WireContentSyncWith(rt, gen.substore)
 	health.Wire()
 
 	if opts.Repo == nil {
+		// NewApp() test path: no Manager instance, so the deploy Service and
+		// the Manager receipt check use the package-level fallbacks.
+		gen.deploy = newDeployService(deploy.Options{})
+		agents.RegisterHooks(agents.Hooks{ReceiptMatches: deploy.ReceiptMatches})
 		rulesync.WireOn(rt)
 		dnsfollow.RegisterOn(rt)
 		dnsha.RegisterOn(rt)
@@ -106,17 +108,22 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 		},
 	})
 	rulesync.UseService(rsync)
-	refresh.OnRulesRefreshed(rsync.WakeLoop)
+
+	gen.refresh.OnRulesRefreshed(rsync.WakeLoop)
 
 	ip := agentipv6.NewService(m, apiagents.ContentChecker)
 
-	// Transitional boundary bridges for packages not yet migrated to explicit
-	// service injection (W7 deploy, W9 routers, W10 api handlers).
-	deploy.SetPairPublication(func(ctx context.Context, _ *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
-		return ha.PublishPair(ctx, id, b, o)
+	gen.deploy = newDeployService(deploy.Options{
+		Pair: func(ctx context.Context, _ *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
+			return ha.PublishPair(ctx, id, b, o)
+		},
+		IPv6: ip.EnrollSource,
 	})
-	deploy.SetIPv6Enroll(ip.EnrollSource)
-	monitor.SetHARulesJSON(ha.PairRulesJSON)
+
+	// Transitional boundary bridges for packages not yet migrated to explicit
+	// service injection (W9 routers, W10 api handlers). The monitor bridge
+	// dispatches through mon so mon's two-phase HA owner is the only one.
+	monitor.SetHARulesJSON(mon.PairRules)
 	routers.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (routers.IPv6Host, error) {
 		if agent == nil {
 			return ip.Host(ctx, nil)

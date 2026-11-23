@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -34,30 +33,19 @@ const ResponseSeconds = 12
 const PoolWorkers = 8
 
 var (
-	settingsMu      sync.Mutex
-	responseSeconds float64 = ResponseSeconds
-
 	pool = make(chan struct{}, PoolWorkers)
 
 	flights = lockx.NewFlight[flightKey, *responseCopy](lifecycle.DefaultSpawner{}, "provider-render")
 )
 
-// SetResponseSeconds replaces RESPONSE_SECONDS (tests); it returns a
-// restore function. A negative value waits for completed rendering without
-// a deadline; successful responses are still saved as last-good content.
+// SetResponseSeconds replaces RESPONSE_SECONDS on the default service (tests);
+// it returns a restore function. A negative value waits for completed rendering
+// without a deadline; successful responses are still saved as last-good content.
 func SetResponseSeconds(seconds float64) (restore func()) {
-	settingsMu.Lock()
-	previous := responseSeconds
-	responseSeconds = seconds
-	settingsMu.Unlock()
-	return func() { SetResponseSeconds(previous) }
+	return Default().setResponseSeconds(seconds)
 }
 
-func currentResponseSeconds() float64 {
-	settingsMu.Lock()
-	defer settingsMu.Unlock()
-	return responseSeconds
-}
+func currentResponseSeconds() float64 { return Default().ResponseSeconds() }
 
 // flightKey identifies one shared render: the provider, its request filters
 // and the committed configuration it renders (head). A render of a working

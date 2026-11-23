@@ -99,11 +99,18 @@ func (p *contentPool) close() {
 func WireContentSync() { WireContentSyncOn(lifecycle.Current()) }
 
 // WireContentSyncOn installs Sub-Store invalidation and cleanup on rt.
-func WireContentSyncOn(rt *lifecycle.Runtime) {
+func WireContentSyncOn(rt *lifecycle.Runtime) { WireContentSyncWith(rt, substore.Default()) }
+
+// WireContentSyncWith subscribes content-sync invalidation to sub's content
+// change event and registers the shutdown hook on rt.
+func WireContentSyncWith(rt *lifecycle.Runtime, sub *substore.Service) {
 	if rt == nil {
 		rt = lifecycle.Current()
 	}
-	substore.SetContentSyncInvalidator(func(context.Context) error { contentChecks.dispatcher.Invalidate(); return nil })
+	if sub == nil {
+		sub = substore.Default()
+	}
+	sub.OnContentChange(func(context.Context) error { contentChecks.dispatcher.Invalidate(); return nil })
 	rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "agent-content-sync-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { contentChecks.close() }})
 }
 

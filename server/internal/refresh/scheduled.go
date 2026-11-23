@@ -498,7 +498,7 @@ func runResource(ctx context.Context, resource Resource, trigger string) {
 	if trigger != "schedule" {
 		// A run outside the loop moved a due time: the loop recomputes its
 		// pause (its own rounds recompute it when they end).
-		refreshLoop.wake.Notify()
+		Default().Wake()
 	}
 }
 

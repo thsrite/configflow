@@ -297,8 +297,14 @@ func noteHostsChange(ctx context.Context, id string, previous, current *Cache) {
 		return
 	}
 	cacheLog.Info(fmt.Sprintf(msgCacheHosts, logx.LogText(subscriptionLabel(current.Metadata, id), 120), added, removed, changed))
-	invalidate := contentSync.Load()
-	if invalidate == nil {
+	Default().NotifyContentChange(ctx)
+	if invalidate := contentSync.Load(); invalidate != nil {
+		invokeContentInvalidator(ctx, *invalidate)
+	}
+}
+
+func invokeContentInvalidator(ctx context.Context, fn ContentSyncInvalidator) {
+	if fn == nil {
 		return
 	}
 	defer func() {
@@ -306,7 +312,7 @@ func noteHostsChange(ctx context.Context, id string, previous, current *Cache) {
 			cacheLog.Debug(msgCacheInvalidator)
 		}
 	}()
-	if err := (*invalidate)(ctx); err != nil {
+	if err := fn(ctx); err != nil {
 		cacheLog.Debug(msgCacheInvalidator)
 	}
 }

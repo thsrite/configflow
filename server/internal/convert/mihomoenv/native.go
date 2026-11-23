@@ -14,17 +14,29 @@ import (
 	"configflow/internal/yamlx"
 )
 
-type liveNativeConverter struct{}
-
-func (liveNativeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
-	return convert.OptionalNodeConverter(substore.NativeConverter()).ConvertProxy(lifecycle.Detach(ctx), text)
+type liveNativeConverter struct {
+	sub *substore.Service
 }
 
-// NativeEnv constructs the production typed MihomoEnvironment directly from
-// typed owners without legacy JSON transcoding.
-func NativeEnv() convert.MihomoEnvironment {
+func (c liveNativeConverter) ConvertProxy(ctx context.Context, text string) (*yamlx.Node, error) {
+	var converter convert.NodeConverter
+	if c.sub != nil {
+		converter = c.sub.Client
+	} else {
+		converter = substore.NativeConverter()
+	}
+	return convert.OptionalNodeConverter(converter).ConvertProxy(lifecycle.Detach(ctx), text)
+}
+
+// NativeEnv constructs the production typed MihomoEnvironment using the
+// process default Sub-Store and provider services.
+func NativeEnv() convert.MihomoEnvironment { return NativeEnvFor(nil, nil) }
+
+// NativeEnvFor constructs the production typed MihomoEnvironment directly from
+// explicit typed service instances without legacy JSON transcoding.
+func NativeEnvFor(sub *substore.Service, pv *provider.Service) convert.MihomoEnvironment {
 	env := convert.DefaultMihomoEnvironment()
-	env.Converter = liveNativeConverter{}
+	env.Converter = liveNativeConverter{sub: sub}
 	env.ProviderInterval = func(settings model.MihomoSettings) (int64, error) {
 		if settings.ProviderUpdateInterval != nil {
 			return refresh.CheckInterval(*settings.ProviderUpdateInterval, msgProviderInterval)
@@ -61,6 +73,10 @@ func NativeEnv() convert.MihomoEnvironment {
 		return text, true
 	}
 	env.Preflight = func(ctx context.Context, config *model.Config, main *yamlx.Node) error {
+		if pv != nil {
+			_, err := pv.PrepareBundle(ctx, config, main, provider.DeliveryOptions{})
+			return err
+		}
 		_, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{})
 		return err
 	}

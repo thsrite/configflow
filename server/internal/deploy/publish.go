@@ -30,74 +30,25 @@ type PushInput struct {
 }
 
 // Publish delegates pair members to the HA owner, failing closed without one.
-func Publish(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions) (answer *model.Deployment, err error) {
-	err = RunDetached(ctx, "agent-publish-"+id, func(ctx context.Context) error {
-		publicationHooks.RLock()
-		nativePair := publicationHooks.nativePair
-		publicationHooks.RUnlock()
-		if nativePair != nil {
-			r, handled, e := nativePair(ctx, m, id, b, o)
-			if e != nil || handled {
-				answer = r
-				return e
-			}
-		}
-
-		t, found, e := targetByID(ctx, m, id)
-		if e != nil {
-			return e
-		}
-		// Fail closed only without an owner. An installed owner that did not
-		// handle the Agent (no complete enabled pair, e.g. during a first enable)
-		// leaves it to PublishDirect, whose reservation answers the HA conflict.
-		if found && nativePair == nil && pairRequired(t) {
-			return ErrPairPublisherMissing
-		}
-		answer, e = PublishDirect(ctx, m, id, b, o)
-		return e
-	})
-	return
+func Publish(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions) (*model.Deployment, error) {
+	return Default().Publish(ctx, m, id, b, o)
 }
 
 // Push checks current target guards before choosing transactional or legacy publication.
-func Push(ctx context.Context, m *agents.Manager, id string, in PushInput) (answer *model.Deployment, err error) {
-	err = RunDetached(ctx, "agent-push-"+id, func(ctx context.Context) error {
-		t, found, e := targetByID(ctx, m, id)
-		if e != nil {
-			return e
-		}
-		if !found {
-			answer = result(false, "", "Agent not found", 0)
-			return nil
-		}
-		if (in.ExpectedProfileID != nil && t.ProfileID != *in.ExpectedProfileID) || (in.ExpectedServiceType != nil && t.ServiceType != *in.ExpectedServiceType) {
-			answer = result(false, "", msgBindingChanged, 409)
-			return nil
-		}
-		if in.Bundle != nil || t.ServiceType == "mihomo" || t.ServiceType == "mosdns" || t.ServiceType == "oxidns" {
-			if in.Bundle == nil {
-				answer = result(false, "", "A complete deployment bundle is required", 409)
-				return nil
-			}
-			answer, e = Publish(ctx, m, id, in.Bundle, in.Publish)
-		} else {
-			answer, e = legacyPush(ctx, m, id, in.ConfigContent, in)
-		}
-		return e
-	})
-	return
+func Push(ctx context.Context, m *agents.Manager, id string, in PushInput) (*model.Deployment, error) {
+	return Default().Push(ctx, m, id, in)
 }
 
 // PublishDirect durably submits a complete bundle before transmitting it.
-func PublishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions) (answer *model.Deployment, err error) {
-	err = RunDetached(ctx, "agent-publish-"+id, func(ctx context.Context) error {
-		var e error
-		answer, e = publishDirect(ctx, m, id, b, o)
-		return e
-	})
-	return
+func PublishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions) (*model.Deployment, error) {
+	return Default().PublishDirect(ctx, m, id, b, o)
 }
-func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions) (answer *model.Deployment, err error) {
+
+func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions) (*model.Deployment, error) {
+	return publishDirectWith(ctx, m, id, b, o, Default().ipv6Enroller())
+}
+
+func publishDirectWith(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions, enroll IPv6Enroller) (answer *model.Deployment, err error) {
 	if b == nil {
 		return nil, preparation("A complete deployment bundle is required")
 	}
@@ -301,9 +252,6 @@ func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle,
 	if err = m.RememberPreparedContent(ctx, id, did, raw, proof); err != nil {
 		return nil, err
 	}
-	publicationHooks.RLock()
-	enroll := publicationHooks.ipv6
-	publicationHooks.RUnlock()
 	if t.ServiceType == "mihomo" && o.SourceSnapshot != nil && enroll != nil {
 		if err = ctx.Err(); err != nil {
 			return nil, err

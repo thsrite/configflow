@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -199,21 +198,7 @@ func runTask(ctx context.Context, key, id string) error {
 	}
 	return err
 }
-func round(ctx context.Context) {
-	scope := repo.WithScope(ctx)
-	defer repo.ResetConfigContext(scope)
-	refreshLoop.pause.Store(int64(TickSeconds * time.Second))
-	defer func() {
-		if recover() != nil {
-			logger.Errorf(msgRoundPanic)
-		}
-	}()
-	if _, err := RunRound(scope, nil); err != nil && !errors.Is(err, context.Canceled) {
-		logger.Errorf(msgRoundFailed, weburl.SafeErrorDetails(err))
-		return
-	}
-	refreshLoop.pace(scope)
-}
+func round(ctx context.Context) { Default().round(ctx) }
 
 // MaxPause bounds the pause of the scheduled-refresh loop between due times.
 const MaxPause = 10 * time.Minute
@@ -227,8 +212,6 @@ type refreshPacer struct {
 	pause   atomic.Int64 // time.Duration
 	commits repo.CommitWake
 }
-
-var refreshLoop refreshPacer
 
 // pace follows the repository's configuration commits and sets the pause to
 // the next due time.
@@ -253,54 +236,19 @@ func (p *refreshPacer) pace(ctx context.Context) {
 	p.pause.Store(int64(pause))
 }
 
-func refreshPause(context.Context) time.Duration {
-	if pause := time.Duration(refreshLoop.pause.Load()); pause > 0 {
-		return pause
-	}
-	return TickSeconds * time.Second
-}
+func refreshPause(ctx context.Context) time.Duration { return Default().pause(ctx) }
 
-func periodic() lifecycle.Periodic {
-	return lifecycle.Periodic{Name: "scheduled-refresh", Start: lifecycle.AtBoot, FirstDelay: FirstDelaySeconds * time.Second, Interval: refreshPause, Wake: &refreshLoop.wake,
-		// A wake-up left from before this activation must not cut its first pauses short.
-		OnStart: func(context.Context) { refreshLoop.wake.Clear(); refreshLoop.pause.Store(0) },
-		Round:   func(ctx context.Context) error { round(ctx); return nil }}
-}
+func periodic() lifecycle.Periodic { return Default().Periodic() }
 
 // Wire registers native task builders/runners and the tracked refresh loop on the default runtime.
 func Wire() { WireOn(lifecycle.Current()) }
 
 // WireOn registers native task builders/runners and the tracked refresh loop on rt.
-func WireOn(rt *lifecycle.Runtime) {
-	if rt == nil {
-		rt = lifecycle.Current()
-	}
-	tasks.SetRowBuilder(tasks.SlotSubscriptions, SubscriptionTasks)
-	tasks.SetRowBuilder(tasks.SlotRuleSources, RuleTasks)
-	tasks.SetRunner("subscription", runTask)
-	tasks.SetRunner("rule_source", runTask)
-	rt.RegisterPeriodic(periodic())
-}
-
-var rulesRefreshed struct {
-	sync.Mutex
-	hooks []func()
-}
+func WireOn(rt *lifecycle.Runtime) { Default().Register(rt, tasks.Default()) }
 
 // OnRulesRefreshed registers fn to run after a rule source refresh finished
 // (the shared rule files may have changed). fn must not block; the Agent
 // rule-sync loop uses it to wake up (design/o17-runtime-state.md 2.6).
-func OnRulesRefreshed(fn func()) {
-	rulesRefreshed.Lock()
-	rulesRefreshed.hooks = append(rulesRefreshed.hooks, fn)
-	rulesRefreshed.Unlock()
-}
+func OnRulesRefreshed(fn func()) { Default().OnRulesRefreshed(fn) }
 
-func notifyRulesRefreshed() {
-	rulesRefreshed.Lock()
-	hooks := append([]func(){}, rulesRefreshed.hooks...)
-	rulesRefreshed.Unlock()
-	for _, fn := range hooks {
-		fn()
-	}
-}
+func notifyRulesRefreshed() { Default().NotifyRulesRefreshed() }
