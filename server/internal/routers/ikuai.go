@@ -76,12 +76,6 @@ var (
 		"ip_addr", "comment"}
 )
 
-// ikuaiPolicyAlways is the 端口分流 form's default schedule: every day, all day.
-func ikuaiPolicyAlways() map[string]any {
-	return map[string]any{"custom": []any{map[string]any{"type": "weekly", "weekdays": "1234567",
-		"start_time": "00:00", "end_time": "23:59"}}, "object": []any{}}
-}
-
 // Ikuai is an iKuai 4.x driver. A driver is used by one goroutine at a time
 // (the session, the batch snapshot and the proofs of absent adds are per
 // driver); create one per release or read.

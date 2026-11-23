@@ -28,3 +28,6 @@ func (r ikuaiRow) set(key string) bool { return r.text(key) != "" }
 func (r ikuaiRow) is(key, value string) bool     { s, ok := r[key].(string); return ok && s == value }
 func (r ikuaiRow) has(key string) bool           { _, ok := r[key]; return ok }
 func (r ikuaiRow) str(key string) (string, bool) { s, ok := r[key].(string); return s, ok }
+
+// filled: the field holds a non-empty string, a non-zero number or true.
+func (r ikuaiRow) filled(key string) bool { return nonEmptyText(r[key]) != "" || r[key] == true }

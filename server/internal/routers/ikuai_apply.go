@@ -277,7 +277,7 @@ func (d *Ikuai) confirmAdded(ctx context.Context, added []*ikuaiAddUndo) error {
 // --- writes ------------------------------------------------------------------------
 
 // staticWrite writes static_rt and keeps the batch snapshot true to it.
-func (d *Ikuai) staticWrite(ctx context.Context, action string, param ikuaiRow, undo *ikuaiAddUndo) error {
+func (d *Ikuai) staticWrite(ctx context.Context, action string, param ikuaiForm, undo *ikuaiAddUndo) error {
 	if _, err := d.Write(ctx, "static_rt", action, param, 0); err != nil {
 		if isRejected(err) {
 			return err
@@ -298,9 +298,9 @@ func (d *Ikuai) staticWrite(ctx context.Context, action string, param ikuaiRow, 
 	}
 	switch action {
 	case "del":
-		delete(d.batch.rows, param.text("id"))
+		delete(d.batch.rows, param.formID())
 	case "edit":
-		d.batch.stale[param.text("id")] = true
+		d.batch.stale[param.formID()] = true
 	default:
 		d.batch.addedSinceRead = true
 	}
@@ -338,13 +338,14 @@ func (d *Ikuai) row(ctx context.Context, funcName, id string, fresh bool) (ikuai
 // add writes a named object and returns the undo that finds it again by its
 // unique name: iKuai refuses a duplicate name (code 3001, 4.0.314), so the
 // name identifies the new object even when its ID is never read back.
-func (d *Ikuai) add(ctx context.Context, funcName string, payload, match ikuaiRow, timeout float64) (*ikuaiAddUndo, error) {
-	if tag, ok := payload["tagname"].(string); !ok || tag == "" {
+func (d *Ikuai) add(ctx context.Context, funcName string, payload ikuaiForm, match ikuaiRow, timeout float64) (*ikuaiAddUndo, error) {
+	tag := payload.formTag()
+	if tag == "" {
 		// Without a name the undo could not find the object again (or would
 		// take a row without a name for it). Python failed here (KeyError).
 		return nil, routerError(messageIkuaiOperationFormat)
 	}
-	undo := &ikuaiAddUndo{Kind: "add_undo", Func: funcName, Match: ikuaiRow{"tagname": payload["tagname"]}, Confirmed: true}
+	undo := &ikuaiAddUndo{Kind: "add_undo", Func: funcName, Match: ikuaiRow{"tagname": tag}, Confirmed: true}
 	maps.Copy(undo.Match, match)
 	delete(d.absent, absentKey(funcName, undo.Match.text("tagname")))
 	if funcName == "static_rt" {
@@ -447,14 +448,6 @@ func pick(row ikuaiRow, fields []string) ikuaiRow {
 	return out
 }
 
-func anyList(values []string) []any {
-	out := make([]any, len(values))
-	for i, v := range values {
-		out[i] = v
-	}
-	return out
-}
-
 // IkuaiRoutePayload is the complete static_rt edit form of a decoded row with
 // changes applied; the netmask loses the display suffix iKuai adds.
 func IkuaiRoutePayload(row, changes ikuaiRow) ikuaiRow {
@@ -477,16 +470,20 @@ func ikuaiTarget(dst []string, refs []any, useRefs bool) map[string]any {
 	if useRefs {
 		return map[string]any{"custom": []any{}, "object": refs}
 	}
-	return map[string]any{"custom": anyList(dst), "object": []any{}}
+	custom := make([]any, len(dst))
+	for i, v := range dst {
+		custom[i] = v
+	}
+	return map[string]any{"custom": custom, "object": []any{}}
 }
 
 // ikuaiNewNAT is a NAT bypass rule; with refs its destination is those IP
 // groups and dst only names it.
-func ikuaiNewNAT(src, dst []string, comment string, refs []any, useRefs bool) ikuaiRow {
-	return ikuaiNATPayload(ikuaiRow{}, ikuaiRow{"enabled": "yes", "tagname": IkuaiTagname("nat", strings.Join(dst, ",")),
-		"action": "filter", "protocol": "any", "iinterface": "any", "ointerface": "any",
-		"src_addr": map[string]any{"custom": anyList(src), "object": []any{}}, "dst_addr": ikuaiTarget(dst, refs, useRefs),
-		"nat_addr": "", "nat_port": "", "src_addr_inv": 0, "dst_addr_inv": 0, "comment": comment})
+func ikuaiNewNAT(src, dst []string, comment string, refs []any, useRefs bool) *ikuaiNATForm {
+	return &ikuaiNATForm{Enabled: "yes", Tagname: IkuaiTagname("nat", strings.Join(dst, ",")), Action: "filter",
+		Protocol: "any", IInterface: "any", OInterface: "any", SrcAddr: ikuaiAddressList(src),
+		DstAddr: ikuaiTargetSet(dst, refs, useRefs), SrcPort: ikuaiAddressList(nil), DstPort: ikuaiAddressList(nil),
+		Comment: comment}
 }
 
 // ikuaiPolicyPayload is a complete 端口分流 form: a field left out would reset
@@ -508,11 +505,14 @@ func ikuaiPolicyTarget(gateway string, dst []string, comment string, refs []any,
 		"src_addr_inv": 1, "dst_addr": ikuaiTarget(dst, refs, useRefs), "dst_addr_inv": 0, "comment": comment}
 }
 
-func ikuaiNewPolicy(gateway string, dst []string, comment string, refs []any, useRefs bool) ikuaiRow {
-	changes := ikuaiPolicyTarget(gateway, dst, comment, refs, useRefs)
-	maps.Copy(changes, ikuaiRow{"tagname": IkuaiTagname("pr", comment), "interface": "", "iface_band": 0,
-		"time": ikuaiPolicyAlways(), "mode": 0, "area_code": "", "dst_type": 0})
-	return ikuaiPolicyPayload(ikuaiRow{}, changes)
+// ikuaiNewPolicy is a new rule with the target of ikuaiPolicyTarget, every
+// day all day.
+func ikuaiNewPolicy(gateway string, dst []string, comment string, refs []any, useRefs bool) *ikuaiPolicyForm {
+	return &ikuaiPolicyForm{Enabled: "yes", Tagname: IkuaiTagname("pr", comment), SrcAddr: ikuaiAddressList([]string{gateway}),
+		DstAddr: ikuaiTargetSet(dst, refs, useRefs), Comment: comment,
+		Time: ikuaiSchedule{Custom: []ikuaiWeekly{{"weekly", "1234567", "00:00", "23:59"}}, Object: []any{}},
+		Prio: PolicyPriority, Type: ikuaiPolicyNexthop, Nexthop: gateway, SrcPort: ikuaiAddressList(nil),
+		DstPort: ikuaiAddressList(nil), Protocol: "any", SrcAddrInv: 1}
 }
 
 // ipv4Mask is the dotted netmask of an IPv4 prefix length.
@@ -680,7 +680,7 @@ func (d *Ikuai) apply(ctx context.Context, op ikuaiOp) (any, error) {
 }
 
 // addAndFind adds a rule and returns the record deleting it by its new ID.
-func (d *Ikuai) addAndFind(ctx context.Context, funcName, undoKind string, payload, match ikuaiRow, timeout float64) (any, error) {
+func (d *Ikuai) addAndFind(ctx context.Context, funcName, undoKind string, payload ikuaiForm, match ikuaiRow, timeout float64) (any, error) {
 	undo, err := d.add(ctx, funcName, payload, match, timeout)
 	if err != nil {
 		return nil, err
@@ -711,8 +711,8 @@ func (d *Ikuai) addRoute(ctx context.Context, cidr, gateway, comment string) (an
 		return nil, routerError(messageIkuaiOperationFormat)
 	}
 	address, mask := network.Addr().String(), ipv4Mask(network.Bits())
-	undo, err := d.add(ctx, "static_rt", ikuaiRow{"enabled": "yes", "tagname": IkuaiTagname("rt", cidr), "ip_type": "4",
-		"interface": "auto", "dst_addr": address, "gateway": gateway, "netmask": mask, "prio": 1, "comment": comment},
+	undo, err := d.add(ctx, "static_rt", &ikuaiRouteForm{Enabled: "yes", Tagname: IkuaiTagname("rt", cidr), IPType: "4",
+		Interface: "auto", DstAddr: address, Gateway: gateway, Netmask: mask, Prio: 1, Comment: comment},
 		ikuaiRow{"dst_addr": address, "netmask": mask, "gateway": gateway, "comment": comment}, 0)
 	if err != nil {
 		return nil, err
@@ -737,7 +737,7 @@ func (d *Ikuai) applyPolicy(ctx context.Context, op ikuaiOp) (any, error) {
 			return nil, err
 		}
 		payload := ikuaiNewPolicy(op.Gateway, op.Dst, op.Comment, refs, useRefs)
-		return d.addAndFind(ctx, "stream_ipport", "policy_route_delete", payload, ikuaiRow{"comment": payload["comment"]}, 0)
+		return d.addAndFind(ctx, "stream_ipport", "policy_route_delete", payload, ikuaiRow{"comment": payload.Comment}, 0)
 	case "policy_route_readd":
 		record, err := d.rebind(ctx, op.Record)
 		if err != nil {
@@ -1208,7 +1208,7 @@ func IkuaiOversizedRequests(ops []json.RawMessage) []string {
 			}
 			form := ikuaiNewPolicy(op.Gateway, op.Dst, op.Comment, refs, op.Groups != nil)
 			if op.Kind == "policy_route_update" {
-				form["id"] = 0
+				form.ID = new(int64)
 			}
 			payload = form
 		case op.Kind == "nat_add" || op.Kind == "nat_update":
@@ -1224,7 +1224,7 @@ func IkuaiOversizedRequests(ops []json.RawMessage) []string {
 			}
 			form := ikuaiNewNAT(op.Src, dst, op.Comment, refs, op.Groups != nil)
 			if op.Kind == "nat_update" {
-				form["id"] = 0
+				form.ID = new(int64)
 			}
 			payload = form
 		default:

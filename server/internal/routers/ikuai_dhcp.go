@@ -169,7 +169,7 @@ func ikuaiDHCPEntry(row ikuaiRow, bindings []ikuaiRow) (*DhcpDnsEntry, error) {
 		return nil, fmt.Errorf("routers: iKuai DHCP attributes: %w", err)
 	}
 	entry := &DhcpDnsEntry{ID: row.text("id"), Network: "", DNS: dns, Enabled: !row.is("enabled", "no"),
-		DNSExplicit: truthyValue(row["dns1"]) && truthyValue(row["dns2"]), Attributes: encoded,
+		DNSExplicit: row.filled("dns1") && row.filled("dns2"), Attributes: encoded,
 		Blockers: uniqueStrings(blockers)}
 	if network {
 		entry.Network = subnet.String()
@@ -183,9 +183,6 @@ func cmpOrNone(text string) string {
 	}
 	return text
 }
-
-// truthyValue: a non-empty string or a non-zero number.
-func truthyValue(v any) bool { return nonEmptyText(v) != "" || v == true }
 
 // ikuaiDHCPSubnet is the one network the address pool, netmask and gateway
 // agree on.
