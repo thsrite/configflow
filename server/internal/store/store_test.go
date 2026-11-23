@@ -381,13 +381,13 @@ func TestNewDatabaseMeta(t *testing.T) {
 		t.Fatal(entry.Head)
 	}
 	meta := target.SalvageMeta()
-	if !reflect.DeepEqual(meta.Keys(), []string{"commit_id", "created_at", "generation", "migration", "root_order", "storage_version", "store_id"}) {
+	if !reflect.DeepEqual(meta.Keys(), []string{"commit_id", "created_at", "generation", "migration", "root_order", "state_commit_id", "state_generation", "storage_version", "store_id"}) {
 		t.Fatal(meta.Keys())
 	}
 	if !regexp.MustCompile(`^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{6})?Z$`).MatchString(meta.GetString("created_at")) {
 		t.Fatal(meta.GetString("created_at"))
 	}
-	if meta.GetInt("storage_version") != 1 || compact(t, meta.Value("migration")) != `{"source":"defaults"}` {
+	if meta.GetInt("storage_version") != StorageVersion || compact(t, meta.Value("migration")) != `{"source":"defaults"}` {
 		t.Fatal(compact(t, meta))
 	}
 	wantSize := int64(0)
@@ -435,9 +435,9 @@ func TestCheckRejectsDamagedAndNewerFiles(t *testing.T) {
 	if err := target.Check(); err != nil {
 		t.Fatal(err)
 	}
-	execSQL(t, target.Path(), "UPDATE meta SET value = '2' WHERE key = 'storage_version'")
+	execSQL(t, target.Path(), "UPDATE meta SET value = '3' WHERE key = 'storage_version'")
 	if err := target.Check(); !errors.Is(err, ErrUnsupported) || !errors.Is(err, ErrStore) || errors.Is(err, ErrCorrupt) ||
-		err.Error() != "数据库存储版本 2 高于当前支持的 1" {
+		err.Error() != "数据库存储版本 3 高于当前支持的 2" {
 		t.Fatal(err)
 	}
 	execSQL(t, target.Path(), `UPDATE meta SET value = '"1"' WHERE key = 'storage_version'`)

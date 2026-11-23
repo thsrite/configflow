@@ -20,11 +20,15 @@ type ProfileRows struct {
 // Document is the row-level representation of a configuration. Order records
 // the root member order; a nil section means that the section is absent.
 // Documents returned by the store are immutable, including their byte slices.
+//
+// State holds the agent_state rows (storage version 2) in (owner, member)
+// order as read; they are not part of the configuration rows.
 type Document struct {
 	Order          []string
 	Root           []Field
 	System, Shared *Section
 	Profiles       []ProfileRows
+	State          []StateRow
 }
 
 // Meta holds the store's metadata and opaque additional metadata members.

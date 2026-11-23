@@ -31,4 +31,9 @@ const (
 	msgJournalRestore        = "无法把数据库日志模式恢复为 DELETE：%s"
 	msgCorruptAccess         = "配置数据库已损坏：%s"
 	msgAccess                = "配置数据库访问失败：%s"
+	msgStateKey              = "Agent 状态行的 Agent ID 与成员名必须是非空的有效 UTF-8"
+	msgStateDuplicate        = "Agent 状态行 %s/%s 重复"
+	msgStateInvalid          = "Agent 状态行 %s/%s 不是有效 JSON"
+	msgStateHeadInvalid      = "数据库元信息 state_generation/state_commit_id 无效"
+	msgStateTableMissing     = "数据库还没有升级到存储版本 2，不能写入 Agent 状态"
 )

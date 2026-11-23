@@ -189,7 +189,7 @@ func (c *Conn) metaRows(keys ...string) (map[string]json.RawMessage, error) {
 
 // Head returns the identity of the committed state this connection sees.
 func (c *Conn) Head() (Head, error) {
-	meta, err := c.metaRows("store_id", "generation", "commit_id")
+	meta, err := c.metaRows("store_id", "generation", "commit_id", "state_generation", "state_commit_id")
 	if err != nil {
 		return Head{}, err
 	}
@@ -203,7 +203,11 @@ func (c *Conn) Head() (Head, error) {
 			return Head{}, newError(ErrCorrupt, msgCommitIDInvalid)
 		}
 	}
-	return Head{StoreID: storeID, Generation: generation, CommitID: commitID}, nil
+	state, stateCommitID, err := stateMetaFrom(meta)
+	if err != nil {
+		return Head{}, err
+	}
+	return Head{StoreID: storeID, Generation: generation, CommitID: commitID, State: state, StateCommitID: stateCommitID}, nil
 }
 
 func decodeString(value json.RawMessage, target *string) bool {
@@ -299,6 +303,16 @@ func (c *Conn) Load() (Entry, error) {
 	}
 	doc, err := buildDocument(rootOrder, sections, fields)
 	if err != nil {
+		return Entry{}, err
+	}
+	state, err := c.storedState()
+	if err != nil {
+		return Entry{}, err
+	}
+	for _, key := range state.keys {
+		size += textLength(state.values[key])
+	}
+	if doc.State, err = stateList(state); err != nil {
 		return Entry{}, err
 	}
 	return Entry{Head: head, Document: doc, Size: size}, nil

@@ -46,7 +46,7 @@ const (
 	// Filename is the name of the database file inside the data directory.
 	Filename = "configflow.sqlite3"
 	// StorageVersion is the newest storage version this code reads.
-	StorageVersion = 1
+	StorageVersion = 2
 	// ApplicationID is the SQLite application_id of a store ("CFLW").
 	ApplicationID = 0x43464C57
 )
@@ -78,10 +78,16 @@ var schema = []string{
 // with ==. CommitID is random per committed generation, so a restored older
 // database that reaches the same generation number again never equals a
 // cached head; it is "" for a database that has none (Python: None).
+//
+// State and StateCommitID count the commits that changed agent_state rows
+// (zero and "" for a file without any); a state-only commit keeps
+// Generation and CommitID. SameConfig compares only the configuration part.
 type Head struct {
-	StoreID    string
-	Generation int64
-	CommitID   string
+	StoreID       string
+	Generation    int64
+	CommitID      string
+	State         int64
+	StateCommitID string
 }
 
 // Entry is a document as stored at Head. Document must be treated as
@@ -115,6 +121,10 @@ type Store struct {
 	// transaction (ConfigStore._apply and ._commit in the Python tests);
 	// production code leaves it nil.
 	BeforeCommit func() error
+	// BeforeUpgradeRow, when set, runs inside Upgrade before the state row
+	// with index i is inserted; an error rolls the upgrade back. Tests use it
+	// to stop the upgrade at every point.
+	BeforeUpgradeRow func(i int) error
 
 	readers readers
 }
@@ -237,7 +247,7 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 			return err
 		}
 		digest.Write([]byte("fields"))
-		return connection.query("SELECT * FROM fields ORDER BY scope, owner, field", nil, func(rows *sql.Rows) error {
+		err = connection.query("SELECT * FROM fields ORDER BY scope, owner, field", nil, func(rows *sql.Rows) error {
 			var scope, owner, field, value string
 			var position, revision int64
 			if err := rows.Scan(&scope, &owner, &field, &position, &value, &revision); err != nil {
@@ -248,6 +258,24 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 			}
 			return row(scope, owner, field, position, value, revision)
 		})
+		if err != nil {
+			return err
+		}
+		if present, err := connection.hasStateTable(); err != nil || !present {
+			return err
+		}
+		digest.Write([]byte("agent_state"))
+		return connection.query("SELECT * FROM agent_state ORDER BY agent_id, member", nil, func(rows *sql.Rows) error {
+			var owner, member, value string
+			var revision int64
+			if err := rows.Scan(&owner, &member, &value, &revision); err != nil {
+				return err
+			}
+			if err := checkRowText("agent_state", owner+"/"+member, stateColumns, owner, member, value); err != nil {
+				return err
+			}
+			return row(owner, member, value, revision)
+		})
 	})
 	if err != nil {
 		return Fingerprint{}, err
@@ -256,7 +284,8 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 }
 
 // Commit writes the rows in which document differs from the database, and
-// the given meta keys (nil for none), in one transaction.
+// the given meta keys (nil for none), in one transaction. document.State is
+// the complete set of agent_state rows: missing rows are deleted.
 //
 // base is the entry the caller derived document from. If the database head
 // is no longer base.Head the commit fails with ErrConflict and nothing is
@@ -264,6 +293,10 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 // is stored and the changed fields get the new generation as revision. A
 // commit that only sets meta keys keeps the head. When neither the document
 // nor meta changes anything, nothing is written and committed is false.
+//
+// Configuration rows and agent_state rows are counted apart: changed
+// configuration rows advance Generation and CommitID, changed state rows
+// advance State and StateCommitID (state rows get the new State as revision).
 //
 // A document that cannot be stored fails with ErrDocument before anything
 // is written; SQLite failures are ErrStorage.
@@ -279,6 +312,10 @@ func (s *Store) CommitContext(ctx context.Context, base Entry, document *Documen
 	}
 	// Serialize first: a non-JSON value must fail before anything is written.
 	target, err := documentRows(document)
+	if err != nil {
+		return Entry{}, false, err
+	}
+	targetStateRows, err := targetState(document.State)
 	if err != nil {
 		return Entry{}, false, err
 	}
@@ -323,6 +360,19 @@ func (s *Store) CommitContext(ctx context.Context, base Entry, document *Documen
 		storedFields := fields
 		pending := diff(storedRootOrder, storedSections, storedFields, target)
 		changed := pending.any()
+		storedStateRows, err := connection.storedState()
+		if err != nil {
+			return err
+		}
+		pendingState := diffState(storedStateRows, targetStateRows)
+		stateChanged := pendingState.any()
+		if stateChanged {
+			if present, err := connection.hasStateTable(); err != nil {
+				return err
+			} else if !present {
+				return newError(ErrStore, msgStateTableMissing)
+			}
+		}
 		if len(meta) > 0 {
 			keys := make([]string, 0, len(meta))
 			for key := range meta {
@@ -338,7 +388,7 @@ func (s *Store) CommitContext(ctx context.Context, base Entry, document *Documen
 				}
 			}
 		}
-		if !changed && len(meta) == 0 {
+		if !changed && !stateChanged && len(meta) == 0 {
 			connection.rollback()
 			return nil
 		}
@@ -347,6 +397,15 @@ func (s *Store) CommitContext(ctx context.Context, base Entry, document *Documen
 			head.Generation++
 			head.CommitID = newUUIDHex()
 			meta["commit_id"] = jsonText(head.CommitID)
+		}
+		if stateChanged {
+			head.State++
+			head.StateCommitID = newUUIDHex()
+			meta["state_generation"] = jsonText(head.State)
+			meta["state_commit_id"] = jsonText(head.StateCommitID)
+			if err := connection.applyState(pendingState, targetStateRows, head.State); err != nil {
+				return err
+			}
 		}
 		if err := connection.apply(pending, target, head.Generation, meta); err != nil {
 			return err
@@ -374,8 +433,14 @@ func (s *Store) CommitContext(ctx context.Context, base Entry, document *Documen
 	for _, key := range target.fields.keys {
 		size += textLength(target.fields.values[key].value)
 	}
+	for _, key := range targetStateRows.keys {
+		size += textLength(targetStateRows.values[key])
+	}
 	built, err := buildDocument(target.rootOrder, target.sections, target.fields)
 	if err != nil {
+		return Entry{}, false, err
+	}
+	if built.State, err = stateList(targetStateRows); err != nil {
 		return Entry{}, false, err
 	}
 	return Entry{Head: head, Document: built, Size: size}, true, nil
@@ -455,6 +520,10 @@ func (s *Store) BuildTemporary(document *Document, meta map[string]json.RawMessa
 	if err != nil {
 		return "", Entry{}, err
 	}
+	targetStateRows, err := targetState(document.State)
+	if err != nil {
+		return "", Entry{}, err
+	}
 	if err := validateMeta(meta); err != nil {
 		return "", Entry{}, err
 	}
@@ -470,7 +539,7 @@ func (s *Store) BuildTemporary(document *Document, meta map[string]json.RawMessa
 			temporary = ""
 		}
 	}()
-	if err = s.writeTemporary(temporary, target, meta); err != nil {
+	if err = s.writeTemporary(temporary, target, targetStateRows, meta); err != nil {
 		return "", Entry{}, untranslated(err)
 	}
 	built := New(temporary, s.timeout)
@@ -483,7 +552,11 @@ func (s *Store) BuildTemporary(document *Document, meta map[string]json.RawMessa
 	if err != nil {
 		return "", Entry{}, err
 	}
-	if !maps.Equal(written.fields.values, target.fields.values) || !maps.Equal(written.sections.values, target.sections.values) || !slices.Equal(written.rootOrder, target.rootOrder) {
+	writtenState, err := targetState(entry.Document.State)
+	if err != nil {
+		return "", Entry{}, err
+	}
+	if !maps.Equal(written.fields.values, target.fields.values) || !maps.Equal(written.sections.values, target.sections.values) || !slices.Equal(written.rootOrder, target.rootOrder) || !maps.Equal(writtenState.values, targetStateRows.values) {
 		return "", Entry{}, newError(ErrStore, msgBuiltMismatch)
 	}
 
@@ -493,7 +566,7 @@ func (s *Store) BuildTemporary(document *Document, meta map[string]json.RawMessa
 	return temporary, entry, nil
 }
 
-func (s *Store) writeTemporary(temporary string, target *rows, meta map[string]json.RawMessage) error {
+func (s *Store) writeTemporary(temporary string, target *rows, state *ordered[stateKey, string], meta map[string]json.RawMessage) error {
 	connection, err := connect(temporary, false, s.timeout())
 	if err != nil {
 		return err
@@ -512,7 +585,7 @@ func (s *Store) writeTemporary(temporary string, target *rows, meta map[string]j
 	if err := connection.begin("BEGIN IMMEDIATE"); err != nil {
 		return err
 	}
-	for _, statement := range schema {
+	for _, statement := range append(slices.Clone(schema), stateSchema) {
 		if err := connection.exec(statement); err != nil {
 			return err
 		}
@@ -520,6 +593,7 @@ func (s *Store) writeTemporary(temporary string, target *rows, meta map[string]j
 	values := map[string]json.RawMessage{
 		"storage_version": jsonText(StorageVersion), "store_id": jsonText(newUUIDHex()), "generation": jsonText(1),
 		"commit_id": jsonText(newUUIDHex()), "root_order": jsonText(target.rootOrder), "created_at": jsonText(now()),
+		"state_generation": jsonText(1), "state_commit_id": jsonText(newUUIDHex()),
 	}
 	maps.Copy(values, meta)
 	for key, value := range values {
@@ -539,6 +613,12 @@ func (s *Store) writeTemporary(temporary string, target *rows, meta map[string]j
 		field := target.fields.values[key]
 		err := connection.exec("INSERT INTO fields (scope, owner, field, position, value, revision) VALUES (?, ?, ?, ?, ?, 1)",
 			key.scope, key.owner, key.field, field.position, field.value)
+		if err != nil {
+			return err
+		}
+	}
+	for _, key := range state.keys {
+		err := connection.exec("INSERT INTO agent_state (agent_id, member, value, revision) VALUES (?, ?, ?, 1)", key.owner, key.member, state.values[key])
 		if err != nil {
 			return err
 		}
@@ -680,6 +760,9 @@ func (s *Store) check() error {
 	}
 	if value > StorageVersion {
 		return newError(ErrUnsupported, fmt.Sprintf(msgVersionUnsupported, version, StorageVersion))
+	}
+	if value >= 2 && !slices.Contains(tables, "agent_state") {
+		return newError(ErrCorrupt, fmt.Sprintf(msgMissingTables, "agent_state"))
 	}
 
 	mode, err := connection.strings1("PRAGMA journal_mode")
