@@ -30,7 +30,7 @@ func TestReplaceAndDeletePreserveIndependentState(t *testing.T) {
 	}
 	s.Put("/api/rule-library/manual", auth, httpxtest.JSON(map[string]string{"name": "Edited", "source_type": "content", "behavior": "domain", "format": "text", "content": "+.edited.example\n"})).WantStatus(200)
 	item, err := source(s.Context(), "manual")
-	if err != nil || string(field(item, "update_interval")) != "7200" {
+	if err != nil || item.UpdateInterval == nil || *item.UpdateInterval != 7200 {
 		t.Fatal("source edit lost its task interval", err)
 	}
 	path, err := cachePath(s.Context(), item)
@@ -105,12 +105,12 @@ func TestConnectivityDoesNotOverwriteConcurrentLibraryEdit(t *testing.T) {
 	unblock()
 	(<-pending).WantStatus(200)
 	item, err := source(s.Context(), "remote")
-	if err != nil || text(item, "name") != "Concurrent edit" || string(field(item, "enabled")) != "true" {
+	if err != nil || item.Name != "Concurrent edit" || item.Enabled == nil || !*item.Enabled {
 		t.Fatalf("test overwrote concurrent edit: %+v %v", item, err)
 	}
 	s.Post("/api/rule-library/test", auth, httpxtest.JSON(map[string]any{})).WantStatus(200)
 	item, err = source(s.Context(), "remote")
-	if err != nil || string(field(item, "enabled")) != "false" {
+	if err != nil || item.Enabled == nil || *item.Enabled {
 		t.Fatal("unchanged failed source was not disabled", err)
 	}
 }
@@ -161,13 +161,11 @@ func FuzzEditableContent(f *testing.F) {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, content string) {
-		var body record
-		for _, entry := range []struct{ key, value string }{{"content", content}, {"behavior", "domain"}, {"format", "yaml"}} {
-			if err := put(&body, entry.key, entry.value); err != nil {
-				t.Fatal(err)
-			}
+		raw, err := json.Marshal(map[string]string{"content": content, "behavior": "domain", "format": "yaml"})
+		if err != nil {
+			t.Fatal(err)
 		}
-		_, _ = (&Service{}).Check(body)
+		_, _ = (&Service{}).Check(decodeTestJSON[checkContentRequest](t, string(raw)))
 	})
 }
 

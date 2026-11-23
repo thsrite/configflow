@@ -99,7 +99,7 @@ func TestCacheBackupParticipatesInUnchangedCheck(t *testing.T) {
 		t.Fatal("previous-version backup incorrectly qualified as unchanged")
 	}
 	assertCacheBackup(t, path, string(current))
-	if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), recordJSON(t, `{"rule_ids":["manual"]}`)); err != nil {
+	if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
 		t.Fatal(err)
 	}
 	assertCacheBackup(t, path, string(current))
@@ -174,11 +174,7 @@ func TestCacheBackupFinishesAfterRenameShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := recordJSON(t, `{"content":"+.new.example\n"}`)
-	if err = put(&body, "revision", token); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = service.SaveDraft(ctx, "manual", body); err != nil {
+	if _, err = service.SaveDraft(ctx, "manual", draftBody(t, token, "+.new.example\n")); err != nil {
 		t.Fatal("post-rename shutdown aborted committed publication", err)
 	}
 	path, err := cachePath(s.Context(), item)

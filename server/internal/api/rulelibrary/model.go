@@ -3,94 +3,237 @@
 package rulelibrary
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
+	"encoding/json/jsontext"
 
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
+	"configflow/internal/rulefetch"
 )
 
-type record = model.Fields
+type member[T any] = jsondecode.Member[T]
 
-func text(r record, key string) string {
-	raw, _ := r.Get(key)
-	var out string
-	_ = json.Unmarshal(raw, &out)
-	return out
+type libraryItemWire model.RuleLibraryItem
+
+// libraryListItem is a stored library item annotated with has_ip_part for GET /api/rule-library.
+type libraryListItem struct {
+	libraryItemWire
+	HasIPPart bool `json:"has_ip_part"`
 }
-func field(r record, key string) json.RawMessage {
-	raw, ok := r.Get(key)
-	if !ok {
-		return json.RawMessage("null")
+
+// libraryRequest is a rule-library create/replace request body decoded with
+// exact member matching. Derived display members (base_url, has_ip_part) and
+// undeclared members are ignored.
+type libraryRequest struct {
+	ID             member[string]          `json:"id"`
+	Name           member[json.RawMessage] `json:"name"`
+	Enabled        member[json.RawMessage] `json:"enabled"`
+	SourceType     member[string]          `json:"source_type"`
+	Behavior       member[string]          `json:"behavior"`
+	Format         member[string]          `json:"format"`
+	URL            member[string]          `json:"url"`
+	Content        member[string]          `json:"content"`
+	Remark         member[json.RawMessage] `json:"remark"`
+	UpdateInterval member[json.RawMessage] `json:"update_interval"`
+	Policy         member[json.RawMessage] `json:"policy"`
+	Target         member[json.RawMessage] `json:"target"`
+}
+
+func (r *libraryRequest) sourceType() string {
+	if !r.SourceType.Present() {
+		return "url"
 	}
-	return raw
+	return r.SourceType.Value
 }
-func put[T any](r *record, key string, value T) error {
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return err
+
+func (r *libraryRequest) declaration() rulefetch.Declaration {
+	return rulefetch.Declaration{
+		SourceType: r.SourceType,
+		Behavior:   r.Behavior,
+		Format:     r.Format,
+		Content:    r.Content,
 	}
-	return r.Set(key, raw)
 }
-func rows(r record, key string) ([]record, error) {
-	out := []record{}
-	raw, ok := r.Get(key)
-	if !ok {
-		return out, nil
+
+func (r *libraryRequest) cleanForCreate() {
+	switch r.sourceType() {
+	case "content":
+		r.URL = member[string]{}
+	case "url":
+		r.Content = member[string]{}
 	}
-	err := json.Unmarshal(raw, &out)
-	if out == nil {
-		out = []record{}
+}
+
+func (r *libraryRequest) cleanForUpdate() {
+	if r.sourceType() == "content" {
+		r.URL = member[string]{}
+	} else {
+		r.Content = member[string]{}
 	}
-	return out, err
 }
-func child(r record, key string) record {
-	var out record
-	_ = json.Unmarshal(field(r, key), &out)
-	return out
+
+func (r *libraryRequest) decodeItem(overrideID string, inheritInterval *model.Int) (model.RuleLibraryItem, error) {
+	var item model.RuleLibraryItem
+	if overrideID != "" {
+		item.ID = overrideID
+	}
+	fields := []struct {
+		name string
+		raw  json.RawMessage
+	}{
+		{"name", r.Name.Raw},
+		{"enabled", r.Enabled.Raw},
+		{"source_type", r.SourceType.Raw},
+		{"behavior", r.Behavior.Raw},
+		{"format", r.Format.Raw},
+		{"url", r.URL.Raw},
+		{"content", r.Content.Raw},
+		{"remark", r.Remark.Raw},
+		{"update_interval", r.UpdateInterval.Raw},
+		{"policy", r.Policy.Raw},
+		{"target", r.Target.Raw},
+	}
+	if overrideID == "" {
+		fields = append([]struct {
+			name string
+			raw  json.RawMessage
+		}{{"id", r.ID.Raw}}, fields...)
+	}
+	for _, field := range fields {
+		if field.raw == nil {
+			continue
+		}
+		if err := model.DecodeInputMember("rule_library_item", &item, field.name, field.raw); err != nil {
+			return model.RuleLibraryItem{}, err
+		}
+	}
+	if !r.UpdateInterval.Present() && inheritInterval != nil {
+		item.UpdateInterval = inheritInterval
+	}
+	return item, nil
 }
-func find(items []record, id string) int {
-	for i, item := range items {
-		if text(item, "id") == id {
+
+// previewItem returns a best-effort typed RuleLibraryItem for pre-transaction
+// source reading and profile-selection checks; strict decoding runs on commit.
+func (r *libraryRequest) previewItem(overrideID string) model.RuleLibraryItem {
+	item := model.RuleLibraryItem{ID: overrideID}
+	if overrideID == "" && r.ID.OK {
+		item.ID = r.ID.Value
+	}
+	if r.Name.Present() {
+		var name string
+		if json.Unmarshal(r.Name.Raw, &name) == nil {
+			item.Name = name
+		}
+	}
+	if r.Enabled.Present() {
+		var enabled bool
+		if json.Unmarshal(r.Enabled.Raw, &enabled) == nil {
+			item.Enabled = &enabled
+		}
+	}
+	if r.SourceType.OK {
+		item.SourceType = new(r.SourceType.Value)
+	}
+	if r.Behavior.OK {
+		item.Behavior = new(r.Behavior.Value)
+	} else if r.Behavior.Present() && r.Behavior.Null() {
+		item.Behavior = new("")
+	}
+	if r.Format.OK {
+		item.Format = new(r.Format.Value)
+	}
+	if r.URL.OK {
+		item.URL = new(r.URL.Value)
+	}
+	if r.Content.OK {
+		item.Content = new(r.Content.Value)
+	}
+	return item
+}
+
+type draftRule struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	SourceType string `json:"source_type"`
+	Behavior   string `json:"behavior"`
+	Format     string `json:"format"`
+	Content    string `json:"content"`
+	URL        string `json:"url"`
+}
+
+type draftRequest struct {
+	Revision member[string]
+	Content  member[string]
+	exact    bool
+}
+
+func decodeDraftRequest(raw json.RawMessage) *draftRequest {
+	if len(raw) == 0 || raw[0] != '{' {
+		return &draftRequest{}
+	}
+	dec := jsontext.NewDecoder(bytes.NewReader(raw))
+	if tok, err := dec.ReadToken(); err != nil || tok.Kind() != '{' {
+		return &draftRequest{}
+	}
+	req := &draftRequest{}
+	count := 0
+	for dec.PeekKind() != '}' {
+		tok, err := dec.ReadToken()
+		if err != nil {
+			return &draftRequest{}
+		}
+		key := tok.String()
+		val, err := dec.ReadValue()
+		if err != nil {
+			return &draftRequest{}
+		}
+		count++
+		switch key {
+		case "revision":
+			_ = req.Revision.UnmarshalJSON(val)
+		case "content":
+			_ = req.Content.UnmarshalJSON(val)
+		}
+	}
+	req.exact = count == 2 && req.Revision.OK && req.Content.OK
+	return req
+}
+
+type singleRequest struct {
+	URL member[string] `json:"url"`
+}
+
+type cacheRequest struct {
+	RuleIDs member[[]member[string]] `json:"rule_ids"`
+}
+
+type checkContentRequest struct {
+	Content     member[string]           `json:"content"`
+	AppendLines member[[]member[string]] `json:"append_lines"`
+	Behavior    member[string]           `json:"behavior"`
+	Format      member[string]           `json:"format"`
+}
+
+type proxyDomainsRequest struct {
+	ProxyDomains member[string] `json:"proxy_domains"`
+}
+
+func find(items []model.RuleLibraryItem, id string) int {
+	for i := range items {
+		if items[i].ID == id {
 			return i
 		}
 	}
 	return -1
 }
-func stringField(r record, key string) (string, bool) {
-	raw, ok := r.Get(key)
-	if !ok || string(raw) == "null" {
-		return "", false
-	}
-	var out string
-	err := json.Unmarshal(raw, &out)
-	return out, err == nil
-}
-func stringsField(r record, key string) ([]string, error) {
-	raw, ok := r.Get(key)
-	if !ok {
-		return []string{}, nil
-	}
-	var out []string
-	if string(raw) == "null" {
-		return nil, errors.New("expected string array")
-	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, err
-	}
-	var entries []json.RawMessage
-	_ = json.Unmarshal(raw, &entries)
-	for _, entry := range entries {
-		if string(entry) == "null" {
-			return nil, errors.New("expected string array")
-		}
-	}
-	return out, nil
-}
-func sourceType(r record) string {
-	if !r.Has("source_type") {
+
+func sourceTypeOf(item model.RuleLibraryItem) string {
+	if item.SourceType == nil {
 		return "url"
 	}
-	return text(r, "source_type")
+	return *item.SourceType
 }
 
 type fault struct {
@@ -101,10 +244,7 @@ type fault struct {
 func (e *fault) Error() string              { return e.message }
 func fail(status int, message string) error { return &fault{status, message} }
 
-type success struct {
-	Success bool `json:"success"`
-}
 type itemResult struct {
-	Success bool   `json:"success"`
-	Data    record `json:"data"`
+	Success bool                  `json:"success"`
+	Data    model.RuleLibraryItem `json:"data"`
 }

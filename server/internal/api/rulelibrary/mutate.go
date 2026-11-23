@@ -1,30 +1,29 @@
 package rulelibrary
 
 import (
-	"bytes"
-	"configflow/internal/model"
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 )
 
-type sourceChange struct{ Old, Next record }
+type sourceChange struct{ Old, Next model.RuleLibraryItem }
 type profileWarning struct {
 	Profile string `json:"profile"`
 	Message string `json:"message"`
 }
 type mutationResult struct {
-	Success  bool              `json:"success"`
-	Data     *record           `json:"data,omitempty"`
-	Synced   *int              `json:"synced_count,omitempty"`
-	Warnings *[]profileWarning `json:"warnings,omitempty"`
+	Success  bool                   `json:"success"`
+	Data     *model.RuleLibraryItem `json:"data,omitempty"`
+	Synced   *int                   `json:"synced_count,omitempty"`
+	Warnings *[]profileWarning      `json:"warnings,omitempty"`
 }
 
-func same(a, b record) bool {
+func same(a, b model.RuleLibraryItem) bool {
 	x, err := revision(a)
 	if err != nil {
 		return false
@@ -32,34 +31,48 @@ func same(a, b record) bool {
 	y, err := revision(b)
 	return err == nil && x == y
 }
-func different(a, b record, defaults map[string]json.RawMessage) bool {
-	for key, def := range defaults {
-		x, ok := a.Get(key)
-		if !ok {
-			x = def
-		}
-		y, ok := b.Get(key)
-		if !ok {
-			y = def
-		}
-		var ca, cb bytes.Buffer
-		if json.Compact(&ca, x) != nil || json.Compact(&cb, y) != nil || !bytes.Equal(ca.Bytes(), cb.Bytes()) {
-			return true
-		}
+
+func equalOptionalString(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
 	}
-	return false
+	return *a == *b
 }
 
-var declarationFields = map[string]json.RawMessage{"url": json.RawMessage("null"), "source_type": json.RawMessage("null"), "behavior": json.RawMessage("null"), "format": json.RawMessage("null"), "content": json.RawMessage("null")}
-var routingFields = map[string]json.RawMessage{"enabled": json.RawMessage("true"), "behavior": json.RawMessage(`"domain"`)}
-var downloadFields = map[string]json.RawMessage{"url": json.RawMessage("null"), "source_type": json.RawMessage(`"url"`)}
+func declarationChanged(req *libraryRequest, baseline model.RuleLibraryItem) bool {
+	sameMember := func(sent member[string], stored *string) bool {
+		if !sent.Present() || sent.Null() {
+			return stored == nil
+		}
+		return sent.OK && stored != nil && sent.Value == *stored
+	}
+	return !sameMember(req.URL, baseline.URL) ||
+		!sameMember(req.SourceType, baseline.SourceType) ||
+		!sameMember(req.Behavior, baseline.Behavior) ||
+		!sameMember(req.Format, baseline.Format) ||
+		!sameMember(req.Content, baseline.Content)
+}
+
+func routingChanged(a, b model.RuleLibraryItem) bool {
+	behaviorOf := func(item model.RuleLibraryItem) string {
+		if item.Behavior == nil {
+			return "domain"
+		}
+		return *item.Behavior
+	}
+	return model.Flag(a.Enabled, true) != model.Flag(b.Enabled, true) || behaviorOf(a) != behaviorOf(b)
+}
+
+func downloadChanged(a, b model.RuleLibraryItem) bool {
+	return !equalOptionalString(a.URL, b.URL) || sourceTypeOf(a) != sourceTypeOf(b)
+}
 
 func affects(profile *model.Profile, changes []sourceChange) (routing, downloads bool, err error) {
 	for _, item := range profile.RuleConfigs {
 		for _, change := range changes {
-			if item.LibraryRuleID == text(change.Old, "id") {
-				routing = routing || different(change.Old, change.Next, routingFields)
-				downloads = downloads || different(change.Old, change.Next, downloadFields)
+			if item.LibraryRuleID == change.Old.ID {
+				routing = routing || routingChanged(change.Old, change.Next)
+				downloads = downloads || downloadChanged(change.Old, change.Next)
 			}
 		}
 	}
@@ -68,13 +81,14 @@ func affects(profile *model.Profile, changes []sourceChange) (routing, downloads
 
 // Mutate replaces or removes a shared source without overwriting an intervening
 // edit, and reconstructs the affected native profiles in the same transaction.
-func (s *Service) Mutate(ctx context.Context, id string, next record, remove bool, base string) (mutationResult, error) {
+func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, remove bool, base string) (mutationResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := mutationResult{Success: true}
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
-	var baseline record
+	var baseline model.RuleLibraryItem
+	var preview model.RuleLibraryItem
 	var prepared []byte
 	changed := false
 	var err error
@@ -83,15 +97,13 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 		if err != nil {
 			return out, itemMissing(err)
 		}
-		if err = put(&next, "id", id); err != nil {
+		if err = validateDeclaration(req.declaration(), &baseline); err != nil {
 			return out, err
 		}
-		if err = validateContent(next, &baseline); err != nil {
-			return out, err
-		}
-		changed = different(next, baseline, declarationFields)
+		changed = declarationChanged(req, baseline)
+		preview = req.previewItem(id)
 		if changed {
-			prepared, err = s.readSource(ctx, next)
+			prepared, err = s.readSource(ctx, preview)
 			if err != nil {
 				if rulefetch.IsRequestException(err) {
 					return out, fail(502, msgDownloadEdit)
@@ -108,28 +120,25 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 			}
 		}
 	}
-	var identity record
-	if err = put(&identity, "id", id); err != nil {
-		return out, err
-	}
-	ctx, release, err := editLease(ctx, identity)
+	ctx, release, err := editLease(ctx, id)
 	if err != nil {
 		return out, err
 	}
 	defer release()
-	if !remove && prepared != nil && sourceType(next) == "url" {
-		path, err := cachePath(ctx, next)
+	if !remove && prepared != nil && req.sourceType() == "url" {
+		path, err := cachePath(ctx, preview)
 		if err != nil {
 			return out, err
 		}
 		_, statErr := os.Stat(path)
 		if changed || errors.Is(statErr, os.ErrNotExist) {
-			if err = writeCache(ctx, next, prepared); err != nil {
+			if err = writeCache(ctx, preview, prepared); err != nil {
 				return out, err
 			}
 		}
 	}
-	var previous record
+	var previous model.RuleLibraryItem
+	var saved model.RuleLibraryItem
 	var stage *stagedCache
 	committed := false
 	defer func() {
@@ -139,50 +148,41 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 	}()
 	changes := []sourceChange{}
 	if !remove {
-		changes = append(changes, sourceChange{baseline, next})
+		changes = append(changes, sourceChange{baseline, preview})
 	}
 	warnings, err := editWithProfiles(ctx, changes, func(tx context.Context, catalog *model.Shared) error {
-		library, err := libraryItems(catalog)
-		if err != nil {
-			return err
-		}
+		library := slices.Clone(catalog.RuleLibrary)
 		i := find(library, id)
 		if i < 0 {
 			return fail(404, "Rule not found")
 		}
 		previous = library[i]
 		if remove {
-			library = append(library[:i:i], library[i+1:]...)
-			return setLibrary(catalog, library)
+			catalog.RuleLibrary = slices.Delete(library, i, i+1)
+			return nil
 		}
 		if !same(previous, baseline) {
 			return fail(409, msgDraftConflict)
 		}
-		next.Delete("base_url")
-		next.Delete("has_ip_part")
-		if sourceType(next) == "content" {
-			next.Delete("url")
-		} else {
-			next.Delete("content")
-		}
-		if err = validateContent(next, &previous); err != nil {
+		cleaned := *req
+		cleaned.cleanForUpdate()
+		if err = validateDeclaration(cleaned.declaration(), &previous); err != nil {
 			return err
 		}
-		if !next.Has("update_interval") {
-			if interval, ok := previous.Get("update_interval"); ok {
-				if err = next.Set("update_interval", interval); err != nil {
-					return err
-				}
-			}
+		next, err := cleaned.decodeItem(id, previous.UpdateInterval)
+		if err != nil {
+			return libraryTypeError(library, i, &cleaned, id, err)
 		}
-		if sourceType(next) == "content" && prepared != nil {
+		if sourceTypeOf(next) == "content" && prepared != nil {
 			stage, err = stageCache(tx, next, prepared, s.replaceCache)
 			if err != nil {
 				return err
 			}
 		}
+		saved = next
 		library[i] = next
-		return setLibrary(catalog, library)
+		catalog.RuleLibrary = library
+		return nil
 	}, base)
 	if err != nil {
 		if !rejectedBeforeCommit(err) {
@@ -207,8 +207,8 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 			return out, err
 		}
 	}
-	if name := text(previous, "name"); name != "" && (remove || name != text(next, "name")) {
-		if err = removeLegacy(ctx, name); err != nil {
+	if previous.Name != "" && (remove || previous.Name != saved.Name) {
+		if err = removeLegacy(ctx, previous.Name); err != nil {
 			return out, err
 		}
 	}
@@ -217,7 +217,7 @@ func (s *Service) Mutate(ctx context.Context, id string, next record, remove boo
 		if err != nil {
 			return out, err
 		}
-		out.Data = &next
+		out.Data = &saved
 		out.Synced = &count
 		out.Warnings = &warnings
 	}

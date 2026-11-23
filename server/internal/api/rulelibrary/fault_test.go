@@ -100,7 +100,7 @@ func TestCanceledConnectivityRequestCompletesAndJoinsWorkers(t *testing.T) {
 		t.Fatal("request cancellation reached the detached probe", reply.Text())
 	}
 	item, err := source(s.Context(), "remote")
-	if err != nil || string(field(item, "enabled")) == "false" {
+	if err != nil || !model.Flag(item.Enabled, true) {
 		t.Fatal("cancellation disabled an available source", err)
 	}
 }
@@ -142,7 +142,7 @@ func TestUnknownCommitFailureRetainsDurableInvalidation(t *testing.T) {
 				t.Fatal("unknown commit outcome cleared invalidation", err)
 			}
 			item, err = source(s.Context(), "manual")
-			if err != nil || text(item, "content") != "+.old.example\n" {
+			if err != nil || model.TextValue(item.Content) != "+.old.example\n" {
 				t.Fatal("test's rejected commit did not roll back", err)
 			}
 			// A later observed committed head can be newer than the rejected call's

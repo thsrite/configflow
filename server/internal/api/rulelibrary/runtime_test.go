@@ -18,6 +18,7 @@ import (
 	apirules "configflow/internal/api/rules"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
@@ -36,13 +37,31 @@ func runtimeRequest(t *testing.T, base context.Context) (*lifecycle.Runtime, con
 	})
 	return runtime, bound, cancel
 }
-func recordJSON(t *testing.T, raw string) record {
+func decodeTestJSON[T any](t *testing.T, raw string) *T {
 	t.Helper()
-	var out record
-	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+	out := new(T)
+	if err := jsondecode.Unmarshal([]byte(raw), out); err != nil {
 		t.Fatal(err)
 	}
 	return out
+}
+
+func jsonQuote(t *testing.T, value string) string {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func draftBody(t *testing.T, token, content string) *draftRequest {
+	t.Helper()
+	raw, err := json.Marshal(map[string]string{"revision": token, "content": content})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return decodeDraftRequest(raw)
 }
 
 type durableState struct {
@@ -89,38 +108,31 @@ func TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect(t *testing.T)
 		networkOnly, cache bool
 	}{
 		{name: "library-create", write: func(t *testing.T, s *Service, _ *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.Create(ctx, recordJSON(t, `{"id":"new","name":"New","source_type":"content","behavior":"domain","format":"text","content":"+.new.example\n"}`))
+			_, err := s.Create(ctx, decodeTestJSON[libraryRequest](t, `{"id":"new","name":"New","source_type":"content","behavior":"domain","format":"text","content":"+.new.example\n"}`))
 			return err
 		}},
 		{name: "library-put", write: func(t *testing.T, s *Service, _ *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.Mutate(ctx, "manual", recordJSON(t, `{"name":"Edited","source_type":"content","behavior":"domain","format":"text","content":"+.new.example\n"}`), false, "http://localhost")
+			_, err := s.Mutate(ctx, "manual", decodeTestJSON[libraryRequest](t, `{"name":"Edited","source_type":"content","behavior":"domain","format":"text","content":"+.new.example\n"}`), false, "http://localhost")
 			return err
 		}},
 		{name: "library-delete", write: func(t *testing.T, s *Service, _ *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.Mutate(ctx, "manual", record{}, true, "http://localhost")
+			_, err := s.Mutate(ctx, "manual", nil, true, "http://localhost")
 			return err
 		}},
 		{name: "draft", write: func(t *testing.T, s *Service, _ *proxygroups.Service, ctx context.Context, token, _ string) error {
-			var body record
-			if err := put(&body, "revision", token); err != nil {
-				t.Fatal(err)
-			}
-			if err := put(&body, "content", "+.new.example\n"); err != nil {
-				t.Fatal(err)
-			}
-			_, err := s.SaveDraft(ctx, "manual", body)
+			_, err := s.SaveDraft(ctx, "manual", draftBody(t, token, "+.new.example\n"))
 			return err
 		}},
 		{name: "library-reorder", write: func(t *testing.T, s *Service, _ *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.Reorder(ctx, recordJSON(t, `{"ids":["remote"]}`))
+			_, err := s.Reorder(ctx, json.RawMessage(`{"ids":["remote"]}`))
 			return err
 		}},
 		{name: "proxy-domain", write: func(t *testing.T, s *Service, _ *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.SetProxyDomains(ctx, recordJSON(t, `{"proxy_domains":"https://mirror.example/"}`))
+			_, err := s.SetProxyDomains(ctx, decodeTestJSON[proxyDomainsRequest](t, `{"proxy_domains":"https://mirror.example/"}`))
 			return err
 		}},
 		{name: "cache", cache: true, write: func(t *testing.T, s *Service, _ *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.Cache(ctx, recordJSON(t, `{"rule_ids":["manual"]}`))
+			_, err := s.Cache(ctx, decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`))
 			return err
 		}},
 		{name: "connectivity", write: func(_ *testing.T, s *Service, _ *proxygroups.Service, ctx context.Context, _, _ string) error {
@@ -128,27 +140,23 @@ func TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect(t *testing.T)
 			return err
 		}},
 		{name: "probe", networkOnly: true, write: func(t *testing.T, s *Service, _ *proxygroups.Service, ctx context.Context, _, origin string) error {
-			var body record
-			if err := put(&body, "url", origin+"/source"); err != nil {
-				t.Fatal(err)
-			}
-			_, err := s.Single(ctx, body)
+			_, err := s.Single(ctx, decodeTestJSON[singleRequest](t, `{"url":`+jsonQuote(t, origin+"/source")+`}`))
 			return err
 		}},
 		{name: "group-create", write: func(t *testing.T, _ *Service, s *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.Create(ctx, "default", recordJSON(t, `{"id":"new","name":"New","type":"select","manual_nodes":["DIRECT"]}`), "http://localhost")
+			_, err := s.Create(ctx, "default", json.RawMessage(`{"id":"new","name":"New","type":"select","manual_nodes":["DIRECT"]}`), "http://localhost")
 			return err
 		}},
 		{name: "group-profile-create", write: func(t *testing.T, _ *Service, s *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.Create(ctx, "other", recordJSON(t, `{"id":"new","name":"New","type":"select","manual_nodes":["DIRECT"]}`), "http://localhost")
+			_, err := s.Create(ctx, "other", json.RawMessage(`{"id":"new","name":"New","type":"select","manual_nodes":["DIRECT"]}`), "http://localhost")
 			return err
 		}},
 		{name: "group-put", write: func(t *testing.T, _ *Service, s *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.Mutate(ctx, "default", "group", recordJSON(t, `{"name":"Renamed"}`), false, "http://localhost")
+			_, err := s.Mutate(ctx, "default", "group", json.RawMessage(`{"name":"Renamed"}`), false, "http://localhost")
 			return err
 		}},
 		{name: "group-delete", write: func(_ *testing.T, _ *Service, s *proxygroups.Service, ctx context.Context, _, _ string) error {
-			_, err := s.Mutate(ctx, "default", "group", record{}, true, "http://localhost")
+			_, err := s.Mutate(ctx, "default", "group", nil, true, "http://localhost")
 			return err
 		}},
 		{name: "group-health", write: func(t *testing.T, _ *Service, s *proxygroups.Service, ctx context.Context, _, _ string) error {
@@ -174,7 +182,7 @@ func TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect(t *testing.T)
 					t.Fatal(err)
 				}
 
-				if _, err := groups.Create(app.Context(), "default", recordJSON(t, `{"id":"group","name":"Group","type":"url-test","manual_nodes":["DIRECT"],"url":"http://probe.example/old"}`), "http://localhost"); err != nil {
+				if _, err := groups.Create(app.Context(), "default", json.RawMessage(`{"id":"group","name":"Group","type":"url-test","manual_nodes":["DIRECT"],"url":"http://probe.example/old"}`), "http://localhost"); err != nil {
 					t.Fatal(err)
 				}
 				var calls atomic.Int32
@@ -188,12 +196,7 @@ func TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect(t *testing.T)
 				}))
 				defer origin.Close()
 				service := &Service{client: rulefetch.DefaultClient}
-				var remote record
-				for key, value := range map[string]string{"id": "remote", "name": "Remote", "source_type": "url", "behavior": "domain", "format": "text", "url": origin.URL + "/source"} {
-					if err := put(&remote, key, value); err != nil {
-						t.Fatal(err)
-					}
-				}
+				remote := decodeTestJSON[libraryRequest](t, `{"id":"remote","name":"Remote","source_type":"url","behavior":"domain","format":"text","url":`+jsonQuote(t, origin.URL+"/source")+`}`)
 				if _, err := service.Create(app.Context(), remote); err != nil {
 					t.Fatal(err)
 				}
@@ -283,7 +286,7 @@ func TestStoppedRuntimeCannotStageOrReplaceFiles(t *testing.T) {
 	// Cleanup happens only after a new generation admits another cache owner.
 	runtime.Start(t.Context())
 	fresh := runtime.BindRequest(app.Context())
-	if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(fresh, recordJSON(t, `{"rule_ids":["manual"]}`)); err != nil {
+	if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(fresh, decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
 		t.Fatal(err)
 	}
 	for path := range persisted(t, app).Files {
@@ -306,21 +309,14 @@ func TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var body record
-	if err = put(&body, "revision", draft.Revision); err != nil {
-		t.Fatal(err)
-	}
-	if err = put(&body, "content", "+.committed.example\n"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = service.SaveDraft(ctx, "manual", body); !errors.Is(err, context.Canceled) {
+	if _, err = service.SaveDraft(ctx, "manual", draftBody(t, draft.Revision, "+.committed.example\n")); !errors.Is(err, context.Canceled) {
 		t.Fatal("rename ignored shutdown", err)
 	}
 	if !reflect.DeepEqual(atShutdown, persisted(t, app)) {
 		t.Fatal("cache publication/cleanup wrote after shutdown")
 	}
 	item, err := source(app.Context(), "manual")
-	if err != nil || text(item, "content") != "+.committed.example\n" {
+	if err != nil || model.TextValue(item.Content) != "+.committed.example\n" {
 		t.Fatal("pre-shutdown committed DB was rolled back", err)
 	}
 	path, err := cachePath(app.Context(), item)
@@ -355,14 +351,7 @@ func TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body = record{}
-	if err = put(&body, "revision", draft.Revision); err != nil {
-		t.Fatal(err)
-	}
-	if err = put(&body, "content", "+.repaired.example\n"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = freshService.SaveDraft(fresh, "manual", body); err != nil {
+	if _, err = freshService.SaveDraft(fresh, "manual", draftBody(t, draft.Revision, "+.repaired.example\n")); err != nil {
 		t.Fatal("next edit did not repair interrupted publication", err)
 	}
 	if raw, err = os.ReadFile(path); err != nil || string(raw) != "+.repaired.example\n" {

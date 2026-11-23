@@ -11,6 +11,7 @@ import (
 
 	apirules "configflow/internal/api/rules"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 )
 
@@ -36,8 +37,8 @@ func TestReviewCacheCrashRecovery(t *testing.T) {
 			if point == "staged" {
 				want = "+.old.example\n"
 			}
-			if text(item, "content") != want {
-				t.Fatalf("unexpected reopened DB: %s", text(item, "content"))
+			if model.TextValue(item.Content) != want {
+				t.Fatalf("unexpected reopened DB: %s", model.TextValue(item.Content))
 			}
 			path, err := cachePath(s.Context(), item)
 			if err != nil {
@@ -48,10 +49,7 @@ func TestReviewCacheCrashRecovery(t *testing.T) {
 				backup = "+.old.example\n"
 			}
 			assertCacheBackup(t, path, backup)
-			raw, err := ruleRecord(item)
-			if err != nil {
-				t.Fatal(err)
-			}
+			raw := ruleRecord(item)
 			cache, err := rulefetch.ReadCache(s.Context(), raw, nil)
 			if err != nil || (point != "complete" && cache != nil) || (point == "complete" && string(cache) != want) {
 				t.Fatalf("reopened cache: %q %v", cache, err)
@@ -61,7 +59,7 @@ func TestReviewCacheCrashRecovery(t *testing.T) {
 					t.Fatalf("restart delivery %s: %q", route, got)
 				}
 			}
-			if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), recordJSON(t, `{"rule_ids":["manual"]}`)); err != nil {
+			if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
 				t.Fatal(err)
 			}
 			previousPrimary := "+.old.example\n"
@@ -130,11 +128,7 @@ func TestReviewCacheCrashChild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := recordJSON(t, `{"content":"+.committed.example\n"}`)
-	if err = put(&body, "revision", token); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = service.SaveDraft(s.Context(), "manual", body); err != nil {
+	if _, err = service.SaveDraft(s.Context(), "manual", draftBody(t, token, "+.committed.example\n")); err != nil {
 		t.Fatal(err)
 	}
 	crash()

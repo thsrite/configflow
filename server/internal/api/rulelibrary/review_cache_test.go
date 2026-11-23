@@ -41,11 +41,7 @@ func TestReviewUnreadableReceiptCannotReviveLegacyCache(t *testing.T) {
 	if _, err = os.Stat(path + ".invalid"); !os.IsPermission(err) {
 		t.Fatalf("fixture must deny marker lookup: %v", err)
 	}
-	raw, err := ruleRecord(item)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cache, err := rulefetch.ReadCache(s.Context(), raw, nil)
+	cache, err := rulefetch.ReadCache(s.Context(), ruleRecord(item), nil)
 	if err != nil || cache != nil {
 		t.Fatalf("unreadable invalidation served cache: %q %v", cache, err)
 	}
@@ -86,11 +82,7 @@ func TestReviewOldInlineReaderCannotOverwriteCommittedDraft(t *testing.T) {
 		}
 		return nil
 	}}
-	body := recordJSON(t, `{"content":"+.committed.example\n"}`)
-	if err = put(&body, "revision", token); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = service.SaveDraft(s.Context(), "manual", body); err != nil {
+	if _, err = service.SaveDraft(s.Context(), "manual", draftBody(t, token, "+.committed.example\n")); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.Get("/api/rules/local/Manual", s.Login()).WantStatus(200).Text(); got != "+.committed.example\n" {
@@ -105,10 +97,8 @@ func TestReviewStageRejectsNewerCommittedDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = put(&first, "content", "+.first-commit.example\n"); err != nil {
-		t.Fatal(err)
-	}
-	stage, err := stageCache(s.Context(), first, []byte(text(first, "content")), nil)
+	first.Content = new("+.first-commit.example\n")
+	stage, err := stageCache(s.Context(), first, []byte(model.TextValue(first.Content)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +140,7 @@ func TestReviewStageRejectsNewerCommittedDeclaration(t *testing.T) {
 	if got := s.Get("/api/rules/local/Manual", s.Login()).WantStatus(200).Text(); got != "+.newer-owner.example\n" {
 		t.Fatalf("obsolete stage resurrected old bytes: %q", got)
 	}
-	if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), recordJSON(t, `{"rule_ids":["manual"]}`)); err != nil {
+	if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = os.Stat(stage.marker); !os.IsNotExist(err) {
@@ -212,10 +202,8 @@ func TestReviewAbortClearsOnlyItsUnchangedBaseline(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err = put(&next, "content", "+.rejected-proposal.example\n"); err != nil {
-				t.Fatal(err)
-			}
-			stage, err := stageCache(s.Context(), next, []byte(text(next, "content")), nil)
+			next.Content = new("+.rejected-proposal.example\n")
+			stage, err := stageCache(s.Context(), next, []byte(model.TextValue(next.Content)), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -256,8 +244,8 @@ func TestReviewAbortClearsOnlyItsUnchangedBaseline(t *testing.T) {
 
 func TestReviewCreateUsesTheSourceCleanupLease(t *testing.T) {
 	s := fixture(t)
-	item := recordJSON(t, `{"id":"created","name":"Created","source_type":"content","behavior":"domain","format":"text","content":"+.created.example\n"}`)
-	path, err := cachePath(s.Context(), item)
+	item := decodeTestJSON[libraryRequest](t, `{"id":"created","name":"Created","source_type":"content","behavior":"domain","format":"text","content":"+.created.example\n"}`)
+	path, err := cachePath(s.Context(), item.previewItem(""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +269,7 @@ func TestReviewCreateUsesTheSourceCleanupLease(t *testing.T) {
 func TestReviewCreateDoesNotHoldCleanupLeaseDuringDownload(t *testing.T) {
 	s := fixture(t)
 	service := &Service{client: rulefetch.DefaultClient}
-	winner := recordJSON(t, `{"id":"same","name":"Winner","source_type":"content","behavior":"domain","format":"text","content":"+.winner.example\n"}`)
+	winner := decodeTestJSON[libraryRequest](t, `{"id":"same","name":"Winner","source_type":"content","behavior":"domain","format":"text","content":"+.winner.example\n"}`)
 	winnerResult := make(chan error, 1)
 	var once sync.Once
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -294,10 +282,7 @@ func TestReviewCreateDoesNotHoldCleanupLeaseDuringDownload(t *testing.T) {
 		_, _ = w.Write([]byte("+.late-download.example\n"))
 	}))
 	defer origin.Close()
-	remote := recordJSON(t, `{"id":"same","name":"Remote","source_type":"url","behavior":"domain","format":"text"}`)
-	if err := put(&remote, "url", origin.URL+"/source"); err != nil {
-		t.Fatal(err)
-	}
+	remote := decodeTestJSON[libraryRequest](t, `{"id":"same","name":"Remote","source_type":"url","behavior":"domain","format":"text","url":`+jsonQuote(t, origin.URL+"/source")+`}`)
 	_, err := service.Create(s.Context(), remote)
 	var conflict *fault
 	if !errors.Is(err, repo.ErrExists) && (!errors.As(err, &conflict) || conflict.status != 409) {
@@ -312,7 +297,7 @@ func TestReviewCreateDoesNotHoldCleanupLeaseDuringDownload(t *testing.T) {
 		t.Fatal("the actual download did not admit the inline winner")
 	}
 	current, err := source(s.Context(), "same")
-	if err != nil || text(current, "content") != "+.winner.example\n" {
+	if err != nil || model.TextValue(current.Content) != "+.winner.example\n" {
 		t.Fatal("inline winner was overwritten", err)
 	}
 	path, err := cachePath(s.Context(), current)
@@ -367,11 +352,7 @@ func TestReviewColdInlineReaderPopulatesCurrentDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := recordJSON(t, `{"content":"+.committed.example\n"}`)
-	if err = put(&body, "revision", draft.Revision); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = service.SaveDraft(s.Context(), "manual", body); err != nil {
+	if _, err = service.SaveDraft(s.Context(), "manual", draftBody(t, draft.Revision, "+.committed.example\n")); err != nil {
 		t.Fatal(err)
 	}
 	item, err := source(s.Context(), "manual")
@@ -410,21 +391,13 @@ func TestReviewOtherInlineWritersCannotOverwriteCommittedDraft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := recordJSON(t, `{"content":"+.committed.example\n"}`)
-	if err = put(&body, "revision", token); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = (&Service{client: rulefetch.DefaultClient}).SaveDraft(s.Context(), "manual", body); err != nil {
-		t.Fatal(err)
-	}
-	raw, err := ruleRecord(old)
-	if err != nil {
+	if _, err = (&Service{client: rulefetch.DefaultClient}).SaveDraft(s.Context(), "manual", draftBody(t, token, "+.committed.example\n")); err != nil {
 		t.Fatal(err)
 	}
 	before := doc(t, s)
 	// Discovery/Agent/compose owners can finish their post-commit cache work
 	// after a newer C33 edit. Exercise their actual shared write entry point.
-	if _, err = rulefetch.SaveSource(s.Context(), raw, nil); err != nil {
+	if _, err = rulefetch.SaveSource(s.Context(), ruleRecord(old), nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.Get("/api/rules/local/Manual", s.Login()).WantStatus(200).Text(); got != "+.committed.example\n" {

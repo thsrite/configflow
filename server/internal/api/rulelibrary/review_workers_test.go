@@ -80,7 +80,7 @@ func TestReviewConnectivityWorkerBoundAndRawRequest(t *testing.T) {
 		t.Fatalf("probe fanout: total=%d failed=%d calls=%d peak=%d active=%d err=%v", out.value.Total, out.value.Failed, calls.Load(), peak.Load(), active.Load(), out.err)
 	}
 	for i, result := range out.value.Results {
-		if string(result.ID) != fmt.Sprintf(`"%d"`, i) || !result.Available || result.Status == nil || *result.Status != 204 {
+		if result.ID != fmt.Sprintf("%d", i) || !result.Available || result.Status == nil || *result.Status != 204 {
 			t.Fatalf("probe result lost identity/status at %d: %+v", i, result)
 		}
 	}

@@ -3,7 +3,6 @@ package rulelibrary
 // C33 and other inline editors share the same durable publication owner.
 import (
 	"context"
-	"encoding/json"
 	"os"
 
 	"configflow/internal/model"
@@ -13,8 +12,8 @@ import (
 var edits = rulefetch.CacheEditLocks
 var errStaleCacheStage = rulefetch.ErrStaleCacheStage
 
-func editLease(ctx context.Context, item record) (context.Context, func(), error) {
-	return rulefetch.LockCacheEdits(ctx, text(item, "id"))
+func editLease(ctx context.Context, id string) (context.Context, func(), error) {
+	return rulefetch.LockCacheEdits(ctx, id)
 }
 
 type stagedCache struct {
@@ -22,16 +21,8 @@ type stagedCache struct {
 	path, temp, marker string
 }
 
-func stageCache(ctx context.Context, item record, content []byte, replace func(context.Context, string, string) error) (*stagedCache, error) {
-	raw, err := json.Marshal(item)
-	if err != nil {
-		return nil, err
-	}
-	var declaration model.RuleLibraryItem
-	if err = json.Unmarshal(raw, &declaration); err != nil {
-		return nil, err
-	}
-	publication, err := rulefetch.StageCache(ctx, declaration, content, replace)
+func stageCache(ctx context.Context, item model.RuleLibraryItem, content []byte, replace func(context.Context, string, string) error) (*stagedCache, error) {
+	publication, err := rulefetch.StageCache(ctx, item, content, replace)
 	if err != nil {
 		return nil, err
 	}

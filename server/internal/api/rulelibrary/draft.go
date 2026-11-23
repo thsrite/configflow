@@ -2,24 +2,25 @@ package rulelibrary
 
 import (
 	"bytes"
-	"configflow/internal/model"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 )
 
 type draftResult struct {
-	Success  bool    `json:"success"`
-	Revision string  `json:"revision"`
-	Rule     *record `json:"rule,omitempty"`
-	Usage    *int    `json:"usage_count,omitempty"`
+	Success  bool       `json:"success"`
+	Revision string     `json:"revision"`
+	Rule     *draftRule `json:"rule,omitempty"`
+	Usage    *int       `json:"usage_count,omitempty"`
 }
 
-func revision(item record) (string, error) {
-	raw, err := json.Marshal(item)
+func revision(item model.RuleLibraryItem) (string, error) {
+	raw, err := model.Marshal(item)
 	if err != nil {
 		return "", err
 	}
@@ -36,20 +37,16 @@ func revision(item record) (string, error) {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
 }
-func source(ctx context.Context, id string) (record, error) {
+func source(ctx context.Context, id string) (model.RuleLibraryItem, error) {
 	catalog, err := sharedConfig(ctx)
 	if err != nil {
-		return record{}, err
+		return model.RuleLibraryItem{}, err
 	}
-	library, err := libraryItems(catalog)
-	if err != nil {
-		return record{}, err
-	}
-	i := find(library, id)
+	i := find(catalog.RuleLibrary, id)
 	if i < 0 {
-		return record{}, fail(404, msgDraftMissing)
+		return model.RuleLibraryItem{}, fail(404, msgDraftMissing)
 	}
-	return library[i], nil
+	return catalog.RuleLibrary[i], nil
 }
 
 // Draft reads the current shared declaration with a deterministic editor token.
@@ -63,42 +60,32 @@ func (s *Service) Draft(ctx context.Context, id string) (draftResult, error) {
 	if err != nil {
 		return out, err
 	}
-	var selected record
-	for _, key := range []string{"id", "name", "source_type", "behavior", "format", "content", "url"} {
-		raw, ok := item.Get(key)
-		if !ok {
-			raw = json.RawMessage(`""`)
-		}
-		if err = selected.Set(key, raw); err != nil {
-			return out, err
-		}
+	out.Rule = &draftRule{
+		ID:         item.ID,
+		Name:       item.Name,
+		SourceType: model.TextValue(item.SourceType),
+		Behavior:   model.TextValue(item.Behavior),
+		Format:     model.TextValue(item.Format),
+		Content:    model.TextValue(item.Content),
+		URL:        model.TextValue(item.URL),
 	}
-	out.Rule = &selected
 	count, err := usage(ctx, id)
 	out.Usage = &count
 	return out, err
 }
 
 // SaveDraft changes only handwritten content and rejects stale editor tokens.
-func (s *Service) SaveDraft(ctx context.Context, id string, body record) (draftResult, error) {
+func (s *Service) SaveDraft(ctx context.Context, id string, body *draftRequest) (draftResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := draftResult{Success: true}
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
-	token, tokenOK := stringField(body, "revision")
-	content, contentOK := stringField(body, "content")
-	if body.Len() != 2 || !tokenOK || !contentOK {
+	if body == nil || !body.exact {
 		return out, fail(400, msgDraftBody)
 	}
-	identity := record{}
-	if err := put(&identity, "id", id); err != nil {
-		return out, err
-	}
-	if err := put(&identity, "source_type", "content"); err != nil {
-		return out, err
-	}
-	held, release, err := editLease(ctx, identity)
+	token, content := body.Revision.Value, body.Content.Value
+	held, release, err := editLease(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -112,10 +99,7 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body record) (draftR
 		}
 	}()
 	err = editShared(ctx, func(tx context.Context, catalog *model.Shared) error {
-		library, err := libraryItems(catalog)
-		if err != nil {
-			return err
-		}
+		library := slices.Clone(catalog.RuleLibrary)
 		i := find(library, id)
 		if i < 0 {
 			return fail(404, msgDraftMissing)
@@ -128,14 +112,12 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body record) (draftR
 		if current != token {
 			return fail(409, msgDraftConflict)
 		}
-		if sourceType(old) != "content" {
+		if sourceTypeOf(old) != "content" {
 			return fail(400, msgDraftRemote)
 		}
 		next := old
-		if err = put(&next, "content", content); err != nil {
-			return err
-		}
-		if err = validateContent(next, &old); err != nil {
+		next.Content = new(content)
+		if err = validateItemContent(next, &old); err != nil {
 			return err
 		}
 		staged, err = stageCache(tx, next, []byte(content), s.replaceCache)
@@ -143,9 +125,7 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body record) (draftR
 			return err
 		}
 		library[i] = next
-		if err = setLibrary(catalog, library); err != nil {
-			return err
-		}
+		catalog.RuleLibrary = library
 		out.Revision, err = revision(next)
 		return err
 	})

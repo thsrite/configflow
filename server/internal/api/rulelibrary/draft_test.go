@@ -12,6 +12,7 @@ import (
 	apirules "configflow/internal/api/rules"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/model"
 	"configflow/internal/rulefetch"
 )
 
@@ -69,11 +70,11 @@ func TestDraftRevisionAndConcurrentSubmission(t *testing.T) {
 	s.Get("/api/rule-library/missing/draft-content", auth).WantStatus(404)
 }
 func TestRevisionUsesRecursiveNativeSortedJSON(t *testing.T) {
-	var a, b record
+	var a, b model.RuleLibraryItem
 	for _, pair := range []struct {
-		dst *record
+		dst *model.RuleLibraryItem
 		raw string
-	}{{&a, `{"name":"中文","extra":{"z":2,"a":1},"id":"x"}`}, {&b, `{"id":"x","extra":{"a":1,"z":2},"name":"中文"}`}} {
+	}{{&a, `{"name":"中文","source_type":"content","id":"x"}`}, {&b, `{"id":"x","source_type":"content","name":"中文"}`}} {
 		if err := json.Unmarshal([]byte(pair.raw), pair.dst); err != nil {
 			t.Fatal(err)
 		}
@@ -108,7 +109,7 @@ func TestFailedCacheReplacementNeverServesStableOrLegacyContent(t *testing.T) {
 	token := s.Get("/api/rule-library/manual/draft-content", auth).WantStatus(200).Object().GetString("revision")
 	s.Put("/api/rule-library/manual/draft-content", auth, httpxtest.JSON(map[string]string{"revision": token, "content": "+.new.example\n"})).WantStatus(500)
 	item, err = source(s.Context(), "manual")
-	if err != nil || text(item, "content") != "+.new.example\n" {
+	if err != nil || model.TextValue(item.Content) != "+.new.example\n" {
 		t.Fatal("committed declaration lost", err)
 	}
 	if _, err = os.Stat(path + ".invalid"); err != nil {
@@ -121,11 +122,7 @@ func TestFailedCacheReplacementNeverServesStableOrLegacyContent(t *testing.T) {
 	if err = os.WriteFile(path, []byte("+.stale-restored.example\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := ruleRecord(item)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cached, err := rulefetch.ReadCache(s.Context(), raw, nil)
+	cached, err := rulefetch.ReadCache(s.Context(), ruleRecord(item), nil)
 	if err != nil || cached != nil {
 		t.Fatalf("invalid cache returned %q %v", cached, err)
 	}

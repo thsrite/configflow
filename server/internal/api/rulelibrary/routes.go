@@ -2,6 +2,7 @@ package rulelibrary
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -31,7 +32,7 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 			out, err := s.List(c.Context())
 			return respond(out, err)
 		}
-		body, ok, err := readBody(c)
+		body, ok, err := decodeRequestObject[libraryRequest](c)
 		if err != nil {
 			return nil, err
 		}
@@ -42,11 +43,11 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		return respond(out, err)
 	}))
 	r.Handle([]string{"PUT", "DELETE"}, "/api/rule-library/<rule_id>", "rule_library.handle_rule_library_item", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		var body record
+		var body *libraryRequest
 		if c.Method() == "PUT" {
 			var ok bool
 			var err error
-			body, ok, err = readBody(c)
+			body, ok, err = decodeRequestObject[libraryRequest](c)
 			if err != nil {
 				return nil, err
 			}
@@ -65,15 +66,15 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 			}
 			return httpx.JSON(out).WithHeader("Cache-Control", "no-store"), nil
 		}
-		body, _, err := readBody(c)
+		raw, _, err := httpx.BindObject[json.RawMessage](c, false)
 		if err != nil {
 			return nil, err
 		}
-		out, err := s.SaveDraft(c.Context(), c.Param("rule_id"), body)
+		out, err := s.SaveDraft(c.Context(), c.Param("rule_id"), decodeDraftRequest(raw))
 		return respond(out, err)
 	}))
 	r.POST("/api/rule-library/test-single", "rule_library.test_single_rule", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, ok, err := readBody(c)
+		body, ok, err := decodeRequestObject[singleRequest](c)
 		if err != nil {
 			return nil, err
 		}
@@ -88,7 +89,7 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		return respond(out, err)
 	}))
 	r.POST("/api/rule-library/cache", "rule_library.cache_rules", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, ok, err := readCaughtBody(c)
+		body, ok, err := decodeCaughtObject[cacheRequest](c)
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +100,7 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 		return respond(out, err)
 	}))
 	r.POST("/api/rule-library/check-content", "rule_library.check_rule_content", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, ok, err := readBody(c)
+		body, ok, err := decodeRequestObject[checkContentRequest](c)
 		if err != nil {
 			return nil, err
 		}
@@ -136,7 +137,7 @@ func RegisterWithOptions(r *httpx.Router, options Options) {
 				Domains jsonValue `json:"proxy_domains"`
 			}{out}, err)
 		}
-		body, ok, err := readCaughtBody(c)
+		body, ok, err := decodeCaughtObject[proxyDomainsRequest](c)
 		if err != nil {
 			return nil, err
 		}

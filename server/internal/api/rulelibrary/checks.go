@@ -1,25 +1,25 @@
 package rulelibrary
 
 import (
-	"configflow/internal/model"
 	"context"
-	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/weburl"
 )
 
 type checkResult struct {
-	ID        json.RawMessage `json:"id"`
-	Name      json.RawMessage `json:"name"`
-	URL       json.RawMessage `json:"url"`
-	Available bool            `json:"available"`
-	Status    *int            `json:"status_code,omitempty"`
-	Error     string          `json:"error,omitempty"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	Available bool   `json:"available"`
+	Status    *int   `json:"status_code,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 type singleResult struct {
 	Success   bool `json:"success"`
@@ -34,15 +34,8 @@ type checksResult struct {
 	Skipped int           `json:"skipped_count"`
 }
 
-func defaultField(item record, key string) json.RawMessage {
-	if item.Has(key) {
-		return field(item, key)
-	}
-	return json.RawMessage(`""`)
-}
-
 // Single checks the configured forwarding path with Python's five-second timeout.
-func (s *Service) Single(ctx context.Context, body record) (singleResult, error) {
+func (s *Service) Single(ctx context.Context, body *singleRequest) (singleResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return singleResult{}, err
@@ -74,25 +67,23 @@ func (s *Service) Test(ctx context.Context, base string) (checksResult, error) {
 	if err != nil {
 		return out, err
 	}
-	library, err := libraryItems(catalog)
-	if err != nil {
-		return out, err
-	}
+	library := catalog.RuleLibrary
 	system, err := systemConfig(ctx)
 	if err != nil {
 		return out, err
 	}
-	selected := []record{}
+	selected := []model.RuleLibraryItem{}
 	for _, item := range library {
-		if sourceType(item) == "url" && text(item, "url") != "" {
+		if sourceTypeOf(item) == "url" && model.TextValue(item.URL) != "" {
 			selected = append(selected, item)
 		}
 	}
 	out.Total = len(selected)
 	out.Skipped = len(library) - len(selected)
-	out.Results, err = parallel(ctx, selected, func(ctx context.Context, item record) (checkResult, error) {
-		result := checkResult{ID: defaultField(item, "id"), Name: defaultField(item, "name"), URL: defaultField(item, "url")}
-		status, err := s.requestStatus(ctx, text(item, "url"), system, true)
+	out.Results, err = parallel(ctx, selected, func(ctx context.Context, item model.RuleLibraryItem) (checkResult, error) {
+		url := model.TextValue(item.URL)
+		result := checkResult{ID: item.ID, Name: item.Name, URL: url}
+		status, err := s.requestStatus(ctx, url, system, true)
 		if err != nil {
 			result.Error = weburl.SafeErrorDetails(err)
 		} else {
@@ -109,33 +100,27 @@ func (s *Service) Test(ctx context.Context, base string) (checksResult, error) {
 		if !result.Available {
 			out.Failed++
 			next := selected[i]
-			if err = put(&next, "enabled", false); err != nil {
-				return out, err
-			}
+			next.Enabled = new(false)
 			changes = append(changes, sourceChange{selected[i], next})
 		}
 	}
 	_, err = editWithProfiles(ctx, changes, func(_ context.Context, current *model.Shared) error {
-		items, err := libraryItems(current)
-		if err != nil {
-			return err
-		}
+		items := slices.Clone(current.RuleLibrary)
 		for _, change := range changes {
-			i := find(items, text(change.Old, "id"))
+			i := find(items, change.Old.ID)
 			if i >= 0 && same(items[i], change.Old) {
-				if err = put(&items[i], "enabled", false); err != nil {
-					return err
-				}
+				items[i].Enabled = new(false)
 			}
 		}
-		return setLibrary(current, items)
+		current.RuleLibrary = items
+		return nil
 	}, base)
 	return out, err
 }
 
 // parallel uses a fixed worker count and joins all workers before returning.
 // A child panic is contained, logged without source material, and returned.
-func parallel[T any](ctx context.Context, items []record, run func(context.Context, record) (T, error)) ([]T, error) {
+func parallel[T any](ctx context.Context, items []model.RuleLibraryItem, run func(context.Context, model.RuleLibraryItem) (T, error)) ([]T, error) {
 	out := make([]T, len(items))
 	failures := make([]error, len(items))
 	var next atomic.Int64
@@ -159,7 +144,7 @@ func parallel[T any](ctx context.Context, items []record, run func(context.Conte
 	}
 	return out, nil
 }
-func runItem[T any](ctx context.Context, item record, run func(context.Context, record) (T, error)) (out T, err error) {
+func runItem[T any](ctx context.Context, item model.RuleLibraryItem, run func(context.Context, model.RuleLibraryItem) (T, error)) (out T, err error) {
 	defer func() {
 		if recover() != nil {
 			logx.Get("api.rulelibrary").Error("rule library worker panicked")
@@ -173,12 +158,12 @@ func runItem[T any](ctx context.Context, item record, run func(context.Context, 
 }
 
 type cacheResult struct {
-	ID       json.RawMessage `json:"id"`
-	Name     json.RawMessage `json:"name"`
-	Success  bool            `json:"success"`
-	Path     string          `json:"local_path,omitempty"`
-	Error    string          `json:"error,omitempty"`
-	Retained *bool           `json:"cache_retained,omitempty"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Success  bool   `json:"success"`
+	Path     string `json:"local_path,omitempty"`
+	Error    string `json:"error,omitempty"`
+	Retained *bool  `json:"cache_retained,omitempty"`
 }
 type cacheResults struct {
 	Success   bool          `json:"success"`
@@ -189,35 +174,28 @@ type cacheResults struct {
 }
 
 // Cache refreshes selected sources without changing preferences on failure.
-func (s *Service) Cache(ctx context.Context, body record) (cacheResults, error) {
+func (s *Service) Cache(ctx context.Context, body *cacheRequest) (cacheResults, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := cacheResults{Success: true, Results: []cacheResult{}}
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
-	var selectedIDs []json.RawMessage
-	input, present := body.Get("rule_ids")
-	if !present || json.Unmarshal(input, &selectedIDs) != nil || len(selectedIDs) == 0 {
+	if !body.RuleIDs.OK || len(body.RuleIDs.Value) == 0 {
 		return out, fail(400, msgCacheSelect)
 	}
 	chosen := map[string]bool{}
-	for _, raw := range selectedIDs {
-		var id string
-		if string(raw) != "null" && json.Unmarshal(raw, &id) == nil {
-			chosen[id] = true
+	for _, entry := range body.RuleIDs.Value {
+		if entry.OK {
+			chosen[entry.Value] = true
 		}
 	}
 	catalog, err := sharedConfig(ctx)
 	if err != nil {
 		return out, err
 	}
-	library, err := libraryItems(catalog)
-	if err != nil {
-		return out, err
-	}
-	selected := []record{}
-	for _, item := range library {
-		if chosen[text(item, "id")] {
+	selected := []model.RuleLibraryItem{}
+	for _, item := range catalog.RuleLibrary {
+		if chosen[item.ID] {
 			selected = append(selected, item)
 		}
 	}
@@ -225,16 +203,16 @@ func (s *Service) Cache(ctx context.Context, body record) (cacheResults, error) 
 		return out, fail(404, msgCacheMissing)
 	}
 	out.Total = len(selected)
-	out.Results, err = parallel(ctx, selected, func(ctx context.Context, item record) (cacheResult, error) {
-		result := cacheResult{ID: defaultField(item, "id"), Name: defaultField(item, "name")}
-		ctx, release, err := editLease(ctx, item)
+	out.Results, err = parallel(ctx, selected, func(ctx context.Context, item model.RuleLibraryItem) (cacheResult, error) {
+		result := cacheResult{ID: item.ID, Name: item.Name}
+		ctx, release, err := editLease(ctx, item.ID)
 		if err != nil {
 			return result, err
 		}
 		defer release()
 		// A waiting manual refresh resolves the latest declaration after acquiring
 		// the edit lease, so a slow previous request cannot republish old inline text.
-		current, err := source(ctx, text(item, "id"))
+		current, err := source(ctx, item.ID)
 		if err != nil {
 			result.Error = weburl.SafeErrorDetails(err)
 			retained := false

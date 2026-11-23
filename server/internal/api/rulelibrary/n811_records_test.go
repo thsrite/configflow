@@ -50,7 +50,7 @@ func TestN811SectionEditsPreserveUnchangedBytes(t *testing.T) {
 		t.Fatalf("undeclared member kept: %s %s", beforeSubscriptions, beforeBackup)
 	}
 	if err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
-		return setLibrary(catalog, []record{recordJSON(t, `{"id":"record","name":"Record","source_type":"content","content":"+.records.example\n","behavior":"domain","format":"text"}`)})
+		return catalog.SetJSON("rule_library", []byte(`[{"id":"record","name":"Record","source_type":"content","content":"+.records.example\n","behavior":"domain","format":"text"}]`))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 	}
 	stop := errors.New("abort edit")
 	if err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
-		if err := setLibrary(catalog, []record{recordJSON(t, `{"id":"temp","name":"Temp","source_type":"content","content":"+.temp.example\n","behavior":"domain","format":"text"}`)}); err != nil {
+		if err := catalog.SetJSON("rule_library", []byte(`[{"id":"temp","name":"Temp","source_type":"content","content":"+.temp.example\n","behavior":"domain","format":"text"}]`)); err != nil {
 			return err
 		}
 		return stop
@@ -103,7 +103,7 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 		t.Fatalf("failed editShared changed snapshot: %v", cached.RuleLibrary)
 	}
 	if err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
-		return setLibrary(catalog, []record{recordJSON(t, `{"id":"saved","name":"Saved","source_type":"content","content":"+.saved.example\n","behavior":"domain","format":"text"}`)})
+		return catalog.SetJSON("rule_library", []byte(`[{"id":"saved","name":"Saved","source_type":"content","content":"+.saved.example\n","behavior":"domain","format":"text"}]`))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestReviewN811CheckContentRejectsNonStringFormat(t *testing.T) {
 		`{"content":"example.com","behavior":"domain","format":[]}`,
 		`{"content":"example.com","behavior":"domain","format":{}}`,
 	} {
-		result, err := svc.Check(recordJSON(t, raw))
+		result, err := svc.Check(decodeTestJSON[checkContentRequest](t, raw))
 		if err != nil {
 			t.Fatalf("%s: unexpected error %v", raw, err)
 		}
@@ -154,7 +154,7 @@ func TestReviewN811CheckContentRejectsNonStringFormat(t *testing.T) {
 		`{"content":"example.com","behavior":"domain","format":null}`,
 		`{"content":"example.com","behavior":"domain","format":""}`,
 	} {
-		result, err := svc.Check(recordJSON(t, raw))
+		result, err := svc.Check(decodeTestJSON[checkContentRequest](t, raw))
 		if err != nil {
 			t.Fatalf("%s: unexpected error %v", raw, err)
 		}

@@ -1,7 +1,6 @@
 package rulelibrary
 
 import (
-	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +9,7 @@ import (
 	"strings"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
@@ -21,35 +21,30 @@ type Service struct {
 }
 
 // List annotates shared entries with the shared DNS engine's IP projection.
-func (s *Service) List(ctx context.Context) ([]record, error) {
+func (s *Service) List(ctx context.Context) ([]libraryListItem, error) {
 	catalog, err := sharedConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	items, err := libraryItems(catalog)
-	if err != nil {
-		return nil, err
-	}
-	for i := range items {
-		has, err := hasIP(items[i], catalog)
+	items := make([]libraryListItem, len(catalog.RuleLibrary))
+	for i, item := range catalog.RuleLibrary {
+		has, err := hasIP(item, catalog)
 		if err != nil {
 			return nil, err
 		}
-		if err = put(&items[i], "has_ip_part", has); err != nil {
-			return nil, err
-		}
+		items[i] = libraryListItem{libraryItemWire: libraryItemWire(item), HasIPPart: has}
 	}
 	return items, nil
 }
 
 // Create downloads and validates before publishing a source and its cache.
-func (s *Service) Create(ctx context.Context, item record) (itemResult, error) {
+func (s *Service) Create(ctx context.Context, req *libraryRequest) (itemResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := itemResult{Success: true}
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
-	id := text(item, "id")
+	id := req.ID.Value
 	if id == "" {
 		return out, fail(400, msgID)
 	}
@@ -57,21 +52,17 @@ func (s *Service) Create(ctx context.Context, item record) (itemResult, error) {
 	if err != nil {
 		return out, err
 	}
-	library, err := libraryItems(catalog)
-	if err != nil {
-		return out, err
-	}
-	if find(library, id) >= 0 {
+	if find(catalog.RuleLibrary, id) >= 0 {
 		return out, fail(409, msgDuplicate)
 	}
-	item.Delete("has_ip_part")
-	if err = validateContent(item, nil); err != nil {
+	if err = validateDeclaration(req.declaration(), nil); err != nil {
 		return out, err
 	}
-	if sourceType(item) == "content" {
-		item.Delete("url")
-	} else if sourceType(item) == "url" {
-		item.Delete("content")
+	cleaned := *req
+	cleaned.cleanForCreate()
+	item, err := cleaned.decodeItem("", nil)
+	if err != nil {
+		return out, libraryTypeError(nil, -1, &cleaned, id, err)
 	}
 	content, err := s.readSource(ctx, item)
 	if err != nil {
@@ -86,7 +77,7 @@ func (s *Service) Create(ctx context.Context, item record) (itemResult, error) {
 	// Download before admission so a slow URL creation cannot block an inline
 	// creation of the same ID. Serialize the actual creation with edit/delete
 	// cleanup so a new generation never lands under a previous owner's lease.
-	held, release, err := editLease(ctx, item)
+	held, release, err := editLease(ctx, item.ID)
 	if err != nil {
 		return out, err
 	}
@@ -108,21 +99,24 @@ func (s *Service) Create(ctx context.Context, item record) (itemResult, error) {
 }
 
 // Check validates editable content and appends complete lines via yamlx.
-func (s *Service) Check(body record) (*rulefetch.Inspection, error) {
-	content, ok := stringField(body, "content")
-	if !ok {
+func (s *Service) Check(body *checkContentRequest) (*rulefetch.Inspection, error) {
+	if !body.Content.OK {
 		return nil, fail(400, msgCheckBody)
 	}
-	lines, err := stringsField(body, "append_lines")
-	if err != nil {
-		return nil, fail(400, msgAppend)
-	}
-	for _, line := range lines {
-		if strings.ContainsAny(line, "\r\n") {
+	var lines []string
+	if body.AppendLines.Present() {
+		if !body.AppendLines.OK {
 			return nil, fail(400, msgAppend)
 		}
+		lines = make([]string, len(body.AppendLines.Value))
+		for i, entry := range body.AppendLines.Value {
+			if !entry.OK || strings.ContainsAny(entry.Value, "\r\n") {
+				return nil, fail(400, msgAppend)
+			}
+			lines[i] = entry.Value
+		}
 	}
-	return inspect(content, lines, body)
+	return inspect(body.Content.Value, lines, body)
 }
 
 // Content returns handwritten bytes directly from the shared declaration.
@@ -131,40 +125,29 @@ func (s *Service) Content(ctx context.Context, id string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	library, err := libraryItems(catalog)
-	if err != nil {
-		return nil, err
-	}
-	i := find(library, id)
+	i := find(catalog.RuleLibrary, id)
 	if i < 0 {
 		return nil, fail(404, "Rule not found")
 	}
-	if sourceType(library[i]) != "content" {
+	item := catalog.RuleLibrary[i]
+	if sourceTypeOf(item) != "content" {
 		return nil, fail(400, "This rule does not have content")
 	}
-	if !library[i].Has("content") {
+	if item.Content == nil {
 		return []byte{}, nil
 	}
-	content, ok := stringField(library[i], "content")
-	if !ok {
-		return nil, fail(500, "invalid stored rule content")
-	}
-	return []byte(content), nil
+	return []byte(*item.Content), nil
 }
 
 // Reorder resolves identifiers against the latest shared transaction snapshot.
-func (s *Service) Reorder(ctx context.Context, body record) ([]string, error) {
+func (s *Service) Reorder(ctx context.Context, body json.RawMessage) ([]string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	data, err := body.MarshalJSON()
-	if err != nil {
-		return nil, err
-	}
 	order := []string{}
-	err = editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
-		ordered, missing := reorder(catalog.RuleLibrary, data)
+	err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
+		ordered, missing := reorder(catalog.RuleLibrary, body)
 		if len(missing) > 0 {
 			return fail(404, fmt.Sprintf(msgOrderMissing, missingText(missing)))
 		}
@@ -189,18 +172,17 @@ func (s *Service) ProxyDomains(ctx context.Context) (jsonValue, error) {
 }
 
 // SetProxyDomains preserves other system settings in the same transaction.
-func (s *Service) SetProxyDomains(ctx context.Context, body record) (string, error) {
+func (s *Service) SetProxyDomains(ctx context.Context, body *proxyDomainsRequest) (string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	value := ""
-	if body.Has("proxy_domains") {
-		var ok bool
-		value, ok = stringField(body, "proxy_domains")
-		if !ok {
+	if body.ProxyDomains.Present() {
+		if !body.ProxyDomains.OK {
 			return "", fail(500, "proxy_domains must be a string")
 		}
+		value = body.ProxyDomains.Value
 	}
 	value = strings.TrimSpace(value)
 	err := editSystem(ctx, func(system *model.System) error {

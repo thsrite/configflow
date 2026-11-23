@@ -1,8 +1,7 @@
 package rulelibrary
 
-// Record DTOs delegate sources and coupled transactions to their typed owners.
+// Typed DTOs delegate sources and coupled transactions to their typed owners.
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/ctxx"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
@@ -25,8 +25,16 @@ import (
 
 type jsonValue = json.RawMessage
 
-func readBody(c *httpx.Ctx) (record, bool, error) {
-	return httpx.BindObject[record](c, false)
+func decodeRequestObject[T any](c *httpx.Ctx) (*T, bool, error) {
+	raw, ok, err := httpx.BindObject[json.RawMessage](c, false)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	out := new(T)
+	if err := jsondecode.Unmarshal(raw, out); err != nil {
+		return nil, true, err
+	}
+	return out, true, nil
 }
 func sharedConfig(ctx context.Context) (*model.Shared, error) {
 	r, err := repo.GetRepository(ctx)
@@ -36,32 +44,45 @@ func sharedConfig(ctx context.Context) (*model.Shared, error) {
 	return r.Shared(ctx)
 }
 
-// libraryItems is the catalog's rule library as JSON members per item: editors
-// compare, validate and revise library items as sent (see record).
-func libraryItems(shared *model.Shared) ([]record, error) {
-	out := make([]record, len(shared.RuleLibrary))
-	for i, item := range shared.RuleLibrary {
-		data, err := model.Marshal(item)
-		if err == nil {
-			err = out[i].UnmarshalJSON(data)
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+type libraryErrorItem struct {
+	ID     string          `json:"id"`
+	Name   json.RawMessage `json:"name,omitempty"`
+	Policy json.RawMessage `json:"policy,omitempty"`
+	Target json.RawMessage `json:"target,omitempty"`
 }
 
-// setLibrary stores items as the catalog's rule library. The catalog decodes
-// them strictly: a member of another type is refused with the repository's
-// message for the list.
-func setLibrary(shared *model.Shared, items []record) error {
-	raw, err := json.Marshal(items)
+func libraryTypeError(existing []model.RuleLibraryItem, index int, req *libraryRequest, id string, cause error) error {
+	failed, err := json.Marshal(libraryErrorItem{
+		ID:     id,
+		Name:   req.Name.Raw,
+		Policy: req.Policy.Raw,
+		Target: req.Target.Raw,
+	})
 	if err != nil {
 		return err
 	}
-	return shared.SetJSON("rule_library", raw)
+	list := make([]json.RawMessage, 0, len(existing)+1)
+	for i, item := range existing {
+		if i == index {
+			list = append(list, failed)
+			continue
+		}
+		data, err := model.Marshal(item)
+		if err != nil {
+			return err
+		}
+		list = append(list, data)
+	}
+	if index < 0 {
+		list = append(list, failed)
+	}
+	raw, err := json.Marshal(list)
+	if err != nil {
+		return err
+	}
+	return repo.InputError(&model.MemberTypeError{Record: "shared", Member: "rule_library", Value: raw, Err: cause})
 }
+
 func systemConfig(ctx context.Context) (*model.SystemConfig, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
@@ -116,33 +137,32 @@ func editSystem(ctx context.Context, fn func(*model.System) error) error {
 	return nil
 }
 
-// validateContent checks the request as sent (O18 T1c: the rule record
+// validateDeclaration checks the request as sent (O18 T1c: the rule record
 // cannot hold members of the wrong JSON type).
-func validateContent(item record, old *record) error {
-	raw, err := item.MarshalJSON()
-	if err != nil {
-		return err
-	}
-	var previous json.RawMessage
+func validateDeclaration(sent rulefetch.Declaration, old *model.RuleLibraryItem) error {
+	var before *rulefetch.Declaration
 	if old != nil {
-		if previous, err = old.MarshalJSON(); err != nil {
-			return err
-		}
+		before = new(rulefetch.DeclarationOf(ruleRecord(*old)))
 	}
-	return rulefetch.ValidateContentJSON(raw, previous)
+	return rulefetch.ValidateDeclaration(sent, before)
 }
-func (s *Service) readSource(ctx context.Context, item record) ([]byte, error) {
-	rule, err := ruleRecord(item)
-	if err != nil {
-		return nil, err
+
+func validateItemContent(item model.RuleLibraryItem, old *model.RuleLibraryItem) error {
+	var before *model.RuleConfig
+	if old != nil {
+		before = new(ruleRecord(*old))
 	}
-	content, err := rulefetch.ReadSource(ctx, rule, s.client)
+	return rulefetch.ValidateContent(ruleRecord(item), before)
+}
+
+func (s *Service) readSource(ctx context.Context, item model.RuleLibraryItem) ([]byte, error) {
+	content, err := rulefetch.ReadSource(ctx, ruleRecord(item), s.client)
 	if err != nil || content == nil {
 		return nil, err
 	}
 	return content.Data, nil
 }
-func create(ctx context.Context, item record, content []byte) error {
+func create(ctx context.Context, item model.RuleLibraryItem, content []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -150,30 +170,18 @@ func create(ctx context.Context, item record, content []byte) error {
 	if err != nil {
 		return err
 	}
-	data, err := json.Marshal(item)
-	var value model.RuleLibraryItem
-	if err == nil {
-		err = json.Unmarshal(data, &value)
-	}
-	if err != nil {
-		return err
-	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = r.CreateRuleLibraryRecord(ctx, value, content)
-
+	_, err = r.CreateRuleLibraryRecord(ctx, item, content)
 	return err
 }
 
 // hasIP reports whether a library item has (or may have) IP entries, as the
 // rules page shows it for a rule-set reference.
-func hasIP(item record, shared *model.Shared) (bool, error) {
-	rule, err := ruleRecord(item)
-	if err != nil {
-		return false, err
-	}
-	rule.ItemType, rule.LibraryRuleID = "ruleset", text(item, "id")
+func hasIP(item model.RuleLibraryItem, shared *model.Shared) (bool, error) {
+	rule := ruleRecord(item)
+	rule.ItemType, rule.LibraryRuleID = "ruleset", item.ID
 	profile, err := oxidns.NewTypedProfile(&model.Config{Profile: &model.Profile{}, RuleLibrary: shared.RuleLibrary,
 		Nodes: shared.Nodes, Subscriptions: shared.Subscriptions, Aggregations: shared.Aggregations})
 	if err != nil {
@@ -181,7 +189,7 @@ func hasIP(item record, shared *model.Shared) (bool, error) {
 	}
 	return oxidns.RuleHasIPPart(rule, profile), nil
 }
-func inspect(content string, lines []string, body record) (*rulefetch.Inspection, error) {
+func inspect(content string, lines []string, body *checkContentRequest) (*rulefetch.Inspection, error) {
 	if len(lines) > 0 {
 		_, payload, err := rulefetch.ReadRulePayload(content)
 		if err != nil {
@@ -192,36 +200,32 @@ func inspect(content string, lines []string, body record) (*rulefetch.Inspection
 			return nil, err
 		}
 	}
-	out, err := rulefetch.Inspect(content, text(body, "behavior"), optionalFormat(body, "format"))
+	format := ""
+	if !body.Format.Null() {
+		if body.Format.OK {
+			format = body.Format.Value
+		} else {
+			format = "\x00"
+		}
+	}
+	behavior := body.Behavior.Value
+	out, err := rulefetch.Inspect(content, behavior, format)
 	if err != nil {
 		return nil, err
 	}
-	if text(body, "behavior") == "classical" {
+	if behavior == "classical" {
 		out.Content = content
 		out.Changes = []rulefetch.Change{}
 	}
 	return out, nil
 }
 
-func optionalFormat(r record, key string) string {
-	raw, ok := r.Get(key)
-	if !ok {
-		return ""
-	}
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return ""
-	}
-	var out string
-	if json.Unmarshal(trimmed, &out) != nil {
-		return "\x00"
-	}
-	return out
-}
-
 // reorder applies a reorder request; a malformed request is reported as
 // the only missing ID, as before.
 func reorder(items []model.RuleLibraryItem, body json.RawMessage) ([]model.RuleLibraryItem, []string) {
+	if len(body) == 0 {
+		body = json.RawMessage("{}")
+	}
 	request, err := rules.DecodeOrder(body, "rules")
 	if err != nil {
 		return items, []string{err.Error()}
@@ -230,16 +234,12 @@ func reorder(items []model.RuleLibraryItem, body json.RawMessage) ([]model.RuleL
 }
 func missingText(ids []string) string { return rules.IdentifierList(ids) }
 
-func cachePath(ctx context.Context, item record) (string, error) {
+func cachePath(ctx context.Context, item model.RuleLibraryItem) (string, error) {
 	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return "", err
 	}
-	raw, err := ruleRecord(item)
-	if err != nil {
-		return "", err
-	}
-	return r.SharedPath("rules/" + rules.CacheFilename(raw))
+	return r.SharedPath("rules/" + rules.CacheFilename(ruleRecord(item)))
 }
 func usage(ctx context.Context, id string) (int, error) {
 	r, err := repo.GetRepository(ctx)
@@ -250,25 +250,14 @@ func usage(ctx context.Context, id string) (int, error) {
 	return len(refs), err
 }
 
-func readCache(ctx context.Context, item record) ([]byte, error) {
-	raw, err := ruleRecord(item)
-	if err != nil {
-		return nil, err
-	}
-	return rulefetch.ReadCache(ctx, raw, nil)
+func readCache(ctx context.Context, item model.RuleLibraryItem) ([]byte, error) {
+	return rulefetch.ReadCache(ctx, ruleRecord(item), nil)
 }
-func writeCache(ctx context.Context, item record, content []byte) error {
+func writeCache(ctx context.Context, item model.RuleLibraryItem, content []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	raw, err := ruleRecord(item)
-	if err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	_, err = rulefetch.WriteCache(ctx, raw, rulefetch.Content{Data: content}, nil)
+	_, err := rulefetch.WriteCache(ctx, ruleRecord(item), rulefetch.Content{Data: content}, nil)
 	return err
 }
 func forget(ctx context.Context, id string) error {
@@ -285,7 +274,7 @@ func forget(ctx context.Context, id string) error {
 	// The status owner rechecks cancellation after leaf-lock admission.
 	return taskstatus.New(r.DataDir()).ForgetContext(ctx, refresh.RuleTaskKey(id))
 }
-func removeCache(ctx context.Context, item record) error {
+func removeCache(ctx context.Context, item model.RuleLibraryItem) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -331,14 +320,10 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		items, err := libraryItems(shared)
-		if err != nil {
-			return nil, err
-		}
 		applicable = nil
 		for _, change := range changes {
-			i := find(items, text(change.Old, "id"))
-			if i >= 0 && same(items[i], change.Old) {
+			i := find(shared.RuleLibrary, change.Old.ID)
+			if i >= 0 && same(shared.RuleLibrary[i], change.Old) {
 				applicable = append(applicable, change)
 			}
 		}
@@ -484,21 +469,18 @@ func (s *Service) requestStatus(ctx context.Context, address string, settings *m
 	}
 	return response.StatusCode, nil
 }
-func (s *Service) cacheOne(ctx context.Context, item record) (string, error) {
+func (s *Service) cacheOne(ctx context.Context, item model.RuleLibraryItem) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	raw, err := ruleRecord(item)
-	if err != nil {
-		return "", err
-	}
-	if sourceType(item) == "url" {
+	raw := ruleRecord(item)
+	if sourceTypeOf(item) == "url" {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
 		// A manual refresh resolves global fetch settings, just like the
 		// scheduler. Passing a shared catalog here would erase proxy settings.
-		_, _, err := refresh.RefreshRemote(ctx, libraryRecord(raw), "manual", refresh.RuleReadOptions{Fetch: func(ctx context.Context, url string) (rulefetch.Content, error) {
+		_, _, err := refresh.RefreshRemote(ctx, item, "manual", refresh.RuleReadOptions{Fetch: func(ctx context.Context, url string) (rulefetch.Content, error) {
 			if err := ctx.Err(); err != nil {
 				return rulefetch.Content{}, err
 			}
@@ -536,54 +518,58 @@ func (s *Service) cacheOne(ctx context.Context, item record) (string, error) {
 }
 func describeFailure(err error) string { return refresh.FailureReason(err) }
 
-func requestURL(body record) (string, error) {
-	raw := field(body, "url")
+func requestURL(body *singleRequest) (string, error) {
+	raw := body.URL.Raw
+	if raw == nil {
+		raw = json.RawMessage("null")
+	}
 	if !rules.EnabledField(raw, false) {
 		return "", fail(400, "URL is required")
 	}
-	var address *string
-	if json.Unmarshal(raw, &address) != nil || address == nil {
+	if !body.URL.OK {
 		return "", fail(500, httpx.DescInternal)
 	}
-	return *address, nil
+	return body.URL.Value, nil
 }
 
-// readCaughtBody preserves the error boundary of endpoints that deliberately
+// decodeCaughtObject preserves the error boundary of endpoints that deliberately
 // catch JSON decoding failures. The diagnostic stays native and contains no body.
-func readCaughtBody(c *httpx.Ctx) (record, bool, error) {
-	body, ok, err := readBody(c)
+func decodeCaughtObject[T any](c *httpx.Ctx) (*T, bool, error) {
+	body, ok, err := decodeRequestObject[T](c)
 	if err != nil {
-		return record{}, false, fail(500, "invalid JSON request")
+		return nil, false, fail(500, "invalid JSON request")
 	}
 	return body, ok, nil
 }
 
-func readReorderBody(c *httpx.Ctx) (record, error) {
-	body, ok, err := readCaughtBody(c)
-	if err != nil || ok {
-		return body, err
+func readReorderBody(c *httpx.Ctx) (json.RawMessage, error) {
+	raw, ok, err := httpx.BindObject[json.RawMessage](c, false)
+	if err != nil {
+		return nil, fail(500, "invalid JSON request")
+	}
+	if ok {
+		return raw, nil
 	}
 	// Python's `body or {}` defaults only empty values. A nonempty scalar or
 	// array still fails before resolving IDs; do not report a missing resource.
 	if boundNonempty(c) {
-		return record{}, fail(500, "reorder request must be a JSON object")
+		return nil, fail(500, "reorder request must be a JSON object")
 	}
-	return record{}, nil
+	return json.RawMessage("{}"), nil
 }
 
-func ruleRecord(item record) (model.RuleConfig, error) {
-	raw, err := json.Marshal(item)
-	var out model.RuleConfig
-	if err == nil {
-		err = json.Unmarshal(raw, &out)
+func ruleRecord(item model.RuleLibraryItem) model.RuleConfig {
+	return model.RuleConfig{
+		ID:         item.ID,
+		Name:       item.Name,
+		Enabled:    item.Enabled,
+		SourceType: item.SourceType,
+		Behavior:   item.Behavior,
+		Format:     item.Format,
+		URL:        item.URL,
+		Content:    item.Content,
+		Remark:     item.Remark,
 	}
-	return out, err
-}
-func libraryRecord(rule model.RuleConfig) model.RuleLibraryItem {
-	data, _ := model.Marshal(rule)
-	var item model.RuleLibraryItem
-	_ = json.Unmarshal(data, &item)
-	return item
 }
 func boundNonempty(c *httpx.Ctx) bool {
 	var raw json.RawMessage
