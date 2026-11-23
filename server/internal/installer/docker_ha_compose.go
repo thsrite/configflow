@@ -174,5 +174,8 @@ func generateBundleNative(params GuideOptions, request GuideRequest, enrollment 
 		{"enrollment.json", append(settingsJSON, '\n'), 0o600},
 		{"README.txt", []byte(readme), 0o600},
 	})
+	if err != nil {
+		return "", nil, err
+	}
 	return content, &ComposeBundle{Filename: project + ".zip", ProjectName: project, ContentBase64: base64.StdEncoding.EncodeToString(archive), PrepareCommand: "sudo bash prepare.sh", StartCommand: "docker compose up -d"}, nil
 }
