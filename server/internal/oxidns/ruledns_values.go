@@ -93,19 +93,19 @@ func (m *actionMap) clone() *actionMap {
 	return out
 }
 
-func (m *actionMap) node() *Node {
+func (m *actionMap) toNode() *Node {
 	out := M()
 	if m == nil {
 		return out
 	}
 	for _, id := range m.order {
-		set(out, id, m.items[id].node())
+		set(out, id, m.items[id].toNode())
 	}
 	return out
 }
 
 func (m *actionMap) equal(other *actionMap) bool {
-	return equal(m.node(), other.node())
+	return equal(m.toNode(), other.toNode())
 }
 
 func actionMapFromNode(n *Node) *actionMap {
@@ -229,11 +229,11 @@ func (v *ruleDNSValues) fieldNode(key string) *Node {
 	case "proxy_rulesets":
 		return strs(v.ProxyRulesets)
 	case "rule_actions":
-		return v.Actions.node()
+		return v.Actions.toNode()
 	case "rule_dns_follow":
 		return strs(v.Follow)
 	case "rule_dns_parked":
-		return v.Parked.node()
+		return v.Parked.toNode()
 	}
 	return Null()
 }
@@ -342,7 +342,7 @@ func (v *routingValues) clone() *routingValues {
 	return out
 }
 
-func (v *routingValues) node() *Node {
+func (v *routingValues) toNode() *Node {
 	out := M()
 	for _, key := range Selectors {
 		set(out, key, strs(v.selector(key)))
@@ -367,7 +367,7 @@ func (v *routingValues) node() *Node {
 	} else {
 		set(out, "custom_match_position", Null())
 	}
-	set(out, "rule_actions", v.Actions.node())
+	set(out, "rule_actions", v.Actions.toNode())
 	set(out, "rule_dns_follow", strs(v.Follow))
 	return out
 }

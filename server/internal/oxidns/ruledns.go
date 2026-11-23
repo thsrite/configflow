@@ -89,8 +89,8 @@ func (a RuleAction) Key() string {
 	return a.Action
 }
 
-// node is the canonical stored form of a normalized action.
-func (a RuleAction) node() *Node {
+// toNode is the canonical stored form of a normalized action.
+func (a RuleAction) toNode() *Node {
 	if a.raw != nil {
 		return clone(a.raw)
 	}
@@ -125,7 +125,7 @@ func NormalizeAction(value *Node, parked bool) (*Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return action.node(), nil
+	return action.toNode(), nil
 }
 
 func normalizeAction(value *Node, parked bool) (RuleAction, error) {
@@ -476,7 +476,7 @@ func pinnedAction(key string, plugins map[string]*Node) *Node {
 	if !ok {
 		return nil
 	}
-	return action.node()
+	return action.toNode()
 }
 
 // policyDNSRoutes maps each proxy group to the DNS route of its configured

@@ -16,7 +16,7 @@ type RuleRouting struct {
 // Analyze exposes the existing routing recognizer without duplicating its logic.
 func Analyze(document *nativeDoc, settings *Node, p *Profile) RuleRouting {
 	s := p.analyzeRouting(document, settings)
-	out := RuleRouting{Values: s.values.node(), Capabilities: s.caps}
+	out := RuleRouting{Values: s.values.toNode(), Capabilities: s.caps}
 	for _, g := range s.groups.all() {
 		out.Groups = append(out.Groups, RoutingGroup{Tag: g.tag, Provider: g.provider})
 	}

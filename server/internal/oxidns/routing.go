@@ -992,7 +992,7 @@ func ReadRouting(document *nativeDoc, settings *Node, p *Profile) (RoutingView, 
 	if err != nil {
 		return RoutingView{}, err
 	}
-	return RoutingView{values.node(), caps}, nil
+	return RoutingView{values.toNode(), caps}, nil
 }
 
 // MigrateDomainOnlyRouting renders old managed IP routing as domain-only
@@ -1077,7 +1077,7 @@ func RemoveRule(settings *Node, p *Profile, identity, baseURL string) (*Node, er
 	if state.values.Actions.has(identity) {
 		kept := state.values.Actions.clone()
 		kept.delete(identity)
-		set(changes, "rule_actions", kept.node())
+		set(changes, "rule_actions", kept.toNode())
 	}
 	editable := true
 	for _, key := range keys(changes) {
@@ -1492,6 +1492,8 @@ type ownedChain struct {
 	action RuleAction
 }
 
+func (c ownedChain) toNode() *Node { return c.action.toNode() }
+
 func ownedChainList(document *nativeDoc) []ownedChain {
 	plugins := pluginMap(document)
 	var out []ownedChain
@@ -1513,7 +1515,7 @@ func ownedChainList(document *nativeDoc) []ownedChain {
 func OwnedChains(document *nativeDoc) map[string]*Node {
 	out := map[string]*Node{}
 	for _, c := range ownedChainList(document) {
-		out[c.tag] = c.action.node()
+		out[c.tag] = c.action.toNode()
 	}
 	return out
 }
@@ -1621,7 +1623,7 @@ func routeLabel(route string) string { return RouteLabels[strings.SplitN(route, 
 
 // assignStored routes one active rule by a stored choice.
 func assignStored(values *ruleDNSValues, item model.RuleConfig, action RuleAction) error {
-	normalized, err := normalizeAction(action.node(), true)
+	normalized, err := normalizeAction(action.toNode(), true)
 	if err != nil {
 		return err
 	}
@@ -1994,7 +1996,7 @@ type RoutingChanges struct {
 	CustomMatchPosition *string
 }
 
-func (c RoutingChanges) node() *Node {
+func (c RoutingChanges) toNode() *Node {
 	out := M()
 	if c.DirectRules != nil {
 		set(out, "direct_rules", strs(*c.DirectRules))
@@ -2011,7 +2013,7 @@ func (c RoutingChanges) node() *Node {
 	if c.RuleActions != nil {
 		actions := M()
 		for _, entry := range *c.RuleActions {
-			set(actions, entry.RuleID, entry.Action.node())
+			set(actions, entry.RuleID, entry.Action.toNode())
 		}
 		set(out, "rule_actions", actions)
 	}
@@ -2036,7 +2038,7 @@ func (c RoutingChanges) node() *Node {
 // ApplyRouting applies one typed atomic routing edit to copies of document and
 // settings.
 func ApplyRouting(document *nativeDoc, settings *Node, p *Profile, changes RoutingChanges, baseURL string, opts RoutingOptions) (*Node, *Node, error) {
-	return applyRoutingNode(document, settings, p, changes.node(), baseURL, opts)
+	return applyRoutingNode(document, settings, p, changes.toNode(), baseURL, opts)
 }
 
 func applyRoutingNode(document *nativeDoc, settings *Node, p *Profile, changes *Node, baseURL string, opts RoutingOptions) (*Node, *Node, error) {
@@ -2193,8 +2195,8 @@ func applyRoutingNode(document *nativeDoc, settings *Node, p *Profile, changes *
 			}
 			set(resultSettings, key, list)
 		}
-		set(resultSettings, "rule_actions", values.Actions.node())
-		set(resultSettings, "rule_dns_parked", parked.node())
+		set(resultSettings, "rule_actions", values.Actions.toNode())
+		set(resultSettings, "rule_dns_parked", parked.toNode())
 	} else {
 		groups = &routingGroups{}
 		for _, g := range current.groups.Domain {

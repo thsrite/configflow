@@ -142,8 +142,8 @@ func parkInactive(settings *Node, p *Profile) {
 			}
 		}
 	}
-	set(settings, "rule_actions", values.Actions.node())
-	set(settings, "rule_dns_parked", values.Parked.node())
+	set(settings, "rule_actions", values.Actions.toNode())
+	set(settings, "rule_dns_parked", values.Parked.toNode())
 }
 
 // renderTemplate is _template: normalized template settings, generated
