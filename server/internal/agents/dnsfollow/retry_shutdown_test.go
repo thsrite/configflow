@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"configflow/internal/agents/agentfake"
-	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 )
 
@@ -19,8 +18,8 @@ func TestShutdownBetweenRetryCommitsRetainsCompleteWaitingState(t *testing.T) {
 		_ = model.SetStoredMember(&a, "dns_follow_state", []byte(`{"status":"failed"}`))
 		_ = model.SetStoredMember(&a, "dns_follow_job", []byte(`{"binding_id":"old-private-job"}`))
 	})
-	startRuntime(t, f.ctx)
-	ctx := lifecycle.BindRequest(f.ctx)
+	rt := startRuntime(t, f.ctx)
+	ctx := rt.BindRequest(f.ctx)
 	before := durable(t, f)
 	commits := f.r.CommitCount()
 	calls := 0
@@ -29,7 +28,7 @@ func TestShutdownBetweenRetryCommitsRetainsCompleteWaitingState(t *testing.T) {
 	f.s.now = func() time.Time {
 		calls++
 		if calls == 2 {
-			lifecycle.Stop(20 * time.Millisecond)
+			rt.Stop(20 * time.Millisecond)
 		}
 		return time.Date(2026, 11, 18, 0, 0, 0, 0, time.UTC)
 	}

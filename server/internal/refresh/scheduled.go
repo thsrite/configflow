@@ -650,7 +650,7 @@ func (s *Service) RunResourceNow(ctx context.Context, kind, id string) (string, 
 		}
 		return "", &TaskBusy{Message: msgTaskBusy}
 	}
-	spawn := lifecycle.Spawn
+	spawn := (lifecycle.ContextSpawner{}).Spawn
 	if s.runtime != nil {
 		spawn = s.runtime.Spawn
 	} else if spawner := lifecycle.SpawnerFrom(held); spawner != nil {

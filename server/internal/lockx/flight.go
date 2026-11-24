@@ -52,7 +52,7 @@ type Flight[K comparable, V any] struct {
 }
 
 // NewFlight constructs shared work with a stable diagnostic name and a tracked
-// spawner. O3-2 supplies an adapter for lifecycle.Spawn; no unmanaged goroutine
+// spawner. O3-2 supplies an adapter for lifecycle.ContextSpawner; no unmanaged goroutine
 // fallback is started when the spawner is missing.
 func NewFlight[K comparable, V any](spawner Spawner, name string) *Flight[K, V] {
 	return &Flight[K, V]{spawner: spawner, name: name, calls: make(map[K]*flightCall[V])}

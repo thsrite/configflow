@@ -263,7 +263,7 @@ func startGoWithRequestRuntime(t *testing.T, dataDir string, requestRuntime *lif
 
 // startGoWith runs beforeStart after the app is wired and the Agent manager
 // registered its loops, right before the background loops start.
-func startGoWith(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime, beforeStart func()) (string, func()) {
+func startGoWith(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime, beforeStart func(*lifecycle.Runtime)) (string, func()) {
 	pinPythonAgentVersion(t)
 	t.Setenv("DATA_DIR", dataDir)
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
@@ -278,7 +278,11 @@ func startGoWith(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime
 	if err != nil {
 		t.Fatal(err)
 	}
-	full, err := server.New(context.Background(), server.Options{Repo: r, Runtime: requestRuntime})
+	rt := requestRuntime
+	if rt == nil {
+		rt = lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	}
+	full, err := server.New(context.Background(), server.Options{Repo: r, Runtime: rt})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,14 +300,14 @@ func startGoWith(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	// main starts the loops once listening and, on SIGTERM, stops the HTTP
-	// server before lifecycle.Stop runs the shutdown hooks.
+	// server before rt.Stop runs the shutdown hooks.
 	if beforeStart != nil {
-		beforeStart()
+		beforeStart(rt)
 	}
-	lifecycle.Start(context.Background())
+	rt.Start(context.Background())
 	return srv.URL, func() {
 		srv.Close()
-		lifecycle.Stop(30 * time.Second)
+		rt.Stop(30 * time.Second)
 	}
 }
 

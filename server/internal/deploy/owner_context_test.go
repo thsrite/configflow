@@ -1,7 +1,6 @@
 package deploy
 
 import (
-	"configflow/internal/lifecycle"
 	"context"
 	"errors"
 	"sync/atomic"
@@ -17,12 +16,12 @@ func TestNestedOwnerKeepsTrackedCancellation(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			ctx := testContext(t)
-			startGlobalPublishRuntime(t, ctx)
+			rt := startGlobalPublishRuntime(t, ctx)
 			cancellation := make(chan context.CancelFunc, 1)
 			entered := make(chan struct{})
 			done := make(chan error, 1)
 			var called atomic.Bool
-			if err := lifecycle.Spawn(lifecycle.BindRequest(ctx), "owner-cancellation-test", func(job context.Context) {
+			if err := rt.Spawn(rt.BindRequest(ctx), "owner-cancellation-test", func(job context.Context) {
 				owner, cancel := context.WithCancel(job)
 				defer cancel()
 				cancellation <- cancel

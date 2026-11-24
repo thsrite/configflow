@@ -22,11 +22,6 @@ func TestProductionRouteTableMatchesGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	rt := lifecycle.NewProcessRuntime(lifecycle.Options{})
-	t.Cleanup(func() {
-		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-			t.Error(err)
-		}
-	})
 	r, err := repo.OpenDefaultWithOptions(t.TempDir(), RepoOptions())
 	if err != nil {
 		t.Fatal(err)

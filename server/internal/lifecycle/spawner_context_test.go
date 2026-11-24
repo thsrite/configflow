@@ -10,8 +10,8 @@ import (
 )
 
 func TestSpawnerFromKeepsOrigin(t *testing.T) {
-	if _, ok := lifecycle.SpawnerFrom(t.Context()).(lifecycle.DefaultSpawner); !ok {
-		t.Fatal("unbound context must use DefaultSpawner")
+	if _, ok := lifecycle.SpawnerFrom(t.Context()).(lifecycle.ContextSpawner); !ok {
+		t.Fatal("unbound context must use ContextSpawner")
 	}
 	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 	rt.Start(t.Context())

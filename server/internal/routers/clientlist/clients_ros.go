@@ -281,7 +281,7 @@ func (d rosDevice) confirmClients(ctx context.Context, r *routerdoc.Reading, can
 				results <- a
 			}
 		}
-		if err := lifecycle.Spawn(ctx, "router-client-probe", run); err != nil {
+		if err := lifecycle.SpawnerFrom(ctx).Spawn(ctx, "router-client-probe", run); err != nil {
 			run(ctx)
 		}
 	}

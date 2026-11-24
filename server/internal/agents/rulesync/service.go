@@ -315,7 +315,7 @@ func (s *Service) Round(ctx context.Context) (e error) {
 			s.mu.Unlock()
 			return e
 		}
-		e = lifecycle.Spawn(ctx, "agent-rule-sync-"+id, func(job context.Context) {
+		e = lifecycle.SpawnerFrom(ctx).Spawn(ctx, "agent-rule-sync-"+id, func(job context.Context) {
 			defer func() { s.mu.Lock(); s.pending[id] = false; s.mu.Unlock() }()
 			_ = s.Run(job, id)
 		})

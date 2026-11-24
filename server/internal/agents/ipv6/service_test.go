@@ -82,13 +82,12 @@ func requireCode(t *testing.T, e error, code string, status int) {
 		t.Fatalf("error=%v want=%s/%d", e, code, status)
 	}
 }
-func startRuntime(t *testing.T) {
+func startRuntime(t *testing.T) *lifecycle.Runtime {
 	t.Helper()
-	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 10 * time.Millisecond}); e != nil {
-		t.Fatal(e)
-	}
-	lifecycle.Start(context.Background())
-	t.Cleanup(func() { lifecycle.Stop(time.Second) })
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 10 * time.Millisecond})
+	rt.Start(context.Background())
+	t.Cleanup(func() { rt.Stop(time.Second) })
+	return rt
 }
 func TestReadinessCachePrepareAndStale(t *testing.T) {
 	startRuntime(t)
@@ -204,7 +203,7 @@ func TestTransportRawRequestsAndClasses(t *testing.T) {
 func TestReadinessRuntimeDisconnectAndShutdown(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect", true: "shutdown"}[shutdown], func(t *testing.T) {
-			startRuntime(t)
+			rt := startRuntime(t)
 			s, base := fixture(t)
 			entered, gate := make(chan struct{}), make(chan struct{})
 			s.Manager.SetClient(clientFunc(func(ctx context.Context, r agents.Request) (*agents.Response, error) {
@@ -216,7 +215,7 @@ func TestReadinessRuntimeDisconnectAndShutdown(t *testing.T) {
 					return response(hostStatus()), nil
 				}
 			}))
-			request, cancel := context.WithCancel(lifecycle.BindRequest(base))
+			request, cancel := context.WithCancel(rt.BindRequest(base))
 			defer cancel()
 			done := make(chan error, 1)
 			go func() { _, e := s.Status(request, "source", "default", true); done <- e }()
@@ -228,7 +227,7 @@ func TestReadinessRuntimeDisconnectAndShutdown(t *testing.T) {
 				t.Fatal("owner did not reach I/O")
 			}
 			if shutdown {
-				lifecycle.Stop(time.Second)
+				rt.Stop(time.Second)
 			} else {
 				cancel()
 			}
@@ -253,7 +252,7 @@ func TestReadinessRuntimeDisconnectAndShutdown(t *testing.T) {
 func TestPrepareDeviceWriteDisconnectAndShutdown(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect", true: "shutdown"}[shutdown], func(t *testing.T) {
-			startRuntime(t)
+			rt := startRuntime(t)
 			s, base := fixture(t)
 			first, e := s.Status(base, "source", "default", true)
 			if e != nil {
@@ -276,7 +275,7 @@ func TestPrepareDeviceWriteDisconnectAndShutdown(t *testing.T) {
 				}
 				return response(hostStatus()), nil
 			}))
-			request, cancel := context.WithCancel(lifecycle.BindRequest(base))
+			request, cancel := context.WithCancel(rt.BindRequest(base))
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
@@ -291,7 +290,7 @@ func TestPrepareDeviceWriteDisconnectAndShutdown(t *testing.T) {
 				t.Fatal("prepare did not reach write")
 			}
 			if shutdown {
-				lifecycle.Stop(time.Second)
+				rt.Stop(time.Second)
 			} else {
 				cancel()
 			}

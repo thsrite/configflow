@@ -35,7 +35,7 @@ const PoolWorkers = 8
 var (
 	pool = make(chan struct{}, PoolWorkers)
 
-	flights = lockx.NewFlight[flightKey, *responseCopy](lifecycle.DefaultSpawner{}, "provider-render")
+	flights = lockx.NewFlight[flightKey, *responseCopy](lifecycle.ContextSpawner{}, "provider-render")
 )
 
 // flightKey identifies one shared render: the provider, its request filters

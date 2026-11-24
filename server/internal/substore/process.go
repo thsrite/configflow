@@ -73,7 +73,7 @@ type Supervisor struct {
 
 	// Command returns the argv to run; nil runs node on Env.ActiveBundle.
 	Command func(ctx context.Context) ([]string, error)
-	// SpawnService starts the supervising goroutine; nil is lifecycle.SpawnService.
+	// SpawnService starts the supervising goroutine; nil resolves the Runtime from ctx.
 	SpawnService func(ctx context.Context, name string, fn func(context.Context)) error
 	// Clock times start-up, back-off and stability; nil is lifecycle.ClockFrom.
 	Clock clock.Clock
@@ -141,7 +141,11 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	s.mu.Unlock()
 	spawn := s.SpawnService
 	if spawn == nil {
-		spawn = lifecycle.SpawnService
+		if rt, ok := lifecycle.SpawnerFrom(ctx).(*lifecycle.Runtime); ok {
+			spawn = rt.SpawnService
+		} else {
+			spawn = (lifecycle.ContextSpawner{}).Spawn
+		}
 	}
 	first := make(chan error, 1)
 	if err := spawn(lifecycle.Detach(ctx), "sub-store-process", func(work context.Context) { s.supervise(work, run, first) }); err != nil {

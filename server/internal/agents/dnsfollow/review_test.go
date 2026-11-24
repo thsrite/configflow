@@ -14,7 +14,6 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/deploy"
-	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
@@ -303,7 +302,7 @@ func TestShutdownAfterDraftCommitResumesWithoutSecondUpload(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.publishSource(t, "source-next")
-	startRuntime(t, f.ctx)
+	rt := startRuntime(t, f.ctx)
 	arrived, release := make(chan struct{}), make(chan struct{})
 	fired := false
 	draft := func(doc *model.Document) string {
@@ -336,13 +335,13 @@ func TestShutdownAfterDraftCommitResumesWithoutSecondUpload(t *testing.T) {
 	})
 	defer unsub()
 	done := make(chan error, 1)
-	go func() { done <- f.s.Tick(lifecycle.BindRequest(f.ctx)) }()
+	go func() { done <- f.s.Tick(rt.BindRequest(f.ctx)) }()
 	select {
 	case <-arrived:
 	case <-time.After(30 * time.Second):
 		t.Fatal("follow never committed the draft")
 	}
-	lifecycle.Stop(20 * time.Millisecond)
+	rt.Stop(20 * time.Millisecond)
 	before := durable(t, f)
 	close(release)
 	if e := <-done; !errors.Is(e, context.Canceled) {
@@ -356,7 +355,7 @@ func TestShutdownAfterDraftCommitResumesWithoutSecondUpload(t *testing.T) {
 		t.Fatalf("unexpected stored stage %q %q", st.Status, st.Message)
 	}
 	// Restart: fresh Runtime, Manager and owner over the same data directory.
-	startRuntime(t, f.ctx)
+	rt2 := startRuntime(t, f.ctx)
 	f.m.Close()
 	m, err := agents.New(f.ctx, f.r)
 	if err != nil {
@@ -364,7 +363,7 @@ func TestShutdownAfterDraftCommitResumesWithoutSecondUpload(t *testing.T) {
 	}
 	defer m.Close()
 	f.m, f.s = m, New(m, Options{})
-	if err = f.s.Tick(lifecycle.BindRequest(f.ctx)); err != nil {
+	if err = f.s.Tick(rt2.BindRequest(f.ctx)); err != nil {
 		t.Fatal(err)
 	}
 	a = f.agent(t)

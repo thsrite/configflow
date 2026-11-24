@@ -86,7 +86,7 @@ func TestRequestSeenAfterProfileAndAuth(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("accepted request did not start the loop")
 	}
-	lifecycle.Stop(time.Second)
+	rt.Stop(time.Second)
 	select {
 	case <-ran:
 		t.Fatal("later request restarted the one-shot driver")

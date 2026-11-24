@@ -46,11 +46,6 @@ func nilFuncFields(v any) []string {
 func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 	t.Cleanup(convert.ResetMihomoEnvironmentForTest(t))
 	t.Cleanup(convert.ResetMihomoIntegrationsForTest(t))
-	t.Cleanup(func() {
-		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-			t.Error(err)
-		}
-	})
 
 	// cmd/configflow.run: repository with server Options, explicit Runtime, New.
 	r, err := repo.OpenDefaultWithOptions(t.TempDir(), RepoOptions())
@@ -59,9 +54,6 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 	}
 	t.Cleanup(r.Close)
 	rt := lifecycle.NewProcessRuntime(lifecycle.Options{})
-	if err := lifecycle.UseRuntime(rt); err != nil {
-		t.Fatal(err)
-	}
 	ctx := context.Background()
 	app, err := New(ctx, Options{Repo: r, Runtime: rt})
 	if err != nil {

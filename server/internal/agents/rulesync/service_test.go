@@ -111,17 +111,11 @@ func TestConfigureAndStateCommitBoundaries(t *testing.T) {
 }
 func TestRealRuntimeShutdownAndDisconnect(t *testing.T) {
 	ctx, s := fixtureService(t)
-	lifecycle.Stop(3 * time.Second)
-	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
-		t.Fatal(e)
-	}
-	lifecycle.Start(ctx)
-	t.Cleanup(func() {
-		lifecycle.Stop(3 * time.Second)
-		_ = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
-	})
-	bound := lifecycle.BindRequest(ctx)
-	lifecycle.Stop(3 * time.Second)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(ctx)
+	t.Cleanup(func() { rt.Stop(3 * time.Second) })
+	bound := rt.BindRequest(ctx)
+	rt.Stop(3 * time.Second)
 	before := string(systemBytes(t, s))
 	checks := []struct {
 		name string
@@ -147,8 +141,8 @@ func TestRealRuntimeShutdownAndDisconnect(t *testing.T) {
 			}
 		})
 	}
-	lifecycle.Start(ctx)
-	request, cancel := context.WithCancel(lifecycle.BindRequest(ctx))
+	rt.Start(ctx)
+	request, cancel := context.WithCancel(rt.BindRequest(ctx))
 	cancel()
 	view, e := s.Configure(request, "device", []byte(`{"library":true,"rules":true}`))
 	if e != nil || view.Settings != (Settings{true, true}) {
@@ -314,20 +308,14 @@ func TestRoundAdmissionRotationAndDrain(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	lifecycle.Stop(20 * time.Second)
-	if e = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
-		t.Fatal(e)
-	}
-	t.Cleanup(func() {
-		lifecycle.Stop(20 * time.Second)
-		_ = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
-	})
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	t.Cleanup(func() { rt.Stop(20 * time.Second) })
 	for round, want := range []int{2, 4, 5} {
-		lifecycle.Start(ctx)
-		if e = s.Round(lifecycle.BindRequest(ctx)); e != nil {
+		rt.Start(ctx)
+		if e = s.Round(rt.BindRequest(ctx)); e != nil {
 			t.Fatal(e)
 		}
-		lifecycle.Stop(20 * time.Second)
+		rt.Stop(20 * time.Second)
 		records, e := s.m.ReadAgents(ctx, false, nil)
 		if e != nil {
 			t.Fatal(e)

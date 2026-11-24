@@ -14,11 +14,6 @@ import (
 func TestServerWiresAgentAPIHandler(t *testing.T) {
 	t.Cleanup(convert.ResetMihomoEnvironmentForTest(t))
 	t.Cleanup(convert.ResetMihomoIntegrationsForTest(t))
-	t.Cleanup(func() {
-		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-			t.Error(err)
-		}
-	})
 
 	r, err := repo.OpenDefaultWithOptions(t.TempDir(), RepoOptions())
 	if err != nil {

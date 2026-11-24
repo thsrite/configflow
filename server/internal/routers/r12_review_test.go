@@ -183,16 +183,15 @@ func TestR12ReviewStartPublishPanicIsLogged(t *testing.T) {
 	if _, e := logx.Setup(logx.Config{Level: logx.Info, Console: &logs}); e != nil {
 		t.Fatal(e)
 	}
-	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
-		t.Fatal(e)
-	}
-	defer lifecycle.Stop(time.Second)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(t.Context())
+	defer rt.Stop(time.Second)
 	r := r10Router()
 	r.Endpoint = "http://192.0.2.1"
 	db := r12Repository(t, r, "{}")
 	_, r, _ = r12Config(t, db)
 	released := 0
-	ch, e := StartPublish(t.Context(), PublishRequest{ProfileID: "default", RouterID: r.ID, Router: r, Repo: db,
+	ch, e := StartPublish(rt.BindRequest(t.Context()), PublishRequest{ProfileID: "default", RouterID: r.ID, Router: r, Repo: db,
 		NewDriver: func(*spec.Router) Driver { panic("synthetic-password") }}, func() { released++ })
 	if e != nil {
 		t.Fatal(e)

@@ -758,8 +758,8 @@ func TestPublishEasyTierCoreVersionsAgainstFlask(t *testing.T) {
 // holdIPv6Scheduler replaces the IPv6 verification scheduler registered by the
 // Agent manager with a round that does nothing, before the loops start. The
 // next manager initialization registers the real scheduler again.
-func holdIPv6Scheduler() {
-	lifecycle.RegisterPeriodic(lifecycle.Periodic{
+func holdIPv6Scheduler(rt *lifecycle.Runtime) {
+	rt.RegisterPeriodic(lifecycle.Periodic{
 		Name:     "ipv6-verification-scheduler",
 		Interval: func(context.Context) time.Duration { return time.Hour },
 		Round:    func(context.Context) error { return nil },

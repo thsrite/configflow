@@ -132,7 +132,7 @@ func (s *DiscoveryService) readAll(ctx context.Context, rs []*spec.Router, prior
 		channels[i] = ch
 		spawner := s.Spawner
 		if spawner == nil {
-			spawner = lifecycle.DefaultSpawner{}
+			spawner = lifecycle.ContextSpawner{}
 		}
 		err := spawner.Spawn(ctx, "client-discovery-router", func(work context.Context) {
 			work, stop := context.WithDeadline(work, deadline)

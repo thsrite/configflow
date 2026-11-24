@@ -79,22 +79,12 @@ func TestRuleSyncHTTPAgainstFlask(t *testing.T) {
 	copyDir(t, pyDir, goDir)
 	py, stopPy := startPythonArgs(t, pyDir, "server/internal/api/agents/difftest/testdata/rulesync_app.py")
 	defer stopPy()
-	lifecycle.Stop(30 * time.Second)
-	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
-		t.Fatal(e)
-	}
-	t.Cleanup(func() {
-		lifecycle.Stop(30 * time.Second)
-		_ = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
-	})
 	// These HTTP comparisons exercise save/read, not clock-driven workers.
 	// Mirror the Python fixture by suppressing only the rule-sync timer driver;
 	// worker admission, device I/O and Runtime cancellation have real tests.
-	lifecycle.RegisterStartup(lifecycle.Startup{Name: "a16-http-no-timer", Run: func(context.Context) error {
-		lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "agent-rule-sync", Start: lifecycle.AfterFirstRequest, Interval: func(context.Context) time.Duration { return 5 * time.Second }, Round: func(context.Context) error { return nil }})
-		return nil
-	}})
-	goBase, stopGo := startGo(t, goDir)
+	goBase, stopGo := startGoWith(t, goDir, nil, func(rt *lifecycle.Runtime) {
+		rt.RegisterPeriodic(lifecycle.Periodic{Name: "agent-rule-sync", Start: lifecycle.AfterFirstRequest, Interval: func(context.Context) time.Duration { return 5 * time.Second }, Round: func(context.Context) error { return nil }})
+	})
 	defer stopGo()
 	pt, gt := login(t, py), login(t, goBase)
 	base := "/api/agents/agent-1/rule-sync"

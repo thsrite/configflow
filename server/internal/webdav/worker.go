@@ -61,7 +61,7 @@ func (w *Worker) activate(options workerOptions) *workerGeneration {
 		options.Clock = lifecycle.ClockFrom(context.Background())
 	}
 	if options.Spawner == nil {
-		options.Spawner = lifecycle.DefaultSpawner{}
+		options.Spawner = lifecycle.ContextSpawner{}
 	}
 	w.mu.Lock()
 	if w.closed {

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -164,30 +163,6 @@ func newO10Fixture(t *testing.T) *o10Fixture {
 	}
 	f.routers = append(f.routers, router.Router.ID)
 	return f
-}
-
-// startO10Runtime gives detached request work (provider renders) a fresh
-// Runtime without any background loop.
-func startO10Runtime(t *testing.T) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second})
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, lifecycle.ErrRunning) || time.Now().After(deadline) {
-			t.Fatal(err)
-		}
-		time.Sleep(time.Millisecond)
-	}
-	lifecycle.Start(context.Background())
-	t.Cleanup(func() {
-		lifecycle.Stop(3 * time.Second)
-		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-			t.Error(err)
-		}
-	})
 }
 
 func copyJSON(t *testing.T, in, out any) {

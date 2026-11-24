@@ -38,12 +38,9 @@ func newDeployHTTPWith(t *testing.T, options agentfake.Options) (*httpxtest.Serv
 
 func newDeployHTTPWithManager(t *testing.T, options agentfake.Options) (*httpxtest.Server, *core.Manager, httpxtest.Option, *agentfake.Agent) {
 	t.Helper()
-	lifecycle.Stop(8 * time.Second)
-	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
-		t.Fatal(e)
-	}
-	lifecycle.Start(context.Background())
-	t.Cleanup(func() { lifecycle.Stop(8 * time.Second) })
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(context.Background())
+	t.Cleanup(func() { rt.Stop(8 * time.Second) })
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	options.AgentID, options.Token, options.ConfigPath = "publish-agent", "synthetic-publish-token", "installed.yaml"
 	fake := agentfake.New(options)
@@ -53,6 +50,7 @@ func newDeployHTTPWithManager(t *testing.T, options agentfake.Options) (*httpxte
 	host, port, _ := net.SplitHostPort(u.Host)
 	n, _ := strconv.Atoi(port)
 	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	s.App.Runtime = rt
 	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		return system.SetJSON("agents", mustRawJSON(t, []map[string]any{{
 			"id": "publish-agent", "name": "Synthetic", "host": host, "port": n,

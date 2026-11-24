@@ -13,7 +13,6 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/deploy"
-	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
@@ -57,10 +56,10 @@ func TestTaskStatusRetainsOwnerLifetimeAfterPrecheck(t *testing.T) {
 			if _, err = store.SaveResult(context.Background(), "dns_follow:target", taskstatus.Result{OK: true}); err != nil {
 				t.Fatal(err)
 			}
-			startRuntime(t, ctx)
+			rt := startRuntime(t, ctx)
 			request, disconnect := context.WithCancel(ctx)
 			defer disconnect()
-			bound := lifecycle.BindRequest(request)
+			bound := rt.BindRequest(request)
 			checked, resume := make(chan struct{}), make(chan struct{})
 			var release sync.Once
 			releaseWriter := func() { release.Do(func() { close(resume) }) }
@@ -78,7 +77,7 @@ func TestTaskStatusRetainsOwnerLifetimeAfterPrecheck(t *testing.T) {
 				t.Fatal("owner never reached its outcome check")
 			}
 			if shutdown {
-				lifecycle.Stop(20 * time.Millisecond)
+				rt.Stop(20 * time.Millisecond)
 			} else {
 				disconnect()
 			}

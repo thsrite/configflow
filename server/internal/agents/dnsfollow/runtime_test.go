@@ -19,19 +19,12 @@ import (
 	"configflow/internal/lifecycle"
 )
 
-func startRuntime(t *testing.T, ctx context.Context) {
+func startRuntime(t *testing.T, ctx context.Context) *lifecycle.Runtime {
 	t.Helper()
-	lifecycle.Stop(time.Second)
-	if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-		t.Fatal(err)
-	}
-	lifecycle.Start(ctx)
-	t.Cleanup(func() {
-		lifecycle.Stop(time.Second)
-		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-			t.Error(err)
-		}
-	})
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(ctx)
+	t.Cleanup(func() { rt.Stop(time.Second) })
+	return rt
 }
 func durable(t *testing.T, f *fixture) map[string]string {
 	t.Helper()
@@ -64,9 +57,9 @@ func durable(t *testing.T, f *fixture) map[string]string {
 func TestRuntimeStoppedRejectsEveryFollowWrite(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
-	startRuntime(t, f.ctx)
-	ctx := lifecycle.BindRequest(f.ctx)
-	lifecycle.Stop(time.Second)
+	rt := startRuntime(t, f.ctx)
+	ctx := rt.BindRequest(f.ctx)
+	rt.Stop(time.Second)
 	before := durable(t, f)
 	calls := len(f.source.fake.Calls()) + len(f.target.fake.Calls())
 	dnsCalls := len(f.source.paths) + len(f.target.paths)
@@ -92,9 +85,9 @@ func TestRuntimeStoppedRejectsEveryFollowWrite(t *testing.T) {
 }
 func TestDisconnectedBoundRequestFinishesBindingAndFollow(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
-	startRuntime(t, f.ctx)
+	rt := startRuntime(t, f.ctx)
 	req, cancel := context.WithCancel(f.ctx)
-	ctx := lifecycle.BindRequest(req)
+	ctx := rt.BindRequest(req)
 	cancel()
 	if _, e := f.s.Configure(ctx, "target", json.RawMessage(`{"source_agent_id":"source","upstream_tag":"forward_remote","upstream_index":1,"connection":"auto"}`)); e != nil {
 		t.Fatal(e)
@@ -128,7 +121,7 @@ func TestShutdownDuringFollowIOLeavesNoLateCommit(t *testing.T) {
 			f := newFixture(t, Options{}, agentfake.Options{})
 			f.bind(t)
 			f.publishSource(t, "source-next")
-			startRuntime(t, f.ctx)
+			rt := startRuntime(t, f.ctx)
 			c := &stopAfterReply{next: agents.HTTPClient{}, arrived: make(chan struct{}), release: make(chan struct{}), path: path}
 			if path == "/api/deployments" {
 				c.path = "/api/deployments"
@@ -146,7 +139,7 @@ func TestShutdownDuringFollowIOLeavesNoLateCommit(t *testing.T) {
 				}
 			})
 			done := make(chan error, 1)
-			go func() { defer close(finished); done <- f.s.Tick(lifecycle.BindRequest(f.ctx)) }()
+			go func() { defer close(finished); done <- f.s.Tick(rt.BindRequest(f.ctx)) }()
 			select {
 			case <-c.arrived:
 			case err := <-done:
@@ -154,7 +147,7 @@ func TestShutdownDuringFollowIOLeavesNoLateCommit(t *testing.T) {
 			case <-time.After(60 * time.Second):
 				t.Fatal("owner did not reach real I/O")
 			}
-			lifecycle.Stop(20 * time.Millisecond)
+			rt.Stop(20 * time.Millisecond)
 			before := durable(t, f)
 			release()
 			if e := <-done; !errors.Is(e, context.Canceled) {

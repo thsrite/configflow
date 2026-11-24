@@ -14,7 +14,6 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/configgen"
 	"configflow/internal/convert/mihomoenv"
-	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
@@ -40,12 +39,12 @@ func TestManualArtifactRuntime(t *testing.T) {
 		for _, shutdown := range []bool{true, false} {
 			t.Run(string(engine)+map[bool]string{true: "/shutdown", false: "/disconnect"}[shutdown], func(t *testing.T) {
 				base, m := artifactManager(t)
-				startGlobalPublishRuntime(t, base)
+				rt := startGlobalPublishRuntime(t, base)
 				request, cancel := context.WithCancel(base)
 				defer cancel()
-				ctx := lifecycle.BindRequest(request)
+				ctx := rt.BindRequest(request)
 				if shutdown {
-					lifecycle.Stop(0)
+					rt.Stop(0)
 				} else {
 					cancel()
 				}
@@ -124,8 +123,8 @@ func TestManualArtifactUsesOwnerRepository(t *testing.T) {
 func TestManualArtifactShutdownBeforePreviewCommit(t *testing.T) {
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	base, m := artifactManager(t)
-	startGlobalPublishRuntime(t, base)
-	ctx := lifecycle.BindRequest(base)
+	rt := startGlobalPublishRuntime(t, base)
+	ctx := rt.BindRequest(base)
 	svc := New(Options{})
 	owner := svc.PreviewsFor(m)
 	owner.mu.Lock()
@@ -163,7 +162,7 @@ func TestManualArtifactShutdownBeforePreviewCommit(t *testing.T) {
 	}
 	// Use the production grace, rather than a shortened seam that could hide
 	// incorrect Runtime cancellation or admission behavior.
-	lifecycle.Stop(8 * time.Second)
+	rt.Stop(8 * time.Second)
 	owner.mu.Unlock()
 	locked = false
 	select {

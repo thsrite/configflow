@@ -57,7 +57,7 @@ type DiscoveryCache struct {
 // NewDiscoveryCache creates an isolated cache for one application.
 func NewDiscoveryCache(spawner lockx.Spawner, clockSource clock.Clock) *DiscoveryCache {
 	if spawner == nil {
-		spawner = lifecycle.DefaultSpawner{}
+		spawner = lifecycle.ContextSpawner{}
 	}
 	return &DiscoveryCache{entries: map[string]*cacheEntry{}, clock: clockSource, flight: lockx.NewFlight[*cacheEntry, cachedSnapshot](spawner, "client-discovery-cache")}
 }

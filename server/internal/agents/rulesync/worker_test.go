@@ -553,18 +553,12 @@ func TestRuleSyncRuntimeDuringDeviceIO(t *testing.T) {
 				t.Fatal(e)
 			}
 			f.now = f.now.Add(PollInterval)
-			lifecycle.Stop(4 * time.Second)
-			if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
-				t.Fatal(e)
-			}
-			lifecycle.Start(f.ctx)
-			t.Cleanup(func() {
-				lifecycle.Stop(4 * time.Second)
-				_ = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
-			})
+			rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+			rt.Start(f.ctx)
+			t.Cleanup(func() { rt.Stop(4 * time.Second) })
 			f.fake.gate = make(chan struct{})
 			f.fake.entered = make(chan struct{}, 1)
-			request, cancel := context.WithCancel(lifecycle.BindRequest(f.ctx))
+			request, cancel := context.WithCancel(rt.BindRequest(f.ctx))
 			defer cancel()
 			done := make(chan error, 1)
 			go func() { done <- f.s.Run(request, "device") }()
@@ -575,7 +569,7 @@ func TestRuleSyncRuntimeDuringDeviceIO(t *testing.T) {
 			}
 			before := systemBytes(t, f.s)
 			if shutdown {
-				lifecycle.Stop(4 * time.Second)
+				rt.Stop(4 * time.Second)
 				if e := <-done; e == nil {
 					t.Fatal("shutdown device I/O succeeded")
 				}

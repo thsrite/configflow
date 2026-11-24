@@ -200,7 +200,7 @@ func TestSchedulerUnavailableExpiryAndBadRows(t *testing.T) {
 	}
 }
 func TestQueueBoundAndShutdownDoesNotFinishRun(t *testing.T) {
-	startRuntime(t)
+	rt := startRuntime(t)
 	s, ctx := fixture(t)
 	for range cap(verificationSlots) {
 		verificationSlots <- struct{}{}
@@ -219,13 +219,13 @@ func TestQueueBoundAndShutdownDoesNotFinishRun(t *testing.T) {
 		}
 		return response(hostStatus()), nil
 	}))
-	bound := lifecycle.BindRequest(ctx)
+	bound := rt.BindRequest(ctx)
 	_, e = s.Start(bound, "source", "default", json.RawMessage(`{}`), false)
 	if e != nil {
 		t.Fatal(e)
 	}
 	<-entered
-	lifecycle.Stop(time.Second)
+	rt.Stop(time.Second)
 	a, _ := s.agent(ctx, "source", "default")
 	b, _ := runs(a).Get("manual")
 	if text(object(b)["status"]) != "running" {
@@ -394,7 +394,7 @@ func TestClientChecksRequireMatchingRunAndIdentity(t *testing.T) {
 }
 
 func TestVerificationRunsAtMostTwoWorkers(t *testing.T) {
-	startRuntime(t)
+	rt := startRuntime(t)
 	s, ctx := fixture(t)
 	a, e := s.Manager.ReadAgent(ctx, "source", true)
 	if e != nil {
@@ -433,7 +433,7 @@ func TestVerificationRunsAtMostTwoWorkers(t *testing.T) {
 		return nil, ctx.Err()
 	}))
 	for _, id := range []string{"source", "source-two", "source-three"} {
-		if _, e = s.Start(lifecycle.BindRequest(ctx), id, "default", json.RawMessage(`{}`), false); e != nil {
+		if _, e = s.Start(rt.BindRequest(ctx), id, "default", json.RawMessage(`{}`), false); e != nil {
 			t.Fatal(e)
 		}
 	}
@@ -452,7 +452,7 @@ func TestVerificationRunsAtMostTwoWorkers(t *testing.T) {
 		t.Fatal("third worker ran concurrently")
 	default:
 	}
-	lifecycle.Stop(time.Second)
+	rt.Stop(time.Second)
 	if maxActive.Load() != 2 || len(verificationWorkers) != 0 || len(verificationSlots) != 0 {
 		t.Fatal("worker release", maxActive.Load(), len(verificationWorkers), len(verificationSlots))
 	}
@@ -476,7 +476,7 @@ func TestClientRequiresStoredOnlineStatus(t *testing.T) {
 }
 
 func TestEnrollOnlyValidNewIPv6Publications(t *testing.T) {
-	startRuntime(t)
+	rt := startRuntime(t)
 	s, ctx := fixture(t)
 	task := Document{"deployment_id": jsonresp.Value("new"), "status": jsonresp.Value("preparing"), "future": jsonresp.Value(Document{"keep": jsonresp.Value(true)})}
 	if e := s.update(ctx, "source", func(_ context.Context, a Document, _ []Document) error {
@@ -508,17 +508,17 @@ func TestEnrollOnlyValidNewIPv6Publications(t *testing.T) {
 	if !yes(latest["ipv6_verification_requested"]) || string(jsonresp.Value(stored)) != string(jsonresp.Value(latest)) {
 		t.Fatal("enrollment lost task/mirror", latest)
 	}
-	bound := lifecycle.BindRequest(ctx)
-	lifecycle.Stop(time.Second)
+	bound := rt.BindRequest(ctx)
+	rt.Stop(time.Second)
 	before := s.Manager.Repository().CommitCount()
 	if e = s.Enroll(bound, "source", "new", config); e == nil || s.Manager.Repository().CommitCount() != before {
 		t.Fatal("stopped enrollment wrote", e)
 	}
 }
 func TestSchedulerStartsCapturedPublicationOnce(t *testing.T) {
-	startRuntime(t)
+	rt := startRuntime(t)
 	s, ctx := fixture(t)
-	ctx = lifecycle.BindRequest(ctx)
+	ctx = rt.BindRequest(ctx)
 	runtime, ok := lifecycle.SpawnerFrom(ctx).(*lifecycle.Runtime)
 	if !ok {
 		t.Fatal("scheduler request has no originating Runtime")
@@ -559,7 +559,7 @@ func TestSchedulerStartsCapturedPublicationOnce(t *testing.T) {
 func TestSettingsCapabilityPreflightBelongsToWriteOwner(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect", true: "shutdown"}[shutdown], func(t *testing.T) {
-			startRuntime(t)
+			rt := startRuntime(t)
 			s, ctx := fixture(t)
 			addClient(t, s, ctx)
 			entered, gate := make(chan struct{}), make(chan struct{})
@@ -575,7 +575,7 @@ func TestSettingsCapabilityPreflightBelongsToWriteOwner(t *testing.T) {
 				}
 				return response(Document{"platform": jsonresp.Value("linux"), "ipv6_client_probe_protocols": jsonresp.Value([]int{1})}), nil
 			}))
-			bound, cancel := context.WithCancel(lifecycle.BindRequest(ctx))
+			bound, cancel := context.WithCancel(rt.BindRequest(ctx))
 			defer cancel()
 			before := s.Manager.Repository().CommitCount()
 			done := make(chan error, 1)
@@ -591,7 +591,7 @@ func TestSettingsCapabilityPreflightBelongsToWriteOwner(t *testing.T) {
 				t.Fatal("no capability preflight")
 			}
 			if shutdown {
-				lifecycle.Stop(time.Second)
+				rt.Stop(time.Second)
 			} else {
 				cancel()
 			}

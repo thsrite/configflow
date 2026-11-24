@@ -124,6 +124,10 @@ func setup(t *testing.T) (*httpxtest.Server, *agents.Manager, string, installati
 	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(context.Background())
+	t.Cleanup(func() { rt.Stop(10 * time.Second) })
+	s.App.Runtime = rt
 	static := t.TempDir()
 	t.Setenv("AGENTS_STATIC_DIR", static)
 	must(t, os.WriteFile(filepath.Join(static, "configflow-agent-linux-amd64"), []byte("synthetic-agent-binary"), 0600))
@@ -328,7 +332,7 @@ func TestGatewayFlaskHTTPAndDurableState(t *testing.T) {
 	// Poll the real progress endpoint to completion before stopping the Runtime.
 	// Shutdown is a cancellation operation, not an unbounded join under race.
 	waitPublished(t, s, path, admin)
-	lifecycle.Stop(10 * time.Second)
+	s.App.Runtime.Stop(10 * time.Second)
 	published = true
 	settled := py.call(t, "WAIT", "", "", "")
 	checkpoint, e := os.ReadFile(filepath.Join(s.DataDir, "gateway-installations", r.ID+".json"))

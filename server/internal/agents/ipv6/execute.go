@@ -165,7 +165,7 @@ func (s *Service) clientChecks(ctx context.Context, a, config Document, saved Se
 	observations := make(chan observed, 1)
 	// These fanout workers are children of the current owner and are joined on
 	// every path. Their explicit stop context is preserved by the request owner.
-	e = lifecycle.Spawn(watchCtx, "ipv6-router-observe", func(job context.Context) {
+	e = lifecycle.SpawnerFrom(watchCtx).Spawn(watchCtx, "ipv6-router-observe", func(job context.Context) {
 		defer func() {
 			if recover() != nil {
 				logger.Error("IPv6 router observer did not complete")
@@ -186,7 +186,7 @@ func (s *Service) clientChecks(ctx context.Context, a, config Document, saved Se
 	timer.Stop()
 	traces := make(chan Document, 1)
 	host, _ := targetURL(testURL)
-	e = lifecycle.Spawn(ctx, "ipv6-connection-observe", func(job context.Context) {
+	e = lifecycle.SpawnerFrom(ctx).Spawn(ctx, "ipv6-connection-observe", func(job context.Context) {
 		defer func() {
 			if recover() != nil {
 				logger.Error("IPv6 connection observer did not complete")

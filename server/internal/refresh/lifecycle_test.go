@@ -100,15 +100,10 @@ func TestRoundJoinsThreeWorkersAndStopsAdmission(t *testing.T) {
 func TestRunNowSurvivesRequestAndReceivesShutdownCancel(t *testing.T) {
 	f := setup(t, 60)
 	clock := lifecycletest.NewClock(f.clock.Now())
-	if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Clock: clock}); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		lifecycle.Stop(time.Second)
-		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-			t.Error(err)
-		}
-	})
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Clock: clock})
+	f.svc.runtime = rt
+	rt.Start(context.Background())
+	t.Cleanup(func() { rt.Stop(time.Second) })
 	entered, cancelled := make(chan struct{}), make(chan struct{})
 	f.env.Sources.Fetch = func(ctx context.Context, _, _ string, _ substore.FetchOptions) (*SourceResult, error) {
 		close(entered)
@@ -116,7 +111,7 @@ func TestRunNowSurvivesRequestAndReceivesShutdownCancel(t *testing.T) {
 		close(cancelled)
 		return nil, ctx.Err()
 	}
-	request, cancel := context.WithCancel(f.ctx)
+	request, cancel := context.WithCancel(rt.BindRequest(f.ctx))
 	cancel() // A disconnected request must still acquire the key and start work.
 	key, err := f.svc.RunResourceNow(request, "subscription", "s")
 	if err != nil {
@@ -133,7 +128,7 @@ func TestRunNowSurvivesRequestAndReceivesShutdownCancel(t *testing.T) {
 	default:
 	}
 	stopped := make(chan struct{})
-	go func() { defer close(stopped); lifecycle.Stop(10 * time.Second) }()
+	go func() { defer close(stopped); rt.Stop(10 * time.Second) }()
 	awaitRefresh(t, func() bool { return clock.Pending() == 2 })
 	clock.Advance(6 * time.Second)
 	select {

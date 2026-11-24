@@ -70,7 +70,7 @@ type Dependencies struct {
 func NewDependencies(env *Env, runtime *Runtime, client *Client) *Dependencies {
 	return &Dependencies{env: env, runtime: runtime, client: client,
 		LatestReleaseURL: fmt.Sprintf(latestAPIFormat, SubStoreRepo), MinBundleSize: minBundleSize,
-		Spawner: lifecycle.DefaultSpawner{}, updateLock: lockx.NewMutex(lockx.LevelJob, "sub-store-update"),
+		Spawner: lifecycle.ContextSpawner{}, updateLock: lockx.NewMutex(lockx.LevelJob, "sub-store-update"),
 		state: UpdateState{State: "idle"}}
 }
 
@@ -675,7 +675,7 @@ func (d *Dependencies) StartUpdate(ctx context.Context) (string, error) {
 	d.prepareUpdate(version)
 	spawner := d.Spawner
 	if spawner == nil {
-		spawner = lifecycle.DefaultSpawner{}
+		spawner = lifecycle.ContextSpawner{}
 	}
 	if err := spawner.Spawn(ctx, "sub-store-update", func(worker context.Context) { d.runUpdate(worker, release, unlock) }); err != nil {
 		unlock()

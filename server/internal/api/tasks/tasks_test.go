@@ -48,7 +48,8 @@ func decodeMap(t *testing.T, data []byte) map[string]any {
 
 func setup(t *testing.T) (*httpxtest.Server, *tasks.Registry) {
 	srv := httpxtest.New(t, httpxtest.Options{})
-	reg := tasks.NewRegistry(srv.Repo, lifecycle.Current())
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	reg := tasks.NewRegistry(srv.Repo, rt)
 	for _, slot := range []string{tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
 		reg.SetRowBuilder(slot, none)
 	}

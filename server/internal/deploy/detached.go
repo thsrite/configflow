@@ -24,7 +24,7 @@ func RunDetached(ctx context.Context, name string, fn func(context.Context) erro
 		return err
 	}
 	done := make(chan error, 1)
-	err := lifecycle.Spawn(ctx, name, func(job context.Context) {
+	err := lifecycle.SpawnerFrom(ctx).Spawn(ctx, name, func(job context.Context) {
 		// lifecycle recovers too, but this waiter must always be released.
 		defer func() {
 			if p := recover(); p != nil {

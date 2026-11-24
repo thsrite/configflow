@@ -28,14 +28,10 @@ func Detach(ctx context.Context) context.Context {
 	return ctxx.Detach(ctx)
 }
 
-// BindRequest attaches the default Runtime's live generation to a request
-// context (httpx does this for every request), so owners that Detach keep the
-// generation's shutdown cancellation and Stopping/ClockFrom see it. A context
-// already inside a Runtime, or a process without a live generation, is
-// returned unchanged.
-func BindRequest(ctx context.Context) context.Context { return currentRuntime().BindRequest(ctx) }
-
-// BindRequest attaches this Runtime's live generation to a request context.
+// BindRequest attaches this Runtime's live generation to a request context, so
+// owners that Detach keep the generation's shutdown cancellation and
+// Stopping/ClockFrom see it. A context already inside a Runtime, or a Runtime
+// without a live generation, is returned unchanged.
 func (r *Runtime) BindRequest(ctx context.Context) context.Context {
 	if _, ok := ctx.Value(generationKey{}).(*generation); ok {
 		return ctx
@@ -64,12 +60,12 @@ func Tracked(ctx context.Context) bool {
 
 type trackedKey struct{}
 
-// SpawnerFrom returns the originating Runtime, or DefaultSpawner outside one.
+// SpawnerFrom returns the originating Runtime, or ContextSpawner outside one.
 // A stopped originating generation rejects admission; it never falls back to
-// the default Runtime. Owners use this to keep jobs with their source lifetime.
+// another Runtime. Owners use this to keep jobs with their source lifetime.
 func SpawnerFrom(ctx context.Context) lockx.Spawner {
 	if g, ok := ctx.Value(generationKey{}).(*generation); ok {
 		return g.runtime
 	}
-	return DefaultSpawner{}
+	return ContextSpawner{}
 }

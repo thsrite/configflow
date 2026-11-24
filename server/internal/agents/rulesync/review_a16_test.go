@@ -151,17 +151,11 @@ func TestShutdownDuringStructurePublicationConverges(t *testing.T) {
 	blocker := &snapshotBlocker{inner: f.fake, entered: make(chan struct{}, 1)}
 	blocker.block.Store(true)
 	f.s.m.SetClient(blocker)
-	lifecycle.Stop(4 * time.Second)
-	if e = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
-		t.Fatal(e)
-	}
-	lifecycle.Start(f.ctx)
-	t.Cleanup(func() {
-		lifecycle.Stop(4 * time.Second)
-		_ = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
-	})
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(f.ctx)
+	t.Cleanup(func() { rt.Stop(4 * time.Second) })
 	done := make(chan error, 1)
-	go func() { done <- f.s.Run(lifecycle.BindRequest(f.ctx), "device") }()
+	go func() { done <- f.s.Run(rt.BindRequest(f.ctx), "device") }()
 	select {
 	case <-blocker.entered:
 	case <-time.After(30 * time.Second):
@@ -173,7 +167,7 @@ func TestShutdownDuringStructurePublicationConverges(t *testing.T) {
 		t.Fatalf("running state %s %s", state.Status, state.Message)
 	}
 	id := value(state.DeploymentID)
-	lifecycle.Stop(4 * time.Second)
+	rt.Stop(4 * time.Second)
 	if e = <-done; e == nil {
 		t.Fatal("shutdown publication succeeded")
 	}
@@ -181,11 +175,12 @@ func TestShutdownDuringStructurePublicationConverges(t *testing.T) {
 		t.Fatal("a write landed after shutdown")
 	}
 	// Next process: fresh Runtime and owner, the device answers again.
-	_ = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
-	lifecycle.Start(f.ctx)
+	rt2 := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt2.Start(f.ctx)
+	t.Cleanup(func() { rt2.Stop(4 * time.Second) })
 	blocker.block.Store(false)
 	resumed := New(f.s.m, nil, Options{Now: func() time.Time { return f.now }})
-	if e = resumed.Run(f.ctx, "device"); e != nil {
+	if e = resumed.Run(rt2.BindRequest(f.ctx), "device"); e != nil {
 		t.Fatal(e)
 	}
 	r, e := f.s.m.GetDeploymentModel(f.ctx, "device", id)

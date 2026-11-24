@@ -2,7 +2,6 @@ package lifecycle_test
 
 import (
 	"context"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,14 +13,14 @@ import (
 	"configflow/internal/lifecycle"
 )
 
-func TestDefaultRuntimeProcess(t *testing.T) {
+func TestProcessRuntimeBehavior(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_LIFECYCLE_HELPER") != "1" {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestDefaultRuntimeProcess$", "-test.count=1")
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestProcessRuntimeBehavior$", "-test.count=1")
 		cmd.Env = append(os.Environ(), "CONFIGFLOW_LIFECYCLE_HELPER=1")
 		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("default runtime helper: %v\n%s", err, out)
+			t.Fatalf("process runtime helper: %v\n%s", err, out)
 		}
 		return
 	}
@@ -31,13 +30,15 @@ func TestDefaultRuntimeProcess(t *testing.T) {
 	t.Setenv("CONFIGFLOW_LIFECYCLE_MODE", "manual")
 	var startups, drains atomic.Int64
 	ran := make(chan struct{}, 4)
-	lifecycle.RegisterStartup(lifecycle.Startup{Name: "once", Run: func(context.Context) error { startups.Add(1); return nil }})
-	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "periodic", Interval: func(context.Context) time.Duration { return time.Hour }, Round: func(context.Context) error { ran <- struct{}{}; return nil }})
-	if err := lifecycle.Configure(lifecycle.Options{Mode: lifecycle.ModeManual}); err != nil {
-		t.Fatal(err)
-	}
+	rt := lifecycle.NewProcessRuntime(lifecycle.Options{
+		Mode:  lifecycle.ModeManual,
+		Drain: func(context.Context) error { drains.Add(1); return nil },
+	})
+	rt.RegisterStartup(lifecycle.Startup{Name: "once", Run: func(context.Context) error { startups.Add(1); return nil }})
+	rt.RegisterPeriodic(lifecycle.Periodic{Name: "periodic", Interval: func(context.Context) time.Duration { return time.Hour }, Round: func(context.Context) error { ran <- struct{}{}; return nil }})
 	for i := int64(1); i <= 2; i++ {
-		lifecycle.Start(context.Background())
+		rt.Start(context.Background())
+		rt.ReportReady()
 		if manualDefaultBuild {
 			select {
 			case <-ran:
@@ -47,11 +48,8 @@ func TestDefaultRuntimeProcess(t *testing.T) {
 		} else {
 			receive(t, ran)
 		}
-		if err := lifecycle.Configure(lifecycle.Options{}); !errors.Is(err, lifecycle.ErrRunning) {
-			t.Fatalf("running reconfigure: %v", err)
-		}
-		lifecycle.Stop(time.Second)
-		lifecycle.Stop(time.Second)
+		rt.Stop(time.Second)
+		rt.Stop(time.Second)
 		if startups.Load() != i {
 			t.Fatalf("startup once/restart: %d", startups.Load())
 		}
@@ -67,86 +65,31 @@ func TestDefaultRuntimeProcess(t *testing.T) {
 	} else if _, err := os.Stat(path + ".ready"); !os.IsNotExist(err) {
 		t.Fatalf("production wrote test metadata: %v", err)
 	}
-	// Retain Wire's registry while replacing the configured instance. Global
-	// Spawn and the zero-value adapter must track jobs on this replacement.
-	if err := lifecycle.Configure(lifecycle.Options{Drain: func(context.Context) error { drains.Add(1); return nil }}); err != nil {
-		t.Fatal(err)
-	}
-	lifecycle.Start(context.Background())
+	rt.Start(context.Background())
 	if !manualDefaultBuild {
 		receive(t, ran)
 	}
 	started := make(chan struct{})
 	finished := make(chan struct{})
-	if err := (lifecycle.DefaultSpawner{}).Spawn(context.Background(), "new-instance", func(ctx context.Context) { close(started); <-lifecycle.Stopping(ctx); close(finished) }); err != nil {
+	bound := rt.BindRequest(context.Background())
+	if err := (lifecycle.ContextSpawner{}).Spawn(bound, "bound-instance", func(ctx context.Context) { close(started); <-lifecycle.Stopping(ctx); close(finished) }); err != nil {
 		t.Fatal(err)
 	}
 	receive(t, started)
 	select {
 	case <-finished:
-		t.Fatal("Spawn still bound to stopped instance")
+		t.Fatal("Spawn exited before runtime stop")
 	default:
 	}
-	lifecycle.Stop(time.Second)
+	rt.Stop(time.Second)
 	receive(t, finished)
-	if drains.Load() != 1 || startups.Load() != 3 {
-		t.Fatalf("Configure dropped registry or Drain: %d/%d", drains.Load(), startups.Load())
+	if drains.Load() != 3 || startups.Load() != 3 {
+		t.Fatalf("runtime drain/startup counts: %d/%d", drains.Load(), startups.Load())
 	}
-	if err := lifecycle.Configure(lifecycle.Options{Grace: time.Millisecond}); err != nil {
-		t.Fatal(err)
-	}
-	gate, finish := releaseGate(t)
-	oldStarted := make(chan struct{})
-	oldDone := make(chan struct{})
-	if err := lifecycle.Spawn(context.Background(), "ignores-cancel", func(context.Context) { close(oldStarted); <-gate; close(oldDone) }); err != nil {
-		t.Fatal(err)
-	}
-	receive(t, oldStarted)
-	lifecycle.Stop(time.Second)
-	if err := lifecycle.Configure(lifecycle.Options{}); !errors.Is(err, lifecycle.ErrRunning) {
-		finish()
-		t.Fatalf("Configure abandoned active old work: %v", err)
-	}
-	lifecycle.Start(context.Background())
-	if !manualDefaultBuild {
-		receive(t, ran)
-	}
-	lifecycle.Stop(time.Second)
-	if err := lifecycle.Configure(lifecycle.Options{}); !errors.Is(err, lifecycle.ErrRunning) {
-		finish()
-		t.Fatalf("Configure abandoned earlier-generation work after restart: %v", err)
-	}
-	finish()
-	receive(t, oldDone)
-	until(t, func() bool { return lifecycle.Configure(lifecycle.Options{}) == nil })
 }
 
-func TestStartupConfigureProcess(t *testing.T) {
-	if os.Getenv("O33_STARTUP_CONFIGURE_HELPER") != "1" {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStartupConfigureProcess$", "-test.count=1")
-		cmd.Env = append(os.Environ(), "O33_STARTUP_CONFIGURE_HELPER=1")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("startup/configure: %v\n%s", err, out)
-		}
-		return
+func TestStoppingOutsideRuntimeIsNil(t *testing.T) {
+	if ch := lifecycle.Stopping(context.Background()); ch != nil {
+		t.Fatalf("Stopping outside runtime = %v, want nil", ch)
 	}
-	entered := make(chan struct{})
-	gate, finish := releaseGate(t)
-	lifecycle.RegisterStartup(lifecycle.Startup{Name: "configure-barrier", Run: func(context.Context) error {
-		close(entered)
-		<-gate
-		return nil
-	}})
-	done := make(chan struct{})
-	go func() { defer close(done); lifecycle.RunStartup(context.Background()) }()
-	receive(t, entered)
-	if err := lifecycle.Configure(lifecycle.Options{}); !errors.Is(err, lifecycle.ErrRunning) {
-		finish()
-		receive(t, done)
-		t.Fatalf("Configure replaced active startup: %v", err)
-	}
-	finish()
-	receive(t, done)
 }

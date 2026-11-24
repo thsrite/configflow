@@ -51,13 +51,15 @@ func TestPublishChild(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	lifecycle.Start(context.Background())
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(context.Background())
+	boundCtx := rt.BindRequest(ctx)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM)
 	defer signal.Stop(sig)
 	done := make(chan error, 1)
 	go func() {
-		answer, e := New(Options{}).PublishDirect(ctx, m, "publish-agent", b, PublishOptions{Activate: true})
+		answer, e := New(Options{}).PublishDirect(boundCtx, m, "publish-agent", b, PublishOptions{Activate: true})
 		if e == nil {
 			t.Logf("child outcome: %+v", resultView(fixtureTask(answer)))
 		}
@@ -65,7 +67,7 @@ func TestPublishChild(t *testing.T) {
 	}()
 	select {
 	case <-sig:
-		lifecycle.Stop(8 * time.Second)
+		rt.Stop(8 * time.Second)
 		if e = <-done; !errors.Is(e, context.Canceled) {
 			t.Fatal(e)
 		}

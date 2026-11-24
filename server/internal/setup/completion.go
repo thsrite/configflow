@@ -175,7 +175,7 @@ func (s *Service) routeLoader(ctx context.Context, config json.RawMessage, missi
 	deadline := clock.Now().Add(budget)
 	spawner := s.spawner
 	if spawner == nil {
-		spawner = lifecycle.DefaultSpawner{}
+		spawner = lifecycle.ContextSpawner{}
 	}
 	return func(item routers.RuleSet, library *routers.LibraryRule) (content string, err error) {
 		defer func() {
@@ -376,7 +376,7 @@ func findRouter(config json.RawMessage, id string) (*routers.Router, error) {
 }
 
 // Keep spawner's contract checked at the native seam.
-var _ lockx.Spawner = lifecycle.DefaultSpawner{}
+var _ lockx.Spawner = lifecycle.ContextSpawner{}
 
 func gatewayRuleIDs(config *model.Config) ([]string, error) {
 	settings, err := gateway.SettingsOf(config)

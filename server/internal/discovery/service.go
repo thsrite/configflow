@@ -129,23 +129,13 @@ func (s *Service) mutex() *lockx.Mutex {
 }
 
 func (s *Service) spawner(ctx context.Context) lockx.Spawner {
-	if sp := lifecycle.SpawnerFrom(ctx); sp != nil {
-		return sp
+	if rt, ok := lifecycle.SpawnerFrom(ctx).(*lifecycle.Runtime); ok {
+		return rt
 	}
 	if s != nil && s.Runtime != nil {
 		return s.Runtime
 	}
-	return directSpawner{}
-}
-
-type directSpawner struct{}
-
-func (directSpawner) Spawn(ctx context.Context, _ string, fn func(context.Context)) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	go fn(ctx)
-	return nil
+	return lifecycle.ContextSpawner{}
 }
 
 // Register installs domain-discovery task providers on tk and the automatic

@@ -54,16 +54,12 @@ type contentHTTP struct {
 
 func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTTP {
 	t.Helper()
-	// Earlier API tests can activate O3's lazy shared workers. End that
-	// generation before installing this fixture's isolated registry.
-	lifecycle.Stop(8 * time.Second)
-	if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-		t.Fatal(err)
-	}
-	lifecycle.Start(context.Background())
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(context.Background())
 	f := &contentHTTP{s: httpxtest.New(t, httpxtest.Options{DefaultFactories: true, Auth: authenticated})}
+	f.s.App.Runtime = rt
 	f.sub = substore.NewService(substore.NewEnvFor(f.s.Repo))
-	WireContentSyncWith(lifecycle.Current(), f.sub)
+	WireContentSyncWith(rt, f.sub)
 	old := contentBundle(t, "mode: rule\n", "DOMAIN,old.example.test\n")
 	f.candidate.Store(old)
 	fp, err := deploy.Fingerprint(old.Manifest())
@@ -142,7 +138,7 @@ func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTT
 	})
 	t.Cleanup(func() {
 		f.manager.Close()
-		lifecycle.Stop(8 * time.Second)
+		rt.Stop(8 * time.Second)
 		restore()
 	})
 	if authenticated {

@@ -83,7 +83,7 @@ func New(opts Options) *Checker {
 		opts.MaxListBytes = MaxListBytes
 	}
 	if opts.Spawner == nil {
-		opts.Spawner = lifecycle.DefaultSpawner{}
+		opts.Spawner = lifecycle.ContextSpawner{}
 	}
 	return &Checker{opts: opts, slots: make(chan struct{}, opts.Workers), keys: lockx.NewKeyed[string](lockx.LevelJob, "agent-content-sync"), entries: map[string]*entry{}, details: map[string]*detail{}, running: map[string]*reservation{}, order: list.New(), detailOrder: list.New()}
 }

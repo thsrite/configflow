@@ -3,7 +3,6 @@ package aggregations_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,26 +23,12 @@ import (
 	"configflow/internal/refresh"
 )
 
-func startDeliveryRuntime(t *testing.T, ctx context.Context) {
+func startDeliveryRuntime(t *testing.T, ctx context.Context) *lifecycle.Runtime {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second})
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, lifecycle.ErrRunning) || time.Now().After(deadline) {
-			t.Fatal(err)
-		}
-		time.Sleep(time.Millisecond)
-	}
-	lifecycle.Start(ctx)
-	t.Cleanup(func() {
-		lifecycle.Stop(3 * time.Second)
-		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-			t.Error(err)
-		}
-	})
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second})
+	rt.Start(ctx)
+	t.Cleanup(func() { rt.Stop(3 * time.Second) })
+	return rt
 }
 
 func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {

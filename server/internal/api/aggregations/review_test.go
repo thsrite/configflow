@@ -134,9 +134,9 @@ func TestReviewDeliveryShutdownDoesNotPublish(t *testing.T) {
 			}
 			// Provider Flight uses DefaultSpawner, just as production main does.
 			// Bind the request and shutdown to that same configured Runtime.
-			startDeliveryRuntime(t, srv.Context())
+			rt := startDeliveryRuntime(t, srv.Context())
 			done := make(chan *httptest.ResponseRecorder, 1)
-			if err := lifecycle.Spawn(srv.Context(), "delivery-review", func(ctx context.Context) {
+			if err := rt.Spawn(srv.Context(), "delivery-review", func(ctx context.Context) {
 				reply := httptest.NewRecorder()
 				srv.Handler().ServeHTTP(reply, httptest.NewRequest("GET", "/api/aggregations/a/"+suffix, nil).WithContext(ctx))
 				done <- reply
@@ -148,7 +148,7 @@ func TestReviewDeliveryShutdownDoesNotPublish(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("source I/O did not start")
 			}
-			lifecycle.Stop(3 * time.Second)
+			rt.Stop(3 * time.Second)
 			select {
 			case <-observed:
 			case <-time.After(time.Second):

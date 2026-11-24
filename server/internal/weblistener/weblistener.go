@@ -293,7 +293,7 @@ func (m *Manager) ipv6Available() bool {
 func (m *Manager) serve(ctx context.Context, listeners []net.Listener) error {
 	spawner := m.Spawner
 	if spawner == nil {
-		spawner = lifecycle.DefaultSpawner{}
+		spawner = lifecycle.ContextSpawner{}
 	}
 	for _, listener := range listeners {
 		l := listener

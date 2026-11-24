@@ -197,7 +197,7 @@ func (s *Service) Start(ctx context.Context, id, profile string, body json.RawMe
 			return e
 		}
 		if reserved {
-			e = lifecycle.Spawn(ctx, "ipv6-verification", func(job context.Context) {
+			e = lifecycle.SpawnerFrom(ctx).Spawn(ctx, "ipv6-verification", func(job context.Context) {
 				defer release()
 				defer func() {
 					if recover() != nil {

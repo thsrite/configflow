@@ -71,7 +71,7 @@ type PendingCache struct {
 // production clock and lifecycle; injected clocks advance the real 25/35s budgets.
 func NewPendingCache(spawner lockx.Spawner, c clock.Clock) *PendingCache {
 	if spawner == nil {
-		spawner = lifecycle.DefaultSpawner{}
+		spawner = lifecycle.ContextSpawner{}
 	}
 	if c == nil {
 		c = clock.Real{}

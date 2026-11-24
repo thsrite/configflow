@@ -83,7 +83,7 @@ var o10WholeEncodeAllowed = map[string]string{
 }
 
 // o10LoopPackages are the packages that register background loops
-// (lifecycle.RegisterPeriodic), besides internal/lifecycle itself.
+// ((*lifecycle.Runtime).RegisterPeriodic), besides internal/lifecycle itself.
 var o10LoopPackages = []string{
 	"internal/agents/dnsfollow", "internal/agents/dnsha", "internal/agents/ipv6", "internal/agents/metrics",
 	"internal/agents/monitor", "internal/agents/rulesync", "internal/discovery", "internal/refresh",

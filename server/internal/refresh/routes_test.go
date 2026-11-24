@@ -51,10 +51,11 @@ func decodeObject(t *testing.T, raw []byte) map[string]any {
 func server(t *testing.T) (*httpxtest.Server, *refresh.Service) {
 	t.Helper()
 	srv := httpxtest.New(t, httpxtest.Options{})
-	reg := tasks.NewRegistry(srv.Repo, lifecycle.Current())
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	reg := tasks.NewRegistry(srv.Repo, rt)
 	apitasks.NewHandlerWithRepo(reg, srv.Repo).Register(srv.App.Router)
 	rf := refresh.New(refresh.Options{Repo: srv.Repo})
-	rf.Register(lifecycle.Current(), reg)
+	rf.Register(rt, reg)
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
 		reg.SetRowBuilder(slot, none)
 	}
@@ -76,8 +77,9 @@ func server(t *testing.T) (*httpxtest.Server, *refresh.Service) {
 }
 
 func TestReviewTaskFixtureRestoresMissingSlots(t *testing.T) {
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 	reg := tasks.NewRegistry(nil, nil)
-	refresh.New(refresh.Options{}).Register(lifecycle.Current(), reg)
+	refresh.New(refresh.Options{}).Register(rt, reg)
 	before := reg.Missing()
 	t.Run("fixture", func(t *testing.T) { _, _ = server(t) })
 	if after := reg.Missing(); !reflect.DeepEqual(before, after) {

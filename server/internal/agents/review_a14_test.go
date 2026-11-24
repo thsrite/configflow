@@ -10,19 +10,12 @@ import (
 	"configflow/internal/lifecycle"
 )
 
-func startReviewRuntime(t *testing.T) {
+func startReviewRuntime(t *testing.T) *lifecycle.Runtime {
 	t.Helper()
-	lifecycle.Stop(8 * time.Second)
-	if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-		t.Fatal(err)
-	}
-	lifecycle.Start(context.Background())
-	t.Cleanup(func() {
-		lifecycle.Stop(8 * time.Second)
-		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-			t.Error("restore idle Runtime", err)
-		}
-	})
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(context.Background())
+	t.Cleanup(func() { rt.Stop(8 * time.Second) })
+	return rt
 }
 
 // A14 review M1: a manual rollback reservation whose submission was lost at
@@ -32,8 +25,8 @@ func startReviewRuntime(t *testing.T) {
 func TestReviewA14ManualRollbackWithoutLiveOwnerIsReissued(t *testing.T) {
 	e := newEnv(t)
 	id := successfulDeployment(e, "manual-test")
-	startReviewRuntime(t)
-	ctx := lifecycle.BindRequest(e.ctx)
+	rt := startReviewRuntime(t)
+	ctx := rt.BindRequest(e.ctx)
 	livePolls := 0
 	e.fake.set(func(req Request) (*Response, error) {
 		if req.Method == "GET" {
@@ -49,7 +42,7 @@ func TestReviewA14ManualRollbackWithoutLiveOwnerIsReissued(t *testing.T) {
 		}
 		// Shutdown cancels the bound request; the connection is reset before
 		// the Agent reads the rollback request.
-		lifecycle.Stop(8 * time.Second)
+		rt.Stop(8 * time.Second)
 		return nil, &TransportError{Err: context.Canceled}
 	})
 	if _, err := e.m.RollbackDeploymentModel(ctx, e.id(), id); !errors.Is(err, context.Canceled) {
@@ -70,10 +63,10 @@ func TestReviewA14ManualRollbackWithoutLiveOwnerIsReissued(t *testing.T) {
 		}
 		return reply(map[string]any{"success": true, "status": "rolled_back", "manual_rollback": true, "config_version": "old"}, 200), nil
 	})
-	lifecycle.Start(context.Background())
+	rt.Start(context.Background())
 	restarted := newManager(t, e.repo)
 	restarted.SetClient(e.fake)
-	result, err := restarted.GetDeploymentModel(lifecycle.BindRequest(e.ctx), e.id(), id)
+	result, err := restarted.GetDeploymentModel(rt.BindRequest(e.ctx), e.id(), id)
 	if err != nil {
 		t.Fatal(err)
 	}

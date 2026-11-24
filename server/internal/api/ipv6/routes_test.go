@@ -63,12 +63,11 @@ func project(v any) any {
 	return v
 }
 func TestRoutesAgainstFlask(t *testing.T) {
-	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond}); e != nil {
-		t.Fatal(e)
-	}
-	lifecycle.Start(context.Background())
-	t.Cleanup(func() { lifecycle.Stop(time.Second) })
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond})
+	rt.Start(context.Background())
+	t.Cleanup(func() { rt.Stop(time.Second) })
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
+	srv.App.Runtime = rt
 	m, e := agents.New(srv.Context(), srv.Repo)
 	if e != nil {
 		t.Fatal(e)

@@ -51,12 +51,12 @@ func TestR12StartPublishReleasesBeforeDeliveryAndRefusal(t *testing.T) {
 		}
 		return
 	}
-	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
-		t.Fatal(e)
-	}
-	defer lifecycle.Stop(time.Second)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(t.Context())
+	defer rt.Stop(time.Second)
+	ctx := rt.BindRequest(t.Context())
 	var released atomic.Int32
-	ch, e := StartPublish(t.Context(), PublishRequest{RouterID: "synthetic"}, func() { released.Add(1) })
+	ch, e := StartPublish(ctx, PublishRequest{RouterID: "synthetic"}, func() { released.Add(1) })
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -68,8 +68,8 @@ func TestR12StartPublishReleasesBeforeDeliveryAndRefusal(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("owner did not finish")
 	}
-	lifecycle.Stop(time.Second)
-	_, e = StartPublish(t.Context(), PublishRequest{RouterID: "synthetic"}, func() { released.Add(1) })
+	rt.Stop(time.Second)
+	_, e = StartPublish(ctx, PublishRequest{RouterID: "synthetic"}, func() { released.Add(1) })
 	if !errors.Is(e, lifecycle.ErrStopping) || released.Load() != 2 {
 		t.Fatalf("refusal leaked L1: %v %d", e, released.Load())
 	}

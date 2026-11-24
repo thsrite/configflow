@@ -19,26 +19,18 @@ import (
 	"configflow/internal/model"
 )
 
-type runtimeControl struct{}
+type runtimeControl struct{ rt *lifecycle.Runtime }
 
-func (*runtimeControl) BindRequest(ctx context.Context) context.Context {
-	return lifecycle.BindRequest(ctx)
+func (r *runtimeControl) BindRequest(ctx context.Context) context.Context {
+	return r.rt.BindRequest(ctx)
 }
-func (*runtimeControl) Shutdown(context.Context) { lifecycle.Stop(100 * time.Millisecond) }
+func (r *runtimeControl) Shutdown(context.Context) { r.rt.Stop(100 * time.Millisecond) }
 func newRuntime(t *testing.T, ctx context.Context) *runtimeControl {
 	t.Helper()
-	lifecycle.Stop(time.Second)
-	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 25 * time.Millisecond}); e != nil {
-		t.Fatal(e)
-	}
-	lifecycle.Start(ctx)
-	t.Cleanup(func() {
-		lifecycle.Stop(time.Second)
-		if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
-			t.Error(e)
-		}
-	})
-	return &runtimeControl{}
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 25 * time.Millisecond})
+	rt.Start(ctx)
+	t.Cleanup(func() { rt.Stop(time.Second) })
+	return &runtimeControl{rt: rt}
 }
 
 func durable(t *testing.T, f *fixture) map[string]string {

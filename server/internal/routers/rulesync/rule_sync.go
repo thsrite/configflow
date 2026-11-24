@@ -667,7 +667,7 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 	unlock()
 	spawner := s.Spawner
 	if spawner == nil {
-		spawner = lifecycle.DefaultSpawner{}
+		spawner = lifecycle.ContextSpawner{}
 	}
 	err = spawner.Spawn(held, "router-rule-sync-now", func(run context.Context) {
 		defer release()

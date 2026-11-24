@@ -20,19 +20,12 @@ import (
 	"configflow/internal/provider"
 )
 
-func startGlobalPublishRuntime(t *testing.T, ctx context.Context) {
+func startGlobalPublishRuntime(t *testing.T, ctx context.Context) *lifecycle.Runtime {
 	t.Helper()
-	lifecycle.Stop(8 * time.Second)
-	if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-		t.Fatal(err)
-	}
-	lifecycle.Start(ctx)
-	t.Cleanup(func() {
-		lifecycle.Stop(8 * time.Second)
-		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-			t.Error("restore idle test Runtime", err)
-		}
-	})
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(ctx)
+	t.Cleanup(func() { rt.Stop(8 * time.Second) })
+	return rt
 }
 
 func durableSnapshot(t *testing.T, f *publishFixture) map[string]string {
@@ -74,11 +67,11 @@ func durableSnapshot(t *testing.T, f *publishFixture) map[string]string {
 
 func TestShutdownRejectsEveryPublishCommit(t *testing.T) {
 	f := newPublish(t, agentfake.Options{}, nil)
-	startGlobalPublishRuntime(t, f.ctx)
-	ctx := lifecycle.BindRequest(f.ctx)
+	rt := startGlobalPublishRuntime(t, f.ctx)
+	ctx := rt.BindRequest(f.ctx)
 	b := f.bundle(t, "closed")
 	target := mustTarget(t, f)
-	lifecycle.Stop(8 * time.Second)
+	rt.Stop(8 * time.Second)
 	before := durableSnapshot(t, f)
 	calls := len(f.fake.Calls())
 	checks := []struct {
@@ -134,10 +127,10 @@ func TestShutdownRejectsEveryPublishCommit(t *testing.T) {
 
 func TestShutdownAtSQLiteCommitKeepsWholeDocument(t *testing.T) {
 	f := newPublish(t, agentfake.Options{}, nil)
-	startGlobalPublishRuntime(t, f.ctx)
-	ctx := lifecycle.BindRequest(f.ctx)
+	rt := startGlobalPublishRuntime(t, f.ctx)
+	ctx := rt.BindRequest(f.ctx)
 	before := durableSnapshot(t, f)
-	f.m.Repository().Store().BeforeCommit = func() error { lifecycle.Stop(8 * time.Second); return nil }
+	f.m.Repository().Store().BeforeCommit = func() error { rt.Stop(8 * time.Second); return nil }
 	_, err := f.m.ReserveDeployment(ctx, "publish-agent", "at-commit")
 	defer f.m.FinishDeploymentPreparation("publish-agent", "at-commit")
 	f.m.Repository().Store().BeforeCommit = nil
@@ -147,9 +140,9 @@ func TestShutdownAtSQLiteCommitKeepsWholeDocument(t *testing.T) {
 	if !reflect.DeepEqual(before, durableSnapshot(t, f)) {
 		t.Fatal("cancelled SQLite transaction committed")
 	}
-	lifecycle.Start(f.ctx)
-	defer lifecycle.Stop(8 * time.Second)
-	if _, err = f.m.ReserveDeployment(lifecycle.BindRequest(f.ctx), "publish-agent", "at-commit"); err != nil {
+	rt.Start(f.ctx)
+	defer rt.Stop(8 * time.Second)
+	if _, err = f.m.ReserveDeployment(rt.BindRequest(f.ctx), "publish-agent", "at-commit"); err != nil {
 		t.Fatal("cancelled reservation leaked", err)
 	}
 	f.m.FinishDeploymentPreparation("publish-agent", "at-commit")
@@ -171,8 +164,8 @@ func (c *acceptedBeforeRecord) Do(ctx context.Context, request agents.Request) (
 
 func TestShutdownAfterAgentAcceptanceRetainsUncertainSubmission(t *testing.T) {
 	f := newPublish(t, agentfake.Options{}, nil)
-	startGlobalPublishRuntime(t, f.ctx)
-	ctx := lifecycle.BindRequest(f.ctx)
+	rt := startGlobalPublishRuntime(t, f.ctx)
+	ctx := rt.BindRequest(f.ctx)
 	client := &acceptedBeforeRecord{next: agents.HTTPClient{}, arrived: make(chan struct{}), release: make(chan struct{})}
 	f.m.SetClient(client)
 	b := f.bundle(t, "accepted-at-stop")
@@ -183,7 +176,7 @@ func TestShutdownAfterAgentAcceptanceRetainsUncertainSubmission(t *testing.T) {
 	}()
 	<-client.arrived
 	before := durableSnapshot(t, f)
-	lifecycle.Stop(8 * time.Second)
+	rt.Stop(8 * time.Second)
 	close(client.release)
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
@@ -198,12 +191,12 @@ func TestShutdownAfterAgentAcceptanceRetainsUncertainSubmission(t *testing.T) {
 	if len(f.fake.Journal()) != 1 {
 		t.Fatal("Agent did not accept real upload")
 	}
-	lifecycle.Start(f.ctx)
-	defer lifecycle.Stop(8 * time.Second)
+	rt.Start(f.ctx)
+	defer rt.Stop(8 * time.Second)
 	var last *model.Deployment
 	var err error
 	for i := 0; i < 4; i++ {
-		last, err = f.m.GetDeploymentModel(lifecycle.BindRequest(f.ctx), "publish-agent", "accepted-at-stop")
+		last, err = f.m.GetDeploymentModel(rt.BindRequest(f.ctx), "publish-agent", "accepted-at-stop")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -215,10 +208,10 @@ func TestShutdownAfterAgentAcceptanceRetainsUncertainSubmission(t *testing.T) {
 
 func TestDisconnectedBoundRequestCompletesPublicationAndArtifacts(t *testing.T) {
 	f := newPublish(t, agentfake.Options{}, nil)
-	startGlobalPublishRuntime(t, f.ctx)
-	defer lifecycle.Stop(8 * time.Second)
+	rt := startGlobalPublishRuntime(t, f.ctx)
+	defer rt.Stop(8 * time.Second)
 	request, cancel := context.WithCancel(f.ctx)
-	ctx := lifecycle.BindRequest(request)
+	ctx := rt.BindRequest(request)
 	cancel()
 	b := f.bundle(t, "disconnected-runtime")
 	answer, err := New(Options{}).PublishDirect(ctx, f.m, "publish-agent", b, PublishOptions{Activate: true, SourceSnapshot: f.source, BaseURL: "https://panel.example.com"})
@@ -244,7 +237,7 @@ func TestDisconnectedBoundRequestCompletesPublicationAndArtifacts(t *testing.T) 
 
 func TestNativePairOwnerTakesPrecedenceAndRuntimeGuards(t *testing.T) {
 	f := newPublish(t, agentfake.Options{}, nil)
-	startGlobalPublishRuntime(t, f.ctx)
+	rt := startGlobalPublishRuntime(t, f.ctx)
 	nativeCalls := 0
 	dp := New(Options{Pair: func(ctx context.Context, _ *agents.Manager, _ string, _ *Bundle, _ PublishOptions) (*model.Deployment, bool, error) {
 		nativeCalls++
@@ -255,14 +248,14 @@ func TestNativePairOwnerTakesPrecedenceAndRuntimeGuards(t *testing.T) {
 		err := json.Unmarshal([]byte(`{"success":true,"deployment_id":"native-owner"}`), &result)
 		return &result, true, err
 	}})
-	bound := lifecycle.BindRequest(f.ctx)
+	bound := rt.BindRequest(f.ctx)
 	request, disconnect := context.WithCancel(bound)
 	disconnect()
 	result, err := dp.Publish(request, f.m, "publish-agent", nil, PublishOptions{})
 	if err != nil || result.DeploymentID != "native-owner" || nativeCalls != 1 {
 		t.Fatal("native owner did not run once", result, err, nativeCalls)
 	}
-	lifecycle.Stop(8 * time.Second)
+	rt.Stop(8 * time.Second)
 	if _, err = dp.Publish(bound, f.m, "publish-agent", nil, PublishOptions{}); !errors.Is(err, context.Canceled) || nativeCalls != 1 {
 		t.Fatal("shutdown dispatched owner", err, nativeCalls)
 	}

@@ -25,11 +25,6 @@ import (
 // one installed as default and carries the W6 subscriber.
 func TestNewConnectsAgentLoopWakeSources(t *testing.T) {
 	rt := lifecycle.NewProcessRuntime(lifecycle.Options{})
-	t.Cleanup(func() {
-		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-			t.Error(err)
-		}
-	})
 	r, err := repo.OpenDefaultWithOptions(t.TempDir(), RepoOptions())
 	if err != nil {
 		t.Fatal(err)

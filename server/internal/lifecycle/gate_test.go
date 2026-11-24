@@ -22,7 +22,7 @@ var joinedGo = map[string]string{
 	"cmd/configflow/service.go:drainServers":                            "Every Shutdown worker sends one result and all results are consumed before returning.",
 	"internal/aggregations/render.go:render":                            "All bounded subscription workers join through workers.Wait before results are used.",
 	"internal/health/latency.go:runLatencyTestsLocked":                  "All conversion workers join through wg.Wait before measurement or persistence.",
-	"internal/refresh/scheduled.go:RunRound":                            "All claimed workers join through wg.Wait, including the stopping branches.",
+	"internal/refresh/scheduled.go:Service.RunRound":                    "All claimed workers join through wg.Wait, including the stopping branches.",
 	"internal/rulefetch/transport.go:timeoutBody.Read":                  "Each read joins done; timeout closes the body and still consumes done before returning.",
 	"tools/proddiff/comparator/run.go:comparisonResults":                "Offline test tool: the eight comparison workers join through wg.Wait before any result is used.",
 	"tools/proddiff/comparator/main.go:runCommandLine":                  "Offline test tool: the signal watcher is joined via watcher before returning; on a signal it cleans up and exits the process.",

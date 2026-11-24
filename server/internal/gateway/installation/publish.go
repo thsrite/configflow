@@ -90,7 +90,7 @@ func (s *Service) Publish(ctx context.Context, id string, body json.RawMessage) 
 	// follows it. Only the release closure mutates lease ownership.
 	spawner := s.Spawner
 	if spawner == nil {
-		spawner = lifecycle.DefaultSpawner{}
+		spawner = lifecycle.ContextSpawner{}
 	}
 	if err = ctx.Err(); err != nil {
 		return nil, err
