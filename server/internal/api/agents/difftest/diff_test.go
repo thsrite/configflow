@@ -58,7 +58,7 @@ func freePort(t *testing.T) int {
 }
 
 func seed(t *testing.T, dir string) {
-	r, err := repo.OpenDefault(dir)
+	r, err := repo.OpenDefaultWithOptions(dir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func startGoWith(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime
 	t.Cleanup(func() { root.Close() })
 	previous := auth.Configure(auth.Config{AdminUsername: username, AdminPassword: password, SecretKey: secret})
 	t.Cleanup(func() { auth.Configure(previous) })
-	r, err := repo.OpenDefault(dataDir)
+	r, err := repo.OpenDefaultWithOptions(dataDir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -727,7 +727,7 @@ func dataFiles(t *testing.T, dir string) []string {
 
 // finalAgents is the stored Agent list with per-server values masked.
 func finalAgents(t *testing.T, dir string) any {
-	r, err := repo.OpenDefault(dir)
+	r, err := repo.OpenDefaultWithOptions(dir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

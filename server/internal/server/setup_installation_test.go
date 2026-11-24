@@ -26,7 +26,7 @@ import (
 )
 
 func TestSetupInstallationServerRegistrationUsesRealOwner(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
+	srv := httpxtest.New(t, httpxtest.Options{RepoOptions: RepoOptions(), Auth: true})
 	setupHandler := apisetup.NewHandler(srv.Repo, nil)
 	setupHandler.Register(srv.App.Router)
 	onboardingHandler := &apionboarding.Handler{Repo: srv.Repo, DNSLoop: onboarding.CheckDNSLoop}

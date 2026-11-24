@@ -7,7 +7,7 @@ import (
 )
 
 func TestWholeApplicationRegistersRuleLiteralsAndParameters(t *testing.T) {
-	r, err := repo.OpenDefault(t.TempDir())
+	r, err := repo.OpenDefaultWithOptions(t.TempDir(), server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

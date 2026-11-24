@@ -25,7 +25,7 @@ import (
 )
 
 func TestSetupOwnersAllRegisteredByApp(t *testing.T) {
-	r, err := repo.Open(t.TempDir(), repo.Options{})
+	r, err := repo.Open(t.TempDir(), RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestVerifySetupRouterUsesRouterPlan(t *testing.T) {
 		{name: "blockers", device: synced, want: verificationOutcome{Empty: true, Blockers: []string{"blocker"}}},
 		{name: "device rejects", gateway: "synthetic-gateway", device: routerfake.State{Faults: []routerfake.Fault{{Method: "GET", Path: "/ip/route", Status: 401, Body: routerfake.Row{"error": 401, "message": "Unauthorized"}}}}, want: verificationOutcome{Status: 502}},
 	}
-	srv := httpxtest.New(t, httpxtest.Options{})
+	srv := httpxtest.New(t, httpxtest.Options{RepoOptions: RepoOptions()})
 	err := srv.Repo.UpdateSystem(srv.Context(), func(_ context.Context, c *model.System) error {
 		c.Agents = []model.Agent{testjson.Decode[model.Agent](t, gatewayAgent)}
 		return nil

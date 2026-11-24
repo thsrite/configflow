@@ -18,7 +18,7 @@ import (
 func TestO9EveryNonPublicRouteRequiresLogin(t *testing.T) {
 	previous := auth.Configure(auth.Config{AdminUsername: "o9-admin", AdminPassword: "o9-password"})
 	t.Cleanup(func() { auth.Configure(previous) })
-	repository, err := repo.Open(t.TempDir(), repo.Options{})
+	repository, err := repo.Open(t.TempDir(), RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

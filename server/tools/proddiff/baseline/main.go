@@ -72,7 +72,7 @@ func run() (resultErr error) {
 			_ = privateWrite(filepath.Join(proofDir, "error.txt"), []byte(resultErr.Error()))
 		}
 	}()
-	repository, err := repo.OpenDefault(data)
+	repository, err := repo.OpenDefaultWithOptions(data, server.RepoOptions())
 	if err != nil {
 		return err
 	}

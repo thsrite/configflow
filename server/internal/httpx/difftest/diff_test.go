@@ -64,7 +64,7 @@ func freePort(t *testing.T) int {
 // server domain (no local IP lookup), and nothing that points at a remote
 // host, so neither server has anything to fetch.
 func seed(t *testing.T, dir string) {
-	r, err := repo.OpenDefault(dir)
+	r, err := repo.OpenDefaultWithOptions(dir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func startGo(t *testing.T, dataDir string) string {
 	t.Cleanup(func() { root.Close() })
 	previous := auth.Configure(auth.Config{AdminUsername: username, AdminPassword: password, SecretKey: secret})
 	t.Cleanup(func() { auth.Configure(previous) })
-	r, err := repo.OpenDefault(dataDir)
+	r, err := repo.OpenDefaultWithOptions(dataDir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

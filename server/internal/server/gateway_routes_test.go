@@ -13,7 +13,7 @@ import (
 // Every A20 rule is registered in the fully merged application. Static routes
 // must keep Flask precedence even when their spelling can be an Agent ID.
 func TestGatewayRegistrationAndPrecedence(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{})
+	s := httpxtest.New(t, httpxtest.Options{RepoOptions: RepoOptions()})
 	srv, err := New(s.Context(), Options{Repo: s.Repo})
 	if err != nil {
 		t.Fatal(err)

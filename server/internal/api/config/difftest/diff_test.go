@@ -127,7 +127,7 @@ func newWorld(t *testing.T, seeds ...func(*httpxtest.Server)) *world {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret})
+	srv := httpxtest.New(t, httpxtest.Options{RepoOptions: server.RepoOptions(), Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret})
 	full, err := server.New(srv.Context(), server.Options{Repo: srv.Repo})
 	if err != nil {
 		t.Fatal(err)

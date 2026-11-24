@@ -280,7 +280,7 @@ func run() error {
 	if err := json.Unmarshal(data, &jobs); err != nil {
 		return fmt.Errorf("decode generator manifest: %w", err)
 	}
-	repository, err := repo.OpenDefault(repo.DataDir())
+	repository, err := repo.OpenDefaultWithOptions(repo.DataDir(), server.RepoOptions())
 	if err != nil {
 		return fmt.Errorf("open generator copy: %w", err)
 	}

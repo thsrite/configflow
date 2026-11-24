@@ -32,6 +32,8 @@ func TestFaultStateRequiresLoopbackAndPrivateToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(repository.Close)
+	app.Repo = repository
 	for _, tt := range []struct {
 		name, remote, token string
 		status              int

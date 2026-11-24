@@ -95,7 +95,7 @@ func upstream(t *testing.T) *httptest.Server {
 }
 
 func seed(t *testing.T, dir, base string) {
-	r, err := repo.OpenDefault(dir)
+	r, err := repo.OpenDefaultWithOptions(dir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +242,7 @@ func startGo(t *testing.T, dataDir string) string {
 	t.Cleanup(func() { root.Close() })
 	previous := auth.Configure(auth.Config{AdminUsername: username, AdminPassword: password, SecretKey: secret})
 	t.Cleanup(func() { auth.Configure(previous) })
-	r, err := repo.OpenDefault(dataDir)
+	r, err := repo.OpenDefaultWithOptions(dataDir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +456,7 @@ func files(t *testing.T, dir string, cacheNames map[string]string) map[string]an
 		}
 		return nil
 	})
-	r, err := repo.Open(dir, repo.Options{})
+	r, err := repo.Open(dir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -75,7 +75,7 @@ func TestRealFlaskHTTP(t *testing.T) {
 	}
 	previous := auth.Configure(auth.Config{SecretKey: "synthetic-mcp-jwt-key-32-characters"})
 	defer auth.Configure(previous)
-	r, err := repo.Open(t.TempDir(), repo.Options{})
+	r, err := repo.Open(t.TempDir(), server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

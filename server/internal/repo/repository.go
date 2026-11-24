@@ -569,3 +569,17 @@ func (r *Repository) Head(ctx context.Context) (store.Head, error) {
 	entry, err := r.readEntry(ctx, false)
 	return entry.Head, err
 }
+
+// ErrServerCollaboratorsMissing reports a repository opened without the
+// server-owned collaborators (export sanitizer, router publication lock).
+var ErrServerCollaboratorsMissing = errors.New("repo: export sanitizer or router job lock is not configured")
+
+// RequireServerCollaborators reports whether r was opened with the Options a
+// server needs: without them desensitized exports and router record mutations
+// fail closed, so server construction refuses such a repository up front.
+func (r *Repository) RequireServerCollaborators() error {
+	if r == nil || r.options.Export == nil || r.options.RouterJobLock == nil {
+		return ErrServerCollaboratorsMissing
+	}
+	return nil
+}

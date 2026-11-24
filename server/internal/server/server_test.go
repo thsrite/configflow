@@ -47,7 +47,7 @@ func TestEmptyBackendHostFailsAtStartup(t *testing.T) {
 
 func newTestApp(t *testing.T) *App {
 	t.Helper()
-	r, err := repo.OpenDefault(t.TempDir())
+	r, err := repo.OpenDefaultWithOptions(t.TempDir(), RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer(t *testing.T) {
 // the save inside 监控历史保存) and the traffic store the DELETE route
 // clears first.
 func TestNewAppWiresTheTrafficStores(t *testing.T) {
-	r, err := repo.OpenDefault(t.TempDir())
+	r, err := repo.OpenDefaultWithOptions(t.TempDir(), RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestNewAppWiresTheTrafficStores(t *testing.T) {
 // A04: the full application wires the metrics history into the registry
 // (heartbeat metrics, Agent deletion) and provides the metrics task row.
 func TestNewAppWiresTheMetricsHistory(t *testing.T) {
-	r, err := repo.OpenDefault(t.TempDir())
+	r, err := repo.OpenDefaultWithOptions(t.TempDir(), RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

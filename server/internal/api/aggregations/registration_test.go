@@ -12,7 +12,7 @@ import (
 func TestFullApplicationRegistersAggregationRoutes(t *testing.T) {
 	previous := auth.Configure(auth.Config{AdminUsername: "synthetic", AdminPassword: "synthetic", SecretKey: "synthetic-secret"})
 	t.Cleanup(func() { auth.Configure(previous) })
-	repository, err := repo.Open(t.TempDir(), repo.Options{})
+	repository, err := repo.Open(t.TempDir(), server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

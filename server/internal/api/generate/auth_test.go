@@ -24,7 +24,7 @@ func c34Owned(route *httpx.Route) bool {
 	return strings.Contains(route.Path, "/generate/") && (strings.HasPrefix(route.Endpoint, "profiles.profile_generate_") || strings.HasPrefix(route.Endpoint, "profiles.profile_preview_"))
 }
 func TestEveryC34RegisteredMethodRequiresTheRightAuthentication(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	s := httpxtest.New(t, httpxtest.Options{RepoOptions: server.RepoOptions(), Auth: true})
 	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
 	if err != nil {
 		t.Fatal(err)

@@ -24,7 +24,7 @@ import (
 
 func artifactServer(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	s := httpxtest.New(t, httpxtest.Options{})
+	s := httpxtest.New(t, httpxtest.Options{RepoOptions: server.RepoOptions()})
 	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +219,7 @@ func TestArtifactRejectsForeignExpiredAndCorruptPreviews(t *testing.T) {
 }
 
 func TestCompleteC34RegistrationHasOneOwner(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{})
+	s := httpxtest.New(t, httpxtest.Options{RepoOptions: server.RepoOptions()})
 	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
 	if err != nil {
 		t.Fatal(err)

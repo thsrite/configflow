@@ -57,7 +57,7 @@ func freePort(t *testing.T) int {
 }
 
 func seed(t *testing.T, dir string) {
-	r, err := repo.OpenDefault(dir)
+	r, err := repo.OpenDefaultWithOptions(dir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func startGo(t *testing.T, dataDir string) string {
 	t.Cleanup(func() { root.Close() })
 	previous := auth.Configure(auth.Config{AdminUsername: username, AdminPassword: password, SecretKey: secret})
 	t.Cleanup(func() { auth.Configure(previous) })
-	r, err := repo.OpenDefault(dataDir)
+	r, err := repo.OpenDefaultWithOptions(dataDir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func runWith(t *testing.T, env map[string]string, prepare func(pyDir, goDir stri
 	}
 	// The data written: sub_store_mode in the stored system settings.
 	readMode := func(dir string) json.RawMessage {
-		r, err := repo.Open(dir, repo.Options{})
+		r, err := repo.Open(dir, server.RepoOptions())
 		if err != nil {
 			t.Fatal(err)
 		}

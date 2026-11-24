@@ -11,7 +11,7 @@ import (
 )
 
 func TestC29RouteRegistrationHasOneOwner(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{})
+	srv := httpxtest.New(t, httpxtest.Options{RepoOptions: server.RepoOptions()})
 	full, err := server.New(srv.Context(), server.Options{Repo: srv.Repo})
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func TestC29RouteRegistrationHasOneOwner(t *testing.T) {
 }
 
 func TestC29HEADReturnsGETHeadersWithoutSaving(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{})
+	srv := httpxtest.New(t, httpxtest.Options{RepoOptions: server.RepoOptions()})
 	api.New(api.Deps{Repo: srv.Repo}).Register(srv.App.Router)
 	for _, path := range []string{"/api/oxidns/settings", "/api/profiles/default/oxidns/settings"} {
 		get := httptest.NewRecorder()
@@ -95,7 +95,7 @@ func TestC29HEADReturnsGETHeadersWithoutSaving(t *testing.T) {
 }
 
 func TestNativeRequestTypesReturn400WithoutWrites(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{})
+	srv := httpxtest.New(t, httpxtest.Options{RepoOptions: server.RepoOptions()})
 	api.New(api.Deps{Repo: srv.Repo}).Register(srv.App.Router)
 	for _, body := range []string{`{"custom_matches":[{"enabled":0}]}`, `{"ros_route":{"args":{"routing_table":5}}}`, `{"ros_route":{"args":{"gateway4":[]}}}`} {
 		before, err := srv.Repo.ExportAllJSON(srv.Context(), false)

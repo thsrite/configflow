@@ -12,7 +12,7 @@ import (
 )
 
 func TestNewAppWiresRuleContentForGatewayProviders(t *testing.T) {
-	r, err := repo.Open(t.TempDir(), repo.Options{})
+	r, err := repo.Open(t.TempDir(), RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

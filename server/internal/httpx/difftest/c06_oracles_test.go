@@ -95,7 +95,7 @@ json.dump({'rows':out, 'snapshot':snapshot}, sys.stdout, ensure_ascii=False)
 	if err := json.Unmarshal(output, &expected); err != nil {
 		t.Fatal(err)
 	}
-	r, err := repo.Open(t.TempDir(), repo.Options{})
+	r, err := repo.Open(t.TempDir(), server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestPythonAuthenticationMatrixForEveryRegisteredRoute(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1")
 	}
-	r, err := repo.OpenDefault(t.TempDir())
+	r, err := repo.OpenDefaultWithOptions(t.TempDir(), server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ json.dump(out, sys.stdout)
 	}
 	previous := auth.Configure(auth.Config{AdminUsername: "matrix-admin", AdminPassword: "matrix-password", SecretKey: "matrix-secret"})
 	t.Cleanup(func() { auth.Configure(previous) })
-	r, err = repo.Open(t.TempDir(), repo.Options{})
+	r, err = repo.Open(t.TempDir(), server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

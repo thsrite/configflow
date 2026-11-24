@@ -55,7 +55,7 @@ func newGatewayGuardFixture(t *testing.T, config json.RawMessage) (context.Conte
 	t.Cleanup(srv.Close)
 	host, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
 	n, _ := strconv.Atoi(port)
-	r, err := repo.Open(t.TempDir(), repo.Options{})
+	r, err := repo.Open(t.TempDir(), RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -11,7 +11,7 @@ import (
 
 func TestProductionHasNoFaultRoutes(t *testing.T) {
 	t.Setenv("CONFIGFLOW_FAULT_DIR", t.TempDir())
-	r, err := repo.OpenDefault(t.TempDir())
+	r, err := repo.OpenDefaultWithOptions(t.TempDir(), server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

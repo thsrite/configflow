@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/dnsfollow"
@@ -34,7 +35,8 @@ import (
 	"configflow/internal/webdav"
 )
 
-// Options configures server construction. Repo is required; a nil Runtime
+// Options configures server construction. Repo is required and must be opened
+// with RepoOptions (export sanitizer, router job lock); a nil Runtime
 // constructs a fresh Runtime for the App.
 type Options struct {
 	Repo    *repo.Repository
@@ -79,6 +81,9 @@ type App struct {
 func New(ctx context.Context, opts Options) (*App, error) {
 	if opts.Repo == nil {
 		return nil, errors.New("server.New: repository is nil")
+	}
+	if err := opts.Repo.RequireServerCollaborators(); err != nil {
+		return nil, fmt.Errorf("server.New: open the repository with server.RepoOptions(): %w", err)
 	}
 	rt := opts.Runtime
 	if rt == nil {

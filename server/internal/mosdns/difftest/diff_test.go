@@ -73,7 +73,7 @@ func upstream(t *testing.T) *httptest.Server {
 }
 
 func seed(t *testing.T, dir, base string) {
-	r, err := repo.OpenDefault(dir)
+	r, err := repo.OpenDefaultWithOptions(dir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func startGo(t *testing.T, dataDir string) string {
 	t.Cleanup(func() { root.Close() })
 	previous := auth.Configure(auth.Config{AdminUsername: username, AdminPassword: password, SecretKey: secret})
 	t.Cleanup(func() { auth.Configure(previous) })
-	r, err := repo.OpenDefault(dataDir)
+	r, err := repo.OpenDefaultWithOptions(dataDir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func maskTimes(value any) any {
 // settings, the rule caches and task-status.json.
 func written(t *testing.T, dir string) map[string]any {
 	out := map[string]any{}
-	r, err := repo.Open(dir, repo.Options{})
+	r, err := repo.Open(dir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func written(t *testing.T, dir string) map[string]any {
 }
 
 func ruleToken(t *testing.T, dir string) string {
-	r, err := repo.Open(dir, repo.Options{})
+	r, err := repo.Open(dir, server.RepoOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

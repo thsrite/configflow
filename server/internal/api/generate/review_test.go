@@ -13,7 +13,7 @@ import (
 )
 
 func TestReviewC34AuthenticationMatrix(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	s := httpxtest.New(t, httpxtest.Options{RepoOptions: server.RepoOptions(), Auth: true})
 	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +93,7 @@ func TestReviewC34AuthenticationMatrix(t *testing.T) {
 }
 
 func TestReviewC34ForeignAliasDispatch(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{})
+	s := httpxtest.New(t, httpxtest.Options{RepoOptions: server.RepoOptions()})
 	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +138,7 @@ func TestReviewC34ForeignAliasDispatch(t *testing.T) {
 }
 
 func TestPreviewOxiDNSPreservesAuthObjectAndRedactsSystemSecrets(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{})
+	s := httpxtest.New(t, httpxtest.Options{RepoOptions: server.RepoOptions()})
 	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
 	if err != nil {
 		t.Fatal(err)

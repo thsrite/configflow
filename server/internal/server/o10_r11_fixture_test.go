@@ -41,7 +41,7 @@ const (
 
 func newO10Fixture(t *testing.T) *o10Fixture {
 	t.Helper()
-	srv := httpxtest.New(t, httpxtest.Options{DefaultFactories: true})
+	srv := httpxtest.New(t, httpxtest.Options{RepoOptions: RepoOptions(), DefaultFactories: true})
 	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second, Mode: lifecycle.ModeManual})
 	prod, err := New(srv.Context(), Options{Repo: srv.Repo, Runtime: rt})
 	if err != nil {

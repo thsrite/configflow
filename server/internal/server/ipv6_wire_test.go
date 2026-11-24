@@ -14,7 +14,7 @@ import (
 )
 
 func TestIPv6ServerRegistrationAndHEAD(t *testing.T) {
-	fixture := httpxtest.New(t, httpxtest.Options{})
+	fixture := httpxtest.New(t, httpxtest.Options{RepoOptions: RepoOptions()})
 	srv, err := New(context.Background(), Options{Repo: fixture.Repo})
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func (ipv6HostClient) Do(_ context.Context, r agents.Request) (*agents.Response,
 	return &agents.Response{StatusCode: 200, Body: []byte(`{"success":true,"interface":"eth0","addresses":[{"address":"2001:db8::2","usable":true}]}`)}, nil
 }
 func TestIPv6RouterHostOwnerRegistration(t *testing.T) {
-	fixture := httpxtest.New(t, httpxtest.Options{})
+	fixture := httpxtest.New(t, httpxtest.Options{RepoOptions: RepoOptions()})
 	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 	app, e := New(context.Background(), Options{Repo: fixture.Repo, Runtime: rt})
 	if e != nil {

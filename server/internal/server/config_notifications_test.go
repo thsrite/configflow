@@ -15,7 +15,7 @@ import (
 )
 
 func TestConfigFindingsFailedReceiptsCreateNotificationsBeforeAllTaskSlotsExist(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{})
+	srv := httpxtest.New(t, httpxtest.Options{RepoOptions: RepoOptions()})
 	prod, err := New(srv.Context(), Options{Repo: srv.Repo})
 	if err != nil {
 		t.Fatal(err)
