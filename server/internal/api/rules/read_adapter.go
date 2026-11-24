@@ -30,6 +30,9 @@ import (
 type sourceOptions = rulesource.ReadOptions
 
 func (s *Service) reader() *rulesource.Service {
+	if s != nil && s.ruleSource != nil {
+		return s.ruleSource
+	}
 	if s != nil && s.client != nil {
 		return rulesource.New(rulesource.Options{Client: s.client})
 	}
@@ -93,7 +96,7 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 			// a draft's DB commit/rename and overwrite the newly published cache.
 			// Cold-cache population resolves the current DB declaration and the
 			// shared writer checks it again under the repository lock.
-			populateInlineCache(ctx, shared.LibraryRule(*source))
+			s.populateInlineCache(ctx, shared.LibraryRule(*source))
 		}
 	}
 	if err != nil {
@@ -122,11 +125,11 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 	return delivery{Content: content, Stale: stale != nil}, nil
 }
 
-func populateInlineCache(ctx context.Context, source model.RuleConfig) {
+func (s *Service) populateInlineCache(ctx context.Context, source model.RuleConfig) {
 	if ctx.Err() != nil {
 		return
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository(ctx)
 	if err != nil {
 		return
 	}
@@ -171,7 +174,7 @@ func remoteFault(err error) *sourceFailure {
 	return &sourceFailure{Message: validation.Error(), Errors: raw}
 }
 func (s *Service) match(ctx context.Context, id, query, host string) (*shared.Hit, error) {
-	config, err := resolvedConfig(ctx, id)
+	config, err := s.resolvedConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +211,7 @@ func (s *Service) match(ctx context.Context, id, query, host string) (*shared.Hi
 	return matched, nil
 }
 func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, func(int) (string, error), error) {
-	config, err := resolvedConfig(ctx, id)
+	config, err := s.resolvedConfig(ctx, id)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -251,8 +254,8 @@ func Wire() {
 	gateway.SetRuleSourceReader(rs.ReadGateway)
 }
 
-func resolvedConfig(ctx context.Context, id string) (*model.Config, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) resolvedConfig(ctx context.Context, id string) (*model.Config, error) {
+	r, err := s.repository(ctx)
 	if err != nil {
 		return nil, err
 	}

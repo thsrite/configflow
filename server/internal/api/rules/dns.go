@@ -91,7 +91,7 @@ type dnsWriteResult struct {
 
 // DNSState returns the rule page's current OxiDNS and MosDNS routing read model.
 func (s *Service) DNSState(ctx context.Context, id, base string) (dnsReadResult, error) {
-	profile, err := loadProfile(ctx, id)
+	profile, err := s.loadProfile(ctx, id)
 	if err != nil {
 		return dnsReadResult{}, err
 	}
@@ -157,7 +157,7 @@ func (s *Service) SetDNS(ctx context.Context, id string, body *dnsWriteRequest, 
 	if err != nil {
 		return out, err
 	}
-	config, err := loadProfile(ctx, id)
+	config, err := s.loadProfile(ctx, id)
 	if err != nil {
 		return out, err
 	}

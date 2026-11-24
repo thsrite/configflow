@@ -15,15 +15,25 @@ import (
 	"configflow/internal/oxidns"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/rulesource"
 )
 
 var logger = logx.Get("backend.routes.rules")
 
 // Service owns rule-page operations and their transaction boundaries.
 type Service struct {
+	repo        *repo.Repository
+	ruleSource  *rulesource.Service
 	client      *rulefetch.Client
 	now         func() time.Time
 	pinnedCheck func(ctx context.Context, profileID string, ruleIDs []string) (bool, error)
+}
+
+func (s *Service) repository(ctx context.Context) (*repo.Repository, error) {
+	if s != nil && s.repo != nil {
+		return s.repo, nil
+	}
+	return repo.GetRepository(ctx)
 }
 
 func invalid(message string) error { return repo.NewValidationError(message) }
@@ -105,7 +115,7 @@ func (s *Service) pinned(ctx context.Context, id string, ids []string) *bool {
 		logger.Warning(msgWithheldWarning)
 		return nil
 	}
-	value, err := withheld(ctx, resolved, ids, s.pinnedCheck)
+	value, err := s.withheld(ctx, resolved, ids, s.pinnedCheck)
 	if err != nil {
 		logger.Warning(msgWithheldWarning)
 		return nil
@@ -115,7 +125,7 @@ func (s *Service) pinned(ctx context.Context, id string, ids []string) *bool {
 
 // List reads composition, hydrating display URLs without rewriting stored values.
 func (s *Service) List(ctx context.Context, id string, sets bool) ([]model.RuleConfig, error) {
-	config, err := loadProfile(ctx, id)
+	config, err := s.loadProfile(ctx, id)
 	if err != nil {
 		return nil, err
 	}

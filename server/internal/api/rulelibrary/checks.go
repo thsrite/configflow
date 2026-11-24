@@ -44,7 +44,7 @@ func (s *Service) Single(ctx context.Context, body *singleRequest) (singleResult
 	if err != nil {
 		return singleResult{}, err
 	}
-	system, err := systemConfig(ctx)
+	system, err := s.systemConfig(ctx)
 	if err != nil {
 		return singleResult{}, err
 	}
@@ -63,12 +63,12 @@ func (s *Service) Test(ctx context.Context, base string) (checksResult, error) {
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
-	catalog, err := sharedConfig(ctx)
+	catalog, err := s.sharedConfig(ctx)
 	if err != nil {
 		return out, err
 	}
 	library := catalog.RuleLibrary
-	system, err := systemConfig(ctx)
+	system, err := s.systemConfig(ctx)
 	if err != nil {
 		return out, err
 	}
@@ -189,7 +189,7 @@ func (s *Service) Cache(ctx context.Context, body *cacheRequest) (cacheResults, 
 			chosen[entry.Value] = true
 		}
 	}
-	catalog, err := sharedConfig(ctx)
+	catalog, err := s.sharedConfig(ctx)
 	if err != nil {
 		return out, err
 	}

@@ -409,7 +409,7 @@ func (s *Service) Compose(ctx context.Context, id string, body *composeRequest, 
 			out.Warnings = append(out.Warnings, msgComposedCacheWarning)
 		}
 	}
-	config, err := loadProfile(ctx, id)
+	config, err := s.loadProfile(ctx, id)
 	if err != nil {
 		return out, err
 	}

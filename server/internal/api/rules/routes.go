@@ -11,28 +11,70 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/rulesource"
 )
+
+// Deps supplies the collaborators for the rules HTTP Handler.
+type Deps struct {
+	Repo       *repo.Repository
+	RuleSource *rulesource.Service
+	Client     *rulefetch.Client
+	Now        func() time.Time
+}
+
+// Handler serves rule composition, rule-set, DNS routing, and local rule routes.
+type Handler struct {
+	service *Service
+}
+
+// New constructs a rules Handler with explicit dependencies. Nil fields fall
+// back to transitional process defaults until W11.
+func New(deps Deps) *Handler {
+	now := deps.Now
+	if now == nil {
+		now = time.Now
+	}
+	client := deps.Client
+	if client == nil {
+		client = rulefetch.DefaultClient
+	}
+	return &Handler{
+		service: &Service{
+			repo:       deps.Repo,
+			ruleSource: deps.RuleSource,
+			client:     client,
+			now:        now,
+		},
+	}
+}
 
 // Register installs rule composition and DNS routes. Public delivery routes are
 // registered separately with their own cache-owner cancellation semantics.
-func Register(r *httpx.Router) { RegisterWithOptions(r, Options{}) }
+func Register(r *httpx.Router) { New(Deps{}).Register(r) }
 
 // Options supplies deterministic time and loopback-only rule transport in tests.
 type Options struct {
-	Client *rulefetch.Client
-	Now    func() time.Time
+	Repo       *repo.Repository
+	RuleSource *rulesource.Service
+	Client     *rulefetch.Client
+	Now        func() time.Time
 }
 
 // RegisterWithOptions installs the routes with injected external collaborators.
 func RegisterWithOptions(r *httpx.Router, options Options) {
-	if options.Now == nil {
-		options.Now = time.Now
-	}
-	if options.Client == nil {
-		options.Client = rulefetch.DefaultClient
-	}
-	s := &Service{client: options.Client, now: options.Now}
+	New(Deps{
+		Repo:       options.Repo,
+		RuleSource: options.RuleSource,
+		Client:     options.Client,
+		Now:        options.Now,
+	}).Register(r)
+}
+
+// Register mounts rule composition, DNS routing, and local delivery routes on r.
+func (h *Handler) Register(r *httpx.Router) {
+	s := h.service
 	for _, path := range []struct {
 		path, name string
 		sets       bool

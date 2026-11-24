@@ -93,7 +93,7 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 	changed := false
 	var err error
 	if !remove {
-		baseline, err = source(ctx, id)
+		baseline, err = s.source(ctx, id)
 		if err != nil {
 			return out, itemMissing(err)
 		}
@@ -126,7 +126,7 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 	}
 	defer release()
 	if !remove && prepared != nil && req.sourceType() == "url" {
-		path, err := cachePath(ctx, preview)
+		path, err := s.cachePath(ctx, preview)
 		if err != nil {
 			return out, err
 		}
@@ -193,7 +193,7 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 	}
 	committed = true
 	if remove {
-		if err = removeCache(ctx, previous); err != nil {
+		if err = s.removeCache(ctx, previous); err != nil {
 			return out, err
 		}
 	} else if err = stage.commit(ctx); err != nil {
@@ -203,7 +203,7 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 		return out, fail(500, msgCacheFailed)
 	}
 	if remove || changed {
-		if err = forget(ctx, id); err != nil {
+		if err = s.forget(ctx, id); err != nil {
 			return out, err
 		}
 	}
@@ -213,7 +213,7 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 		}
 	}
 	if !remove {
-		count, err := usage(ctx, id)
+		count, err := s.usage(ctx, id)
 		if err != nil {
 			return out, err
 		}

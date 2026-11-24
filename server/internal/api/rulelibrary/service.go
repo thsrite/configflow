@@ -16,13 +16,21 @@ import (
 
 // Service owns shared-library transactions and injectable external transport.
 type Service struct {
+	repo         *repo.Repository
 	client       *rulefetch.Client
 	replaceCache func(context.Context, string, string) error
 }
 
+func (s *Service) repository(ctx context.Context) (*repo.Repository, error) {
+	if s != nil && s.repo != nil {
+		return s.repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
 // List annotates shared entries with the shared DNS engine's IP projection.
 func (s *Service) List(ctx context.Context) ([]libraryListItem, error) {
-	catalog, err := sharedConfig(ctx)
+	catalog, err := s.sharedConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +56,7 @@ func (s *Service) Create(ctx context.Context, req *libraryRequest) (itemResult, 
 	if id == "" {
 		return out, fail(400, msgID)
 	}
-	catalog, err := sharedConfig(ctx)
+	catalog, err := s.sharedConfig(ctx)
 	if err != nil {
 		return out, err
 	}
@@ -83,7 +91,7 @@ func (s *Service) Create(ctx context.Context, req *libraryRequest) (itemResult, 
 	}
 	defer release()
 	ctx = held
-	err = create(ctx, item, content)
+	err = s.create(ctx, item, content)
 	if err != nil {
 		if errors.Is(err, repo.ErrRuleLibraryCreationUncertain) {
 			return out, err
@@ -121,7 +129,7 @@ func (s *Service) Check(body *checkContentRequest) (*rulefetch.Inspection, error
 
 // Content returns handwritten bytes directly from the shared declaration.
 func (s *Service) Content(ctx context.Context, id string) ([]byte, error) {
-	catalog, err := sharedConfig(ctx)
+	catalog, err := s.sharedConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +154,7 @@ func (s *Service) Reorder(ctx context.Context, body json.RawMessage) ([]string, 
 		return nil, err
 	}
 	order := []string{}
-	err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
+	err := s.editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
 		ordered, missing := reorder(catalog.RuleLibrary, body)
 		if len(missing) > 0 {
 			return fail(404, fmt.Sprintf(msgOrderMissing, missingText(missing)))
@@ -163,7 +171,7 @@ func (s *Service) Reorder(ctx context.Context, body json.RawMessage) ([]string, 
 
 // ProxyDomains reads the configured GitHub forwarding domain.
 func (s *Service) ProxyDomains(ctx context.Context) (jsonValue, error) {
-	settings, err := systemConfig(ctx)
+	settings, err := s.systemConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +193,7 @@ func (s *Service) SetProxyDomains(ctx context.Context, body *proxyDomainsRequest
 		value = body.ProxyDomains.Value
 	}
 	value = strings.TrimSpace(value)
-	err := editSystem(ctx, func(system *model.System) error {
+	err := s.editSystem(ctx, func(system *model.System) error {
 		system.SystemConfig.GitHubProxyDomain = value
 		return nil
 	})

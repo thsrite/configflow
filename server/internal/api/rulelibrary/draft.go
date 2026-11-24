@@ -37,8 +37,8 @@ func revision(item model.RuleLibraryItem) (string, error) {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:]), nil
 }
-func source(ctx context.Context, id string) (model.RuleLibraryItem, error) {
-	catalog, err := sharedConfig(ctx)
+func (s *Service) source(ctx context.Context, id string) (model.RuleLibraryItem, error) {
+	catalog, err := s.sharedConfig(ctx)
 	if err != nil {
 		return model.RuleLibraryItem{}, err
 	}
@@ -52,7 +52,7 @@ func source(ctx context.Context, id string) (model.RuleLibraryItem, error) {
 // Draft reads the current shared declaration with a deterministic editor token.
 func (s *Service) Draft(ctx context.Context, id string) (draftResult, error) {
 	out := draftResult{Success: true}
-	item, err := source(ctx, id)
+	item, err := s.source(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -69,7 +69,7 @@ func (s *Service) Draft(ctx context.Context, id string) (draftResult, error) {
 		Content:    model.TextValue(item.Content),
 		URL:        model.TextValue(item.URL),
 	}
-	count, err := usage(ctx, id)
+	count, err := s.usage(ctx, id)
 	out.Usage = &count
 	return out, err
 }
@@ -98,7 +98,7 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body *draftRequest) 
 			staged.abort(ctx)
 		}
 	}()
-	err = editShared(ctx, func(tx context.Context, catalog *model.Shared) error {
+	err = s.editShared(ctx, func(tx context.Context, catalog *model.Shared) error {
 		library := slices.Clone(catalog.RuleLibrary)
 		i := find(library, id)
 		if i < 0 {

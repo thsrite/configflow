@@ -57,8 +57,8 @@ func emptyObject(raw json.RawMessage) bool {
 	return raw == nil || json.Compact(&compact, raw) == nil && compact.String() == "{}"
 }
 
-func loadProfile(ctx context.Context, id string) (*model.Config, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) loadProfile(ctx context.Context, id string) (*model.Config, error) {
+	r, err := s.repository(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -242,8 +242,8 @@ func nativeWithout(view *oxidns.Profile, head oxidns.SettingsHead, settings *oxi
 	}
 	return next, nil
 }
-func withheld(ctx context.Context, profileID string, ids []string, check func(context.Context, string, []string) (bool, error)) (*bool, error) {
-	config, err := loadProfile(ctx, profileID)
+func (s *Service) withheld(ctx context.Context, profileID string, ids []string, check func(context.Context, string, []string) (bool, error)) (*bool, error) {
+	config, err := s.loadProfile(ctx, profileID)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +271,7 @@ func withheld(ctx context.Context, profileID string, ids []string, check func(co
 	}
 	if check == nil {
 		check = func(ctx context.Context, profileID string, ruleIDs []string) (bool, error) {
-			r, err := repo.GetRepository(ctx)
+			r, err := s.repository(ctx)
 			if err != nil {
 				return false, err
 			}

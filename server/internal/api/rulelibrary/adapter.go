@@ -31,8 +31,8 @@ func decodeRequestObject[T any](c *httpx.Ctx) (*T, bool, error) {
 	}
 	return &out, true, nil
 }
-func sharedConfig(ctx context.Context) (*model.Shared, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) sharedConfig(ctx context.Context) (*model.Shared, error) {
+	r, err := s.repository(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -77,18 +77,18 @@ func libraryTypeError(existing []model.RuleLibraryItem, index int, req *libraryR
 	return repo.InputError(&model.MemberTypeError{Record: "shared", Member: "rule_library", Value: raw, Err: cause})
 }
 
-func systemConfig(ctx context.Context) (*model.SystemConfig, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) systemConfig(ctx context.Context) (*model.SystemConfig, error) {
+	r, err := s.repository(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return r.SystemConfig(ctx)
 }
-func editShared(ctx context.Context, fn func(context.Context, *model.Shared) error) error {
+func (s *Service) editShared(ctx context.Context, fn func(context.Context, *model.Shared) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository(ctx)
 	if err != nil {
 		return err
 	}
@@ -107,11 +107,11 @@ func editShared(ctx context.Context, fn func(context.Context, *model.Shared) err
 	repo.ResetConfigContext(ctx)
 	return nil
 }
-func editSystem(ctx context.Context, fn func(*model.System) error) error {
+func (s *Service) editSystem(ctx context.Context, fn func(*model.System) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository(ctx)
 	if err != nil {
 		return err
 	}
@@ -156,11 +156,11 @@ func (s *Service) readSource(ctx context.Context, item model.RuleLibraryItem) ([
 	}
 	return content.Data, nil
 }
-func create(ctx context.Context, item model.RuleLibraryItem, content []byte) error {
+func (s *Service) create(ctx context.Context, item model.RuleLibraryItem, content []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository(ctx)
 	if err != nil {
 		return err
 	}
@@ -228,15 +228,15 @@ func reorder(items []model.RuleLibraryItem, body json.RawMessage) ([]model.RuleL
 }
 func missingText(ids []string) string { return rules.IdentifierList(ids) }
 
-func cachePath(ctx context.Context, item model.RuleLibraryItem) (string, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) cachePath(ctx context.Context, item model.RuleLibraryItem) (string, error) {
+	r, err := s.repository(ctx)
 	if err != nil {
 		return "", err
 	}
 	return r.SharedPath("rules/" + rules.CacheFilename(ruleRecord(item)))
 }
-func usage(ctx context.Context, id string) (int, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) usage(ctx context.Context, id string) (int, error) {
+	r, err := s.repository(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -254,11 +254,11 @@ func writeCache(ctx context.Context, item model.RuleLibraryItem, content []byte)
 	_, err := rulefetch.WriteCache(ctx, ruleRecord(item), rulefetch.Content{Data: content}, nil)
 	return err
 }
-func forget(ctx context.Context, id string) error {
+func (s *Service) forget(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository(ctx)
 	if err != nil {
 		return err
 	}
@@ -268,11 +268,11 @@ func forget(ctx context.Context, id string) error {
 	// The status owner rechecks cancellation after leaf-lock admission.
 	return taskstatus.New(r.DataDir()).ForgetContext(ctx, refresh.RuleTaskKey(id))
 }
-func removeCache(ctx context.Context, item model.RuleLibraryItem) error {
+func (s *Service) removeCache(ctx context.Context, item model.RuleLibraryItem) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	path, err := cachePath(ctx, item)
+	path, err := s.cachePath(ctx, item)
 	if err != nil {
 		return err
 	}

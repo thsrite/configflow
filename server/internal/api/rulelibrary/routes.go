@@ -12,21 +12,47 @@ import (
 	"configflow/internal/rulefetch"
 )
 
+// Deps supplies the collaborators for the rule-library HTTP Handler.
+type Deps struct {
+	Repo   *repo.Repository
+	Client *rulefetch.Client
+}
+
+// Handler serves shared rule-library editing and public delivery routes.
+type Handler struct {
+	service *Service
+}
+
+// New constructs a rule-library Handler with explicit dependencies. Nil fields
+// fall back to transitional process defaults until W11.
+func New(deps Deps) *Handler {
+	client := deps.Client
+	if client == nil {
+		client = rulefetch.DefaultClient
+	}
+	return &Handler{service: &Service{repo: deps.Repo, client: client}}
+}
+
 // Register installs shared rule editing and public handwritten-source delivery.
-func Register(r *httpx.Router) { RegisterWithOptions(r, Options{}) }
+func Register(r *httpx.Router) { New(Deps{}).Register(r) }
 
 // Options injects loopback-only HTTP transport for boundary tests.
 type Options struct {
+	Repo         *repo.Repository
 	Client       *rulefetch.Client
 	replaceCache func(context.Context, string, string) error
 }
 
 // RegisterWithOptions installs the library routes with an injected transport.
 func RegisterWithOptions(r *httpx.Router, options Options) {
-	if options.Client == nil {
-		options.Client = rulefetch.DefaultClient
-	}
-	s := &Service{client: options.Client, replaceCache: options.replaceCache}
+	h := New(Deps{Repo: options.Repo, Client: options.Client})
+	h.service.replaceCache = options.replaceCache
+	h.Register(r)
+}
+
+// Register mounts shared rule editing and public delivery routes on r.
+func (h *Handler) Register(r *httpx.Router) {
+	s := h.service
 	r.Handle([]string{"GET", "POST"}, "/api/rule-library", "rule_library.handle_rule_library", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		if c.Method() != "POST" {
 			out, err := s.List(c.Context())
