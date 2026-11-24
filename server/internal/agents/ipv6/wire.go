@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"configflow/internal/agents"
-	"configflow/internal/deploy"
 	"configflow/internal/deploy/contentsync"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
@@ -183,13 +182,6 @@ func WireOn(rt *lifecycle.Runtime, checker func(*agents.Manager) *contentsync.Ch
 	if rt == nil {
 		rt = lifecycle.Current()
 	}
-	deploy.SetIPv6Enroll(func(ctx context.Context, m *agents.Manager, id, did string, src *deploy.Source) error {
-		b, e := src.Raw()
-		if e != nil {
-			return e
-		}
-		return (&Service{Manager: m, Checker: checker}).Enroll(ctx, id, did, object(b))
-	})
 
 	agents.OnManagerInit(func(ctx context.Context, m *agents.Manager) {
 		owner := &schedulerOwner{service: &Service{Manager: m, Checker: checker}}

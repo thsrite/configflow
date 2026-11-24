@@ -86,11 +86,18 @@ func TestShutdownRejectsEveryPublishCommit(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"publish-direct", func() error { _, e := PublishDirect(ctx, f.m, "publish-agent", b, PublishOptions{}); return e }},
-		{"publish-pair-entry", func() error { _, e := Publish(ctx, f.m, "publish-agent", b, PublishOptions{}); return e }},
-		{"push-entry", func() error { _, e := Push(ctx, f.m, "publish-agent", PushInput{Bundle: b}); return e }},
-		{"push-http-owner", func() error { return PushConfig(ctx, f.m, "publish-agent", PushRequest{Body: []byte(`{}`)}).Err }},
-		{"generate-owner", func() error { return GenerateFinal(ctx, f.m, "publish-agent", GenerateRequest{Body: []byte(`{}`)}).Err }},
+		{"publish-direct", func() error {
+			_, e := New(Options{}).PublishDirect(ctx, f.m, "publish-agent", b, PublishOptions{})
+			return e
+		}},
+		{"publish-pair-entry", func() error { _, e := New(Options{}).Publish(ctx, f.m, "publish-agent", b, PublishOptions{}); return e }},
+		{"push-entry", func() error { _, e := New(Options{}).Push(ctx, f.m, "publish-agent", PushInput{Bundle: b}); return e }},
+		{"push-http-owner", func() error {
+			return New(Options{}).PushConfig(ctx, f.m, "publish-agent", PushRequest{Body: []byte(`{}`)}).Err
+		}},
+		{"generate-owner", func() error {
+			return New(Options{}).GenerateFinal(ctx, f.m, "publish-agent", GenerateRequest{Body: []byte(`{}`)}).Err
+		}},
 		{"reserve", func() error { _, e := f.m.ReserveDeployment(ctx, "publish-agent", "closed"); return e }},
 		{"record", func() error {
 			_, e := recordUpdate(ctx, f.m, "publish-agent", "closed", Update{Status: new("uploading"), Submitted: new(true)}, agents.RecordOptions{})
@@ -172,7 +179,7 @@ func TestShutdownAfterAgentAcceptanceRetainsUncertainSubmission(t *testing.T) {
 	b := f.bundle(t, "accepted-at-stop")
 	done := make(chan error, 1)
 	go func() {
-		_, err := PublishDirect(ctx, f.m, "publish-agent", b, PublishOptions{Activate: true, SourceSnapshot: f.source, BaseURL: "https://panel.example.com"})
+		_, err := New(Options{}).PublishDirect(ctx, f.m, "publish-agent", b, PublishOptions{Activate: true, SourceSnapshot: f.source, BaseURL: "https://panel.example.com"})
 		done <- err
 	}()
 	<-client.arrived
@@ -215,7 +222,7 @@ func TestDisconnectedBoundRequestCompletesPublicationAndArtifacts(t *testing.T) 
 	ctx := lifecycle.BindRequest(request)
 	cancel()
 	b := f.bundle(t, "disconnected-runtime")
-	answer, err := PublishDirect(ctx, f.m, "publish-agent", b, PublishOptions{Activate: true, SourceSnapshot: f.source, BaseURL: "https://panel.example.com"})
+	answer, err := New(Options{}).PublishDirect(ctx, f.m, "publish-agent", b, PublishOptions{Activate: true, SourceSnapshot: f.source, BaseURL: "https://panel.example.com"})
 	if err != nil || !resultView(fixtureTask(answer)).Submitted {
 		t.Fatal(answer, err)
 	}
@@ -239,13 +246,8 @@ func TestDisconnectedBoundRequestCompletesPublicationAndArtifacts(t *testing.T) 
 func TestNativePairOwnerTakesPrecedenceAndRuntimeGuards(t *testing.T) {
 	f := newPublish(t, agentfake.Options{}, nil)
 	startGlobalPublishRuntime(t, f.ctx)
-	nativeCalls, legacyCalls := 0, 0
-	restoreLegacy := SetPairPublication(func(context.Context, *agents.Manager, string, *Bundle, PublishOptions) (*model.Deployment, bool, error) {
-		legacyCalls++
-		return nil, true, nil
-	})
-	defer restoreLegacy()
-	restoreNative := SetPairPublication(func(ctx context.Context, _ *agents.Manager, _ string, _ *Bundle, _ PublishOptions) (*model.Deployment, bool, error) {
+	nativeCalls := 0
+	dp := New(Options{Pair: func(ctx context.Context, _ *agents.Manager, _ string, _ *Bundle, _ PublishOptions) (*model.Deployment, bool, error) {
 		nativeCalls++
 		if ctx.Err() != nil {
 			t.Fatal("stopped owner was dispatched")
@@ -253,17 +255,16 @@ func TestNativePairOwnerTakesPrecedenceAndRuntimeGuards(t *testing.T) {
 		var result model.Deployment
 		err := json.Unmarshal([]byte(`{"success":true,"deployment_id":"native-owner"}`), &result)
 		return &result, true, err
-	})
-	defer restoreNative()
+	}})
 	bound := lifecycle.BindRequest(f.ctx)
 	request, disconnect := context.WithCancel(bound)
 	disconnect()
-	result, err := Publish(request, f.m, "publish-agent", nil, PublishOptions{})
-	if err != nil || result.DeploymentID != "native-owner" || nativeCalls != 1 || legacyCalls != 0 {
-		t.Fatal("native owner did not run once", result, err, nativeCalls, legacyCalls)
+	result, err := dp.Publish(request, f.m, "publish-agent", nil, PublishOptions{})
+	if err != nil || result.DeploymentID != "native-owner" || nativeCalls != 1 {
+		t.Fatal("native owner did not run once", result, err, nativeCalls)
 	}
 	lifecycle.Stop(8 * time.Second)
-	if _, err = Publish(bound, f.m, "publish-agent", nil, PublishOptions{}); !errors.Is(err, context.Canceled) || nativeCalls != 1 || legacyCalls != 0 {
-		t.Fatal("shutdown dispatched owner", err, nativeCalls, legacyCalls)
+	if _, err = dp.Publish(bound, f.m, "publish-agent", nil, PublishOptions{}); !errors.Is(err, context.Canceled) || nativeCalls != 1 {
+		t.Fatal("shutdown dispatched owner", err, nativeCalls)
 	}
 }

@@ -54,7 +54,7 @@ func prepareContent(ctx context.Context, m *core.Manager, t deploy.Target, s *de
 			return nil, err
 		}
 	}
-	return deploy.PrepareContentBundle(ctx, m, t, s, url, id)
+	return deploy.New(deploy.Options{}).PrepareContentBundle(ctx, m, t, s, url, id)
 }
 
 func (p *contentPool) checker(m *core.Manager) *contentsync.Checker {

@@ -95,7 +95,7 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		{"refresh service is the default", app.Refresh != nil && refresh.Default() == app.Refresh},
 		{"provider service is instantiated", app.Provider != nil},
 		{"aggregations service", app.Aggregations != nil},
-		{"deploy service is the default", app.Deploy != nil && deploy.Default() == app.Deploy},
+		{"deploy service is instantiated", app.Deploy != nil},
 		{"rule source service is instantiated", app.RuleSource != nil},
 		{"onboarding adoption owner", onboarding.RegisteredAdoptOwnedWrite() != nil},
 		{"gateway rule source reader", gateway.RegisteredRuleSourceReader() != nil},

@@ -6,7 +6,6 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
-	"configflow/internal/provider"
 	"configflow/internal/repo"
 	"configflow/internal/version"
 	"configflow/internal/yamlx"
@@ -77,14 +76,14 @@ func DeploymentResponse(r *model.Deployment) Response {
 func httpTerminal(status string) bool { return finished(status) || status == "rollback_failed" }
 
 // PushConfig owns guard checking, reservation, preparation, cache commit and publication.
-func PushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest) (out Response) {
-	err := RunDetached(ctx, "agent-publish-"+id, func(ctx context.Context) error { out = pushConfig(ctx, m, id, r); return out.Err })
+func (s *Service) PushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest) (out Response) {
+	err := RunDetached(ctx, "agent-publish-"+id, func(ctx context.Context) error { out = s.pushConfig(ctx, m, id, r); return out.Err })
 	if err != nil {
 		out = Response{Err: err}
 	}
 	return
 }
-func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest) (out Response) {
+func (s *Service) pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest) (out Response) {
 	var did string
 	var owns bool
 	var t Target
@@ -146,7 +145,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 	if !ok {
 		return rejected(400, msgPushBody)
 	}
-	previews := previewsFor(m)
+	previews := s.PreviewsFor(m)
 	var generated *Preview
 	if raw, has := data["generation_id"]; has {
 		key, valid := rawString(raw)
@@ -257,7 +256,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 			in.ExpectedProfileID = &t.ProfileID
 			in.ExpectedServiceType = &t.ServiceType
 		}
-		answer, e := Push(ctx, m, id, in)
+		answer, e := s.Push(ctx, m, id, in)
 		if e != nil {
 			return fail(e)
 		}
@@ -353,7 +352,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 		}
 		prepared = &Prepared{Bundle: generated.Bundle, ConfigContent: generated.Public().Content}
 	} else {
-		prepared, err = PrepareContent(ctx, m, t, source, PrepareOptions{BaseURL: base, DeploymentID: did, StoreDownloads: true, Progress: publishProgress(ctx, m, id, did, t.Token)})
+		prepared, err = s.PrepareContent(ctx, m, t, source, PrepareOptions{BaseURL: base, DeploymentID: did, StoreDownloads: true, Progress: publishProgress(ctx, m, id, did, t.Token)})
 		if err != nil {
 			return fail(err)
 		}
@@ -362,18 +361,14 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 		if ctx.Err() != nil {
 			return Response{Err: ctx.Err()}
 		}
-		pv := Default().provider
-		if pv == nil {
-			pv = provider.New(provider.Options{Repo: m.Repository(), SubStore: Default().substore, Locations: Locations{}})
-		}
-		if err = pv.CommitArtifacts(ctx, t.ProfileID, prepared.Providers); err != nil {
+		if err = s.providerFor(m).CommitArtifacts(ctx, t.ProfileID, prepared.Providers); err != nil {
 			return fail(err)
 		}
 	}
 	if _, err = recordUpdate(ctx, m, id, did, Update{Status: new("preparing"), Message: new(msgFilesReady)}, agents.RecordOptions{}); err != nil {
 		return fail(err)
 	}
-	answer, err := Push(ctx, m, id, PushInput{ConfigContent: prepared.ConfigContent, Bundle: prepared.Bundle, Publish: PublishOptions{Activate: activate, ConfigRevision: revision, BaseURL: base, ResourceConfig: source, SourceSnapshot: source}})
+	answer, err := s.Push(ctx, m, id, PushInput{ConfigContent: prepared.ConfigContent, Bundle: prepared.Bundle, Publish: PublishOptions{Activate: activate, ConfigRevision: revision, BaseURL: base, ResourceConfig: source, SourceSnapshot: source}})
 	if err != nil {
 		return fail(err)
 	}
@@ -394,7 +389,7 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 }
 
 // GenerateFinal freezes target-adapted files without reserving or publishing a task.
-func GenerateFinal(ctx context.Context, m *agents.Manager, id string, r GenerateRequest) (out Response) {
+func (s *Service) GenerateFinal(ctx context.Context, m *agents.Manager, id string, r GenerateRequest) (out Response) {
 	err := RunDetached(ctx, "agent-generate-"+id, func(ctx context.Context) error {
 		t, found, e := targetByID(ctx, m, id)
 		if e != nil {
@@ -456,7 +451,7 @@ func GenerateFinal(ctx context.Context, m *agents.Manager, id string, r Generate
 			}
 			input.ConfigContent = generated.Content
 		} else {
-			prepared, e = PrepareContent(ctx, m, t, src, PrepareOptions{BaseURL: base, StoreDownloads: true})
+			prepared, e = s.PrepareContent(ctx, m, t, src, PrepareOptions{BaseURL: base, StoreDownloads: true})
 			if e != nil {
 				return fail(e)
 			}
@@ -484,11 +479,11 @@ func GenerateFinal(ctx context.Context, m *agents.Manager, id string, r Generate
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		pv, e := previewsFor(m).Save(ctx, input)
+		pv, e := s.PreviewsFor(m).Save(ctx, input)
 		if e != nil {
 			return fail(e)
 		}
-		if e = previewsFor(m).RequireCurrent(ctx, m, pv); e != nil {
+		if e = s.PreviewsFor(m).RequireCurrent(ctx, m, pv); e != nil {
 			return fail(e)
 		}
 		public := pv.Public()

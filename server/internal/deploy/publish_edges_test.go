@@ -24,7 +24,7 @@ func TestFinalResourceRetryUsesContentIdentity(t *testing.T) {
 		t.Fatal(e)
 	}
 	for i := 0; i < 2; i++ {
-		r, e := PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{Activate: false})
+		r, e := New(Options{}).PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{Activate: false})
 		if e != nil || resultView(fixtureTask(r)).HTTPStatus == 409 {
 			t.Fatal("identical frozen candidate was rejected", r, e)
 		}
@@ -66,7 +66,7 @@ func TestOxiDNSPublicationAttestsBeforeActivation(t *testing.T) {
 	Wire()
 	f := newPublish(t, agentfake.Options{ServiceType: "oxidns"}, nil)
 	b := f.bundle(t, "checked")
-	r, e := PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{SourceSnapshot: f.source})
+	r, e := New(Options{}).PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{SourceSnapshot: f.source})
 	if e != nil || resultView(fixtureTask(r)).Status != "verifying" {
 		t.Fatal(r, e)
 	}

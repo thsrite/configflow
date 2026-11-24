@@ -36,18 +36,18 @@ type AgentConfig struct {
 }
 
 // PrepareContent generates and validates the entire candidate before any upload.
-func PrepareContent(ctx context.Context, m *agents.Manager, t Target, src *Source, o PrepareOptions) (p *Prepared, err error) {
+func (s *Service) PrepareContent(ctx context.Context, m *agents.Manager, t Target, src *Source, o PrepareOptions) (p *Prepared, err error) {
 	err = RunDetached(ctx, "agent-prepare-"+t.ID, func(ctx context.Context) error {
 		var e error
-		p, e = prepareContent(ctx, m, t, src, o)
+		p, e = s.prepareContent(ctx, m, t, src, o)
 		return e
 	})
 	return
 }
 
 // PrepareContentBundle is the read-only content comparison preparation entry.
-func PrepareContentBundle(ctx context.Context, m *agents.Manager, t Target, src *Source, baseURL, id string) (*Bundle, error) {
-	p, err := PrepareContent(ctx, m, t, src, PrepareOptions{BaseURL: baseURL, DeploymentID: id, PreferCached: true})
+func (s *Service) PrepareContentBundle(ctx context.Context, m *agents.Manager, t Target, src *Source, baseURL, id string) (*Bundle, error) {
+	p, err := s.PrepareContent(ctx, m, t, src, PrepareOptions{BaseURL: baseURL, DeploymentID: id, PreferCached: true})
 	if err != nil {
 		return nil, err
 	}

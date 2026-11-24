@@ -141,7 +141,7 @@ func run() (resultErr error) {
 		if err != nil {
 			return err
 		}
-		candidate, err := deploy.PrepareContentBundle(ctx, manager, target, source, receipt.BaseURL, "format-proof")
+		candidate, err := deploy.New(deploy.Options{}).PrepareContentBundle(ctx, manager, target, source, receipt.BaseURL, "format-proof")
 		if err != nil {
 			return fmt.Errorf("prepare native YAML for baseline proof: %w", err)
 		}

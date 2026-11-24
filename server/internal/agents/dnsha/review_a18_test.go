@@ -1,9 +1,12 @@
 package dnsha
 
 import (
+	"context"
 	"testing"
 
+	"configflow/internal/agents"
 	"configflow/internal/deploy"
+	"configflow/internal/model"
 )
 
 // Review A18 F1: while a first enable is in flight the journal is active on
@@ -31,7 +34,10 @@ func TestPublishDuringFirstEnableAnswersPythonConflict(t *testing.T) {
 				t.Fatal(e)
 			}
 			b := f.bundle(t, id, "during-enable-"+id, false)
-			r, e := deploy.Publish(f.ctx, f.m, id, b, deploy.PublishOptions{Activate: true, SourceSnapshot: src, ResourceConfig: src, ConfigRevision: rev})
+			dp := deploy.New(deploy.Options{Pair: func(ctx context.Context, _ *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
+				return f.s.PublishPair(ctx, id, b, o)
+			}})
+			r, e := dp.Publish(f.ctx, f.m, id, b, deploy.PublishOptions{Activate: true, SourceSnapshot: src, ResourceConfig: src, ConfigRevision: rev})
 			if e != nil {
 				t.Fatalf("push during enable must be Python's 409 conflict, got error %v", e)
 			}

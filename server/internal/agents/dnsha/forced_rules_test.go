@@ -16,6 +16,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"configflow/internal/agents"
 	"configflow/internal/deploy"
 	"configflow/internal/model"
 	"configflow/internal/refresh"
@@ -86,11 +87,14 @@ func TestManualPairRulesForcesUnchangedLibraryMaterialization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := deploy.PrepareContent(f.ctx, f.m, owner.target, source, deploy.PrepareOptions{BaseURL: "https://panel.example", DeploymentID: "remote-rules-baseline"})
+	dp := deploy.New(deploy.Options{Pair: func(ctx context.Context, _ *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
+		return f.s.PublishPair(ctx, id, b, o)
+	}})
+	prepared, err := dp.PrepareContent(f.ctx, f.m, owner.target, source, deploy.PrepareOptions{BaseURL: "https://panel.example", DeploymentID: "remote-rules-baseline"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = deploy.Publish(f.ctx, f.m, "primary", prepared.Bundle, deploy.PublishOptions{Activate: true, BaseURL: "https://panel.example", SourceSnapshot: source, ResourceConfig: source, ConfigRevision: revision}); err != nil {
+	if _, err = dp.Publish(f.ctx, f.m, "primary", prepared.Bundle, deploy.PublishOptions{Activate: true, BaseURL: "https://panel.example", SourceSnapshot: source, ResourceConfig: source, ConfigRevision: revision}); err != nil {
 		t.Fatal(err)
 	}
 	if last := f.drain(t, 12); last.Status != "succeeded" {

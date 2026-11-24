@@ -188,7 +188,7 @@ func TestPayloadResumeKeepsPythonPresenceAndUnknownFields(t *testing.T) {
 func TestFinalGenerationRequiresMatchingPeerAndPinsBothIdentities(t *testing.T) {
 	f := fixtureNew(t, Options{}, true, nil)
 	req := deploy.GenerateRequest{Body: []byte(`{"expected_profile_id":"default","expected_service_type":"oxidns","base_url":"https://panel.example"}`), HostURL: "https://panel.example"}
-	response := deploy.GenerateFinal(f.ctx, f.m, "primary", req)
+	response := deploy.New(deploy.Options{}).GenerateFinal(f.ctx, f.m, "primary", req)
 	if response.Err != nil || response.Status != 200 {
 		t.Fatal(response.Status, response.Err, response.Body)
 	}
@@ -215,7 +215,7 @@ func TestFinalGenerationRequiresMatchingPeerAndPinsBothIdentities(t *testing.T) 
 		}
 		return nil
 	})
-	response = deploy.GenerateFinal(f.ctx, f.m, "primary", req)
+	response = deploy.New(deploy.Options{}).GenerateFinal(f.ctx, f.m, "primary", req)
 	if response.Status != 400 {
 		t.Fatal("different peer target allowed", response.Status)
 	}

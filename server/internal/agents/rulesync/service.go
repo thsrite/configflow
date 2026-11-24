@@ -37,6 +37,7 @@ type Options struct {
 // Service owns lightweight comparison memory and at most two concurrent workers.
 type Service struct {
 	m           *agents.Manager
+	Deploy      *deploy.Service
 	receipts    *deploy.Receipts
 	now         func() time.Time
 	prepare     PrepareFunc
@@ -46,6 +47,13 @@ type Service struct {
 	comparisons map[string]comparison
 	pending     map[string]bool
 	cursor      int
+}
+
+func (s *Service) deployService() *deploy.Service {
+	if s != nil && s.Deploy != nil {
+		return s.Deploy
+	}
+	return deploy.New(deploy.Options{})
 }
 
 // New builds a rule-sync owner for one manager.

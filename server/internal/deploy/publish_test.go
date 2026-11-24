@@ -111,7 +111,7 @@ func (f *publishFixture) agent(t *testing.T) *model.Agent {
 func TestPublishBoundary(t *testing.T) {
 	f := newPublish(t, agentfake.Options{ConfigPath: "installed.yaml"}, nil)
 	b := f.bundle(t, "stage")
-	got, e := PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{Activate: false, SourceSnapshot: f.source, BaseURL: "https://panel.example.com", ConfigRevision: &Revision{Value: 7}})
+	got, e := New(Options{}).PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{Activate: false, SourceSnapshot: f.source, BaseURL: "https://panel.example.com", ConfigRevision: &Revision{Value: 7}})
 	if e != nil || resultView(fixtureTask(got)).Status != "verifying" {
 		t.Fatal(got, e)
 	}
@@ -176,7 +176,7 @@ func TestSubmittedBeforeNetworkAndLostResponse(t *testing.T) {
 			next.ServeHTTP(w, r)
 		})
 	})
-	got, e := PublishDirect(f.ctx, f.m, "publish-agent", f.bundle(t, "lost"), PublishOptions{Activate: true})
+	got, e := New(Options{}).PublishDirect(f.ctx, f.m, "publish-agent", f.bundle(t, "lost"), PublishOptions{Activate: true})
 	if e != nil || resultView(fixtureTask(got)).Status != "unknown" || !resultView(fixtureTask(got)).Submitted {
 		t.Fatal(got, e)
 	}
@@ -215,7 +215,7 @@ func TestLateUploadCannotRegressPoll(t *testing.T) {
 	done := make(chan error, 1)
 	b := f.bundle(t, "late")
 	go func() {
-		_, e := PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{Activate: true})
+		_, e := New(Options{}).PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{Activate: true})
 		done <- e
 	}()
 	<-arrived
@@ -245,7 +245,7 @@ func TestPublishRefusalsAndJournalLoss(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newPublish(t, agentfake.Options{Capabilities: tc.caps, Script: tc.fault}, nil)
-			r, e := PublishDirect(f.ctx, f.m, "publish-agent", f.bundle(t, "refuse"), PublishOptions{})
+			r, e := New(Options{}).PublishDirect(f.ctx, f.m, "publish-agent", f.bundle(t, "refuse"), PublishOptions{})
 			if e != nil || resultView(fixtureTask(r)).Status != tc.want || resultView(fixtureTask(r)).HTTPStatus != tc.code {
 				t.Fatal(r, e)
 			}
@@ -256,7 +256,7 @@ func TestPublishRefusalsAndJournalLoss(t *testing.T) {
 	}
 	f := newPublish(t, agentfake.Options{}, nil)
 	b := f.bundle(t, "restart")
-	_, e := PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{})
+	_, e := New(Options{}).PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{})
 	if e != nil {
 		t.Fatal(e)
 	}

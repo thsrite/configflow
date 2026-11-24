@@ -373,7 +373,7 @@ func TestPrepareUsesProductionOptionsAndRechecksOwnership(t *testing.T) {
 		if o.BaseURL != "https://panel.example" || o.DeploymentID == "" || o.PreferCached || o.StoreDownloads {
 			return nil, fmt.Errorf("unexpected preparation options: %#v", o)
 		}
-		p, err := deploy.PrepareContent(ctx, m, a, src, o)
+		p, err := deploy.New(deploy.Options{}).PrepareContent(ctx, m, a, src, o)
 		if calls == 2 {
 			f.editAgent(t, "source", func(a *model.Agent) {
 				yes := true

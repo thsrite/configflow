@@ -29,25 +29,6 @@ type PushInput struct {
 	ExpectedProfileID, ExpectedServiceType *string
 }
 
-// Publish delegates pair members to the HA owner, failing closed without one.
-func Publish(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions) (*model.Deployment, error) {
-	return Default().Publish(ctx, m, id, b, o)
-}
-
-// Push checks current target guards before choosing transactional or legacy publication.
-func Push(ctx context.Context, m *agents.Manager, id string, in PushInput) (*model.Deployment, error) {
-	return Default().Push(ctx, m, id, in)
-}
-
-// PublishDirect durably submits a complete bundle before transmitting it.
-func PublishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions) (*model.Deployment, error) {
-	return Default().PublishDirect(ctx, m, id, b, o)
-}
-
-func publishDirect(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions) (*model.Deployment, error) {
-	return publishDirectWith(ctx, m, id, b, o, Default().ipv6Enroller())
-}
-
 func publishDirectWith(ctx context.Context, m *agents.Manager, id string, b *Bundle, o PublishOptions, enroll IPv6Enroller) (answer *model.Deployment, err error) {
 	if b == nil {
 		return nil, preparation("A complete deployment bundle is required")

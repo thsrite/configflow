@@ -24,7 +24,7 @@ type Artifact struct {
 
 // GenerateArtifact materializes one pinned profile through the shared generator
 // and stores its immutable bytes with the Manager's A14 preview owner.
-func GenerateArtifact(ctx context.Context, m *agents.Manager, profileID string, engine configgen.Engine, baseURL string) (out Artifact, err error) {
+func (s *Service) GenerateArtifact(ctx context.Context, m *agents.Manager, profileID string, engine configgen.Engine, baseURL string) (out Artifact, err error) {
 	err = RunDetached(ctx, "manual-artifact", func(ctx context.Context) error {
 		candidate, err := configgen.Capture(ctx, m.Repository(), profileID, engine, baseURL)
 		if err != nil {
@@ -104,7 +104,7 @@ func GenerateArtifact(ctx context.Context, m *agents.Manager, profileID string, 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		pv, err := previewsFor(m).Save(ctx, PreviewInput{Target: Target{ID: "manual", ServiceType: string(engine)}, Source: source, Bundle: bundle, Members: []Target{}})
+		pv, err := s.PreviewsFor(m).Save(ctx, PreviewInput{Target: Target{ID: "manual", ServiceType: string(engine)}, Source: source, Bundle: bundle, Members: []Target{}})
 		if err != nil {
 			return err
 		}

@@ -89,11 +89,12 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	prepared, e := deploy.PrepareContent(f.ctx, f.m, tTarget, source, deploy.PrepareOptions{DeploymentID: "target-ha-baseline", BaseURL: "https://panel.example"})
+	dp := deploy.New(deploy.Options{})
+	prepared, e := dp.PrepareContent(f.ctx, f.m, tTarget, source, deploy.PrepareOptions{DeploymentID: "target-ha-baseline", BaseURL: "https://panel.example"})
 	if e != nil {
 		t.Fatal(e)
 	}
-	published, e := deploy.PublishDirect(f.ctx, f.m, "target", prepared.Bundle, deploy.PublishOptions{Activate: true, SourceSnapshot: source, ResourceConfig: source, BaseURL: "https://panel.example"})
+	published, e := dp.PublishDirect(f.ctx, f.m, "target", prepared.Bundle, deploy.PublishOptions{Activate: true, SourceSnapshot: source, ResourceConfig: source, BaseURL: "https://panel.example"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -127,11 +128,11 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	p, e := deploy.PrepareContent(f.ctx, f.m, sTarget, src, deploy.PrepareOptions{DeploymentID: "standby-baseline", BaseURL: "https://panel.example"})
+	p, e := dp.PrepareContent(f.ctx, f.m, sTarget, src, deploy.PrepareOptions{DeploymentID: "standby-baseline", BaseURL: "https://panel.example"})
 	if e != nil {
 		t.Fatal(e)
 	}
-	result, e := deploy.PublishDirect(f.ctx, f.m, "standby", p.Bundle, deploy.PublishOptions{Activate: true, SourceSnapshot: src, ResourceConfig: src, BaseURL: "https://panel.example"})
+	result, e := dp.PublishDirect(f.ctx, f.m, "standby", p.Bundle, deploy.PublishOptions{Activate: true, SourceSnapshot: src, ResourceConfig: src, BaseURL: "https://panel.example"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -185,6 +186,9 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 	oldHooks := agents.CurrentHooks()
 	dnsha.Register()
 	t.Cleanup(func() { agents.ResetHooks(); agents.RegisterHooks(oldHooks) })
+	f.s.Deploy = deploy.New(deploy.Options{Pair: func(ctx context.Context, m *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
+		return dnsha.ForManager(m).PublishPair(ctx, id, b, o)
+	}})
 	_, e = f.s.Configure(f.ctx, "target", json.RawMessage(`{"source_agent_id":"source","upstream_tag":"forward_remote","upstream_index":0,"connection":"network","address":"192.0.2.10"}`))
 	if e != nil {
 		t.Fatal(e)

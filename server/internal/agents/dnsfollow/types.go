@@ -26,10 +26,18 @@ type Options struct {
 // Service owns follow reconciliation for one registry manager.
 type Service struct {
 	m       *agents.Manager
+	Deploy  *deploy.Service
 	now     func() time.Time
 	prepare func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
 	// waker paces the dns-follow loop (shared by every Service: one loop).
 	waker *agents.Waker
+}
+
+func (s *Service) deployService() *deploy.Service {
+	if s != nil && s.Deploy != nil {
+		return s.Deploy
+	}
+	return deploy.New(deploy.Options{})
 }
 
 // loop wakes the dns-follow loop on configuration and Agent state commits
@@ -44,14 +52,17 @@ func New(m *agents.Manager, o Options) *Service {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	if o.Prepare == nil {
-		o.Prepare = deploy.PrepareContent
-	}
 	w := agents.NewWaker(PollInterval, agents.IdleFallback)
 	if m != nil {
 		w.Watch(m, repo.ChangeConfig|repo.ChangeState, true)
 	}
-	return &Service{m: m, now: o.Now, prepare: o.Prepare, waker: w}
+	s := &Service{m: m, now: o.Now, prepare: o.Prepare, waker: w}
+	if s.prepare == nil {
+		s.prepare = func(ctx context.Context, m *agents.Manager, t deploy.Target, src *deploy.Source, opt deploy.PrepareOptions) (*deploy.Prepared, error) {
+			return s.deployService().PrepareContent(ctx, m, t, src, opt)
+		}
+	}
+	return s
 }
 
 // Error is a safe user-facing follow refusal.

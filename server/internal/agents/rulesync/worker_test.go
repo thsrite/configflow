@@ -228,7 +228,7 @@ rules: ['RULE-SET,selected,DIRECT', 'DOMAIN,old-inline.example.com,DIRECT', 'MAT
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = deploy.PublishDirect(ctx, s.m, "device", baseline, deploy.PublishOptions{Activate: true, SourceSnapshot: source, ResourceConfig: source, BaseURL: "https://panel.example.com"})
+	_, e = deploy.New(deploy.Options{}).PublishDirect(ctx, s.m, "device", baseline, deploy.PublishOptions{Activate: true, SourceSnapshot: source, ResourceConfig: source, BaseURL: "https://panel.example.com"})
 	if e != nil {
 		t.Fatal(e)
 	}

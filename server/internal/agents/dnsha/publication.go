@@ -277,7 +277,7 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 			if e = ctx.Err(); e != nil {
 				return e
 			}
-			r, e := deploy.PublishDirect(ctx, s.m, id, child, o)
+			r, e := s.deployService().PublishDirect(ctx, s.m, id, child, o)
 			if e != nil {
 				return e
 			}

@@ -141,11 +141,15 @@ func (d Deps) discoveryService(ctx context.Context) (*discovery.Service, error) 
 	return discovery.New(discovery.Options{Repo: r, Agents: d.Agents, Traffic: d.Traffic}), nil
 }
 
-func (d Deps) loadPreview(m *core.Manager, previewID, agentID string) (*deploy.Preview, error) {
+func (d Deps) deployService() *deploy.Service {
 	if d.Deploy != nil {
-		return d.Deploy.LoadPreview(m, previewID, agentID)
+		return d.Deploy
 	}
-	return deploy.LoadPreview(m, previewID, agentID)
+	return deploy.New(deploy.Options{})
+}
+
+func (d Deps) loadPreview(m *core.Manager, previewID, agentID string) (*deploy.Preview, error) {
+	return d.deployService().LoadPreview(m, previewID, agentID)
 }
 
 func (d Deps) followHost(ctx context.Context, m *core.Manager, a *model.Agent, host string) error {

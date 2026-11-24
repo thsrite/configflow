@@ -57,7 +57,7 @@ func TestPublishChild(t *testing.T) {
 	defer signal.Stop(sig)
 	done := make(chan error, 1)
 	go func() {
-		answer, e := PublishDirect(ctx, m, "publish-agent", b, PublishOptions{Activate: true})
+		answer, e := New(Options{}).PublishDirect(ctx, m, "publish-agent", b, PublishOptions{Activate: true})
 		if e == nil {
 			t.Logf("child outcome: %+v", resultView(fixtureTask(answer)))
 		}
@@ -150,7 +150,7 @@ func TestPublishProcessRecovery(t *testing.T) {
 					t.Fatal(answer, e)
 				}
 				// A process-local preparation key cannot survive death; the next task starts.
-				_, e = PublishDirect(f.ctx, f.m, "publish-agent", f.bundle(t, "after-crash"), PublishOptions{Activate: false})
+				_, e = New(Options{}).PublishDirect(f.ctx, f.m, "publish-agent", f.bundle(t, "after-crash"), PublishOptions{Activate: false})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -165,7 +165,7 @@ func TestPublishKeepsProductionUploadTimeout(t *testing.T) {
 	client := &observedPublishClient{next: agents.HTTPClient{}}
 	f.m.SetClient(client)
 	started := time.Now()
-	answer, e := PublishDirect(f.ctx, f.m, "publish-agent", f.bundle(t, "timeout"), PublishOptions{})
+	answer, e := New(Options{}).PublishDirect(f.ctx, f.m, "publish-agent", f.bundle(t, "timeout"), PublishOptions{})
 	if e != nil || resultView(fixtureTask(answer)).Status != "unknown" || !resultView(fixtureTask(answer)).Submitted {
 		t.Fatal(answer, e)
 	}

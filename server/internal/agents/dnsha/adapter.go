@@ -314,9 +314,6 @@ func pairFailureMessage(ctx context.Context, m *agents.Manager, e error) (string
 // Wire installs all cross-module hooks, with manager dispatch at the boundary.
 func Wire(m *agents.Manager) { ForManager(m) }
 func installHooks() {
-	deploy.SetPairPublication(func(ctx context.Context, m *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
-		return ForManager(m).PublishPair(ctx, id, b, o)
-	})
 	agents.RegisterHooks(agents.Hooks{
 		HADeployment: func(ctx context.Context, m *agents.Manager, id, did string) (*model.Deployment, error) {
 			return ForManager(m).PairDeployment(ctx, id, did)

@@ -195,7 +195,8 @@ func (s *Service) publishService(ctx context.Context, r *Record, service string)
 	if err != nil {
 		return nil, err
 	}
-	prepared, err := deploy.PrepareContent(ctx, s.Manager, target, source, deploy.PrepareOptions{BaseURL: r.ServerURL, DeploymentID: did, StoreDownloads: true})
+	dp := s.deployService()
+	prepared, err := dp.PrepareContent(ctx, s.Manager, target, source, deploy.PrepareOptions{BaseURL: r.ServerURL, DeploymentID: did, StoreDownloads: true})
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +213,7 @@ func (s *Service) publishService(ctx context.Context, r *Record, service string)
 		}
 	}
 	profile, kind := r.ProfileID, service
-	result, err := deploy.Push(ctx, s.Manager, a.ID, deploy.PushInput{ConfigContent: prepared.ConfigContent, Bundle: prepared.Bundle, Publish: deploy.PublishOptions{Activate: true, ConfigRevision: &deploy.Revision{Value: r.ConfigRevision}, BaseURL: r.ServerURL, ResourceConfig: source, SourceSnapshot: source}, ExpectedProfileID: &profile, ExpectedServiceType: &kind})
+	result, err := dp.Push(ctx, s.Manager, a.ID, deploy.PushInput{ConfigContent: prepared.ConfigContent, Bundle: prepared.Bundle, Publish: deploy.PublishOptions{Activate: true, ConfigRevision: &deploy.Revision{Value: r.ConfigRevision}, BaseURL: r.ServerURL, ResourceConfig: source, SourceSnapshot: source}, ExpectedProfileID: &profile, ExpectedServiceType: &kind})
 	if err != nil {
 		return nil, err
 	}

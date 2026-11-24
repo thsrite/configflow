@@ -57,7 +57,7 @@ func (h *Handler) generateArtifact(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	artifact, err := deploy.GenerateArtifact(c.Context(), m, c.ProfileID, engine, base)
+	artifact, err := h.deployService().GenerateArtifact(c.Context(), m, c.ProfileID, engine, base)
 	if err != nil {
 		return failure(engine, err, false)
 	}

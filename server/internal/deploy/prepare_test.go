@@ -71,7 +71,7 @@ func TestPythonPrepare(t *testing.T) {
 					t.Fatal("pull digest inconsistent")
 				}
 			}
-			p, e := PrepareContent(ctx, m, target, src, PrepareOptions{BaseURL: "https://panel.example.com", DeploymentID: "prepare-corpus"})
+			p, e := New(Options{}).PrepareContent(ctx, m, target, src, PrepareOptions{BaseURL: "https://panel.example.com", DeploymentID: "prepare-corpus"})
 			if row.Error != "" {
 				if e == nil {
 					t.Fatal("accepted Python rejection")

@@ -215,7 +215,10 @@ func (f *fixture) publish(t *testing.T, id, did string, activate bool) *model.De
 		t.Fatal(e)
 	}
 	b := f.bundle(t, id, did, false)
-	result, e := deploy.Publish(f.ctx, f.m, id, b, deploy.PublishOptions{Activate: activate, SourceSnapshot: src, ResourceConfig: src, ConfigRevision: rev, BaseURL: "https://panel.example"})
+	dp := deploy.New(deploy.Options{Pair: func(ctx context.Context, _ *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
+		return f.s.PublishPair(ctx, id, b, o)
+	}})
+	result, e := dp.Publish(f.ctx, f.m, id, b, deploy.PublishOptions{Activate: activate, SourceSnapshot: src, ResourceConfig: src, ConfigRevision: rev, BaseURL: "https://panel.example"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -328,7 +331,7 @@ func TestInitialEnableCapturesOneSource(t *testing.T) {
 	count := 0
 	f := fixtureNew(t, Options{Prepare: func(ctx context.Context, m *agents.Manager, target deploy.Target, src *deploy.Source, o deploy.PrepareOptions) (*deploy.Prepared, error) {
 		count++
-		return deploy.PrepareContent(ctx, m, target, src, o)
+		return deploy.New(deploy.Options{}).PrepareContent(ctx, m, target, src, o)
 	}}, false, nil)
 	out, e := f.s.Configure(f.ctx, "primary", []byte(`{"peer_id":"secondary","vip":"192.0.2.53"}`), "https://panel.example")
 	if e != nil {

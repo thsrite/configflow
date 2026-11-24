@@ -565,7 +565,7 @@ func reportedCore(ctx context.Context, t Target) string {
 		return status
 	})
 }
-func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source, o PrepareOptions) (*Prepared, error) {
+func (ds *Service) prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source, o PrepareOptions) (*Prepared, error) {
 	if s == nil {
 		return nil, preparation("Missing profile snapshot")
 	}
@@ -655,7 +655,10 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 			}}
 			if o.PreferCached {
 				opts.SubscriptionFetch = func(ctx context.Context, id, url string) (*refresh.SourceResult, error) {
-					sub := Default().substore
+					var sub *substore.Service
+					if ds != nil {
+						sub = ds.substore
+					}
 					if sub == nil {
 						return nil, errors.New("deploy: substore service is nil")
 					}
@@ -666,10 +669,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 					return &refresh.SourceResult{Text: result.Text, Source: result.Source, FetchedAt: result.FetchedAt, Traffic: refreshTraffic(result.Traffic)}, nil
 				}
 			}
-			pv := Default().provider
-			if pv == nil {
-				pv = provider.New(provider.Options{Repo: m.Repository(), SubStore: Default().substore, Locations: Locations{}})
-			}
+			pv := ds.providerFor(m)
 			p.Providers, e = pv.PrepareBundle(convert.WithConversions(ctx, conversions, false), cfg, main, opts)
 			if e != nil {
 				return nil, e

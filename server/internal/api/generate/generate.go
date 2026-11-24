@@ -64,7 +64,7 @@ func (h *Handler) deployService() *deploy.Service {
 	if h != nil && h.deploy != nil {
 		return h.deploy
 	}
-	return deploy.Default()
+	return deploy.New(deploy.Options{})
 }
 
 // Register installs five generators and previews with their profile aliases.

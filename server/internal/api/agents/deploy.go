@@ -90,7 +90,7 @@ func (h *deployHandler) pushAgentConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	proto, _ := c.Header("X-Forwarded-Proto")
 	host, _ := c.Header("X-Forwarded-Host")
-	return deployResponse(deploy.PushConfig(c.Context(), m, c.Param("agent_id"), deploy.PushRequest{Body: body, Scheme: c.Scheme(), Host: c.Host(), ForwardedProto: proto, ForwardedHost: host}))
+	return deployResponse(h.deps.deployService().PushConfig(c.Context(), m, c.Param("agent_id"), deploy.PushRequest{Body: body, Scheme: c.Scheme(), Host: c.Host(), ForwardedProto: proto, ForwardedHost: host}))
 }
 func (h *deployHandler) generateAgentFinal(c *httpx.Ctx) (*httpx.Response, error) {
 	m, e := h.deps.manager(c.Context())
@@ -101,7 +101,7 @@ func (h *deployHandler) generateAgentFinal(c *httpx.Ctx) (*httpx.Response, error
 	if !c.BindSilent(&body) {
 		body = json.RawMessage("null")
 	}
-	return deployResponse(deploy.GenerateFinal(c.Context(), m, c.Param("agent_id"), deploy.GenerateRequest{Body: body, HostURL: c.HostURL()}))
+	return deployResponse(h.deps.deployService().GenerateFinal(c.Context(), m, c.Param("agent_id"), deploy.GenerateRequest{Body: body, HostURL: c.HostURL()}))
 }
 func (h *deployHandler) deploymentAction(action string) httpx.HandlerFunc {
 	return func(c *httpx.Ctx) (*httpx.Response, error) {

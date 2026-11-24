@@ -197,11 +197,12 @@ func newFixture(t *testing.T, o Options, targetOptions agentfake.Options) *fixtu
 	if e != nil {
 		t.Fatal(e)
 	}
-	p, e := deploy.PrepareContent(ctx, m, a.target, src, deploy.PrepareOptions{BaseURL: "https://panel.example", DeploymentID: "target-baseline"})
+	dp := deploy.New(deploy.Options{})
+	p, e := dp.PrepareContent(ctx, m, a.target, src, deploy.PrepareOptions{BaseURL: "https://panel.example", DeploymentID: "target-baseline"})
 	if e != nil {
 		t.Fatal(e)
 	}
-	result, e := deploy.Publish(ctx, m, "target", p.Bundle, deploy.PublishOptions{Activate: true, ConfigRevision: revision, BaseURL: "https://panel.example", ResourceConfig: src, SourceSnapshot: src})
+	result, e := dp.Publish(ctx, m, "target", p.Bundle, deploy.PublishOptions{Activate: true, ConfigRevision: revision, BaseURL: "https://panel.example", ResourceConfig: src, SourceSnapshot: src})
 	if e == nil && result.Status == "verifying" {
 		result, e = m.GetDeploymentModel(ctx, "target", "target-baseline")
 	}
@@ -225,7 +226,7 @@ func (f *fixture) publishSource(t *testing.T, id string) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	r, e := deploy.Publish(f.ctx, f.m, "source", b, deploy.PublishOptions{Activate: true, ConfigRevision: revision, BaseURL: "https://panel.example", ResourceConfig: src, SourceSnapshot: src})
+	r, e := deploy.New(deploy.Options{}).Publish(f.ctx, f.m, "source", b, deploy.PublishOptions{Activate: true, ConfigRevision: revision, BaseURL: "https://panel.example", ResourceConfig: src, SourceSnapshot: src})
 	if e == nil && r.Status == "verifying" {
 		r, e = f.m.GetDeploymentModel(f.ctx, "source", id)
 	}
@@ -301,7 +302,7 @@ func TestUnchangedVerifiedAddressSkipsPreparation(t *testing.T) {
 	calls := 0
 	f := newFixture(t, Options{Prepare: func(ctx context.Context, m *agents.Manager, a deploy.Target, s *deploy.Source, o deploy.PrepareOptions) (*deploy.Prepared, error) {
 		calls++
-		return deploy.PrepareContent(ctx, m, a, s, o)
+		return deploy.New(deploy.Options{}).PrepareContent(ctx, m, a, s, o)
 	}}, agentfake.Options{})
 	f.bind(t)
 	f.source.mu.Lock()

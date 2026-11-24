@@ -75,9 +75,7 @@ func newGenerateServices(r *repo.Repository, rt *lifecycle.Runtime, tk *tasks.Re
 // instance is also installed as deploy.Default() for callers not yet migrated
 // (api/agents until W10). Nil options keep the fail-closed defaults.
 func newDeployService(opts deploy.Options) *deploy.Service {
-	dp := deploy.New(opts)
-	deploy.UseService(dp)
-	return dp
+	return deploy.New(opts)
 }
 
 func wireConvertOnce(r *repo.Repository, gen *generateServices) error {

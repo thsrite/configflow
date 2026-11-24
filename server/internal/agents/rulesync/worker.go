@@ -664,7 +664,7 @@ func (w *worker) publish(ctx context.Context, record *model.Agent, a *model.Agen
 	if e = ctx.Err(); e != nil {
 		return e
 	}
-	result, e := deploy.Publish(ctx, s.m, a.ID, bundle, deploy.PublishOptions{Activate: true, BaseURL: baseline.Receipt.BaseURL, ResourceConfig: source, SourceSnapshot: source})
+	result, e := s.deployService().Publish(ctx, s.m, a.ID, bundle, deploy.PublishOptions{Activate: true, BaseURL: baseline.Receipt.BaseURL, ResourceConfig: source, SourceSnapshot: source})
 	if e != nil {
 		return e
 	}

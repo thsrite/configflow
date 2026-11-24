@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"configflow/internal/agents"
+	"configflow/internal/deploy"
 	"configflow/internal/gateway/host"
 	"configflow/internal/installer"
 	"configflow/internal/lifecycle"
@@ -35,8 +36,16 @@ var logger = logx.Get("backend.agents.gateway_installation")
 type Service struct {
 	Repository *repo.Repository
 	Manager    *agents.Manager
+	Deploy     *deploy.Service
 	Spawner    lockx.Spawner
 	Render     func(installer.GatewayInstallOptions) (string, error)
+}
+
+func (s *Service) deployService() *deploy.Service {
+	if s != nil && s.Deploy != nil {
+		return s.Deploy
+	}
+	return deploy.New(deploy.Options{})
 }
 
 func (s *Service) now(ctx context.Context) time.Time { return lifecycle.ClockFrom(ctx).Now() }

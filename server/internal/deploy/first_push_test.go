@@ -78,9 +78,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			pv := provider.New(provider.Options{Repo: f.m.Repository(), SubStore: sub, Locations: Locations{}})
 			aggSvc := aggregations.New(aggregations.ServiceOptions{Provider: pv, Repo: f.m.Repository(), SubStore: sub})
 			_ = pv.SetAggregations(aggSvc.RenderProvider)
-			prevDeploy := Default()
-			UseService(New(Options{SubStore: sub, Provider: pv}))
-			defer UseService(prevDeploy)
+			dp := New(Options{SubStore: sub, Provider: pv})
 			mihomoenv.OverrideForTest(t, f.m.Repository(), sub, pv)
 			rawSource, err := f.source.Raw()
 			if err != nil {
@@ -105,7 +103,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 				cfg["subscription_aggregations"].([]any)[0].(map[string]any)["nodes"] = []any{"member-node"}
 			}
 			if tc.cached {
-				pre, e := PrepareContent(f.ctx, f.m, mustTarget(t, f), testSource(t, cfg), PrepareOptions{BaseURL: "https://panel.example.com", DeploymentID: "warm", StoreDownloads: true})
+				pre, e := dp.PrepareContent(f.ctx, f.m, mustTarget(t, f), testSource(t, cfg), PrepareOptions{BaseURL: "https://panel.example.com", DeploymentID: "warm", StoreDownloads: true})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -121,7 +119,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 				oldCfg := cloneMap(t, cfg)
 				oldCfg["subscriptions"] = []any{old}
 				oldCfg["proxy_groups"] = []any{map[string]any{"id": "g", "name": "Proxy", "type": "select", "subscriptions": []any{"other-sub"}}}
-				_, e := PrepareContent(f.ctx, f.m, mustTarget(t, f), testSource(t, oldCfg), PrepareOptions{BaseURL: "https://panel.example.com", StoreDownloads: true})
+				_, e := dp.PrepareContent(f.ctx, f.m, mustTarget(t, f), testSource(t, oldCfg), PrepareOptions{BaseURL: "https://panel.example.com", StoreDownloads: true})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -139,7 +137,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 				Phase:   func(m string) { progressMu.Lock(); forced = append(forced, m); progressMu.Unlock() },
 				Message: func(m string) { progressMu.Lock(); unforced = append(unforced, m); progressMu.Unlock() },
 			}
-			p, e := PrepareContent(f.ctx, f.m, mustTarget(t, f), source, PrepareOptions{BaseURL: "https://panel.example.com", DeploymentID: "first", StoreDownloads: true, Progress: progress})
+			p, e := dp.PrepareContent(f.ctx, f.m, mustTarget(t, f), source, PrepareOptions{BaseURL: "https://panel.example.com", DeploymentID: "first", StoreDownloads: true, Progress: progress})
 			// A14 review L1: per-provider details are throttled like Python's
 			// unforced phase_progress; only the graph validation is forced.
 			progressMu.Lock()
@@ -187,7 +185,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 					t.Fatalf("URI conversion was not reused through rerender: inline=%d member=%d", one, two)
 				}
 			}
-			candidate, e := PrepareContentBundle(f.ctx, f.m, mustTarget(t, f), source, "https://panel.example.com", "check-first")
+			candidate, e := dp.PrepareContentBundle(f.ctx, f.m, mustTarget(t, f), source, "https://panel.example.com", "check-first")
 			if e != nil {
 				t.Fatal(e)
 			}

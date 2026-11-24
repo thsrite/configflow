@@ -136,7 +136,7 @@ func TestNewAppGatewayGuardBlocksFullTunPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, m, fake := newGatewayGuardFixture(t, cfg)
-	response := deploy.PushConfig(ctx, m, "gw", deploy.PushRequest{Body: []byte(`{"deployment_id":"guarded"}`), Scheme: "https", Host: "panel.example.com"})
+	response := deploy.New(deploy.Options{}).PushConfig(ctx, m, "gw", deploy.PushRequest{Body: []byte(`{"deployment_id":"guarded"}`), Scheme: "https", Host: "panel.example.com"})
 	if response.Err != nil {
 		t.Fatal(response.Err)
 	}

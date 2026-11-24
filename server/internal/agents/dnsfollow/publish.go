@@ -376,7 +376,7 @@ func (s *Service) run(ctx context.Context, target, source *agent, b *model.DNSFo
 	if _, _, e = s.saveState(ctx, target.ID, "publishing", msgPublishing, statePatch{}, nil); e != nil {
 		return e
 	}
-	if _, e = deploy.Publish(ctx, s.m, target.ID, candidate.Bundle, deploy.PublishOptions{Activate: true, ConfigRevision: revision, BaseURL: base.BaseURL, ResourceConfig: candidateSource, SourceSnapshot: candidateSource}); e != nil {
+	if _, e = s.deployService().Publish(ctx, s.m, target.ID, candidate.Bundle, deploy.PublishOptions{Activate: true, ConfigRevision: revision, BaseURL: base.BaseURL, ResourceConfig: candidateSource, SourceSnapshot: candidateSource}); e != nil {
 		return e
 	}
 	current, e := s.get(ctx, target.ID)

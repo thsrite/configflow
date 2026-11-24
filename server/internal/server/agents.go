@@ -45,7 +45,16 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	if opts.Repo == nil {
 		// NewApp() test path: no Manager instance, so the deploy Service and
 		// the Manager receipt check use the package-level fallbacks.
-		gen.deploy = newDeployService(deploy.Options{SubStore: gen.substore})
+		gen.deploy = newDeployService(deploy.Options{
+			Pair: func(ctx context.Context, m *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
+				return dnsha.ForManager(m).PublishPair(ctx, id, b, o)
+			},
+			IPv6: func(ctx context.Context, m *agents.Manager, id, did string, src *deploy.Source) error {
+				return agentipv6.NewService(m, apiagents.ContentChecker).EnrollSource(ctx, m, id, did, src)
+			},
+			SubStore: gen.substore,
+			Provider: gen.provider,
+		})
 		agents.RegisterHooks(agents.Hooks{ReceiptMatches: deploy.ReceiptMatches})
 		rulesync.WireOn(rt)
 		// Finished rule-source refreshes wake the package rule-sync loop, on
@@ -122,6 +131,9 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 		SubStore: gen.substore,
 		Provider: gen.provider,
 	})
+	ha.Deploy = gen.deploy
+	follow.Deploy = gen.deploy
+	rsync.Deploy = gen.deploy
 
 	// Transitional boundary bridge for packages not yet migrated to explicit
 	// service injection (W10 api handlers). The monitor bridge dispatches

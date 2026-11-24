@@ -53,7 +53,7 @@ func TestManualArtifactRuntime(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				artifact, err := GenerateArtifact(ctx, m, "default", engine, "https://panel.example.com")
+				artifact, err := New(Options{}).GenerateArtifact(ctx, m, "default", engine, "https://panel.example.com")
 				if shutdown {
 					if !errors.Is(err, context.Canceled) {
 						t.Fatalf("shutdown result: %v", err)
@@ -67,7 +67,7 @@ func TestManualArtifactRuntime(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					pv, err := LoadPreview(m, artifact.ID, "manual")
+					pv, err := New(Options{}).LoadPreview(m, artifact.ID, "manual")
 					if err != nil || pv.ConfigRevision == nil || pv.ProfileID != "default" {
 						t.Fatalf("disconnect lost artifact: %v", err)
 					}
@@ -96,14 +96,14 @@ func TestManualArtifactUsesOwnerRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := repo.WithRepository(ctx, foreign.Repository())
-	artifact, err := GenerateArtifact(request, m, "default", configgen.Surge, "")
+	artifact, err := New(Options{}).GenerateArtifact(request, m, "default", configgen.Surge, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(artifact.Content, "foreign-profile-secret") {
 		t.Fatal("foreign repository leaked")
 	}
-	pv, err := LoadPreview(m, artifact.ID, "manual")
+	pv, err := New(Options{}).LoadPreview(m, artifact.ID, "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestManualArtifactUsesOwnerRepository(t *testing.T) {
 	if err := json.Unmarshal(pv.Source, &source); err != nil || source.ProfileID != artifact.ProfileID {
 		t.Fatal("source/profile mismatch", err)
 	}
-	if _, err := LoadPreview(foreign, artifact.ID, "manual"); err == nil {
+	if _, err := New(Options{}).LoadPreview(foreign, artifact.ID, "manual"); err == nil {
 		t.Fatal("preview leaked across repositories")
 	}
 }
@@ -126,7 +126,8 @@ func TestManualArtifactShutdownBeforePreviewCommit(t *testing.T) {
 	base, m := artifactManager(t)
 	startGlobalPublishRuntime(t, base)
 	ctx := lifecycle.BindRequest(base)
-	owner := previewsFor(m)
+	svc := New(Options{})
+	owner := svc.PreviewsFor(m)
 	owner.mu.Lock()
 	locked := true
 	defer func() {
@@ -135,7 +136,7 @@ func TestManualArtifactShutdownBeforePreviewCommit(t *testing.T) {
 		}
 	}()
 	done := make(chan error, 1)
-	go func() { _, err := GenerateArtifact(ctx, m, "default", configgen.Surge, ""); done <- err }()
+	go func() { _, err := svc.GenerateArtifact(ctx, m, "default", configgen.Surge, ""); done <- err }()
 	// The existing generator's committed file proves the new request has
 	// passed rendering. Holding the real leaf lock fences the next commit.
 	path := filepath.Join(m.Repository().DataDir(), "profiles", "default", "generated", "config.conf")

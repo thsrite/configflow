@@ -50,29 +50,6 @@ func New(opts Options) *Service {
 	}
 }
 
-var (
-	defaultSvcMu   sync.RWMutex
-	defaultService = New(Options{})
-)
-
-// Default returns the process default deploy Service (transitional helper
-// until W5/W6/W11 remove package-level wiring).
-func Default() *Service {
-	defaultSvcMu.RLock()
-	defer defaultSvcMu.RUnlock()
-	return defaultService
-}
-
-// UseService installs svc as the process default deploy Service.
-func UseService(svc *Service) {
-	if svc == nil {
-		return
-	}
-	defaultSvcMu.Lock()
-	defaultService = svc
-	defaultSvcMu.Unlock()
-}
-
 // Validate reports a required collaborator that server wiring left unset: the
 // HA pair publisher (without it every HA member fails closed) and the IPv6
 // enrollment (without it publications silently skip IPv6 readiness).
@@ -93,33 +70,23 @@ func (s *Service) pairPublisher() PairPublisher {
 }
 
 func (s *Service) ipv6Enroller() IPv6Enroller {
+	if s == nil {
+		return nil
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.ipv6
 }
 
-func (s *Service) setPairPublication(fn PairPublisher) func() {
-	s.mu.Lock()
-	old := s.pair
-	s.pair = fn
-	s.mu.Unlock()
-	return func() {
-		s.mu.Lock()
-		s.pair = old
-		s.mu.Unlock()
+func (s *Service) providerFor(m *agents.Manager) *provider.Service {
+	if s != nil && s.provider != nil {
+		return s.provider
 	}
-}
-
-func (s *Service) setIPv6Enroll(fn IPv6Enroller) func() {
-	s.mu.Lock()
-	old := s.ipv6
-	s.ipv6 = fn
-	s.mu.Unlock()
-	return func() {
-		s.mu.Lock()
-		s.ipv6 = old
-		s.mu.Unlock()
+	var sub *substore.Service
+	if s != nil {
+		sub = s.substore
 	}
+	return provider.New(provider.Options{Repo: m.Repository(), SubStore: sub, Locations: Locations{}})
 }
 
 // PreviewsFor returns the Manager-owned immutable preview store on s.

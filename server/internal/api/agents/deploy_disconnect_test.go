@@ -16,14 +16,15 @@ func TestDeployOwnersFinishDisconnectedRequests(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(s.Context())
 	cancel()
-	generated := deploy.GenerateFinal(ctx, m, "publish-agent", deploy.GenerateRequest{Body: []byte(`{"expected_profile_id":"default","expected_service_type":"mihomo","base_url":"https://panel.example.com"}`), HostURL: "https://panel.example.com"})
+	dp := deploy.New(deploy.Options{})
+	generated := dp.GenerateFinal(ctx, m, "publish-agent", deploy.GenerateRequest{Body: []byte(`{"expected_profile_id":"default","expected_service_type":"mihomo","base_url":"https://panel.example.com"}`), HostURL: "https://panel.example.com"})
 	if generated.Err != nil || generated.Status != 200 {
 		t.Fatal(generated)
 	}
 	body := generated.Body.(map[string]any)
 	key := body["id"].(string)
 	raw, _ := json.Marshal(map[string]any{"generation_id": key, "restart": false})
-	pushed := deploy.PushConfig(ctx, m, "publish-agent", deploy.PushRequest{Body: raw, Scheme: "https", Host: "panel.example.com"})
+	pushed := dp.PushConfig(ctx, m, "publish-agent", deploy.PushRequest{Body: raw, Scheme: "https", Host: "panel.example.com"})
 	if pushed.Err != nil || pushed.Status != 202 {
 		t.Fatal(pushed)
 	}

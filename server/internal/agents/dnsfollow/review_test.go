@@ -196,13 +196,12 @@ func TestDeviceAndSourceNamesFollowStoredRecord(t *testing.T) {
 func TestPreparationFailureRecordHidesOtherAgentCredentials(t *testing.T) {
 	f := newFixture(t, Options{}, agentfake.Options{})
 	f.bind(t)
-	restore := deploy.SetPairPublication(func(_ context.Context, _ *agents.Manager, id string, _ *deploy.Bundle, _ deploy.PublishOptions) (*model.Deployment, bool, error) {
+	f.s.Deploy = deploy.New(deploy.Options{Pair: func(_ context.Context, _ *agents.Manager, id string, _ *deploy.Bundle, _ deploy.PublishOptions) (*model.Deployment, bool, error) {
 		if id != "target" {
 			return nil, false, nil
 		}
 		return nil, false, &deploy.Refusal{Message: "peer refused " + f.source.token}
-	})
-	defer restore()
+	}})
 	f.publishSource(t, "source-next")
 	if e := f.s.Tick(f.ctx); e != nil {
 		t.Fatal(e)

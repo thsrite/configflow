@@ -65,7 +65,7 @@ func TestPythonPublishTranscripts(t *testing.T) {
 				var result any
 				switch action {
 				case "publish":
-					result, e = PublishDirect(goSide.ctx, goSide.m, "publish-agent", b, PublishOptions{Activate: tc.activate, ConfigRevision: &Revision{Value: 7}, SourceSnapshot: goSide.source, BaseURL: "https://panel.example.com"})
+					result, e = New(Options{}).PublishDirect(goSide.ctx, goSide.m, "publish-agent", b, PublishOptions{Activate: tc.activate, ConfigRevision: &Revision{Value: 7}, SourceSnapshot: goSide.source, BaseURL: "https://panel.example.com"})
 				case "poll":
 					result, e = goSide.m.GetDeploymentModel(goSide.ctx, "publish-agent", "oracle")
 				case "activate":

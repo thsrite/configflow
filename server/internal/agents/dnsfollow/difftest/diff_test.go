@@ -211,7 +211,7 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 		}
 		var bundle *deploy.Bundle
 		if baseline {
-			p, e := deploy.PrepareContent(ctx, m, tgt, src, deploy.PrepareOptions{BaseURL: "https://panel.example", DeploymentID: ident})
+			p, e := deploy.New(deploy.Options{}).PrepareContent(ctx, m, tgt, src, deploy.PrepareOptions{BaseURL: "https://panel.example", DeploymentID: ident})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -222,7 +222,7 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 				t.Fatal(e)
 			}
 		}
-		r, e := deploy.Publish(ctx, m, id, bundle, deploy.PublishOptions{Activate: true, ConfigRevision: &deploy.Revision{Value: rev}, BaseURL: "https://panel.example", ResourceConfig: src, SourceSnapshot: src})
+		r, e := deploy.New(deploy.Options{}).Publish(ctx, m, id, bundle, deploy.PublishOptions{Activate: true, ConfigRevision: &deploy.Revision{Value: rev}, BaseURL: "https://panel.example", ResourceConfig: src, SourceSnapshot: src})
 		if e == nil && r.Status == "verifying" {
 			r, e = m.GetDeploymentModel(ctx, id, ident)
 		}
