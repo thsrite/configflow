@@ -52,7 +52,7 @@ func (h *deployHandler) getAgentConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := deploy.GenerateAgentConfig(c.Context(), source, target, strings.TrimRight(c.URLRoot(), "/"))
+	result, err := deploy.GenerateAgentConfig(c.Context(), m.Repository().DataDir(), source, target, strings.TrimRight(c.URLRoot(), "/"))
 	if err != nil {
 		var strategy *rules.StrategyReferenceError
 		if errors.As(err, &strategy) {

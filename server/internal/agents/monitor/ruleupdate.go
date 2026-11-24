@@ -13,7 +13,6 @@ import (
 	"errors"
 	"regexp"
 	"slices"
-	"sync"
 
 	"configflow/internal/agents"
 	"configflow/internal/jsondecode"
@@ -107,7 +106,15 @@ func decodeRuleTask(raw json.RawMessage) (*RuleTask, error) {
 }
 
 // CallRuleUpdate starts or reads a rule update with typed request and reply DTOs.
+// Unwired HA pairs fail closed with ErrHARulesNotPorted; production callers use
+// (*Service).CallRuleUpdate.
 func CallRuleUpdate(ctx context.Context, m Registry, id, method string, paths []string) (*RuleUpdateResult, int, error) {
+	return (*Service)(nil).CallRuleUpdate(ctx, m, id, method, paths)
+}
+
+// CallRuleUpdate starts or reads a rule update with typed request and reply DTOs,
+// dispatching paired OxiDNS Agents through s's wired HA rules owner.
+func (s *Service) CallRuleUpdate(ctx context.Context, m Registry, id, method string, paths []string) (*RuleUpdateResult, int, error) {
 	if method != "GET" && method != "POST" || paths != nil && (method != "POST" || len(paths) == 0 || len(paths) > RuleUpdateMaxPaths) {
 		return nil, 0, RuleUpdateFail("INVALID_REQUEST", 400)
 	}
@@ -140,7 +147,7 @@ func CallRuleUpdate(ctx context.Context, m Registry, id, method string, paths []
 		return nil, 0, NewError("SERVICE_BUSY", 409, msgHARulesBusy)
 	}
 	if paired {
-		raw, status, err := pairRules(ctx, m, id, method)
+		raw, status, err := s.PairRules(ctx, m, id, method)
 		var busy *HABusyError
 		if errors.As(err, &busy) {
 			return nil, 0, NewError("SERVICE_BUSY", 409, busy.Message)
@@ -242,33 +249,12 @@ type HABusyError struct{ Message string }
 
 func (e *HABusyError) Error() string { return e.Message }
 
-// ErrHARulesNotPorted is the default pair rule update until A18 (DNS HA)
-// registers oxidns_ha_publish.rules with SetHARulesJSON.
+// ErrHARulesNotPorted is the fail-closed error returned when no HA rules owner
+// has been wired onto monitor.Service.
 var ErrHARulesNotPorted = errors.New("oxidns_ha_publish.rules is not ported yet (A18)")
 
 // HARulesJSONFunc supplies the HA owner's native result through the registry.
 type HARulesJSONFunc func(context.Context, Registry, string, string) (json.RawMessage, int, error)
-
-var haJSONMu sync.RWMutex
-var haJSON HARulesJSONFunc
-
-// SetHARulesJSON installs the native pair-rule owner and returns a restoration function.
-func SetHARulesJSON(fn HARulesJSONFunc) func() {
-	haJSONMu.Lock()
-	previous := haJSON
-	haJSON = fn
-	haJSONMu.Unlock()
-	return func() { haJSONMu.Lock(); haJSON = previous; haJSONMu.Unlock() }
-}
-func pairRules(ctx context.Context, m Registry, id, method string) (json.RawMessage, int, error) {
-	haJSONMu.RLock()
-	fn := haJSON
-	haJSONMu.RUnlock()
-	if fn == nil {
-		return nil, 0, ErrHARulesNotPorted
-	}
-	return fn(ctx, m, id, method)
-}
 
 // SupportsRulePaths reports support using the original stored version token.
 func SupportsRulePaths(a *model.Agent) bool {

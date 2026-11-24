@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/agents"
 	"configflow/internal/instance"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
@@ -238,8 +239,13 @@ func TestReviewRankingLoopRunsUnderInstanceLock(t *testing.T) {
 	stamp := LastCompleteSlotEnd(nowSeconds()) - HistorySlot
 	addSlot(t, store, "removed-agent", "records", stamp, testSlot(1, i64(0), map[string]*Counts{"domains": NewCounts("example.com.", 1)}))
 	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
+	mgr, err := agents.New(ctx, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mgr.Close)
 	reg := lifecycle.NewRegistry()
-	spec := rankingPeriodic()
+	spec := rankingPeriodic(mgr)
 	original := spec.Round
 	rounds := make(chan struct{}, 3)
 	spec.Round = func(ctx context.Context) error {

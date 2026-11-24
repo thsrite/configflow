@@ -518,17 +518,17 @@ func TestIdentityUnknownFieldsAndSettingsCanonical(t *testing.T) {
 	b := a
 	b.Record = fixtureAgent(a.Record)
 	b.Record.ConfigVersion = "heartbeat"
-	if !bytes.Equal(AgentIdentity(a), AgentIdentity(b)) {
+	if !bytes.Equal(AgentIdentity("", a), AgentIdentity("", b)) {
 		t.Fatal("heartbeat changed target identity")
 	}
 	b.Record.Token = "rotated-token"
-	if bytes.Equal(AgentIdentity(a), AgentIdentity(b)) {
+	if bytes.Equal(AgentIdentity("", a), AgentIdentity("", b)) {
 		t.Fatal("rotation ignored")
 	}
 	if SettingsDigest(json.RawMessage(`{"b":{"x":1},"a":2}`)) != SettingsDigest(json.RawMessage(`{"a":2,"b":{"x":1}}`)) {
 		t.Fatal("noncanonical native digest")
 	}
-	if reflect.DeepEqual(AgentIdentity(a), AgentIdentity(b)) {
+	if reflect.DeepEqual(AgentIdentity("", a), AgentIdentity("", b)) {
 		t.Fatal("identities equal")
 	}
 }

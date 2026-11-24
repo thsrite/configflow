@@ -3,6 +3,7 @@ package deploy
 import (
 	"bytes"
 	"configflow/internal/convert"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 	"context"
@@ -19,6 +20,15 @@ import (
 	"testing"
 	"time"
 )
+
+func testRefresh(t *testing.T) *refresh.Service {
+	t.Helper()
+	r, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return refresh.New(refresh.Options{Repo: r})
+}
 
 func testContext(t *testing.T) context.Context {
 	t.Helper()
@@ -97,6 +107,7 @@ func TestPythonBuild(t *testing.T) {
 			for _, f := range row.Pinned {
 				in.PinnedFiles = append(in.PinnedFiles, PinnedFile{Path: f.Path, Content: []byte(f.Content), Role: f.Role})
 			}
+			in.Refresh = testRefresh(t)
 			b, err := Build(testContext(t), in)
 			if row.Error != "" {
 				if err == nil {

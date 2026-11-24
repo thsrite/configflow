@@ -110,7 +110,7 @@ func (h *panelHandler) updateOxidnsRules(c *httpx.Ctx) (*httpx.Response, error) 
 		if err != nil {
 			return nil, 0, err
 		}
-		return monitor.CallRuleUpdate(c.Context(), monitor.TypedFromAgents(manager), c.Param("agent_id"), c.Request.Method, nil)
+		return h.deps.Monitor.CallRuleUpdate(c.Context(), monitor.TypedFromAgents(manager), c.Param("agent_id"), c.Request.Method, nil)
 	}()
 	if err != nil {
 		answer, errStatus, ok := monitorAnswer(err)

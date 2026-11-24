@@ -111,7 +111,11 @@ func (d Deps) trafficStore(ctx context.Context) (*trafficstore.NativeStore, erro
 	if d.Traffic != nil {
 		return d.Traffic.Store(), nil
 	}
-	return trafficstore.GetNative(ctx)
+	r, err := d.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return trafficstore.NewService(r.DataDir()).Store(), nil
 }
 
 func (d Deps) probeStore(ctx context.Context) (*check.ProbeStore, error) {

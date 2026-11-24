@@ -181,6 +181,7 @@ func TestReviewBuildDownloadsAndJSONSources(t *testing.T) {
 			for _, d := range row.Downloads {
 				in.RulesetDownloads = append(in.RulesetDownloads, convert.ResourceDownload{Name: d.Name, URL: d.URL, LocalPath: d.LocalPath, Behavior: d.Behavior, Format: d.Format})
 			}
+			in.Refresh = testRefresh(t)
 			b, err := Build(testContext(t), in)
 			if row.Error != "" {
 				if err == nil {

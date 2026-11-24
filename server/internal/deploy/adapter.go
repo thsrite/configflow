@@ -416,7 +416,7 @@ func publicDeployment(record *model.Deployment) *model.Deployment {
 
 // AgentIdentity freezes fields that affect target adaptation, including the
 // reported Mihomo core. Canonical JSON is a transient native identity.
-func AgentIdentity(t Target) []byte {
+func AgentIdentity(dataDir string, t Target) []byte {
 	record := t.Record
 	if record == nil {
 		record = &model.Agent{ID: t.ID, ProfileID: t.ProfileID, ServiceType: t.ServiceType, Host: t.Host, Token: t.Token, Version: t.Version, DeploymentMethod: t.DeploymentMethod, DomainDiscoveryEnabled: &t.DomainDiscovery}
@@ -435,7 +435,7 @@ func AgentIdentity(t Target) []byte {
 		}
 		identity[key] = raw
 	}
-	core := reportedCore(context.Background(), Target{Record: record})
+	core := reportedCore(dataDir, Target{Record: record})
 	identity["core_version"] = json.RawMessage("null")
 	if core != "" {
 		identity["core_version"], _ = json.Marshal(core)
@@ -524,12 +524,12 @@ func (s *Source) githubSource(rawURL string) string {
 	return rawURL
 }
 
-func generateAgentConfig(ctx context.Context, s *Source, t Target, base string) (AgentConfig, error) {
+func generateAgentConfig(ctx context.Context, dataDir string, s *Source, t Target, base string) (AgentConfig, error) {
 	var text string
 	var err error
 	switch t.ServiceType {
 	case "", "mihomo":
-		text, err = convert.MihomoConfig(ctx, s.config(), convert.MihomoOptions{BaseURL: base, RegionProbe: t.DomainDiscovery, CoreVersion: coreVersionJSON(ctx, t), ForAgent: true})
+		text, err = convert.MihomoConfig(ctx, s.config(), convert.MihomoOptions{BaseURL: base, RegionProbe: t.DomainDiscovery, CoreVersion: coreVersionJSON(ctx, dataDir, t), ForAgent: true})
 	case "mosdns":
 		text, err = mosdns.Generate(s.config(), base)
 	case "oxidns":
@@ -547,14 +547,11 @@ func generateAgentConfig(ctx context.Context, s *Source, t Target, base string) 
 	hash := hex.EncodeToString(sum[:])
 	return AgentConfig{Content: text, MD5: hash, Version: hash[:8], ServiceType: t.ServiceType}, err
 }
-func reportedCore(ctx context.Context, t Target) string {
-	if t.Record == nil {
+func reportedCore(dataDir string, t Target) string {
+	if t.Record == nil || dataDir == "" {
 		return ""
 	}
-	store, err := trafficstore.GetNative(ctx)
-	if err != nil {
-		return ""
-	}
+	store := trafficstore.NewService(dataDir).Store()
 	raw, err := model.Marshal(t.Record)
 	if err != nil {
 		return ""
@@ -599,7 +596,7 @@ func (ds *Service) prepareContent(ctx context.Context, m *agents.Manager, t Targ
 		report := &convert.GenerationReport{}
 		generate := func(reuse bool) (*yamlx.Node, error) {
 			var e error
-			p.ConfigContent, e = convert.MihomoConfig(convert.WithConversions(ctx, conversions, reuse), cfg, convert.MihomoOptions{BaseURL: o.BaseURL, SyncLANHosts: true, SkipProviderPreflight: true, RegionProbe: t.DomainDiscovery, CoreVersion: coreVersionJSON(ctx, t), Report: report, ForAgent: true})
+			p.ConfigContent, e = convert.MihomoConfig(convert.WithConversions(ctx, conversions, reuse), cfg, convert.MihomoOptions{BaseURL: o.BaseURL, SyncLANHosts: true, SkipProviderPreflight: true, RegionProbe: t.DomainDiscovery, CoreVersion: coreVersionJSON(ctx, m.Repository().DataDir(), t), Report: report, ForAgent: true})
 			if e != nil {
 				return nil, e
 			}
@@ -1139,8 +1136,8 @@ func (s *Source) ViewConfig(fn func(*model.Config) error) error {
 	}
 	return fn(s.modelConfig)
 }
-func coreVersionJSON(ctx context.Context, t Target) json.RawMessage {
-	version := reportedCore(ctx, t)
+func coreVersionJSON(ctx context.Context, dataDir string, t Target) json.RawMessage {
+	version := reportedCore(dataDir, t)
 	if version != "" {
 		if _, ok := subs.CoreVersion(version); !ok {
 			safe := redact.DiagnosticText(version, []string{t.Token}, 120)

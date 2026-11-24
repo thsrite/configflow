@@ -197,7 +197,7 @@ func (p *Previews) Save(ctx context.Context, in PreviewInput) (*Preview, error) 
 			return nil, preparation("Missing or duplicate preview member identity")
 		}
 		seen[member.ID] = true
-		pv.Identities = append(pv.Identities, Identity{member.ID, AgentIdentity(member)})
+		pv.Identities = append(pv.Identities, Identity{member.ID, AgentIdentity(p.dataDir, member)})
 	}
 	var archive []byte
 	if in.Bundle != nil {
@@ -340,7 +340,7 @@ func (p *Previews) RequireCurrent(ctx context.Context, m *agents.Manager, pv *Pr
 		if err != nil {
 			return err
 		}
-		if !ok || !equalJSON(AgentIdentity(target), identity.Value) {
+		if !ok || !equalJSON(AgentIdentity(m.Repository().DataDir(), target), identity.Value) {
 			return &PreviewChanged{msgPreviewTargetChanged}
 		}
 	}

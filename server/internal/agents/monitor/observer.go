@@ -9,11 +9,13 @@ import (
 type publicationObserver struct{}
 
 func (publicationObserver) PublicationComplete(ctx context.Context, m *agents.Manager, agentID, deploymentID string, status any) error {
-	return completeHook(ctx, m, agentID, deploymentID, status)
+	value, _ := status.(string)
+	return CompleteStatistics(ctx, TypedFromAgents(m), agentID, deploymentID, value)
 }
 
 func (publicationObserver) PublicationCheckpoint(ctx context.Context, m *agents.Manager, agentID, deploymentID string, configSHA256 any) error {
-	return checkpointHook(ctx, m, agentID, deploymentID, configSHA256)
+	revision, _ := configSHA256.(string)
+	return CheckpointStatistics(ctx, TypedFromAgents(m), agentID, deploymentID, revision)
 }
 
 // PublicationObserver returns an agents.PublicationObserver backed by the

@@ -29,7 +29,7 @@ func NewService(m *agents.Manager, checker func(*agents.Manager) *contentsync.Ch
 func (s *Service) Loop() lifecycle.Periodic {
 	w := s.waker
 	if w == nil {
-		w = schedulerLoop
+		w = agents.NewWaker(5*time.Second, agents.IdleFallback)
 	}
 	return lifecycle.Periodic{
 		Name:       "ipv6-verification-scheduler",

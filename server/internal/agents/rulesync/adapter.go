@@ -273,8 +273,8 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 	link := "/agents"
 	return &tasks.Task{Key: key, Category: "agent_rule_sync", Name: name, ResourceID: id, Enabled: enabled, ScheduleText: msgRowSchedule, RunHint: msgRowHint, Running: enabled && state.Status == "running", StateMessage: stateMessage, Link: &link, HistoryData: history}, nil
 }
-func nativeCall(ctx context.Context, m *agents.Manager, id, method string, paths []string) (nativeTask, error) {
-	answer, _, err := monitor.CallRuleUpdate(ctx, monitor.TypedFromAgents(m), id, method, paths)
+func (s *Service) nativeCall(ctx context.Context, m *agents.Manager, id, method string, paths []string) (nativeTask, error) {
+	answer, _, err := s.monitor.CallRuleUpdate(ctx, monitor.TypedFromAgents(m), id, method, paths)
 	if err != nil {
 		return nativeTask{}, err
 	}

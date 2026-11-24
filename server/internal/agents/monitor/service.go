@@ -59,6 +59,9 @@ func (s *Service) MarkStarted() {
 // PairRules dispatches an HA rule update, failing closed with ErrHARulesNotPorted
 // when no HA rules owner was wired.
 func (s *Service) PairRules(ctx context.Context, m Registry, id, method string) (json.RawMessage, int, error) {
+	if s == nil {
+		return nil, 0, ErrHARulesNotPorted
+	}
 	s.mu.RLock()
 	fn := s.haRules
 	s.mu.RUnlock()
@@ -70,13 +73,15 @@ func (s *Service) PairRules(ctx context.Context, m Registry, id, method string) 
 
 // PublicationComplete records publication completion statistics.
 func (s *Service) PublicationComplete(ctx context.Context, m *agents.Manager, agentID, deploymentID string, status any) error {
-	return completeHook(ctx, m, agentID, deploymentID, status)
+	value, _ := status.(string)
+	return CompleteStatistics(ctx, TypedFromAgents(m), agentID, deploymentID, value)
 }
 
 // PublicationCheckpoint records publication checkpoint statistics.
 func (s *Service) PublicationCheckpoint(ctx context.Context, m *agents.Manager, agentID, deploymentID string, configSHA256 any) error {
-	return checkpointHook(ctx, m, agentID, deploymentID, configSHA256)
+	revision, _ := configSHA256.(string)
+	return CheckpointStatistics(ctx, TypedFromAgents(m), agentID, deploymentID, revision)
 }
 
-// Loop returns the periodic OxiDNS ranking history collection loop.
-func (s *Service) Loop() lifecycle.Periodic { return rankingPeriodic() }
+// Loop returns the periodic OxiDNS ranking history collection loop for m.
+func (s *Service) Loop(m *agents.Manager) lifecycle.Periodic { return rankingPeriodic(m) }

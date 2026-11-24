@@ -36,7 +36,6 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 	"configflow/internal/rules"
 )
 
@@ -534,15 +533,6 @@ func NewNative(dataDir string) *NativeStore {
 		return s.files.WriteContext(ctx, id, raw, true)
 	}
 	return s
-}
-
-// GetNative opens the domain-discovery store in the current repository.
-func GetNative(ctx context.Context) (*NativeStore, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return NewNative(filepath.Join(r.DataDir(), "traffic")), nil
 }
 
 // Path returns the safe per-Agent file path.

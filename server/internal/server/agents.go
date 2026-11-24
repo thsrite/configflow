@@ -65,8 +65,6 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 		dnsha.RegisterOn(rt)
 		metrics.WireOn(rt)
 		metrics.WireTraffic()
-		monitor.WireOn(rt)
-		wireIPv6On(rt)
 		if err := nt.SetAgents(agents.NotificationAgents); err != nil {
 			return nil, err
 		}
@@ -113,6 +111,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	follow := dnsfollow.New(m, dnsfollow.Options{})
 	dnsfollow.RegisterInstance(m, follow)
 	rsync := rulesync.New(m, nil, rulesync.Options{
+		Monitor: mon,
 		Pair: rulesync.PairHooks{
 			Advance:        func(ctx context.Context, id string) { _, _ = ha.Advance(ctx, id) },
 			FailureMessage: ha.PairFailureMessage,
@@ -137,11 +136,6 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	follow.Deploy = gen.deploy
 	rsync.Deploy = gen.deploy
 
-	// Transitional boundary bridge for packages not yet migrated to explicit
-	// service injection (W10 api handlers). The monitor bridge dispatches
-	// through mon so mon's two-phase HA owner is the only one.
-	monitor.SetHARulesJSON(mon.PairRules)
-
 	rt.RegisterPeriodic(rsync.Loop())
 	rt.RegisterPeriodic(follow.Loop())
 	rt.RegisterPeriodic(ha.Loop())
@@ -150,7 +144,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 		rt.RegisterShutdown(hook)
 	}
 	mt.RegisterTasks(tk)
-	rt.RegisterPeriodic(mon.Loop())
+	rt.RegisterPeriodic(mon.Loop(m))
 	rt.RegisterPeriodic(ip.Loop())
 
 	tk.SetRunner("dns_follow", follow.Runner())
@@ -171,8 +165,4 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 		rulesync:  rsync,
 		ipv6:      ip,
 	}, nil
-}
-
-func wireIPv6On(rt *lifecycle.Runtime) {
-	agentipv6.WireOn(rt, apiagents.ContentChecker)
 }

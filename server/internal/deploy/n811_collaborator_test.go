@@ -20,7 +20,7 @@ func TestN811MissingGenerationCollaboratorFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenerateAgentConfig(testContext(t), source, target, "https://panel.example.com")
+	_, err = GenerateAgentConfig(testContext(t), t.TempDir(), source, target, "https://panel.example.com")
 	var missing *convert.HookMissingError
 	if !errors.As(err, &missing) {
 		t.Fatalf("missing collaborator was skipped: %v", err)

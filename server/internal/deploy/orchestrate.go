@@ -235,7 +235,7 @@ func (s *Service) pushConfig(ctx context.Context, m *agents.Manager, id string, 
 		if generated != nil {
 			content = generated.ConfigContent
 		} else {
-			cfg, e := GenerateAgentConfig(ctx, source, t, base)
+			cfg, e := GenerateAgentConfig(ctx, m.Repository().DataDir(), source, t, base)
 			if e != nil {
 				return fail(e)
 			}
@@ -445,7 +445,7 @@ func (s *Service) GenerateFinal(ctx context.Context, m *agents.Manager, id strin
 		input := PreviewInput{Target: t, Source: src, ConfigRevision: revision, BaseURL: base, Members: members}
 		var prepared *Prepared
 		if t.ServiceType == "surge" {
-			generated, e := GenerateAgentConfig(ctx, src, t, base)
+			generated, e := GenerateAgentConfig(ctx, m.Repository().DataDir(), src, t, base)
 			if e != nil {
 				return fail(e)
 			}

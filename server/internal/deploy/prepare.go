@@ -55,8 +55,8 @@ func (s *Service) PrepareContentBundle(ctx context.Context, m *agents.Manager, t
 }
 
 // GenerateAgentConfig generates the legacy pull payload without creating a deployment.
-func GenerateAgentConfig(ctx context.Context, src *Source, t Target, baseURL string) (AgentConfig, error) {
-	return generateAgentConfig(ctx, src, t, baseURL)
+func GenerateAgentConfig(ctx context.Context, dataDir string, src *Source, t Target, baseURL string) (AgentConfig, error) {
+	return generateAgentConfig(ctx, dataDir, src, t, baseURL)
 }
 
 // Refusal is a safety guard refusal with a user-facing message.

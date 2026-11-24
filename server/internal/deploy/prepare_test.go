@@ -50,7 +50,7 @@ func TestPythonPrepare(t *testing.T) {
 		t.Run(row.Name, func(t *testing.T) {
 			src := testSource(t, row.Source)
 			target := testTarget(t, row.Agent)
-			pull, e := GenerateAgentConfig(ctx, src, target, "https://panel.example.com")
+			pull, e := GenerateAgentConfig(ctx, r.DataDir(), src, target, "https://panel.example.com")
 			if row.PullError != "" {
 				if e == nil || e.Error() != row.PullError {
 					t.Fatalf("pull %v, want %s", e, row.PullError)

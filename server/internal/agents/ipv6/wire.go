@@ -5,15 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync"
-	"time"
 
-	"configflow/internal/agents"
-	"configflow/internal/deploy/contentsync"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 )
 
 var logger = logx.Get("backend.agents.ipv6_verification")
@@ -170,58 +165,4 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 		}
 	}
 	return idle, nil
-}
-
-// Wire installs A14 enrollment and the Manager-init scheduler hook on the default runtime.
-func Wire(checker func(*agents.Manager) *contentsync.Checker) {
-	WireOn(lifecycle.Current(), checker)
-}
-
-// WireOn installs A14 enrollment and the Manager-init scheduler hook on rt.
-func WireOn(rt *lifecycle.Runtime, checker func(*agents.Manager) *contentsync.Checker) {
-	if rt == nil {
-		rt = lifecycle.Current()
-	}
-
-	agents.OnManagerInit(func(ctx context.Context, m *agents.Manager) {
-		owner := &schedulerOwner{service: &Service{Manager: m, Checker: checker}}
-		scheduler.Lock()
-		scheduler.owner = owner
-		scheduler.Unlock()
-		schedulerLoop.Watch(m, repo.ChangeConfig|repo.ChangeState, false)
-		m.OnClose(func() {
-			scheduler.Lock()
-			if scheduler.owner == owner {
-				scheduler.owner = nil
-			}
-			scheduler.Unlock()
-		})
-		rt.RegisterPeriodic(lifecycle.Periodic{Name: "ipv6-verification-scheduler", FirstDelay: 0, Interval: schedulerLoop.Interval, Wake: schedulerLoop.Signal(), Round: schedulerRound})
-	})
-}
-
-// schedulerLoop wakes the scheduler on configuration and Agent state
-// commits (a finished deployment requests a verification); while a
-// verification runs it checks every 5 seconds (design/o17-runtime-state.md 2.6).
-var schedulerLoop = agents.NewWaker(5*time.Second, agents.IdleFallback)
-
-type schedulerOwner struct {
-	service *Service
-}
-
-var scheduler struct {
-	sync.Mutex
-	owner *schedulerOwner
-}
-
-func schedulerRound(ctx context.Context) error {
-	scheduler.Lock()
-	owner := scheduler.owner
-	scheduler.Unlock()
-	if owner == nil {
-		return nil
-	}
-	idle, e := owner.service.Tick(ctx)
-	schedulerLoop.Done(e != nil || !idle)
-	return e
 }

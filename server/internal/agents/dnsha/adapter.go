@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"configflow/internal/agents"
-	"configflow/internal/agents/monitor"
 	"configflow/internal/agents/rulesync"
 	"configflow/internal/deploy"
 	"configflow/internal/logx"
@@ -326,22 +325,6 @@ func installHooks() {
 		},
 	})
 	rulesync.SetPairFailureMessage(pairFailureMessage)
-	monitor.SetHARulesJSON(func(ctx context.Context, m monitor.Registry, id, method string) (json.RawMessage, int, error) {
-		bridge, ok := m.(interface{ RegistryManager() *agents.Manager })
-		if !ok {
-			return nil, 0, errors.New("HA rules require registry manager")
-		}
-		real := bridge.RegistryManager()
-		r, code, e := ForManager(real).PairRules(ctx, id, method)
-		if IsUserError(e) {
-			return nil, 0, &monitor.HABusyError{Message: ForManager(real).FailureMessage(ctx, e)}
-		}
-		if e != nil {
-			return nil, code, e
-		}
-		raw, e := json.Marshal(r)
-		return raw, code, e
-	})
 }
 
 // RuleResult is the Agent rule-update envelope for an HA publication.

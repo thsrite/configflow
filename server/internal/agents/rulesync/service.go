@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"configflow/internal/agents"
+	"configflow/internal/agents/monitor"
 	"configflow/internal/deploy"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
@@ -26,18 +27,20 @@ type PairHooks struct {
 	FailureMessage func(context.Context, error) (string, bool)
 }
 
-// Options injects a wall clock, candidate preparation, and optional HA pair
-// callbacks for deterministic workers.
+// Options injects a wall clock, candidate preparation, monitor service, and
+// optional HA pair callbacks for deterministic workers.
 type Options struct {
 	Now     func() time.Time
 	Prepare PrepareFunc
 	Pair    PairHooks
+	Monitor *monitor.Service
 }
 
 // Service owns lightweight comparison memory and at most two concurrent workers.
 type Service struct {
 	m           *agents.Manager
 	Deploy      *deploy.Service
+	monitor     *monitor.Service
 	receipts    *deploy.Receipts
 	now         func() time.Time
 	prepare     PrepareFunc
@@ -73,6 +76,7 @@ func New(m *agents.Manager, r *deploy.Receipts, o Options) *Service {
 	}
 	return &Service{
 		m:           m,
+		monitor:     o.Monitor,
 		receipts:    r,
 		now:         o.Now,
 		prepare:     o.Prepare,

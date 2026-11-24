@@ -232,18 +232,20 @@ func TestRuleUpdateOfDNSHAPairs(t *testing.T) {
 	if _, _, err := CallRuleUpdate(ctx, m, "dns", "POST", nil); !errors.Is(err, ErrHARulesNotPorted) {
 		t.Fatal(err)
 	}
-	restore := SetHARulesJSON(func(_ context.Context, _ Registry, agentID, method string) (json.RawMessage, int, error) {
+	svc := New(t.TempDir())
+	if err := svc.SetHARules(func(_ context.Context, _ Registry, agentID, method string) (json.RawMessage, int, error) {
 		if method == "POST" {
 			return nil, 0, &HABusyError{"请先完整发布相同的主备配置，再更新规则"}
 		}
 		return mustMarshal(t, map[string]any{"success": true, "task": ruleTask("running")}), 202, nil
-	})
-	defer restore()
-	_, _, err = CallRuleUpdate(ctx, m, "dns", "POST", nil)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = svc.CallRuleUpdate(ctx, m, "dns", "POST", nil)
 	if e := wantMonitorError(t, err, "SERVICE_BUSY", 409); e.Message != "请先完整发布相同的主备配置，再更新规则" {
 		t.Fatal(e)
 	}
-	if _, status, err := CallRuleUpdate(ctx, m, "dns", "GET", nil); err != nil || status != 202 {
+	if _, status, err := svc.CallRuleUpdate(ctx, m, "dns", "GET", nil); err != nil || status != 202 {
 		t.Fatal(status, err)
 	}
 	if client.count() != 1 {

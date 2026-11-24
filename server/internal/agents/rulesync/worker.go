@@ -353,7 +353,7 @@ func mustString(s string) json.RawMessage     { raw, _ := json.Marshal(s); retur
 func stringsContains(text, part string) bool  { return strings.Contains(text, part) }
 func (w *worker) resumeNative(ctx context.Context, record *model.Agent, a *model.Agent, settings Settings, old *model.RuleSyncState, source *deploy.Source, key string) error {
 	s := w.s
-	task, e := nativeCall(ctx, s.m, a.ID, "GET", nil)
+	task, e := s.nativeCall(ctx, s.m, a.ID, "GET", nil)
 	if e != nil {
 		return e
 	}
@@ -493,7 +493,7 @@ func (w *worker) refresh(ctx context.Context, record *model.Agent, a *model.Agen
 			}
 		}
 	} else {
-		existing, e := nativeCall(ctx, s.m, a.ID, "GET", nil)
+		existing, e := s.nativeCall(ctx, s.m, a.ID, "GET", nil)
 		if e != nil {
 			return e
 		}
@@ -534,7 +534,7 @@ func (w *worker) refresh(ctx context.Context, record *model.Agent, a *model.Agen
 		if e != nil || !same {
 			return e
 		}
-		task, e := nativeCall(ctx, s.m, a.ID, "POST", paths)
+		task, e := s.nativeCall(ctx, s.m, a.ID, "POST", paths)
 		var nativeErr *monitor.Error
 		if len(paths) > 0 && errors.As(e, &nativeErr) && nativeErr.Code == "RULE_UPDATE_TARGET_UNKNOWN" {
 			paths = nil
@@ -545,7 +545,7 @@ func (w *worker) refresh(ctx context.Context, record *model.Agent, a *model.Agen
 			if e != nil || !same {
 				return e
 			}
-			task, e = nativeCall(ctx, s.m, a.ID, "POST", nil)
+			task, e = s.nativeCall(ctx, s.m, a.ID, "POST", nil)
 		}
 		if e != nil {
 			return e

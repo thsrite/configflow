@@ -6,9 +6,11 @@ import (
 	"configflow/internal/model"
 	"context"
 	"encoding/json"
+	"path/filepath"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
+	"configflow/internal/repo"
 )
 
 // flushTraffic is the traffic-history half of metrics_flush.run():
@@ -68,11 +70,11 @@ func retentionDaysJSON(raw json.RawMessage) (int64, error) {
 // deleteTrafficStore is get_traffic_store().delete(agent_id), run by the
 // DELETE /api/agents/<id> route after the Agent is gone.
 func deleteTrafficStore(ctx context.Context, agentID string) error {
-	store, err := trafficstore.GetNative(ctx)
+	r, err := repo.GetRepository(ctx)
 	if err != nil {
 		return err
 	}
-	return store.DeleteContext(ctx, agentID)
+	return trafficstore.NewNative(filepath.Join(r.DataDir(), "traffic")).DeleteContext(ctx, agentID)
 }
 
 // WireTraffic is A05's entry in the server wiring (server.New): the registry

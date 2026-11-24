@@ -325,7 +325,11 @@ func TestKeepalivedBusyRetriesNextRound(t *testing.T) {
 }
 func TestRulesHookUsesPairReceiptAndForcedReload(t *testing.T) {
 	f := fixtureNew(t, Options{}, true, nil)
-	r, code, e := monitor.CallRuleUpdate(f.ctx, monitor.TypedFromAgents(f.m), "primary", "GET", nil)
+	mon := monitor.New(f.m.Repository().DataDir())
+	if err := mon.SetHARules(f.s.PairRulesJSON); err != nil {
+		t.Fatal(err)
+	}
+	r, code, e := mon.CallRuleUpdate(f.ctx, monitor.TypedFromAgents(f.m), "primary", "GET", nil)
 	if e != nil || code != 200 || ruleUpdateStatus(t, r) != "idle" {
 		t.Fatal(r, code, e)
 	}
@@ -334,7 +338,7 @@ func TestRulesHookUsesPairReceiptAndForcedReload(t *testing.T) {
 		t.Fatal("baseline")
 	}
 	before := len(f.uploads())
-	r, code, e = monitor.CallRuleUpdate(f.ctx, monitor.TypedFromAgents(f.m), "secondary", "POST", nil)
+	r, code, e = mon.CallRuleUpdate(f.ctx, monitor.TypedFromAgents(f.m), "secondary", "POST", nil)
 	if e != nil {
 		t.Fatal(r, code, e)
 	}
@@ -366,7 +370,7 @@ func TestRulesHookUsesPairReceiptAndForcedReload(t *testing.T) {
 	if yes(a.OxiDNSHAPublication.HandoffRequired) {
 		t.Fatal("rule update restarted core")
 	}
-	r, code, e = monitor.CallRuleUpdate(f.ctx, monitor.TypedFromAgents(f.m), "primary", "GET", nil)
+	r, code, e = mon.CallRuleUpdate(f.ctx, monitor.TypedFromAgents(f.m), "primary", "GET", nil)
 	if e != nil || code != 200 || ruleUpdateStatus(t, r) != "succeeded" {
 		t.Fatal(r, code, e)
 	}

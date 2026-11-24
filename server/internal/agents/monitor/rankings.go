@@ -829,12 +829,12 @@ func LastCompleteSlotEnd(now int64) int64 {
 // rankingSleep waits between slot requests using the scheduling clock (tests may replace it).
 var rankingSleep = rankingPause
 
-func rankingPeriodic() lifecycle.Periodic {
+func rankingPeriodic(m *agents.Manager) lifecycle.Periodic {
 	return lifecycle.Periodic{
 		Name: "oxidns-ranking-history", Start: lifecycle.AtBoot,
 		FirstDelay: RankingRoundSeconds * time.Second,
 		Interval:   func(context.Context) time.Duration { return RankingRoundSeconds * time.Second },
-		Round:      func(ctx context.Context) error { rankingRound(ctx); return nil },
+		Round:      func(ctx context.Context) error { rankingRound(ctx, m); return nil },
 	}
 }
 
@@ -860,7 +860,7 @@ func rankingPause(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-func rankingRound(ctx context.Context) {
+func rankingRound(ctx context.Context, m *agents.Manager) {
 	scope := repo.WithScope(ctx)
 	defer repo.ResetConfigContext(scope)
 	defer func() {
@@ -868,11 +868,10 @@ func rankingRound(ctx context.Context) {
 			rankingLogger.Exception("OxiDNS ranking collection round failed", lifecycle.ErrPanic)
 		}
 	}()
-	manager, err := agents.Get(scope)
-	if err == nil {
-		err = CollectHistoryRound(scope, agentsManager{manager}, nil, nil)
+	if m == nil {
+		return
 	}
-	if err != nil {
+	if err := CollectHistoryRound(scope, agentsManager{m}, nil, nil); err != nil {
 		rankingLogger.Exception("OxiDNS ranking collection round failed", err)
 	}
 }
