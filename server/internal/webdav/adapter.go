@@ -62,10 +62,12 @@ func captureDocument(ctx context.Context, r *repo.Repository) (Snapshot, *model.
 
 func (s *Service) automaticWorker() *Worker {
 	s.workerOnce.Do(func() {
-		s.worker = NewWorker(time.Second, func(ctx context.Context, snapshot Snapshot) error {
+		// Before webdav-worker-init activates the worker, commits schedule on
+		// the Runtime given to Register (a tracked job), never a bare goroutine.
+		s.worker = newWorker(time.Second, func(ctx context.Context, snapshot Snapshot) error {
 			_, err := s.Run(ctx, snapshot, true)
 			return err
-		})
+		}, workerOptions{Spawner: s.spawner})
 	})
 	return s.worker
 }
@@ -130,6 +132,7 @@ func (s *Service) Register(rt *lifecycle.Runtime, tk *tasks.Registry) {
 		s.registerTasks(tk)
 	}
 	if rt != nil {
+		s.spawner = rt
 		rt.RegisterStartup(workerStartup(s.automaticWorker(), rt, rt.RegisterShutdown))
 	}
 }

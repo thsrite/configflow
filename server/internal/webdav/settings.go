@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"configflow/internal/lockx"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
@@ -87,6 +88,7 @@ type Service struct {
 
 	workerOnce sync.Once
 	worker     *Worker
+	spawner    lockx.Spawner // set by Register before the worker is created
 }
 
 // NewService uses net/http without adding a WebDAV dependency.

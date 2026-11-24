@@ -10,7 +10,6 @@ import (
 
 	"configflow/internal/deploy"
 	"configflow/internal/lifecycle"
-	"configflow/internal/provider"
 )
 
 // Publish records immutable task IDs before spawning the single tracked worker.
@@ -207,8 +206,7 @@ func (s *Service) publishService(ctx context.Context, r *Record, service string)
 		return nil, err
 	}
 	if len(prepared.Providers) > 0 {
-		pv := provider.New(provider.Options{Repo: s.Repository})
-		if err = pv.CommitArtifacts(ctx, r.ProfileID, prepared.Providers); err != nil {
+		if err = dp.CommitArtifacts(ctx, s.Manager, r.ProfileID, prepared.Providers); err != nil {
 			return nil, err
 		}
 	}

@@ -15,6 +15,7 @@ import (
 type contentPool struct {
 	mu         sync.Mutex
 	checkers   map[*core.Manager]*contentsync.Checker
+	deploys    map[*core.Manager]*deploy.Service
 	dispatcher contentsync.Dispatcher
 }
 
@@ -50,7 +51,48 @@ func prepareContent(ctx context.Context, m *core.Manager, t deploy.Target, s *de
 	if m == nil {
 		return nil, errors.New("api/agents: manager is nil")
 	}
-	return deploy.New(deploy.Options{}).PrepareContentBundle(ctx, m, t, s, url, id)
+	dp := contentChecks.deployFor(m)
+	if dp == nil {
+		return nil, errContentDeployUnbound
+	}
+	return dp.PrepareContentBundle(ctx, m, t, s, url, id)
+}
+
+// errContentDeployUnbound refuses a content comparison for a Manager whose
+// deploy Service was never bound: a fresh deploy Service would lack the
+// Sub-Store, provider (aggregations) and HA owners of the server instance.
+var errContentDeployUnbound = errors.New("api/agents: deploy service is not bound for this manager")
+
+// bindDeploy records dp as m's deploy Service for content preparation, until
+// m closes. NewHandler binds the injected Deps.Deploy.
+func (p *contentPool) bindDeploy(m *core.Manager, dp *deploy.Service) {
+	if m == nil || dp == nil {
+		return
+	}
+	p.mu.Lock()
+	if p.deploys == nil {
+		p.deploys = map[*core.Manager]*deploy.Service{}
+	}
+	_, bound := p.deploys[m]
+	p.deploys[m] = dp
+	p.mu.Unlock()
+	if bound {
+		return
+	}
+	forget := func() {
+		p.mu.Lock()
+		delete(p.deploys, m)
+		p.mu.Unlock()
+	}
+	if !m.OnClose(forget) {
+		forget()
+	}
+}
+
+func (p *contentPool) deployFor(m *core.Manager) *deploy.Service {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.deploys[m]
 }
 
 func (p *contentPool) checker(m *core.Manager) *contentsync.Checker {

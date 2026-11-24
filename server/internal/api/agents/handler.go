@@ -14,6 +14,7 @@ import (
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/deploy"
 	"configflow/internal/discovery"
+	"configflow/internal/gateway/installation"
 	"configflow/internal/health"
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
@@ -22,7 +23,7 @@ import (
 )
 
 // Deps holds the explicit services injected into the /api/agents HTTP handlers.
-// Nil fields fall back to transitional process/context locators until W11.
+// server.New sets every field; unit tests may leave optional services nil.
 type Deps struct {
 	Repo      *repo.Repository
 	Agents    *core.Manager
@@ -150,6 +151,13 @@ func (d Deps) deployService() *deploy.Service {
 	return deploy.New(deploy.Options{})
 }
 
+// installationService composes the gateway installation owner with the
+// injected deploy Service, so onboarding publication uses the server's HA pair
+// publisher, IPv6 enroller, Sub-Store and provider instances.
+func (d Deps) installationService(r *repo.Repository, m *core.Manager) installation.Service {
+	return installation.Service{Repository: r, Manager: m, Deploy: d.deployService()}
+}
+
 func (d Deps) loadPreview(m *core.Manager, previewID, agentID string) (*deploy.Preview, error) {
 	return d.deployService().LoadPreview(m, previewID, agentID)
 }
@@ -195,6 +203,7 @@ func NewHandler(deps Deps) *Handler {
 	if deps.Repo == nil && deps.Agents != nil {
 		deps.Repo = deps.Agents.Repository()
 	}
+	contentChecks.bindDeploy(deps.Agents, deps.deployService())
 	content := &contentHandler{deps: deps}
 	met := &metricsHandler{deps: deps}
 	ox := &oxidnsHandler{deps: deps}

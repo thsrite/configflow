@@ -82,6 +82,13 @@ func (s *Service) ipv6Enroller() IPv6Enroller {
 	return s.ipv6
 }
 
+// CommitArtifacts commits prepared provider artifacts through s's provider
+// Service, so subscription cache writes notify the same Sub-Store instance's
+// content-change subscribers as a regular deployment does.
+func (s *Service) CommitArtifacts(ctx context.Context, m *agents.Manager, profileID string, artifacts []*provider.Artifact) error {
+	return s.providerFor(m).CommitArtifacts(ctx, profileID, artifacts)
+}
+
 func (s *Service) providerFor(m *agents.Manager) *provider.Service {
 	if s != nil && s.provider != nil {
 		return s.provider

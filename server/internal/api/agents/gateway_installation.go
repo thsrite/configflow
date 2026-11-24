@@ -68,7 +68,7 @@ func (h *gatewayInstallationHandler) installationHandler(operation string) httpx
 				return nil, err
 			}
 		}
-		s := installation.Service{Repository: r, Manager: m}
+		s := h.deps.installationService(r, m)
 		var body, jsonBody json.RawMessage
 		status := 200
 		if c.Method() == "POST" {

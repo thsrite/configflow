@@ -183,7 +183,7 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	if frontendDir != "" {
 		edge := &httpx.Edge{API: app, Root: frontendDir, AccessLog: os.Stdout}
 		web = newHTTPServer(edge)
-		manager = &weblistener.Manager{DataDir: dataDir, Server: webServer{web, edge}}
+		manager = &weblistener.Manager{DataDir: dataDir, Server: webServer{web, edge}, Spawner: rt}
 		status, err := manager.Listen(work)
 		if err != nil {
 			return fmt.Errorf("[web-listener] %w", err)

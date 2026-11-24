@@ -69,7 +69,8 @@ type Manager struct {
 	// DataDir holds web-listener.json. Legacy web-listener.lock is untouched.
 	DataDir string
 	Server  Server
-	// Spawner tracks Serve jobs; nil uses the default lifecycle Runtime.
+	// Spawner tracks Serve jobs; production passes the process Runtime. Nil
+	// uses lifecycle.ContextSpawner (ctx's Runtime, or an untracked goroutine).
 	Spawner lockx.Spawner
 	// HealthTimeout bounds the check of a new listener (5 s).
 	HealthTimeout time.Duration
