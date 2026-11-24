@@ -204,15 +204,11 @@ func mergeSectionMembers(keys []string, proposed, base model.Fields, current any
 	return nil
 }
 
-// SharedConfig loads an owned shared snapshot (CloneShared: catalog editors
-// modify it and hand it to SaveSharedRecord) and records its immutable
-// baseline in the request Scope, retaining three-way save semantics.
-func SharedConfig(ctx context.Context) (*model.Shared, error) {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result, err := repository.CloneShared(ctx)
+// ScopedSharedConfig loads an owned shared snapshot (CloneShared: catalog
+// editors modify it and hand it to SaveScopedSharedRecord) and records its
+// immutable baseline in the request Scope, retaining three-way save semantics.
+func (r *Repository) ScopedSharedConfig(ctx context.Context) (*model.Shared, error) {
+	result, err := r.CloneShared(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +218,7 @@ func SharedConfig(ctx context.Context) (*model.Shared, error) {
 	}
 	if scope := ScopeOf(ctx); scope != nil {
 		scope.mu.Lock()
-		scope.bind(repository)
+		scope.bind(r)
 		if scope.recordBaselines == nil {
 			scope.recordBaselines = map[string]model.Fields{}
 		}
@@ -232,18 +228,15 @@ func SharedConfig(ctx context.Context) (*model.Shared, error) {
 	return result, nil
 }
 
-// SaveSharedRecord saves a shared catalog using the explicit baseline, or the
-// baseline captured by SharedConfig in the same Scope. Successful saves reset it.
-func SaveSharedRecord(ctx context.Context, snapshot, baseline *model.Shared) error {
+// SaveScopedSharedRecord saves a shared catalog using the explicit baseline, or
+// the baseline captured by ScopedSharedConfig in the same Scope. Successful
+// saves reset it.
+func (r *Repository) SaveScopedSharedRecord(ctx context.Context, snapshot, baseline *model.Shared) error {
 	ctx = ctxx.Detach(ctx)
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return err
-	}
 	if baseline == nil {
 		if scope := ScopeOf(ctx); scope != nil {
 			scope.mu.Lock()
-			scope.bind(repository)
+			scope.bind(r)
 			fields, present := scope.recordBaselines[sharedBaselineKey]
 			scope.mu.Unlock()
 			if present {
@@ -258,9 +251,27 @@ func SaveSharedRecord(ctx context.Context, snapshot, baseline *model.Shared) err
 			}
 		}
 	}
-	if _, err := repository.SaveSharedRecord(ctx, snapshot, baseline); err != nil {
+	if _, err := r.SaveSharedRecord(ctx, snapshot, baseline); err != nil {
 		return err
 	}
 	ResetConfigContext(ctx)
 	return nil
+}
+
+// SharedConfig delegates to the context/default repository (transitional; removed in W11).
+func SharedConfig(ctx context.Context) (*model.Shared, error) {
+	repository, err := GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return repository.ScopedSharedConfig(ctx)
+}
+
+// SaveSharedRecord delegates to the context/default repository (transitional; removed in W11).
+func SaveSharedRecord(ctx context.Context, snapshot, baseline *model.Shared) error {
+	repository, err := GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	return repository.SaveScopedSharedRecord(ctx, snapshot, baseline)
 }

@@ -218,11 +218,7 @@ func (s *Scope) remember(memo map[resolvedKey]string, key resolvedKey, profileID
 // else the default profile. The id is validated and must exist
 // (ErrValidation, ErrNotFound). Results are remembered per request until
 // the next commit.
-func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, error) {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return "", err
-	}
+func (r *Repository) ResolveProfile(ctx context.Context, explicit, fallback *string) (string, error) {
 	scope := ScopeOf(ctx)
 	var request *RequestInfo
 	if scope != nil {
@@ -241,7 +237,7 @@ func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, er
 			memoKey = resolvedKey{explicit: true, id: *explicit}
 		}
 		scope.mu.Lock()
-		memo = scope.resolvedProfiles(ctx, repository)
+		memo = scope.resolvedProfiles(ctx, r)
 		resolved, ok := memo[memoKey]
 		scope.mu.Unlock()
 		if ok {
@@ -261,9 +257,10 @@ func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, er
 		candidate = fallback
 	}
 	profileID := ""
+	var err error
 	if candidate != nil {
 		profileID = *candidate
-	} else if profileID, err = repository.DefaultProfileID(ctx); err != nil {
+	} else if profileID, err = r.DefaultProfileID(ctx); err != nil {
 		return "", err
 	}
 	if err := ValidateProfileID(profileID); err != nil {
@@ -272,7 +269,7 @@ func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, er
 	// Request preparation must finish before detached handlers (such as
 	// provider rendering) start, even if the HTTP waiter already disconnected;
 	// work shutdown carried by ctxx.WithParent is still honored.
-	if _, err := repository.ProfileMetadataRecord(ctxx.Detach(ctx), profileID); err != nil {
+	if _, err := r.ProfileMetadataRecord(ctxx.Detach(ctx), profileID); err != nil {
 		return "", err
 	}
 	if memo != nil {
@@ -283,11 +280,100 @@ func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, er
 
 // ResolveProfileID is ResolveProfile without a fallback; an empty explicit
 // id means "not given" (Python: None).
-func ResolveProfileID(ctx context.Context, explicit string) (string, error) {
+func (r *Repository) ResolveProfileID(ctx context.Context, explicit string) (string, error) {
 	if explicit == "" {
-		return ResolveProfile(ctx, nil, nil)
+		return r.ResolveProfile(ctx, nil, nil)
 	}
-	return ResolveProfile(ctx, &explicit, nil)
+	return r.ResolveProfile(ctx, &explicit, nil)
+}
+
+// ScopedConfig returns the request-scoped resolved view of a profile ("" = the
+// request's profile). Within one Scope the same *model.Config snapshot is
+// returned until invalidated by a write or ResetConfigContext. Without a
+// Scope every call returns a fresh view.
+func (r *Repository) ScopedConfig(ctx context.Context, profileID string) (*model.Config, error) {
+	resolvedID, err := r.ResolveProfileID(ctx, profileID)
+	if err != nil {
+		return nil, err
+	}
+	scope := ScopeOf(ctx)
+	if scope != nil {
+		scope.mu.Lock()
+		scope.bind(r)
+		cached := scope.configs[resolvedID]
+		scope.mu.Unlock()
+		if cached != nil {
+			return cached, nil
+		}
+	}
+	config, err := r.Config(ctx, resolvedID, nil)
+	if err != nil || scope == nil {
+		return config, err
+	}
+	scope.mu.Lock()
+	defer scope.mu.Unlock()
+	scope.bind(r)
+	if cached := scope.configs[resolvedID]; cached != nil {
+		return cached, nil
+	}
+	if scope.configs == nil {
+		scope.configs = map[string]*model.Config{}
+	}
+	scope.configs[resolvedID] = config
+	return config, nil
+}
+
+// PrepareConfig performs configuration startup preparation on r.
+func (r *Repository) PrepareConfig(ctx context.Context) (*model.Config, error) {
+	ctx = ctxx.Detach(ctx)
+	if err := r.prepareConfig(ctx); err != nil {
+		return nil, err
+	}
+	return r.ScopedConfig(ctx, "")
+}
+
+func (r *Repository) prepareConfig(ctx context.Context) error {
+	ResetConfigContext(ctx)
+	domainFn := r.options.DefaultServerDomain
+	if domainFn == nil {
+		domainFn = currentHooks().DefaultServerDomain
+	}
+	_, dockerErr := os.Stat("/.dockerenv")
+	_, podmanErr := os.Stat("/run/.containerenv")
+	if dockerErr != nil && podmanErr != nil && domainFn != nil {
+		settings, err := r.SystemConfig(ctx)
+		if err != nil {
+			return err
+		}
+		if trimText(settings.ServerDomain) == "" {
+			domain := domainFn()
+			if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+				s.SystemConfig.ServerDomain = domain
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// ResolveProfile delegates to the context/default repository (transitional; removed in W11).
+func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, error) {
+	repository, err := GetRepository(ctx)
+	if err != nil {
+		return "", err
+	}
+	return repository.ResolveProfile(ctx, explicit, fallback)
+}
+
+// ResolveProfileID delegates to the context/default repository (transitional; removed in W11).
+func ResolveProfileID(ctx context.Context, explicit string) (string, error) {
+	repository, err := GetRepository(ctx)
+	if err != nil {
+		return "", err
+	}
+	return repository.ResolveProfileID(ctx, explicit)
 }
 
 // GetDefaultProfileID is get_default_profile_id().
@@ -299,83 +385,22 @@ func GetDefaultProfileID(ctx context.Context) (string, error) {
 	return repository.DefaultProfileID(ctx)
 }
 
-// Config returns the request-scoped resolved view of a profile ("" = the
-// request's profile). Within one Scope the same *model.Config snapshot is
-// returned until invalidated by a write or ResetConfigContext. Without a
-// Scope every call returns a fresh view.
+// Config delegates to the context/default repository (transitional; removed in W11).
 func Config(ctx context.Context, profileID string) (*model.Config, error) {
-	resolvedID, err := ResolveProfileID(ctx, profileID)
-	if err != nil {
-		return nil, err
-	}
 	repository, err := GetRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
-	scope := ScopeOf(ctx)
-	if scope != nil {
-		scope.mu.Lock()
-		scope.bind(repository)
-		cached := scope.configs[resolvedID]
-		scope.mu.Unlock()
-		if cached != nil {
-			return cached, nil
-		}
-	}
-	config, err := repository.Config(ctx, resolvedID, nil)
-	if err != nil || scope == nil {
-		return config, err
-	}
-	scope.mu.Lock()
-	defer scope.mu.Unlock()
-	scope.bind(repository)
-	if cached := scope.configs[resolvedID]; cached != nil {
-		return cached, nil
-	}
-	if scope.configs == nil {
-		scope.configs = map[string]*model.Config{}
-	}
-	scope.configs[resolvedID] = config
-	return config, nil
+	return repository.ScopedConfig(ctx, profileID)
 }
 
 // PrepareConfig performs configuration startup preparation.
 func PrepareConfig(ctx context.Context) (*model.Config, error) {
-	ctx = ctxx.Detach(ctx)
-	if err := prepareConfig(ctx); err != nil {
-		return nil, err
-	}
-	return Config(ctx, "")
-}
-
-func prepareConfig(ctx context.Context) error {
-	ResetConfigContext(ctx)
 	repository, err := GetRepository(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	domainFn := repository.options.DefaultServerDomain
-	if domainFn == nil {
-		domainFn = currentHooks().DefaultServerDomain
-	}
-	_, dockerErr := os.Stat("/.dockerenv")
-	_, podmanErr := os.Stat("/run/.containerenv")
-	if dockerErr != nil && podmanErr != nil && domainFn != nil {
-		settings, err := repository.SystemConfig(ctx)
-		if err != nil {
-			return err
-		}
-		if trimText(settings.ServerDomain) == "" {
-			domain := domainFn()
-			if err := repository.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
-				s.SystemConfig.ServerDomain = domain
-				return nil
-			}); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return repository.PrepareConfig(ctx)
 }
 
 const sharedBaselineKey = "@shared"
