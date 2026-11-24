@@ -184,7 +184,7 @@ export const fakeIpFilterField: BaseFieldDef = {
   path: ['dns', 'fake-ip-filter'], label: 'Fake-IP 过滤列表', type: 'list', wide: true, placeholder: '*.lan\n+.ntp.example.com',
   help: settingHelp({
     what: 'blacklist 方式下，这些域名不使用 Fake-IP、直接返回真实 IP。每行一个，支持 +.example.com、*.lan、rule-set:名称、geosite:名称 等写法。',
-    recommend: '局域网域名（*.lan、*.local）、对时服务器（+.pool.ntp.org、time.*.com）、联网检测、游戏主机等需要真实地址的服务。',
+    recommend: '填入需要真实地址的服务域名，例如局域网域名（*.lan、*.local）、对时服务器、联网检测和游戏主机。对时服务器可参照 +.ntp.example.com 的写法，填写实际使用的域名。',
     effect: '保存并发布后生效。清空会删除该项，改用 Mihomo 自带的默认名单。',
     risk: '写入此项会替换 Mihomo 自带的默认名单。列入的域名返回真实 IP，在网关方案中如果该 IP 不在接管范围，连接会直连。',
   }),

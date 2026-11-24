@@ -67,7 +67,7 @@ export const EASYTIER_GROUPS: EasyTierGroup[] = [
     fields: [
       field('network-name', '网络名', 'text', '要加入的 EasyTier 网络名，和其他节点填写的一致。', { placeholder: '必填' }),
       { secret: 'network-secret', label: '网络密钥（network-secret）', help: help('网络密钥。网络名和密钥都相同的节点才在同一个虚拟网里。', '导出脱敏备份时会被隐去。') },
-      field('hostname', '主机名', 'text', '本节点在虚拟网里的名字，也用于 MagicDNS（如 phone.et.example.org）。', { help: '同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备同名，用名字访问时分不清是哪台。', placeholder: '自动' }),
+      field('hostname', '主机名', 'text', '本节点在虚拟网里的名字，也用于 MagicDNS（使用默认后缀时如 phone.et.net）。', { help: '同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备同名，用名字访问时分不清是哪台。', placeholder: '自动' }),
       field('ipv4', '虚拟 IPv4', 'text', '本节点的虚拟网地址，例如 192.0.2.10/24。', { help: '不填时自动分配（DHCP），每次重启可能变化；要固定地址就在这里填写。\n同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备抢同一个地址。', placeholder: '自动分配' }),
       field('dhcp', '自动分配地址', 'bool', '是否通过 DHCP 自动获取虚拟 IPv4。', { help: '不填虚拟 IPv4 时默认开启；填了则默认关闭。' }),
       field('peers', '入网节点', 'list', '启动时主动连接的节点，可以写多个，例如中转 VPS 和家里节点。', {
@@ -98,7 +98,7 @@ export const EASYTIER_GROUPS: EasyTierGroup[] = [
       field('latency-first', '延迟优先', 'bool', '选路时优先延迟最低的路径，而不是跳数最少的路径。', { coreDefault: false }),
       field('disable-p2p', '禁用直连', 'bool', '不尝试点对点直连，所有流量都经中转。', { coreDefault: false }),
       field('accept-dns', '接受网络下发的 DNS', 'bool', '是否使用网络推送的 DNS 设置。', { coreDefault: false }),
-      field('tld-dns-zone', 'MagicDNS 域名后缀', 'text', 'MagicDNS 使用的域名后缀。', { placeholder: 'et.example.org.' }),
+      field('tld-dns-zone', 'MagicDNS 域名后缀', 'text', 'MagicDNS 使用的域名后缀。留空使用默认后缀 et.net。', { placeholder: 'et.net' }),
     ],
   },
   {
@@ -158,7 +158,7 @@ export const OUTPUT_FIELDS = {
     path: ['easytier', 'routes'], label: '走 EasyTier 的网段', type: 'list', help: help('这些 IPv4 网段的流量交给 EasyTier，规则排在最前面。',
       '通常填虚拟网网段（如 192.0.2.0/24）和其他节点公布的网段（如 198.51.100.0/24）。'), placeholder: '192.0.2.0/24',
   },
-  magic_dns: { path: ['easytier', 'magic_dns'], label: '解析组网设备名', type: 'bool', coreDefault: false, help: help('用主机名访问虚拟网设备，例如 nas.et.example.org。', '添加该域名后缀的分流规则，并把它的解析交给 EasyTier（nameserver-policy）。') },
+  magic_dns: { path: ['easytier', 'magic_dns'], label: '解析组网设备名', type: 'bool', coreDefault: false, help: help('用主机名访问虚拟网设备，使用默认后缀时如 nas.et.net。', '添加 MagicDNS 域名后缀的分流规则，并把它的解析交给 EasyTier（nameserver-policy）。') },
   keepalive: { path: ['easytier', 'keepalive', 'enabled'], label: '启动即连接', type: 'bool', coreDefault: false, help: help('Mihomo 启动后马上加入虚拟网，而不是等第一次访问时才连接。',
     '生成一个带健康检查的策略组，定时访问下面的地址来保持连接。需要别人连进来时（例如开启了监听）必须开启。') },
   keepalive_url: { path: ['easytier', 'keepalive', 'url'], label: '检测地址', type: 'text', help: help('保持连接用的网址，填虚拟网里某台设备上的网页。', '访问失败也会触发连接。'), placeholder: 'http://192.0.2.1/' },

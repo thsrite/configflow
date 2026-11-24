@@ -62,6 +62,8 @@ rt --no-sync -e PLAYWRIGHT_MODULE=/tmp/configflow-guide-browser/node_modules/pla
 
 只重拍部分图片时加 `-e CAPTURE_ONLY=名称[,名称]`（不含 `.jpg`），脚本只写这些图片，并在 `capture-report.json` 中更新或追加对应条目、记 `recapturedAt`。2026-11-21 `oxidns-docker-ha-prepare.jpg` 按此重拍（镜像输入框改为默认留空、与面板版本配套）；2026-11-24 切换为 Go 面板采集并重拍了 `panel-header-docs.jpg`（顶栏新增通知中心图标）与 `panel-service-settings.jpg`（改用 RFC 5737 示例地址），同时补截了 `agents-backup-restored-desktop-light.jpg` 与 `agents-backup-restored-mobile-dark.jpg`。
 
+2026-11-24 脱敏更新重拍了 `oxidns-docker-ha-prepare.jpg`、`oxidns-docker-ha-host.jpg` 和 `oxidns-docker-ha-macvlan.jpg`，服务地址、主机地址和网段均使用 RFC 5737 文档地址。
+
 第一条命令同步代码并准备共用依赖；后续命令不再同步，避免把本机的依赖软链接覆盖到远端。Playwright 安装在测试服务器的独立临时目录，不修改项目依赖；`1.64.1` 是本批图片实际使用的版本。脚本优先使用 `PLAYWRIGHT_MODULE`，未指定时尝试加载当前项目可解析的 `playwright`。后端直接从 `server/cmd/configflow` 构建并启动 Go 面板（无需 Python），也可通过 `DOCS_SERVER_BIN` 指定已构建的二进制路径。
 
 不再需要这套截图依赖时，可在测试服务器删除本次创建的独立目录：

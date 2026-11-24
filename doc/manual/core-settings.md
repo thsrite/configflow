@@ -39,7 +39,7 @@ outline: 2
 | 控制面板 | `secret`（默认隐藏，可点眼睛查看）、`external-controller` 监听（局域网可访问 0.0.0.0 / 仅本机 127.0.0.1 / 自定义）与端口、网页面板 `external-ui` 开关和 `external-ui-url` | 密码规则与首次向导相同：8–64 个字母、数字或符号，不含空格，不能是 123456；对局域网开放时必须设置。自定义地址只能是 `::` 或回环地址，监听某个局域网 IP 时 Agent 无法热重载和做 IPv6 检查。Agent 遇到 0.0.0.0 会改用 127.0.0.1，两种选择都能读取连接和流量。改动控制面板相关设置后发布会重启 Mihomo |
 | 代理端口 | `mixed-port`，以及 `port`、`socks-port`、`redir-port`、`tproxy-port` 是否保留和端口 | 一般只留混合端口；使用 TUN（含向导方案）时不需要 redir / tproxy。端口不能互相重复，也不能与 DNS 监听、控制面板或同机 Agent 的端口相同 |
 | 局域网访问 | `allow-lan`、`bind-address` | 其他设备手动填代理时才需要允许局域网；TUN、网关和主路由分流的接管不受影响 |
-| DNS 上游 | 「DNS 方案」选「国内 DoH」或「国内外分开解析」预设；旁边的 `default-nameserver`、`nameserver`、`proxy-server-nameserver`、`direct-nameserver`（点开后每行一个）及 `respect-rules`、`direct-nameserver-follow-policy` 可直接修改，改过后方案显示为「自定义」 | 「国内 DoH」与初始模板一致。「国内外分开解析」让 `geosite:cn,private` 用国内 DoH、其他域名经代理用 Google / Cloudflare DoH，依赖 GeoSite 数据（Mihomo 首次自动下载）和可用节点。切换预设只改这几项并删除旧的 `fallback` / `fallback-filter`；`nameserver-policy` 只增删 `geosite:cn,private` 一条（追加在最后），自己写的条目（如 `+.115.com`）保留并优先匹配。上游不能指向本机、本机 OxiDNS 或 `system`，否则形成解析循环 |
+| DNS 上游 | 「DNS 方案」选「国内 DoH」或「国内外分开解析」预设；旁边的 `default-nameserver`、`nameserver`、`proxy-server-nameserver`、`direct-nameserver`（点开后每行一个）及 `respect-rules`、`direct-nameserver-follow-policy` 可直接修改，改过后方案显示为「自定义」 | 「国内 DoH」与初始模板一致。「国内外分开解析」让 `geosite:cn,private` 用国内 DoH、其他域名经代理用 Google / Cloudflare DoH，依赖 GeoSite 数据（Mihomo 首次自动下载）和可用节点。切换预设只改这几项并删除旧的 `fallback` / `fallback-filter`；`nameserver-policy` 只增删 `geosite:cn,private` 一条（追加在最后），自己写的条目（如 `+.example.org`）保留并优先匹配。上游不能指向本机、本机 OxiDNS 或 `system`，否则形成解析循环 |
 | Fake-IP | `fake-ip-range`（IPv4 网段）、`fake-ip-filter-mode`、`fake-ip-filter`（每行一个） | 网段只接受 /8 至 /30 的 IPv4 网段（与 Linux 网关的规则相同），改了以后到「上游路由」预览并发布新的路由；写入过滤列表会替换 Mihomo 自带的默认名单，局域网域名、对时服务器等需要真实地址的服务放在这里。IPv6 网段在上方 IPv6 卡片里 |
 | 域名嗅探 | `sniffer.enable`；`sniff` 的 HTTP、TLS、QUIC 各一格：端口就地输入（逗号分隔，单个端口或 `8080-8880` 这样的范围），右侧开关增删这个协议；HTTP 的 `override-destination`；`skip-domain`、`force-domain` | 关闭后按 IP 进入的连接无法匹配域名规则；首次开启时补上 HTTP / TLS / QUIC 常用端口，打开某个协议的开关时写入初始模板的端口。端口写错时标红并禁止保存，不会等到发布后 Mihomo 才报错。协议名大小写不限（如 `http`），表单改动沿用原来的写法；还在用旧写法 `sniffing` 时这几格只读，请在 YAML 中修改。总开关开着但三个协议都关了时会提示嗅探不生效 |
 | 进程匹配与日志 | `find-process-mode`、`log-level` | 网关、主路由分流等替别的设备转发的机器建议 `off`：客户端进程不在本机，查找只会白耗 CPU。已有配置不会被自动修改。`debug` 只在排查时临时使用 |
@@ -76,7 +76,7 @@ Mihomo v1.19.31 起内置了 EasyTier（`type: easytier` 节点）。开启后�
 
 | 项目 | 说明 |
 | --- | --- |
-| 解析组网设备名 | 用主机名访问虚拟网设备（如 `nas.et.example.org`）：添加该后缀的分流规则，并把解析交给 EasyTier（`nameserver-policy` 中已有同名条目时保留你的） |
+| 解析组网设备名 | 按 MagicDNS 域名后缀添加分流规则，并把解析交给 EasyTier。已有的同名 `nameserver-policy` 条目会保留。后缀（`tld-dns-zone`）留空时使用 `et.net`，例如通过 `nas.et.net` 访问虚拟网设备 |
 | 启动即连接 | Mihomo 的 EasyTier 默认等第一次访问时才连接；开启后生成一个带健康检查的策略组，Mihomo 启动就入网并保持连接，分流规则改为指向这个策略组。需要别的节点连进来（开启了监听）时必须开启 |
 | 监听端口 | 默认关闭，只主动连出去，外出设备保持关闭即可。打开后才显示「监听地址」（不填时用 `tcp://0.0.0.0:11010`）和「对外公布地址」（经过端口映射或内网穿透时填写）；关闭时一并清除。监听时要同时开启「启动即连接」，否则 EasyTier 在第一次访问前没有启动，别人连不进来 |
 | 安全模式与本机密钥 | 网络开了安全模式时这里也要开。Mihomo v1.19.34 以下（例如 FlClash 0.9.3 内置的 v1.19.33）还必须填写本机私钥和公钥，否则启动失败并报 `local private key is not set`；每台设备要用自己的一对，不能共用 |
