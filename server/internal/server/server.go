@@ -22,21 +22,13 @@ import (
 	apiaggregations "configflow/internal/api/aggregations"
 	apiauth "configflow/internal/api/auth"
 	apiclientdevices "configflow/internal/api/clientdevices"
-	apiconfig "configflow/internal/api/config"
 	apidiscovery "configflow/internal/api/domaindiscovery"
 	apigatewayonboarding "configflow/internal/api/gatewayonboarding"
-	apigenerate "configflow/internal/api/generate"
 	apiipv6 "configflow/internal/api/ipv6"
 	apilinuxgateway "configflow/internal/api/linuxgateway"
 	apilogs "configflow/internal/api/logs"
-	apimosdns "configflow/internal/api/mosdns"
 	apinodes "configflow/internal/api/nodes"
-	apioxidns "configflow/internal/api/oxidns"
-	apiprofiles "configflow/internal/api/profiles"
 	apiproxygroups "configflow/internal/api/proxygroups"
-	apirouters "configflow/internal/api/routers"
-	apirulelibrary "configflow/internal/api/rulelibrary"
-	apirules "configflow/internal/api/rules"
 	apisettings "configflow/internal/api/settings"
 	apisetup "configflow/internal/api/setup"
 	apistats "configflow/internal/api/stats"
@@ -44,17 +36,11 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/mcp"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
-	routerrulesync "configflow/internal/routers/rulesync"
 )
 
 // registerRoutes mounts every ported blueprint in Flask-blueprint order,
 // injecting explicit service instances for handlers already migrated.
-func registerRoutes(r *httpx.Router, agHandler *apiagents.Handler, rtr *routers.Service, rr *routerrulesync.RuleSyncService) {
-	registerAgents := apiagents.Register
-	if agHandler != nil {
-		registerAgents = agHandler.Register
-	}
+func registerRoutes(r *httpx.Router, agents *apiagents.Handler, w10b w10bHandlers) {
 	routePackages := []func(*httpx.Router){
 		mcp.Register,
 		apiauth.Register,
@@ -62,23 +48,23 @@ func registerRoutes(r *httpx.Router, agHandler *apiagents.Handler, rtr *routers.
 		apinodes.Register,
 		apisubscriptions.Register,
 		apiaggregations.Register,
-		apirules.Register,
-		apirulelibrary.Register,
+		w10b.rules.Register,
+		w10b.rulelibrary.Register,
 		apiproxygroups.Register,
-		registerAgents,
-		apirouters.NewHandler(rtr, rr).Register,
+		agents.Register,
+		w10b.routers.Register,
 		apiipv6.Register,
 		apilinuxgateway.Register,
-		apiconfig.Register,
-		apigenerate.Register,
-		apiprofiles.Register,
+		w10b.config.Register,
+		w10b.generate.Register,
+		w10b.profiles.Register,
 		apigatewayonboarding.Register,
 		apisettings.Register,
 		apisetup.Register,
 		apilogs.Register,
 		apistats.Register,
-		apimosdns.Register,
-		apioxidns.Register,
+		w10b.mosdns.Register,
+		w10b.oxidns.Register,
 		apidiscovery.Register,
 	}
 	for _, register := range routePackages {

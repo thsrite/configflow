@@ -127,7 +127,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	}
 	nt.MarkStarted()
 	httpApp := httpx.New()
-	registerRoutes(httpApp.Router, newAgentAPIHandler(opts, ag, gen), rtrSvc.routers, rtrSvc.rulesync)
+	registerRoutes(httpApp.Router, newAgentAPIHandler(opts, ag, gen), newW10bHandlers(opts, ag, gen, rs, rtrSvc))
 	apitasks.NewHandler(tk).Register(httpApp.Router)
 	apinotifications.NewHandler(tk, nt, opts.Repo).Register(httpApp.Router)
 	auth.Install(httpApp)
