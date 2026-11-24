@@ -28,7 +28,7 @@ func sourceRuleState(doc *yaml.Node, content bool) *yaml.Node {
 		if !active(r) {
 			continue
 		}
-		fields := []string{}
+		var fields []string
 		switch scope(r) {
 		case "library":
 			fields = []string{"id", "library_rule_id", "name", "url", "behavior", "source_type", "format", "policy", "no_resolve"}

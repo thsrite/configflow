@@ -283,8 +283,8 @@ func (c *rankConn) queryRow(statement string, args ...any) *sql.Row {
 	return c.q.QueryRowContext(c.ctx, statement, args...)
 }
 
-// readContext runs body on a fresh connection without a transaction.
-func (s *RankingStore) readContext(ctx context.Context, body func(c *rankConn) error) error {
+// read runs body on a fresh connection without a transaction.
+func (s *RankingStore) read(ctx context.Context, body func(c *rankConn) error) error {
 	c, err := s.connect(ctx)
 	if err != nil {
 		return err
@@ -345,7 +345,7 @@ func (s *RankingStore) Fetched(ctx context.Context, agentID, recorder string, st
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	err := s.readContext(ctx, func(c *rankConn) error {
+	err := s.read(ctx, func(c *rankConn) error {
 		return c.query("SELECT start FROM ranking_slots WHERE agent_id = ? AND recorder = ? AND start BETWEEN ? AND ?",
 			[]any{agentID, recorder, lo, hi}, func(rows *sql.Rows) error {
 				var start int64
@@ -629,7 +629,7 @@ func (s *RankingStore) HasAny(ctx context.Context, agentID, recorder string) (bo
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	found := false
-	err := s.readContext(ctx, func(c *rankConn) error {
+	err := s.read(ctx, func(c *rankConn) error {
 		return c.query("SELECT 1 FROM ranking_slots WHERE agent_id = ? AND recorder = ? LIMIT 1", []any{agentID, recorder},
 			func(*sql.Rows) error { found = true; return nil })
 	})
@@ -706,7 +706,7 @@ func (s *RankingStore) query(ctx context.Context, agentID, recorder string, sinc
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var answer *HistoryAnswer
-	err := s.readContext(ctx, func(c *rankConn) error {
+	err := s.read(ctx, func(c *rankConn) error {
 		var totals [7]sql.NullInt64
 		if err := c.queryRow(
 			"SELECT SUM(records), SUM(blocked_records), SUM(blocked_slots), SUM(slots), SUM(partial_slots),"+
@@ -779,13 +779,6 @@ func GetRankingStore(dataDir string) *RankingStore {
 		stores[dataDir] = s
 	}
 	return s
-}
-
-// ResetRankingStores forgets every store (tests: a fresh process).
-func ResetRankingStores() {
-	storesMu.Lock()
-	stores = map[string]*RankingStore{}
-	storesMu.Unlock()
 }
 
 // --- collecting -------------------------------------------------------------

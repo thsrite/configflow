@@ -24,11 +24,6 @@ func writeResponse(w http.ResponseWriter, req *http.Request, r *Response) {
 	switch {
 	case r.file != nil:
 		writeFile(w, req, r)
-	case r.stream != nil:
-		w.WriteHeader(r.Status)
-		if req.Method != "HEAD" {
-			_ = r.stream(w)
-		}
 	default:
 		h.Set("Content-Length", strconv.Itoa(len(r.body)))
 		if h.Get("Content-Type") == "" && len(r.body) > 0 {

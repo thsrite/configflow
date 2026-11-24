@@ -2,7 +2,6 @@ package httpx
 
 import (
 	"hash/adler32"
-	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -27,8 +26,6 @@ type Response struct {
 	// hooks never parse or rewrite the body.
 	passthrough bool
 	file        *fileBody
-	// stream writes the body (for Stream responses); nil otherwise.
-	stream func(w io.Writer) error
 
 	// sortValue preserves Flask's original-key order for redaction collisions.
 	sortValue bool
@@ -88,11 +85,6 @@ func Text(status int, text string) *Response {
 	return Bytes(status, "text/plain; charset=utf-8", []byte(text))
 }
 
-// HTML is what Flask makes of a view returning a plain str.
-func HTML(status int, text string) *Response {
-	return Bytes(status, "text/html; charset=utf-8", []byte(text))
-}
-
 // RawJSON is Response(body, mimetype="application/json"): already encoded
 // JSON; the response hook still parses and redacts it.
 func RawJSON(status int, body []byte) *Response {
@@ -103,14 +95,6 @@ func RawJSON(status int, body []byte) *Response {
 // Flask's default.
 func Empty(status int) *Response {
 	return Bytes(status, "text/html; charset=utf-8", nil)
-}
-
-// Stream is a streamed body (Flask: Response(generator)). The hooks do not
-// touch it; Content-Length is not set.
-func Stream(status int, contentType string, write func(w io.Writer) error) *Response {
-	r := &Response{Status: status, stream: write, passthrough: true}
-	r.Header().Set("Content-Type", contentType)
-	return r
 }
 
 // Passthrough marks the response as direct_passthrough: hooks leave the body
@@ -312,9 +296,8 @@ var mimeTypes = map[string]string{
 // GuessMimeType is Flask's mimetypes.guess_type fallback for send_file:
 // application/octet-stream when the extension is unknown.
 func GuessMimeType(name string) string {
-	ext := strings.ToLower(name[strings.LastIndexByte(name, '.')+1:])
 	if i := strings.LastIndexByte(name, '.'); i >= 0 {
-		ext = strings.ToLower(name[i:])
+		ext := strings.ToLower(name[i:])
 		if t, ok := mimeTypes[ext]; ok {
 			return t
 		}

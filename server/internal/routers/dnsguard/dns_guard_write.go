@@ -18,12 +18,6 @@ type rosDevice struct {
 	*ros.Client
 }
 
-// Publication returns whether this client assigned a publication and its
-// current value. A set null means withdrawal; an unset value leaves storage alone.
-func Publication(c *ros.Client) (json.RawMessage, bool) {
-	return ros.GuardRaw(c.DNSGuardManifest()), c.DNSGuardManifestSet()
-}
-
 func guardValidateSpec(s *Spec) bool {
 	if s == nil {
 		return true

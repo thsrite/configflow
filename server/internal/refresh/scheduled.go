@@ -650,11 +650,9 @@ func (s *Service) RunResourceNow(ctx context.Context, kind, id string) (string, 
 		}
 		return "", &TaskBusy{Message: msgTaskBusy}
 	}
-	spawn := (lifecycle.ContextSpawner{}).Spawn
+	spawn := lifecycle.SpawnerFrom(held).Spawn
 	if s.runtime != nil {
 		spawn = s.runtime.Spawn
-	} else if spawner := lifecycle.SpawnerFrom(held); spawner != nil {
-		spawn = spawner.Spawn
 	}
 	if err := spawn(held, "task-"+key, func(work context.Context) { defer release(); s.runResource(work, resource, "manual") }); err != nil {
 		release()

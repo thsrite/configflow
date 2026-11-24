@@ -74,15 +74,6 @@ func LevelFromEnv() Level {
 	return ParseLevel(name)
 }
 
-// IsDebugEnabled is is_debug_enabled: LOG_LEVEL is DEBUG.
-func IsDebugEnabled() bool {
-	name := os.Getenv("LOG_LEVEL")
-	if name == "" {
-		name = "INFO"
-	}
-	return strings.ToUpper(name) == "DEBUG"
-}
-
 // Config is the logging setup of app.py.
 type Config struct {
 	// Level is the threshold; LevelFromEnv() in production.
@@ -257,9 +248,6 @@ func (l *Logger) logf(level Level, format string, args []any) {
 		l.Log(level, fmt.Sprintf(format, args...))
 	}
 }
-
-// DebugLog is debug_log (deprecated in Python): a DEBUG line from "debug_log".
-func DebugLog(message string) { Get("debug_log").Debug(message) }
 
 // LogText is log_text(value, limit): user-supplied text on one bounded log
 // line. Characters Python's str.isprintable() rejects (line breaks and other

@@ -97,15 +97,6 @@ func (c *ResultCache) Put(key string, value any, size int) {
 	}
 }
 
-// Clear empties the cache.
-func (c *ResultCache) Clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.entries = map[string]*list.Element{}
-	c.order.Init()
-	c.size = 0
-}
-
 func dataDigest(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
 const (
@@ -117,15 +108,6 @@ var (
 	validatedCache  = NewResultCache(1024, 0)
 	normalizedCache = NewResultCache(256, normalizedCacheMaxBytes)
 )
-
-// ClearRuleContentCaches is clear_rule_content_caches.
-func ClearRuleContentCaches() {
-	cachesMu.Lock()
-	defer cachesMu.Unlock()
-	for _, c := range caches {
-		c.Clear()
-	}
-}
 
 const (
 	msgDomainClassical = "Domain 不接受 Classical 规则行；精确域名请填写 example.com，域名及其子域名请填写 +.example.com。"
@@ -196,7 +178,6 @@ type Inspection struct {
 func problemObject(line int, before *string, message string) Problem {
 	return Problem{line, before, message}
 }
-func strp(s string) *string { return &s }
 func cloneProblems(problems []Problem) []Problem {
 	result := slices.Clone(problems)
 	for i := range result {
@@ -608,20 +589,6 @@ func ValidateContent(rule model.RuleConfig, previous *model.RuleConfig) error {
 		before = new(DeclarationOf(*previous))
 	}
 	return ValidateDeclaration(DeclarationOf(rule), before)
-}
-
-// ValidateContentJSON is ValidateDeclaration on declarations as JSON objects.
-func ValidateContentJSON(raw, previous json.RawMessage) error {
-	var sent Declaration
-	if err := jsondecode.Unmarshal(raw, &sent); err != nil {
-		return err
-	}
-	var before *Declaration
-	if previous != nil {
-		before = new(Declaration)
-		_ = jsondecode.Unmarshal(previous, before)
-	}
-	return ValidateDeclaration(sent, before)
 }
 
 // ValidateDeclaration validates a sent declaration; previous is the stored

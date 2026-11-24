@@ -58,15 +58,6 @@ type ProbeSettings struct {
 	UnifiedDelay bool     `json:"unified_delay"`
 }
 
-// ResolveDNSSettings returns the active node-test DNS server list.
-func ResolveDNSSettings(ctx context.Context, repository *repo.Repository) ([]string, error) {
-	effective, err := EffectiveDNSSettings(ctx, repository, nil)
-	if err != nil {
-		return nil, err
-	}
-	return effective.DNSServers, nil
-}
-
 func isInvalidInput(err error) bool {
 	var ve *ValidationError
 	if errors.As(err, &ve) {

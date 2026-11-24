@@ -242,18 +242,6 @@ func ValidateProviderHealth(hc *model.ProviderHealthCheck) error {
 	return validateStoredHealth(raw, healthValues{Enable: hc.Enable, URL: hc.URL, Interval: hc.Interval, Timeout: hc.Timeout, Lazy: hc.Lazy, ExpectedStatus: hc.ExpectedStatus}, true)
 }
 
-// ValidateGroupHealth validates the health-check fields of a stored proxy group.
-func ValidateGroupHealth(group *model.ProxyGroup) error {
-	if group == nil {
-		return invalidInput(msgHealthMustBeObject)
-	}
-	raw, err := model.Marshal(group)
-	if err != nil {
-		return fmt.Errorf("marshal proxy group health: %w", err)
-	}
-	return validateStoredHealth(raw, healthValues{URL: group.URL, Interval: group.Interval, Timeout: group.Timeout, Lazy: group.Lazy, ExpectedStatus: group.ExpectedStatus, Tolerance: group.Tolerance}, false)
-}
-
 // healthValues contains the decoded values used by stored-data validation.
 // The original member set supplies presence; R5 provenance is never reinterpreted.
 type healthValues struct {

@@ -18,11 +18,6 @@ type Handler struct {
 	Repo  *repo.Repository
 }
 
-// NewHandler constructs a Handler for reg.
-func NewHandler(reg *tasks.Registry) *Handler {
-	return &Handler{Tasks: reg}
-}
-
 // NewHandlerWithRepo constructs a Handler with an explicit tasks.Registry and
 // Repository.
 func NewHandlerWithRepo(reg *tasks.Registry, r *repo.Repository) *Handler {

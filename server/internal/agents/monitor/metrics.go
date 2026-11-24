@@ -60,14 +60,6 @@ func lookupField(fields []fieldMap, metric string) (string, bool) {
 	return "", false
 }
 
-func fieldNames(fields []fieldMap) []string {
-	out := make([]string, len(fields))
-	for i, f := range fields {
-		out[i] = f.field
-	}
-	return out
-}
-
 var cacheRowFields = []string{"lookups", "fresh_hits", "stale_hits", "misses", "expired", "entries"}
 
 // sampleRE accepts Prometheus machine numbers and ASCII timestamps.
@@ -304,7 +296,7 @@ func ReadMetrics(text string) (*Observations, error) {
 			continue
 		}
 		l := labels(labelText, hasLabels)
-		if l == nil || len(l) == 0 || l["plugin_tag"] == "" {
+		if l["plugin_tag"] == "" {
 			continue
 		}
 		tag := l["plugin_tag"]

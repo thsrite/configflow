@@ -235,53 +235,6 @@ func (s *Service) SetResponseSeconds(seconds float64) func() {
 	return s.setResponseSeconds(seconds)
 }
 
-func (s *Service) setLocations(l Locations) func() {
-	if l == nil {
-		l = PassthroughLocations{}
-	}
-	s.mu.Lock()
-	prev := s.locations
-	s.locations = l
-	s.mu.Unlock()
-	return func() {
-		s.mu.Lock()
-		s.locations = prev
-		s.mu.Unlock()
-	}
-}
-
-func (s *Service) setAggregationRenderer(fn AggregationRenderer) func() {
-	s.mu.Lock()
-	prev := s.aggregations
-	prevSet := s.aggregationsSet
-	if fn == nil {
-		s.aggregations = missingAggregationProvider
-		s.aggregationsSet = false
-	} else {
-		s.aggregations = fn
-		s.aggregationsSet = true
-	}
-	s.mu.Unlock()
-	return func() {
-		s.mu.Lock()
-		s.aggregations = prev
-		s.aggregationsSet = prevSet
-		s.mu.Unlock()
-	}
-}
-
-func (s *Service) setDeliveryEnv(e *DeliveryEnv) func() {
-	s.mu.Lock()
-	prev := s.env
-	s.env = e
-	s.mu.Unlock()
-	return func() {
-		s.mu.Lock()
-		s.env = prev
-		s.mu.Unlock()
-	}
-}
-
 func (s *Service) setResponseSeconds(seconds float64) func() {
 	s.mu.Lock()
 	prev := s.responseSeconds

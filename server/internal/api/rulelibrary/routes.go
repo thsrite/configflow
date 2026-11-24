@@ -43,13 +43,6 @@ type Options struct {
 	replaceCache func(context.Context, string, string) error
 }
 
-// RegisterWithOptions installs the library routes with an injected transport.
-func RegisterWithOptions(r *httpx.Router, options Options) {
-	h := New(Deps{Repo: options.Repo, Client: options.Client, Refresh: options.Refresh})
-	h.service.replaceCache = options.replaceCache
-	h.Register(r)
-}
-
 // Register mounts shared rule editing and public delivery routes on r.
 func (h *Handler) Register(r *httpx.Router) {
 	s := h.service

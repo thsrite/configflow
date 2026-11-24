@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-var collections = []string{"subscriptions", "nodes", "rules", "rule_library", "proxy_groups"}
 var reorderPaths = map[string]string{"subscriptions": "/api/subscriptions/reorder", "nodes": "/api/nodes/reorder", "rules": "/api/rules/reorder", "rule_library": "/api/rule-library/reorder", "proxy_groups": "/api/proxy-groups/reorder"}
 
 func (i *invocation) reorder(ctx context.Context, collection string, ids []string, position string) (json.RawMessage, error) {

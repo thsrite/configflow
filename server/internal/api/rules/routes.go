@@ -63,16 +63,6 @@ type Options struct {
 	Now        func() time.Time
 }
 
-// RegisterWithOptions installs the routes with injected external collaborators.
-func RegisterWithOptions(r *httpx.Router, options Options) {
-	New(Deps{
-		Repo:       options.Repo,
-		RuleSource: options.RuleSource,
-		Client:     options.Client,
-		Now:        options.Now,
-	}).Register(r)
-}
-
 // Register mounts rule composition, DNS routing, and local delivery routes on r.
 func (h *Handler) Register(r *httpx.Router) {
 	s := h.service

@@ -94,13 +94,6 @@ type active struct {
 	listeners []net.Listener
 }
 
-func (m *Manager) getenv(name string) string {
-	if m.Getenv != nil {
-		return m.Getenv(name)
-	}
-	return os.Getenv(name)
-}
-
 func (m *Manager) lookupEnv(name string) (string, bool) {
 	if m.LookupEnv != nil {
 		return m.LookupEnv(name)
@@ -109,7 +102,6 @@ func (m *Manager) lookupEnv(name string) (string, bool) {
 }
 
 func (m *Manager) statePath() string { return filepath.Join(m.DataDir, "web-listener.json") }
-func (m *Manager) lockPath() string  { return filepath.Join(m.DataDir, "web-listener.lock") }
 
 // validPort validates a native integer supplied by a decoded DTO.
 func validPort(port int) (int, error) {
@@ -409,7 +401,7 @@ func (m *Manager) InformationFor(ctx context.Context) (*Information, error) {
 	if m == nil {
 		return UnsupportedInformation(), nil
 	}
-	ctx, unlock, err := m.lock(ctx)
+	_, unlock, err := m.lock(ctx)
 	if err != nil {
 		return nil, err
 	}

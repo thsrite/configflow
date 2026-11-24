@@ -326,9 +326,3 @@ func ResetArtifactCache() {
 	cacheOrder.Init()
 	cacheIndex = map[string]*list.Element{}
 }
-
-func cacheLen() int {
-	cacheMu.Lock()
-	defer cacheMu.Unlock()
-	return cacheOrder.Len()
-}

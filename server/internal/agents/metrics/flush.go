@@ -254,7 +254,7 @@ func (s *Service) FlushNow(ctx context.Context, trigger string, recordIdle bool)
 		failures = append(failures, err)
 	} else {
 		// 导入、恢复或重置配置后已不存在的 Agent，不再保存它们的历史
-		if _, err := s.history.RetainMetricsAgents(ctx, agentIDs); err != nil {
+		if _, err := s.history.RetainAgents(ctx, agentIDs); err != nil {
 			return nil, err
 		}
 		faultprobe.Point(ctx, faultprobe.MetricsFlush)

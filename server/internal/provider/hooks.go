@@ -26,7 +26,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 
 	"configflow/internal/agents/diag"
@@ -118,21 +117,4 @@ var nodeFallback atomic.Uint64
 
 func (e *DeliveryEnv) converter() convert.NodeConverter {
 	return convert.OptionalNodeConverter(e.Converter)
-}
-
-// SequentialNodeIDs returns a NodeID generator node_00000001, node_00000002,
-// ... (tests and reference corpora).
-func SequentialNodeIDs() func() string {
-	var mu sync.Mutex
-	n := 0
-	return func() string {
-		mu.Lock()
-		defer mu.Unlock()
-		n++
-		s := strconv.FormatInt(int64(n), 16)
-		for len(s) < 8 {
-			s = "0" + s
-		}
-		return "node_" + s
-	}
 }

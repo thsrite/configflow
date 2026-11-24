@@ -7,9 +7,6 @@ import (
 
 const msgHARulesBusy = "DNS 主备正在同步，请等待两台发布完成后更新规则"
 
-const msgHAConfigDamaged = "OxiDNS HA 配置记录损坏，请先停用或修复主备配置。"
-const msgHAPublicationDamaged = "OxiDNS HA 发布记录损坏，请先停用或修复主备配置。"
-
 const (
 	msgAgentMissing      = "未找到这台 Agent。"
 	msgPanelWrongService = "Mihomo 面板仅适用于 Mihomo Agent。"

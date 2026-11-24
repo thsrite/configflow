@@ -62,12 +62,6 @@ func New(deps Deps) *Handler {
 	}
 }
 
-// NewHandler constructs a router HTTP Handler with explicit services. Nil
-// services fall back to the transitional process defaults until W10/W11.
-func NewHandler(svc *core.Service, syncSvc *routerrulesync.RuleSyncService) *Handler {
-	return New(Deps{Routers: svc, RuleSync: syncSvc})
-}
-
 func (h *Handler) repository(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.repo != nil {
 		return h.repo, nil

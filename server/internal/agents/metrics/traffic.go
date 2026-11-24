@@ -354,14 +354,6 @@ func DecodeTrafficReport(report json.RawMessage, at *float64) *CleanedTraffic {
 // trafficNow is time.time() (tests replace it).
 var trafficNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
-// SetTrafficNow replaces the clock of the traffic history and returns a
-// function restoring it (tests).
-func SetTrafficNow(fn func() float64) func() {
-	previous := trafficNow
-	trafficNow = fn
-	return func() { trafficNow = previous }
-}
-
 // ---------- exact counters and SQLite numeric storage ----------
 
 // counter accumulates exact pending integers, promoting to big.Int on overflow.

@@ -4,7 +4,6 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
-	"context"
 	"errors"
 	"math/big"
 	"time"
@@ -87,4 +86,3 @@ func textOr(value *string, fallback string) string {
 	}
 	return *value
 }
-func checkOwner(ctx context.Context) error { return ctx.Err() }

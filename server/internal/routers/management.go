@@ -471,9 +471,6 @@ func (s *ManagementService) safeText(ctx context.Context, profile string, r *spe
 	}
 	return managementSafeText(nil, redact.NewSecrets(seeds, credentials), r, value)
 }
-func managementLogText(config json.RawMessage, seeds redact.Secrets, r *spec.Router, value string) string {
-	return eventText(managementSafeText(config, seeds, r, value))
-}
 func eventText(value string) string {
 	if value == redact.Redacted {
 		return value

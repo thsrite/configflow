@@ -133,27 +133,6 @@ func ResetCache() {
 	damagedIndex = map[string]*list.Element{}
 }
 
-// SetCacheLimit changes _STATUS_CACHE_LIMIT and returns the old value
-// (tests).
-func SetCacheLimit(limit int) int {
-	mu.Lock()
-	defer mu.Unlock()
-	old := statusCacheLimit
-	statusCacheLimit = limit
-	return old
-}
-
-// CachedPaths lists the cached paths, least recently used first (tests).
-func CachedPaths() []string {
-	mu.Lock()
-	defer mu.Unlock()
-	var out []string
-	for element := statusCache.Front(); element != nil; element = element.Next() {
-		out = append(out, element.Value.(*cacheEntry).path)
-	}
-	return out
-}
-
 func cachePop(path string) {
 	if element, ok := statusIndex[path]; ok {
 		statusCache.Remove(element)
@@ -496,15 +475,6 @@ func RouteKey(rule, rulePayload, outlet, policy string) string {
 	return strings.Join([]string{rule, rulePayload, outlet, policy}, routeSeparator)
 }
 
-// ParseRouteKey decodes a persisted rule decision.
-func ParseRouteKey(key string) (Route, bool) {
-	p := strings.SplitN(key, routeSeparator, 4)
-	if len(p) != 4 {
-		return Route{}, false
-	}
-	return Route{p[0], p[1], p[2], p[3]}, true
-}
-
 // NativeStore owns native JSON persistence and a shared bounded status cache.
 type NativeStore struct {
 	files     *jsonstore.Store
@@ -685,9 +655,6 @@ func weight(raw json.RawMessage) (*big.Rat, error) {
 }
 
 var now = time.Now
-
-// SetNow replaces the store clock for tests.
-func SetNow(fn func() time.Time) func() { old := now; now = fn; return func() { now = old } }
 
 func validateStatusFields(raw json.RawMessage) error {
 	if len(raw) == 0 || string(raw) == "null" {
@@ -1113,6 +1080,3 @@ func (s *NativeStore) Delete(ctx context.Context, id string) error {
 	damagedPop(path)
 	return s.files.Remove(ctx, id)
 }
-
-// CtimeNs returns the cache change-time signature for tests.
-func CtimeNs(info os.FileInfo) int64 { return signatureOf(info).CtimeNs }

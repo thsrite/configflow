@@ -1294,7 +1294,7 @@ func (d *Client) Perform(ctx context.Context, change ROSChange, undo *[]ROSChang
 	}
 
 	if method == "PUT" {
-		beforeRows := []Row{}
+		var beforeRows []Row
 		var err error
 		if isSingleRowPath(path) {
 			beforeRows, err = d.Scoped(ctx, path, values)

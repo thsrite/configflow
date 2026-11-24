@@ -255,16 +255,6 @@ func (e *RequestError) Unwrap() error { return e.Err }
 
 func (e *RequestError) HTTPStatus() int { return e.Status }
 
-// StatusOf is getattr(getattr(exc, 'response', None), 'status_code', None)
-// (0 = none).
-func StatusOf(err error) int {
-	var request *RequestError
-	if errors.As(err, &request) {
-		return request.Status
-	}
-	return 0
-}
-
 // HTTPClient performs requests; tests point the production client at
 // loopback servers or inject fakes.
 type HTTPClient interface {

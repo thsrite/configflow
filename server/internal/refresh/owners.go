@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"configflow/internal/convert"
-	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
@@ -236,6 +235,3 @@ func sourceCache(cache *substore.Cache, err error) (*NodeCache, error) {
 	}
 	return out, nil
 }
-
-// detached keeps the admitted Runtime generation while completing request work.
-func detached(ctx context.Context) context.Context { return lifecycle.Detach(ctx) }

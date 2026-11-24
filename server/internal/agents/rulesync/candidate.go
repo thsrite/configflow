@@ -9,12 +9,6 @@ import (
 	"strings"
 )
 
-// PrepareCandidate generates only opted-in rule artifacts; all other delivered
-// files and the main document's non-rule fields come from the verified device.
-func PrepareCandidate(ctx context.Context, target deploy.Target, source *deploy.Source, baseline Baseline, settings Settings, deploymentID string, forceRefresh bool) (bundle *deploy.Bundle, err error) {
-	return PrepareCandidateWith(ctx, nil, target, source, baseline, settings, deploymentID, forceRefresh)
-}
-
 // PrepareCandidateWith generates only opted-in rule artifacts using rf for
 // remote rule reads.
 func PrepareCandidateWith(ctx context.Context, rf *refresh.Service, target deploy.Target, source *deploy.Source, baseline Baseline, settings Settings, deploymentID string, forceRefresh bool) (bundle *deploy.Bundle, err error) {

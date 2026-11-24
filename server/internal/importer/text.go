@@ -252,13 +252,7 @@ func rulesetName(source string) string {
 		return "RuleSet"
 	}
 	path := strings.TrimRight(u.Path, "/")
-	_, stem, found := strings.Cut(path, "/")
-	if found {
-		parts := strings.Split(path, "/")
-		stem = parts[len(parts)-1]
-	} else {
-		stem = path
-	}
+	stem := path[strings.LastIndexByte(path, '/')+1:]
 	stem = rulesetExtension.ReplaceAllString(stem, "")
 	if stem == "" {
 		stem = "RuleSet"

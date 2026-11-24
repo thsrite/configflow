@@ -440,27 +440,6 @@ func observeRuleSyncPresence(ctx context.Context, m *agents.Manager, records []a
 	})
 }
 
-// Presence uses the shared transition owner, with only its log-facing fields
-// projected and sanitized. No metrics/history or deployment graph is copied.
-func observePresence(ctx context.Context, m *agents.Manager, records []*model.Agent) {
-	secrets, err := systemSecrets(ctx, m)
-	if err != nil {
-		hidden := make([]agents.PresenceObservation, 0, len(records))
-		for _, a := range records {
-			if !agents.AgentMatchesID(a, a.ID) {
-				continue
-			}
-			hidden = append(hidden, agents.PresenceObservation{ID: a.ID, Status: a.Status, Name: redact.Redacted, LastHeartbeat: redact.Redacted})
-		}
-		agents.ObserveAgentPresence(hidden, nil)
-		return
-	}
-	for _, a := range records {
-		secrets = agents.CollectAgentCredentials(a, secrets)
-	}
-	agents.ObserveRegistryPresence(records, secrets)
-}
-
 func safeDisplay(text string, secrets redact.Secrets) string {
 	safe := redact.DiagnosticText(text, secrets, 2000)
 	if redact.ContainsEncodedSecret(safe, secrets) {

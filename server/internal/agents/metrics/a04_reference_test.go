@@ -140,7 +140,7 @@ func TestReferenceReadSavedLines(t *testing.T) {
 		if err := os.WriteFile(h.agentFile("a"), decodeBase64(t, item.Data), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		points, count, err := h.readFile("a", limit)
+		points, count, _, err := h.readFileState("a", limit)
 		if err != nil {
 			t.Fatal(err)
 		}

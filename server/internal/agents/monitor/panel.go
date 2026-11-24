@@ -141,15 +141,6 @@ func argGet(args [][2]string, key, def string) string {
 	return def
 }
 
-func argPresent(args [][2]string, key string) bool {
-	for _, pair := range args {
-		if pair[0] == key {
-			return true
-		}
-	}
-	return false
-}
-
 // panelName is _name(args, key).
 func panelName(args [][2]string, key string) (string, error) {
 	name := argGet(args, key, "")
@@ -391,13 +382,6 @@ var (
 	// coreLocks: one GitHub fetch per channel at a time.
 	coreLocks = map[string]*sync.Mutex{"release": {}, "alpha": {}}
 )
-
-// ResetCoreLatest empties _core_latest (tests).
-func ResetCoreLatest() {
-	coreLatestMu.Lock()
-	coreLatest = map[string]*coreCached{}
-	coreLatestMu.Unlock()
-}
 
 func coreCachedOf(channel string) *coreCached {
 	coreLatestMu.Lock()

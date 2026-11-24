@@ -316,11 +316,6 @@ func decodeReplace(data []byte) string {
 	return agents.DecodeUTF8Replace(data)
 }
 
-func (h *History) readFile(agentID string, limit time.Time) ([]point, int, error) {
-	points, count, _, err := h.readFileState(agentID, limit)
-	return points, count, err
-}
-
 func (h *History) readFileState(agentID string, limit time.Time) ([]point, int, bool, error) {
 	data, err := os.ReadFile(h.agentFile(agentID))
 	if err != nil {
@@ -414,7 +409,7 @@ func (h *History) Load(ctx context.Context, agentIDs []string) (LoadResult, erro
 		path := h.DataDir + "/" + name
 		if strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".tmp") {
 			// 整理文件时中断留下的临时文件
-			h.removeContext(ctx, path, false)
+			h.remove(ctx, path, false)
 			continue
 		}
 		for _, suffix := range []string{FileSuffix, LegacySuffix} {
@@ -450,7 +445,7 @@ func (h *History) Load(ctx context.Context, agentIDs []string) (LoadResult, erro
 				present bool
 				suffix  string
 			}{{k.file, FileSuffix}, {k.legacy, LegacySuffix}} {
-				if item.present && h.removeContext(ctx, h.DataDir+"/"+agentID+item.suffix, false) == removed {
+				if item.present && h.remove(ctx, h.DataDir+"/"+agentID+item.suffix, false) == removed {
 					result.Removed++
 				}
 			}
@@ -467,7 +462,7 @@ func (h *History) Load(ctx context.Context, agentIDs []string) (LoadResult, erro
 			}
 			if k.legacy {
 				// 新文件由旧文件改写而来，旧文件是迁移中断留下的
-				h.removeContext(ctx, h.legacyFile(agentID), false)
+				h.remove(ctx, h.legacyFile(agentID), false)
 			}
 		} else {
 			points, err = h.readLegacy(agentID, limit)
@@ -482,7 +477,7 @@ func (h *History) Load(ctx context.Context, agentIDs []string) (LoadResult, erro
 					reason = DescribeOSError(err)
 				}
 				historyLogger.Warningf("读取 Agent %s 的旧版监控历史失败，已忽略：%s", agentID, reason)
-				h.removeContext(ctx, h.legacyFile(agentID), false)
+				h.remove(ctx, h.legacyFile(agentID), false)
 				continue
 			}
 			migrate = append(migrate, agentID)
@@ -601,16 +596,16 @@ func (h *History) DeleteAgentHistory(ctx context.Context, agentID string) (bool,
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	first := h.remove(h.agentFile(agentID), true)
+	first := h.unlinkFile(h.agentFile(agentID), true)
 	if err := ctx.Err(); err != nil {
 		return first != failed, err
 	}
-	second := h.remove(h.legacyFile(agentID), true)
+	second := h.unlinkFile(h.legacyFile(agentID), true)
 	return first != failed && second != failed, nil
 }
 
-// RetainMetricsAgents removes stale files with shutdown cancellation.
-func (h *History) RetainMetricsAgents(ctx context.Context, agentIDs []string) (int, error) {
+// RetainAgents removes stale files with shutdown cancellation.
+func (h *History) RetainAgents(ctx context.Context, agentIDs []string) (int, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -672,9 +667,9 @@ var unlink = func(path string) error {
 	return nil
 }
 
-// remove is _remove: removed, missing, or failed (logged as a warning when
-// report is set, at debug level otherwise).
-func (h *History) remove(path string, report bool) removal {
+// unlinkFile distinguishes a removed file, a missing file, and an unlink failure.
+// Failures are logged at warning level when report is set and at debug level otherwise.
+func (h *History) unlinkFile(path string, report bool) removal {
 	err := unlink(path)
 	if err == nil {
 		return removed
@@ -749,7 +744,7 @@ func (h *History) replace(ctx context.Context, agentID, path string, lines []str
 		return err
 	}
 	if len(lines) == 0 {
-		h.remove(path, false)
+		h.unlinkFile(path, false)
 		return nil
 	}
 	temp, err := fsx.Stage(ctx, path, joinLines(lines), fsx.Options{Perm: 0o600, Pattern: "." + agentID + "*.tmp"})
@@ -845,7 +840,7 @@ func (h *History) flushAgents(ctx context.Context, agentIDs []string) flushResul
 		delete(h.legacy, job.agentID)
 		h.mu.Unlock()
 		if hadLegacy && legacy != "" && ctx.Err() == nil {
-			h.remove(legacy, true)
+			h.unlinkFile(legacy, true)
 		}
 		if job.pending > 0 {
 			result.agents++
@@ -901,9 +896,9 @@ func (h *History) Flush(ctx context.Context) (FlushResult, error) {
 	return counts, nil
 }
 
-func (h *History) removeContext(ctx context.Context, path string, report bool) removal {
+func (h *History) remove(ctx context.Context, path string, report bool) removal {
 	if ctx.Err() != nil {
 		return failed
 	}
-	return h.remove(path, report)
+	return h.unlinkFile(path, report)
 }

@@ -3,7 +3,6 @@ package ipv6
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
-	"encoding/json"
 	"fmt"
 	"net/netip"
 	"slices"
@@ -534,13 +533,4 @@ func PolicyChecks(env PolicyEnvironment, agent *model.Agent, host IPv6Host, conf
 		return policyReport(key, label, decision, messages[decision], []string{scope})
 	}
 	return append([]PolicyCheck{summary("firewall", messagePolicyFirewallLabel, traffic), summary("nat", messagePolicyNATLabel, nat)}, checks...)
-}
-
-// MarshalJSON describes policy configuration in the same external JSON vocabulary.
-func (e PolicyEnvironment) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		IPv6         PolicySnapshot `json:"ipv6"`
-		IPv4         PolicySnapshot `json:"ipv4"`
-		RoutingRules []ros.Row      `json:"routing_rules"`
-	}{e.IPv6, e.IPv4, e.RoutingRules})
 }

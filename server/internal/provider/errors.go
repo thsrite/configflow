@@ -65,11 +65,6 @@ func isStrategyReference(err error) bool {
 	return errors.As(err, &strategy)
 }
 
-func isDialerReference(err error) bool {
-	var dialer *convert.DialerReferenceError
-	return errors.As(err, &dialer)
-}
-
 func contextsOf(err error) []contextKey {
 	var own *Error
 	if errors.As(err, &own) {

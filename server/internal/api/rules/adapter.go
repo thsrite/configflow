@@ -113,15 +113,6 @@ func validateSyntax(kind member[string], value member[string]) error {
 	return nil
 }
 
-// textMember is a stored text value as if it had been sent.
-func textMember(value *string) member[string] {
-	if value == nil {
-		return member[string]{Raw: json.RawMessage("null")}
-	}
-	raw, _ := json.Marshal(*value)
-	return member[string]{Raw: raw, Value: *value, OK: true}
-}
-
 func reorderSelected(items []model.RuleConfig, selection []json.RawMessage, position string) ([]model.RuleConfig, []json.RawMessage, error) {
 	ids := []string{}
 	for _, raw := range selection {

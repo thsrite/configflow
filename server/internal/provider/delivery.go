@@ -574,11 +574,6 @@ func prepareSubscription(ctx context.Context, svc *Service, sub model.Subscripti
 	return &Artifact{Name: sub.Name, HasName: true, Content: string(data), CacheUpdates: updates}, nil
 }
 
-// ValidateArtifacts checks exact prepared content and all provider URL aliases.
-func ValidateArtifacts(snapshot *DeliverySnapshot, providers []*Artifact) (bool, error) {
-	return validateArtifactsWith(PassthroughLocations{}, snapshot, providers)
-}
-
 func validateArtifactsWith(loc Locations, snapshot *DeliverySnapshot, providers []*Artifact) (bool, error) {
 	collections := make([][]*yamlx.Node, len(providers))
 	present := make([]bool, len(providers))

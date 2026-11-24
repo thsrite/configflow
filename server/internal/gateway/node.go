@@ -12,10 +12,6 @@ import (
 // Value predicates and builders for the *yaml.Node documents this package
 // reads and edits, on top of the shared yamlx node helpers.
 
-// tagOpaque marks a scalar this package only carries (a YAML timestamp or
-// binary value of the source document); it counts as set and truthy.
-const tagOpaque = "!configflow/opaque"
-
 func isMap(n *yaml.Node) bool {
 	n = yamlx.Resolve(n)
 	return n != nil && n.Kind == yaml.MappingNode

@@ -11,7 +11,6 @@ package resource
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -62,13 +61,4 @@ func (l Locator) Backend(filename string) string { return join(join(l.Root, "bac
 func (l Locator) Exists(relativePath string) bool {
 	info, err := os.Stat(l.Path(relativePath))
 	return err == nil && info.Mode().IsRegular()
-}
-
-// Abs returns Path as an absolute path (for messages).
-func (l Locator) Abs(relativePath string) string {
-	abs, err := filepath.Abs(l.Path(relativePath))
-	if err != nil {
-		return l.Path(relativePath)
-	}
-	return abs
 }

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 )
 
-var payloadFields = []string{"id", "source_snapshot", "resource_config", "config_revision", "base_url", "baseline_deployment_id", "bundle"}
-
 // UnmarshalJSON retains fields from a newer publisher while reading the owned
 // envelope strictly. Bad owned metadata must stop preparation before a core write.
 func (p *payload) UnmarshalJSON(data []byte) error {

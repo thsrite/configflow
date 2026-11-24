@@ -164,9 +164,3 @@ func (ix *StaticRouteIndex) Select(cidr, gateway string) (sel StaticRouteSelecti
 	}
 	return sel, true
 }
-
-// StaticRouteCandidates is the complete ownership proof for one lookup; empty when coverage is incomplete or unsafe.
-func StaticRouteCandidates(routes []*RouteEntry, cidr, gateway string) []*RouteEntry {
-	sel, _ := NewStaticRouteIndex(routes).Select(cidr, gateway)
-	return sel.Candidates
-}

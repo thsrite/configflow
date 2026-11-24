@@ -79,9 +79,6 @@ func NewPendingCache(spawner lockx.Spawner, c clock.Clock) *PendingCache {
 	return &PendingCache{entries: map[string]*pendingCacheEntry{}, order: list.New(), clock: c, spawner: spawner, flight: lockx.NewFlight[uint64, pendingLoad](spawner, "upstream-pending")}
 }
 
-// Clear invalidates cached and in-flight generations without abandoning their
-// tracked work. Late completion cannot repopulate or overwrite newer entries.
-func (c *PendingCache) Clear() { c.mu.Lock(); defer c.mu.Unlock(); clear(c.entries); c.order.Init() }
 func clonePendingEntries(entries []PendingEntry) []PendingEntry {
 	out := append([]PendingEntry{}, entries...)
 	for i := range out {

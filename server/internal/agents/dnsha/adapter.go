@@ -87,8 +87,6 @@ func (s *Service) pair(ctx context.Context, id string) ([]*agent, error) {
 	return out, nil
 }
 
-var owned = []string{"oxidns_ha", "oxidns_ha_state", "oxidns_ha_publication", "rule_sync", "deployments", "latest_deployment"}
-
 func (s *Service) update(ctx context.Context, fn func([]*agent) error) error {
 	if err := ctx.Err(); err != nil {
 		return err

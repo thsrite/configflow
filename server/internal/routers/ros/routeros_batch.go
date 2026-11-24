@@ -616,10 +616,7 @@ func (d *Client) AddRoutes(ctx context.Context, rawOps []json.RawMessage, batch 
 	if added.Unexplained {
 		return nil, device.RollbackError(fmt.Sprintf(messageBatchIncomplete, path))
 	}
-	left := make([]int, 0, len(batch)-added.Count)
-	for _, index := range batch[added.Count:] {
-		left = append(left, index)
-	}
+	left := append(make([]int, 0, len(batch)-added.Count), batch[added.Count:]...)
 	return left, nil
 }
 

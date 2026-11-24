@@ -37,7 +37,6 @@ func isFileError(err error) bool {
 	var errno syscall.Errno
 	return errors.Is(err, store.ErrStorage) || errors.As(err, &pe) || errors.As(err, &le) || errors.As(err, &errno)
 }
-func fileErrorText(err error) string { return err.Error() }
 func ensureCacheDir(ctx context.Context, r *repo.Repository) (string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
@@ -69,12 +68,6 @@ func CachePath(ctx context.Context, r *repo.Repository, id string) (string, erro
 		return "", err
 	}
 	return filepath.Join(dir, cacheName(id)), nil
-}
-func removeFile(path string) error {
-	if err := syscall.Unlink(path); err != nil {
-		return &fs.PathError{Op: "remove", Path: path, Err: err}
-	}
-	return nil
 }
 
 // DeleteSubscriptionCache removes a node cache with the canonical repository leaf lease.

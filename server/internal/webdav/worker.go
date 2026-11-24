@@ -44,11 +44,6 @@ type Worker struct {
 	closed     bool
 }
 
-// NewWorker creates an idle worker using the default tracked spawner. Explicit
-// Close is terminal; Runtime startup activates the automatic worker each generation.
-func NewWorker(delay time.Duration, upload UploadFunc) *Worker {
-	return newWorker(delay, upload, workerOptions{})
-}
 func newWorker(delay time.Duration, upload UploadFunc, options workerOptions) *Worker {
 	idle := make(chan struct{})
 	close(idle)
@@ -236,16 +231,6 @@ func (w *Worker) WaitIdle(ctx context.Context) error {
 func (w *Worker) stopGeneration(ctx context.Context, g *workerGeneration) error {
 	w.mu.Lock()
 	w.stopLocked(g)
-	w.mu.Unlock()
-	return w.WaitIdle(ctx)
-}
-
-// Close permanently refuses scheduling, discards pending work and waits within
-// ctx. In-flight uploads retain their Runtime cancellation and own I/O timeouts.
-func (w *Worker) Close(ctx context.Context) error {
-	w.mu.Lock()
-	w.closed = true
-	w.stopLocked(w.generation)
 	w.mu.Unlock()
 	return w.WaitIdle(ctx)
 }
