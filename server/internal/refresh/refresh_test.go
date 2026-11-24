@@ -401,7 +401,7 @@ func (f *fixture) listRows() map[string]map[string]any {
 func TestFailedRuleRefreshSurvivesAReloadWithReasonAndRetainedCache(t *testing.T) {
 	f := setup(t, 86400)
 	rule := ruleDecl(t)
-	if _, err := rulefetch.WriteCache(f.ctx, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.old.test\n")}, nil); err != nil {
+	if _, err := rulefetch.WriteCache(f.ctx, f.repo, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.old.test\n")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	_, _, err := RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
@@ -437,7 +437,7 @@ func TestFailedRuleRefreshSurvivesAReloadWithReasonAndRetainedCache(t *testing.T
 	if strings.Contains(compactJSON(row), "private") {
 		t.Error("the address leaked")
 	}
-	cached, _ := rulefetch.ReadCache(f.ctx, refreshCacheRule(t, rule), nil)
+	cached, _ := rulefetch.ReadCache(f.ctx, f.repo, refreshCacheRule(t, rule), nil)
 	if string(cached) != "+.old.test\n" {
 		t.Errorf("cache %q", cached)
 	}
@@ -503,7 +503,7 @@ func TestDeviceReadsUseTheCacheAndOnlyAMissingCacheDownloadsNow(t *testing.T) {
 func TestDeviceReadOfAFailedSourceIsStale(t *testing.T) {
 	f := setup(t, 86400)
 	rule := ruleDecl(t)
-	_, _ = rulefetch.WriteCache(f.ctx, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.old.test\n")}, nil)
+	_, _ = rulefetch.WriteCache(f.ctx, f.repo, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.old.test\n")}, nil)
 	_, _, _ = RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
 		Fetch: func(context.Context, string) (rulefetch.Content, error) { return rulefetch.Content{}, timeoutError() },
 	})
@@ -535,7 +535,7 @@ func TestRuleSourceDueOnFirstRoundWithoutCache(t *testing.T) {
 	if n, err := RunRound(f.ctx, nil); n != 1 || err != nil {
 		t.Fatal(n, err)
 	}
-	cached, _ := rulefetch.ReadCache(f.ctx, refreshCacheRule(t, ruleDecl(t)), nil)
+	cached, _ := rulefetch.ReadCache(f.ctx, f.repo, refreshCacheRule(t, ruleDecl(t)), nil)
 	if string(cached) != "+.new.test\n" {
 		t.Fatalf("cache %q", cached)
 	}
@@ -930,7 +930,7 @@ func awaitRefresh(t *testing.T, condition func() bool) {
 func TestInvalidRefreshKeepsTheValidCache(t *testing.T) {
 	f := setup(t, 86400)
 	rule := ruleDecl(t)
-	_, _ = rulefetch.WriteCache(f.ctx, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.valid.example\n")}, nil)
+	_, _ = rulefetch.WriteCache(f.ctx, f.repo, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.valid.example\n")}, nil)
 	_, _, err := RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
 		Fetch: func(context.Context, string) (rulefetch.Content, error) {
 			return rulefetch.Content{Data: []byte("DOMAIN,bad.example")}, nil
@@ -940,7 +940,7 @@ func TestInvalidRefreshKeepsTheValidCache(t *testing.T) {
 	if !errors.As(err, &invalid) {
 		t.Fatal(err)
 	}
-	cached, _ := rulefetch.ReadCache(f.ctx, refreshCacheRule(t, rule), nil)
+	cached, _ := rulefetch.ReadCache(f.ctx, f.repo, refreshCacheRule(t, rule), nil)
 	entry := f.status("rule_source:rule")
 	if string(cached) != "+.valid.example\n" || entry["last_status"] != "failed" || entry["cache_retained"] != true ||
 		!strings.Contains(mapStr(entry, "last_error"), "DOMAIN,bad.example") || !pyTruthy(entry["cache_updated_at"]) {

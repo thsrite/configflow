@@ -25,13 +25,13 @@ func TestReviewC08ReadPathPrefersExistingCacheWithoutRepositoryRead(t *testing.T
 	if _, err := r.Shared(ctx); err == nil {
 		t.Skip("repository still readable; nothing to prove")
 	}
-	got, err := CacheReadPath(ctx, rule, nil)
+	got, err := CacheReadPath(ctx, r, rule, nil)
 	if err != nil || got != path {
 		t.Fatalf("CacheReadPath = %q, %v; want %q", got, err, path)
 	}
 	other := remoteSource()
 	other.URL = strp("https://rules.test/other.txt")
-	if _, err := CacheReadPath(ctx, other, nil); err == nil {
+	if _, err := CacheReadPath(ctx, r, other, nil); err == nil {
 		t.Fatal("a missing cache must still read the repository (and fail here)")
 	}
 }

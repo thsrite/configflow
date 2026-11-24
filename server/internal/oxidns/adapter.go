@@ -8,6 +8,7 @@ import (
 	"configflow/internal/ippresence"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
+	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/yamlx"
 )
@@ -16,6 +17,7 @@ import (
 // Rules, groups, Agents and system settings are read from the typed source;
 // the OxiDNS settings object is decoded once from its stored JSON.
 type Profile struct {
+	Repo         *repo.Repository
 	source       *model.Config
 	settings     *Node
 	notes        json.RawMessage
@@ -234,7 +236,7 @@ func (p *Profile) classicalWithoutIP(item model.RuleConfig) bool {
 		URL: item.URL, Format: item.Format, SourceType: item.SourceType, Content: item.Content, Behavior: item.Behavior}
 	// Generate owns only a snapshot, not a write-capable Runtime context.
 	// PeekTypedClassicalIPLines is peek-only so this offline probe cannot migrate files.
-	value, err := ippresence.PeekTypedClassicalIPLines(context.Background(), rule, p.source.RuleLibrary)
+	value, err := ippresence.PeekTypedClassicalIPLines(context.Background(), p.Repo, rule, p.source.RuleLibrary)
 	return err == nil && value != nil && !*value
 }
 

@@ -55,7 +55,7 @@ func TestNativeCacheMigrationPreservesOfflineFallback(t *testing.T) {
 	}
 	beforeJSON, _ := model.Marshal(before)
 	offline := errors.New("synthetic upstream unavailable")
-	content, refreshErr, err := RefreshRule(ctx, rule, nil, CacheOptions{
+	content, refreshErr, err := RefreshRule(ctx, r, rule, nil, CacheOptions{
 		AllowStale: true,
 		Fetch:      func(context.Context, string) (Content, error) { return Content{}, offline },
 	})
@@ -84,7 +84,7 @@ func TestNativeCacheMigrationPreservesOfflineFallback(t *testing.T) {
 	if err := os.Remove(old); err != nil {
 		t.Fatal(err)
 	}
-	cached, err := ReadCache(ctx, rule, nil)
+	cached, err := ReadCache(ctx, r, rule, nil)
 	if err != nil || string(cached) != string(content) {
 		t.Fatal("native read after migration", err)
 	}
@@ -115,7 +115,7 @@ func TestNativeCacheMigrationRejectsBadBytesDeclarationsAndReceipts(t *testing.T
 					t.Fatal(err)
 				}
 			}
-			content, err := ReadCache(ctx, rule, nil)
+			content, err := ReadCache(ctx, r, rule, nil)
 			if err != nil || content != nil {
 				t.Fatalf("refusal %s: bytes=%d err=%v", kind, len(content), err)
 			}
@@ -141,7 +141,7 @@ func TestCacheWriteUsesOriginatingRuntimeAfterDisconnectAndShutdown(t *testing.T
 			if shutdown {
 				runtime.Shutdown(context.Background())
 			}
-			_, err := WriteCache(request, rule, Content{Data: []byte("payload: [changed.example]\n")}, nil)
+			_, err := WriteCache(request, r, rule, Content{Data: []byte("payload: [changed.example]\n")}, nil)
 			if shutdown {
 				if !errors.Is(err, context.Canceled) {
 					t.Fatalf("shutdown error: %v", err)
@@ -176,12 +176,12 @@ func TestDownloadRetryWaitKeepsRequestCancellation(t *testing.T) {
 }
 
 func TestLegacyDigestIsReadOnlyMigrationMetadata(t *testing.T) {
-	ctx, _, rule, old, native := migrationFixture(t)
+	ctx, r, rule, old, native := migrationFixture(t)
 	name, ok := rules.LegacyCacheFilename(rule)
 	if !ok || filepath.Base(old) != filepath.Base(name) || filepath.Base(old) == filepath.Base(native) {
 		t.Fatal("historical address not recognized")
 	}
-	if _, err := ReadCache(ctx, rule, nil); err != nil {
+	if _, err := ReadCache(ctx, r, rule, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -189,7 +189,7 @@ func TestLegacyDigestIsReadOnlyMigrationMetadata(t *testing.T) {
 func TestRefreshCommitChecksRuntimeAfterDownload(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect", true: "shutdown"}[shutdown], func(t *testing.T) {
-			ctx, _, rule, _, native := migrationFixture(t)
+			ctx, r, rule, _, native := migrationFixture(t)
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 			runtime.Start(context.Background())
 			t.Cleanup(func() { runtime.Shutdown(context.Background()) })
@@ -198,7 +198,7 @@ func TestRefreshCommitChecksRuntimeAfterDownload(t *testing.T) {
 			release := make(chan struct{})
 			done := make(chan error, 1)
 			go func() {
-				_, _, err := RefreshRule(request, rule, nil, CacheOptions{Fetch: func(work context.Context, _ string) (Content, error) {
+				_, _, err := RefreshRule(request, r, rule, nil, CacheOptions{Fetch: func(work context.Context, _ string) (Content, error) {
 					if work.Err() != nil {
 						t.Error("not admitted")
 					}
@@ -256,7 +256,7 @@ func FuzzTypedRuleContent(f *testing.F) {
 func TestLegacyCacheMigrationUsesHeldReadSnapshot(t *testing.T) {
 	ctx, r, rule, _, native := migrationFixture(t)
 	err := r.WithReadSnapshot(ctx, func(held context.Context) error {
-		data, err := ReadCacheWithFormat(held, rule, nil, "yaml")
+		data, err := ReadCacheWithFormat(held, r, rule, nil, "yaml")
 		if err != nil {
 			return err
 		}
@@ -271,7 +271,7 @@ func TestLegacyCacheMigrationUsesHeldReadSnapshot(t *testing.T) {
 	if _, err := os.Stat(native); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("read-only snapshot wrote cache")
 	}
-	if _, err := ReadCacheWithFormat(ctx, rule, nil, "yaml"); err != nil {
+	if _, err := ReadCacheWithFormat(ctx, r, rule, nil, "yaml"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(native); err != nil {
@@ -282,7 +282,7 @@ func TestLegacyCacheMigrationUsesHeldReadSnapshot(t *testing.T) {
 func TestKnownFormatNeverDecodesInferenceLibrary(t *testing.T) {
 	rule := remoteSource()
 	ctx, r := cacheRepo(t, &rule)
-	if _, err := WriteCache(ctx, rule, Content{Data: []byte("example.com\n")}, nil); err != nil {
+	if _, err := WriteCache(ctx, r, rule, Content{Data: []byte("example.com\n")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	// A caller-known format with an existing stable cache must never touch the
@@ -291,7 +291,7 @@ func TestKnownFormatNeverDecodesInferenceLibrary(t *testing.T) {
 		t.Fatal("known format visited library")
 		return nil
 	}}
-	data, err := ReadCacheWithFormat(ctx, rule, config, "text")
+	data, err := ReadCacheWithFormat(ctx, r, rule, config, "text")
 	if err != nil || string(data) != "example.com\n" {
 		t.Fatal("known format visited library", err)
 	}

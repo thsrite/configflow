@@ -107,6 +107,7 @@ func RenderConfig(ctx context.Context, r *repo.Repository, config *model.Config,
 		if e != nil {
 			return out, e
 		}
+		profile.Repo = r
 		out.Content, err = oxidns.Generate(profile, baseURL)
 	default:
 		err = errors.New("unsupported configuration engine")

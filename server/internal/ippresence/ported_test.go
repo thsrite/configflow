@@ -18,7 +18,7 @@ import (
 // by cache path + mtime_ns + size, cleared when 1024 entries are reached)
 // and the hook registration of Wire.
 
-func listRepo(t *testing.T) (context.Context, string, model.RuleConfig, []model.RuleLibraryItem) {
+func listRepo(t *testing.T) (context.Context, *repo.Repository, string, model.RuleConfig, []model.RuleLibraryItem) {
 	t.Helper()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
@@ -40,14 +40,14 @@ func listRepo(t *testing.T) (context.Context, string, model.RuleConfig, []model.
 	if err := json.Unmarshal([]byte(`{"id":"tiktok","itemType":"ruleset","library_rule_id":"lib-tiktok","behavior":"classical"}`), &item); err != nil {
 		t.Fatal(err)
 	}
-	return ctx, filepath.Join(root, rules.CacheFilename(rules.LibraryRule(entry))), item, []model.RuleLibraryItem{entry}
+	return ctx, r, filepath.Join(root, rules.CacheFilename(rules.LibraryRule(entry))), item, []model.RuleLibraryItem{entry}
 }
 
 // A cache file rewritten with the same size and modification time keeps the
 // memoized answer (keyed by path, mtime_ns, size); a new size or mtime is read again.
 func TestCacheMemoIsKeyedByPathMtimeAndSize(t *testing.T) {
 	ClearMemo()
-	ctx, path, item, library := listRepo(t)
+	ctx, r, path, item, library := listRepo(t)
 	stamp := time.Unix(1700000000, 123456789)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestCacheMemoIsKeyedByPathMtimeAndSize(t *testing.T) {
 	}
 	check := func(want bool) {
 		t.Helper()
-		got, err := TypedClassicalIPLines(ctx, item, library)
+		got, err := TypedClassicalIPLines(ctx, r, item, library)
 		if err != nil || got == nil || *got != want {
 			t.Fatalf("got %v %v, want %v", got, err, want)
 		}
@@ -86,7 +86,7 @@ func TestContentMemoLimit(t *testing.T) {
 	for i := 0; i < memoLimit; i++ {
 		content := fmt.Sprintf("DOMAIN,%c%d.test", rune('a'+i%26), i)
 		item := model.RuleConfig{SourceType: &srcType, Content: &content}
-		if got, err := TypedClassicalIPLines(ctx, item, nil); err != nil || got == nil || *got {
+		if got, err := TypedClassicalIPLines(ctx, nil, item, nil); err != nil || got == nil || *got {
 			t.Fatalf("%d: %v %v", i, got, err)
 		}
 	}
@@ -97,7 +97,7 @@ func TestContentMemoLimit(t *testing.T) {
 		t.Fatalf("memo holds %d", full)
 	}
 	ipContent := "1.1.1.1"
-	if _, err := TypedClassicalIPLines(ctx, model.RuleConfig{SourceType: &srcType, Content: &ipContent}, nil); err != nil {
+	if _, err := TypedClassicalIPLines(ctx, nil, model.RuleConfig{SourceType: &srcType, Content: &ipContent}, nil); err != nil {
 		t.Fatal(err)
 	}
 	memoMu.Lock()

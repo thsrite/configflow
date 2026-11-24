@@ -184,6 +184,7 @@ func (h *Handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.Repo = s.Repo
 	content := ""
 	if len(targets) > 0 {
 		content, err = oxidns.Generate(p, base)

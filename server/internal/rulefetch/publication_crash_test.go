@@ -153,12 +153,12 @@ func TestInlinePublicationProcess(t *testing.T) {
 			t.Fatalf("committed %s: %v want %q", item.ID, item.Content, want)
 		}
 		rule := rules.LibraryRule(item)
-		root, err := rulefetch.GetRulesDir(s.Context())
+		root, err := rulefetch.GetRulesDir(s.Repo)
 		if err != nil {
 			t.Fatal(err)
 		}
 		path := filepath.Join(root, rules.CacheFilename(rule))
-		cache, err := rulefetch.ReadCache(s.Context(), rule, nil)
+		cache, err := rulefetch.ReadCache(s.Context(), s.Repo, rule, nil)
 		changed := want != inlineSeedContent()[item.ID]
 		if mode == "read-crashed" && changed {
 			// Negative control: the old valid file still exists, so receipt bypass
@@ -192,7 +192,7 @@ func TestInlinePublicationProcess(t *testing.T) {
 	}
 	// Recovery reuses the same C33 publisher, including its receipt/temp cleanup.
 	s.Post("/api/rule-library/cache", s.Login(), httpxtest.JSON(map[string]any{"rule_ids": ids})).WantStatus(200)
-	root, err := rulefetch.GetRulesDir(s.Context())
+	root, err := rulefetch.GetRulesDir(s.Repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestInlinePublicationProcess(t *testing.T) {
 			continue
 		}
 		rule := rules.LibraryRule(item)
-		cache, err := rulefetch.ReadCache(s.Context(), rule, nil)
+		cache, err := rulefetch.ReadCache(s.Context(), s.Repo, rule, nil)
 		if err != nil || string(cache) != want {
 			t.Fatalf("repaired cache: %q %v", cache, err)
 		}
@@ -271,7 +271,7 @@ func seedInlinePublication(t *testing.T, s *httpxtest.Server) {
 		t.Fatal(err)
 	}
 	for _, item := range catalog.RuleLibrary {
-		if _, err := rulefetch.SaveSource(s.Context(), rules.LibraryRule(item), nil); err != nil {
+		if _, err := rulefetch.SaveSource(s.Context(), s.Repo, rules.LibraryRule(item), nil); err != nil {
 			t.Fatal(err)
 		}
 	}

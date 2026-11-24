@@ -88,16 +88,15 @@ func BenchmarkOxiDNSMetadataChain(b *testing.B) {
 	for i := 0; i < 128; i++ {
 		id := fmt.Sprintf("set-%d", i)
 		item := map[string]any{"id": id, "name": id, "source_type": "url", "behavior": "classical", "url": "https://rules.example/" + id}
-		if _, err := rulefetch.WriteCache(ctx, metadataCacheRule(b, item), rulefetch.Content{Data: []byte("DOMAIN-SUFFIX,example.com"), Text: true}, &rulefetch.SourceConfig{Library: []model.RuleLibraryItem{}}); err != nil {
+		if _, err := rulefetch.WriteCache(ctx, repository, metadataCacheRule(b, item), rulefetch.Content{Data: []byte("DOMAIN-SUFFIX,example.com"), Text: true}, &rulefetch.SourceConfig{Library: []model.RuleLibraryItem{}}); err != nil {
 			b.Fatal(err)
 		}
 	}
-	repo.SetRepository(repository)
-	b.Cleanup(func() { repo.SetRepository(nil) })
 
 	for _, width := range []int{0, 2 << 20} {
 		b.Run(fmt.Sprintf("rules128/unused%d", width), func(b *testing.B) {
 			profile := metadataProfile(b, 128, width)
+			profile.Repo = repository
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -121,12 +120,10 @@ func TestMetadataChainAllocationBound(t *testing.T) {
 	for i := 0; i < 128; i++ {
 		id := fmt.Sprintf("set-%d", i)
 		item := map[string]any{"id": id, "name": id, "source_type": "url", "behavior": "classical", "url": "https://rules.example/" + id}
-		if _, err := rulefetch.WriteCache(ctx, metadataCacheRule(t, item), rulefetch.Content{Data: []byte("DOMAIN-SUFFIX,example.com"), Text: true}, &rulefetch.SourceConfig{Library: []model.RuleLibraryItem{}}); err != nil {
+		if _, err := rulefetch.WriteCache(ctx, repository, metadataCacheRule(t, item), rulefetch.Content{Data: []byte("DOMAIN-SUFFIX,example.com"), Text: true}, &rulefetch.SourceConfig{Library: []model.RuleLibraryItem{}}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	repo.SetRepository(repository)
-	t.Cleanup(func() { repo.SetRepository(nil) })
 	var sizes []uint64
 	for _, width := range []int{0, 2 << 20} {
 		profile := metadataProfile(t, 128, width)

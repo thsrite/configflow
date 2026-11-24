@@ -74,11 +74,11 @@ func TestReviewSourceTimeoutAndMirror(t *testing.T) {
 			mirrorRule := testSourceRule(t, library)
 			mirrorURL := item["url"].(string)
 			mirrorRule.URL = &mirrorURL
-			cached, err := rulefetch.ReadCache(ctx, mirrorRule, srcCfg)
+			cached, err := rulefetch.ReadCache(ctx, srv.Repo, mirrorRule, srcCfg)
 			if err != nil || string(cached) != content {
 				t.Fatalf("mirror cache: %q %v", cached, err)
 			}
-			primary, err := rulefetch.ReadCache(ctx, testSourceRule(t, library), srcCfg)
+			primary, err := rulefetch.ReadCache(ctx, srv.Repo, testSourceRule(t, library), srcCfg)
 			if err != nil || primary != nil {
 				t.Fatalf("mirror was cached as primary: %q %v", primary, err)
 			}
@@ -127,7 +127,7 @@ func TestReviewShutdownDuringDownload(t *testing.T) {
 			if readErr != nil || !testjson.Equal(before, after) {
 				t.Fatalf("shutdown committed source/profile/DNS: %v", readErr)
 			}
-			cached, readErr := rulefetch.ReadCache(srv.Context(), testSourceRule(t, source), nil)
+			cached, readErr := rulefetch.ReadCache(srv.Context(), srv.Repo, testSourceRule(t, source), nil)
 			if readErr != nil || cached != nil {
 				t.Fatalf("shutdown cached response: %q %v", cached, readErr)
 			}

@@ -28,26 +28,24 @@ import (
 var utilsLogger = logx.Get("backend.utils.rule_utils")
 
 // GetRulesDir is get_rules_dir: DATA_DIR/shared/rules.
-func GetRulesDir(ctx context.Context) (string, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return "", err
+func GetRulesDir(r *repo.Repository) (string, error) {
+	if r == nil {
+		return "", errNilRepository
 	}
 	return r.SharedRulesDir()
 }
 
 // CacheReadPath is rule_cache_read_path(rule, library) with the stored
 // shared rule library; library nil is None.
-func CacheReadPath(ctx context.Context, rule model.RuleConfig, library []model.RuleLibraryItem) (string, error) {
-	return cacheReadPath(ctx, rule, func() []model.RuleLibraryItem { return library })
+func CacheReadPath(ctx context.Context, r *repo.Repository, rule model.RuleConfig, library []model.RuleLibraryItem) (string, error) {
+	return cacheReadPath(ctx, r, rule, func() []model.RuleLibraryItem { return library })
 }
-func cacheReadPath(ctx context.Context, rule model.RuleConfig, library func() []model.RuleLibraryItem) (string, error) {
+func cacheReadPath(ctx context.Context, r *repo.Repository, rule model.RuleConfig, library func() []model.RuleLibraryItem) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return "", err
+	if r == nil {
+		return "", errNilRepository
 	}
 	root, err := r.SharedRulesDir()
 	if err != nil {
@@ -76,29 +74,29 @@ type Content struct {
 
 // ReadCache is read_validated_rule_cache: only cache bytes that
 // satisfy the current remote declaration, else nil. config nil is None.
-func ReadCache(ctx context.Context, rule model.RuleConfig, config *SourceConfig) ([]byte, error) {
-	return ReadCacheWithFormat(ctx, rule, config, "")
+func ReadCache(ctx context.Context, r *repo.Repository, rule model.RuleConfig, config *SourceConfig) ([]byte, error) {
+	return ReadCacheWithFormat(ctx, r, rule, config, "")
 }
 
 // ReadCacheWithFormat validates a cached source with a caller-known format.
 // A nonempty format never runs inference or decodes a rule-library payload.
-func ReadCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *SourceConfig, format string) ([]byte, error) {
+func ReadCacheWithFormat(ctx context.Context, r *repo.Repository, rule model.RuleConfig, config *SourceConfig, format string) ([]byte, error) {
 	ctx = ctxx.Detach(ctx)
-	return readCacheWithFormat(ctx, rule, config, format, true)
+	return readCacheWithFormat(ctx, r, rule, config, format, true)
 }
 
 // PeekCacheWithFormat validates local cache bytes without migrating them. It
 // never takes a write lock, updates receipts, or creates or replaces any file.
 // A nonempty format uses the same inference-free path as ReadCacheWithFormat.
-func PeekCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *SourceConfig, format string) ([]byte, error) {
-	return readCacheWithFormat(ctx, rule, config, format, false)
+func PeekCacheWithFormat(ctx context.Context, r *repo.Repository, rule model.RuleConfig, config *SourceConfig, format string) ([]byte, error) {
+	return readCacheWithFormat(ctx, r, rule, config, format, false)
 }
 
-func readCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *SourceConfig, format string, migrate bool) ([]byte, error) {
+func readCacheWithFormat(ctx context.Context, r *repo.Repository, rule model.RuleConfig, config *SourceConfig, format string, migrate bool) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	cachePath, err := cacheReadPath(ctx, rule, func() []model.RuleLibraryItem {
+	cachePath, err := cacheReadPath(ctx, r, rule, func() []model.RuleLibraryItem {
 		if config == nil {
 			return nil
 		}
@@ -128,12 +126,12 @@ func readCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *Sou
 	}
 	// Migrate an old name only after byte validation and another declaration
 	// check under the repository transaction. Keep the old file for rollback.
-	root, err := GetRulesDir(ctx)
+	root, err := GetRulesDir(r)
 	if err != nil {
 		return nil, err
 	}
 	if textOr(rule.SourceType, "url") == "url" && cachePath != filepath.Join(root, rules.CacheFilename(rule)) {
-		if err := migrateCache(ctx, rule, content, cachePath); err != nil {
+		if err := migrateCache(ctx, r, rule, content, cachePath); err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
@@ -151,10 +149,13 @@ func readCacheWithFormat(ctx context.Context, rule model.RuleConfig, config *Sou
 // complete response, then atomically replace the raw bytes (identical
 // bytes only get a new modification time). It returns the cache file name
 // relative to the rules directory.
-func WriteCache(ctx context.Context, rule model.RuleConfig, content Content, config *SourceConfig) (string, error) {
+func WriteCache(ctx context.Context, r *repo.Repository, rule model.RuleConfig, content Content, config *SourceConfig) (string, error) {
 	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return "", err
+	}
+	if r == nil {
+		return "", errNilRepository
 	}
 	if textOr(rule.SourceType, "url") == "url" {
 		if err := validateBytes(content, rule, config, ""); err != nil {
@@ -163,10 +164,6 @@ func WriteCache(ctx context.Context, rule model.RuleConfig, content Content, con
 	}
 	filename := rules.CacheFilename(rule)
 	relative := path.Join("rules", filename)
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return "", err
-	}
 	target, err := r.SharedPath(relative)
 	if err != nil {
 		return "", err
@@ -250,7 +247,7 @@ type CacheOptions struct {
 
 // RefreshRule is refresh_remote_rule: the raw bytes, plus the refresh
 // error when validated cache bytes are served instead (AllowStale).
-func RefreshRule(ctx context.Context, rule model.RuleConfig, config *SourceConfig, opts CacheOptions) ([]byte, error, error) {
+func RefreshRule(ctx context.Context, r *repo.Repository, rule model.RuleConfig, config *SourceConfig, opts CacheOptions) ([]byte, error, error) {
 	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
@@ -268,13 +265,13 @@ func RefreshRule(ctx context.Context, rule model.RuleConfig, config *SourceConfi
 		if client == nil {
 			client = DefaultClient
 		}
-		return downloadContent(ctx, client, address, config, timeout)
+		return downloadContent(ctx, r, client, address, config, timeout)
 	}()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, nil, ctxErr
 	}
 	if err == nil {
-		if _, err = WriteCache(ctx, rule, content, config); err == nil {
+		if _, err = WriteCache(ctx, r, rule, content, config); err == nil {
 			return content.Data, nil, nil
 		}
 	}
@@ -282,7 +279,7 @@ func RefreshRule(ctx context.Context, rule model.RuleConfig, config *SourceConfi
 		return nil, nil, err
 	}
 	if opts.AllowStale {
-		cached, readErr := ReadCache(ctx, rule, config)
+		cached, readErr := ReadCache(ctx, r, rule, config)
 		if readErr != nil {
 			return nil, nil, readErr
 		}
@@ -299,7 +296,7 @@ func RefreshRule(ctx context.Context, rule model.RuleConfig, config *SourceConfi
 // handwritten content (string), the downloaded text (string) or MRS bytes
 // ([]byte), or nil (None) when there is no source to read. Transport
 // failures become a RequestException without details.
-func ReadSource(ctx context.Context, rule model.RuleConfig, client *Client) (*Content, error) {
+func ReadSource(ctx context.Context, r *repo.Repository, rule model.RuleConfig, client *Client) (*Content, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -313,7 +310,7 @@ func ReadSource(ctx context.Context, rule model.RuleConfig, client *Client) (*Co
 	if client == nil {
 		client = DefaultClient
 	}
-	content, err := downloadContent(ctx, client, *rule.URL, nil, 10*time.Second)
+	content, err := downloadContent(ctx, r, client, *rule.URL, nil, 10*time.Second)
 	if err != nil {
 		return nil, sourceDownloadError(err)
 	}
@@ -329,12 +326,12 @@ func ReadSource(ctx context.Context, rule model.RuleConfig, client *Client) (*Co
 }
 
 // SaveSource validates and publishes a complete source; a failure keeps its cache.
-func SaveSource(ctx context.Context, rule model.RuleConfig, client *Client) (string, error) {
+func SaveSource(ctx context.Context, r *repo.Repository, rule model.RuleConfig, client *Client) (string, error) {
 	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	content, err := ReadSource(ctx, rule, client)
+	content, err := ReadSource(ctx, r, rule, client)
 	if err != nil {
 		return "", err
 	}
@@ -344,7 +341,7 @@ func SaveSource(ctx context.Context, rule model.RuleConfig, client *Client) (str
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	return WriteCache(ctx, rule, *content, nil)
+	return WriteCache(ctx, r, rule, *content, nil)
 }
 func textOr(value *string, fallback string) string {
 	if value == nil {
@@ -353,14 +350,13 @@ func textOr(value *string, fallback string) string {
 	return *value
 }
 
-func migrateCache(ctx context.Context, rule model.RuleConfig, data []byte, oldPath string) error {
+func migrateCache(ctx context.Context, r *repo.Repository, rule model.RuleConfig, data []byte, oldPath string) error {
 	ctx = ctxx.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return err
+	if r == nil {
+		return errNilRepository
 	}
 	root, err := r.SharedRulesDir()
 	if err != nil {

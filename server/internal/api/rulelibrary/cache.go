@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
 
@@ -13,7 +14,11 @@ var edits = rulefetch.CacheEditLocks
 var errStaleCacheStage = rulefetch.ErrStaleCacheStage
 
 func editLease(ctx context.Context, id string) (context.Context, func(), error) {
-	return rulefetch.LockCacheEdits(ctx, id)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return ctx, nil, err
+	}
+	return rulefetch.LockCacheEdits(ctx, r, id)
 }
 
 type stagedCache struct {
@@ -22,7 +27,11 @@ type stagedCache struct {
 }
 
 func stageCache(ctx context.Context, item model.RuleLibraryItem, content []byte, replace func(context.Context, string, string) error) (*stagedCache, error) {
-	publication, err := rulefetch.StageCache(ctx, item, content, replace)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	publication, err := rulefetch.StageCache(ctx, r, item, content, replace)
 	if err != nil {
 		return nil, err
 	}

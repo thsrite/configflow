@@ -41,7 +41,7 @@ func TestReviewUnreadableReceiptCannotReviveLegacyCache(t *testing.T) {
 	if _, err = os.Stat(path + ".invalid"); !os.IsPermission(err) {
 		t.Fatalf("fixture must deny marker lookup: %v", err)
 	}
-	cache, err := rulefetch.ReadCache(s.Context(), ruleRecord(item), nil)
+	cache, err := rulefetch.ReadCache(s.Context(), s.Repo, ruleRecord(item), nil)
 	if err != nil || cache != nil {
 		t.Fatalf("unreadable invalidation served cache: %q %v", cache, err)
 	}
@@ -397,7 +397,7 @@ func TestReviewOtherInlineWritersCannotOverwriteCommittedDraft(t *testing.T) {
 	before := doc(t, s)
 	// Discovery/Agent/compose owners can finish their post-commit cache work
 	// after a newer C33 edit. Exercise their actual shared write entry point.
-	if _, err = rulefetch.SaveSource(s.Context(), ruleRecord(old), nil); err != nil {
+	if _, err = rulefetch.SaveSource(s.Context(), s.Repo, ruleRecord(old), nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.Get("/api/rules/local/Manual", s.Login()).WantStatus(200).Text(); got != "+.committed.example\n" {

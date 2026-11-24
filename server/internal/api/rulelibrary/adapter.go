@@ -150,7 +150,11 @@ func validateItemContent(item model.RuleLibraryItem, old *model.RuleLibraryItem)
 }
 
 func (s *Service) readSource(ctx context.Context, item model.RuleLibraryItem) ([]byte, error) {
-	content, err := rulefetch.ReadSource(ctx, ruleRecord(item), s.client)
+	r, err := s.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	content, err := rulefetch.ReadSource(ctx, r, ruleRecord(item), s.client)
 	if err != nil || content == nil {
 		return nil, err
 	}
@@ -245,13 +249,21 @@ func (s *Service) usage(ctx context.Context, id string) (int, error) {
 }
 
 func readCache(ctx context.Context, item model.RuleLibraryItem) ([]byte, error) {
-	return rulefetch.ReadCache(ctx, ruleRecord(item), nil)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return rulefetch.ReadCache(ctx, r, ruleRecord(item), nil)
 }
 func writeCache(ctx context.Context, item model.RuleLibraryItem, content []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := rulefetch.WriteCache(ctx, ruleRecord(item), rulefetch.Content{Data: content}, nil)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = rulefetch.WriteCache(ctx, r, ruleRecord(item), rulefetch.Content{Data: content}, nil)
 	return err
 }
 func (s *Service) forget(ctx context.Context, id string) error {
@@ -290,7 +302,11 @@ func removeLegacy(ctx context.Context, name string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	root, err := rulefetch.GetRulesDir(ctx)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	root, err := rulefetch.GetRulesDir(r)
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package rulefetch
 
 import (
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"context"
 	"time"
 )
@@ -22,8 +23,8 @@ func validateBytes(content Content, rule model.RuleConfig, config *SourceConfig,
 	}
 	return ValidateRemote(content, rule, library, format)
 }
-func downloadContent(ctx context.Context, client *Client, url string, config *SourceConfig, timeout time.Duration) (Content, error) {
-	response, err := client.Download(ctx, url, DownloadRequest{Config: config, ConnectTimeout: timeout, ReadTimeout: timeout})
+func downloadContent(ctx context.Context, r *repo.Repository, client *Client, url string, config *SourceConfig, timeout time.Duration) (Content, error) {
+	response, err := client.Download(ctx, url, DownloadRequest{Repo: r, Config: config, ConnectTimeout: timeout, ReadTimeout: timeout})
 	if err != nil {
 		return Content{}, err
 	}

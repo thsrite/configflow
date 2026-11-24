@@ -62,18 +62,21 @@ type DownloadRequest struct {
 	CABundle                    string // verify=<path>
 	// HostURL is flask.request.host_url when called inside a request ("" outside).
 	HostURL string
+	// Repo supplies SystemConfig when Config is nil.
+	Repo *repo.Repository
 }
 
-func loadConfig(ctx context.Context, config *SourceConfig) (*SourceConfig, error) {
+var errNilRepository = errors.New("rulefetch: repository is nil")
+
+func loadConfig(ctx context.Context, repository *repo.Repository, config *SourceConfig) (*SourceConfig, error) {
 	if config != nil {
 		return config, nil
 	}
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+	if repository == nil {
+		return nil, errNilRepository
 	}
 	result := &SourceConfig{}
-	err = repository.View(ctx, func(document *model.Document) error {
+	err := repository.View(ctx, func(document *model.Document) error {
 		settings := document.System.SystemConfig
 		result.Settings = model.SystemConfig{ServerDomain: settings.ServerDomain, GitHubProxyDomain: settings.GitHubProxyDomain, RuleFetchProxy: settings.RuleFetchProxy}
 		return nil
@@ -549,7 +552,7 @@ func (c *Client) Download(ctx context.Context, url string, r DownloadRequest) (*
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	config, err := loadConfig(ctx, r.Config)
+	config, err := loadConfig(ctx, r.Repo, r.Config)
 	if err != nil {
 		return nil, err
 	}

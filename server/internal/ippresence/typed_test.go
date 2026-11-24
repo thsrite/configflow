@@ -21,7 +21,7 @@ func (d *denyingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 func TestTypedPresenceMatchesOfflineCache(t *testing.T) {
-	ctx, _, _, library := listRepo(t)
+	ctx, r, _, _, library := listRepo(t)
 	var requests atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -39,7 +39,7 @@ func TestTypedPresenceMatchesOfflineCache(t *testing.T) {
 		Format:        library[0].Format,
 		LibraryRuleID: library[0].ID,
 	}
-	path, err := rulefetch.CacheReadPath(ctx, rule, library)
+	path, err := rulefetch.CacheReadPath(ctx, r, rule, library)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestTypedPresenceMatchesOfflineCache(t *testing.T) {
 				t.Fatal(err)
 			}
 			ClearMemo()
-			got, err := TypedClassicalIPLines(ctx, rule, library)
+			got, err := TypedClassicalIPLines(ctx, r, rule, library)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -93,25 +93,25 @@ func TestTypedPresenceMatchesOfflineCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	srcCfg := &rulefetch.SourceConfig{Library: library}
-	old, err := rulefetch.ReadCache(ctx, rule, srcCfg)
+	old, err := rulefetch.ReadCache(ctx, r, rule, srcCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	known, err := rulefetch.ReadCacheWithFormat(ctx, rule, srcCfg, "text")
+	known, err := rulefetch.ReadCacheWithFormat(ctx, r, rule, srcCfg, "text")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(old) == 0 || string(old) != string(known) {
 		t.Fatalf("known-format entry changed validation: %q / %q", old, known)
 	}
-	invalid, err := rulefetch.ReadCacheWithFormat(ctx, rule, srcCfg, "yaml")
+	invalid, err := rulefetch.ReadCacheWithFormat(ctx, r, rule, srcCfg, "yaml")
 	if err != nil || invalid != nil {
 		t.Fatalf("known format bypassed validation: %q / %v", invalid, err)
 	}
 
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	if _, err := TypedClassicalIPLines(canceled, rule, library); err != context.Canceled {
+	if _, err := TypedClassicalIPLines(canceled, r, rule, library); err != context.Canceled {
 		t.Fatalf("canceled read: %v", err)
 	}
 }
@@ -120,12 +120,12 @@ func TestTypedPresenceInlineDeclarationFirstMatch(t *testing.T) {
 	str := func(s string) *string { return &s }
 	rule := model.RuleConfig{LibraryRuleID: "library", Content: str("IP-CIDR,192.0.2.0/24"), SourceType: str("content")}
 	library := []model.RuleLibraryItem{{ID: "library", Name: "first", SourceType: str("content"), Content: str("DOMAIN-SUFFIX,example.com")}, {ID: "library", SourceType: str("content"), Content: str("IP-CIDR,192.0.2.0/24")}}
-	got, err := TypedClassicalIPLines(t.Context(), rule, library)
+	got, err := TypedClassicalIPLines(t.Context(), nil, rule, library)
 	if err != nil || got == nil || *got {
 		t.Fatalf("first declaration not respected: %v / %v", got, err)
 	}
 	library[0].Content = str("IP-CIDR,192.0.2.0/24")
-	got, err = TypedClassicalIPLines(t.Context(), rule, library)
+	got, err = TypedClassicalIPLines(t.Context(), nil, rule, library)
 	if err != nil || got == nil || !*got {
 		t.Fatalf("inline IP lost: %v / %v", got, err)
 	}

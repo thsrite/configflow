@@ -50,7 +50,7 @@ func TestReviewCacheCrashRecovery(t *testing.T) {
 			}
 			assertCacheBackup(t, path, backup)
 			raw := ruleRecord(item)
-			cache, err := rulefetch.ReadCache(s.Context(), raw, nil)
+			cache, err := rulefetch.ReadCache(s.Context(), s.Repo, raw, nil)
 			if err != nil || (point != "complete" && cache != nil) || (point == "complete" && string(cache) != want) {
 				t.Fatalf("reopened cache: %q %v", cache, err)
 			}
@@ -74,7 +74,7 @@ func TestReviewCacheCrashRecovery(t *testing.T) {
 			if err != nil || len(temps) != 0 {
 				t.Fatalf("restart repair retained stages: %v %v", temps, err)
 			}
-			cache, err = rulefetch.ReadCache(s.Context(), raw, nil)
+			cache, err = rulefetch.ReadCache(s.Context(), s.Repo, raw, nil)
 			if err != nil || string(cache) != want {
 				t.Fatalf("repaired cache: %q %v", cache, err)
 			}

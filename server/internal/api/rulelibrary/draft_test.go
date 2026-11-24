@@ -122,7 +122,7 @@ func TestFailedCacheReplacementNeverServesStableOrLegacyContent(t *testing.T) {
 	if err = os.WriteFile(path, []byte("+.stale-restored.example\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	cached, err := rulefetch.ReadCache(s.Context(), ruleRecord(item), nil)
+	cached, err := rulefetch.ReadCache(s.Context(), s.Repo, ruleRecord(item), nil)
 	if err != nil || cached != nil {
 		t.Fatalf("invalid cache returned %q %v", cached, err)
 	}

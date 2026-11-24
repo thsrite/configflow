@@ -24,13 +24,12 @@ import (
 var CacheEditLocks = lockx.NewKeyed[string](lockx.LevelDevice, "rule-library-edit")
 
 // LockCacheEdits leases sorted, distinct library identities before a DB edit.
-func LockCacheEdits(ctx context.Context, ids ...string) (context.Context, func(), error) {
+func LockCacheEdits(ctx context.Context, r *repo.Repository, ids ...string) (context.Context, func(), error) {
+	if r == nil {
+		return ctx, nil, errNilRepository
+	}
 	ids = append([]string(nil), ids...)
 	sort.Strings(ids)
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return ctx, nil, err
-	}
 	paths := []string{}
 	for i, id := range ids {
 		if i > 0 && id == ids[i-1] {
@@ -98,6 +97,7 @@ func LockCacheEdits(ctx context.Context, ids ...string) (context.Context, func()
 // CachePublication stages bytes and a durable invalidation receipt before a DB
 // commit. Keep its identity lease until Commit or failure cleanup completes.
 type CachePublication struct {
+	repo               *repo.Repository
 	path, temp, marker string
 	item               model.RuleLibraryItem
 	baseline           model.RuleLibraryItem
@@ -107,13 +107,12 @@ type CachePublication struct {
 
 // StageCache persists prepared bytes and invalidation before the caller commits
 // the declaration. Call it inside the DB transaction with the owner lifetime.
-func StageCache(ctx context.Context, item model.RuleLibraryItem, content []byte, replace func(context.Context, string, string) error) (*CachePublication, error) {
+func StageCache(ctx context.Context, r *repo.Repository, item model.RuleLibraryItem, content []byte, replace func(context.Context, string, string) error) (*CachePublication, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+	if r == nil {
+		return nil, errNilRepository
 	}
 	catalog, err := r.Shared(ctx)
 	if err != nil {
@@ -161,7 +160,7 @@ func StageCache(ctx context.Context, item model.RuleLibraryItem, content []byte,
 	if err != nil {
 		return nil, err
 	}
-	stage := &CachePublication{path: path, temp: file.Name(), marker: path + ".invalid", item: item, baseline: baseline, replace: replace}
+	stage := &CachePublication{repo: r, path: path, temp: file.Name(), marker: path + ".invalid", item: item, baseline: baseline, replace: replace}
 	if replace == nil {
 		stage.replace = replaceFile
 	}
@@ -228,8 +227,8 @@ func (s *CachePublication) Abort(ctx context.Context) {
 	if s.wasInvalid || ctx.Err() != nil {
 		return
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
+	r := s.repo
+	if r == nil {
 		return
 	}
 	clear := func(tx context.Context, catalog *model.Shared) {
@@ -275,11 +274,11 @@ func (s *CachePublication) Commit(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return err
+	r := s.repo
+	if r == nil {
+		return errNilRepository
 	}
-	err = r.UpdateShared(ctx, func(tx context.Context, catalog *model.Shared) error {
+	err := r.UpdateShared(ctx, func(tx context.Context, catalog *model.Shared) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return err

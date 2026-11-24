@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/routersplit"
 	"configflow/internal/rulefetch"
 	"configflow/internal/yamlx"
@@ -355,7 +356,11 @@ func (c *Config) storedContent(ctx context.Context, item, library *Rule, require
 	if entries == nil {
 		entries = []model.RuleLibraryItem{}
 	}
-	path, err := rulefetch.CacheReadPath(ctx, targetRule, entries)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return "", err
+	}
+	path, err := rulefetch.CacheReadPath(ctx, r, targetRule, entries)
 	if err != nil {
 		return "", err
 	}

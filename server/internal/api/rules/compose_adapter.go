@@ -95,7 +95,11 @@ func (s *Service) prepareRemote(ctx context.Context, library model.RuleLibraryIt
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	content, err := rulefetch.ReadSource(ctx, shared.LibraryRule(library), s.client)
+	r, err := s.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	content, err := rulefetch.ReadSource(ctx, r, shared.LibraryRule(library), s.client)
 	if canceled := ctx.Err(); canceled != nil {
 		return nil, canceled
 	}
@@ -114,12 +118,15 @@ func (s *Service) cacheComposed(ctx context.Context, library model.RuleLibraryIt
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	r, err := s.repository(ctx)
+	if err != nil {
+		return err
+	}
 	value := shared.LibraryRule(library)
-	var err error
 	if prepared != nil {
-		_, err = rulefetch.WriteCache(ctx, value, rulefetch.Content{Data: prepared}, nil)
+		_, err = rulefetch.WriteCache(ctx, r, value, rulefetch.Content{Data: prepared}, nil)
 	} else {
-		_, err = rulefetch.SaveSource(ctx, value, s.client)
+		_, err = rulefetch.SaveSource(ctx, r, value, s.client)
 	}
 	return err
 }

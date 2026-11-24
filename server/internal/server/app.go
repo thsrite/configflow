@@ -99,7 +99,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	rs := rulesource.New(rulesource.Options{})
+	rs := rulesource.New(rulesource.Options{Repo: opts.Repo})
 	rulesource.UseService(rs)
 	registerStartup(rt, gen.substore, ag.manager, ag.metrics, process)
 	if opts.Repo != nil {

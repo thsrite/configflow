@@ -235,7 +235,7 @@ func replay(t *testing.T, path string) {
 		var out *bool
 		var callErr error
 		if !unknown {
-			out, callErr = TypedClassicalIPLines(ctx, rule, library)
+			out, callErr = TypedClassicalIPLines(ctx, fixture.r, rule, library)
 		}
 		sum := fmt.Sprintf("%x", sha256.Sum256(lineBytes))
 		if ref, ok := cacheReferences[sum]; ok {

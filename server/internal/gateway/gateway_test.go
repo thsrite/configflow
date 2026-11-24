@@ -375,7 +375,7 @@ func TestReviewN811ReaderProjectionPreservesFormatInferenceWithoutBody(t *testin
 		if len(config.Library) != 1 || config.Library[0].Format == nil || *config.Library[0].Format != "yaml" || config.Library[0].Content != nil {
 			t.Fatalf("unexpected library projection: %+v", config.Library)
 		}
-		data, err := rulefetch.ReadCache(ctx, item, config)
+		data, err := rulefetch.ReadCache(ctx, r, item, config)
 		return string(data), err
 	}))
 

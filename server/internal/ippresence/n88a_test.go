@@ -10,7 +10,7 @@ import (
 )
 
 func TestNativeFormatErrorsRemainUnknown(t *testing.T) {
-	ctx, path, _, library := listRepo(t)
+	ctx, r, path, _, library := listRepo(t)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -39,20 +39,20 @@ func TestNativeFormatErrorsRemainUnknown(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ClearMemo()
-			value, err := TypedClassicalIPLines(ctx, tt.item, tt.library)
+			value, err := TypedClassicalIPLines(ctx, r, tt.item, tt.library)
 			if value != nil || err != nil {
 				t.Fatalf("want unknown without error, got %v / %v", value, err)
 			}
 		})
 	}
 	ClearMemo()
-	if value, err := TypedClassicalIPLines(ctx, entry, nil); value == nil || !*value || err != nil {
+	if value, err := TypedClassicalIPLines(ctx, r, entry, nil); value == nil || !*value || err != nil {
 		t.Fatalf("valid cache no longer inspected: %v / %v", value, err)
 	}
 	mrs := library[0]
 	mrsFmt := "mrs"
 	mrs.Format = &mrsFmt
-	if value, err := TypedClassicalIPLines(ctx, entry, []model.RuleLibraryItem{mrs}); value != nil || err != nil {
+	if value, err := TypedClassicalIPLines(ctx, r, entry, []model.RuleLibraryItem{mrs}); value != nil || err != nil {
 		t.Fatalf("selected declaration format lost: %v / %v", value, err)
 	}
 }

@@ -10,7 +10,7 @@ import (
 	"configflow/internal/rules"
 )
 
-func knownFormatInput(tb testing.TB, payload int) (context.Context, model.RuleConfig, *SourceConfig) {
+func knownFormatInput(tb testing.TB, payload int) (context.Context, *repo.Repository, model.RuleConfig, *SourceConfig) {
 	tb.Helper()
 	r, err := repo.Open(tb.TempDir(), repo.Options{})
 	if err != nil {
@@ -31,17 +31,17 @@ func knownFormatInput(tb testing.TB, payload int) (context.Context, model.RuleCo
 	config := &SourceConfig{
 		Library: []model.RuleLibraryItem{{ID: "unused", Name: "Unused", Content: strp(strings.Repeat("x", payload))}},
 	}
-	return ctx, rule, config
+	return ctx, r, rule, config
 }
 
 func TestKnownFormatReadAllocationsIgnoreUnrelatedLibrary(t *testing.T) {
-	ctx, rule, small := knownFormatInput(t, 0)
+	ctx, r, rule, small := knownFormatInput(t, 0)
 	large := &SourceConfig{
 		Library: []model.RuleLibraryItem{{ID: "unused", Content: strp(strings.Repeat("x", 1<<20))}},
 	}
 	run := func(config *SourceConfig) float64 {
 		return testing.AllocsPerRun(10, func() {
-			data, err := ReadCacheWithFormat(ctx, rule, config, "text")
+			data, err := ReadCacheWithFormat(ctx, r, rule, config, "text")
 			if err != nil || string(data) != "example.com\n" {
 				t.Fatal(err)
 			}
@@ -57,7 +57,7 @@ func TestKnownFormatReadAllocationsIgnoreUnrelatedLibrary(t *testing.T) {
 	bytesPerRead := func(config *SourceConfig) int64 {
 		result := testing.Benchmark(func(b *testing.B) {
 			for b.Loop() {
-				data, err := ReadCacheWithFormat(ctx, rule, config, "text")
+				data, err := ReadCacheWithFormat(ctx, r, rule, config, "text")
 				if err != nil || string(data) != "example.com\n" {
 					b.Fatal("known-format read changed", err)
 				}
@@ -76,7 +76,7 @@ func TestKnownFormatReadAllocationsIgnoreUnrelatedLibrary(t *testing.T) {
 
 	// Known format is validation authority, never an instruction to accept a
 	// cached file under any interpretation.
-	data, err := ReadCacheWithFormat(ctx, rule, large, "mrs")
+	data, err := ReadCacheWithFormat(ctx, r, rule, large, "mrs")
 	if err != nil || data != nil {
 		t.Fatal("wrong explicit format accepted", err)
 	}
@@ -85,11 +85,11 @@ func TestKnownFormatReadAllocationsIgnoreUnrelatedLibrary(t *testing.T) {
 func BenchmarkKnownFormatRead(b *testing.B) {
 	for _, size := range []int{0, 1 << 20} {
 		b.Run(map[int]string{0: "empty", 1 << 20: "1MiB"}[size], func(b *testing.B) {
-			ctx, rule, config := knownFormatInput(b, size)
+			ctx, r, rule, config := knownFormatInput(b, size)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				_, err := ReadCacheWithFormat(ctx, rule, config, "text")
+				_, err := ReadCacheWithFormat(ctx, r, rule, config, "text")
 				if err != nil {
 					b.Fatal(err)
 				}

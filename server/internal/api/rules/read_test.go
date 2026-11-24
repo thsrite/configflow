@@ -38,7 +38,7 @@ func TestPublicProvidersNormalizeOnlyDelivery(t *testing.T) {
 	}
 	s.Get("/api/rules/local/Absent").WantStatus(404)
 	s.Post("/api/rules/match-test", httpxtest.JSON(map[string]string{"query": "example.com"})).WantStatus(401)
-	rulesDir, err := rulefetch.GetRulesDir(s.Context())
+	rulesDir, err := rulefetch.GetRulesDir(s.Repo)
 	if err != nil {
 		t.Fatal(err)
 	}

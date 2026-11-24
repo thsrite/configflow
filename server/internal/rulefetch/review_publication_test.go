@@ -78,7 +78,7 @@ func TestReviewInlinePublicationInterleaving(t *testing.T) {
 				t.Fatal(err)
 			}
 			rule := rules.LibraryRule(catalog.RuleLibrary[0])
-			root, err := rulefetch.GetRulesDir(s.Context())
+			root, err := rulefetch.GetRulesDir(s.Repo)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -123,7 +123,7 @@ func TestReviewInlinePublicationInterleaving(t *testing.T) {
 				t.Fatal(err)
 			}
 			rule = rules.LibraryRule(catalog.RuleLibrary[0])
-			cache, err := rulefetch.ReadCache(s.Context(), rule, nil)
+			cache, err := rulefetch.ReadCache(s.Context(), s.Repo, rule, nil)
 			if err != nil || string(cache) != test.want || *rule.Content != test.want {
 				t.Fatalf("interleaved DB/cache: %q want %q: %v", cache, test.want, err)
 			}

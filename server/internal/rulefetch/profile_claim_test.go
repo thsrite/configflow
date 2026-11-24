@@ -62,7 +62,7 @@ func TestStoredProfileLocalCacheOwnership(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data, err := PeekCacheWithFormat(ctx, rule, config, "yaml")
+			data, err := PeekCacheWithFormat(ctx, r, rule, config, "yaml")
 			valid := state == "stored" || state == "legacy rule_sets"
 			if err != nil || valid && string(data) != "payload: [example.com]\n" || !valid && data != nil {
 				t.Fatalf("profile ownership %s: %q %v", state, data, err)
@@ -75,7 +75,7 @@ func TestStoredProfileLocalCacheOwnership(t *testing.T) {
 			t.Cleanup(func() { runtime.Shutdown(context.Background()) })
 			request, disconnect := context.WithCancel(runtime.BindRequest(ctx))
 			disconnect()
-			_, err = ReadCacheWithFormat(request, rule, config, "yaml")
+			_, err = ReadCacheWithFormat(request, r, rule, config, "yaml")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -105,14 +105,14 @@ func TestProfileCacheMigrationRechecksStoredOwner(t *testing.T) {
 	if err := editStoredProfile(ctx, r, func(_ context.Context, p *model.Profile) error { p.RuleConfigs = []model.RuleConfig{rule}; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	data, err := PeekCacheWithFormat(ctx, rule, nil, "yaml")
+	data, err := PeekCacheWithFormat(ctx, r, rule, nil, "yaml")
 	if err != nil || len(data) == 0 {
 		t.Fatal("current profile cannot claim old bytes", err)
 	}
 	if err := editStoredProfile(ctx, r, func(_ context.Context, p *model.Profile) error { p.RuleConfigs = nil; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if err := migrateCache(ctx, rule, data, old); err != nil {
+	if err := migrateCache(ctx, r, rule, data, old); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(native); !errors.Is(err, os.ErrNotExist) {
@@ -146,8 +146,8 @@ func TestProfileCacheClaimsKeepReceiptAndPathGuards(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			for _, read := range []func(context.Context, model.RuleConfig, *SourceConfig, string) ([]byte, error){PeekCacheWithFormat, ReadCacheWithFormat} {
-				data, err := read(ctx, rule, nil, "yaml")
+			for _, read := range []func(context.Context, *repo.Repository, model.RuleConfig, *SourceConfig, string) ([]byte, error){PeekCacheWithFormat, ReadCacheWithFormat} {
+				data, err := read(ctx, r, rule, nil, "yaml")
 				if err != nil || data != nil {
 					t.Fatalf("profile %s escaped guard: %q %v", kind, data, err)
 				}

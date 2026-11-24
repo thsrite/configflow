@@ -64,7 +64,11 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 	if source != nil {
 		cacheSource = shared.LibraryRule(*source)
 	}
-	filename, err := rulefetch.CacheReadPath(ctx, cacheSource, library)
+	r, err := s.repository(ctx)
+	if err != nil {
+		return delivery{}, &fault{500, msgLocalFailed}
+	}
+	filename, err := rulefetch.CacheReadPath(ctx, r, cacheSource, library)
 	if err != nil {
 		return delivery{}, &fault{500, msgLocalFailed}
 	}
@@ -87,7 +91,7 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 			return delivery{}, &sourceFailure{Status: 502, Message: weburl.SafeErrorDetails(err), CacheRetained: boolPointer(false)}
 		}
 	} else {
-		content, err = rulefetch.ReadCache(ctx, shared.LibraryRule(*source), fetchConfig(config))
+		content, err = rulefetch.ReadCache(ctx, r, shared.LibraryRule(*source), fetchConfig(config))
 		if err == nil && content == nil {
 			// The committed inline declaration remains authoritative if an edit
 			// could not replace its stable cache. Never try the legacy cache again.
@@ -142,7 +146,7 @@ func (s *Service) populateInlineCache(ctx context.Context, source model.RuleConf
 			continue
 		}
 		if sourceField(current.SourceType, "url") == "content" && ctx.Err() == nil {
-			_, _ = rulefetch.SaveSource(ctx, shared.LibraryRule(current), nil)
+			_, _ = rulefetch.SaveSource(ctx, r, shared.LibraryRule(current), nil)
 		}
 		break
 	}

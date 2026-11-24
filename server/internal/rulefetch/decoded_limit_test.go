@@ -103,11 +103,11 @@ func TestRuleDownloadEnforcesDecodedSizeLimit(t *testing.T) {
 	ctx, r := cacheRepo(t, nil)
 	rule := remoteSource()
 	rule.URL = strp(source.URL + "/rules.list")
-	if _, err := WriteCache(ctx, rule, Content{Data: []byte("example.com\n"), Text: true}, nil); err != nil {
+	if _, err := WriteCache(ctx, r, rule, Content{Data: []byte("example.com\n"), Text: true}, nil); err != nil {
 		t.Fatal(err)
 	}
 	path := cachePath(t, r, rule)
-	content, _, err := RefreshRule(ctx, rule, &SourceConfig{}, CacheOptions{})
+	content, _, err := RefreshRule(ctx, r, rule, &SourceConfig{}, CacheOptions{})
 	if !errors.Is(err, ErrSizeLimit) || content != nil {
 		t.Fatalf("cache accepted decoded bomb: %v", err)
 	}

@@ -118,7 +118,11 @@ func ruleCacheAtLibrary(ctx context.Context, rule model.RuleConfig) (*string, er
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	path, err := rulefetch.CacheReadPath(ctx, rule, nil)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	path, err := rulefetch.CacheReadPath(ctx, r, rule, nil)
 	if err != nil {
 		if errors.Is(err, repo.ErrRejected) || isFileError(err) {
 			return nil, nil
@@ -291,14 +295,18 @@ func RefreshRemote(ctx context.Context, rule model.RuleLibraryItem, trigger stri
 	if rule.ID == "" {
 		return nil, nil, repo.NewValidationError(msgRuleIdentity)
 	}
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	key := RuleTaskKey(rule.ID)
 	started, clock := nowISO(), refreshEnv().Clock.Monotonic()
-	content, refreshErr, failure := rulefetch.RefreshRule(ctx, rules.LibraryRule(rule), opt.Config, opt.cacheOptions(RuleTimeout*time.Second))
+	content, refreshErr, failure := rulefetch.RefreshRule(ctx, r, rules.LibraryRule(rule), opt.Config, opt.cacheOptions(RuleTimeout*time.Second))
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
 	if failure != nil {
-		cached, err := rulefetch.ReadCache(ctx, rules.LibraryRule(rule), opt.Config)
+		cached, err := rulefetch.ReadCache(ctx, r, rules.LibraryRule(rule), opt.Config)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -352,10 +360,14 @@ func ReadRemote(ctx context.Context, rule model.RuleLibraryItem, opt RuleReadOpt
 	if err != nil {
 		return nil, nil, err
 	}
-	if !stored {
-		return rulefetch.RefreshRule(ctx, rules.LibraryRule(rule), opt.Config, opt.cacheOptions(10*time.Second))
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
-	cached, err := rulefetch.ReadCache(ctx, rules.LibraryRule(rule), opt.Config)
+	if !stored {
+		return rulefetch.RefreshRule(ctx, r, rules.LibraryRule(rule), opt.Config, opt.cacheOptions(10*time.Second))
+	}
+	cached, err := rulefetch.ReadCache(ctx, r, rules.LibraryRule(rule), opt.Config)
 	if err != nil {
 		return nil, nil, err
 	}

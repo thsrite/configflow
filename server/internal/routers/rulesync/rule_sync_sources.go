@@ -5,6 +5,7 @@ package rulesync
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/routeedit"
 	"configflow/internal/rulefetch"
@@ -86,7 +87,11 @@ func syncCacheRead(ctx context.Context, source syncSource, config json.RawMessag
 	if err != nil {
 		return "", err
 	}
-	raw, err := rulefetch.PeekCacheWithFormat(ctx, rule, cfg, "")
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return "", err
+	}
+	raw, err := rulefetch.PeekCacheWithFormat(ctx, r, rule, cfg, "")
 	if err != nil {
 		return "", err
 	}
@@ -113,7 +118,11 @@ func syncCacheWrite(ctx context.Context, source syncSource, content string, conf
 	if err != nil {
 		return err
 	}
-	_, err = rulefetch.WriteCache(ctx, rule, rulefetch.Content{Data: []byte(content), Text: true}, cfg)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = rulefetch.WriteCache(ctx, r, rule, rulefetch.Content{Data: []byte(content), Text: true}, cfg)
 	return err
 }
 

@@ -11,6 +11,7 @@ import (
 	"configflow/internal/ctxx"
 	"configflow/internal/faultprobe"
 	"configflow/internal/lifecycle"
+	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
 )
@@ -134,7 +135,11 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 	for _, target := range targets {
 		ids = append(ids, infos[target].ID)
 	}
-	ctx, release, err := rulefetch.LockCacheEdits(ctx, ids...)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return out, err
+	}
+	ctx, release, err := rulefetch.LockCacheEdits(ctx, r, ids...)
 	if err != nil {
 		return out, err
 	}
@@ -371,7 +376,11 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 	if rid != nil {
 		ids = append(ids, *rid)
 	}
-	ctx, release, err := rulefetch.LockCacheEdits(ctx, ids...)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx, release, err := rulefetch.LockCacheEdits(ctx, r, ids...)
 	if err != nil {
 		return nil, err
 	}

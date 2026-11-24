@@ -20,6 +20,7 @@ import (
 
 // Options configures a rulesource Service instance.
 type Options struct {
+	Repo   *repo.Repository
 	Client *rulefetch.Client
 }
 
@@ -42,13 +43,21 @@ type ContentOptions struct {
 
 // Service owns rule-set content reading backed by a rulefetch.Client.
 type Service struct {
+	repo   *repo.Repository
 	client *rulefetch.Client
 }
 
 // New constructs a rulesource Service. A nil Client resolves
 // rulefetch.DefaultClient dynamically on each call.
 func New(opts Options) *Service {
-	return &Service{client: opts.Client}
+	return &Service{repo: opts.Repo, client: opts.Client}
+}
+
+func (s *Service) repository(ctx context.Context) (*repo.Repository, error) {
+	if s != nil && s.repo != nil {
+		return s.repo, nil
+	}
+	return repo.GetRepository(ctx)
 }
 
 var (
@@ -89,11 +98,15 @@ func (s *Service) Read(ctx context.Context, config *rulefetch.SourceConfig, item
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	r, err := s.repository(ctx)
+	if err != nil {
+		return "", err
+	}
 	source := item
 	if library != nil {
 		source = shared.LibraryRule(*library)
 	}
-	cached, err := rulefetch.ReadCache(ctx, source, config)
+	cached, err := rulefetch.ReadCache(ctx, r, source, config)
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +134,7 @@ func (s *Service) Read(ctx context.Context, config *rulefetch.SourceConfig, item
 		read = 30 * time.Second
 	}
 	fetch := s.FetchWithTimeouts(ctx, config, options.Host, connect, read, options.BoundDeadline)
-	content, _, err := rulefetch.RefreshRule(ctx, source, config, rulefetch.CacheOptions{
+	content, _, err := rulefetch.RefreshRule(ctx, r, source, config, rulefetch.CacheOptions{
 		Client:  s.clientOrDefault(),
 		Timeout: 30 * time.Second,
 		Fetch:   func(ctx context.Context, _ string) (rulefetch.Content, error) { return fetch(address) },

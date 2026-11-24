@@ -28,11 +28,15 @@ func ruleRecord(item libraryItem) (model.RuleConfig, error) {
 	return rules.LibraryRule(declaration), nil
 }
 func nativeSaveRule(ctx context.Context, item libraryItem) error {
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return err
+	}
 	rule, err := ruleRecord(item)
 	if err != nil {
 		return err
 	}
-	_, err = rulefetch.SaveSource(ctx, rule, nil)
+	_, err = rulefetch.SaveSource(ctx, r, rule, nil)
 	return err
 }
 func nativeValidateContent(item libraryItem) error {
@@ -43,11 +47,15 @@ func nativeValidateContent(item libraryItem) error {
 	return rulefetch.ValidateContent(rule, nil)
 }
 func nativeCachedContent(ctx context.Context, item libraryItem) ([]byte, error) {
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rule, err := ruleRecord(item)
 	if err != nil {
 		return nil, err
 	}
-	return rulefetch.ReadCache(ctx, rule, nil)
+	return rulefetch.ReadCache(ctx, r, rule, nil)
 }
 func nativeMatcherOptions() rules.CacheOptions {
 	return rules.CacheOptions{
@@ -154,5 +162,9 @@ func stageRule(ctx context.Context, item libraryItem) (*rulefetch.CachePublicati
 	if err = json.Unmarshal(raw, &declaration); err != nil {
 		return nil, err
 	}
-	return rulefetch.StageCache(ctx, declaration, []byte(item.Content), nil)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return rulefetch.StageCache(ctx, r, declaration, []byte(item.Content), nil)
 }

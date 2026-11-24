@@ -93,17 +93,17 @@ func TestRefreshRejectsEntireBodyKeepsBytes(t *testing.T) {
 		rule := remoteSource()
 		rule.Behavior = strp(c[0])
 		ctx, r := cacheRepo(t, &rule)
-		if _, err := WriteCache(ctx, rule, Content{Data: []byte(c[1])}, nil); err != nil {
+		if _, err := WriteCache(ctx, r, rule, Content{Data: []byte(c[1])}, nil); err != nil {
 			t.Fatal(err)
 		}
 		path := cachePath(t, r, rule)
 		before, _ := os.Stat(path)
-		_, _, err := RefreshRule(ctx, rule, nil, CacheOptions{Fetch: fetchBytes(c[2])})
+		_, _, err := RefreshRule(ctx, r, rule, nil, CacheOptions{Fetch: fetchBytes(c[2])})
 		var remote *RemoteRuleValidationError
 		if !errors.As(err, &remote) || !strings.Contains(err.Error(), "第 2 行") || !strings.Contains(err.Error(), strings.Split(c[2], "\n")[1]) {
 			t.Fatal(err)
 		}
-		value, refreshErr, err := RefreshRule(ctx, rule, nil, CacheOptions{Fetch: fetchBytes(c[2]), AllowStale: true})
+		value, refreshErr, err := RefreshRule(ctx, r, rule, nil, CacheOptions{Fetch: fetchBytes(c[2]), AllowStale: true})
 		if err != nil || string(value) != c[1] || !errors.As(refreshErr, &remote) {
 			t.Fatal(string(value), refreshErr, err)
 		}
@@ -119,7 +119,7 @@ func TestRefreshRejectsEntireBodyKeepsBytes(t *testing.T) {
 func TestNoValidCacheNeverSavesPartialResponse(t *testing.T) {
 	rule := remoteSource()
 	ctx, r := cacheRepo(t, &rule)
-	_, _, err := RefreshRule(ctx, rule, nil, CacheOptions{Fetch: fetchBytes("good.test\nDOMAIN,other.test\n"), AllowStale: true})
+	_, _, err := RefreshRule(ctx, r, rule, nil, CacheOptions{Fetch: fetchBytes("good.test\nDOMAIN,other.test\n"), AllowStale: true})
 	var remote *RemoteRuleValidationError
 	if !errors.As(err, &remote) || len(remote.Errors) == 0 || textOr(remote.Errors[0].Before, "") != "DOMAIN,other.test" {
 		t.Fatal(err)
@@ -136,10 +136,10 @@ func TestOldInvalidCacheIsNeverUsedAsFallback(t *testing.T) {
 	if _, err := r.WriteSharedText(ctx, "rules/"+rules.CacheFilename(rule), []byte("DOMAIN,wrong.test")); err != nil {
 		t.Fatal(err)
 	}
-	if value, err := ReadCache(ctx, rule, nil); err != nil || value != nil {
+	if value, err := ReadCache(ctx, r, rule, nil); err != nil || value != nil {
 		t.Fatal(value, err)
 	}
-	if _, _, err := RefreshRule(ctx, rule, nil, CacheOptions{Fetch: fetchBytes("DOMAIN-SUFFIX,wrong.test"), AllowStale: true}); err == nil {
+	if _, _, err := RefreshRule(ctx, r, rule, nil, CacheOptions{Fetch: fetchBytes("DOMAIN-SUFFIX,wrong.test"), AllowStale: true}); err == nil {
 		t.Fatal("served invalid cache")
 	}
 	if data, _ := os.ReadFile(cachePath(t, r, rule)); string(data) != "DOMAIN,wrong.test" {
@@ -151,11 +151,11 @@ func TestOldInvalidCacheIsNeverUsedAsFallback(t *testing.T) {
 func TestGoodRefreshPreservesOriginalFraming(t *testing.T) {
 	rule := remoteSource()
 	ctx, r := cacheRepo(t, &rule)
-	if _, err := WriteCache(ctx, rule, Content{Data: []byte("old.test")}, nil); err != nil {
+	if _, err := WriteCache(ctx, r, rule, Content{Data: []byte("old.test")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	raw := "\xef\xbb\xbf# source\r\n+.new.test\r\n"
-	value, refreshErr, err := RefreshRule(ctx, rule, nil, CacheOptions{Fetch: fetchBytes(raw)})
+	value, refreshErr, err := RefreshRule(ctx, r, rule, nil, CacheOptions{Fetch: fetchBytes(raw)})
 	if err != nil || refreshErr != nil || string(value) != raw {
 		t.Fatal(err)
 	}
@@ -169,20 +169,20 @@ func TestSourceIdentityPreventsLateOldRefresh(t *testing.T) {
 	rule := remoteSource()
 	old := rule
 	rule.URL = strp("https://rules.test/new.txt")
-	ctx, _ := cacheRepo(t, &rule)
-	if _, err := WriteCache(ctx, rule, Content{Data: []byte("new.test")}, nil); err != nil {
+	ctx, r := cacheRepo(t, &rule)
+	if _, err := WriteCache(ctx, r, rule, Content{Data: []byte("new.test")}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := WriteCache(ctx, old, Content{Data: []byte("old.test")}, nil); err != nil {
+	if _, err := WriteCache(ctx, r, old, Content{Data: []byte("old.test")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if rules.CacheFilename(rule) == rules.CacheFilename(old) {
 		t.Fatal("same name")
 	}
-	if v, _ := ReadCache(ctx, rule, nil); string(v) != "new.test" {
+	if v, _ := ReadCache(ctx, r, rule, nil); string(v) != "new.test" {
 		t.Fatal(string(v))
 	}
-	if v, _ := ReadCache(ctx, old, nil); string(v) != "old.test" {
+	if v, _ := ReadCache(ctx, r, old, nil); string(v) != "old.test" {
 		t.Fatal(string(v))
 	}
 }
@@ -191,16 +191,16 @@ func TestSourceIdentityPreventsLateOldRefresh(t *testing.T) {
 func TestNetworkFailureAlsoKeepsValidCache(t *testing.T) {
 	rule := remoteSource()
 	ctx, r := cacheRepo(t, &rule)
-	if _, err := WriteCache(ctx, rule, Content{Data: []byte("old.test")}, nil); err != nil {
+	if _, err := WriteCache(ctx, r, rule, Content{Data: []byte("old.test")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	timeout := &FetchError{Class: "Timeout", Message: "controlled"}
 	fail := func(context.Context, string) (Content, error) { return Content{}, timeout }
-	value, refreshErr, err := RefreshRule(ctx, rule, nil, CacheOptions{Fetch: fail, AllowStale: true})
+	value, refreshErr, err := RefreshRule(ctx, r, rule, nil, CacheOptions{Fetch: fail, AllowStale: true})
 	if err != nil || string(value) != "old.test" || refreshErr != error(timeout) {
 		t.Fatal(value, refreshErr, err)
 	}
-	if _, _, err := RefreshRule(ctx, rule, nil, CacheOptions{Fetch: fail}); err != error(timeout) {
+	if _, _, err := RefreshRule(ctx, r, rule, nil, CacheOptions{Fetch: fail}); err != error(timeout) {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(cachePath(t, r, rule)); string(data) != "old.test" {
@@ -213,14 +213,14 @@ func TestUnchangedRefreshOnlyTouches(t *testing.T) {
 	rule := remoteSource()
 	ctx, r := cacheRepo(t, &rule)
 	for i := 0; i < 2; i++ {
-		if _, err := WriteCache(ctx, rule, Content{Data: []byte("same.test\n"), Text: true}, nil); err != nil {
+		if _, err := WriteCache(ctx, r, rule, Content{Data: []byte("same.test\n"), Text: true}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	path := cachePath(t, r, rule)
 	old := time.Now().Add(-time.Hour)
 	os.Chtimes(path, old, old)
-	if _, err := WriteCache(ctx, rule, Content{Data: []byte("same.test\n")}, nil); err != nil {
+	if _, err := WriteCache(ctx, r, rule, Content{Data: []byte("same.test\n")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	info, _ := os.Stat(path)
@@ -243,13 +243,13 @@ func TestLegacyCacheReadSide(t *testing.T) {
 	if _, err := r.WriteSharedText(ctx, "rules/by-id/"+sha("remote")+".list", []byte("legacy.test\n")); err != nil {
 		t.Fatal(err)
 	}
-	if v, err := ReadCache(ctx, rule, nil); err != nil || string(v) != "legacy.test\n" {
+	if v, err := ReadCache(ctx, r, rule, nil); err != nil || string(v) != "legacy.test\n" {
 		t.Fatal(string(v), err)
 	}
 	// A proposed declaration cannot borrow the stored source's legacy cache.
 	proposed := rule
 	proposed.URL = strp("https://rules.test/other.txt")
-	if v, _ := ReadCache(ctx, proposed, nil); v != nil {
+	if v, _ := ReadCache(ctx, r, proposed, nil); v != nil {
 		t.Fatal(string(v))
 	}
 	// Legacy name caches shared by two library names are never attributed.
@@ -266,7 +266,7 @@ func TestLegacyCacheReadSide(t *testing.T) {
 	r2.WriteSharedText(ctx2, "rules/a_b.list", []byte("shared.test\n"))
 	cfg := &SourceConfig{Library: library}
 	for _, item := range []model.RuleConfig{content, other} {
-		if v, _ := ReadCache(ctx2, item, cfg); v != nil {
+		if v, _ := ReadCache(ctx2, r2, item, cfg); v != nil {
 			t.Fatalf("%s read ambiguous legacy cache", item.ID)
 		}
 	}
@@ -284,16 +284,16 @@ func TestReadRuleSourceContentAndSaveRuleToLocal(t *testing.T) {
 	rule := remoteSource()
 	ctx, r := cacheRepo(t, &rule)
 	client := &Client{Transport: staticTransport{200}, Sleep: func(time.Duration) {}}
-	if v, err := ReadSource(ctx, model.RuleConfig{SourceType: strp("content"), Content: strp("x")}, client); err != nil || v == nil || !v.Text || string(v.Data) != "x" {
+	if v, err := ReadSource(ctx, r, model.RuleConfig{SourceType: strp("content"), Content: strp("x")}, client); err != nil || v == nil || !v.Text || string(v.Data) != "x" {
 		t.Fatal(v, err)
 	}
-	if v, err := ReadSource(ctx, model.RuleConfig{SourceType: strp("url")}, client); err != nil || v != nil {
+	if v, err := ReadSource(ctx, r, model.RuleConfig{SourceType: strp("url")}, client); err != nil || v != nil {
 		t.Fatal(v, err)
 	}
-	if v, err := ReadSource(ctx, rule, client); err != nil || v == nil || !v.Text || string(v.Data) != "+.ok.test\n" {
+	if v, err := ReadSource(ctx, r, rule, client); err != nil || v == nil || !v.Text || string(v.Data) != "+.ok.test\n" {
 		t.Fatal(v, err)
 	}
-	name, err := SaveSource(ctx, rule, client)
+	name, err := SaveSource(ctx, r, rule, client)
 	if err != nil || name != rules.CacheFilename(rule) {
 		t.Fatal(name, err)
 	}
@@ -301,10 +301,10 @@ func TestReadRuleSourceContentAndSaveRuleToLocal(t *testing.T) {
 		t.Fatal(string(data))
 	}
 	failing := &Client{Transport: staticTransport{503}, Sleep: func(time.Duration) {}}
-	if _, err := ReadSource(ctx, rule, failing); err == nil || err.Error() != "Rule download failed (HTTPError)" || errorClass(err) != "RequestException" {
+	if _, err := ReadSource(ctx, r, rule, failing); err == nil || err.Error() != "Rule download failed (HTTPError)" || errorClass(err) != "RequestException" {
 		t.Fatal(err)
 	}
-	if _, err := SaveSource(ctx, model.RuleConfig{SourceType: strp("url")}, client); err == nil || err.Error() != "请提供有效的规则来源和订阅地址" {
+	if _, err := SaveSource(ctx, r, model.RuleConfig{SourceType: strp("url")}, client); err == nil || err.Error() != "请提供有效的规则来源和订阅地址" {
 		t.Fatal(err)
 	}
 }

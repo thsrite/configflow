@@ -83,7 +83,7 @@ func TestO36cRuleTouchLockRuntimeBoundary(t *testing.T) {
 			rule := testjson.Decode[model.RuleConfig](t, json.RawMessage(`{"id":"o3-rule","name":"O3","source_type":"url","url":"https://rules.example.com/o3.txt","behavior":"domain","format":"text","enabled":true}`))
 			content := []byte("example.com\n")
 			for range 2 {
-				if _, err := rulefetch.WriteCache(base, rule, rulefetch.Content{Data: content}, nil); err != nil {
+				if _, err := rulefetch.WriteCache(base, r, rule, rulefetch.Content{Data: content}, nil); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -113,7 +113,7 @@ func TestO36cRuleTouchLockRuntimeBoundary(t *testing.T) {
 			defer disconnect()
 			done := make(chan error, 1)
 			go func() {
-				_, err := rulefetch.WriteCache(ctx, rule, rulefetch.Content{Data: content}, nil)
+				_, err := rulefetch.WriteCache(ctx, r, rule, rulefetch.Content{Data: content}, nil)
 				done <- err
 			}()
 			escaped := false
@@ -156,7 +156,7 @@ func TestO36cRuleTouchAfterShutdown(t *testing.T) {
 	r, runtime, base := commitRuntime(t)
 	rule := testjson.Decode[model.RuleConfig](t, json.RawMessage(`{"id":"closed-rule","name":"Closed","source_type":"url","url":"https://rules.example.com/closed.txt","behavior":"domain","format":"text"}`))
 	for range 2 {
-		if _, err := rulefetch.WriteCache(base, rule, rulefetch.Content{Data: []byte("example.com\n"), Text: true}, nil); err != nil {
+		if _, err := rulefetch.WriteCache(base, r, rule, rulefetch.Content{Data: []byte("example.com\n"), Text: true}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -170,7 +170,7 @@ func TestO36cRuleTouchAfterShutdown(t *testing.T) {
 	}
 	ctx := runtime.BindRequest(base)
 	runtime.Shutdown(context.Background())
-	_, err = rulefetch.WriteCache(ctx, rule, rulefetch.Content{Data: []byte("example.com\n"), Text: true}, nil)
+	_, err = rulefetch.WriteCache(ctx, r, rule, rulefetch.Content{Data: []byte("example.com\n"), Text: true}, nil)
 	info, statErr := os.Stat(path)
 	if !errors.Is(err, context.Canceled) || statErr != nil || !info.ModTime().Equal(old) {
 		t.Fatalf("closed Runtime touched rule freshness: %v, %v", err, statErr)

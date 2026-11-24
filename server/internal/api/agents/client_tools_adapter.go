@@ -228,7 +228,11 @@ func (t clientTools) clientTargetsPayload(ctx context.Context, id string) (any, 
 	}{true, id, name, targets, direct, proxy}, err
 }
 func (t clientTools) applyClientIP(ctx context.Context, id string, edit connectionEdit, dest *rules.Destination) (any, error) {
-	ctx, release, err := rulefetch.LockCacheEdits(ctx, edit.RulesetID)
+	r, err := t.deps.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctx, release, err := rulefetch.LockCacheEdits(ctx, r, edit.RulesetID)
 	if err != nil {
 		return nil, err
 	}
@@ -236,10 +240,6 @@ func (t clientTools) applyClientIP(ctx context.Context, id string, edit connecti
 	var stage *rulefetch.CachePublication
 	defer func() { stage.Discard(ctx) }()
 	var result *rules.IPResult
-	r, err := t.deps.repository(ctx)
-	if err != nil {
-		return nil, err
-	}
 	err = r.UpdateShared(ctx, func(tx context.Context, shared *model.Shared) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := t.checkClientBinding(tx, id, edit.ProfileID, true); err != nil {
@@ -262,7 +262,7 @@ func (t clientTools) applyClientIP(ctx context.Context, id string, edit connecti
 			if item.Content != nil {
 				content = *item.Content
 			}
-			stage, err = rulefetch.StageCache(tx, item, []byte(content), nil)
+			stage, err = rulefetch.StageCache(tx, r, item, []byte(content), nil)
 			if err != nil {
 				return err
 			}

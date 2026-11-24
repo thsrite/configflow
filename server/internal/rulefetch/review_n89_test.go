@@ -11,7 +11,7 @@ import (
 func TestReviewN89AllLegacyReceiptsBlockMigration(t *testing.T) {
 	for _, kind := range []string{"source", "id", "name"} {
 		t.Run(kind, func(t *testing.T) {
-			ctx, _, rule, old, native := migrationFixture(t)
+			ctx, r, rule, old, native := migrationFixture(t)
 			candidate := old
 			switch kind {
 			case "id":
@@ -30,7 +30,7 @@ func TestReviewN89AllLegacyReceiptsBlockMigration(t *testing.T) {
 			if err := os.WriteFile(candidate+".invalid", []byte("pending edit"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			data, err := ReadCacheWithFormat(ctx, rule, nil, "yaml")
+			data, err := ReadCacheWithFormat(ctx, r, rule, nil, "yaml")
 			if err != nil || data != nil {
 				t.Fatalf("invalid %s cache returned %q: %v", kind, data, err)
 			}
@@ -41,7 +41,7 @@ func TestReviewN89AllLegacyReceiptsBlockMigration(t *testing.T) {
 			if err := os.Remove(candidate + ".invalid"); err != nil {
 				t.Fatal(err)
 			}
-			data, err = ReadCacheWithFormat(ctx, rule, nil, "yaml")
+			data, err = ReadCacheWithFormat(ctx, r, rule, nil, "yaml")
 			if err != nil || string(data) != "payload: [example.com]\n" {
 				t.Fatalf("valid %s fallback lost: %q %v", kind, data, err)
 			}
@@ -53,7 +53,7 @@ func TestReviewN89AllLegacyReceiptsBlockMigration(t *testing.T) {
 }
 
 func TestReviewN89MigrationReadStaysInsideRulesDirectory(t *testing.T) {
-	ctx, _, rule, old, native := migrationFixture(t)
+	ctx, r, rule, old, native := migrationFixture(t)
 	outside := filepath.Join(t.TempDir(), "outside.list")
 	if err := os.Rename(old, outside); err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func TestReviewN89MigrationReadStaysInsideRulesDirectory(t *testing.T) {
 	if err := os.Symlink(outside, old); err != nil {
 		t.Fatal(err)
 	}
-	data, err := ReadCacheWithFormat(ctx, rule, nil, "yaml")
+	data, err := ReadCacheWithFormat(ctx, r, rule, nil, "yaml")
 	if data != nil {
 		t.Fatalf("cache read followed escaping symlink: %q (%v)", data, err)
 	}
@@ -75,7 +75,7 @@ func TestReviewN89MigrationReadStaysInsideRulesDirectory(t *testing.T) {
 }
 
 func TestReviewN89ReceiptCannotBecomeReadableSentinel(t *testing.T) {
-	ctx, _, rule, old, native := migrationFixture(t)
+	ctx, r, rule, old, native := migrationFixture(t)
 	// A receipt with the wrong filesystem type must still fail closed. The
 	// former sentinel path was an ordinary readable child of this directory.
 	if err := os.MkdirAll(native+".invalid", 0700); err != nil {
@@ -84,7 +84,7 @@ func TestReviewN89ReceiptCannotBecomeReadableSentinel(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(native+".invalid", "unavailable"), []byte("payload: [receipt.example]\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	data, err := ReadCacheWithFormat(ctx, rule, nil, "yaml")
+	data, err := ReadCacheWithFormat(ctx, r, rule, nil, "yaml")
 	if err != nil || data != nil {
 		t.Fatalf("receipt supplied cache bytes: %q %v", data, err)
 	}
@@ -97,11 +97,11 @@ func TestReviewN89ReceiptCannotBecomeReadableSentinel(t *testing.T) {
 }
 
 func TestReviewN89DanglingReceiptStillBlocksCache(t *testing.T) {
-	ctx, _, rule, _, native := migrationFixture(t)
+	ctx, r, rule, _, native := migrationFixture(t)
 	if err := os.Symlink(filepath.Join(t.TempDir(), "missing"), native+".invalid"); err != nil {
 		t.Fatal(err)
 	}
-	data, err := ReadCacheWithFormat(ctx, rule, nil, "yaml")
+	data, err := ReadCacheWithFormat(ctx, r, rule, nil, "yaml")
 	if err != nil || data != nil {
 		t.Fatalf("dangling invalid receipt was treated as absent: %q %v", data, err)
 	}

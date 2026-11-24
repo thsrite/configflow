@@ -36,7 +36,7 @@ func TestLocalDeliveryReviewWarnings(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			path, err := rulefetch.CacheReadPath(s.Context(), model.RuleConfig{ID: "ads", Name: "Ads"}, nil)
+			path, err := rulefetch.CacheReadPath(s.Context(), s.Repo, model.RuleConfig{ID: "ads", Name: "Ads"}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
