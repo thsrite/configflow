@@ -10,6 +10,7 @@ import (
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
@@ -45,12 +46,14 @@ func decodeMap(t *testing.T, data []byte) map[string]any {
 	return out
 }
 
-func setup(t *testing.T) *httpxtest.Server {
+func setup(t *testing.T) (*httpxtest.Server, *tasks.Registry) {
+	srv := httpxtest.New(t, httpxtest.Options{})
+	reg := tasks.NewRegistry(srv.Repo, lifecycle.Current())
 	for _, slot := range []string{tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
-		t.Cleanup(tasks.SetRowBuilder(slot, none))
+		reg.SetRowBuilder(slot, none)
 	}
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, sourceRows))
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apitasks.Register)})
+	reg.SetRowBuilder(tasks.SlotSubscriptions, sourceRows)
+	apitasks.NewHandlerWithRepo(reg, srv.Repo).Register(srv.App.Router)
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
 		subsRaw, err := json.Marshal([]any{map[string]any{"id": "s", "name": "Feed", "url": "https://airport.test/sub", "interval": 86400}})
 		if err != nil {
@@ -71,11 +74,11 @@ func setup(t *testing.T) *httpxtest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return srv
+	return srv, reg
 }
 
 func TestTasksListIsNoStoreAndIncludesTheBackupRow(t *testing.T) {
-	srv := setup(t)
+	srv, _ := setup(t)
 	res := srv.Get("/api/tasks").WantStatus(200)
 	list, _ := decodeMap(t, res.Body)["tasks"].([]any)
 	if res.Header.Get("Cache-Control") != "no-store" || len(list) != 1 {
@@ -111,7 +114,7 @@ func TestTasksListIsNoStoreAndIncludesTheBackupRow(t *testing.T) {
 
 // test_scheduled_tasks.py::test_interval_edit_validates_and_rule_source_edits_keep_it (route part)
 func TestIntervalEditValidates(t *testing.T) {
-	srv := setup(t)
+	srv, _ := setup(t)
 	assertJSON(t, srv.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": "subscription:s", "interval_seconds": 30})).WantStatus(400),
 		map[string]any{"success": false, "message": "更新间隔必须为 0（关闭自动更新）或 60 ~ 604800 秒的整数"})
 	srv.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": "subscription:s"})).WantStatus(400)
@@ -139,18 +142,18 @@ func TestIntervalEditValidates(t *testing.T) {
 }
 
 func TestRunDispatchAndBackgroundBusy(t *testing.T) {
-	srv := setup(t)
+	srv, reg := setup(t)
 	assertJSON(t, srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{})).WantStatus(400),
 		map[string]any{"success": false, "message": "请指定任务"})
 	assertJSON(t, srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{"key": "other:x"})).WantStatus(400),
 		map[string]any{"success": false, "message": "这个任务不能在这里立即运行"})
 	release := make(chan struct{})
-	t.Cleanup(tasks.SetRunner("webdav_backup", func(ctx context.Context, key, resource string) error {
-		return tasks.StartBackground(ctx, key, func(context.Context) error { <-release; return nil })
-	}))
-	t.Cleanup(tasks.SetRunner("subscription", func(ctx context.Context, key, resource string) error {
+	reg.SetRunner("webdav_backup", func(ctx context.Context, key, resource string) error {
+		return reg.StartBackground(ctx, key, func(context.Context) error { <-release; return nil })
+	})
+	reg.SetRunner("subscription", func(ctx context.Context, key, resource string) error {
 		return &tasks.NotFound{Message: "订阅不存在"}
-	}))
+	})
 	assertJSON(t, srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{"key": "webdav_backup"})).WantStatus(202),
 		map[string]any{"success": true, "message": "已开始运行，结果会显示在列表中"})
 	if !tasks.IsBackground("webdav_backup") {
@@ -166,13 +169,14 @@ func TestRunDispatchAndBackgroundBusy(t *testing.T) {
 }
 
 func TestRoutesStayUnregisteredUntilEverySlotIsProvided(t *testing.T) {
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotMetrics, nil))
+	reg := tasks.NewRegistry(nil, nil)
+	reg.SetRowBuilder(tasks.SlotMetrics, nil)
 	app := httpx.New()
-	apitasks.Register(app.Router)
+	apitasks.NewHandler(reg).Register(app.Router)
 	if !app.Router.HasEndpoint("tasks.get_tasks") {
 		t.Fatal("missing route when slot not ready")
 	}
-	if missing := tasks.Missing(); !slices.Contains(missing, tasks.SlotMetrics) {
+	if missing := reg.Missing(); !slices.Contains(missing, tasks.SlotMetrics) {
 		t.Fatal(missing)
 	}
 }

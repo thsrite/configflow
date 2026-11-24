@@ -61,31 +61,6 @@ func New(opts Options) *Service {
 	return s
 }
 
-var (
-	defaultSvcMu   sync.RWMutex
-	defaultService = New(Options{})
-)
-
-// Default returns the process default notifications Service (transitional helper
-// until W9/W11 remove package-level wiring).
-func Default() *Service {
-	defaultSvcMu.RLock()
-	defer defaultSvcMu.RUnlock()
-	return defaultService
-}
-
-// UseService installs svc as the process default notifications Service so
-// packages not yet migrated to explicit injection (internal/routers until W9)
-// register onto svc.
-func UseService(svc *Service) {
-	if svc == nil {
-		return
-	}
-	defaultSvcMu.Lock()
-	defaultService = svc
-	defaultSvcMu.Unlock()
-}
-
 // SetAgents installs the Agent snapshot source in the two-phase construction
 // step (O17 D6). It may be called at most once and only before MarkStarted.
 func (s *Service) SetAgents(fn func(context.Context) ([]model.Agent, error)) error {
@@ -153,17 +128,14 @@ func (s *Service) currentInputs() Inputs {
 }
 
 func (s *Service) taskRegistry() *tasks.Registry {
-	if s.tasks != nil {
-		return s.tasks
-	}
-	return tasks.Default()
+	return s.tasks
 }
 
-func (s *Service) repository(ctx context.Context) (*repo.Repository, error) {
+func (s *Service) repository(_ context.Context) (*repo.Repository, error) {
 	if s.repo != nil {
 		return s.repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("notifications: repository is nil")
 }
 
 // Complete reports whether all required notification sources are wired.
@@ -183,7 +155,10 @@ func (s *Service) Validate() error {
 	if !s.Complete() {
 		return ErrSourcesMissing
 	}
-	return s.taskRegistry().Validate()
+	if s.tasks == nil {
+		return tasks.ErrIncomplete
+	}
+	return s.tasks.Validate()
 }
 
 // SnapshotItems refreshes receipts and returns pending incidents in display order.
@@ -206,6 +181,9 @@ func (s *Service) snapshot(ctx context.Context, completedTask string, persist, p
 	}
 	if in.Rows == nil {
 		reg := s.taskRegistry()
+		if reg == nil {
+			return nil, ErrSourcesMissing
+		}
 		in.Rows = reg.Available
 		if in.MissingTasks == nil {
 			in.MissingTasks = reg.Missing

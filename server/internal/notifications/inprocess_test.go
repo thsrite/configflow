@@ -108,9 +108,7 @@ func TestObservationCollectionDoesNotHoldLeafAndCannotOverwriteNewerState(t *tes
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx := repo.WithRepository(context.Background(), repository)
-			previous := currentInputs()
-			t.Cleanup(func() { ResetInputs(); SetInputs(previous) })
+			ctx := context.Background()
 			task := func(message string) []*tasks.Task {
 				return []*tasks.Task{{
 					Key:      "sample",
@@ -124,11 +122,12 @@ func TestObservationCollectionDoesNotHoldLeafAndCannotOverwriteNewerState(t *tes
 					},
 				}}
 			}
-			SetInputs(Inputs{
+			svc := New(Options{
+				Repo:   repository,
 				Agents: func(context.Context) ([]model.Agent, error) { return nil, nil },
 				Rows:   func(context.Context) ([]*tasks.Task, error) { return task("current"), nil },
 			})
-			initial, err := SnapshotItems(ctx, "")
+			initial, err := svc.SnapshotItems(ctx, "")
 			if err != nil || len(initial) != 1 {
 				t.Fatal(initial, err)
 			}
@@ -137,7 +136,7 @@ func TestObservationCollectionDoesNotHoldLeafAndCannotOverwriteNewerState(t *tes
 			var once sync.Once
 			t.Cleanup(func() { once.Do(func() { close(release) }) })
 			var calls atomic.Int32
-			SetInputs(Inputs{Rows: func(context.Context) ([]*tasks.Task, error) {
+			svc.SetInputs(Inputs{Rows: func(context.Context) ([]*tasks.Task, error) {
 				if calls.Add(1) == 1 {
 					close(entered)
 					<-release
@@ -149,14 +148,14 @@ func TestObservationCollectionDoesNotHoldLeafAndCannotOverwriteNewerState(t *tes
 				return task("new"), nil
 			}})
 			old := make(chan error, 1)
-			go func() { _, err := SnapshotItems(ctx, ""); old <- err }()
+			go func() { _, err := svc.SnapshotItems(ctx, ""); old <- err }()
 			notificationResult(t, entered)
 			changed := make(chan error, 1)
 			go func() {
 				var err error
 				switch name {
 				case "newer snapshot", "unchanged snapshot":
-					_, err = SnapshotItems(ctx, "")
+					_, err = svc.SnapshotItems(ctx, "")
 				case "notice":
 					err = SaveNotice(ctx, repository, "task:sample", "new notice", "new notice", nil)
 				case "read":

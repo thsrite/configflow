@@ -48,14 +48,15 @@ func decodeObject(t *testing.T, raw []byte) map[string]any {
 	return out
 }
 
-// server mutates process-wide task slots; its callers must stay sequential.
 func server(t *testing.T) (*httpxtest.Server, *refresh.Service) {
 	t.Helper()
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apitasks.RegisterAlways)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	reg := tasks.NewRegistry(srv.Repo, lifecycle.Current())
+	apitasks.NewHandlerWithRepo(reg, srv.Repo).Register(srv.App.Router)
 	rf := refresh.New(refresh.Options{Repo: srv.Repo})
-	rf.Register(lifecycle.Current(), tasks.Default())
+	rf.Register(lifecycle.Current(), reg)
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
-		t.Cleanup(tasks.SetRowBuilder(slot, none))
+		reg.SetRowBuilder(slot, none)
 	}
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
 		shared.Subscriptions = []model.Subscription{testjson.Decode[model.Subscription](t, map[string]any{
@@ -75,10 +76,11 @@ func server(t *testing.T) (*httpxtest.Server, *refresh.Service) {
 }
 
 func TestReviewTaskFixtureRestoresMissingSlots(t *testing.T) {
-	refresh.New(refresh.Options{}).Register(lifecycle.Current(), tasks.Default())
-	before := tasks.Missing()
+	reg := tasks.NewRegistry(nil, nil)
+	refresh.New(refresh.Options{}).Register(lifecycle.Current(), reg)
+	before := reg.Missing()
 	t.Run("fixture", func(t *testing.T) { _, _ = server(t) })
-	if after := tasks.Missing(); !reflect.DeepEqual(before, after) {
+	if after := reg.Missing(); !reflect.DeepEqual(before, after) {
 		t.Fatal("fake task providers leaked", before, after)
 	}
 }

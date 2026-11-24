@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -26,13 +27,9 @@ func findRow(ctx context.Context, reg *tasks.Registry, key, slot string) (*tasks
 	return nil, nil
 }
 
-func updateInterval(ctx context.Context, body intervalRequest) (*tasks.Task, error) {
-	return updateIntervalOn(ctx, tasks.Default(), nil, body)
-}
-
 func updateIntervalOn(ctx context.Context, reg *tasks.Registry, repository *repo.Repository, body intervalRequest) (*tasks.Task, error) {
 	if reg == nil {
-		reg = tasks.Default()
+		return nil, errors.New("api/tasks: registry is nil")
 	}
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {

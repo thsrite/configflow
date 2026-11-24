@@ -27,7 +27,7 @@ func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 	var h *subscriptions.Handler
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 		nodes.Register(r)
-		h = subscriptions.NewHandler(nil, nil, nil, nil)
+		h = subscriptions.NewHandler(nil, nil, nil, nil, nil)
 		h.Register(r)
 	})})
 	env := refresh.DefaultRefreshEnvFor(srv.Repo, nil)
@@ -92,7 +92,7 @@ func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 func TestConfigFindingsMalformedCacheFailureIsJSON(t *testing.T) {
 	var h *subscriptions.Handler
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
-		h = subscriptions.NewHandler(nil, nil, nil, nil)
+		h = subscriptions.NewHandler(nil, nil, nil, nil, nil)
 		h.Register(r)
 	})})
 	env := refresh.DefaultRefreshEnvFor(srv.Repo, nil)
@@ -123,7 +123,7 @@ func TestConfigFindingsMalformedCacheFailureIsJSON(t *testing.T) {
 func TestConfigFindingsFailedImportCommitIsJSON(t *testing.T) {
 	var h *subscriptions.Handler
 	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
-		h = subscriptions.NewHandler(nil, nil, nil, nil)
+		h = subscriptions.NewHandler(nil, nil, nil, nil, nil)
 		h.Register(r)
 	})})
 	env := refresh.DefaultRefreshEnvFor(srv.Repo, nil)

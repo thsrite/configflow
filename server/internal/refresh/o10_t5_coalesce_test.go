@@ -65,22 +65,26 @@ func TestO10T5NotificationSemanticsLockedBeforeCoalescing(t *testing.T) {
 	})
 
 	// Wire task slots and notification inputs cleanly for this test.
+	reg := tasks.NewRegistry(f.repo, nil)
 	none := func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
-		t.Cleanup(tasks.SetRowBuilder(slot, none))
+		reg.SetRowBuilder(slot, none)
 	}
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, f.svc.SubscriptionTasks))
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRuleSources, f.svc.RuleTasks))
+	reg.SetRowBuilder(tasks.SlotSubscriptions, f.svc.SubscriptionTasks)
+	reg.SetRowBuilder(tasks.SlotRuleSources, f.svc.RuleTasks)
 
 	var snapshotRowsCalls atomic.Int32
-	t.Cleanup(notifications.SetInputs(notifications.Inputs{
+	nt := notifications.New(notifications.Options{
+		Repo:  f.repo,
+		Tasks: reg,
 		Rows: func(ctx context.Context) ([]*tasks.Task, error) {
 			snapshotRowsCalls.Add(1)
-			return tasks.Available(ctx)
+			return reg.Available(ctx)
 		},
-		MissingTasks: tasks.Missing,
+		MissingTasks: reg.Missing,
 		Agents:       func(context.Context) ([]model.Agent, error) { return nil, nil },
-	}))
+	})
+	f.svc.notifications = nt
 
 	prevClock := notifications.Clock
 	notifications.Clock = f.clock.Now
@@ -178,7 +182,7 @@ func TestO10T5NotificationSemanticsLockedBeforeCoalescing(t *testing.T) {
 		t.Fatalf("dismiss: %v", err)
 	}
 	// A snapshot without a new failure keeps s2 and r1 dismissed.
-	items, err := notifications.SnapshotItems(f.ctx, "")
+	items, err := nt.SnapshotItems(f.ctx, "")
 	if err != nil {
 		t.Fatalf("snapshot after dismiss: %v", err)
 	}
@@ -319,16 +323,20 @@ func TestO10T5MidRoundObservationAndDismissalStayConsistent(t *testing.T) {
 		}
 		shared.RuleLibrary = []model.RuleLibraryItem{}
 	})
+	reg := tasks.NewRegistry(f.repo, nil)
 	none := func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }
 	for _, slot := range []string{tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
-		t.Cleanup(tasks.SetRowBuilder(slot, none))
+		reg.SetRowBuilder(slot, none)
 	}
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, f.svc.SubscriptionTasks))
-	t.Cleanup(notifications.SetInputs(notifications.Inputs{
-		Rows:         tasks.Available,
-		MissingTasks: tasks.Missing,
+	reg.SetRowBuilder(tasks.SlotSubscriptions, f.svc.SubscriptionTasks)
+	nt := notifications.New(notifications.Options{
+		Repo:         f.repo,
+		Tasks:        reg,
+		Rows:         reg.Available,
+		MissingTasks: reg.Missing,
 		Agents:       func(context.Context) ([]model.Agent, error) { return nil, nil },
-	}))
+	})
+	f.svc.notifications = nt
 	prevClock := notifications.Clock
 	notifications.Clock = f.clock.Now
 	t.Cleanup(func() { notifications.Clock = prevClock })
@@ -364,7 +372,7 @@ func TestO10T5MidRoundObservationAndDismissalStayConsistent(t *testing.T) {
 
 	// Browser observes notifications mid-round and sees fast immediately.
 	f.clock.advance(2 * time.Second)
-	midItems, err := notifications.SnapshotItems(f.ctx, "")
+	midItems, err := nt.SnapshotItems(f.ctx, "")
 	if err != nil {
 		close(releaseSlow)
 		t.Fatalf("mid-round snapshot: %v", err)
@@ -391,7 +399,7 @@ func TestO10T5MidRoundObservationAndDismissalStayConsistent(t *testing.T) {
 
 	// Verify fast kept its exact mid-round first_seen_at, version, and occurrences=1,
 	// while slow is now also pending.
-	afterItems, err := notifications.SnapshotItems(f.ctx, "")
+	afterItems, err := nt.SnapshotItems(f.ctx, "")
 	if err != nil {
 		t.Fatalf("post-round snapshot: %v", err)
 	}

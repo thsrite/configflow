@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"configflow/internal/agents"
 	apiagents "configflow/internal/api/agents"
 	api "configflow/internal/api/routers"
 	"configflow/internal/httpx"
@@ -13,6 +14,7 @@ import (
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	core "configflow/internal/routers"
+	routerrulesync "configflow/internal/routers/rulesync"
 )
 
 func decodeJSON(t *testing.T, res *httpxtest.Result) map[string]any {
@@ -28,12 +30,20 @@ func wireRouterTestHooks(t *testing.T) {
 	t.Helper()
 	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: core.JobLockRecord}})
 	t.Cleanup(func() { repo.SetHooks(previous) })
-	t.Cleanup(notifications.SetInputs(notifications.Inputs{Summarize: core.NotificationSummary}))
 }
 
 func fixture(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(api.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	m, err := agents.New(s.Context(), s.Repo, agents.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	nt := notifications.New(notifications.Options{Repo: s.Repo, Summarize: core.NotificationSummary})
+	rtr := core.New(s.Repo, core.Options{Notifications: nt})
+	rr := routerrulesync.New(s.Repo, routerrulesync.Options{Notifications: nt})
+	api.New(api.Deps{Repo: s.Repo, Agents: m, Routers: rtr, RuleSync: rr, Notifications: nt}).Register(s.App.Router)
 	wireRouterTestHooks(t)
 	return s
 }

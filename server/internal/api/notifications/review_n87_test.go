@@ -11,7 +11,7 @@ import (
 func TestN87ReviewStoreContainerErrorsRetainUnavailable(t *testing.T) {
 	for _, raw := range []string{`[]`, `{"items":[]}`} {
 		t.Run(raw, func(t *testing.T) {
-			s := notificationServer(t)
+			s, _, _ := notificationServer(t)
 			path := filepath.Join(s.DataDir, "notifications.json")
 			if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
 				t.Fatal(err)

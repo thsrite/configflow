@@ -32,7 +32,10 @@ func NotificationSummary(report *notifications.RouterReport, plan json.RawMessag
 	}
 	return &result, nil
 }
-func recordPendingNotice(ctx context.Context, db *repo.Repository, profileID string, config json.RawMessage, r *spec.Router, report *Report, plan *Plan) {
+func recordPendingNotice(ctx context.Context, nt *notifications.Service, db *repo.Repository, profileID string, config json.RawMessage, r *spec.Router, report *Report, plan *Plan) {
+	if nt == nil {
+		return
+	}
 	work := lifecycle.Detach(repo.WithRepository(ctx, db))
 	if work.Err() != nil {
 		return
@@ -61,6 +64,6 @@ func recordPendingNotice(ctx context.Context, db *repo.Repository, profileID str
 		if err = work.Err(); err != nil {
 			return err
 		}
-		return notifications.SaveRouter(work, profileID, config, &router, &native, raw, "")
+		return nt.SaveRouter(work, profileID, config, &router, &native, raw, "")
 	})
 }

@@ -283,14 +283,21 @@ func newWorldSaved(t *testing.T, retention map[string]any) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.Repo = srv.Repo
-	service.Subscribe(srv.Repo)
 	rt := lifecycle.NewRuntime(lifecycle.Options{})
-	service.Register(rt, tasks.Default())
-	for _, slot := range tasks.Missing() {
-		t.Cleanup(tasks.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return []*tasks.Task{}, nil }))
+	tk := tasks.NewRegistry(srv.Repo, rt)
+	service.Repo = srv.Repo
+	service.Tasks = tk
+	service.Subscribe(srv.Repo)
+	service.Register(rt, tk)
+	for _, slot := range tk.Missing() {
+		tk.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return []*tasks.Task{}, nil })
 	}
-	t.Cleanup(notifications.SetInputs(notifications.Inputs{Agents: func(context.Context) ([]model.Agent, error) { return []model.Agent{}, nil }, Rows: tasks.List}))
+	service.Notifications = notifications.New(notifications.Options{
+		Repo:   srv.Repo,
+		Tasks:  tk,
+		Agents: func(context.Context) ([]model.Agent, error) { return []model.Agent{}, nil },
+		Rows:   tk.List,
+	})
 	previousClock := notifications.Clock
 	notifications.Clock = func() time.Time { return fixed }
 	t.Cleanup(func() { notifications.Clock = previousClock })

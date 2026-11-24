@@ -27,43 +27,29 @@ type Handler struct {
 	Repo          *repo.Repository
 }
 
-// NewHandler constructs a Handler; nil fields fall back to package defaults.
+// NewHandler constructs a Handler with explicit services.
 func NewHandler(reg *tasks.Registry, svc *notifications.Service, r *repo.Repository) *Handler {
 	return &Handler{Tasks: reg, Notifications: svc, Repo: r}
 }
 
-func (h *Handler) taskRegistry() *tasks.Registry {
+func (h *Handler) taskRegistry() (*tasks.Registry, error) {
 	if h != nil && h.Tasks != nil {
-		return h.Tasks
+		return h.Tasks, nil
 	}
-	return tasks.Default()
+	return nil, errors.New("api/notifications: tasks registry is nil")
 }
 
-func (h *Handler) notifService() *notifications.Service {
+func (h *Handler) notifService() (*notifications.Service, error) {
 	if h != nil && h.Notifications != nil {
-		return h.Notifications
+		return h.Notifications, nil
 	}
-	return notifications.Default()
+	return nil, errors.New("api/notifications: notifications service is nil")
 }
 
 // Register mounts the /api/notifications routes on r.
 func (h *Handler) Register(r *httpx.Router) {
 	r.GET("/api/notifications", "notifications.list_notifications", auth.Require(h.listNotifications))
 	r.POST("/api/notifications/read", "notifications.read_notifications", auth.Require(h.readNotifications))
-}
-
-// Register adds both routes regardless of source readiness.
-func Register(r *httpx.Router) {
-	RegisterAlways(r)
-}
-
-// ListComplete reports whether GET /api/notifications can observe every
-// notification source and every task-row slot is provided.
-func ListComplete() bool { return notifications.Complete() && tasks.Complete() }
-
-// RegisterAlways adds both routes regardless of the sources (tests).
-func RegisterAlways(r *httpx.Router) {
-	NewHandler(nil, nil, nil).Register(r)
 }
 
 // isOSOrValueError is `except (OSError, ValueError)`: file system errors,
@@ -78,8 +64,14 @@ func isOSOrValueError(err error) bool {
 }
 
 func (h *Handler) listNotifications(c *httpx.Ctx) (*httpx.Response, error) {
-	reg := h.taskRegistry()
-	svc := h.notifService()
+	reg, err := h.taskRegistry()
+	if err != nil {
+		return nil, err
+	}
+	svc, err := h.notifService()
+	if err != nil {
+		return nil, err
+	}
 	missing := append(reg.Missing(), svc.MissingSources()...)
 	if len(missing) > 0 {
 		return httpx.JSONStatus(503, struct {
@@ -89,7 +81,6 @@ func (h *Handler) listNotifications(c *httpx.Ctx) (*httpx.Response, error) {
 		}{false, fmt.Sprintf(msgNotReady, strings.Join(missing, "、")), missing}).NoStore(), nil
 	}
 	var items []*notifications.Item
-	var err error
 	if c.Request.Method == http.MethodHead {
 		items, err = svc.PreviewItems(c.Context())
 	} else {

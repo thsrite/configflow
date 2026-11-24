@@ -9,6 +9,7 @@ import (
 	apirouters "configflow/internal/api/routers"
 	apirulelibrary "configflow/internal/api/rulelibrary"
 	apirules "configflow/internal/api/rules"
+	"configflow/internal/notifications"
 	"configflow/internal/rulesource"
 )
 
@@ -26,7 +27,7 @@ type w10bHandlers struct {
 	oxidns      *apioxidns.Handler
 }
 
-func newW10bHandlers(opts Options, ag *agentServices, gen *generateServices, rs *rulesource.Service, rtrSvc *routerServices) w10bHandlers {
+func newW10bHandlers(opts Options, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service, rtrSvc *routerServices) w10bHandlers {
 	return w10bHandlers{
 		rules: apirules.New(apirules.Deps{
 			Repo:       opts.Repo,
@@ -38,10 +39,11 @@ func newW10bHandlers(opts Options, ag *agentServices, gen *generateServices, rs 
 			Refresh: gen.refresh,
 		}),
 		routers: apirouters.New(apirouters.Deps{
-			Repo:     opts.Repo,
-			Agents:   ag.manager,
-			Routers:  rtrSvc.routers,
-			RuleSync: rtrSvc.rulesync,
+			Repo:          opts.Repo,
+			Agents:        ag.manager,
+			Routers:       rtrSvc.routers,
+			RuleSync:      rtrSvc.rulesync,
+			Notifications: nt,
 		}),
 		config: apiconfig.New(apiconfig.Deps{
 			Repo: opts.Repo,

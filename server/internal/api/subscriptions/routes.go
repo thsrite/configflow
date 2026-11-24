@@ -11,6 +11,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
+	"configflow/internal/notifications"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
@@ -20,16 +21,16 @@ import (
 // Handler serves the /api/subscriptions routes and profile provider alias
 // backed by explicit services.
 type Handler struct {
-	Repo     *repo.Repository
-	SubStore *substore.Service
-	Provider *provider.Service
-	Refresh  *refresh.Service
+	Repo          *repo.Repository
+	SubStore      *substore.Service
+	Provider      *provider.Service
+	Refresh       *refresh.Service
+	Notifications *notifications.Service
 }
 
-// NewHandler constructs a subscriptions Handler. Nil dependencies fall back to
-// context/package defaults until W11.
-func NewHandler(r *repo.Repository, sub *substore.Service, pv *provider.Service, rf *refresh.Service) *Handler {
-	return &Handler{Repo: r, SubStore: sub, Provider: pv, Refresh: rf}
+// NewHandler constructs a subscriptions Handler with explicit services.
+func NewHandler(r *repo.Repository, sub *substore.Service, pv *provider.Service, rf *refresh.Service, nt *notifications.Service) *Handler {
+	return &Handler{Repo: r, SubStore: sub, Provider: pv, Refresh: rf, Notifications: nt}
 }
 
 // Register adds the subscriptions blueprint and its profile provider alias to r.
@@ -48,7 +49,7 @@ func (h *Handler) Register(r *httpx.Router) {
 }
 
 // Register adds the subscriptions blueprint and its profile provider alias.
-func Register(r *httpx.Router) { NewHandler(nil, nil, nil, nil).Register(r) }
+func Register(r *httpx.Router) { NewHandler(nil, nil, nil, nil, nil).Register(r) }
 
 func (h *Handler) healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
 	return h.usage(c.Context(), c.Param("resource_id"))

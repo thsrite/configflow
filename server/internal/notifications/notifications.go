@@ -35,20 +35,6 @@ type Inputs struct {
 	Summarize    func(*RouterReport, json.RawMessage) (*RouterSummary, error)
 }
 
-// SetInputs installs non-nil sources on the default Service.
-func SetInputs(s Inputs) func() { return Default().SetInputs(s) }
-
-// ResetInputs clears source wiring on the default Service.
-func ResetInputs() { Default().ResetInputs() }
-
-func currentInputs() Inputs { return Default().currentInputs() }
-
-// Complete reports whether all source kinds are wired on the default Service.
-func Complete() bool { return Default().Complete() }
-
-// MissingSources lists required unwired sources on the default Service.
-func MissingSources() []string { return Default().MissingSources() }
-
 // ErrSourceUnavailable identifies a source read failure (HTTP 503).
 var ErrSourceUnavailable = errors.New("notification source unavailable")
 
@@ -368,12 +354,12 @@ type routerCheck struct {
 }
 
 // SaveRouter records a checked router's manual actions and publication summary.
-func SaveRouter(ctx context.Context, profileID string, config json.RawMessage, router *model.Router, report *RouterReport, plan json.RawMessage, checkedAt string) error {
+func (s *Service) SaveRouter(ctx context.Context, profileID string, config json.RawMessage, router *model.Router, report *RouterReport, plan json.RawMessage, checkedAt string) error {
 	ctx = lifecycle.Detach(ctx)
 	if router == nil || report == nil {
 		return ErrInvalidStore
 	}
-	repository, err := repo.GetRepository(ctx)
+	repository, err := s.repository(ctx)
 	if err != nil {
 		return err
 	}
@@ -412,7 +398,7 @@ func SaveRouter(ctx context.Context, profileID string, config json.RawMessage, r
 	}
 	var summary *RouterSummary
 	if len(plan) > 0 && string(plan) != "null" {
-		summarize := currentInputs().Summarize
+		summarize := s.currentInputs().Summarize
 		if summarize == nil {
 			return errors.New("routers.pending.summarize is not wired")
 		}
@@ -742,22 +728,4 @@ func (c *collectedObservations) apply(items *Items, retainUnseen bool) error {
 		}
 	}
 	return nil
-}
-
-// SnapshotItems refreshes receipts and returns pending incidents in display order.
-func SnapshotItems(ctx context.Context, completedTask string) ([]*Item, error) {
-	return Default().SnapshotItems(ctx, completedTask)
-}
-
-// PreviewItems returns the projection without creating or rewriting receipts.
-func PreviewItems(ctx context.Context) ([]*Item, error) { return Default().PreviewItems(ctx) }
-
-// RefreshTasks observes known sources without retiring unobserved old incidents.
-func RefreshTasks(ctx context.Context, completedTask string) error {
-	return Default().RefreshTasks(ctx, completedTask)
-}
-
-// TaskStatus wires status commits to notification refresh after the leaf unlock.
-func TaskStatus(ctx context.Context, dataDir string) *taskstatus.Store {
-	return Default().TaskStatus(ctx, dataDir)
 }

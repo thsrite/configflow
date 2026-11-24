@@ -161,12 +161,9 @@ func captureRouter(r *spec.Router, d Driver) *spec.Router {
 	return &out
 }
 func refreshRelease(ctx context.Context, nt *notifications.Service) {
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && nt != nil {
 		notifications.Safely(func() error {
-			if nt != nil {
-				return nt.RefreshTasks(ctx, "")
-			}
-			return notifications.RefreshTasks(ctx, "")
+			return nt.RefreshTasks(ctx, "")
 		})
 	}
 }

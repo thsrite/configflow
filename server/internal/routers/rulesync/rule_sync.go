@@ -28,21 +28,23 @@ import (
 
 // Options configures a router RuleSyncService instance.
 type Options struct {
-	Agents    routers.AgentSource
-	IPv6Hosts routers.IPv6HostFetcher
-	NewDriver func(*spec.Router) *routers.RouterOS
-	Download  RuleSyncDownload
-	Spawner   lockx.Spawner
+	Agents        routers.AgentSource
+	IPv6Hosts     routers.IPv6HostFetcher
+	Notifications *notifications.Service
+	NewDriver     func(*spec.Router) *routers.RouterOS
+	Download      RuleSyncDownload
+	Spawner       lockx.Spawner
 }
 
 // RuleSyncService owns manual baselines, automatic destination deltas and jobs.
 // Drivers remain real production clients; tests inject a loopback-backed factory.
 type RuleSyncService struct {
-	Repo      *repo.Repository
-	Agents    routers.AgentSource
-	IPv6Hosts routers.IPv6HostFetcher
-	NewDriver func(*spec.Router) *routers.RouterOS
-	Download  RuleSyncDownload
+	Repo          *repo.Repository
+	Agents        routers.AgentSource
+	IPv6Hosts     routers.IPv6HostFetcher
+	Notifications *notifications.Service
+	NewDriver     func(*spec.Router) *routers.RouterOS
+	Download      RuleSyncDownload
 	// Spawner defaults to the production lifecycle; isolated runtimes may be injected.
 	Spawner lockx.Spawner
 	pacer   ruleSyncPacer
@@ -51,12 +53,13 @@ type RuleSyncService struct {
 // New constructs a RuleSyncService with explicit dependencies.
 func New(r *repo.Repository, opts Options) *RuleSyncService {
 	return &RuleSyncService{
-		Repo:      r,
-		Agents:    opts.Agents,
-		IPv6Hosts: opts.IPv6Hosts,
-		NewDriver: opts.NewDriver,
-		Download:  opts.Download,
-		Spawner:   opts.Spawner,
+		Repo:          r,
+		Agents:        opts.Agents,
+		IPv6Hosts:     opts.IPv6Hosts,
+		Notifications: opts.Notifications,
+		NewDriver:     opts.NewDriver,
+		Download:      opts.Download,
+		Spawner:       opts.Spawner,
 	}
 }
 
@@ -516,7 +519,11 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string,
 	default:
 		syncLogger.Warningf(messageSyncLogFailed, label, message)
 	}
-	_, err = notifications.TaskStatus(ctx, s.Repo.DataDir()).SaveResult(ctx, syncTaskKey(profile, id), taskstatus.Result{OK: receipt.Status == "synced", StartedAt: timestamp, Error: receipt.Message, Trigger: trigger, DurationMs: float64(lifecycle.ClockFrom(ctx).Now().Sub(started).Milliseconds())})
+	statusStore := taskstatus.New(s.Repo.DataDir())
+	if s.Notifications != nil {
+		statusStore = s.Notifications.TaskStatus(ctx, s.Repo.DataDir())
+	}
+	_, err = statusStore.SaveResult(ctx, syncTaskKey(profile, id), taskstatus.Result{OK: receipt.Status == "synced", StartedAt: timestamp, Error: receipt.Message, Trigger: trigger, DurationMs: float64(lifecycle.ClockFrom(ctx).Now().Sub(started).Milliseconds())})
 	return receipt.Public(true), err
 }
 func syncTaskKey(profile, id string) string { return "router_rule_sync:" + profile + ":" + id }

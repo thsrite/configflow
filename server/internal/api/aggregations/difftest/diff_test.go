@@ -226,8 +226,9 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	re.Clock = fixedClock{}
 	re.HTTP = subSvc.Env.HTTP
 	re.RandomHex = subSvc.Env.RandomHex
-	rf := refresh.New(refresh.Options{Repo: srv.Repo, SubStore: subSvc, Env: re})
-	notifications.SetInputs(notifications.Inputs{
+	var rf *refresh.Service
+	nt := notifications.New(notifications.Options{
+		Repo:   srv.Repo,
 		Agents: func(context.Context) ([]model.Agent, error) { return []model.Agent{}, nil },
 		Rows: func(ctx context.Context) ([]*tasks.Task, error) {
 			status, err := taskstatus.New(srv.DataDir).Read()
@@ -242,7 +243,7 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 			return append(subs, rules...), err
 		},
 	})
-	t.Cleanup(notifications.ResetInputs)
+	rf = refresh.New(refresh.Options{Repo: srv.Repo, SubStore: subSvc, Env: re, Notifications: nt})
 	err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		s.SystemConfig.ConfigToken = "c31-pull"
 		s.SystemConfig.RuleProxyToken = "c31-internal"

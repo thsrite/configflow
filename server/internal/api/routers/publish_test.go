@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/agents"
 	apiconfig "configflow/internal/api/config"
 	apiprofiles "configflow/internal/api/profiles"
 	api "configflow/internal/api/routers"
@@ -21,7 +22,10 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/notifications"
+	core "configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
+	routerrulesync "configflow/internal/routers/rulesync"
 )
 
 func saveFixtureConfig(t *testing.T, s *httpxtest.Server, cfg any) {
@@ -116,13 +120,22 @@ func TestR15PublishHTTPDisconnectAndShutdownAfterWrite(t *testing.T) {
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Mode: lifecycle.ModeManual})
 			runtime.Start(t.Context())
 			defer runtime.Shutdown(t.Context())
-			s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(api.Register, apiconfig.Register, apiprofiles.Register), Setup: func(app *httpx.App) {
+			s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apiconfig.Register, apiprofiles.Register), Setup: func(app *httpx.App) {
 				app.AfterRequest(func(c *httpx.Ctx, r *httpx.Response) {
 					if c.Path() == "/api/routers/router-one/apply" {
 						close(finished)
 					}
 				})
 			}})
+			mgr, err := agents.New(s.Context(), s.Repo, agents.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(mgr.Close)
+			nt := notifications.New(notifications.Options{Repo: s.Repo, Summarize: core.NotificationSummary})
+			rtr := core.New(s.Repo, core.Options{Notifications: nt})
+			rr := routerrulesync.New(s.Repo, routerrulesync.Options{Notifications: nt})
+			api.New(api.Deps{Repo: s.Repo, Agents: mgr, Routers: rtr, RuleSync: rr, Notifications: nt}).Register(s.App.Router)
 			wireRouterTestHooks(t)
 			createSpare(t, s)
 			saveFixtureConfig(t, s, inputConfig(device.URL))

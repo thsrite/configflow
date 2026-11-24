@@ -11,9 +11,10 @@ import (
 
 func TestReviewC07FixtureRestoresRunner(t *testing.T) {
 	want := errors.New("synthetic original runner")
-	t.Cleanup(tasks.SetRunner(tasks.SlotSubscriptions, func(context.Context, string, string) error { return want }))
+	reg := tasks.NewRegistry(nil, nil)
+	reg.SetRunner(tasks.SlotSubscriptions, func(context.Context, string, string) error { return want })
 	t.Run("fixture", func(t *testing.T) { newWorld(t) })
-	if err := tasks.Runner(tasks.SlotSubscriptions)(context.Background(), "subscription:s", "s"); !errors.Is(err, want) {
+	if err := reg.Runner(tasks.SlotSubscriptions)(context.Background(), "subscription:s", "s"); !errors.Is(err, want) {
 		t.Fatal("fixture leaked its production runner", err)
 	}
 }
@@ -38,7 +39,7 @@ func TestReviewC07LegacyCountersAndSilentBinding(t *testing.T) {
 
 func TestReviewC07UnknownExactKeyAgainstFlask(t *testing.T) {
 	w := newWorld(t)
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotMetrics, nil))
+	w.tasks.SetRowBuilder(tasks.SlotMetrics, nil)
 	commands := w.commands([]command{
 		{Method: "POST", Path: "/api/tasks/run", Body: `{"key":"metrics_history_flush:unknown"}`},
 		{Method: "PUT", Path: "/api/tasks/interval", Body: `{"key":"metrics_history_flush:unknown","interval_seconds":600}`},

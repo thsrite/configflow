@@ -9,25 +9,26 @@ import (
 )
 
 func TestProviderRestorationIsNestedAndDoesNotFakeCompleteness(t *testing.T) {
-	before := Missing()
+	reg := NewRegistry(nil, nil)
+	before := reg.Missing()
 	t.Run("fake", func(t *testing.T) {
 		for _, slot := range before {
-			t.Cleanup(SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*Task, error) { return nil, nil }))
+			t.Cleanup(reg.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*Task, error) { return nil, nil }))
 		}
-		if !Complete() {
-			t.Fatal(Missing())
+		if !reg.Complete() {
+			t.Fatal(reg.Missing())
 		}
 		t.Run("override", func(t *testing.T) {
-			t.Cleanup(SetRowBuilder(SlotRouters, nil))
-			if HasRows(SlotRouters) {
+			t.Cleanup(reg.SetRowBuilder(SlotRouters, nil))
+			if reg.HasRows(SlotRouters) {
 				t.Fatal("override not installed")
 			}
 		})
-		if !HasRows(SlotRouters) {
+		if !reg.HasRows(SlotRouters) {
 			t.Fatal("nested cleanup did not restore outer provider")
 		}
 	})
-	if !reflect.DeepEqual(Missing(), before) {
-		t.Fatal("fake providers leaked", Missing(), before)
+	if !reflect.DeepEqual(reg.Missing(), before) {
+		t.Fatal("fake providers leaked", reg.Missing(), before)
 	}
 }

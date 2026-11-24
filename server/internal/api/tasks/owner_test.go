@@ -38,7 +38,8 @@ func TestIntervalOwnerKeepsDisconnectButRejectsStoppedGeneration(t *testing.T) {
 			t.Cleanup(func() { runtime.Shutdown(context.Background()) })
 			request, cancel := context.WithCancel(runtime.BindRequest(ctx))
 			defer cancel()
-			t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }))
+			reg := tasks.NewRegistry(r, runtime)
+			reg.SetRowBuilder(tasks.SlotSubscriptions, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil })
 			before, err := r.ExportAllJSON(ctx, false)
 			if err != nil {
 				t.Fatal(err)
@@ -52,7 +53,7 @@ func TestIntervalOwnerKeepsDisconnectButRejectsStoppedGeneration(t *testing.T) {
 			if err := body.UnmarshalJSON([]byte(`{"key":"subscription:s","interval_seconds":60}`)); err != nil {
 				t.Fatal(err)
 			}
-			_, err = updateInterval(request, body)
+			_, err = updateIntervalOn(request, reg, r, body)
 			if shutdown {
 				if !errors.Is(err, context.Canceled) {
 					t.Fatal(err)

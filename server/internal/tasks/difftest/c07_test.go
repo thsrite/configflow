@@ -47,6 +47,8 @@ type answer struct {
 }
 type world struct {
 	s            *httpxtest.Server
+	tasks        *tasks.Registry
+	nt           *notifications.Service
 	pyDir, token string
 }
 
@@ -55,25 +57,28 @@ func newWorld(t *testing.T) *world {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(apilogs.Register, apistats.Register, apitasks.Register, apinotifications.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(apilogs.Register, apistats.Register)})
+	reg := tasks.NewRegistry(s.Repo, nil)
 	rf := refresh.New(refresh.Options{Repo: s.Repo})
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
-		t.Cleanup(tasks.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }))
+		reg.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil })
 	}
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, rf.SubscriptionTasks))
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRuleSources, rf.RuleTasks))
+	reg.SetRowBuilder(tasks.SlotSubscriptions, rf.SubscriptionTasks)
+	reg.SetRowBuilder(tasks.SlotRuleSources, rf.RuleTasks)
 	mt := metrics.New(metrics.Options{Repo: s.Repo})
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotMetrics, mt.BuildRows))
-	t.Cleanup(tasks.SetIntervalEditor(tasks.MetricsTaskKey, func(ctx context.Context, value *int64) error {
+	reg.SetRowBuilder(tasks.SlotMetrics, mt.BuildRows)
+	reg.SetIntervalEditor(tasks.MetricsTaskKey, func(ctx context.Context, value *int64) error {
 		if value == nil {
 			return mt.SetFlushInterval(ctx, 0)
 		}
 		return mt.SetFlushInterval(ctx, *value)
-	}))
+	})
 	for _, category := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources} {
-		t.Cleanup(tasks.SetRunner(category, func(context.Context, string, string) error { return nil }))
+		reg.SetRunner(category, func(context.Context, string, string) error { return nil })
 	}
-	t.Cleanup(notifications.SetInputs(notifications.Inputs{Rows: tasks.Available, MissingTasks: tasks.Missing, Agents: func(context.Context) ([]model.Agent, error) { return nil, nil }}))
+	nt := notifications.New(notifications.Options{Repo: s.Repo, Tasks: reg, Rows: reg.Available, MissingTasks: reg.Missing, Agents: func(context.Context) ([]model.Agent, error) { return nil, nil }})
+	apitasks.NewHandlerWithRepo(reg, s.Repo).Register(s.App.Router)
+	apinotifications.NewHandler(reg, nt, s.Repo).Register(s.App.Router)
 	previousNow, previousClock := apistats.Now, notifications.Clock
 	apistats.Now = func() time.Time { return fixed }
 	notifications.Clock = func() time.Time { return fixed }
@@ -111,7 +116,7 @@ func newWorld(t *testing.T) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &world{s, pyDir, "Bearer " + token}
+	return &world{s: s, tasks: reg, nt: nt, pyDir: pyDir, token: "Bearer " + token}
 }
 
 func (w *world) commands(commands []command) []command {
@@ -426,7 +431,7 @@ func TestC07NotificationReadAndCombinedRedaction(t *testing.T) {
 func TestC07ExpectedReadinessDifferenceKeepsUnseenFailures(t *testing.T) {
 	w := newWorld(t)
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents} {
-		t.Cleanup(tasks.SetRowBuilder(slot, nil))
+		w.tasks.SetRowBuilder(slot, nil)
 	}
 	old := []byte(`{"items":{"task:router_rule_sync:default:r":{"state":"pending","source":"task","version":"old","read":false},"task:agent_rule_sync:a":{"state":"pending","source":"task","version":"old","read":false}}}`)
 	commands := w.commands([]command{
@@ -446,7 +451,7 @@ func TestC07ExpectedReadinessDifferenceKeepsUnseenFailures(t *testing.T) {
 			t.Fatal(string(got.Body), err)
 		}
 	}
-	if err := notifications.RefreshTasks(w.s.Context(), "subscription:s"); err != nil {
+	if err := w.nt.RefreshTasks(w.s.Context(), "subscription:s"); err != nil {
 		t.Fatal(err)
 	}
 	after, err := os.ReadFile(filepath.Join(w.s.DataDir, "notifications.json"))

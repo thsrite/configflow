@@ -60,7 +60,7 @@ func newW10cHandlers(opts Options, tk *tasks.Registry, nt *notifications.Service
 		auth:              apiauth.NewHandler(),
 		clientdevices:     apiclientdevices.NewHandler(opts.Repo, ag.manager),
 		nodes:             apinodes.NewHandler(opts.Repo, gen.substore),
-		subscriptions:     apisubscriptions.NewHandler(opts.Repo, gen.substore, gen.provider, gen.refresh),
+		subscriptions:     apisubscriptions.NewHandler(opts.Repo, gen.substore, gen.provider, gen.refresh, nt),
 		aggregations:      apiaggregations.NewHandler(opts.Repo, gen.aggregations, gen.provider, gen.substore),
 		proxygroups:       apiproxygroups.NewHandler(opts.Repo, gen.substore),
 		ipv6:              apiipv6.NewHandler(opts.Repo, ag.manager, ag.ipv6),

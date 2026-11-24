@@ -15,7 +15,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
-	"configflow/internal/notifications"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
@@ -23,6 +22,7 @@ import (
 	"configflow/internal/store"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
+	"configflow/internal/taskstatus"
 	"configflow/internal/weburl"
 	"configflow/internal/yamlx"
 )
@@ -263,7 +263,10 @@ func (h *Handler) forgetTask(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	return notifications.TaskStatus(ctx, r.DataDir()).ForgetContext(ctx, refresh.SourceTaskKey(id))
+	if h != nil && h.Notifications != nil {
+		return h.Notifications.TaskStatus(ctx, r.DataDir()).ForgetContext(ctx, refresh.SourceTaskKey(id))
+	}
+	return taskstatus.New(r.DataDir()).ForgetContext(ctx, refresh.SourceTaskKey(id))
 }
 func (h *Handler) forgetSubscription(ctx context.Context, id string) error {
 	ctx = lifecycle.Detach(h.withRepo(ctx))

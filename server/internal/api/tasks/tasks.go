@@ -18,22 +18,22 @@ type Handler struct {
 	Repo  *repo.Repository
 }
 
-// NewHandler constructs a Handler for reg (nil falls back to tasks.Default).
+// NewHandler constructs a Handler for reg.
 func NewHandler(reg *tasks.Registry) *Handler {
 	return &Handler{Tasks: reg}
 }
 
 // NewHandlerWithRepo constructs a Handler with an explicit tasks.Registry and
-// Repository (nil fields fall back to package/context defaults until W11).
+// Repository.
 func NewHandlerWithRepo(reg *tasks.Registry, r *repo.Repository) *Handler {
 	return &Handler{Tasks: reg, Repo: r}
 }
 
-func (h *Handler) registry() *tasks.Registry {
+func (h *Handler) registry() (*tasks.Registry, error) {
 	if h != nil && h.Tasks != nil {
-		return h.Tasks
+		return h.Tasks, nil
 	}
-	return tasks.Default()
+	return nil, errors.New("api/tasks: registry is nil")
 }
 
 // Register adds the /api/tasks routes to r.
@@ -43,18 +43,11 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.PUT("/api/tasks/interval", "tasks.set_interval", auth.Require(h.setInterval))
 }
 
-// Register always adds the routes; handlers report capability readiness.
-func Register(r *httpx.Router) {
-	RegisterAlways(r)
-}
-
-// RegisterAlways adds the routes regardless (tests with fake slots).
-func RegisterAlways(r *httpx.Router) {
-	NewHandler(nil).Register(r)
-}
-
 func (h *Handler) getTasks(c *httpx.Ctx) (*httpx.Response, error) {
-	reg := h.registry()
+	reg, err := h.registry()
+	if err != nil {
+		return nil, err
+	}
 	if missing := reg.Missing(); len(missing) > 0 {
 		return unavailable(missing), nil
 	}
@@ -77,7 +70,11 @@ func (h *Handler) runTask(c *httpx.Ctx) (*httpx.Response, error) {
 	if !c.BindSilent(&body) || body.Key == "" {
 		return message(400, msgSpecifyTask), nil
 	}
-	err := h.registry().RunNow(c.Context(), body.Key)
+	reg, err := h.registry()
+	if err != nil {
+		return nil, err
+	}
+	err = reg.RunNow(c.Context(), body.Key)
 	var notReady *tasks.Unavailable
 	if errors.As(err, &notReady) {
 		return unavailable(notReady.Slots), nil
@@ -110,7 +107,11 @@ func (h *Handler) setInterval(c *httpx.Ctx) (*httpx.Response, error) {
 	if !c.BindSilent(&body) || !body.valid {
 		return message(400, msgSpecifyTaskInterval), nil
 	}
-	row, err := updateIntervalOn(c.Context(), h.registry(), h.Repo, body)
+	reg, err := h.registry()
+	if err != nil {
+		return nil, err
+	}
+	row, err := updateIntervalOn(c.Context(), reg, h.Repo, body)
 	var notReady *tasks.Unavailable
 	var invalid *tasks.Invalid
 	var missing *tasks.NotFound

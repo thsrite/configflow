@@ -131,7 +131,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	api := apiHandlers{
 		mcp:    mcp.NewHandler(opts.Repo),
 		agents: newAgentAPIHandler(opts, ag, gen, disc),
-		w10b:   newW10bHandlers(opts, ag, gen, rs, rtrSvc),
+		w10b:   newW10bHandlers(opts, nt, ag, gen, rs, rtrSvc),
 		w10c:   newW10cHandlers(opts, tk, nt, ag, gen, rs, wd, disc, &setupOwners),
 	}
 	registerRoutes(httpApp.Router, api)

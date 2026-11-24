@@ -381,6 +381,7 @@ func runHTTPBoundary(t *testing.T, fake *routerfake.Fake, seed routerfake.State,
 	t.Cleanup(mgr.Close)
 	rs := rulesource.New(rulesource.Options{Repo: s.Repo})
 	rr := routerrulesync.New(s.Repo, routerrulesync.Options{Agents: core.ManagerAgentSource{Manager: mgr}})
+	nt := notifications.New(notifications.Options{Repo: s.Repo, Summarize: core.NotificationSummary})
 	rtr := core.New(s.Repo, core.Options{
 		Rules: func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
 			var libRaw json.RawMessage
@@ -390,11 +391,11 @@ func runHTTPBoundary(t *testing.T, fake *routerfake.Fake, seed routerfake.State,
 			return rs.ReadOfflineJSON(ctx, profile, item.Raw, libRaw)
 		},
 		ManualBaseline: rr.CaptureManual,
+		Notifications:  nt,
 	})
-	api.New(api.Deps{Repo: s.Repo, Agents: mgr, Routers: rtr, RuleSync: rr}).Register(s.App.Router)
+	api.New(api.Deps{Repo: s.Repo, Agents: mgr, Routers: rtr, RuleSync: rr, Notifications: nt}).Register(s.App.Router)
 	previousHooks := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: core.JobLockRecord}})
 	t.Cleanup(func() { repo.SetHooks(previousHooks) })
-	t.Cleanup(notifications.SetInputs(notifications.Inputs{Summarize: core.NotificationSummary}))
 	var plan, route, workspace map[string]any
 	created := ""
 	for i, step := range requests {

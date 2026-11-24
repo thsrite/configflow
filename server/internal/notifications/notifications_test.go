@@ -95,27 +95,29 @@ func summarize(_ *notifications.RouterReport, plan json.RawMessage) (*notificati
 type fixture struct {
 	t      *testing.T
 	srv    *httpxtest.Server
+	tasks  *tasks.Registry
+	svc    *notifications.Service
 	status *taskstatus.Store
 }
 
 func setup(t *testing.T) *fixture {
+	running = false
+	srv := httpxtest.New(t, httpxtest.Options{})
+	reg := tasks.NewRegistry(srv.Repo, nil)
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents,
 		tasks.SlotDomains, tasks.SlotMetrics} {
-		t.Cleanup(tasks.SetRowBuilder(slot, none))
+		reg.SetRowBuilder(slot, none)
 	}
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, subscriptionRows))
-	notifications.ResetInputs()
-	notifications.SetInputs(notifications.Inputs{Rows: tasks.List, Agents: storedAgents, Summarize: summarize})
-	t.Cleanup(notifications.ResetInputs)
-	running = false
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apinotifications.RegisterAlways)})
+	reg.SetRowBuilder(tasks.SlotSubscriptions, subscriptionRows)
+	svc := notifications.New(notifications.Options{Repo: srv.Repo, Tasks: reg, Rows: reg.List, Agents: storedAgents, Summarize: summarize})
+	apinotifications.NewHandler(reg, svc, srv.Repo).Register(srv.App.Router)
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
 		return shared.SetJSON("subscriptions", json.RawMessage(`[{"id":"feed","name":"常用订阅","url":"https://test.invalid/?token=private","enabled":true,"interval":3600}]`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{t, srv, notifications.TaskStatus(srv.Context(), srv.DataDir)}
+	return &fixture{t, srv, reg, svc, svc.TaskStatus(srv.Context(), srv.DataDir)}
 }
 
 func strVal(p *string) string {
@@ -298,7 +300,7 @@ func TestTaskRunningOrSourceReadFailureNeverClearsPending(t *testing.T) {
 	if f.items()[key].State != "pending" {
 		t.Fatal("running is not recovery")
 	}
-	notifications.SetInputs(notifications.Inputs{Rows: func(context.Context) ([]*tasks.Task, error) {
+	f.svc.SetInputs(notifications.Inputs{Rows: func(context.Context) ([]*tasks.Task, error) {
 		return nil, notifications.ErrSourceUnavailable
 	}})
 	f.srv.Get("/api/notifications").WantStatus(503)
@@ -521,7 +523,7 @@ func TestRouterNoticesKeepProfileSectionFreshnessAndUnknownIsNotRecovery(t *test
 	router := f.seedRouter("default")
 	report := forwardReport()
 	ctx := f.srv.Context()
-	if err := notifications.SaveRouter(ctx, "default", f.config("default"), router, report, routePlan(), ""); err != nil {
+	if err := f.svc.SaveRouter(ctx, "default", f.config("default"), router, report, routePlan(), ""); err != nil {
 		t.Fatal(err)
 	}
 	k := "router:default:r:firewall"
@@ -534,11 +536,11 @@ func TestRouterNoticesKeepProfileSectionFreshnessAndUnknownIsNotRecovery(t *test
 		t.Fatal("changes")
 	}
 	report.Routes.ForwardHint = &notifications.RouterCheck{Status: "unknown"}
-	notifications.SaveRouter(ctx, "default", f.config("default"), router, report, nil, "")
+	f.svc.SaveRouter(ctx, "default", f.config("default"), router, report, nil, "")
 	if f.items()[k].State != "pending" {
 		t.Fatal("unknown")
 	}
-	notifications.SaveRouter(ctx, "default", f.config("default"), router, &notifications.RouterReport{}, nil, "")
+	f.svc.SaveRouter(ctx, "default", f.config("default"), router, &notifications.RouterReport{}, nil, "")
 	if f.items()[k].State != "pending" {
 		t.Fatal("empty")
 	}
@@ -554,7 +556,7 @@ func TestRouterNoticesKeepProfileSectionFreshnessAndUnknownIsNotRecovery(t *test
 	}
 	report.Routes.ForwardHint = &notifications.RouterCheck{Status: "ok"}
 	report.InSync = new(true)
-	notifications.SaveRouter(ctx, "default", f.config("default"), router, report, nil, "")
+	f.svc.SaveRouter(ctx, "default", f.config("default"), router, report, nil, "")
 	if _, ok := f.items()[k]; ok {
 		t.Fatal("resolved")
 	}
@@ -570,14 +572,14 @@ func TestSameRouterIDInDifferentProfilesDoesNotMerge(t *testing.T) {
 	var router *model.Router
 	for _, profile := range []string{"default", "other"} {
 		router = f.seedRouter(profile)
-		notifications.SaveRouter(ctx, profile, f.config(profile), router,
+		f.svc.SaveRouter(ctx, profile, f.config(profile), router,
 			&notifications.RouterReport{IPv6DNS: &notifications.RouterCheck{Status: "blocked", Blockers: []string{"需要指定 LAN"}}}, nil, "")
 	}
 	rows := f.items()
 	if rows["router:default:r:ipv6_dns"].ProfileText() != "default" || rows["router:other:r:ipv6_dns"].ProfileText() != "other" {
 		t.Fatal("profiles")
 	}
-	notifications.SaveRouter(ctx, "other", f.config("other"), router, &notifications.RouterReport{Desired: json.RawMessage(`{}`), Routes: &notifications.RouteHints{}, HasRoutes: true}, nil, "")
+	f.svc.SaveRouter(ctx, "other", f.config("other"), router, &notifications.RouterReport{Desired: json.RawMessage(`{}`), Routes: &notifications.RouteHints{}, HasRoutes: true}, nil, "")
 	rows = f.items()
 	if _, ok := rows["router:other:r:ipv6_dns"]; ok || rows["router:default:r:ipv6_dns"].State != "pending" {
 		t.Fatal("independent")
@@ -621,7 +623,7 @@ func TestRouterReadIsNotReplayedByRepeatedChecksAndMarkerClearsOnRemoval(t *test
 	router := f.seedRouter("default")
 	config := f.config("default")
 	report := forwardReport()
-	notifications.SaveRouter(ctx, "default", config, router, report, routePlan(), "")
+	f.svc.SaveRouter(ctx, "default", config, router, report, routePlan(), "")
 	rows := f.items()
 	if len(rows) != 2 {
 		t.Fatal(len(rows))
@@ -634,24 +636,24 @@ func TestRouterReadIsNotReplayedByRepeatedChecksAndMarkerClearsOnRemoval(t *test
 		f.read(versions...)
 	}
 	readAll(rows)
-	notifications.SaveRouter(ctx, "default", config, router, report, nil, "")
-	notifications.SaveRouter(ctx, "default", config, router, report, routePlan(), "")
+	f.svc.SaveRouter(ctx, "default", config, router, report, nil, "")
+	f.svc.SaveRouter(ctx, "default", config, router, report, routePlan(), "")
 	if len(f.items()) != 0 {
 		t.Fatal("replayed")
 	}
 	report.Routes.ForwardHint = &notifications.RouterCheck{Status: "unknown"}
-	notifications.SaveRouter(ctx, "default", config, router, report, nil, "")
+	f.svc.SaveRouter(ctx, "default", config, router, report, nil, "")
 	if len(f.items()) != 0 {
 		t.Fatal("unknown")
 	}
 	report.Routes.ForwardHint = &notifications.RouterCheck{Status: "ok"}
 	report.InSync = new(true)
-	notifications.SaveRouter(ctx, "default", config, router, report, nil, "")
+	f.svc.SaveRouter(ctx, "default", config, router, report, nil, "")
 	if len(f.saved()) != 0 {
 		t.Fatalf("%+v", f.saved())
 	}
 	report = forwardReport()
-	notifications.SaveRouter(ctx, "default", config, router, report, routePlan(), "")
+	f.svc.SaveRouter(ctx, "default", config, router, report, routePlan(), "")
 	rows = f.items()
 	if len(rows) != 2 {
 		t.Fatal(len(rows))
@@ -674,7 +676,10 @@ func TestRouterReadIsNotReplayedByRepeatedChecksAndMarkerClearsOnRemoval(t *test
 
 // test_notifications_require_authentication
 func TestNotificationsRequireAuthentication(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apinotifications.RegisterAlways)})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
+	reg := tasks.NewRegistry(srv.Repo, nil)
+	svc := notifications.New(notifications.Options{Repo: srv.Repo, Tasks: reg})
+	apinotifications.NewHandler(reg, svc, srv.Repo).Register(srv.App.Router)
 	srv.Get("/api/notifications").WantStatus(401)
 	srv.Post("/api/notifications/read", httpxtest.JSON(map[string]any{"versions": map[string]string{}})).WantStatus(401)
 }

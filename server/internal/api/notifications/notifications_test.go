@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	apinotifications "configflow/internal/api/notifications"
-	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
@@ -16,46 +15,31 @@ import (
 
 const listEndpoint = "notifications.list_notifications"
 
-func registered() bool {
-	app := httpx.New()
-	apinotifications.Register(app.Router)
-	return app.Router.HasEndpoint(listEndpoint)
-}
-
-// C07 registers the list immediately and reports explicit readiness. Agent
-// wiring supplies the real registry even before the task owners are ready.
 func TestListRouteRegistersBeforeTaskSlotsAndAgentsSourceIsUnconditional(t *testing.T) {
-	notifications.ResetInputs()
-	t.Cleanup(notifications.ResetInputs)
-	notifications.SetInputs(notifications.Inputs{Rows: tasks.List})
-	if tasks.Complete() {
+	srv := httpxtest.New(t, httpxtest.Options{})
+	reg := tasks.NewRegistry(srv.Repo, nil)
+	svc := notifications.New(notifications.Options{Repo: srv.Repo, Tasks: reg, Rows: reg.List})
+	h := apinotifications.NewHandler(reg, svc, srv.Repo)
+	h.Register(srv.App.Router)
+	if reg.Complete() {
 		t.Fatal("precondition: some task slots are still unported")
 	}
-	notifications.SetInputs(notifications.Inputs{Agents: func(context.Context) ([]model.Agent, error) { return nil, nil }})
-	if !notifications.Complete() {
+	svc.SetInputs(notifications.Inputs{Agents: func(context.Context) ([]model.Agent, error) { return nil, nil }})
+	if !svc.Complete() {
 		t.Fatal("installing the Agent source must complete notifications while task slots are missing")
 	}
-	if !registered() || apinotifications.ListComplete() {
+	if !srv.App.Router.HasEndpoint(listEndpoint) || (svc.Complete() && reg.Complete()) {
 		t.Fatal("registration/readiness confused")
 	}
-	if !func() bool {
-		app := httpx.New()
-		apinotifications.Register(app.Router)
-		return app.Router.HasEndpoint("notifications.read_notifications")
-	}() {
+	if !srv.App.Router.HasEndpoint("notifications.read_notifications") {
 		t.Fatal("POST /read must not wait")
 	}
-	missing := tasks.Missing()
+	missing := reg.Missing()
 	for i, slot := range missing {
-		t.Cleanup(tasks.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }))
-		if last := i == len(missing)-1; apinotifications.ListComplete() != last {
-			t.Fatalf("after providing %s (last %v) registered=%v", slot, last, registered())
+		t.Cleanup(reg.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }))
+		if last := i == len(missing)-1; (svc.Complete() && reg.Complete()) != last {
+			t.Fatalf("after providing %s (last %v)", slot, last)
 		}
-	}
-	// Fully provided: the list answers with the Agents of the registry.
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apinotifications.Register)})
-	if !srv.App.Router.HasEndpoint(listEndpoint) {
-		t.Fatal("not registered in a test server")
 	}
 	res := srv.Get("/api/notifications").WantStatus(200)
 	var body struct {

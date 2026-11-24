@@ -7,7 +7,7 @@ import (
 )
 
 func TestIntervalBindingRetainsLiteralValidation(t *testing.T) {
-	srv := setup(t)
+	srv, _ := setup(t)
 	for _, value := range []string{"60.0", "6e1", "true", "false", `"60"`, "9223372036854775808", "null", "[]", "{}"} {
 		res := srv.Put("/api/tasks/interval", httpxtest.Body([]byte(`{"key":"subscription:s","interval_seconds":`+value+`}`), "application/json")).WantStatus(400)
 		assertJSON(t, res, map[string]any{"success": false, "message": "更新间隔必须为 0（关闭自动更新）或 60 ~ 604800 秒的整数"})

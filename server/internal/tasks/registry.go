@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 
@@ -23,7 +24,7 @@ type Registry struct {
 }
 
 // NewRegistry creates a task Registry pre-populated with the built-in WebDAV
-// backup row builder. r and spawner may be nil (falling back to ctx/default).
+// backup row builder.
 func NewRegistry(r *repo.Repository, spawner lockx.Spawner) *Registry {
 	reg := &Registry{
 		rows:      map[string]BuildRows{},
@@ -36,43 +37,18 @@ func NewRegistry(r *repo.Repository, spawner lockx.Spawner) *Registry {
 	return reg
 }
 
-var (
-	defaultMu       sync.RWMutex
-	defaultRegistry = NewRegistry(nil, nil)
-)
-
-// Default returns the process default task Registry (transitional helper until
-// W9/W11 remove package-level task registration).
-func Default() *Registry {
-	defaultMu.RLock()
-	defer defaultMu.RUnlock()
-	return defaultRegistry
-}
-
-// UseRegistry installs reg as the process default task Registry so packages
-// not yet migrated to explicit Registry injection (internal/routers until W9)
-// register onto reg.
-func UseRegistry(reg *Registry) {
-	if reg == nil {
-		return
-	}
-	defaultMu.Lock()
-	defaultRegistry = reg
-	defaultMu.Unlock()
-}
-
-func (g *Registry) repository(ctx context.Context) (*repo.Repository, error) {
+func (g *Registry) repository(_ context.Context) (*repo.Repository, error) {
 	if g.repo != nil {
 		return g.repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("tasks: repository is nil")
 }
 
-func (g *Registry) taskSpawner() lockx.Spawner {
+func (g *Registry) taskSpawner(ctx context.Context) lockx.Spawner {
 	if g.spawner != nil {
 		return g.spawner
 	}
-	return lifecycle.DefaultSpawner{}
+	return lifecycle.SpawnerFrom(ctx)
 }
 
 // SetRowBuilder installs the row builder of a slot and returns its restoration.
@@ -150,7 +126,7 @@ func (g *Registry) IntervalEditorFor(key string) IntervalEditor {
 
 // StartBackground runs work once in the background using g's spawner.
 func (g *Registry) StartBackground(ctx context.Context, key string, work func(ctx context.Context) error) error {
-	return startBackground(ctx, key, work, g.taskSpawner())
+	return startBackground(ctx, key, work, g.taskSpawner(ctx))
 }
 
 // List is list_tasks().

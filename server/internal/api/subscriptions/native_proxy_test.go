@@ -44,7 +44,7 @@ func TestCachedProxyPolicySkipsAreCountedWithoutNodeSecrets(t *testing.T) {
 		node("private-node-b", "type: ss\npassword: fixture-secret-value\nx: !!bool fixture-secret-value"),
 		node("other", ""),
 	}
-	h := NewHandler(nil, nil, nil, nil)
+	h := NewHandler(nil, nil, nil, nil, nil)
 	got, err := h.cachedProxies(context.Background(), model.Subscription{}, nodes, false)
 	if err != nil || len(got) != 2 || got[0].text("name") != "good" || got[1].text("name") != "other" {
 		t.Fatalf("lenient: %v %v", got, err)
@@ -76,7 +76,7 @@ func TestStagedIdentityComesFromNodeOwnerNotProtocolParameters(t *testing.T) {
 	for key, value := range map[string]any{"id": "upstream-protocol-id", "name": "Remote", "type": "http", "server": "example.com", "port": 80} {
 		item.set(key, value)
 	}
-	update, err := NewHandler(nil, nil, nil, nil).stageNodes(source, []proxy{item}, &refresh.SourceResult{Source: "prepared_yaml", Text: "proxies: []"}, true)
+	update, err := NewHandler(nil, nil, nil, nil, nil).stageNodes(source, []proxy{item}, &refresh.SourceResult{Source: "prepared_yaml", Text: "proxies: []"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

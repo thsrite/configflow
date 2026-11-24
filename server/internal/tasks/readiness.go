@@ -1,7 +1,6 @@
 package tasks
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,9 +16,6 @@ func (e *Unavailable) Error() string {
 // ErrUnknownTask rejects keys with no supported run operation.
 var ErrUnknownTask = errors.New(msgCannotRun)
 
-// HasRows reports whether a real provider is installed for a slot on the default Registry.
-func HasRows(slot string) bool { return Default().HasRows(slot) }
-
 // SlotFor maps public run categories to their owning row providers.
 func SlotFor(category string) (string, bool) {
 	switch category {
@@ -33,6 +29,3 @@ func SlotFor(category string) (string, bool) {
 		return "", false
 	}
 }
-
-// RunNow owns task admission on the default Registry.
-func RunNow(ctx context.Context, key string) error { return Default().RunNow(ctx, key) }

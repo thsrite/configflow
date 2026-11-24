@@ -69,15 +69,19 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(apirules.Register)})
 	env := refresh.DefaultRefreshEnvFor(w.srv.Repo, nil)
 	env.Clock = fixedClock{}
-	rf := refresh.New(refresh.Options{Repo: w.srv.Repo, Env: env})
-	notifications.SetInputs(notifications.Inputs{Agents: func(context.Context) ([]model.Agent, error) { return []model.Agent{}, nil }, Rows: func(ctx context.Context) ([]*tasks.Task, error) {
-		status, err := taskstatus.New(w.srv.DataDir).Read()
-		if err != nil {
-			return nil, err
-		}
-		return rf.RuleTasks(ctx, status)
-	}})
-	t.Cleanup(notifications.ResetInputs)
+	var rf *refresh.Service
+	nt := notifications.New(notifications.Options{
+		Repo:   w.srv.Repo,
+		Agents: func(context.Context) ([]model.Agent, error) { return []model.Agent{}, nil },
+		Rows: func(ctx context.Context) ([]*tasks.Task, error) {
+			status, err := taskstatus.New(w.srv.DataDir).Read()
+			if err != nil {
+				return nil, err
+			}
+			return rf.RuleTasks(ctx, status)
+		},
+	})
+	rf = refresh.New(refresh.Options{Repo: w.srv.Repo, Env: env, Notifications: nt})
 	oldClock := notifications.Clock
 	notifications.Clock = fixedClock{}.Now
 	t.Cleanup(func() { notifications.Clock = oldClock })

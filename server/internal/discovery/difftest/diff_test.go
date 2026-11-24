@@ -347,7 +347,7 @@ func TestHTTPAndStorageParity(t *testing.T) {
 	auth.Install(app)
 	goServer := httptest.NewServer(app)
 	defer goServer.Close()
-	disc.Register(lifecycle.Current(), tasks.Default())
+	disc.Register(lifecycle.Current(), tasks.NewRegistry(r, lifecycle.Current()))
 	type request struct{ method, path, body string }
 	rs := []request{
 		{"POST", "apply", `[1]`}, {"POST", "probe", `[1]`}, {"PUT", "website/note", `[1]`}, {"POST", "website/identify", `[1]`},

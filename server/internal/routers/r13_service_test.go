@@ -31,7 +31,6 @@ type r13Lab struct {
 
 func r13Fixture(t *testing.T) *r13Lab {
 	t.Helper()
-	t.Cleanup(notifications.SetInputs(notifications.Inputs{Summarize: NotificationSummary}))
 	makeFake := func(pending bool) (*routerfake.Fake, *httptest.Server) {
 		s := r08State()
 		if pending {
@@ -68,7 +67,13 @@ func r13Fixture(t *testing.T) *r13Lab {
 }
 func (l *r13Lab) request(t *testing.T) PendingRequest {
 	t.Helper()
-	return PendingRequest{AgentID: "gateway", Repo: l.db, Agents: l.source, Cache: NewPendingCache(r13Runtime(t), nil)}
+	return PendingRequest{
+		AgentID:       "gateway",
+		Repo:          l.db,
+		Agents:        l.source,
+		Cache:         NewPendingCache(r13Runtime(t), nil),
+		Notifications: notifications.New(notifications.Options{Repo: l.db, Summarize: NotificationSummary}),
+	}
 }
 func TestR13AgentRoutersScopeCacheAndNotifications(t *testing.T) {
 	l := r13Fixture(t)

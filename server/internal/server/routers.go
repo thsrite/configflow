@@ -37,8 +37,9 @@ func wireRouters(opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *no
 		agentSource = routers.ManagerAgentSource{Manager: ag.manager}
 	}
 	rr := routerrulesync.New(opts.Repo, routerrulesync.Options{
-		Agents:    agentSource,
-		IPv6Hosts: ipv6Hosts,
+		Agents:        agentSource,
+		IPv6Hosts:     ipv6Hosts,
+		Notifications: nt,
 	})
 	rtr := routers.New(opts.Repo, routers.Options{
 		IPv6Hosts:      ipv6Hosts,

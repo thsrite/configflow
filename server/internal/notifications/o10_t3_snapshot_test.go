@@ -15,7 +15,6 @@ import (
 	"configflow/internal/agents/dnsfollow"
 	"configflow/internal/agents/metrics"
 	"configflow/internal/agents/rulesync"
-	apinotifications "configflow/internal/api/notifications"
 	"configflow/internal/discovery"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
@@ -32,7 +31,7 @@ import (
 
 func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.Manager) {
 	t.Helper()
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apinotifications.RegisterAlways)})
+	srv := httpxtest.New(t, httpxtest.Options{})
 	ctx := srv.Context()
 
 	deps := make(map[string]any, deployments)
@@ -156,21 +155,25 @@ func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.
 	return srv, m
 }
 
-func wireAllO10T3Slots(t *testing.T, r *repo.Repository, m *agents.Manager, agentReads *atomic.Int32) {
+func wireAllO10T3Slots(t *testing.T, r *repo.Repository, m *agents.Manager, agentReads *atomic.Int32) *notifications.Service {
 	t.Helper()
-	metrics.New(metrics.Options{Repo: r}).RegisterTasks(tasks.Default())
-	refresh.New(refresh.Options{Repo: r}).Register(lifecycle.Current(), tasks.Default())
+	reg := tasks.NewRegistry(r, lifecycle.Current())
+	metrics.New(metrics.Options{Repo: r}).RegisterTasks(reg)
+	refresh.New(refresh.Options{Repo: r}).Register(lifecycle.Current(), reg)
+	discovery.New(discovery.Options{Repo: r}).Register(nil, reg)
 	rr := routerrulesync.New(r, routerrulesync.Options{})
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRouters, rr.TaskRows))
-	t.Cleanup(tasks.SetRunner(tasks.SlotRouters, rr.TaskRunner()))
+	reg.SetRowBuilder(tasks.SlotRouters, rr.TaskRows)
+	reg.SetRunner(tasks.SlotRouters, rr.TaskRunner())
 	rsync := rulesync.New(m, nil, rulesync.Options{})
 	follow := dnsfollow.New(m, dnsfollow.Options{})
 	// O17 W5 removed the self-installing Agent row slot (SetRuleSyncRow /
 	// SetDNSFollowRow); server assembly installs it through agenttasks.
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotAgents, agenttasks.BuildRows(func(context.Context) (*agents.Manager, error) { return m, nil }, rsync.TaskRow, follow.TaskRow)))
-	t.Cleanup(notifications.SetInputs(notifications.Inputs{
-		Rows:         tasks.Available,
-		MissingTasks: tasks.Missing,
+	reg.SetRowBuilder(tasks.SlotAgents, agenttasks.BuildRows(func(context.Context) (*agents.Manager, error) { return m, nil }, rsync.TaskRow, follow.TaskRow))
+	return notifications.New(notifications.Options{
+		Repo:         r,
+		Tasks:        reg,
+		Rows:         reg.Available,
+		MissingTasks: reg.Missing,
 		Summarize:    routers.NotificationSummary,
 		Agents: func(ctx context.Context) ([]model.Agent, error) {
 			if agentReads != nil {
@@ -178,7 +181,7 @@ func wireAllO10T3Slots(t *testing.T, r *repo.Repository, m *agents.Manager, agen
 			}
 			return m.NotificationAgents(ctx)
 		},
-	}))
+	})
 }
 
 // TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache
@@ -193,8 +196,8 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 	var reads atomic.Int32
 	smallSrv, smallMgr := seedO10T3Server(t, 1)
 	largeSrv, largeMgr := seedO10T3Server(t, 300)
-	wireAllO10T3Slots(t, largeSrv.Repo, largeMgr, &reads)
-	discovery.New(discovery.Options{Repo: largeSrv.Repo}).Register(nil, tasks.Default())
+	smallNt := wireAllO10T3Slots(t, smallSrv.Repo, smallMgr, nil)
+	largeNt := wireAllO10T3Slots(t, largeSrv.Repo, largeMgr, &reads)
 
 	// Record a failed subscription receipt on both so SnapshotItems exercises
 	// task, agent, rulesync, dnsfollow, discovery, and router paths.
@@ -208,7 +211,7 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 
 	// Verify redaction and username preservation on the large fixture.
 	readsBefore := reads.Load()
-	items, err := notifications.SnapshotItems(largeSrv.Context(), "")
+	items, err := largeNt.SnapshotItems(largeSrv.Context(), "")
 	if err != nil {
 		t.Fatalf("SnapshotItems: %v", err)
 	}
@@ -274,11 +277,11 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 	smallSrv.Repo.SetViewGuard(nil)
 	largeSrv.Repo.SetViewGuard(nil)
 	smallBytes := measure(func() error {
-		_, err := notifications.SnapshotItems(smallSrv.Context(), "")
+		_, err := smallNt.SnapshotItems(smallSrv.Context(), "")
 		return err
 	})
 	largeBytes := measure(func() error {
-		_, err := notifications.SnapshotItems(largeSrv.Context(), "")
+		_, err := largeNt.SnapshotItems(largeSrv.Context(), "")
 		return err
 	})
 	// 2 Agents × 300 deployments is >1 MB raw; copying history even once blows past 256 KB.
@@ -316,10 +319,10 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 		t.Fatal(err)
 	}
 	routerRec := cfg.Profile.Routers.Items[0]
-	if err := notifications.SaveRouter(largeSrv.Context(), "default", cfgRaw, &routerRec, forwardReport(), routePlan(), ""); err != nil {
+	if err := largeNt.SaveRouter(largeSrv.Context(), "default", cfgRaw, &routerRec, forwardReport(), routePlan(), ""); err != nil {
 		t.Fatal(err)
 	}
-	beforeEdit, err := notifications.SnapshotItems(largeSrv.Context(), "")
+	beforeEdit, err := largeNt.SnapshotItems(largeSrv.Context(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +342,7 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 	}); err != nil {
 		t.Fatal(err)
 	}
-	afterEdit, err := notifications.SnapshotItems(largeSrv.Context(), "")
+	afterEdit, err := largeNt.SnapshotItems(largeSrv.Context(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

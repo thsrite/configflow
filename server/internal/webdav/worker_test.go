@@ -201,7 +201,7 @@ func TestCommitHookRunsOutsideLockAndUploadFailureCannotRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitWorker(t, worker)
-	snap, err := notifications.TaskStatus(ctx, r.DataDir()).Read()
+	snap, err := notifications.New(notifications.Options{Repo: r}).TaskStatus(ctx, r.DataDir()).Read()
 	if err != nil {
 		t.Fatal(err)
 	}

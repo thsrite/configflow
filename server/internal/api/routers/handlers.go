@@ -20,6 +20,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/notifications"
 	"configflow/internal/oxidns"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
@@ -29,33 +30,35 @@ import (
 
 // Deps supplies the collaborators for the router HTTP Handler.
 type Deps struct {
-	Repo     *repo.Repository
-	Agents   *agents.Manager
-	Routers  *core.Service
-	RuleSync *routerrulesync.RuleSyncService
+	Repo          *repo.Repository
+	Agents        *agents.Manager
+	Routers       *core.Service
+	RuleSync      *routerrulesync.RuleSyncService
+	Notifications *notifications.Service
 }
 
 // Handler serves authenticated router and upstream-reminder HTTP routes using
 // explicit router orchestration and rule-sync services.
 type Handler struct {
-	repo     *repo.Repository
-	agents   *agents.Manager
-	routers  *core.Service
-	rulesync *routerrulesync.RuleSyncService
-	pending  *core.PendingCache
+	repo          *repo.Repository
+	agents        *agents.Manager
+	routers       *core.Service
+	rulesync      *routerrulesync.RuleSyncService
+	notifications *notifications.Service
+	pending       *core.PendingCache
 }
 
 var logger = logx.Get("backend.routes.routers")
 
-// New constructs a router HTTP Handler with explicit dependencies. Nil fields
-// fall back to transitional process defaults until W11.
+// New constructs a router HTTP Handler with explicit dependencies.
 func New(deps Deps) *Handler {
 	return &Handler{
-		repo:     deps.Repo,
-		agents:   deps.Agents,
-		routers:  deps.Routers,
-		rulesync: deps.RuleSync,
-		pending:  core.NewPendingCache(nil, nil),
+		repo:          deps.Repo,
+		agents:        deps.Agents,
+		routers:       deps.Routers,
+		rulesync:      deps.RuleSync,
+		notifications: deps.Notifications,
+		pending:       core.NewPendingCache(nil, nil),
 	}
 }
 
@@ -381,7 +384,7 @@ func (h *Handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(c, cfg, err, 502, false)
 	}
 	if strings.HasSuffix(c.Request.URL.Path, "/report") {
-		recordNotice(c, raw, r, value.Report, nil)
+		h.recordNotice(c, raw, r, value.Report, nil)
 		return public(c, cfg, struct {
 			Success     bool         `json:"success"`
 			Report      *core.Report `json:"report"`
@@ -392,7 +395,7 @@ func (h *Handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return failure(c, cfg, err, 502, false)
 	}
-	recordNotice(c, raw, r, value.Report, plan)
+	h.recordNotice(c, raw, r, value.Report, plan)
 	if plan.Empty && len(plan.Blockers) == 0 {
 		db, err := h.repository(c.Context())
 		if err != nil {

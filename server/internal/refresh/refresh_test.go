@@ -180,7 +180,7 @@ func setup(t *testing.T, subInterval any) *fixture {
 		t.Errorf("unexpected subscription download %s", url)
 		return nil, errors.New("no request")
 	}
-	f.svc = New(Options{Repo: r, Env: f.env, Notifications: notifications.Default()})
+	f.svc = New(Options{Repo: r, Env: f.env, Notifications: notifications.New(notifications.Options{Repo: r})})
 	return f
 }
 

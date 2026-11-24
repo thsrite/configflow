@@ -300,7 +300,7 @@ drained:
 			summary = result.summary
 		}
 		if ok && result.report != nil {
-			recordPendingNotice(ctx, req.Repo, target.profile.ID, target.config, target.router, result.report, result.plan)
+			recordPendingNotice(ctx, req.Notifications, req.Repo, target.profile.ID, target.config, target.router, result.report, result.plan)
 		}
 		entries = append(entries, PendingEntry{ID: target.router.ID, Name: device.OrText(target.router.Name, target.router.ID), Type: target.router.Type, ProfileID: target.profile.ID, ProfileName: device.OrText(target.profile.Name, target.profile.ID), PendingSummary: summary})
 	}

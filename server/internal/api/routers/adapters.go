@@ -17,7 +17,10 @@ import (
 
 // recordNotice is the C07 legacy boundary. Notification failures do not change
 // a successfully read report; cancelled shutdown never starts a new commit.
-func recordNotice(c *httpx.Ctx, cfg json.RawMessage, r *spec.Router, report *core.Report, plan *core.Plan) {
+func (h *Handler) recordNotice(c *httpx.Ctx, cfg json.RawMessage, r *spec.Router, report *core.Report, plan *core.Plan) {
+	if h == nil || h.notifications == nil {
+		return
+	}
 	ctx := lifecycle.Detach(c.Context())
 	if ctx.Err() != nil {
 		return
@@ -43,7 +46,7 @@ func recordNotice(c *httpx.Ctx, cfg json.RawMessage, r *spec.Router, report *cor
 		if err != nil {
 			return err
 		}
-		return notifications.SaveRouter(ctx, c.ProfileID, cfg, &router, nativeReport, raw, "")
+		return h.notifications.SaveRouter(ctx, c.ProfileID, cfg, &router, nativeReport, raw, "")
 	})
 }
 func (h *Handler) workspacePeers(c *httpx.Ctx, db *repo.Repository) ([]core.WorkspaceAgent, string, error) {
