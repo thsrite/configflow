@@ -161,6 +161,17 @@ dnsguard/fixedip/clientlist/routeedit/rospolicy/ipv6/routers/rulesync, layers_te
 overlapping recipes 0 status changes; Opus review R2/R8 adversarial: nil StateReader fail closed, router_rule_sync slot
 asserted in production assembly; review-r.md). Full gate: compare PASS on 1c423f113, core PASS after fixes. Lessons
 written to AGENT-BRIEF (45-min cap, no full routerdiff by agents, no wildcard deletes). W9 running (Neon, go-o17-w9).
+2026-11-24: O17 1.5 W9–W11 MERGED (final-w@fac2d9e10; coordinator switched to Gemini 4 Neon high; model division:
+GPT-6.2 Sol high executes, independent Gemini 4 Neon high reviews GPT output, independent GPT reviews Gemini output;
+strictly watch for over-defensive design). Reviews: Opus review-w11.md + fixtures/fetch-settings/baseline proof fixes;
+3 Gemini follow-ups (deploy.Build Repo, proddiff generator wiring, baseline unstarted server.New Runtime) audited by
+independent GPT ab4a9460 (only low traffic-store test gap adopted and strengthened in 3d2866770; SyncLANHosts kept aligned
+with python_generators.py); Codex GET /api/rule-library has_ip_part fix (80711a9a6) + GPT classical-cache parity audit &
+test commits (81ceb24d6, fac2d9e10) audited by independent Gemini e92b16f4 (0 blockers). Gates: .64 FULL core PASS on
+4411666e8 (gofmt/vet/tags/race cache-hits=0/agent+cross-build/83 fuzz) + CACHE core PASS on fac2d9e10 (incl.
+FuzzEditableContent); .32 compare PASS on fac2d9e10 (proddiff 2831 cases new=0 stale=0, difftest 24 pkgs, LIVE 46/46
+0 skips, pyref check, frontend vue-tsc + vitest 3469/3469). Next: O17 前-1 dead code + UI placeholder sanitization →
+PVE CT 240 final perf (Go 2× / Py 1×) → L6 24h soak ∥ go-switch-rehearsal (2× no-Python gate) → switch + v3.0.0-rc.1.
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
