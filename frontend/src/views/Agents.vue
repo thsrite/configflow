@@ -444,7 +444,7 @@
             </FormField>
 
             <FormField :label="dockerDNSHA ? (scriptForm.haNetworkMode === 'host' ? '宿主机固定 IPv4（必填）' : '容器固定 IPv4（必填）') : 'Agent IP（可选）'" html-for="agent-ip" :hint="dockerDNSHA ? (scriptForm.haNetworkMode === 'host' ? '填写这台 Linux 主机的静态局域网地址，不是虚拟 IP。' : '使用未占用的局域网地址，与宿主机地址、虚拟 IP 分别不同。') : undefined" :class="scriptForm.installType === 'shell' && scriptForm.shellMode === 'single' ? 'col-span-2' : 'col-span-2 sm:col-span-1'">
-              <Input id="agent-ip" v-model="scriptForm.agent_ip" class="min-h-11 bg-background/50 font-mono" :placeholder="dockerDNSHA ? '例如：192.168.1.21' : '留空则自动获取'" :aria-required="dockerDNSHA" />
+              <Input id="agent-ip" v-model="scriptForm.agent_ip" class="min-h-11 bg-background/50 font-mono" :placeholder="dockerDNSHA ? '例如：192.0.2.21' : '留空则自动获取'" :aria-required="dockerDNSHA" />
             </FormField>
 
             <FormField v-if="scriptForm.installType === 'docker'" label="Agent 容器名" html-for="docker-container" class="col-span-2">
@@ -484,10 +484,10 @@
                   <Input id="docker-ha-parent" v-model="scriptForm.haParent" class="min-h-11 font-mono" placeholder="例如：eth0 或 enp1s0" aria-required="true" />
                 </FormField>
                 <FormField label="局域网网段（必填）" html-for="docker-ha-subnet">
-                  <Input id="docker-ha-subnet" v-model="scriptForm.haSubnet" class="min-h-11 font-mono" placeholder="例如：192.168.1.0/24" aria-required="true" />
+                  <Input id="docker-ha-subnet" v-model="scriptForm.haSubnet" class="min-h-11 font-mono" placeholder="例如：192.0.2.0/24" aria-required="true" />
                 </FormField>
                 <FormField label="局域网网关（可选）" html-for="docker-ha-gateway" hint="留空由 Docker 选择该网段的默认网关；建议填写实际路由器地址。" class="sm:col-span-2">
-                  <Input id="docker-ha-gateway" v-model="scriptForm.haGateway" class="min-h-11 font-mono" placeholder="例如：192.168.1.1" />
+                  <Input id="docker-ha-gateway" v-model="scriptForm.haGateway" class="min-h-11 font-mono" placeholder="例如：192.0.2.1" />
                 </FormField>
               </div>
               <p v-if="scriptForm.haNetworkMode === 'macvlan'" class="m-0 rounded-md border border-warning/30 bg-warning-soft p-3 text-[12px] leading-relaxed text-foreground">

@@ -233,13 +233,13 @@
           <FormField
             label="WebDAV 地址"
             html-for="webdav-url"
-            hint="例如坚果云：https://dav.jianguoyun.com/dav/"
+            hint="填写 WebDAV 服务提供的完整地址。"
           >
             <Input
               id="webdav-url"
               v-model="backupForm.webdav_url"
               class="bg-background/50 font-mono"
-              placeholder="https://dav.jianguoyun.com/dav/"
+              placeholder="https://storage.example.com/dav/"
             />
           </FormField>
 

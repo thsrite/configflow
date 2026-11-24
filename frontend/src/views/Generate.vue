@@ -428,7 +428,7 @@
                         class="bg-background/50 font-mono text-[12px]"
                         :class="entry.yaml_error && 'border-destructive-accent/60'"
                         :rows="4"
-                        placeholder="- addr: 192.168.1.1:53&#10;  bootstrap: 223.5.5.5&#10;  enable_pipeline: false"
+                        placeholder="- addr: 192.0.2.1:53&#10;  bootstrap: 223.5.5.5&#10;  enable_pipeline: false"
                         @input="validateYaml(entry)"
                       />
                       <p v-if="entry.yaml_error" class="m-0 text-[12px] text-destructive-accent">
@@ -496,7 +496,7 @@
                   v-model="mosdnsCustomHosts"
                   class="min-h-[220px] bg-background/50 font-mono text-[12px]"
                   :rows="10"
-                  placeholder="localhost 127.0.0.1&#10;myserver.local 192.168.1.100&#10;dns.google 8.8.8.8"
+                  placeholder="localhost 127.0.0.1&#10;host.example.com 192.0.2.100&#10;dns.google 8.8.8.8"
                 />
               </FormField>
             </div>
@@ -1606,7 +1606,7 @@ const getCustomConfigDialogTitle = () => {
 const getCustomConfigDialogDesc = () => {
   const descs = {
     mihomo: '设置 mixed-port、dns、tun 等基础选项。生成时会合并当前配置空间中的节点、策略组和规则（proxies、proxy-groups、rules）。',
-    surge: '编辑 [General] 等基础设置；[Proxy]、[Proxy Group]、[Rule] 将由当前配置空间的设置生成。规则格式为 TYPE,VALUE,POLICY，如 DOMAIN-SUFFIX,google.com,Proxy。',
+    surge: '编辑 [General] 等基础设置；[Proxy]、[Proxy Group]、[Rule] 将由当前配置空间的设置生成。规则格式为 TYPE,VALUE,POLICY，如 DOMAIN-SUFFIX,example.com,Proxy。',
     loon: '编辑 [General]、[Rewrite]、[Plugin]、[MITM] 等设置；[Proxy]、[Remote Proxy]、[Remote Filter]、[Proxy Group]、[Rule]、[Remote Rule] 将由当前配置空间的设置生成。',
     mosdns: '设置 log、data_providers、plugins、servers 等选项。请按依赖关系排列插件，确保被使用的插件先初始化。'
   }
@@ -1621,8 +1621,8 @@ const customConfigDescription = computed(() => {
 const getCustomConfigPlaceholder = () => {
   const placeholders = {
     mihomo: '输入自定义 YAML 配置，例如：\nmixed-port: 7890\nallow-lan: true\nmode: rule\nlog-level: info\nexternal-controller: 127.0.0.1:9090\ndns:\n  enable: true\n  listen: 0.0.0.0:53\n  enhanced-mode: fake-ip',
-    surge: '输入自定义配置，例如：\n[General]\nloglevel = notify\ninternet-test-url = https://www.gstatic.com/generate_204\nproxy-test-url = https://www.gstatic.com/generate_204\nskip-proxy = 127.0.0.1, 192.168.0.0/16, 10.0.0.0/8\n\n# 代理将自动生成在 [Proxy] 部分\n# 策略组将自动生成在 [Proxy Group] 部分\n# 规则将自动生成在 [Rule] 部分',
-    loon: '输入自定义配置，例如：\n[General]\nip-mode = dual\ndns-server = system, 223.5.5.5\nproxy-test-url = https://www.gstatic.com/generate_204\nskip-proxy = 192.168.0.0/16, 10.0.0.0/8, localhost, *.local\n\n[Plugin]\n# 插件链接, tag=名称, enabled=true\n\n# 节点、订阅、策略组和规则将自动生成',
+    surge: '输入自定义配置，例如：\n[General]\nloglevel = notify\ninternet-test-url = https://health.example.com/generate_204\nproxy-test-url = https://proxy-check.example.org/generate_204\nskip-proxy = 127.0.0.1, 192.0.2.0/24, 198.51.100.0/24\n\n# 代理将自动生成在 [Proxy] 部分\n# 策略组将自动生成在 [Proxy Group] 部分\n# 规则将自动生成在 [Rule] 部分',
+    loon: '输入自定义配置，例如：\n[General]\nip-mode = dual\ndns-server = system, 223.5.5.5\nproxy-test-url = https://proxy-check.example.org/generate_204\nskip-proxy = 192.0.2.0/24, 198.51.100.0/24, localhost, *.local\n\n[Plugin]\n# 插件链接, tag=名称, enabled=true\n\n# 节点、订阅、策略组和规则将自动生成',
     mosdns: '输入自定义 YAML 配置，例如：\nlog:\n  level: info\n  file: ./mosdns.log\n\nservers:\n  - addr: 127.0.0.1:53\n    protocol: udp\n\n# data_providers 和 plugins 将自动生成'
   }
   return placeholders[currentConfigType.value]

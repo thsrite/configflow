@@ -160,8 +160,8 @@
         </DialogHeader>
         <form @submit.prevent="submitRoute">
           <fieldset :disabled="routeBusy" class="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
-            <div class="flex flex-col gap-1.5"><Label for="static-route-cidr">目的网段（IPv4 CIDR）</Label><Input id="static-route-cidr" v-model="routeForm.cidr" class="font-mono" placeholder="例如 192.168.20.0/24" /></div>
-            <div class="flex flex-col gap-1.5"><Label for="static-route-gateway">下一跳（IPv4）</Label><Input id="static-route-gateway" v-model="routeForm.gateway" class="font-mono" placeholder="例如 192.168.1.2" /></div>
+            <div class="flex flex-col gap-1.5"><Label for="static-route-cidr">目的网段（IPv4 CIDR）</Label><Input id="static-route-cidr" v-model="routeForm.cidr" class="font-mono" placeholder="例如 198.51.100.0/24" /></div>
+            <div class="flex flex-col gap-1.5"><Label for="static-route-gateway">下一跳（IPv4）</Label><Input id="static-route-gateway" v-model="routeForm.gateway" class="font-mono" placeholder="例如 192.0.2.2" /></div>
             <div class="flex flex-col gap-1.5"><Label for="static-route-comment">备注</Label><Textarea id="static-route-comment" v-model="routeForm.comment" :rows="3" placeholder="可选，最多 512 个字符" /></div>
             <div class="flex min-h-11 items-center justify-between gap-3"><Label for="static-route-enabled" class="flex min-h-11 flex-1 items-center">启用路由</Label><Switch id="static-route-enabled" :disabled="routeBusy" :model-value="routeForm.enabled" @update:model-value="value => (routeForm.enabled = Boolean(value))" /></div>
             <p v-if="routeEditing?.managed" class="m-0 text-[12px] text-warning-accent">此路由带 cf 标记，后续自动发布可能调整本次手工变更。</p>
@@ -740,7 +740,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
               id="router-endpoint"
               v-model="form.endpoint"
               class="bg-background/50 font-mono"
-              :placeholder="form.type === 'routeros' ? 'https://192.168.88.1' : 'https://192.168.9.1'"
+              :placeholder="form.type === 'routeros' ? 'https://192.0.2.1' : 'https://198.51.100.1'"
             />
           </FormField>
           <div class="grid grid-cols-2 gap-3 max-md:grid-cols-1">
@@ -848,7 +848,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
                 />
               </div>
               <FormField label="放行设备" html-for="router-dns-guard-bypass" class="pl-3" v-bind="routerCopy.dnsGuardBypass">
-                <Textarea id="router-dns-guard-bypass" v-model="guardBypassText" :rows="3" class="font-mono" placeholder="每行一个，如 192.168.0.50 或 192.168.0.64/28" />
+                <Textarea id="router-dns-guard-bypass" v-model="guardBypassText" :rows="3" class="font-mono" placeholder="每行一个，如 192.0.2.50 或 192.0.2.64/28" />
               </FormField>
             </template>
             <div class="flex flex-col gap-1.5" data-router-ipv6-pd-guard-setting>
@@ -1477,7 +1477,7 @@ const submitRoute = async () => {
   const values = { ...routeForm, cidr: routeForm.cidr.trim(), gateway: routeForm.gateway.trim() }
   const [address, prefix, ...extra] = values.cidr.split('/')
   if (!validIPv4(address || '') || !/^(?:[0-9]|[12][0-9]|3[0-2])$/.test(prefix || '') || extra.length) {
-    routeFormError.value = '请输入有效 IPv4 网段，例如 192.168.20.0/24。'
+    routeFormError.value = '请输入有效 IPv4 网段，例如 198.51.100.0/24。'
     return
   }
   if (!validIPv4(values.gateway)) {

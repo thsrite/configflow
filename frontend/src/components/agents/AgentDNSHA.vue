@@ -175,7 +175,7 @@ const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]
 const vipError = computed(() => {
   const value = vip.value.trim()
   if (!value) return ''
-  if (!IPV4.test(value)) return '请填写 IPv4 地址，如 192.168.0.2。'
+  if (!IPV4.test(value)) return '请填写 IPv4 地址，如 192.0.2.53。'
   const first = Number(value.split('.')[0])
   if (first === 0 || first === 127 || first >= 224) return '虚拟 IP 需为局域网单播地址。'
   if (value === props.agent.host || value === selectedPeer.value?.host) return '虚拟 IP 不能与两台 OxiDNS 的地址相同。'
@@ -378,7 +378,7 @@ async function disable(force: boolean) {
               <p v-if="!candidates.length" class="m-0 text-xs text-warning-accent">同一配置空间内没有可用的另一台 OxiDNS（需尚未加入其他高可用组）。</p>
             </FormField>
             <FormField label="虚拟 IP" :html-for="`dns-ha-vip-${agent.id}`" v-bind="oxidnsHaCopy.vip">
-              <Input :id="`dns-ha-vip-${agent.id}`" v-model="vip" class="min-h-11 font-mono" placeholder="192.168.0.2" autocomplete="off" spellcheck="false" inputmode="decimal" :aria-invalid="!!vipError || undefined" />
+              <Input :id="`dns-ha-vip-${agent.id}`" v-model="vip" class="min-h-11 font-mono" placeholder="192.0.2.53" autocomplete="off" spellcheck="false" inputmode="decimal" :aria-invalid="!!vipError || undefined" />
               <p v-if="vipError" class="m-0 text-xs text-destructive-accent">{{ vipError }}</p>
             </FormField>
             <details class="rounded-md border border-border text-xs text-muted-foreground" data-dns-ha-advanced>

@@ -466,7 +466,7 @@ describe('Gateway LAN input validation', () => {
     expect(gatewaySpecErrors(spec)).toEqual([])
     expect(gatewaySpecErrors({ ...spec, upstream_gateway: spec.address })).toContain('Linux 地址与主路由地址不能相同。')
     expect(gatewaySpecErrors({ ...spec, address: '10.1.1.2' })).toContain('Linux 地址必须在填写的 LAN 网段内。')
-    expect(gatewaySpecErrors({ ...spec, lan_cidr: '192.168.1.5/24' })).toContain('LAN 网段请填写网络地址，例如 192.168.1.0/24，而不是设备地址。')
+    expect(gatewaySpecErrors({ ...spec, lan_cidr: '192.168.1.5/24' })).toContain('LAN 网段请填写网络地址，例如 192.0.2.0/24，而不是设备地址。')
     expect(gatewaySpecErrors({ ...spec, address: 'example.com' }).length).toBeGreaterThan(0)
   })
 })

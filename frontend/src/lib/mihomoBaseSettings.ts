@@ -630,7 +630,7 @@ function problems(values: Record<string, unknown>, changed: (path: BasePath) => 
       const url = new URL(String(uiUrl))
       valid = typeof uiUrl === 'string' && ['http:', 'https:'].includes(url.protocol) && !!url.hostname
     } catch { valid = false }
-    if (!valid) add('external-ui-url', 'external-ui-url 需为 http(s) 下载地址，例如 https://github.com/…/gh-pages.zip')
+    if (!valid) add('external-ui-url', 'external-ui-url 需为 http(s) 下载地址，例如 https://downloads.example.com/dashboard.zip')
   }
   const bind = get(['bind-address'])
   if (changed(['bind-address']) && bind !== undefined) {

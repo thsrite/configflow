@@ -243,7 +243,7 @@ export const oxidnsPluginCatalog: OxidnsPluginDefinition[] = [
   }), { upstreams: [{ addr: '223.5.5.5' }], concurrent: 1 }),
   plugin('cache', 'executor', 'DNS 缓存', optionCopy('复用已有查询结果，减少重复向上游发起请求。', '重复查询较多，希望减少等待和上游请求时添加并引用。', '可缓存正负响应，并设置过期应答、缓存分区和磁盘快照。缓存按响应 TTL 过期；原生 lazy cache 关闭时需删除参数，不能填 0。'), 'executor/resolution', cacheArgs),
   plugin('hosts', 'executor', '静态 Hosts', optionCopy('为指定域名固定返回本地地址，支持双栈。', '需要手动指定网站或局域网设备的域名查询结果。', '按域名规则返回 A / AAAA 地址，可同时使用内联条目和规则文件。新增插件后还需在处理流程引用；其他记录类型可用静态 DNS 记录。'), 'executor/resolution', o('Hosts 参数', '内联条目和文件可以同时提供规则。', {
-    entries: strings('条目', '格式：域名规则 IP1 IP2，例如 full:router.lan 192.168.1.1。'), files, short_circuit: stop,
+    entries: strings('条目', '格式：域名规则 IP1 IP2，例如 full:router.example.com 192.0.2.1。'), files, short_circuit: stop,
   })),
   plugin('arbitrary', 'executor', '静态 DNS 记录', optionCopy('自定义 TXT 等记录，直接返回静态应答。', '需要 MX、TXT、SRV 等无法用 Hosts 表示的记录。', '按 zone record 语法填写本地 DNS 应答，可从条目或文件加载。适合精确配置记录类型和内容，添加后还需在执行链中引用。'), 'executor/resolution', o('静态记录参数', '适合 MX、TXT、SRV 等 Hosts 无法表示的记录。', {
     rules: strings('记录', '每条使用 zone record 语法，例如 example.test. 60 IN TXT "hello"。'), files, short_circuit: stop,

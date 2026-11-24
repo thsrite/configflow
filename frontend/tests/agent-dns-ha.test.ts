@@ -14,18 +14,18 @@ vi.mock('@/lib/feedback', () => ({
 }))
 
 const wrappers: ReturnType<typeof mount>[] = []
-const ha = { enabled: true, group_id: 'g1', peer_id: 'oxi-2', vip: '192.168.0.2', vrid: 2, role: 'primary' }
+const ha = { enabled: true, group_id: 'g1', peer_id: 'oxi-2', vip: '192.0.2.53', vrid: 2, role: 'primary' }
 function agent(id: string, overrides: Record<string, unknown> = {}) {
-  return { id, name: id === 'oxi-1' ? '主 OxiDNS' : `OxiDNS ${id}`, host: `192.168.0.${id === 'oxi-1' ? 20 : 21}`, service_type: 'oxidns', status: 'online', profile_id: 'default', ...overrides } as any
+  return { id, name: id === 'oxi-1' ? '主 OxiDNS' : `OxiDNS ${id}`, host: `192.0.2.${id === 'oxi-1' ? 20 : 21}`, service_type: 'oxidns', status: 'online', profile_id: 'default', ...overrides } as any
 }
 const others = [
   agent('oxi-2'),
-  agent('oxi-3', { host: '192.168.0.22', profile_id: 'other' }),
-  agent('oxi-4', { host: '192.168.0.23', oxidns_ha: { ...ha, group_id: 'g2', peer_id: 'oxi-5' } }),
-  agent('mihomo-1', { service_type: 'mihomo', host: '192.168.0.3' }),
+  agent('oxi-3', { host: '192.0.2.22', profile_id: 'other' }),
+  agent('oxi-4', { host: '192.0.2.23', oxidns_ha: { ...ha, group_id: 'g2', peer_id: 'oxi-5' } }),
+  agent('mihomo-1', { service_type: 'mihomo', host: '192.0.2.3' }),
 ]
 function member(id: string, runtime: Record<string, unknown> | null, overrides: Record<string, unknown> = {}) {
-  return { agent_id: id, name: id === 'oxi-1' ? '主 OxiDNS' : `OxiDNS ${id}`, host: id === 'oxi-1' ? '192.168.0.20' : '192.168.0.21', online: true,
+  return { agent_id: id, name: id === 'oxi-1' ? '主 OxiDNS' : `OxiDNS ${id}`, host: id === 'oxi-1' ? '192.0.2.20' : '192.0.2.21', online: true,
     role_config: id === 'oxi-1' ? 'primary' : 'secondary',
     runtime: runtime && { keepalived_running: true, vip_present: false, role: 'backup', healthy: true, ...runtime }, error: '', ...overrides }
 }
@@ -105,7 +105,7 @@ describe('ordered configuration synchronization', () => {
     const wrapper = render()
     await click('设置 DNS 高可用')
     wrapper.findComponent(Select).vm.$emit('update:modelValue', 'oxi-2')
-    await type('dns-ha-vip-oxi-1', '192.168.0.53')
+    await type('dns-ha-vip-oxi-1', '192.0.2.53')
     await submit()
     expect(notify.success).not.toHaveBeenCalled()
     expect(wrapper.get('[data-ha-publication]').text()).toContain('备用 OxiDNS')
@@ -222,15 +222,15 @@ describe('DNS high availability when not enabled', () => {
     wrapper.findComponent(Select).vm.$emit('update:modelValue', 'oxi-2')
     await flushPromises()
     expect(button('开启').disabled).toBe(true)
-    await type('dns-ha-vip-oxi-1', '192.168.0.300')
+    await type('dns-ha-vip-oxi-1', '192.0.2.300')
     expect(document.body.textContent).toContain('请填写 IPv4 地址')
     expect(button('开启').disabled).toBe(true)
-    await type('dns-ha-vip-oxi-1', '192.168.0.21')
+    await type('dns-ha-vip-oxi-1', '192.0.2.21')
     expect(document.body.textContent).toContain('不能与两台 OxiDNS 的地址相同')
     expect(button('开启').disabled).toBe(true)
     await type('dns-ha-vip-oxi-1', '224.0.0.18')
     expect(document.body.textContent).toContain('单播地址')
-    await type('dns-ha-vip-oxi-1', ' 192.168.0.2 ')
+    await type('dns-ha-vip-oxi-1', ' 192.0.2.53 ')
     expect(button('开启').disabled).toBe(false)
     await type('dns-ha-vrid-oxi-1', '256')
     expect(document.body.textContent).toContain('VRID 范围为 1–255')
@@ -239,7 +239,7 @@ describe('DNS high availability when not enabled', () => {
     await submit()
     expect(confirm).toHaveBeenCalledTimes(1)
     expect(confirmDanger).not.toHaveBeenCalled()
-    expect(agentApi.setDNSHA).toHaveBeenCalledExactlyOnceWith('oxi-1', { peer_id: 'oxi-2', vip: '192.168.0.2' })
+    expect(agentApi.setDNSHA).toHaveBeenCalledExactlyOnceWith('oxi-1', { peer_id: 'oxi-2', vip: '192.0.2.53' })
     expect(wrapper.emitted('changed')).toHaveLength(1)
     expect(notify.success).toHaveBeenCalled()
   })
@@ -248,13 +248,13 @@ describe('DNS high availability when not enabled', () => {
     const wrapper = render()
     await click('设置 DNS 高可用')
     wrapper.findComponent(Select).vm.$emit('update:modelValue', 'oxi-2')
-    await type('dns-ha-vip-oxi-1', '192.168.0.2')
+    await type('dns-ha-vip-oxi-1', '192.0.2.53')
     await type('dns-ha-vrid-oxi-1', '77')
     vi.mocked(confirm).mockResolvedValueOnce(false)
     await submit()
     expect(agentApi.setDNSHA).not.toHaveBeenCalled()
     await submit()
-    expect(agentApi.setDNSHA).toHaveBeenCalledWith('oxi-1', { peer_id: 'oxi-2', vip: '192.168.0.2', vrid: 77 })
+    expect(agentApi.setDNSHA).toHaveBeenCalledWith('oxi-1', { peer_id: 'oxi-2', vip: '192.0.2.53', vrid: 77 })
   })
 
   it('shows the backend warnings instead of a plain success after enabling', async () => {
@@ -262,7 +262,7 @@ describe('DNS high availability when not enabled', () => {
     const wrapper = render()
     await click('设置 DNS 高可用')
     wrapper.findComponent(Select).vm.$emit('update:modelValue', 'oxi-2')
-    await type('dns-ha-vip-oxi-1', '192.168.0.2')
+    await type('dns-ha-vip-oxi-1', '192.0.2.53')
     await submit()
     expect(wrapper.emitted('changed')).toHaveLength(1)
     expect(notify.success).not.toHaveBeenCalled()
@@ -294,7 +294,7 @@ describe('DNS high availability when not enabled', () => {
     const wrapper = render()
     await click('设置 DNS 高可用')
     wrapper.findComponent(Select).vm.$emit('update:modelValue', 'oxi-2')
-    await type('dns-ha-vip-oxi-1', '192.168.0.2')
+    await type('dns-ha-vip-oxi-1', '192.0.2.53')
     await submit()
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     expect(document.querySelector('[role="alert"]')?.textContent).toContain('apt install keepalived')
@@ -309,7 +309,7 @@ describe('DNS high availability status', () => {
     await flushPromises()
     expect(agentApi.getDNSHA).toHaveBeenCalledExactlyOnceWith('oxi-1')
     expect(wrapper.findComponent(AgentStatusRow).props()).toMatchObject({ status: '主备正常', tone: 'success' })
-    expect(wrapper.get('[data-dns-ha-holder]').text()).toBe('主 · VIP 192.168.0.2')
+    expect(wrapper.get('[data-dns-ha-holder]').text()).toBe('主 · VIP 192.0.2.53')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     await wrapper.setProps({ agent: agent('oxi-1', { oxidns_ha: ha, oxidns_ha_state: { status: 'succeeded', updated_at: 1 }, last_heartbeat: 'later' }) })
     await flushPromises()

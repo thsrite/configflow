@@ -735,7 +735,7 @@
         <DialogHeader>
           <DialogTitle>GitHub 代理域名配置</DialogTitle>
           <DialogDescription>
-            面板下载 GitHub 资源时先尝试原始地址，失败后使用此备用地址。支持 https://gh-proxy.com 这样的镜像前缀；生成配置中的 GitHub 链接也会使用此设置。
+            面板下载 GitHub 资源时先尝试原始地址，失败后使用此备用地址。支持 https://mirror.example.com 这样的镜像前缀；生成配置中的 GitHub 链接也会使用此设置。
           </DialogDescription>
         </DialogHeader>
 
@@ -745,7 +745,7 @@
             id="proxy-domain"
             v-model="proxyDomains.proxy"
             class="bg-background/50 font-mono"
-            placeholder="例如 ghproxy.com 或 https://ghproxy.com"
+            placeholder="例如 mirror.example.com 或 https://mirror.example.com"
           />
           <p class="m-0 text-[12px] leading-relaxed text-muted-foreground">
             支持的域名：github.com、raw.githubusercontent.com、gist.githubusercontent.com、api.github.com
@@ -1104,15 +1104,15 @@ const ruleContentPlaceholder = computed(() => {
         '请输入域名规则，每行一条规则',
         '示例：',
         '+.example.com',
-        'api.github.com'
+        'api.example.org'
       ].join('\n')
     case 'ipcidr':
       return [
         '请输入 IP 规则，每行一条规则',
         '示例：',
-        '192.168.0.0/16',
-        '10.0.0.0/8',
-        '2001:db8::/32'
+        '192.0.2.0/24',
+        '198.51.100.0/24',
+        '2001:db8::/64'
       ].join('\n')
     default:
       return [
@@ -1131,7 +1131,7 @@ const ruleContentHelperText = computed(() => {
     case 'domain':
       return 'example.com 仅匹配此域名；+.example.com 包含它的所有子域名。两种写法可混用，每行一条，不加 DOMAIN 等前缀。'
     case 'ipcidr':
-      return '支持 IPv4/IPv6 CIDR 写法，例如 192.168.0.0/16 或 2001:db8::/32。'
+      return '支持 IPv4/IPv6 CIDR 写法，例如 192.0.2.0/24 或 2001:db8::/64。'
     default:
       return '每行一条，支持完整规则，例如 DOMAIN,example.com、DOMAIN-SUFFIX,example.com 或 IP-CIDR,192.0.2.0/24；不支持嵌套 RULE-SET。'
   }
@@ -1149,9 +1149,9 @@ const addRuleToSetHelperText = computed(() => {
     case 'domain':
       return '每行一个域名，由下方选择是否包含子域名；已有通配符可选择「按输入内容」。'
     case 'ipcidr':
-      return '每行一个 CIDR，例如 1.1.1.0/24 或 2001:db8::/32。'
+      return '每行一个 CIDR，例如 192.0.2.0/24 或 2001:db8::/64。'
     default:
-      return '每行一个值，例如 example.com、baidu.com 或 192.168.1.0/24。'
+      return '每行一个值，例如 example.com、example.org 或 192.0.2.0/24。'
   }
 })
 

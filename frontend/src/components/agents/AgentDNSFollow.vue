@@ -201,7 +201,7 @@ defineExpose({ showSettings: () => { if (!action.value) open.value = true } })
               </Select>
             </FormField>
             <FormField v-if="connection === 'network'" label="Mihomo DNS 地址" :html-for="`dns-follow-address-${agent.id}`" hint="填写 OxiDNS 可访问的地址，端口自动跟随。" :help="optionHelp('两服务通过网络连接，默认 Agent 地址不一定能直接访问。', '默认采用所选 Mihomo Agent 的地址，也可改成 OxiDNS 能访问的地址。DNS 端口会自动跟随 Mihomo，不必在此手动追踪端口变化。')">
-              <Input :id="`dns-follow-address-${agent.id}`" v-model="address" class="min-h-11 font-mono" placeholder="192.168.0.3" autocomplete="off" spellcheck="false" />
+              <Input :id="`dns-follow-address-${agent.id}`" v-model="address" class="min-h-11 font-mono" placeholder="192.0.2.3" autocomplete="off" spellcheck="false" />
             </FormField>
           </fieldset>
           <details class="rounded-md border border-border text-xs text-muted-foreground">

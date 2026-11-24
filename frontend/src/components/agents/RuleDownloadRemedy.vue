@@ -17,7 +17,7 @@
         v-if="github"
         label="GitHub 代理域名"
         html-for="remedy-github-proxy"
-        hint="原地址失败后改用镜像下载，例如 https://gh-proxy.com。"
+        hint="原地址失败后改用镜像下载，例如 https://mirror.example.com。"
         :help="optionHelp('服务器无法直连 GitHub，但能访问 GitHub 镜像时使用。', '下载 GitHub 文件时先试原地址，失败后在地址前加上此前缀重试。生成配置中的 GitHub 链接也会使用此设置；也可在规则库中修改。')"
       >
         <Input
@@ -26,7 +26,7 @@
           autocomplete="off"
           :spellcheck="false"
           class="bg-background font-mono"
-          placeholder="https://gh-proxy.com"
+          placeholder="https://mirror.example.com"
         />
       </FormField>
       <FormField
@@ -43,7 +43,7 @@
             autocomplete="off"
             :spellcheck="false"
             class="min-w-0 bg-background font-mono"
-            placeholder="http://192.168.0.3:7890"
+            placeholder="http://192.0.2.3:7890"
           />
           <Button
             variant="outline"
