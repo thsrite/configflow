@@ -6,6 +6,7 @@ import (
 	"configflow/internal/gateway"
 	"configflow/internal/mosdns"
 	"configflow/internal/oxidns"
+	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/yamlx"
 	"context"
@@ -478,7 +479,7 @@ func Build(ctx context.Context, in BuildInput) (*Bundle, error) {
 			return nil, err
 		}
 	}
-	profile, err := resolvedBuildProfile(ctx, in.Repo, in.Source, in.Target)
+	profile, err := resolvedBuildProfile(ctx, in.repository(), in.Source, in.Target)
 	if err != nil {
 		return nil, err
 	}
@@ -575,4 +576,13 @@ func defaultBehavior(s string) string {
 		return "domain"
 	}
 	return s
+}
+
+// repository is the repository that resolves the default profile of a target
+// without one: in.Repo, else the refresh Service's repository.
+func (in BuildInput) repository() *repo.Repository {
+	if in.Repo != nil {
+		return in.Repo
+	}
+	return in.Refresh.Repository()
 }

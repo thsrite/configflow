@@ -54,6 +54,14 @@ func New(opts Options) *Service {
 	}
 }
 
+// Repository returns the repository s was constructed with (nil when none).
+func (s *Service) Repository() *repo.Repository {
+	if s == nil {
+		return nil
+	}
+	return s.repo
+}
+
 func (s *Service) repository() (*repo.Repository, error) {
 	if s == nil || s.repo == nil {
 		return nil, errors.New("refresh: repository is nil")

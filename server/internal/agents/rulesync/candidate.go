@@ -79,7 +79,7 @@ func PrepareCandidateWith(ctx context.Context, rf *refresh.Service, target deplo
 		if e = ctx.Err(); e != nil {
 			return e
 		}
-		candidate, e := deploy.Build(ctx, deploy.BuildInput{Target: target, Source: source, ConfigContent: content, RulesetDownloads: downloads, PinnedFiles: pins, BaseURL: receipt.BaseURL, DeploymentID: deploymentID, LocalDNSWatchdog: localWatchdog, Refresh: rf})
+		candidate, e := deploy.Build(ctx, deploy.BuildInput{Repo: rf.Repository(), Target: target, Source: source, ConfigContent: content, RulesetDownloads: downloads, PinnedFiles: pins, BaseURL: receipt.BaseURL, DeploymentID: deploymentID, LocalDNSWatchdog: localWatchdog, Refresh: rf})
 		if e != nil {
 			return e
 		}

@@ -794,7 +794,7 @@ func (ds *Service) prepareContent(ctx context.Context, m *agents.Manager, t Targ
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	p.Bundle, err = Build(ctx, BuildInput{Target: t, Source: s, ConfigContent: p.ConfigContent, ProviderDownloads: p.ProviderDownloads, RulesetDownloads: p.RulesetDownloads, CustomFiles: p.CustomFiles, BaseURL: o.BaseURL, DeploymentID: o.DeploymentID, LocalDNSWatchdog: true, Progress: o.Progress, Refresh: ds.refreshFor(m)})
+	p.Bundle, err = Build(ctx, BuildInput{Repo: m.Repository(), Target: t, Source: s, ConfigContent: p.ConfigContent, ProviderDownloads: p.ProviderDownloads, RulesetDownloads: p.RulesetDownloads, CustomFiles: p.CustomFiles, BaseURL: o.BaseURL, DeploymentID: o.DeploymentID, LocalDNSWatchdog: true, Progress: o.Progress, Refresh: ds.refreshFor(m)})
 	return p, err
 }
 func preparationFailure(err error) bool {
