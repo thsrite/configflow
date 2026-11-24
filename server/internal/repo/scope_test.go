@@ -328,7 +328,9 @@ func TestRedactionTokensAreReadOncePerGenerationWithoutCopyingSystem(t *testing.
 	ruleToken := must(r.System(bg))(t).SystemConfig.RuleProxyToken
 	var cached *sanitizationTokens
 	for range 3 {
-		if !must(r.AgentTokensForSanitization(bg))(t).Has("agent-token-one") || !must(r.RuleProxyTokensForSanitization(bg))(t).Has(ruleToken) {
+		rules, agents, err := r.SanitizationTokens(bg)
+		noError(t, err)
+		if !agents.Has("agent-token-one") || !rules.Has(ruleToken) {
 			t.Fatal("token missing")
 		}
 		if cached == nil {
@@ -352,7 +354,8 @@ func TestRotatedTokensAreRedactedByTheNextResponse(t *testing.T) {
 		system.SystemConfig.RuleProxyToken = "rule-token-two"
 		return nil
 	}))
-	agents, rules := must(r.AgentTokensForSanitization(bg))(t), must(r.RuleProxyTokensForSanitization(bg))(t)
+	rules, agents, err := r.SanitizationTokens(bg)
+	noError(t, err)
 	if !agents.Has("agent-token-two") || agents.Has("agent-token-one") || !rules.Has("rule-token-two") || !rules.Has(oldRuleToken) {
 		t.Fatalf("agents %v rules %v", agents, rules)
 	}

@@ -148,11 +148,7 @@ func ExternalPayloadSecrets(ctx context.Context, repository *repo.Repository, sy
 	if repository == nil {
 		return nil, errNilRepository
 	}
-	ruleProxy, err := repository.RuleProxyTokensForSanitization(ctx)
-	if err != nil {
-		return nil, err
-	}
-	agents, err := repository.AgentTokensForSanitization(ctx)
+	ruleProxy, agents, err := repository.SanitizationTokens(ctx)
 	if err != nil {
 		return nil, err
 	}

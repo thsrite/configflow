@@ -248,6 +248,13 @@ func sanitizationTokensModel(system *model.System) (TokenSet, TokenSet) {
 	return ruleProxy, agents
 }
 
+// SanitizationTokens returns the current and retired rule proxy tokens and
+// the Agent tokens from the same repository generation. Both sets are read-only
+// and for output sanitization only.
+func (r *Repository) SanitizationTokens(ctx context.Context) (ruleProxy, agents TokenSet, err error) {
+	return r.sanitizationTokensNow(ctx)
+}
+
 // RuleProxyTokensForSanitization is rule_proxy_tokens_for_sanitization: the
 // persisted current and retired rule proxy tokens, for output sanitization
 // only. The set is shared: do not modify it.
