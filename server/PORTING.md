@@ -314,7 +314,7 @@ interchange). Read `repository.go`, `scope.go`, `hooks.go` doc comments before u
   returns the 400/415 error to return as-is), `JSONSilent`, `JSONObject`, `JSONForce`, `Data`, `Form`,
   `RemoteAddr`, `HostURL`, `URLRoot`, `IsInternalCall`, `Set`/`Get` (`flask.g`).
 - **Responses**: `httpx.JSON(v)` (= `jsonify`), `JSONStatus(code, v)`, `Message(code, success, msg)`,
-  `External(c, v)` (= `jsonify_external`), `Text`, `HTML`, `Bytes`, `RawJSON`, `Empty`, `Stream`,
+  `External(c, v)` (= `jsonify_external`), `Text`, `Bytes`, `RawJSON`, `Empty`,
   `File(FileOptions{Path|Data, MimeType, AsAttachment, DownloadName})` (pass `MimeType` explicitly);
   modifiers `.WithStatus`, `.WithHeader`, `.NoStore()`. Token redaction runs globally; do not redact yourself.
 - **Errors**: return them. `*repo.Error` → the standard 400/404/409 bodies; `httpx.BadRequest(msg)`,

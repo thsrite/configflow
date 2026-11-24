@@ -495,3 +495,31 @@ deadcode 以 `cmd/configflow`、`cmd/configflow-autoupdate` 为入口；只被�
 
 方案见 `design/o17-wiring.md`（routers 拆 13 个包、显式组装、R1–R10 + W0–W11 共 22 步，裁定点 D1–D14）；逐项清单在
 `design/o17-wiring/inventory.md`。等「运行状态收尾」合入后实施。
+
+### 前-1 清理（分支 `go-o17-pre1-deadcode`，2026-11-24）
+
+以交接树 `b082e2ca6` 为基线，完成 §3.1、§3.2、§3.3、§3.6。本轮删除
+`convert.ParseIPAddress`，`convert/ipaddr.go` 已在前一轮删除。存储、Agent 监控和健康检查
+统一使用带 `context.Context` 的入口。规则库提交批次在开始文件写入后仍完成已获准的写入和提交。
+
+| 扫描 | 服务端前 → 后 | go-agent 前 → 后 |
+|---|---:|---:|
+| staticcheck，含测试 | 111 → 51 | 25 → 0 |
+| staticcheck，非测试 | 60 → 0 | 23 → 0 |
+| deadcode，默认生产入口 | 257 → 134 | 44 → 0 |
+
+服务端剩余 134 项中，37 项是本轮范围外的 `internal/model`，3 项是 faultprobe 工具和构建标签
+使用的入口，94 项由测试使用。可随所属包测试编译的钩子已移到 `export_test.go`。其他包的集成测试
+仍需要的钩子继续由原包提供，例如 `agents.ResetRuntime`、`health.LockForTest` 和
+`convert.ResetMihomoEnvironmentForTest`。51 条 staticcheck 告警均来自服务端测试文件。
+
+`tools/pyref/sources.json` 随测试助手和删除的文件更新。15 份记录仅刷新源码路径和哈希，
+逐条核对了精确输入、输出和 Python 依赖指纹。installer、mosdns、oxidns、routersplit 的清单入口
+通过 `PYREF_MODE=check`。
+
+验证均通过 `rt` 在 .64 执行。服务端 `gofmt -l internal/ tools/ cmd/` 无输出，
+`go vet ./...` 和 `go build -tags <tag> ./...`（两个标签分别构建）通过。
+`go test -race -count=1 -p 6 -timeout 12m` 覆盖改动 Go 文件的包及
+`cmd/configflow`、`internal/configgen`、`internal/server`、`internal/testgolden`，
+47 个包通过，3 个包无测试。go-agent 的格式检查、默认与 `halab nftlab` 标签 vet、
+Linux 四架构交叉构建和 `go test -race -count=1 ./...` 均通过。

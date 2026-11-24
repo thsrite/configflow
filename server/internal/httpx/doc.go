@@ -62,9 +62,8 @@
 //	httpx.JSON(v)                       jsonify(v); JSONStatus(status, v); Message(status, success, msg)
 //	httpx.External(c, v)                metadata through the same JSON response exit
 //	httpx.RawJSON(status, body)         Response(body, mimetype="application/json") (still redacted by the hook)
-//	httpx.Text(status, s), HTML(status, s), Bytes(status, contentType, body), Empty(status)
+//	httpx.Text(status, s), Bytes(status, contentType, body), Empty(status)
 //	httpx.File(FileOptions{...})        send_file: attachment name, ETag/Last-Modified, 304, Range, never redacted
-//	httpx.Stream(status, type, write)   generator responses
 //	r.WithStatus(n), r.WithHeader(k, v), r.NoStore()   (Cache-Control: no-store)
 //
 // Values may be native structs, maps, slices, scalars, or json.RawMessage.
