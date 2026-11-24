@@ -20,9 +20,8 @@ import (
 //	oxidns-ha-publish (DNSHA)      x       x         x
 //	ipv6-verification (IPv6)       x       x
 //
-// The rule-refresh wake goes through refresh.Default(), the path the refresh
-// round (scheduled.go) uses, so it also proves the W7 refresh instance is the
-// one installed as default and carries the W6 subscriber.
+// The rule-refresh wake goes through the app's refresh.Service instance,
+// proving it carries the agent rule-sync subscriber.
 func TestNewConnectsAgentLoopWakeSources(t *testing.T) {
 	rt := lifecycle.NewProcessRuntime(lifecycle.Options{})
 	r, err := repo.OpenDefaultWithOptions(t.TempDir(), RepoOptions())

@@ -73,10 +73,8 @@ func newGenerateServices(r *repo.Repository, rt *lifecycle.Runtime, tk *tasks.Re
 }
 
 // newDeployService constructs the deploy Service once the HA pair publisher
-// and IPv6 enroller exist (wireAgents), so both are injected directly instead
-// of through the package-level SetPairPublication/SetIPv6Enroll bridges. The
-// instance is also installed as deploy.Default() for callers not yet migrated
-// (api/agents until W10). Nil options keep the fail-closed defaults.
+// and IPv6 enroller exist (wireAgents), so both are injected directly.
+// Nil options keep the fail-closed defaults.
 func newDeployService(opts deploy.Options) *deploy.Service {
 	return deploy.New(opts)
 }

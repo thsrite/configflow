@@ -72,24 +72,23 @@ Go 服务是单个二进制 `cmd/configflow`，取代 Flask + waitress + nginx �
 `main` → `run`（`cmd/configflow/service.go`）：
 
 1. 内存调优（cgroup 上限 × `CONFIGFLOW_MEMORY_LIMIT_RATIO`，未设 `GOMEMLIMIT` 时）、读取关停宽限期；
-2. `instance.Acquire` → `logx.Setup` → `auth.Configure` → `repo.OpenDefault`（迁移、损坏处理）→ `repo.SetRepository`；
-3. `lifecycle.Configure`；注册 Startup 步骤；`server.NewApp()`（执行全部 wire 函数、注册全部路由、装鉴权门禁）；
-4. `lifecycle.RunStartup`：`load-config` → `subscription-cache-prune` → `agent-manager-init` → `metrics-load-history`
+2. `instance.Acquire` → `logx.Setup` → `auth.Configure` → `repo.Open`（带 `server.RepoOptions()`；迁移、损坏处理）；
+3. `rt := lifecycle.NewProcessRuntime(...)`；`srv, err := server.New(ctx, server.Options{Repo: r, Runtime: rt, ...})`（显式构造各领域服务、注册启动步骤与周期循环、构造全部 `api/*` Handler 并注册路由、装鉴权门禁）；
+4. `rt.RunStartup`：`load-config` → `subscription-cache-prune` → `agent-manager-init` → `metrics-load-history`
    （另有 webdav worker 的 Startup）；
-5. 开始监听 API，可选启动 Web；`lifecycle.Start` 启动周期循环；
-6. 等 SIGTERM/SIGINT → `lifecycle.Stop(grace)`。
+5. 开始监听 API，可选启动 Web（两阶段注入 `settings.Handler.SetWebListener`，D5）；`rt.Start` 启动周期循环；
+6. 等 SIGTERM/SIGINT → `rt.Stop(grace)`。
 
 ---
 
 ## 2. 包分层与依赖方向
 
-依赖只能自上而下。下层需要上层能力时用**注册钩子**（`repo.RegisterHooks`、`agents.RegisterHooks`、
-`convert.MihomoHooks` 等，由上层在 wire 时注入），不得反向 import；`internal/server` 负责把它们组合起来。
+依赖只能自上而下。下层需要上层能力时通过**显式构造参数 / 小接口**（`repo.Options`、`agents.Options`、`deploy.Options`、各服务 `New(Options)` 及 `api/*.Deps`，以及按 D2 设一次的 `convert` 环境）注入，不得反向 import，无进程级服务定位器；`internal/server` 是唯一的组合根。
 
 ```
 cmd/configflow                       进程入口：环境、实例锁、监听、信号
-  └─ internal/server                 组装：wirePackages → routePackages → auth.Install
-       ├─ internal/api/*             HTTP 翻译层（一个 Flask blueprint 一个包）
+  └─ internal/server                 组合根：server.New(ctx, Options) → 各服务实例化 → apiHandlers 注册 → auth.Install
+       ├─ internal/api/*             HTTP 翻译层（一个 Flask blueprint 一个包，结构体 Handler + Deps）
        ├─ internal/mcp               MCP JSON-RPC，经 httpx.App.Invoke 调 REST
        ├─ 领域 owner（发布/设备/任务） deploy、agents/*、routers、gateway/*、setup、clients、discovery、refresh …
        ├─ 生成器                     configgen → convert、mosdns、oxidns、subs、rules
@@ -106,7 +105,7 @@ cmd/configflow                       进程入口：环境、实例锁、监听�
 | `internal/model` | 存储文档的 Go 记录类型（`Document`、`Config`、`Shared`、`System`、`Agent`、`Router`…）和 `Fields`/`Map`/`Dynamic`/`model.Int`/`model.String`。保留未知成员与未改成员的原始字节和顺序；不做 I/O。`model.Marshal` 是存储数据唯一的 JSON 写出器 |
 | `internal/store` | SQLite 引擎（`modernc.org/sqlite`，纯 Go）：表结构、`Head`（store_id + generation + commit_id）、行级修订；每次操作新开连接，不解释字段值 |
 | `internal/repo` | 配置仓库，`configflow.sqlite3` 及旁边文件的唯一 owner：事务、`.config.lock`（L3）、请求内 `Scope` 快照、三路合并、导入导出、默认值和校验 |
-| `internal/lifecycle` | 启动步骤、周期循环、受追踪的分离任务（`Spawn`）、分阶段关停；`Detach`/`BindRequest`/`SpawnerFrom` |
+| `internal/lifecycle` | 启动步骤、周期循环、受追踪的分离任务（`(*Runtime).Spawn`）、分阶段关停；context API `Detach`/`Stopping`/`SpawnerFrom`/`ContextSpawner` 与 `(*Runtime).BindRequest` |
 | `internal/lockx` | 可取消的进程内锁（`Mutex`、`RWMutex`、`Keyed`、`Flight`），运行时检查 L1→L2→L3 顺序，`Violations()` |
 | `internal/ctxx`、`internal/clock` | 保留生命周期的 Detach 实现；共享时钟接口（测试用 `lifecycle/lifecycletest`） |
 | `internal/logx` | 日志（格式同 Python：`时间 - logger 名 - 级别 - 消息`），唯一允许的日志出口 |
@@ -120,10 +119,10 @@ cmd/configflow                       进程入口：环境、实例锁、监听�
 | `internal/httpx` | Werkzeug 兼容的 URL 匹配（`Router.GET/POST/…(path, endpoint, handler)`，`<id>`、`<path:x>` 等转换器）、`Ctx`（请求参数、`Bind`）、`Response` 构造器（`JSON`、`JSONStatus`、`Message`、`File`、`Stream`…）、请求管线（CORS、before 钩子、错误处理、全局 token 脱敏、`X-ConfigFlow-Profile`）、`Edge`、进程内调用 `Invoke`、请求体上限 `LimitRequestBody` |
 | `internal/auth` | HS256 登录令牌、Bearer 解析、全局门禁 `Gate`（`auth.Install` 插到 before 链首位）、公开路径表（`publicExactPaths`/`publicPrefixes`/`publicEndpoints`） |
 | `internal/redact` | 不得离开服务器的凭据集合和替换遍历，httpx 对每个 JSON 响应调用 |
-| `internal/api/<blueprint>` | 每个包一个 `Register(*httpx.Router)`。只做 HTTP 翻译：解析请求、调 owner、映射状态码和中文消息。业务、锁、持久化都不在这里 |
+| `internal/api/<blueprint>` | 每个包一个 `NewHandler(Deps)` / `(*Handler).Register(*httpx.Router)`。只做 HTTP 翻译：解析请求、调注入的 owner、映射状态码和中文消息。业务、锁、持久化都不在这里 |
 
-请求管线（`httpx.App.ServeHTTP`）：`repo.WithScope(lifecycle.BindRequest(req.Context()))` → 路由匹配 →
-before 链（鉴权门禁、profile 选择、首请求通知 `lifecycle.RequestSeen`）→ handler → 错误处理器 →
+请求管线（`httpx.App.ServeHTTP`）：`repo.WithScope(app.Runtime.BindRequest(req.Context()))` → 路由匹配 →
+before 链（鉴权门禁、profile 选择、首请求通知 `app.Runtime.RequestSeen`）→ handler → 错误处理器 →
 finalize（脱敏、CORS、头）→ 写回；结束时 `repo.ResetConfigContext`。handler 内 panic 会被兜底成 500，但
 **不要依赖它**（风格规则禁止 panic）。
 
@@ -131,7 +130,7 @@ finalize（脱敏、CORS、头）→ 写回；结束时 `repo.ResetConfigContext
 
 | 领域 | 包 | 职责 |
 |---|---|---|
-| Agent 注册表 | `internal/agents` | `Manager`（`agents.Get(ctx)`）：注册、心跳（内存 runtime state）、部署记录状态机、对 Agent 的调用（`Client`）、钩子表 `Hooks` |
+| Agent 注册表 | `internal/agents` | `Manager`（`agents.New(ctx, r, Options)`）：注册、心跳（内存 runtime state）、部署记录状态机、对 Agent 的调用（`Client`）、显式回调 `Options`（D1 两阶段 `SetPairPublisher`） |
 | Agent 子领域 | `agents/metrics`、`agents/trafficstore`、`agents/monitor` | 监控历史（内存 + 定时落盘）、流量摘要、监控面板/DNS 统计/排行 |
 |  | `agents/rulesync` | 规则自动同步（按部署回执对比，热加载或重新发布） |
 |  | `agents/dnsfollow`、`agents/dnsha` | Mihomo→OxiDNS DNS 联动；OxiDNS 主备（成对发布、VIP 切换） |
@@ -148,24 +147,22 @@ finalize（脱敏、CORS、头）→ 写回；结束时 `repo.ResetConfigContext
 
 依赖方向的几个固定点（新代码不要打破）：
 
-- `deploy` import `agents`，`agents` 不 import `deploy`；registry 需要 deploy 的地方走 `agents.Hooks`。
+- `deploy` import `agents`，`agents` 不 import `deploy`；registry 需要 deploy 的地方经 `agents.Options` 小接口注入。
 - `api/*` 下面的包不 import 任何 `api/*`。
 - `agents` import `notifications`，所以共享的纯文本助手放在叶子包 `agents/diag`。
 - `gateway` 与 `routersplit` 共享的三个符号放在 `gateway/gwbase`，避免互相 import。
-- `repo` 只 import 少数纯函数包（`convert`、`rules` 的校验/默认值等）；需要领域行为时用 `repo.Hooks` / `RecordHooks`
-  （如提交后回调 `ConfigurationCommittedRecords` 由 `webdav` 注册、路由器 job lock、导出脱敏）。
+- `repo` 只 import 少数纯函数包（`convert`、`rules` 的校验/默认值等）；需要领域行为时用 `repo.Options` 实例字段（`RouterJobLock`、`ExportConfig`）与提交后订阅 `r.OnCommit`/`r.OnConfigurationCommitted`。
 - `lifecycle` import `repo` 只为给每轮循环/任务装一个新的 `repo.Scope`。
 
 ### 2.4 组装（`internal/server`）
 
-`server.NewApp()` 依次：
+`server.New(ctx, Options)` 是唯一的生产与测试组合根，按依赖分层依次：
 
-1. 执行 `wirePackages`（钩子、循环、provider 的注册；**顺序有意义**，例如 IPv6 的 Manager-init 钩子最后注册）；
-2. 按 `routePackages` 顺序注册路由（对应 `backend/routes/__init__.py` 的 blueprint 顺序），再注册
-   `lateRoutePackages`（`api/tasks`、`api/notifications`，它们要在所有任务 provider 注册完之后）；
-3. `auth.Install(app)`。
+1. 实例化基础设施与领域服务（`tasks.Registry`、`notifications.Service`、`substore`、`refresh`、`provider`/`aggregations`、`rulesource`、`trafficstore`/`monitor`/`metrics`/`health`/`webdav`、`agents.Manager` 与各 Agent 子领域服务、`deploy`/`contentsync`、`routers`/`routers/rulesync`、`discovery`、`installation`/`setup`），两阶段环路依赖（D1/D6）在 `Start` 前完成连接并调用 `MarkStarted`；
+2. 构造全部 26 个 `api/*` Handler 收进 `App.handlers`（`apiHandlers`），按 Flask blueprint 顺序注册到 `httpx.App.Router`，并校验 `tasks.Registry.Validate()` 与 `notifications.Service.Validate()`；
+3. 注册 `auth.Install(app)` 与 `rt.RegisterStartup` / `rt.RegisterPeriodic`（名单与顺序由回归测试守门）。
 
-跨包组合（例如 deploy 的网关守卫需要 `gateway/host` 的实时检查，而 host 不能 import deploy）写在 `server.go` / `setup.go` 中。
+跨包组合（例如 deploy 的网关守卫需要 `gateway/host` 的实时检查，而 host 不能 import deploy）写在 `server/*.go` 中。
 
 ---
 
@@ -176,12 +173,12 @@ finalize（脱敏、CORS、头）→ 写回；结束时 `repo.ResetConfigContext
 ```
 前端 PUT/POST ─► api/<pkg> handler（c.Context() 原样传下）
               ─► owner 入口：ctx = lifecycle.Detach(ctx)；ctx.Err() 检查
-              ─► repo.UpdateConfig / UpdateSharedConfigs / Repository.Update / CommitConfig
+              ─► (*repo.Repository).UpdateConfig / UpdateSharedConfigs / Update / CommitConfig
                    └─ L3 .config.lock → 事务内工作副本 → store.Commit（只写字节变化的行，revision+1）
-              ─► 释放 L3 后：ConfigurationCommittedRecords（WebDAV 自动备份排队）、通知、推送提示
+              ─► 释放 L3 后：r.OnConfigurationCommitted（WebDAV 自动备份排队）、通知、推送提示
 ```
 
-- 读：`repo.Config(ctx, profileID)` 返回请求内快照；同一请求多次读到同一个 `*model.Config`，写成功后该 profile 的快照失效。
+- 读：`r.Config(ctx, profileID, roots)` / `r.ScopedConfig(ctx, profileID)` 返回请求内快照；同一请求多次读到同一个 `*model.Config`，写成功后该 profile 的快照失效。
 - 编辑器类保存（携带“读取时的状态”）走三路合并（见 4.4），并发编辑别的成员或列表项不会被覆盖。
 - 校验失败返回 400 + 中文消息；锁超时 `Timed out waiting for profile repository lock`（`CONFIGFLOW_LOCK_TIMEOUT_SECONDS`，默认 300 s）。
 
@@ -307,16 +304,16 @@ metrics-history-flush 循环（30 s 轮询，间隔可在定时任务页改）�
 
 ### 5.1 lifecycle Runtime
 
-- `lifecycle.RegisterStartup(Startup{Name, Run})`：一次性、按注册顺序、监听前同步执行。
-- `lifecycle.RegisterPeriodic(Periodic{Name, Start, FirstDelay, Interval, Round, Wake, OnStart})`：间隔从**本轮结束**开始计；
+- `rt.RegisterStartup(Startup{Name, Run})`：一次性、按注册顺序、监听前同步执行。
+- `rt.RegisterPeriodic(Periodic{Name, Start, FirstDelay, Interval, Round, Wake, OnStart})`：间隔从**本轮结束**开始计；
   `Start` 为 `AtBoot` 或 `AfterFirstRequest`；`Wake *Signal` 可打断等待（合并通知）。每轮的 ctx 带新的 repo Scope。
-- `lifecycle.Spawn(ctx, name, fn)` / `lifecycle.SpawnerFrom(ctx).Spawn(...)`：超出调用者生命周期的工作**必须**用它
+- `rt.Spawn(ctx, name, fn)` / `lifecycle.SpawnerFrom(ctx).Spawn(...)` / `lifecycle.ContextSpawner{}`：超出调用者生命周期的工作**必须**用它
   （受追踪、关停时被等待和取消、panic 记日志）；`SpawnerFrom` 保持发起者所在的 Runtime。不要裸 `go`。
 - `lifecycle.Detach(ctx)`：去掉请求的取消/截止时间，保留值和**本代 Runtime 的关停取消**。owner 在入口自己 Detach，handler 不 Detach。
-- `lifecycle.RegisterShutdown(ShutdownHook{Name, Phase, Run})`：`PhaseStopSignal` → `PhaseAfterDrain` → `PhaseClose`。
+- `rt.RegisterShutdown(ShutdownHook{Name, Phase, Run})`：`PhaseStopSignal` → `PhaseAfterDrain` → `PhaseClose`。
 - `lifecycle.ClockFrom(ctx)`：调度等待用的时钟，测试用 `lifecycletest.Clock` 推进。
 
-当前注册的周期循环（`grep -rn RegisterPeriodic internal`）：
+当前注册的周期循环（在 `internal/server` 显式组装）：
 
 | 名称 | 包 | 节奏 |
 |---|---|---|
@@ -401,9 +398,8 @@ Go 不会添加 Python 没有的崩溃恢复动作；各种“进行中”状态
 
 1. 选定 owner 包（业务逻辑放这里，不放在 `api/*`）。入口签名 `func X(ctx context.Context, …) (…, error)`；
    会写状态、取锁、起任务的入口第一行 `ctx = lifecycle.Detach(ctx)`，并在每个提交点前检查 `ctx.Err()`。
-2. 在 `internal/api/<blueprint>` 加 handler：`func h(c *httpx.Ctx) (*httpx.Response, error)`，把 `c.Context()` 原样传给 owner；
-   在包的 `Register` 里 `r.POST("/api/…/<id>", "<blueprint>.<endpoint>", h)`。新 blueprint 包要加进
-   `internal/server/server.go` 的 `routePackages`（依赖全部 provider 的放 `lateRoutePackages`）。
+2. 在 `internal/api/<blueprint>` 加 `Handler` 方法：`func (h *Handler) x(c *httpx.Ctx) (*httpx.Response, error)`，把 `c.Context()` 原样传给注入的 owner；
+   在 `(*Handler).Register` 里 `r.POST("/api/…/<id>", "<blueprint>.<endpoint>", h.x)`。新 blueprint 包在 `internal/server/` 构造并加入 `apiHandlers` 与路由注册顺序。
 3. 中文消息写进该包 `messages.go` 的常量；测试引用同一个常量。
 4. 鉴权：默认受全局门禁保护。确实需要公开（Agent 自鉴权、provider 下载）才改 `internal/auth` 的公开表，并加测试。
 5. 请求体：用 `c.Bind` / `jsondecode`；非对象、错误类型、缺字段返回 400 + 明确消息。L1 锁和校验的先后顺序要写清楚（o3 2.5）。
@@ -424,8 +420,8 @@ Go 不会添加 Python 没有的崩溃恢复动作；各种“进行中”状态
 
 ### 7.3 新增一个后台任务
 
-1. 周期性：在 owner 包的 wire 函数里 `lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "…", Start: lifecycle.AtBoot,
-   FirstDelay: …, Interval: …, Round: …})`，并把 wire 函数加进 `server.wirePackages`。一次性启动工作用 `RegisterStartup`。
+1. 周期性：在 `internal/server/` 组装处调用 `rt.RegisterPeriodic(lifecycle.Periodic{Name: "…", Start: lifecycle.AtBoot,
+   FirstDelay: …, Interval: …, Round: …})`。一次性启动工作用 `rt.RegisterStartup`。
    被事件触发的一次性工作用 `lifecycle.SpawnerFrom(ctx).Spawn(ctx, name, fn)`。
 2. 定时任务页要显示的，在 `internal/tasks` 加行，结果写 `taskstatus`；“立即运行”和循环共享同一把 L1 键，忙则 409。
 3. 选锁级别（o3 2.4 表）；L3 下不做 I/O；不要新建 flock。
