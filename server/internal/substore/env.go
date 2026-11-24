@@ -125,6 +125,7 @@ func (ExecRunner) Run(ctx context.Context, argv []string, timeout time.Duration)
 // Env is what dependencies.py reads from the process: the environment,
 // DATA_DIR, the network, programs, time and randomness.
 type Env struct {
+	Repo      *repo.Repository
 	LookupEnv func(string) (string, bool)
 	DataDir   func() string
 	HTTP      HTTPClient
@@ -136,10 +137,31 @@ type Env struct {
 	RandomHex func() string
 }
 
-// NewEnv returns the production environment.
+// NewEnv returns the production environment without a bound repository (tests
+// that configure DataDir directly).
 func NewEnv() *Env {
 	env := &Env{LookupEnv: os.LookupEnv, DataDir: repo.DataDir, HTTP: RequestsClient{}, Commands: ExecRunner{},
 		Clock: SystemClock, RandomHex: randomHex}
+	env.Process = NewSupervisor(env)
+	return env
+}
+
+// NewEnvFor returns the production environment bound to repository r.
+func NewEnvFor(r *repo.Repository) *Env {
+	env := &Env{
+		Repo:      r,
+		LookupEnv: os.LookupEnv,
+		DataDir: func() string {
+			if r != nil {
+				return r.DataDir()
+			}
+			return ""
+		},
+		HTTP:      RequestsClient{},
+		Commands:  ExecRunner{},
+		Clock:     SystemClock,
+		RandomHex: randomHex,
+	}
 	env.Process = NewSupervisor(env)
 	return env
 }

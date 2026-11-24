@@ -2,6 +2,8 @@ package aggregations
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
+	"configflow/internal/repo"
 	"configflow/internal/rules"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
@@ -19,9 +22,17 @@ import (
 	"configflow/internal/yamlx"
 )
 
+func randomNodeHex() string {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
 // typedDelivery shares one Config and main graph across all aggregation nodes.
 type typedDelivery struct {
 	config        *model.Config
+	repo          *repo.Repository
+	substore      *substore.Service
 	sourceFetch   refresh.FetchSourceFn
 	main          *yamlx.Node
 	snapshot      *provider.DeliverySnapshot
@@ -100,7 +111,11 @@ func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, op
 				nodes[i].SubscriptionID = source.ID
 				nodes[i].SubscriptionName = source.Name
 				if nodes[i].ID == "" {
-					nodes[i].ID = "node_" + substore.Default().Env.RandomHex()
+					if d.substore != nil && d.substore.Env != nil && d.substore.Env.RandomHex != nil {
+						nodes[i].ID = "node_" + d.substore.Env.RandomHex()
+					} else {
+						nodes[i].ID = "node_" + randomNodeHex()
+					}
 				}
 			}
 		}
@@ -116,7 +131,11 @@ func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, op
 		}
 		logx.Get("backend.routes.aggregations").Warningf(msgSourceFailed, weburl.SafeErrorDetails(err))
 		proxies = nil
-		cache, cacheErr := substore.LoadCache(ctx, source.ID)
+		r := d.repo
+		if r == nil {
+			r, _ = repo.GetRepository(ctx)
+		}
+		cache, cacheErr := substore.LoadCache(ctx, r, source.ID)
 		if cacheErr != nil {
 			return sourceResult{err: cacheErr}
 		}
@@ -204,7 +223,11 @@ func (d *typedDelivery) convertNode(ctx context.Context, value node) (Proxy, err
 	} else if err := json.Unmarshal(value.raw, &n); err != nil {
 		return nil, err
 	}
-	graph, err := convert.NodeProxy(ctx, n, convert.OptionalNodeConverter(substore.NativeConverter()))
+	var conv convert.NodeConverter
+	if d.substore != nil {
+		conv = d.substore.Client
+	}
+	graph, err := convert.NodeProxy(ctx, n, convert.OptionalNodeConverter(conv))
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +285,10 @@ func (d *typedDelivery) validate(proxies []Proxy, name, format string) error {
 // RenderProvider binds the typed provider callback without re-decoding Config in
 // each aggregation or each node. Existing HTTP adapters remain separate codecs.
 func RenderProvider(ctx context.Context, agg model.Aggregation, config *model.Config, main *yamlx.Node, snapshot *provider.DeliverySnapshot, fetch refresh.FetchSourceFn) (*provider.Artifact, error) {
+	return renderProviderWith(ctx, nil, nil, agg, config, main, snapshot, fetch)
+}
+
+func renderProviderWith(ctx context.Context, r *repo.Repository, sub *substore.Service, agg model.Aggregation, config *model.Config, main *yamlx.Node, snapshot *provider.DeliverySnapshot, fetch refresh.FetchSourceFn) (*provider.Artifact, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -277,8 +304,10 @@ func RenderProvider(ctx context.Context, agg model.Aggregation, config *model.Co
 		}
 	}
 	d := newTypedDelivery(config, main, snapshot)
-	r := typedResource(agg.ID, agg.Name, agg.Enabled)
-	a := aggregation{resource: r, Subscriptions: agg.Subscriptions, Nodes: agg.Nodes}
+	d.repo = r
+	d.substore = sub
+	res := typedResource(agg.ID, agg.Name, agg.Enabled)
+	a := aggregation{resource: res, Subscriptions: agg.Subscriptions, Nodes: agg.Nodes}
 	if agg.RegexFilter != nil {
 		a.Regex, err = json.Marshal(*agg.RegexFilter)
 		if err != nil {

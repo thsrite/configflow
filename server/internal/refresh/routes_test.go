@@ -122,7 +122,7 @@ func TestRunNowRefreshesInBackgroundAndRejectsUnknownSources(t *testing.T) {
 	if row["last_status"] != "success" || row["last_trigger"] != "manual" || !testjson.Equal(row["run_count"], 1) || row["running"] != false {
 		t.Fatalf("unexpected row: %v", row)
 	}
-	cache, err := substore.LoadCache(srv.Context(), "s")
+	cache, err := substore.LoadCache(srv.Context(), srv.Repo, "s")
 	if err != nil || cache == nil || cache.Count == nil || int64(*cache.Count) != 1 {
 		t.Fatal(cache, err)
 	}

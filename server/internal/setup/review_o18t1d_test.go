@@ -70,7 +70,7 @@ func TestReviewO18T1dLegacyCacheWithoutURL(t *testing.T) {
 		"nodes":         json.RawMessage(`[]`),
 	}
 	record := &Record{SubscriptionIDs: []string{"s1"}}
-	path, err := substore.CachePath(ctx, "s1")
+	path, err := substore.CachePath(ctx, r, "s1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestReviewO18T1dLegacyCacheWithoutURL(t *testing.T) {
 		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		_, _, _, err := resourceNodes(ctx, fields, record)
+		_, _, _, err := resourceNodes(ctx, r, fields, record)
 		if changed := err != nil && strings.Contains(err.Error(), msgChangedSourceURL); changed != tt.changed {
 			t.Errorf("%s: err = %v, want changed=%v", tt.metadata, err, tt.changed)
 		}

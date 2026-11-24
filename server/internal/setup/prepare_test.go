@@ -18,7 +18,7 @@ func preparedFixture(t *testing.T, goal string) (*Service, context.Context) {
 	s, ctx := serviceFixture(t, goal)
 	s.owners.DNS = identityDNS()
 	gateway.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	err := s.repository.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 		return shared.SetJSON("nodes", json.RawMessage(`[{"id":"synthetic-node","name":"Synthetic node","type":"ss","server":"192.0.2.10","port":443,"params":{"password":"synthetic-node-password","cipher":"aes-128-gcm"}}]`))
 	})

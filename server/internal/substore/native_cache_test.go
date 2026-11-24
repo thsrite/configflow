@@ -79,7 +79,7 @@ func TestN89NumericCacheIDReference(t *testing.T) {
 		return &shared, nil, nil
 	}
 	t.Cleanup(func() { getShared = previous })
-	removed, err := PruneOrphanCaches(ctx)
+	removed, err := PruneOrphanCaches(ctx, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestN89CacheWriteOwnerLifetime(t *testing.T) {
 		for _, shutdown := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/shutdown=%t", operation, shutdown), func(t *testing.T) {
 				base, r := sharedRepo(t)
-				if _, err := SaveCache(base, "orphan", []model.Node{{Name: "Old"}}, nil); err != nil {
+				if _, err := SaveCache(base, r, "orphan", []model.Node{{Name: "Old"}}, nil); err != nil {
 					t.Fatal(err)
 				}
 				dir, err := r.SharedCacheDir()
@@ -139,11 +139,11 @@ func TestN89CacheWriteOwnerLifetime(t *testing.T) {
 				}
 				switch operation {
 				case "save":
-					_, err = SaveCache(ctx, "keep", []model.Node{{Name: "New"}}, nil)
+					_, err = SaveCache(ctx, r, "keep", []model.Node{{Name: "New"}}, nil)
 				case "delete":
-					_, err = DeleteSubscriptionCache(ctx, "keep")
+					_, err = DeleteSubscriptionCache(ctx, r, "keep")
 				case "prune":
-					_, err = PruneOrphanCaches(ctx)
+					_, err = PruneOrphanCaches(ctx, r)
 				}
 				if shutdown {
 					if !errors.Is(err, context.Canceled) {

@@ -32,12 +32,8 @@ func TestN89RuntimeDirectoryExplainsEnvironmentAndDoesNotWrite(t *testing.T) {
 				}
 				t.Setenv(name, selected)
 				owner.Directory = ""
-				t.Cleanup(SetDefault(h.service))
-				if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}) })
-				Wire()
+				rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+				h.service.Register(rt)
 				var invalid *RuntimeDirectoryError
 				_, err := owner.Snapshot(context.Background(), false)
 				if !errors.As(err, &invalid) || invalid.Variable != name || invalid.Path != selected {

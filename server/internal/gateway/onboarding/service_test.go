@@ -23,7 +23,7 @@ import (
 func testService(t *testing.T) *Service {
 	t.Helper()
 	gateway.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)

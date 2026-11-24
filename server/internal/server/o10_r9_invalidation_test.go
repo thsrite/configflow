@@ -23,6 +23,7 @@ func TestO10ReuseTablesFollowInputChanges(t *testing.T) {
 	}
 	f := newO10Fixture(t)
 	ctx := f.srv.Context()
+	r := f.srv.Repo
 	routes := []string{
 		"/api/profiles/default/subscriptions/" + o10SubA + "/proxies",
 		"/api/profiles/default/subscriptions/" + o10SubA + "/proxies?format=surge",
@@ -62,7 +63,7 @@ func TestO10ReuseTablesFollowInputChanges(t *testing.T) {
 
 	// 1. The node cache is rewritten within the same second with a file of
 	// the same size: one node renamed to a name of the same length.
-	path, err := substore.CachePath(ctx, o10SubA)
+	path, err := substore.CachePath(ctx, r, o10SubA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +71,7 @@ func TestO10ReuseTablesFollowInputChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := substore.LoadCache(ctx, o10SubA)
+	before, err := substore.LoadCache(ctx, r, o10SubA)
 	if err != nil || before == nil {
 		t.Fatalf("cache: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestO10ReuseTablesFollowInputChanges(t *testing.T) {
 	nodes := append([]model.Node(nil), before.Nodes...)
 	nodes[0].Name = renamed
 	metadata := *before.Metadata
-	if _, err := substore.SaveCache(ctx, o10SubA, nodes, &metadata); err != nil {
+	if _, err := substore.SaveCache(ctx, r, o10SubA, nodes, &metadata); err != nil {
 		t.Fatal(err)
 	}
 	newInfo, err := os.Stat(path)

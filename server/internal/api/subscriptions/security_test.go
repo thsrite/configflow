@@ -15,12 +15,13 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/substore"
 	"configflow/internal/testjson"
 )
 
 func TestGlobalGateAndProfileToken(t *testing.T) {
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	logFile := filepath.Join(t.TempDir(), "provider.log")
 	logger, err := logx.Setup(logx.Config{File: logFile, Level: logx.Debug})
 	if err != nil {
@@ -146,6 +147,6 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 			return err
 		}
 	}
-	_, err = substore.SaveCache(ctx, id, nodes, receipt)
+	_, err = substore.SaveCache(ctx, func() *repo.Repository { r, _ := repo.GetRepository(ctx); return r }(), id, nodes, receipt)
 	return err
 }

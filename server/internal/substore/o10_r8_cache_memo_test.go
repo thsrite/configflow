@@ -28,13 +28,13 @@ func manyCacheNodes(t *testing.T, n int, tag string) []model.Node {
 // gets its own record, and a rewritten or removed file is seen at once.
 func TestO10CacheDecodeReusedWhileFileUnchanged(t *testing.T) {
 	ctx, r := sharedRepo(t)
-	must[*Cache](t)(SaveCache(ctx, "keep", manyCacheNodes(t, 200, "a"), &CacheMetadata{URL: new("https://example.test/keep"), FetchedAt: new("2026-01-01T00:00:00Z")}))
+	must[*Cache](t)(SaveCache(ctx, r, "keep", manyCacheNodes(t, 200, "a"), &CacheMetadata{URL: new("https://example.test/keep"), FetchedAt: new("2026-01-01T00:00:00Z")}))
 
-	first := must[*Cache](t)(LoadCache(ctx, "keep"))
+	first := must[*Cache](t)(LoadCache(ctx, r, "keep"))
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	second := must[*Cache](t)(LoadCache(ctx, "keep"))
+	second := must[*Cache](t)(LoadCache(ctx, r, "keep"))
 	runtime.ReadMemStats(&after)
 	if len(second.Nodes) != 200 {
 		t.Fatalf("nodes = %d", len(second.Nodes))
@@ -50,36 +50,36 @@ func TestO10CacheDecodeReusedWhileFileUnchanged(t *testing.T) {
 	first.Nodes = append(first.Nodes, model.Node{Name: "extra"})
 	first.Metadata.URL = new("https://changed.example.test")
 	*first.Count = 1
-	third := must[*Cache](t)(LoadCache(ctx, "keep"))
+	third := must[*Cache](t)(LoadCache(ctx, r, "keep"))
 	if third.Nodes[0].Name != "a-000" || len(third.Nodes) != 200 || *third.Metadata.URL != "https://example.test/keep" || *third.Count != 200 {
 		t.Fatalf("kept decode modified through a copy: %q %d %q %d", third.Nodes[0].Name, len(third.Nodes), *third.Metadata.URL, *third.Count)
 	}
-	shared := must[*Cache](t)(LoadCacheShared(ctx, "keep"))
-	if again := must[*Cache](t)(LoadCacheShared(ctx, "keep")); again != shared {
+	shared := must[*Cache](t)(LoadCacheShared(ctx, r, "keep"))
+	if again := must[*Cache](t)(LoadCacheShared(ctx, r, "keep")); again != shared {
 		t.Fatal("shared record not stable while the file is unchanged")
 	}
-	encoded := must[json.RawMessage](t)(LoadCacheJSON(ctx, "keep"))
+	encoded := must[json.RawMessage](t)(LoadCacheJSON(ctx, r, "keep"))
 	direct := must[[]byte](t)(model.Marshal(third))
 	if !bytes.Equal(encoded, direct) {
 		t.Fatalf("encoded cache differs from the record's encoding")
 	}
-	summary := must[*CacheSummary](t)(LoadCacheSummary(ctx, "keep"))
+	summary := must[*CacheSummary](t)(LoadCacheSummary(ctx, r, "keep"))
 	if !summary.HasNodes || summary.URL == nil || *summary.URL != "https://example.test/keep" {
 		t.Fatalf("summary: %+v", summary)
 	}
 
 	// A rewrite (same node count, so the same size is likely) is seen at once.
-	must[*Cache](t)(SaveCache(ctx, "keep", manyCacheNodes(t, 200, "b"), &CacheMetadata{URL: new("https://example.test/moved"), FetchedAt: new("2026-01-01T00:00:00Z")}))
-	if got := must[*Cache](t)(LoadCache(ctx, "keep")); got.Nodes[0].Name != "b-000" || *got.Metadata.URL != "https://example.test/moved" {
+	must[*Cache](t)(SaveCache(ctx, r, "keep", manyCacheNodes(t, 200, "b"), &CacheMetadata{URL: new("https://example.test/moved"), FetchedAt: new("2026-01-01T00:00:00Z")}))
+	if got := must[*Cache](t)(LoadCache(ctx, r, "keep")); got.Nodes[0].Name != "b-000" || *got.Metadata.URL != "https://example.test/moved" {
 		t.Fatalf("rewrite not seen: %q %q", got.Nodes[0].Name, *got.Metadata.URL)
 	}
-	if got := must[*Cache](t)(LoadCacheShared(ctx, "keep")); got == shared || got.Nodes[0].Name != "b-000" {
+	if got := must[*Cache](t)(LoadCacheShared(ctx, r, "keep")); got == shared || got.Nodes[0].Name != "b-000" {
 		t.Fatal("shared record not replaced after a rewrite")
 	}
-	if got := must[*CacheSummary](t)(LoadCacheSummary(ctx, "keep")); got.URL == nil || *got.URL != "https://example.test/moved" {
+	if got := must[*CacheSummary](t)(LoadCacheSummary(ctx, r, "keep")); got.URL == nil || *got.URL != "https://example.test/moved" {
 		t.Fatalf("summary not refreshed: %+v", got)
 	}
-	if got := must[json.RawMessage](t)(LoadCacheJSON(ctx, "keep")); !bytes.Contains(got, []byte("b-000")) {
+	if got := must[json.RawMessage](t)(LoadCacheJSON(ctx, r, "keep")); !bytes.Contains(got, []byte("b-000")) {
 		t.Fatal("encoded cache not refreshed")
 	}
 
@@ -88,25 +88,25 @@ func TestO10CacheDecodeReusedWhileFileUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	for range 2 {
-		if got := must[*Cache](t)(LoadCache(ctx, "keep")); got != nil {
+		if got := must[*Cache](t)(LoadCache(ctx, r, "keep")); got != nil {
 			t.Fatal("malformed cache returned")
 		}
-		if got := must[*CacheSummary](t)(LoadCacheSummary(ctx, "keep")); got != nil {
+		if got := must[*CacheSummary](t)(LoadCacheSummary(ctx, r, "keep")); got != nil {
 			t.Fatal("malformed summary returned")
 		}
 	}
 
-	must[*Cache](t)(SaveCache(ctx, "keep", manyCacheNodes(t, 3, "c"), nil))
-	if got := must[*Cache](t)(LoadCache(ctx, "keep")); len(got.Nodes) != 3 {
+	must[*Cache](t)(SaveCache(ctx, r, "keep", manyCacheNodes(t, 3, "c"), nil))
+	if got := must[*Cache](t)(LoadCache(ctx, r, "keep")); len(got.Nodes) != 3 {
 		t.Fatal("valid file after a malformed one not read")
 	}
-	if removed := must[bool](t)(DeleteSubscriptionCache(ctx, "keep")); !removed {
+	if removed := must[bool](t)(DeleteSubscriptionCache(ctx, r, "keep")); !removed {
 		t.Fatal("not removed")
 	}
-	if got := must[*Cache](t)(LoadCache(ctx, "keep")); got != nil {
+	if got := must[*Cache](t)(LoadCache(ctx, r, "keep")); got != nil {
 		t.Fatal("removed cache still returned")
 	}
-	if got := must[json.RawMessage](t)(LoadCacheJSON(ctx, "keep")); got != nil {
+	if got := must[json.RawMessage](t)(LoadCacheJSON(ctx, r, "keep")); got != nil {
 		t.Fatal("removed cache still encoded")
 	}
 }

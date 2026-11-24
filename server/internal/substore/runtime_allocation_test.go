@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func modeReadFixture(tb testing.TB, size int) context.Context {
+func modeReadFixture(tb testing.TB, size int) (context.Context, *repo.Repository) {
 	tb.Helper()
 	r, err := repo.Open(tb.TempDir(), repo.Options{})
 	if err != nil {
@@ -20,7 +20,7 @@ func modeReadFixture(tb testing.TB, size int) context.Context {
 	}
 	// Allocation measurements exclude the test-only view guard's encodings.
 	r.SetViewGuard(nil)
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	data, _ := json.Marshal(strings.Repeat("x", size))
 	if err := r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
 		mode := "always"
@@ -29,19 +29,19 @@ func modeReadFixture(tb testing.TB, size int) context.Context {
 	}); err != nil {
 		tb.Fatal(err)
 	}
-	if mode, err := GetMode(ctx); err != nil || mode != "always" {
+	if mode, err := GetMode(ctx, r); err != nil || mode != "always" {
 		tb.Fatalf("mode fixture: %s %v", mode, err)
 	}
-	return ctx
+	return ctx, r
 }
 func BenchmarkN89RuntimeMode(b *testing.B) {
 	for _, size := range []int{0, 64 << 10, 1 << 20} {
 		b.Run(fmt.Sprint(size), func(b *testing.B) {
-			ctx := modeReadFixture(b, size)
+			ctx, r := modeReadFixture(b, size)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				if mode, err := GetMode(ctx); err != nil || mode != "always" {
+				if mode, err := GetMode(ctx, r); err != nil || mode != "always" {
 					b.Fatalf("mode: %s %v", mode, err)
 				}
 			}
@@ -50,10 +50,10 @@ func BenchmarkN89RuntimeMode(b *testing.B) {
 }
 func TestN89RuntimeModeAllocationBudget(t *testing.T) {
 	measure := func(size int) int64 {
-		ctx := modeReadFixture(t, size)
+		ctx, r := modeReadFixture(t, size)
 		result := testing.Benchmark(func(b *testing.B) {
 			for b.Loop() {
-				if mode, err := GetMode(ctx); err != nil || mode != "always" {
+				if mode, err := GetMode(ctx, r); err != nil || mode != "always" {
 					b.Fatalf("mode: %s %v", mode, err)
 				}
 			}

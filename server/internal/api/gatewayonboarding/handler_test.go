@@ -22,7 +22,7 @@ import (
 // even if the package-level hook is installed (O17 rule 2.2-1).
 func TestNewHandlerNilAdopterFailsClosed(t *testing.T) {
 	gateway.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	dir := t.TempDir()
 	r, err := repo.OpenDefault(dir)
 	if err != nil {

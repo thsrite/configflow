@@ -31,7 +31,7 @@ func testServer(t *testing.T) *httpxtest.Server {
 func testServerWithSplitReader(t *testing.T, readSplit func(context.Context, *repo.Repository, string) (*routersplit.Context, error)) *httpxtest.Server {
 	t.Helper()
 	gateway.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	h := apionboarding.NewHandler(nil, onboarding.CheckDNSLoop, setup.AdoptOwnedWrite)
 	h.ReadSplitContext = readSplit
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(h.Register)})

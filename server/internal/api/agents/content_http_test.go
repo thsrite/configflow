@@ -21,6 +21,7 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/substore"
 	"configflow/internal/testjson"
 )
@@ -43,6 +44,7 @@ func contentBundle(t *testing.T, main, rules string) *deploy.Bundle {
 
 type contentHTTP struct {
 	s         *httpxtest.Server
+	sub       *substore.Service
 	manager   *core.Manager
 	admin     httpxtest.Option
 	candidate atomic.Pointer[deploy.Bundle]
@@ -59,8 +61,9 @@ func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTT
 		t.Fatal(err)
 	}
 	lifecycle.Start(context.Background())
-	WireContentSync()
 	f := &contentHTTP{s: httpxtest.New(t, httpxtest.Options{DefaultFactories: true, Auth: authenticated, Register: httpxtest.Routes(Register)})}
+	f.sub = substore.NewService(substore.NewEnvFor(f.s.Repo))
+	WireContentSyncWith(lifecycle.Current(), f.sub)
 	old := contentBundle(t, "mode: rule\n", "DOMAIN,old.example.test\n")
 	f.candidate.Store(old)
 	fp, err := deploy.Fingerprint(old.Manifest())
@@ -140,7 +143,6 @@ func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTT
 		f.manager.Close()
 		lifecycle.Stop(8 * time.Second)
 		restore()
-		substore.SetContentSyncInvalidator(nil)
 	})
 	if authenticated {
 		f.admin = f.s.Login()
@@ -235,7 +237,7 @@ func TestContentHTTPDiffPagingStoredRedactionAndSubstoreInvalidation(t *testing.
 		fmt.Fprintf(&lines, "DOMAIN,fresh-%03d.example.test\n", i)
 	}
 	f.candidate.Store(contentBundle(t, "mode: global\nsecret: external-user-secret\n", lines.String()))
-	_, err := fixtureSaveSubscriptionNodes(f.s.Context(), "synthetic-feed", []any{}, map[string]any{"hosts": map[string]any{"entries": map[string]any{"host.example.test": "192.0.2.4"}}})
+	_, err := fixtureSaveSubscriptionNodes(f.s.Context(), f.sub, "synthetic-feed", []any{}, map[string]any{"hosts": map[string]any{"entries": map[string]any{"host.example.test": "192.0.2.4"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +338,7 @@ func TestContentHTTPMissingReceiptUsesDigests(t *testing.T) {
 	}
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata map[string]any) (map[string]any, error) {
+func fixtureSaveSubscriptionNodes(ctx context.Context, sub *substore.Service, id string, value any, metadata map[string]any) (map[string]any, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
@@ -356,7 +358,8 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 			return nil, err
 		}
 	}
-	cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+	r, _ := repo.GetRepository(ctx)
+	cache, err := sub.SaveCache(ctx, r, id, nodes, receipt)
 	if err != nil {
 		return nil, err
 	}

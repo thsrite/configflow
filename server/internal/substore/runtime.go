@@ -43,13 +43,12 @@ func IsRuntimeUnavailable(err error) bool {
 
 // GetMode is sub_store_runtime.get_mode(): system_config.sub_store_mode,
 // read from the settings alone ("on_demand" unless it is "always").
-func GetMode(ctx context.Context) (string, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return "", err
+func GetMode(ctx context.Context, r *repo.Repository) (string, error) {
+	if r == nil {
+		return "", errors.New("substore: repository is nil")
 	}
 	mode := "on_demand"
-	err = r.View(ctx, func(document *model.Document) error {
+	err := r.View(ctx, func(document *model.Document) error {
 		value := document.System.SystemConfig.SubStoreMode
 		if value != nil && (*value == "on_demand" || *value == "always") {
 			mode = *value
@@ -59,14 +58,13 @@ func GetMode(ctx context.Context) (string, error) {
 	return mode, err
 }
 
-func saveMode(ctx context.Context, mode string) error {
+func saveMode(ctx context.Context, r *repo.Repository, mode string) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return err
+	if r == nil {
+		return errors.New("substore: repository is nil")
 	}
 	if err := r.UpdateSystem(ctx, func(ctx context.Context, system *model.System) error {
 		if err := ctx.Err(); err != nil {
@@ -349,7 +347,7 @@ func (r *Runtime) mode(ctx context.Context) (string, error) {
 	if r.getMode != nil {
 		return r.getMode(ctx)
 	}
-	return GetMode(ctx)
+	return GetMode(ctx, r.env.Repo)
 }
 
 // ensureRunning is _ensure_running (caller holds the control lock).
@@ -485,7 +483,9 @@ func (r *Runtime) SetMode(ctx context.Context, mode string) error {
 			}
 			save := r.saveMode
 			if save == nil {
-				save = saveMode
+				save = func(ctx context.Context, mode string) error {
+					return saveMode(ctx, r.env.Repo, mode)
+				}
 			}
 			if err := ctx.Err(); err != nil {
 				return err

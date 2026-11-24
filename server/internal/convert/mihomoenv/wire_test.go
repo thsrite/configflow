@@ -5,11 +5,15 @@ import (
 	"testing"
 
 	"configflow/internal/convert"
+	"configflow/internal/provider"
+	"configflow/internal/substore"
 )
 
 func TestProductionWireRegistersEveryCallback(t *testing.T) {
 	t.Cleanup(convert.ResetMihomoEnvironmentForTest(t))
-	Wire()
+	if err := WireWith(nil, substore.NewService(substore.NewEnv()), provider.New(provider.Options{})); err != nil {
+		t.Fatal(err)
+	}
 	env := convert.CurrentMihomoEnvironment()
 	if err := env.Clients.Check(); err != nil {
 		t.Fatal(err)

@@ -32,7 +32,7 @@ func decodeBody(t *testing.T, res *httpxtest.Result) map[string]any {
 func testServer(t *testing.T) *httpxtest.Server {
 	t.Helper()
 	gateway.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(Register)})
 	ctx := s.Context()
 	err := s.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {

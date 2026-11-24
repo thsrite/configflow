@@ -103,10 +103,11 @@ func TestN88dShutdownBetweenCacheAndArtifact(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"entries":{"example.com":["192.0.2.1"]}}`), &hosts); err != nil {
 		t.Fatal(err)
 	}
-	substore.SetContentSyncInvalidator(func(context.Context) error { runtime.Shutdown(context.Background()); return nil })
-	defer substore.SetContentSyncInvalidator(nil)
+	sub := substore.NewService(substore.NewEnvFor(r))
+	t.Cleanup(sub.OnContentChange(func(context.Context) error { runtime.Shutdown(context.Background()); return nil }))
+	pv := New(Options{Repo: r, SubStore: sub})
 	bundle := []*Artifact{{AggregationID: "agg", Content: "proxies: []", CacheUpdates: []CacheWrite{{SubID: "first", Nodes: []model.Node{{Name: "Node"}}, Metadata: &substore.CacheMetadata{Hosts: &hosts}}, {SubID: "second", Nodes: []model.Node{{Name: "Other"}}}}}}
-	err := CommitArtifacts(ctx, "default", bundle)
+	err := pv.CommitArtifacts(ctx, "default", bundle)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}

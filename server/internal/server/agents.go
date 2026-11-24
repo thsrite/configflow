@@ -45,7 +45,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	if opts.Repo == nil {
 		// NewApp() test path: no Manager instance, so the deploy Service and
 		// the Manager receipt check use the package-level fallbacks.
-		gen.deploy = newDeployService(deploy.Options{})
+		gen.deploy = newDeployService(deploy.Options{SubStore: gen.substore})
 		agents.RegisterHooks(agents.Hooks{ReceiptMatches: deploy.ReceiptMatches})
 		rulesync.WireOn(rt)
 		// Finished rule-source refreshes wake the package rule-sync loop, on
@@ -118,7 +118,8 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 		Pair: func(ctx context.Context, _ *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
 			return ha.PublishPair(ctx, id, b, o)
 		},
-		IPv6: ip.EnrollSource,
+		IPv6:     ip.EnrollSource,
+		SubStore: gen.substore,
 	})
 
 	// Transitional boundary bridge for packages not yet migrated to explicit

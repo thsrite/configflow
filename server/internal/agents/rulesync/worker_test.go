@@ -58,7 +58,7 @@ type syncFixture struct {
 
 func newWorkerFixture(t *testing.T, service string) *syncFixture {
 	t.Helper()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	ctx, s := fixtureService(t)
 	fake := &syncFake{nativeStatus: "succeeded"}
 	device := agentfake.New(agentfake.Options{AgentID: "device", Token: "synthetic-rule-token", ServiceType: service})

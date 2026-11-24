@@ -110,7 +110,7 @@ func equalJSON(t *testing.T, label string, got, want json.RawMessage) {
 // this independent corpus contains no Mihomo loop and injects that seam only.
 func TestPythonPreparation(t *testing.T) {
 	gateway.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	rows := pythonRows(t)
 	t.Logf("real Python boundary cases: %d", len(rows))
 	for _, row := range rows {

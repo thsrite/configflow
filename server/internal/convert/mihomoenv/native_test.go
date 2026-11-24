@@ -17,16 +17,17 @@ func TestN89NativeEnvironmentPreservesShutdownAndCacheRecords(t *testing.T) {
 	runtime.Start(context.Background())
 	bound := runtime.BindRequest(context.Background())
 	runtime.Shutdown(context.Background())
-	env := NativeEnv()
-	if node, err := env.Converter.ConvertProxy(bound, "ss://synthetic"); node != nil || !errors.Is(err, context.Canceled) {
-		t.Fatalf("native conversion lost Runtime shutdown: %v", err)
-	}
 	repository, err := repo.OpenDefault(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), repository)
-	if _, err := substore.SaveCache(ctx, "source", []model.Node{{Name: "Node", Type: "http", Server: "192.0.2.1", Port: model.IntPtr(443)}}, nil); err != nil {
+	sub := substore.NewService(substore.NewEnvFor(repository))
+	env := NativeEnvFor(repository, sub, nil)
+	if node, err := env.Converter.ConvertProxy(bound, "ss://synthetic"); node != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("native conversion lost Runtime shutdown: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := substore.SaveCache(ctx, repository, "source", []model.Node{{Name: "Node", Type: "http", Server: "192.0.2.1", Port: model.IntPtr(443)}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	data, err := env.LoadSubscriptionCache(ctx, "source")

@@ -44,7 +44,8 @@ func TestCachedProxyPolicySkipsAreCountedWithoutNodeSecrets(t *testing.T) {
 		node("private-node-b", "type: ss\npassword: fixture-secret-value\nx: !!bool fixture-secret-value"),
 		node("other", ""),
 	}
-	got, err := cachedProxies(context.Background(), model.Subscription{}, nodes, false)
+	h := NewHandler(nil, nil, nil, nil)
+	got, err := h.cachedProxies(context.Background(), model.Subscription{}, nodes, false)
 	if err != nil || len(got) != 2 || got[0].text("name") != "good" || got[1].text("name") != "other" {
 		t.Fatalf("lenient: %v %v", got, err)
 	}
@@ -59,7 +60,7 @@ func TestCachedProxyPolicySkipsAreCountedWithoutNodeSecrets(t *testing.T) {
 		}
 	}
 	logs.Reset()
-	got, err = cachedProxies(context.Background(), model.Subscription{}, nodes, true)
+	got, err = h.cachedProxies(context.Background(), model.Subscription{}, nodes, true)
 	var yamlError *convert.ProxyYAMLError
 	if got != nil || !errors.As(err, &yamlError) || !referenceError(err) {
 		t.Fatalf("strict validation: %v %v", got, err)

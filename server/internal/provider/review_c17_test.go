@@ -55,7 +55,7 @@ func TestReviewBundleAndCommitFinishWhenTheRequestIsCancelled(t *testing.T) {
 	if err := CommitArtifacts(ctx, "default", bundle); err != nil {
 		t.Fatal(err)
 	}
-	if cache, _ := substore.LoadCache(base, "s"); cache == nil {
+	if cache, _ := substore.LoadCache(base, r, "s"); cache == nil {
 		t.Fatal("node cache not committed")
 	}
 	path, _ := r.ProfilePath("default", "providers/agg.yaml")

@@ -341,15 +341,15 @@ func TestModeIsReadFromTheSettingsAlone(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if mode := must[string](t)(GetMode(ctx)); mode != "on_demand" {
+	if mode := must[string](t)(GetMode(ctx, r)); mode != "on_demand" {
 		t.Fatalf("mode %q", mode)
 	}
 	setMode("always")
-	if mode := must[string](t)(GetMode(ctx)); mode != "always" {
+	if mode := must[string](t)(GetMode(ctx, r)); mode != "always" {
 		t.Fatalf("mode %q", mode)
 	}
 	setMode("bogus")
-	if mode := must[string](t)(GetMode(ctx)); mode != "on_demand" {
+	if mode := must[string](t)(GetMode(ctx, r)); mode != "on_demand" {
 		t.Fatalf("mode %q", mode)
 	}
 	// The settings are a copy: editing them does not reach the stored document.
@@ -368,7 +368,7 @@ func TestSaveModeChangesOnlyTheMode(t *testing.T) {
 	}
 	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
 	before := must[*model.System](t)(r.System(ctx))
-	if err := saveMode(ctx, "always"); err != nil {
+	if err := saveMode(ctx, r, "always"); err != nil {
 		t.Fatal(err)
 	}
 	after := must[*model.System](t)(r.System(ctx))

@@ -152,7 +152,7 @@ func (s *Service) abandon(ctx context.Context, record *Record, out *abandonPlan)
 				if err := ctx.Err(); err != nil {
 					return err
 				}
-				if _, err := substore.DeleteSubscriptionCache(ctx, id); err != nil {
+				if _, err := substore.DeleteSubscriptionCache(ctx, s.repository, id); err != nil {
 					return err
 				}
 			}

@@ -472,7 +472,7 @@ func TestReviewN810CorruptDiscoveryFileHTTPRefusalAndReset(t *testing.T) {
 	e := newTrafficEnv(t, false)
 	e.setDiscovery(t, true)
 	s := e.s
-	domaindiscovery.Register(s.App.Router)
+	domaindiscovery.NewHandler(s.Repo, discovery.New(discovery.Options{Repo: s.Repo, Agents: e.manager, Traffic: trafficstore.NewService(s.DataDir)})).Register(s.App.Router)
 	path := filepath.Join(s.DataDir, "traffic", "gw.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
@@ -516,7 +516,7 @@ func TestDomainDiscoveryDamagedStoreStatusClearAndRecovery(t *testing.T) {
 	e := newTrafficEnv(t, false)
 	e.setDiscovery(t, true)
 	s := e.s
-	domaindiscovery.Register(s.App.Router)
+	domaindiscovery.NewHandler(s.Repo, discovery.New(discovery.Options{Repo: s.Repo, Agents: e.manager, Traffic: trafficstore.NewService(s.DataDir)})).Register(s.App.Router)
 	path := filepath.Join(s.DataDir, "traffic", "gw.json")
 
 	agentFrom := func(route string) map[string]any {

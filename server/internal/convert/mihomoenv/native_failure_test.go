@@ -45,8 +45,8 @@ func TestNativeOptionalConversionFailureKeepsClientGeneration(t *testing.T) {
 			return "", false
 		}
 	}
-	t.Cleanup(substore.SetDefault(substore.NewService(environment)))
-	t.Cleanup(convert.OverrideMihomoEnvironmentForTest(t, NativeEnv()))
+	sub := substore.NewService(environment)
+	t.Cleanup(convert.OverrideMihomoEnvironmentForTest(t, NativeEnvFor(nil, sub, nil)))
 	config := &model.Config{Profile: &model.Profile{}, ProfileID: "default", Nodes: []model.Node{{ID: "unavailable", Name: "Unavailable", ProxyString: new(source)}}}
 	for _, test := range []struct {
 		name     string

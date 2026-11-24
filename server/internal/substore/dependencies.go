@@ -22,7 +22,6 @@ import (
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"encoding/json"
 )
@@ -87,8 +86,8 @@ func (d *Dependencies) nodeVersion(ctx context.Context) string {
 // requestProxy is _request_options: GitHub requests use the rule download
 // proxy ("" = none).
 func (d *Dependencies) requestProxy(ctx context.Context) string {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
+	r := d.env.Repo
+	if r == nil {
 		return ""
 	}
 	var value string
@@ -103,8 +102,8 @@ func (d *Dependencies) requestProxy(ctx context.Context) string {
 }
 
 func (d *Dependencies) downloadURL(ctx context.Context, address string) string {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
+	r := d.env.Repo
+	if r == nil {
 		return address
 	}
 	var system model.SystemConfig

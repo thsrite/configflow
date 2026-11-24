@@ -4,8 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"configflow/internal/convert"
 	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 type contentChangeSub struct {
@@ -13,10 +14,10 @@ type contentChangeSub struct {
 	fn ContentSyncInvalidator
 }
 
-// Service bundles the module-level singletons of sub_store_client,
-// sub_store_runtime and dependencies (one environment, one runtime, one
-// client, one dependency manager).
+// Service bundles the Sub-Store environment, runtime, client, and dependency
+// manager for one application instance.
 type Service struct {
+	Repo         *repo.Repository
 	Env          *Env
 	Runtime      *Runtime
 	Client       *Client
@@ -32,7 +33,25 @@ type Service struct {
 func NewService(env *Env) *Service {
 	runtime := NewRuntime(env, "", IdleSeconds)
 	client := NewClient(env, runtime)
-	return &Service{Env: env, Runtime: runtime, Client: client, Dependencies: NewDependencies(env, runtime, client)}
+	var r *repo.Repository
+	if env != nil {
+		r = env.Repo
+	}
+	return &Service{Repo: r, Env: env, Runtime: runtime, Client: client, Dependencies: NewDependencies(env, runtime, client)}
+}
+
+// SaveCache persists typed nodes and metadata and notifies subscribers on s
+// when subscription hosts changed.
+func (s *Service) SaveCache(ctx context.Context, r *repo.Repository, id string, nodes []model.Node, metadata *CacheMetadata) (*Cache, error) {
+	if r == nil && s != nil {
+		r = s.Repo
+	}
+	count := model.Int(len(nodes))
+	var notify func(context.Context)
+	if s != nil {
+		notify = s.NotifyContentChange
+	}
+	return saveCache(ctx, r, id, &Cache{Count: &count, Nodes: nodes, Metadata: metadata}, notify)
 }
 
 // OnContentChange subscribes fn to subscription cache host-change events on
@@ -74,11 +93,8 @@ func (s *Service) NotifyContentChange(ctx context.Context) {
 // Register installs the Sub-Store idle monitor on rt when the built-in runtime
 // is available.
 func (s *Service) Register(rt *lifecycle.Runtime) {
-	if s == nil {
+	if s == nil || rt == nil {
 		return
-	}
-	if rt == nil {
-		rt = lifecycle.Current()
 	}
 	if s.Env.IsBuiltinAvailable() {
 		s.Runtime.warnTempDirectory()
@@ -89,55 +105,14 @@ func (s *Service) Register(rt *lifecycle.Runtime) {
 // RegisterStartup installs the orphan subscription cache pruning step on rt.
 func (s *Service) RegisterStartup(rt *lifecycle.Runtime) {
 	if rt == nil {
-		rt = lifecycle.Current()
+		return
 	}
 	rt.RegisterStartup(lifecycle.Startup{Name: "subscription-cache-prune", Run: func(ctx context.Context) error {
 		// Caches of deleted subscriptions hold node credentials.
-		_, err := PruneOrphanCaches(ctx)
+		if s == nil || s.Repo == nil {
+			return nil
+		}
+		_, err := PruneOrphanCaches(ctx, s.Repo)
 		return err
 	}})
 }
-
-var (
-	defaultMu      sync.Mutex
-	defaultService *Service
-)
-
-// Default is the process-wide service (created on first use).
-func Default() *Service {
-	defaultMu.Lock()
-	defer defaultMu.Unlock()
-	if defaultService == nil {
-		defaultService = NewService(NewEnv())
-	}
-	return defaultService
-}
-
-// SetDefault replaces the process-wide service (tests) and returns a
-// function restoring the previous one.
-func SetDefault(s *Service) (restore func()) {
-	defaultMu.Lock()
-	previous := defaultService
-	defaultService = s
-	defaultMu.Unlock()
-	return func() {
-		defaultMu.Lock()
-		defaultService = previous
-		defaultMu.Unlock()
-	}
-}
-
-// NativeConverter supplies the shared typed node-conversion collaborator.
-func NativeConverter() convert.NodeConverter { return Default().Client }
-
-// Wire registers the Sub-Store idle monitor on the default runtime.
-func Wire() { WireOn(lifecycle.Current()) }
-
-// WireOn registers the Sub-Store idle monitor on rt.
-func WireOn(rt *lifecycle.Runtime) { Default().Register(rt) }
-
-// RegisterStartup registers cache pruning on the default runtime.
-func RegisterStartup() { RegisterStartupOn(lifecycle.Current()) }
-
-// RegisterStartupOn registers cache pruning on rt.
-func RegisterStartupOn(rt *lifecycle.Runtime) { Default().RegisterStartup(rt) }

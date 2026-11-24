@@ -190,7 +190,7 @@ func wireOtherSubsystems(opts Options, rt *lifecycle.Runtime, tk *tasks.Registry
 	gen.substore.Register(rt)
 	gen.refresh.Register(rt, tk)
 	disc.Register(rt, tk)
-	if err := wireConvertOnce(gen); err != nil {
+	if err := wireConvertOnce(opts.Repo, gen); err != nil {
 		return nil, err
 	}
 	rtrSvc := wireRouters(opts, rt, tk, nt, ag, rs)

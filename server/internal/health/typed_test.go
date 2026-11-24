@@ -218,7 +218,7 @@ func TestWrongTypedCandidateIdentitiesReadLeniently(t *testing.T) {
 				Now:         time.Now,
 				ProbeBinary: func() (string, error) { return "/test/probe", nil },
 				Collaborators: Collaborators{
-					LoadSubscriptionCache: func(context.Context, string) (json.RawMessage, error) {
+					LoadSubscriptionCache: func(context.Context, *repo.Repository, string) (json.RawMessage, error) {
 						if tt.cacheRaw == "" {
 							return nil, nil
 						}
@@ -287,7 +287,7 @@ func TestNumericNodeNamesAcceptedLosslessly(t *testing.T) {
 	}
 
 	collabs := defaultCollaborators(nil)
-	collabs.LoadSubscriptionCache = func(context.Context, string) (json.RawMessage, error) {
+	collabs.LoadSubscriptionCache = func(context.Context, *repo.Repository, string) (json.RawMessage, error) {
 		return json.RawMessage(`{"nodes":[{"name":` + cachedBig + `,"type":"http","server":"b.example.test","port":80}]}`), nil
 	}
 	collabs.ReadLatencyFile = func(context.Context, *repo.Repository) (json.RawMessage, bool) {

@@ -33,7 +33,6 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/repo/repotest"
 	"configflow/internal/server"
-	"configflow/internal/substore"
 )
 
 const (
@@ -202,7 +201,7 @@ func startGo(t *testing.T, dataDir string) string {
 	}
 	repo.SetRepository(r)
 	t.Cleanup(func() { repo.SetRepository(nil) })
-	t.Cleanup(substore.SetDefault(substore.NewService(substore.NewEnv())))
+
 	app := server.NewApp()
 	// main registers the in-process dispatch of the server's own API
 	// (callback URLs of the rule proxy).

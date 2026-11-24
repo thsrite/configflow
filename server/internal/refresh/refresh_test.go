@@ -212,7 +212,7 @@ func (f *fixture) status(key string) map[string]any {
 }
 
 func (f *fixture) cache() *substore.Cache {
-	cache, err := substore.LoadCache(f.ctx, "s")
+	cache, err := substore.LoadCache(f.ctx, f.repo, "s")
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func (f *fixture) cacheSource(age time.Duration, url string) *substore.Cache {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	value, err := substore.SaveCache(f.ctx, "s", nodes, &substore.CacheMetadata{URL: new(url)})
+	value, err := substore.SaveCache(f.ctx, f.repo, "s", nodes, &substore.CacheMetadata{URL: new(url)})
 	if err != nil {
 		f.t.Fatal(err)
 	}

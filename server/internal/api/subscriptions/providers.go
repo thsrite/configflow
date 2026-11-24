@@ -119,12 +119,12 @@ func (h *Handler) combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 			if referenceError(fetchErr) {
 				return providerFailure(ctx, fetchErr)
 			}
-			cached, err := loadCache(ctx, sub.ID)
+			cached, err := h.loadCache(ctx, sub.ID)
 			if err != nil {
 				return providerFailure(ctx, err)
 			}
 			if cached != nil {
-				proxies, err = cachedProxies(ctx, sub, cached.Nodes, true)
+				proxies, err = h.cachedProxies(ctx, sub, cached.Nodes, true)
 				if err != nil {
 					return providerFailure(ctx, err)
 				}
@@ -193,7 +193,7 @@ func (h *Handler) subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
 			}
 			return httpx.Bytes(200, "text/yaml; charset=utf-8; charset=utf-8", []byte(content)), nil
 		}
-		return delivery.renderSingle(ctx, list[index], format, filters)
+		return delivery.renderSingle(ctx, h, list[index], format, filters)
 	})
 }
 func (d *delivery) validateSingle(ctx context.Context, sub model.Subscription, proxies []proxy) error {
@@ -206,7 +206,7 @@ func (d *delivery) validateSingle(ctx context.Context, sub model.Subscription, p
 	}
 	return nil
 }
-func (d *delivery) renderSingle(ctx context.Context, sub model.Subscription, format string, filters *[2]string) (*httpx.Response, error) {
+func (d *delivery) renderSingle(ctx context.Context, h *Handler, sub model.Subscription, format string, filters *[2]string) (*httpx.Response, error) {
 	alternate := format == "surge" || format == "loon"
 	proxies := []proxy(nil)
 	cacheUpdated := false
@@ -245,7 +245,7 @@ func (d *delivery) renderSingle(ctx context.Context, sub model.Subscription, for
 		}
 	}
 	if proxies == nil {
-		cached, err := loadCache(ctx, sub.ID)
+		cached, err := h.loadCache(ctx, sub.ID)
 		if err != nil {
 			return providerFailure(ctx, err)
 		}
@@ -272,7 +272,7 @@ func (d *delivery) renderSingle(ctx context.Context, sub model.Subscription, for
 		if err != nil {
 			return providerFailure(ctx, err)
 		}
-		proxies, err = cachedProxies(ctx, sub, filtered, false)
+		proxies, err = h.cachedProxies(ctx, sub, filtered, false)
 		if err != nil {
 			return providerFailure(ctx, err)
 		}

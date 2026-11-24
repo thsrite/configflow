@@ -47,7 +47,7 @@ func startDeliveryRuntime(t *testing.T, ctx context.Context) {
 
 func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
 	generation.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(aggregations.Register)})
 	ctx := srv.Context()
 	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, s *model.Shared) error {

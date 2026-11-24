@@ -222,7 +222,7 @@ func collectCandidateSet(ctx context.Context, repository *repo.Repository) (*can
 		if env.Collaborators.LoadSubscriptionCache == nil {
 			continue
 		}
-		cacheRaw, err := env.Collaborators.LoadSubscriptionCache(ctx, sub.ID)
+		cacheRaw, err := env.Collaborators.LoadSubscriptionCache(ctx, repository, sub.ID)
 		if err != nil {
 			return nil, err
 		}

@@ -7,6 +7,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/repo"
 	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
@@ -14,7 +15,7 @@ import (
 
 // resourceNodes keeps cache/filter/conversion decisions with their existing
 // owners. Only serialization to the current compatibility APIs lives here.
-func resourceNodes(ctx context.Context, fields map[string]json.RawMessage, record *Record) (int, []model.Node, []model.Node, error) {
+func resourceNodes(ctx context.Context, r *repo.Repository, fields map[string]json.RawMessage, record *Record) (int, []model.Node, []model.Node, error) {
 	count := 0
 	output := [][]model.Node{{}, {}}
 	var subscriptions []model.Subscription
@@ -47,7 +48,7 @@ func resourceNodes(ctx context.Context, fields map[string]json.RawMessage, recor
 				if !ok {
 					return 0, nil, nil, failure(msgPrepareSource, 409)
 				}
-				cache, err := substore.LoadCache(ctx, id)
+				cache, err := substore.LoadCache(ctx, r, id)
 				if err != nil {
 					return 0, nil, nil, err
 				}
@@ -82,7 +83,7 @@ func resourceNodes(ctx context.Context, fields map[string]json.RawMessage, recor
 				if !resourceEnabled(node.Enabled) {
 					continue
 				}
-				usable, err := convert.NodeProxy(ctx, *node, substore.NativeConverter())
+				usable, err := convert.NodeProxy(ctx, *node, nil)
 				if err != nil {
 					return 0, nil, nil, err
 				}

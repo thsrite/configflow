@@ -261,7 +261,7 @@ func TestProviderPreflightGetsLogicalProfileAndFinishedDocument(t *testing.T) {
 }
 
 func TestMihomoEnvProviderInterval(t *testing.T) {
-	interval := mihomoenv.NativeEnv().ProviderInterval
+	interval := mihomoenv.NativeEnvFor(nil, nil, nil).ProviderInterval
 	if v, err := interval(model.MihomoSettings{}); err != nil || v != refresh.DefaultProviderInterval {
 		t.Fatalf("default: %d %v", v, err)
 	}
@@ -379,7 +379,7 @@ func TestTypedMihomoProviderInterval(t *testing.T) {
 			if err := json.Unmarshal([]byte(tt.source), &settings); err != nil {
 				t.Fatal(err)
 			}
-			got, err := mihomoenv.NativeEnv().ProviderInterval(settings)
+			got, err := mihomoenv.NativeEnvFor(nil, nil, nil).ProviderInterval(settings)
 			if (err != nil) != tt.invalid || (!tt.invalid && got != tt.want) {
 				t.Fatalf("got %d %v", got, err)
 			}

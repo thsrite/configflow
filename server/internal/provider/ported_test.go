@@ -318,7 +318,7 @@ func TestProviderDeliversFilteredProxiesButCachesRawNodes(t *testing.T) {
 
 const policyURL = "https://airport.test/sub?token=private"
 
-func policyCache(t *testing.T, ctx context.Context) *substore.Cache {
+func policyCache(t *testing.T, ctx context.Context, r *repo.Repository) *substore.Cache {
 	node := yamlx.Map(
 		yamlx.Str("name"), yamlx.Str("Remote"),
 		yamlx.Str("type"), yamlx.Str("ss"),
@@ -331,7 +331,7 @@ func policyCache(t *testing.T, ctx context.Context) *substore.Cache {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cache, err := substore.SaveCache(ctx, "s", nodes, &substore.CacheMetadata{URL: new(policyURL)})
+	cache, err := substore.SaveCache(ctx, r, "s", nodes, &substore.CacheMetadata{URL: new(policyURL)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,8 +340,8 @@ func policyCache(t *testing.T, ctx context.Context) *substore.Cache {
 
 // test_subscription_refresh_policy.py::test_publish_preparation_uses_cache_and_stages_no_fake_refresh
 func TestPublishPreparationUsesCacheAndStagesNoFakeRefresh(t *testing.T) {
-	ctx, _ := repoContext(t)
-	before := policyCache(t, ctx)
+	ctx, r := repoContext(t)
+	before := policyCache(t, ctx, r)
 	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": policyURL, "enabled": true, "interval": 0})
 	got, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
 		Fetch: func(context.Context, string, string) (*refresh.SourceResult, error) {
@@ -355,7 +355,7 @@ func TestPublishPreparationUsesCacheAndStagesNoFakeRefresh(t *testing.T) {
 	if !testjson.Equal(mustParseYAML(t, got.Content)["proxies"], want) || len(got.CacheUpdates) != 0 {
 		t.Fatalf("%q %+v", got.Content, got.CacheUpdates)
 	}
-	after, _ := substore.LoadCache(ctx, "s")
+	after, _ := substore.LoadCache(ctx, r, "s")
 	if !testjson.Equal(before, after) {
 		t.Fatal("cache changed")
 	}
@@ -384,7 +384,7 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 		model.TextValue(first.CacheUpdates[0].Metadata.FetchedAt) != model.TextValue(second.CacheUpdates[0].Metadata.FetchedAt) {
 		t.Fatalf("calls %d", calls)
 	}
-	if cache, _ := substore.LoadCache(ctx, "s"); cache != nil {
+	if cache, _ := substore.LoadCache(ctx, r, "s"); cache != nil {
 		t.Fatal("validated nodes written")
 	}
 }

@@ -201,7 +201,7 @@ func (s *Service) ResponseSeconds() float64 {
 
 // PrepareBundle prepares a validated provider bundle using s's collaborators.
 func (s *Service) PrepareBundle(ctx context.Context, config *model.Config, main *yamlx.Node, options DeliveryOptions) ([]*Artifact, error) {
-	return PrepareBundle(ctx, config, main, options)
+	return prepareBundleWith(ctx, s, config, main, options)
 }
 
 // Serve serves a provider response using s's response settings.

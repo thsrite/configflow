@@ -40,7 +40,7 @@ func TestO10T3CacheSummaryMatchesFullCacheDecode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := setup(t, 60)
-			path, err := substore.CachePath(f.ctx, "s")
+			path, err := substore.CachePath(f.ctx, f.repo, "s")
 			if err != nil {
 				t.Fatal(err)
 			}

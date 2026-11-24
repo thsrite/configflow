@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/api/settings"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/substore"
@@ -66,14 +68,22 @@ func subStoreWorld(t *testing.T, builtin bool, latestRelease string) *substore.S
 	release := make(chan struct{})
 	service.Dependencies.Spawner = heldUpdateSpawner{runner: runner, release: release}
 	t.Cleanup(func() { close(release); runner.Shutdown(context.Background()) })
-	t.Cleanup(substore.SetDefault(service))
 	return service
+}
+
+func newSettingsWithSubStore(t *testing.T, svc *substore.Service) *httpxtest.Server {
+	t.Helper()
+	return httpxtest.New(t, httpxtest.Options{Auth: false, Setup: func(app *httpx.App) {
+		svc.Repo = app.Repo
+		svc.Env.Repo = app.Repo
+		settings.NewHandler(app.Repo, svc, nil).Register(app.Router)
+	}})
 }
 
 // test_sub_store_runtime.py::test_mode_route_validation_and_atomic_persistence
 func TestModeRouteValidationAndAtomicPersistence(t *testing.T) {
-	subStoreWorld(t, true, `{}`)
-	srv := newServer(t, false)
+	svc := subStoreWorld(t, true, `{}`)
+	srv := newSettingsWithSubStore(t, svc)
 	for _, body := range []string{"", "[]", "{}", `{"mode": "stop"}`, `{"mode": ["always"]}`, "not json"} {
 		options := []httpxtest.Option{}
 		if body != "" {
@@ -108,15 +118,15 @@ func TestModeRouteValidationAndAtomicPersistence(t *testing.T) {
 
 // An external Sub-Store's mode is managed elsewhere: 409 with the message.
 func TestModeRouteRefusesExternalSubStore(t *testing.T) {
-	subStoreWorld(t, false, `{}`)
-	srv := newServer(t, false)
+	svc := subStoreWorld(t, false, `{}`)
+	srv := newSettingsWithSubStore(t, svc)
 	res := srv.Post(modePath, httpxtest.JSON(map[string]any{"mode": "always"})).WantStatus(409)
 	assertJSON(t, res, map[string]any{"success": false, "message": "外部 Sub-Store 的运行模式由其部署环境管理"})
 }
 
 func TestDependencyListRoute(t *testing.T) {
-	subStoreWorld(t, true, `{"tag_name": "v2.41.0", "assets": [{"name": "sub-store.bundle.js", "browser_download_url": "x"}]}`)
-	srv := newServer(t, false)
+	svc := subStoreWorld(t, true, `{"tag_name": "v2.41.0", "assets": [{"name": "sub-store.bundle.js", "browser_download_url": "x"}]}`)
+	srv := newSettingsWithSubStore(t, svc)
 	response := srv.Get("/api/settings/dependencies?refresh=1").WantStatus(200)
 	var wire struct {
 		Dependencies []struct {
@@ -145,15 +155,16 @@ func TestDependencyListRoute(t *testing.T) {
 }
 
 func TestUpdateRoute(t *testing.T) {
-	subStoreWorld(t, true, `{"tag_name": "v2.41.0", "assets": [{"name": "sub-store.bundle.js", "browser_download_url": "x"}]}`)
-	srv := newServer(t, false)
+	svc := subStoreWorld(t, true, `{"tag_name": "v2.41.0", "assets": [{"name": "sub-store.bundle.js", "browser_download_url": "x"}]}`)
+	srv := newSettingsWithSubStore(t, svc)
 	assertJSON(t, srv.Post("/api/settings/dependencies/sub-store/update").WantStatus(202),
 		map[string]any{"success": true, "message": "开始更新到 2.41.0"})
 	// The (not started) background task still holds the update lock.
 	assertJSON(t, srv.Post("/api/settings/dependencies/sub-store/update").WantStatus(409),
 		map[string]any{"success": false, "message": "已有更新任务在进行中"})
-	subStoreWorld(t, false, `{}`)
-	assertJSON(t, srv.Post("/api/settings/dependencies/sub-store/update").WantStatus(409),
+	svcExt := subStoreWorld(t, false, `{}`)
+	srvExt := newSettingsWithSubStore(t, svcExt)
+	assertJSON(t, srvExt.Post("/api/settings/dependencies/sub-store/update").WantStatus(409),
 		map[string]any{"success": false, "message": "当前环境没有内置 Sub-Store，无法在线更新"})
 }
 

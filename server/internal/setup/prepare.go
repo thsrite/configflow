@@ -255,7 +255,7 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 	for _, key := range []string{"subscriptions", "nodes", "subscription_aggregations", "rule_library"} {
 		configFields[key] = sharedFields[key]
 	}
-	count, subscriptionNodes, manualNodes, err := resourceNodes(ctx, configFields, record)
+	count, subscriptionNodes, manualNodes, err := resourceNodes(ctx, s.repository, configFields, record)
 	if err != nil {
 		return err
 	}

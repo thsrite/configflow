@@ -62,6 +62,7 @@ type SourceOwners struct {
 	SaveNodes  func(context.Context, string, []model.Node, *SourceMetadata) (*NodeCache, error)
 	// LoadNodes may return a record shared with other readers: read only.
 	LoadNodes        func(context.Context, string) (*NodeCache, error)
+	SharedLoader     bool
 	LoadCacheSummary func(context.Context, string) (*substore.CacheSummary, error)
 	FilterNodes      func(model.Subscription, []model.Node) []model.Node
 	Converter        convert.NodeConverter

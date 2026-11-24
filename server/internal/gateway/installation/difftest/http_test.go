@@ -121,7 +121,7 @@ func (o *oracle) call(t *testing.T, method, path, body, token string) pyAnswer {
 func setup(t *testing.T) (*httpxtest.Server, string, installation.Record, map[string]json.RawMessage) {
 	t.Helper()
 	gateway.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	deploy.Wire()
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apiagents.Register)})
 	static := t.TempDir()

@@ -1,12 +1,13 @@
 package deploy
 
 import (
-	"configflow/internal/lifecycle"
-	"configflow/internal/lifecycle/lifecycletest"
+	"context"
 	"testing"
 	"time"
 
 	"configflow/internal/agents/agentfake"
+	"configflow/internal/lifecycle"
+	"configflow/internal/lifecycle/lifecycletest"
 )
 
 // A14 review L1: unforced provider details share the one-write-per-second

@@ -656,7 +656,11 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 			}}
 			if o.PreferCached {
 				opts.SubscriptionFetch = func(ctx context.Context, id, url string) (*refresh.SourceResult, error) {
-					result, err := substore.Default().Client.Fetch(ctx, id, url, "", substore.FetchOptions{PreferCached: true})
+					sub := Default().substore
+					if sub == nil {
+						return nil, errors.New("deploy: substore service is nil")
+					}
+					result, err := sub.Client.Fetch(ctx, id, url, "", substore.FetchOptions{PreferCached: true})
 					if err != nil || result == nil {
 						return nil, err
 					}

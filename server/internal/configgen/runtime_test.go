@@ -11,7 +11,7 @@ import (
 )
 
 func TestGenerationOwnerRuntime(t *testing.T) {
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	for _, engine := range []Engine{Mihomo, Surge, Loon, MosDNS, OxiDNS} {
 		for _, shutdown := range []bool{true, false} {
 			t.Run(string(engine)+map[bool]string{true: "/shutdown", false: "/disconnect"}[shutdown], func(t *testing.T) {

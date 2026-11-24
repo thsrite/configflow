@@ -126,7 +126,7 @@ func (s *Service) currentEnv() *RefreshEnv {
 	if value != nil {
 		return value
 	}
-	return DefaultRefreshEnv()
+	return DefaultRefreshEnvFor(s.repo, s.substore)
 }
 
 func (s *Service) pause(context.Context) time.Duration {

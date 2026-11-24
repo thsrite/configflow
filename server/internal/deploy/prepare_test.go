@@ -23,7 +23,7 @@ import (
 )
 
 func TestPythonPrepare(t *testing.T) {
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	raw, err := os.ReadFile("testdata/prepare.json")
 	if err != nil {
 		t.Fatal(err)

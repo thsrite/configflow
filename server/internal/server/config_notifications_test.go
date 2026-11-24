@@ -9,17 +9,23 @@ import (
 
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
-	"configflow/internal/notifications"
 	"configflow/internal/refresh"
 	"configflow/internal/taskstatus"
 	"configflow/internal/testjson"
 )
 
 func TestConfigFindingsFailedReceiptsCreateNotificationsBeforeAllTaskSlotsExist(t *testing.T) {
-	NewApp()
 	srv := httpxtest.New(t, httpxtest.Options{})
+	prod, err := New(srv.Context(), Options{Repo: srv.Repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		prod.Runtime.Shutdown(context.Background())
+		prod.Agents.Close()
+	})
 	ctx := srv.Context()
-	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
+	err = srv.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 		shared.Subscriptions = []model.Subscription{
 			testjson.Decode[model.Subscription](t, map[string]any{"id": "backoff", "name": "Synthetic", "url": "https://feed.example/sub", "interval": 60, "enabled": true}),
 			testjson.Decode[model.Subscription](t, map[string]any{"id": "due", "name": "Due", "url": "https://feed.example/due", "interval": 60}),
@@ -37,7 +43,7 @@ func TestConfigFindingsFailedReceiptsCreateNotificationsBeforeAllTaskSlotsExist(
 	}
 	// A due task completes; projecting all known receipts must also expose
 	// the pre-existing backoff failure without executing that source again.
-	_, err = notifications.TaskStatus(ctx, srv.DataDir).SaveResult(ctx, refresh.SourceTaskKey("due"), taskstatus.Result{OK: true, Trigger: "scheduled"})
+	_, err = prod.Notifications.TaskStatus(ctx, srv.DataDir).SaveResult(ctx, refresh.SourceTaskKey("due"), taskstatus.Result{OK: true, Trigger: "scheduled"})
 	if err != nil {
 		t.Fatal(err)
 	}

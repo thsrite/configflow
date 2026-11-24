@@ -15,7 +15,7 @@ import (
 )
 
 func TestLiveConfigProfileAndAuthentication(t *testing.T) {
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	s := exportApp(t)
 	_, err := s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "phone", Name: "手机:/配置"}, "")
 	if err != nil {
@@ -58,7 +58,7 @@ func TestLiveConfigProfileAndAuthentication(t *testing.T) {
 }
 
 func TestLoonFilenamePercentEncoding(t *testing.T) {
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	s := exportApp(t)
 	name := "Phone @ Home + Office"
 	if _, err := s.Repo.UpdateProfileMetadataRecord(s.Context(), "default", repo.ProfileMetadataUpdate{Name: &name}); err != nil {
@@ -77,7 +77,7 @@ func TestLoonFilenamePercentEncoding(t *testing.T) {
 // the handler for both credential check and render, so both observe the rotated
 // token and never mix the two generations.
 func TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation(t *testing.T) {
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	tests := []struct {
 		name               string
 		path               string

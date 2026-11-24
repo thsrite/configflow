@@ -28,7 +28,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 		{name: "subscription-first"}, {name: "aggregation-first", aggregation: true}, {name: "subscription-current", cached: true}, {name: "aggregation-current", aggregation: true, cached: true}, {name: "missing-cache-failure", fail: true}, {name: "moved-fallback", moved: true}, {name: "uri-conversions", aggregation: true, uri: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			mihomoenv.Wire()
+			mihomoenv.OverrideForTest(t, nil, nil, nil)
 			aggregations.Wire()
 			Wire()
 			f := newPublish(t, agentfake.Options{}, nil)
@@ -74,10 +74,18 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 				}
 				return "", false
 			}
-			restoreService := substore.SetDefault(substore.NewService(env))
-			defer restoreService()
-			restore := provider.SetDeliveryEnv(nil)
-			defer restore()
+			sub := substore.NewService(env)
+			sub.Repo = f.m.Repository()
+			pv := provider.New(provider.Options{Repo: f.m.Repository(), SubStore: sub})
+			aggSvc := aggregations.New(aggregations.ServiceOptions{Provider: pv, Repo: f.m.Repository(), SubStore: sub})
+			_ = pv.SetAggregations(aggSvc.RenderProvider)
+			prevPV := provider.Default()
+			provider.UseService(pv)
+			defer provider.UseService(prevPV)
+			prevDeploy := Default()
+			UseService(New(Options{SubStore: sub}))
+			defer UseService(prevDeploy)
+			mihomoenv.OverrideForTest(t, f.m.Repository(), sub, pv)
 			rawSource, err := f.source.Raw()
 			if err != nil {
 				t.Fatal(err)
@@ -152,7 +160,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 				if e == nil || !IsPreparationFailure(e) {
 					t.Fatal("missing cache accepted", e)
 				}
-				if cache, _ := substore.LoadCache(f.ctx, "selected-sub"); cache != nil {
+				if cache, _ := substore.LoadCache(f.ctx, f.m.Repository(), "selected-sub"); cache != nil {
 					t.Fatal("failed download committed cache")
 				}
 				return
@@ -163,7 +171,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			if e = provider.CommitArtifacts(f.ctx, "default", p.Providers); e != nil {
 				t.Fatal(e)
 			}
-			cache, e := substore.LoadCache(f.ctx, "selected-sub")
+			cache, e := substore.LoadCache(f.ctx, f.m.Repository(), "selected-sub")
 			if e != nil || cache == nil {
 				t.Fatal("download not saved", e)
 			}
@@ -199,7 +207,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			if a != b {
 				t.Fatal("first push is not synced")
 			}
-			cache, e = substore.LoadCache(f.ctx, "selected-sub")
+			cache, e = substore.LoadCache(f.ctx, f.m.Repository(), "selected-sub")
 			if e != nil {
 				t.Fatal(e)
 			}

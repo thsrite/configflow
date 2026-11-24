@@ -16,7 +16,7 @@ import (
 )
 
 func TestGeneratedDownloadsPreviewsAndProfileIsolation(t *testing.T) {
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(api.Register)})
 	if _, err := s.Repo.CreateProfileRecord(s.Context(), repo.ProfileCreation{ID: "office", Name: "Office"}, "default"); err != nil {
 		t.Fatal(err)

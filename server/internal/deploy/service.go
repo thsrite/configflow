@@ -6,6 +6,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/model"
+	"configflow/internal/substore"
 )
 
 // PairPublisher handles HA pair publication when an Agent belongs to an
@@ -17,16 +18,18 @@ type IPv6Enroller func(context.Context, *agents.Manager, string, string, *Source
 
 // Options configures a deploy Service instance.
 type Options struct {
-	Pair PairPublisher
-	IPv6 IPv6Enroller
+	Pair     PairPublisher
+	IPv6     IPv6Enroller
+	SubStore *substore.Service
 }
 
 // Service owns deployment publication hooks and per-Manager preview stores for
 // one server instance.
 type Service struct {
-	mu   sync.RWMutex
-	pair PairPublisher
-	ipv6 IPv6Enroller
+	mu       sync.RWMutex
+	pair     PairPublisher
+	ipv6     IPv6Enroller
+	substore *substore.Service
 
 	previewsMu sync.Mutex
 	previews   map[*agents.Manager]*Previews
@@ -38,6 +41,7 @@ func New(opts Options) *Service {
 	return &Service{
 		pair:     opts.Pair,
 		ipv6:     opts.IPv6,
+		substore: opts.SubStore,
 		previews: map[*agents.Manager]*Previews{},
 	}
 }

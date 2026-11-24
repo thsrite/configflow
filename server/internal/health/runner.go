@@ -81,7 +81,7 @@ func (ExecRunner) Run(ctx context.Context, command Command) (Result, error) {
 type Collaborators struct {
 	NeedsRemoteConversion   func(proxyString string) bool
 	ConvertNode             func(ctx context.Context, node json.RawMessage) (model.Fields, bool)
-	LoadSubscriptionCache   func(ctx context.Context, subID string) (json.RawMessage, error)
+	LoadSubscriptionCache   func(ctx context.Context, r *repo.Repository, subID string) (json.RawMessage, error)
 	FilterSubscriptionNodes func(sub model.Subscription, nodes []json.RawMessage) ([]json.RawMessage, error)
 	ReadLatencyFile         func(ctx context.Context, r *repo.Repository) (json.RawMessage, bool)
 	WriteLatencyFile        func(ctx context.Context, r *repo.Repository, data json.RawMessage) error

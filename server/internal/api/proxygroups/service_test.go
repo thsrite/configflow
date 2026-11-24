@@ -47,7 +47,7 @@ func fixture(t *testing.T) *httpxtest.Server {
 	for _, name := range []string{"HK 01", "HK 02", "JP 01", "广告", "US hidden", "HK 01"} {
 		nodes = append(nodes, model.Node{Name: name, Type: "ss"})
 	}
-	if _, err = substore.SaveCache(s.Context(), "feed", nodes, nil); err != nil {
+	if _, err = substore.SaveCache(s.Context(), s.Repo, "feed", nodes, nil); err != nil {
 		t.Fatal(err)
 	}
 	return s

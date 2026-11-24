@@ -15,6 +15,7 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
+	"configflow/internal/provider"
 	"configflow/internal/refresh"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
@@ -94,7 +95,7 @@ func (f converterHTTP) Do(_ context.Context, r *substore.Request) (*substore.Res
 func TestOneOpaqueMaterializationForMainAndAggregation(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{})
 	aggregations.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	var calls atomic.Int32
 	env := substore.NewEnv()
 	env.HTTP = converterHTTP{&calls}
@@ -108,7 +109,11 @@ func TestOneOpaqueMaterializationForMainAndAggregation(t *testing.T) {
 		return "", false
 	}
 	env.RandomHex = func() string { return "00000001" }
-	t.Cleanup(substore.SetDefault(substore.NewService(env)))
+	sub := substore.NewService(env)
+	pv := provider.New(provider.Options{Repo: srv.Repo, SubStore: sub})
+	aggSvc := aggregations.New(aggregations.ServiceOptions{Provider: pv, Repo: srv.Repo, SubStore: sub})
+	_ = pv.SetAggregations(aggSvc.RenderProvider)
+	mihomoenv.OverrideForTest(t, srv.Repo, sub, pv)
 	config, err := model.DecodeConfig([]byte(`{"profile_id":"default","system_config":{"config_token":"synthetic"},"nodes":[{"id":"relay","name":"relay","type":"http","server":"relay.test","port":80},{"id":"exit","name":"Exit","type":"http","proxy_string":"opaque://exit"}],"subscriptions":[],"subscription_aggregations":[{"id":"a","name":"Aggregate","nodes":["exit"],"subscriptions":[]}],"proxy_groups":[{"id":"g","name":"Entry","type":"select","manual_nodes":["relay"],"aggregations":["a"]}],"rule_configs":[]}`))
 	if err != nil {
 		t.Fatal(err)
@@ -154,7 +159,7 @@ func FuzzAggregationDocument(f *testing.F) {
 func TestPublishedSnapshotSurvivesArtifactReplacement(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{})
 	aggregations.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	agg := json.RawMessage(`{"id":"a","name":"Aggregate","nodes":["n"],"subscriptions":[]}`)
 	cfg := json.RawMessage(`{"profile_id":"default","nodes":[{"id":"n","name":"Original","type":"http","server":"original.test","port":80}],"subscriptions":[],"subscription_aggregations":[{"id":"a","name":"Aggregate","nodes":["n"],"subscriptions":[]}],"proxy_groups":[],"rule_configs":[]}`)
 	result, err := aggregations.Generate(srv.Context(), agg, cfg, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`), Persist: true})

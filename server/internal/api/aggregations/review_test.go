@@ -91,7 +91,7 @@ func TestReviewDeliveryShutdownDoesNotPublish(t *testing.T) {
 	for _, suffix := range []string{"preview", "provider"} {
 		t.Run(suffix, func(t *testing.T) {
 			generation.Wire()
-			mihomoenv.Wire()
+			mihomoenv.OverrideForTest(t, nil, nil, nil)
 			srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(aggregations.Register)})
 			err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 				if err := s.SetJSON("nodes", json.RawMessage(`[]`)); err != nil {

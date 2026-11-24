@@ -588,6 +588,6 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 			return err
 		}
 	}
-	_, err = substore.SaveCache(ctx, id, nodes, receipt)
+	_, err = substore.SaveCache(ctx, func() *repo.Repository { r, _ := repo.GetRepository(ctx); return r }(), id, nodes, receipt)
 	return err
 }

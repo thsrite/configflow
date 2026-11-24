@@ -135,8 +135,6 @@ func startGo(t *testing.T, dataDir string) string {
 	}
 	repo.SetRepository(r)
 	t.Cleanup(func() { repo.SetRepository(nil) })
-	// A fresh service reads the environment of this run.
-	t.Cleanup(substore.SetDefault(substore.NewService(substore.NewEnv())))
 	app := server.NewApp()
 	if _, err := repo.PrepareConfig(repo.WithScope(context.Background())); err != nil {
 		t.Fatal(err)

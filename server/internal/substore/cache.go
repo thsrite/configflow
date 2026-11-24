@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"unicode/utf8"
 )
@@ -32,16 +31,6 @@ var cacheLog = logx.Get("backend.utils.subscription_cache")
 // ContentSyncInvalidator invalidates cached Agent content observations.
 type ContentSyncInvalidator func(context.Context) error
 
-var contentSync atomic.Pointer[ContentSyncInvalidator]
-
-// SetContentSyncInvalidator installs the Agent owner's callback.
-func SetContentSyncInvalidator(fn ContentSyncInvalidator) {
-	if fn == nil {
-		contentSync.Store(nil)
-	} else {
-		contentSync.Store(&fn)
-	}
-}
 func isFileError(err error) bool {
 	var pe *fs.PathError
 	var le *os.LinkError
@@ -49,14 +38,13 @@ func isFileError(err error) bool {
 	return errors.Is(err, store.ErrStorage) || errors.As(err, &pe) || errors.As(err, &le) || errors.As(err, &errno)
 }
 func fileErrorText(err error) string { return err.Error() }
-func ensureCacheDir(ctx context.Context) (string, error) {
+func ensureCacheDir(ctx context.Context, r *repo.Repository) (string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return "", err
+	if r == nil {
+		return "", errors.New("substore: repository is nil")
 	}
 	dir, err := r.SharedCacheDir()
 	if err != nil {
@@ -75,8 +63,8 @@ func cacheName(id string) string {
 }
 
 // CachePath resolves the safe shared cache path.
-func CachePath(ctx context.Context, id string) (string, error) {
-	dir, err := ensureCacheDir(ctx)
+func CachePath(ctx context.Context, r *repo.Repository, id string) (string, error) {
+	dir, err := ensureCacheDir(ctx, r)
 	if err != nil {
 		return "", err
 	}
@@ -90,14 +78,13 @@ func removeFile(path string) error {
 }
 
 // DeleteSubscriptionCache removes a node cache with the canonical repository leaf lease.
-func DeleteSubscriptionCache(ctx context.Context, id string) (bool, error) {
+func DeleteSubscriptionCache(ctx context.Context, r *repo.Repository, id string) (bool, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return false, err
+	if r == nil {
+		return false, errors.New("substore: repository is nil")
 	}
 	if path, err := r.SharedPath(filepath.Join("subscribes", cacheName(id))); err == nil {
 		defer memoForget(path)
@@ -124,14 +111,13 @@ var getShared = func(ctx context.Context, r *repo.Repository) (*model.Shared, []
 }
 
 // PruneOrphanCaches uses one typed shared snapshot before deleting any orphan.
-func PruneOrphanCaches(ctx context.Context) ([]string, error) {
+func PruneOrphanCaches(ctx context.Context, r *repo.Repository) ([]string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+	if r == nil {
+		return nil, errors.New("substore: repository is nil")
 	}
 	shared, issues, err := getShared(ctx, r)
 	if err != nil {
@@ -153,7 +139,7 @@ func PruneOrphanCaches(ctx context.Context) ([]string, error) {
 		}
 		keep[cacheName(sub.ID)] = true
 	}
-	dir, err := ensureCacheDir(ctx)
+	dir, err := ensureCacheDir(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -190,17 +176,17 @@ func PruneOrphanCaches(ctx context.Context) ([]string, error) {
 }
 
 // SaveCache persists typed nodes and metadata in one atomic repository file write.
-func SaveCache(ctx context.Context, id string, nodes []model.Node, metadata *CacheMetadata) (*Cache, error) {
+func SaveCache(ctx context.Context, r *repo.Repository, id string, nodes []model.Node, metadata *CacheMetadata) (*Cache, error) {
 	count := model.Int(len(nodes))
-	return saveCache(ctx, id, &Cache{Count: &count, Nodes: nodes, Metadata: metadata})
+	return saveCache(ctx, r, id, &Cache{Count: &count, Nodes: nodes, Metadata: metadata}, nil)
 }
-func saveCache(ctx context.Context, id string, payload *Cache) (*Cache, error) {
+func saveCache(ctx context.Context, r *repo.Repository, id string, payload *Cache, onHostsChange func(context.Context)) (*Cache, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	metadata := payload.Metadata
-	path, err := CachePath(ctx, id)
+	path, err := CachePath(ctx, r, id)
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +205,7 @@ func saveCache(ctx context.Context, id string, payload *Cache) (*Cache, error) {
 	if metadata != nil && metadata.FetchedAt != nil && *metadata.FetchedAt != "" {
 		payload.UpdatedAt = *metadata.FetchedAt
 	}
-	previous, err := LoadCache(ctx, id)
+	previous, err := LoadCache(ctx, r, id)
 	if err != nil {
 		return nil, err
 	}
@@ -232,10 +218,6 @@ func saveCache(ctx context.Context, id string, payload *Cache) (*Cache, error) {
 		return nil, err
 	}
 	formatted.WriteByte('\n')
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -250,7 +232,7 @@ func saveCache(ctx context.Context, id string, payload *Cache) (*Cache, error) {
 		cacheLog.Info(fmt.Sprintf(msgCacheCount, logx.LogText(subscriptionLabel(metadata, id), 120), *previous.Count, count))
 	}
 	if ctx.Err() == nil {
-		noteHostsChange(ctx, id, previous, payload)
+		noteHostsChange(ctx, id, previous, payload, onHostsChange)
 	}
 	return payload, nil
 }
@@ -266,7 +248,7 @@ func cacheHosts(cache *Cache) *subs.HostsData {
 	}
 	return nil
 }
-func noteHostsChange(ctx context.Context, id string, previous, current *Cache) {
+func noteHostsChange(ctx context.Context, id string, previous, current *Cache, onHostsChange func(context.Context)) {
 	old, new := cacheHosts(previous), cacheHosts(current)
 	var before, after model.OrderedMap[model.Dynamic]
 	if old != nil {
@@ -297,9 +279,8 @@ func noteHostsChange(ctx context.Context, id string, previous, current *Cache) {
 		return
 	}
 	cacheLog.Info(fmt.Sprintf(msgCacheHosts, logx.LogText(subscriptionLabel(current.Metadata, id), 120), added, removed, changed))
-	Default().NotifyContentChange(ctx)
-	if invalidate := contentSync.Load(); invalidate != nil {
-		invokeContentInvalidator(ctx, *invalidate)
+	if onHostsChange != nil {
+		onHostsChange(ctx)
 	}
 }
 
@@ -320,8 +301,8 @@ func invokeContentInvalidator(ctx context.Context, fn ContentSyncInvalidator) {
 // LoadCache reads one owned typed record. Malformed files are ignored without
 // discarding valid files elsewhere. The decode is reused while the file is
 // unchanged (cache_memo.go); the caller still gets its own copy.
-func LoadCache(ctx context.Context, id string) (*Cache, error) {
-	path, err := CachePath(ctx, id)
+func LoadCache(ctx context.Context, r *repo.Repository, id string) (*Cache, error) {
+	path, err := CachePath(ctx, r, id)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +314,7 @@ func LoadCache(ctx context.Context, id string) (*Cache, error) {
 	if entry := memoLookup(path, key); entry.cache != nil {
 		return cloneCache(entry.cache), nil
 	}
-	cache, err := decodeCacheFile(ctx, id, path)
+	cache, err := decodeCacheFile(ctx, r, id, path)
 	if err != nil || cache == nil {
 		return nil, err
 	}
@@ -345,8 +326,8 @@ func LoadCache(ctx context.Context, id string) (*Cache, error) {
 // shared by every reader of the unchanged file and must not be modified. The
 // same pointer is returned while the file is unchanged, so derived values may
 // be keyed by it.
-func LoadCacheShared(ctx context.Context, id string) (*Cache, error) {
-	path, err := CachePath(ctx, id)
+func LoadCacheShared(ctx context.Context, r *repo.Repository, id string) (*Cache, error) {
+	path, err := CachePath(ctx, r, id)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +339,7 @@ func LoadCacheShared(ctx context.Context, id string) (*Cache, error) {
 	if entry := memoLookup(path, key); entry.cache != nil {
 		return entry.cache, nil
 	}
-	cache, err := decodeCacheFile(ctx, id, path)
+	cache, err := decodeCacheFile(ctx, r, id, path)
 	if err != nil || cache == nil {
 		return nil, err
 	}
@@ -369,8 +350,8 @@ func LoadCacheShared(ctx context.Context, id string) (*Cache, error) {
 // LoadSubscriptionCacheShared returns a read-only subs.SubscriptionCache view
 // sharing the cached file's decoded Nodes slice without JSON round-tripping.
 // The returned value and its slices must not be modified by the caller.
-func LoadSubscriptionCacheShared(ctx context.Context, id string) (*subs.SubscriptionCache, error) {
-	cache, err := LoadCacheShared(ctx, id)
+func LoadSubscriptionCacheShared(ctx context.Context, r *repo.Repository, id string) (*subs.SubscriptionCache, error) {
+	cache, err := LoadCacheShared(ctx, r, id)
 	if err != nil || cache == nil {
 		return nil, err
 	}
@@ -393,8 +374,8 @@ func LoadSubscriptionCacheShared(ctx context.Context, id string) (*subs.Subscrip
 
 // LoadCacheJSON is the model encoding of LoadCache's record (nil when there
 // is none), reused while the file is unchanged; the caller owns the bytes.
-func LoadCacheJSON(ctx context.Context, id string) (json.RawMessage, error) {
-	path, err := CachePath(ctx, id)
+func LoadCacheJSON(ctx context.Context, r *repo.Repository, id string) (json.RawMessage, error) {
+	path, err := CachePath(ctx, r, id)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +385,7 @@ func LoadCacheJSON(ctx context.Context, id string) (json.RawMessage, error) {
 			return bytes.Clone(entry.encoded), nil
 		}
 	}
-	cache, err := LoadCacheShared(ctx, id)
+	cache, err := LoadCacheShared(ctx, r, id)
 	if err != nil || cache == nil {
 		return nil, err
 	}
@@ -420,10 +401,9 @@ func LoadCacheJSON(ctx context.Context, id string) (json.RawMessage, error) {
 	return bytes.Clone(data), nil
 }
 
-func decodeCacheFile(ctx context.Context, id, path string) (*Cache, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+func decodeCacheFile(ctx context.Context, r *repo.Repository, id, path string) (*Cache, error) {
+	if r == nil {
+		return nil, errors.New("substore: repository is nil")
 	}
 	data, err := r.ReadSharedBytes(ctx, filepath.Join("subscribes", filepath.Base(path)))
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -500,8 +480,8 @@ type CacheSummary struct {
 // LoadCacheSummary reads only the cache envelope (whether valid node objects
 // are present, metadata.url, and updated_at) without decoding each node. It
 // is reused while the file is unchanged, like LoadCache.
-func LoadCacheSummary(ctx context.Context, id string) (*CacheSummary, error) {
-	path, err := CachePath(ctx, id)
+func LoadCacheSummary(ctx context.Context, r *repo.Repository, id string) (*CacheSummary, error) {
+	path, err := CachePath(ctx, r, id)
 	if err != nil {
 		return nil, err
 	}
@@ -513,7 +493,7 @@ func LoadCacheSummary(ctx context.Context, id string) (*CacheSummary, error) {
 	if entry := memoLookup(path, key); entry.summary != nil {
 		return cloneSummary(entry.summary), nil
 	}
-	summary, err := readCacheSummary(ctx, id, path)
+	summary, err := readCacheSummary(ctx, r, id, path)
 	if err != nil || summary == nil {
 		return nil, err
 	}
@@ -521,10 +501,9 @@ func LoadCacheSummary(ctx context.Context, id string) (*CacheSummary, error) {
 	return cloneSummary(summary), nil
 }
 
-func readCacheSummary(ctx context.Context, id, path string) (*CacheSummary, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+func readCacheSummary(ctx context.Context, r *repo.Repository, id, path string) (*CacheSummary, error) {
+	if r == nil {
+		return nil, errors.New("substore: repository is nil")
 	}
 	data, err := r.ReadSharedBytes(ctx, filepath.Join("subscribes", filepath.Base(path)))
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

@@ -50,7 +50,7 @@ func sharedRepo(t *testing.T) (context.Context, *repo.Repository) {
 		t.Fatal(err)
 	}
 	for _, id := range []string{"keep", "drop"} {
-		must[*Cache](t)(SaveCache(ctx, id, []model.Node{testCacheNode(t)}, nil))
+		must[*Cache](t)(SaveCache(ctx, r, id, []model.Node{testCacheNode(t)}, nil))
 	}
 	return ctx, r
 }
@@ -70,20 +70,20 @@ func cacheFiles(t *testing.T, r *repo.Repository) []string {
 // (the cache half of the DELETE route: delete_subscription_cache).
 func TestDeletingASubscriptionRemovesItsNodeCache(t *testing.T) {
 	ctx, r := sharedRepo(t)
-	if !must[bool](t)(DeleteSubscriptionCache(ctx, "drop")) {
+	if !must[bool](t)(DeleteSubscriptionCache(ctx, r, "drop")) {
 		t.Fatal("nothing removed")
 	}
-	if must[*Cache](t)(LoadCache(ctx, "drop")) != nil {
+	if must[*Cache](t)(LoadCache(ctx, r, "drop")) != nil {
 		t.Fatal("cache still readable")
 	}
 	if got := strings.Join(cacheFiles(t, r), ","); got != "keep.json" {
 		t.Fatalf("files %s", got)
 	}
-	kept := must[*Cache](t)(LoadCache(ctx, "keep"))
+	kept := must[*Cache](t)(LoadCache(ctx, r, "keep"))
 	if !testjson.Equal([]model.Node{testCacheNode(t)}, kept.Nodes) {
 		t.Fatal("kept cache changed")
 	}
-	if must[bool](t)(DeleteSubscriptionCache(ctx, "drop")) {
+	if must[bool](t)(DeleteSubscriptionCache(ctx, r, "drop")) {
 		t.Fatal("removed twice")
 	}
 }
@@ -91,7 +91,7 @@ func TestDeletingASubscriptionRemovesItsNodeCache(t *testing.T) {
 // test_subscription_cache_cleanup.py::test_startup_prunes_only_caches_without_a_subscription
 func TestStartupPrunesOnlyCachesWithoutASubscription(t *testing.T) {
 	ctx, r := sharedRepo(t)
-	must[*Cache](t)(SaveCache(ctx, "removed/earlier", []model.Node{testCacheNode(t)}, nil)) // path-safe name
+	must[*Cache](t)(SaveCache(ctx, r, "removed/earlier", []model.Node{testCacheNode(t)}, nil)) // path-safe name
 	err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 		var kept []model.Subscription
 		for _, s := range shared.Subscriptions {
@@ -106,7 +106,7 @@ func TestStartupPrunesOnlyCachesWithoutASubscription(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(must[string](t)(r.SharedCacheDir()), "notes.txt"), []byte("unrelated"), 0o644)
-	removed := must[[]string](t)(PruneOrphanCaches(ctx))
+	removed := must[[]string](t)(PruneOrphanCaches(ctx, r))
 	sort.Strings(removed)
 	if strings.Join(removed, ",") != "drop.json,removed_earlier.json" {
 		t.Fatalf("removed %v", removed)
@@ -114,7 +114,7 @@ func TestStartupPrunesOnlyCachesWithoutASubscription(t *testing.T) {
 	if got := strings.Join(cacheFiles(t, r), ","); got != "keep.json,notes.txt" {
 		t.Fatalf("files %s", got)
 	}
-	if again := must[[]string](t)(PruneOrphanCaches(ctx)); len(again) != 0 {
+	if again := must[[]string](t)(PruneOrphanCaches(ctx, r)); len(again) != 0 {
 		t.Fatalf("second prune %v", again)
 	}
 }
@@ -128,7 +128,7 @@ func TestPruningDeletesNothingWhenSubscriptionsCannotBeRead(t *testing.T) {
 		return nil, nil, repo.NewValidationError("unreadable")
 	}
 	defer func() { getShared = previous }()
-	if removed := must[[]string](t)(PruneOrphanCaches(ctx)); len(removed) != 0 {
+	if removed := must[[]string](t)(PruneOrphanCaches(ctx, r)); len(removed) != 0 {
 		t.Fatalf("removed %v", removed)
 	}
 	files := strings.Join(cacheFiles(t, r), ",")
@@ -166,7 +166,7 @@ func TestPruneInvalidStoredIdentityKeepsFiles(t *testing.T) {
 			}
 			defer func() { getShared = previous }()
 			logs := captureLogs(t)
-			removed, err := PruneOrphanCaches(ctx)
+			removed, err := PruneOrphanCaches(ctx, r)
 			if err != nil || len(removed) != 0 {
 				t.Fatalf("removed %v err %v", removed, err)
 			}
@@ -187,7 +187,7 @@ func TestSavedCacheBytes(t *testing.T) {
 	previous := cacheClock
 	cacheClock = fixedClock{time.Date(2026, 11, 15, 8, 0, 0, 0, time.UTC)}
 	defer func() { cacheClock = previous }()
-	payload := must[*Cache](t)(SaveCache(ctx, "keep", []model.Node{testCacheNode(t)},
+	payload := must[*Cache](t)(SaveCache(ctx, r, "keep", []model.Node{testCacheNode(t)},
 		&CacheMetadata{SubscriptionName: "机场", URL: new("https://example.test/keep")}))
 	data, err := os.ReadFile(filepath.Join(must[string](t)(r.SharedCacheDir()), "keep.json"))
 	if err != nil {
@@ -204,7 +204,7 @@ func TestSavedCacheBytes(t *testing.T) {
 		t.Fatal("payload time")
 	}
 	// fetched_at replaces updated_at; an empty nodes list has count 0.
-	payload = must[*Cache](t)(SaveCache(ctx, "keep", nil, &CacheMetadata{FetchedAt: new("2026-01-01T00:00:00.5+00:00")}))
+	payload = must[*Cache](t)(SaveCache(ctx, r, "keep", nil, &CacheMetadata{FetchedAt: new("2026-01-01T00:00:00.5+00:00")}))
 	if payload.UpdatedAt != "2026-01-01T00:00:00.5+00:00" || payload.Count == nil || int64(*payload.Count) != 0 {
 		t.Fatalf("payload %+v", payload)
 	}
@@ -221,29 +221,29 @@ func TestLoadSubscriptionCacheLegacyAndBroken(t *testing.T) {
 	ctx, r := sharedRepo(t)
 	dir := must[string](t)(r.SharedCacheDir())
 	os.WriteFile(filepath.Join(dir, "old.json"), []byte(`{"nodes": [1, 2]}`), 0o644)
-	if got := must[*Cache](t)(LoadCache(ctx, "old")); got == nil || got.Count == nil || int64(*got.Count) != 2 {
+	if got := must[*Cache](t)(LoadCache(ctx, r, "old")); got == nil || got.Count == nil || int64(*got.Count) != 2 {
 		t.Fatalf("old %+v", got)
 	}
 	logs := captureLogs(t)
 	os.WriteFile(filepath.Join(dir, "broken.json"), []byte(`{`), 0o644)
-	if must[*Cache](t)(LoadCache(ctx, "broken")) != nil {
+	if must[*Cache](t)(LoadCache(ctx, r, "broken")) != nil {
 		t.Fatal("broken cache read")
 	}
 	if !strings.Contains(logs.text(), "读取订阅缓存失败 (broken): decode stored JSON:") {
 		t.Fatalf("log:\n%s", logs.text())
 	}
 	os.WriteFile(filepath.Join(dir, "list.json"), []byte(`[1]`), 0o644)
-	if must[*Cache](t)(LoadCache(ctx, "list")) != nil {
+	if must[*Cache](t)(LoadCache(ctx, r, "list")) != nil {
 		t.Fatal("list cache read")
 	}
 }
 
 // test_subscription_hosts.py::test_hosts_change_invalidates_agent_content_checks_once
 func TestHostsChangeInvalidatesAgentContentChecksOnce(t *testing.T) {
-	ctx, _ := sharedRepo(t)
+	ctx, r := sharedRepo(t)
+	svc := NewService(NewEnvFor(r))
 	calls := 0
-	SetContentSyncInvalidator(func(context.Context) error { calls++; return nil })
-	defer SetContentSyncInvalidator(nil)
+	t.Cleanup(svc.OnContentChange(func(context.Context) error { calls++; return nil }))
 	airport := "proxies:\n  - {name: HK 01, type: socks5, server: jp-node.example.net, port: 1080}\n" +
 		"hosts:\n  jp-node.example.net: jp-entry.example.org\n  google.com: 203.0.113.66\n"
 	store := func(text string) {
@@ -251,7 +251,7 @@ func TestHostsChangeInvalidatesAgentContentChecksOnce(t *testing.T) {
 		metadata := &CacheMetadata{SubscriptionName: "机场", Hosts: subs.ExtractHosts(text)}
 		proxies := must[[]*yamlx.Node](t)(ParseProxyNodes(text))
 		nodes := must[[]model.Node](t)(ProxyNodes(proxies))
-		must[*Cache](t)(SaveCache(ctx, "air", nodes, metadata))
+		must[*Cache](t)(svc.SaveCache(ctx, r, "air", nodes, metadata))
 	}
 	// C11's test_only_hosts_changes_invalidate_agent_content_checks: a node
 	// address change without hosts does not invalidate the main config.
@@ -285,9 +285,9 @@ func TestHostsChangeInvalidatesAgentContentChecksOnce(t *testing.T) {
 
 // Node count changes are logged with the subscription name.
 func TestNodeCountChangeIsLogged(t *testing.T) {
-	ctx, _ := sharedRepo(t)
+	ctx, r := sharedRepo(t)
 	logs := captureLogs(t)
-	must[*Cache](t)(SaveCache(ctx, "keep", []model.Node{testCacheNode(t), testCacheNode(t)}, &CacheMetadata{SubscriptionName: "Keep\nX"}))
+	must[*Cache](t)(SaveCache(ctx, r, "keep", []model.Node{testCacheNode(t), testCacheNode(t)}, &CacheMetadata{SubscriptionName: "Keep\nX"}))
 	if !strings.Contains(logs.text(), "订阅 Keep?X 节点数变化：1 → 2") {
 		t.Fatalf("log:\n%s", logs.text())
 	}
@@ -296,7 +296,7 @@ func TestNodeCountChangeIsLogged(t *testing.T) {
 // O10 cache budget: LoadSubscriptionCacheShared matches LoadCacheJSON without
 // populating the encoded JSON cache field.
 func TestLoadSubscriptionCacheSharedMatchesJSON(t *testing.T) {
-	ctx, _ := sharedRepo(t)
+	ctx, r := sharedRepo(t)
 	url := "https://feed.example.com/sub"
 	airport := "proxies:\n  - {name: HK 01, type: socks5, server: jp-node.example.net, port: 1080}\n" +
 		"hosts:\n  jp-node.example.net: jp-entry.example.org\n"
@@ -307,12 +307,12 @@ func TestLoadSubscriptionCacheSharedMatchesJSON(t *testing.T) {
 	}
 	proxies := must[[]*yamlx.Node](t)(ParseProxyNodes(airport))
 	nodes := must[[]model.Node](t)(ProxyNodes(proxies))
-	must[*Cache](t)(SaveCache(ctx, "shared-view", nodes, metadata))
+	must[*Cache](t)(SaveCache(ctx, r, "shared-view", nodes, metadata))
 
-	path := must[string](t)(CachePath(ctx, "shared-view"))
+	path := must[string](t)(CachePath(ctx, r, "shared-view"))
 	memoForget(path)
 
-	shared := must[*subs.SubscriptionCache](t)(LoadSubscriptionCacheShared(ctx, "shared-view"))
+	shared := must[*subs.SubscriptionCache](t)(LoadSubscriptionCacheShared(ctx, r, "shared-view"))
 	if shared == nil || len(shared.Nodes) != 1 || shared.Metadata == nil || shared.Metadata.URL != url || shared.Metadata.Hosts == nil {
 		t.Fatalf("unexpected shared cache: %+v", shared)
 	}
@@ -323,7 +323,7 @@ func TestLoadSubscriptionCacheSharedMatchesJSON(t *testing.T) {
 	if entry := memoLookup(path, key); entry.encoded != nil {
 		t.Fatal("LoadSubscriptionCacheShared unexpectedly populated encoded JSON bytes")
 	}
-	raw := must[json.RawMessage](t)(LoadCacheJSON(ctx, "shared-view"))
+	raw := must[json.RawMessage](t)(LoadCacheJSON(ctx, r, "shared-view"))
 	var decoded subs.SubscriptionCache
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		t.Fatal(err)

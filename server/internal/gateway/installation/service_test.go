@@ -48,7 +48,7 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	gateway.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	deploy.Wire()
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	must(t, err)

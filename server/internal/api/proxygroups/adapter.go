@@ -231,7 +231,11 @@ func (s *Service) sharedCatalog(ctx context.Context) (*model.Shared, error) {
 }
 
 func (s *Service) cachedNodes(ctx context.Context, id string) ([]model.Node, error) {
-	cache, err := substore.LoadCache(s.withRepo(ctx), id)
+	r, err := s.repo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cache, err := substore.LoadCache(ctx, r, id)
 	if err != nil || cache == nil {
 		return nil, err
 	}

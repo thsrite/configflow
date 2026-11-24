@@ -56,7 +56,7 @@ func o10SaveAirportCache(t *testing.T, f *o10Fixture, id, hostTarget string) {
 	if hosts == nil {
 		t.Fatal("hosts not extracted")
 	}
-	if _, err := substore.SaveCache(ctx, id, nodes, &substore.CacheMetadata{URL: new(o10FeedURL(id)), SubscriptionName: id, Hosts: hosts, Dialers: dialers}); err != nil {
+	if _, err := substore.SaveCache(ctx, f.srv.Repo, id, nodes, &substore.CacheMetadata{URL: new(o10FeedURL(id)), SubscriptionName: id, Hosts: hosts, Dialers: dialers}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -73,6 +73,7 @@ func TestO10SharedSubscriptionCacheStaysReadOnly(t *testing.T) {
 	}
 	f := newO10Fixture(t)
 	ctx := f.srv.Context()
+	r := f.srv.Repo
 	o10SaveAirportCache(t, f, o10SubA, "198.51.100.7")
 
 	const route = "/api/config/default/mihomo"
@@ -84,7 +85,7 @@ func TestO10SharedSubscriptionCacheStaysReadOnly(t *testing.T) {
 		}
 		return res.Body.String()
 	}
-	shared, err := substore.LoadCacheShared(ctx, o10SubA)
+	shared, err := substore.LoadCacheShared(ctx, r, o10SubA)
 	if err != nil || shared == nil {
 		t.Fatalf("shared cache: %v", err)
 	}
@@ -112,7 +113,7 @@ func TestO10SharedSubscriptionCacheStaysReadOnly(t *testing.T) {
 			t.Fatalf("concurrent generation %d differs", i)
 		}
 	}
-	again, err := substore.LoadCacheShared(ctx, o10SubA)
+	again, err := substore.LoadCacheShared(ctx, r, o10SubA)
 	if err != nil {
 		t.Fatal(err)
 	}

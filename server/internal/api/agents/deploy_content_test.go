@@ -10,7 +10,7 @@ import (
 // callback through A13's worker, rather than injecting an already-built bundle.
 func TestPublishedContentUsesRealAsyncPreparation(t *testing.T) {
 	s, admin, _ := newDeployHTTP(t)
-	WireContentSync()
+	WireContentSyncWith(nil, nil)
 	base := "/api/agents/publish-agent"
 	s.Post(base+"/push-config", httpxtest.JSON(map[string]any{"deployment_id": "real-content-worker"}), admin).WantStatus(202)
 	for i := 0; i < 4; i++ {

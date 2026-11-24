@@ -17,16 +17,14 @@ func defaultCollaborators(converterFn func() convert.NodeConverter) Collaborator
 	return Collaborators{
 		NeedsRemoteConversion: needsRemoteProxyString,
 		ConvertNode: func(ctx context.Context, raw json.RawMessage) (model.Fields, bool) {
-			converter := substore.NativeConverter()
+			var converter convert.NodeConverter
 			if converterFn != nil {
-				if provided := converterFn(); provided != nil {
-					converter = provided
-				}
+				converter = converterFn()
 			}
 			return convertProbeNode(ctx, raw, converter)
 		},
-		LoadSubscriptionCache: func(ctx context.Context, id string) (json.RawMessage, error) {
-			cache, err := substore.LoadCache(ctx, id)
+		LoadSubscriptionCache: func(ctx context.Context, r *repo.Repository, id string) (json.RawMessage, error) {
+			cache, err := substore.LoadCache(ctx, r, id)
 			if err != nil || cache == nil {
 				return nil, err
 			}

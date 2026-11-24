@@ -11,7 +11,7 @@ import (
 // default loader and without proxy_string nodes.
 func TestO10CacheTextOnlyForSharedStructuredRecords(t *testing.T) {
 	text := "https://feed.example.com/sub"
-	shared := &RefreshEnv{Sources: SourceOwners{LoadNodes: loadNodeCache}}
+	shared := DefaultRefreshEnvFor(nil, nil)
 	fake := &RefreshEnv{Sources: SourceOwners{LoadNodes: func(context.Context, string) (*NodeCache, error) { return nil, nil }}}
 	structured := &NodeCache{Nodes: []model.Node{{Name: "A", Type: "ss"}}}
 	withString := &NodeCache{Nodes: []model.Node{{Name: "B", ProxyString: &text}}}

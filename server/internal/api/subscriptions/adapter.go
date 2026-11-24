@@ -86,7 +86,7 @@ func (h *Handler) substore() *substore.Service {
 	if h != nil && h.SubStore != nil {
 		return h.SubStore
 	}
-	return substore.Default()
+	return substore.NewService(substore.NewEnv())
 }
 
 func (h *Handler) provider() *provider.Service {
@@ -188,17 +188,21 @@ func filter(sub model.Subscription, nodes []proxy) ([]proxy, error) {
 	}
 	return proxyObjects(subs.FilterProxies(source, graphs))
 }
-func loadCache(ctx context.Context, id string) (*cache, error) {
-	return readCache(ctx, id, false)
+func (h *Handler) loadCache(ctx context.Context, id string) (*cache, error) {
+	return h.readCache(ctx, id, false)
 }
 
 // loadCacheSummary tolerates legacy non-array nodes only for read-only cache
 // metadata/preview routes. Publication continues to use strict decoding.
-func loadCacheSummary(ctx context.Context, id string) (*cache, error) {
-	return readCache(ctx, id, true)
+func (h *Handler) loadCacheSummary(ctx context.Context, id string) (*cache, error) {
+	return h.readCache(ctx, id, true)
 }
-func readCache(ctx context.Context, id string, summary bool) (*cache, error) {
-	v, err := substore.LoadCache(ctx, id)
+func (h *Handler) readCache(ctx context.Context, id string, summary bool) (*cache, error) {
+	r, err := h.repo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, err := substore.LoadCache(ctx, r, id)
 	if err != nil || v == nil {
 		return nil, err
 	}
@@ -254,13 +258,17 @@ func (h *Handler) forgetTask(ctx context.Context, id string) error {
 }
 func (h *Handler) forgetSubscription(ctx context.Context, id string) error {
 	ctx = lifecycle.Detach(h.withRepo(ctx))
+	r, err := h.repo(ctx)
+	if err != nil {
+		return err
+	}
 	if err := refresh.ForgetHealth(ctx, id); err != nil {
 		return err
 	}
 	if err := h.forgetTask(ctx, id); err != nil {
 		return err
 	}
-	_, err := substore.DeleteSubscriptionCache(ctx, id)
+	_, err = substore.DeleteSubscriptionCache(ctx, r, id)
 	return err
 }
 func refreshSubscription(ctx context.Context, sub model.Subscription) ([]proxy, *cache, error) {
@@ -416,7 +424,7 @@ func commitStaged(ctx context.Context, updates []staged) error {
 	}
 	return provider.CommitWrites(ctx, all)
 }
-func cachedProxies(ctx context.Context, sub model.Subscription, nodes []proxy, strict bool) ([]proxy, error) {
+func (h *Handler) cachedProxies(ctx context.Context, sub model.Subscription, nodes []proxy, strict bool) ([]proxy, error) {
 	var typed []model.Node
 	if err := native(nodes, &typed); err != nil {
 		return nil, err
@@ -427,8 +435,9 @@ func cachedProxies(ctx context.Context, sub model.Subscription, nodes []proxy, s
 	source := sub
 	out := []*yamlx.Node{}
 	skipped := 0
+	converter := convert.OptionalNodeConverter(h.substore().Client)
 	for index, item := range subs.FilterNodes(source, typed) {
-		p, err := convert.NodeProxy(ctx, item, convert.OptionalNodeConverter(substore.NativeConverter()))
+		p, err := convert.NodeProxy(ctx, item, converter)
 		if err != nil {
 			if strict && referenceError(err) {
 				return nil, err

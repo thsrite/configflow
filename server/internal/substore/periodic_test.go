@@ -69,21 +69,13 @@ func TestWireRegistersIdleOnlyWithBuiltin(t *testing.T) {
 	for _, builtin := range []bool{false, true} {
 		t.Run(map[bool]string{false: "external", true: "builtin"}[builtin], func(t *testing.T) {
 			h := newHarness(t, harnessOptions{builtin: builtin})
-			t.Cleanup(SetDefault(h.service))
-			if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-				t.Fatal(err)
+			rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+			h.service.Register(rt)
+			if slices.Contains(rt.Names(), "sub-store-idle") != builtin {
+				t.Fatal("conditional idle registration", rt.Names())
 			}
-			t.Cleanup(func() {
-				if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-					t.Error(err)
-				}
-			})
-			Wire()
-			if slices.Contains(lifecycle.Names(), "sub-store-idle") != builtin {
-				t.Fatal("conditional idle registration", lifecycle.Names())
-			}
-			RegisterStartup()
-			if !slices.Contains(lifecycle.Names(), "subscription-cache-prune") {
+			h.service.RegisterStartup(rt)
+			if !slices.Contains(rt.Names(), "subscription-cache-prune") {
 				t.Fatal("prune Startup missing")
 			}
 		})

@@ -190,7 +190,7 @@ func startGo(t *testing.T, dataDir string) string {
 	}
 	repo.SetRepository(r)
 	t.Cleanup(func() { repo.SetRepository(nil) })
-	t.Cleanup(substore.SetDefault(substore.NewService(substore.NewEnv())))
+
 	// The default native ProbeEnv is installed by the package owner.
 	app := server.NewApp()
 	if _, err := repo.PrepareConfig(repo.WithScope(context.Background())); err != nil {
@@ -537,6 +537,6 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 			return err
 		}
 	}
-	_, err = substore.SaveCache(ctx, id, nodes, receipt)
+	_, err = substore.SaveCache(ctx, func() *repo.Repository { r, _ := repo.GetRepository(ctx); return r }(), id, nodes, receipt)
 	return err
 }

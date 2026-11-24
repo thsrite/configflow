@@ -22,7 +22,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -34,7 +33,6 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/model"
 	"configflow/internal/refresh"
-	"configflow/internal/substore"
 	"configflow/internal/yamlx"
 )
 
@@ -119,22 +117,7 @@ type DeliveryEnv struct {
 }
 
 func defaultFetch(ctx context.Context, subID, url string) (*refresh.SourceResult, error) {
-	result, err := substore.Default().Client.Fetch(ctx, subID, url, "", substore.FetchOptions{})
-	if err != nil || result == nil {
-		return nil, err
-	}
-	var traffic *refresh.Traffic
-	if result.Traffic != nil {
-		data, err := model.Marshal(result.Traffic)
-		if err != nil {
-			return nil, err
-		}
-		traffic = &refresh.Traffic{}
-		if err := json.Unmarshal(data, traffic); err != nil {
-			return nil, err
-		}
-	}
-	return &refresh.SourceResult{Text: result.Text, Source: result.Source, FetchedAt: result.FetchedAt, Traffic: traffic}, nil
+	return nil, errors.New("provider: substore service is nil")
 }
 
 func randomNodeID() string {
@@ -159,10 +142,7 @@ func SetDeliveryEnv(e *DeliveryEnv) (restore func()) { return Default().setDeliv
 func currentDeliveryEnv() *DeliveryEnv { return Default().DeliveryEnv() }
 
 func (e *DeliveryEnv) converter() convert.NodeConverter {
-	if e.Converter != nil {
-		return e.Converter
-	}
-	return convert.OptionalNodeConverter(substore.NativeConverter())
+	return convert.OptionalNodeConverter(e.Converter)
 }
 
 // SequentialNodeIDs returns a NodeID generator node_00000001, node_00000002,

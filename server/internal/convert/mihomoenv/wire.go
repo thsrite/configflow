@@ -3,21 +3,24 @@
 package mihomoenv
 
 import (
-	"errors"
+	"testing"
 
 	"configflow/internal/convert"
 	"configflow/internal/provider"
+	"configflow/internal/repo"
 	"configflow/internal/substore"
 )
 
-// Wire registers every production callback used by typed generation once.
-func Wire() {
-	if err := WireWith(nil, nil); err != nil && !errors.Is(err, convert.ErrMihomoEnvironmentAlreadySet) {
-		panic(err)
-	}
+// WireWith registers the typed MihomoEnvironment built from r, sub, and pv once.
+func WireWith(r *repo.Repository, sub *substore.Service, pv *provider.Service) error {
+	return convert.SetMihomoEnvironment(NativeEnvFor(r, sub, pv))
 }
 
-// WireWith registers the typed MihomoEnvironment built from sub and pv once.
-func WireWith(sub *substore.Service, pv *provider.Service) error {
-	return convert.SetMihomoEnvironment(NativeEnvFor(sub, pv))
+// OverrideForTest installs NativeEnvFor(r, sub, pv) for the duration of tb.
+func OverrideForTest(tb testing.TB, r *repo.Repository, sub *substore.Service, pv *provider.Service) {
+	tb.Helper()
+	if sub == nil {
+		sub = substore.NewService(substore.NewEnvFor(r))
+	}
+	tb.Cleanup(convert.OverrideMihomoEnvironmentForTest(tb, NativeEnvFor(r, sub, pv)))
 }

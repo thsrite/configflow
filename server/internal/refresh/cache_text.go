@@ -2,7 +2,6 @@ package refresh
 
 import (
 	"container/list"
-	"reflect"
 	"sync"
 )
 
@@ -94,9 +93,8 @@ func (m *cacheTextMemo) store(env *RefreshEnv, id string, cache *NodeCache, text
 	m.bytes += len(text)
 }
 
-// sharedNodeLoader reports whether env loads node caches with loadNodeCache,
-// whose records are immutable and stable while the file is unchanged.
+// sharedNodeLoader reports whether env loads node caches with the shared
+// immutable cache loader (loadNodeCache).
 func sharedNodeLoader(env *RefreshEnv) bool {
-	return env != nil && env.Sources.LoadNodes != nil &&
-		reflect.ValueOf(env.Sources.LoadNodes).Pointer() == reflect.ValueOf(loadNodeCache).Pointer()
+	return env != nil && env.Sources.LoadNodes != nil && env.Sources.SharedLoader
 }

@@ -26,7 +26,7 @@ func (h *Handler) substore() *substore.Service {
 	if h != nil && h.SubStore != nil {
 		return h.SubStore
 	}
-	return substore.Default()
+	return substore.NewService(substore.NewEnv())
 }
 
 func (h *Handler) sharedNodes(ctx context.Context) ([]model.Node, error) {

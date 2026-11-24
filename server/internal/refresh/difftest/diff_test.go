@@ -41,7 +41,6 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/server"
-	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 	"configflow/internal/testjson"
@@ -249,7 +248,7 @@ func startGo(t *testing.T, dataDir string) string {
 	}
 	repo.SetRepository(r)
 	t.Cleanup(func() { repo.SetRepository(nil) })
-	t.Cleanup(substore.SetDefault(substore.NewService(substore.NewEnv())))
+
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains} {
 		t.Cleanup(tasks.SetRowBuilder(slot, none))
 	}

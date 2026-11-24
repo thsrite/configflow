@@ -240,7 +240,7 @@ func newWorld(t *testing.T, sessions ...string) *world {
 	port, _ := strconv.Atoi(portText)
 	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: "a20-secret", Register: httpxtest.Routes(apiagents.Register, apigateway.Register)})
 	gateway.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	apirules.Wire()
 	ctx := w.srv.Context()
 	r := w.srv.Repo

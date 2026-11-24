@@ -23,7 +23,6 @@ import (
 	routerrulesync "configflow/internal/routers/rulesync"
 	"configflow/internal/rulesource"
 	"configflow/internal/setup"
-	"configflow/internal/substore"
 	"configflow/internal/tasks"
 )
 
@@ -94,7 +93,7 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		{"runtime is the process default", app.Runtime == rt && lifecycle.Current() == rt},
 		{"tasks registry is the default", app.Tasks != nil && tasks.Default() == app.Tasks},
 		{"notifications service is the default", app.Notifications != nil && notifications.Default() == app.Notifications},
-		{"Sub-Store service is the default", app.SubStore != nil && substore.Default() == app.SubStore},
+		{"Sub-Store service", app.SubStore != nil && app.SubStore.Repo == app.Repo},
 		{"refresh service is the default", app.Refresh != nil && refresh.Default() == app.Refresh},
 		{"provider service is the default", app.Provider != nil && provider.Default() == app.Provider},
 		{"aggregations service", app.Aggregations != nil},
@@ -150,7 +149,7 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		t.Errorf("Mihomo integrations left unset: %v", missing)
 	}
 	env := convert.CurrentMihomoEnvironment()
-	if got, want := nilFuncFields(env), nilFuncFields(mihomoenv.NativeEnv()); strings.Join(got, ",") != strings.Join(want, ",") {
+	if got, want := nilFuncFields(env), nilFuncFields(mihomoenv.NativeEnvFor(r, app.SubStore, app.Provider)); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("Mihomo environment nil fields = %v, want the production builder's %v", got, want)
 	}
 	for name, set := range map[string]bool{

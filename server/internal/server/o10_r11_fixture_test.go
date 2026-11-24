@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
@@ -42,10 +43,19 @@ const (
 
 func newO10Fixture(t *testing.T) *o10Fixture {
 	t.Helper()
-	app := NewApp()
 	srv := httpxtest.New(t, httpxtest.Options{DefaultFactories: true})
-	f := &o10Fixture{t: t, srv: srv, app: app}
-	startO10Runtime(t)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second, Mode: lifecycle.ModeManual})
+	prod, err := New(srv.Context(), Options{Repo: srv.Repo, Runtime: rt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt.Start(context.Background())
+	t.Cleanup(func() {
+		rt.Shutdown(context.Background())
+		prod.Agents.Close()
+	})
+	mihomoenv.OverrideForTest(t, srv.Repo, prod.SubStore, prod.Provider)
+	f := &o10Fixture{t: t, srv: srv, app: prod.HTTP}
 	ctx := srv.Context()
 
 	raw, err := srv.Repo.ExportAllJSON(ctx, false)
@@ -136,7 +146,7 @@ func newO10Fixture(t *testing.T) *o10Fixture {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := substore.SaveCache(ctx, sub.id, nodes, &substore.CacheMetadata{URL: new(o10FeedURL(sub.id)), SubscriptionName: sub.id, FetchedAt: new(time.Now().UTC().Format(time.RFC3339))}); err != nil {
+		if _, err := substore.SaveCache(ctx, srv.Repo, sub.id, nodes, &substore.CacheMetadata{URL: new(o10FeedURL(sub.id)), SubscriptionName: sub.id, FetchedAt: new(time.Now().UTC().Format(time.RFC3339))}); err != nil {
 			t.Fatal(err)
 		}
 	}

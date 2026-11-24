@@ -54,7 +54,7 @@ func (fakeSubStore) ConvertProxy(_ context.Context, s string) (*yamlx.Node, erro
 
 // corpusEnv serves subscription caches and download caches from a row.
 func corpusEnv(caches, downloads *convert.JObj) convert.MihomoEnvironment {
-	env := mihomoenv.NativeEnv()
+	env := mihomoenv.NativeEnvFor(nil, nil, nil)
 	env.Converter = fakeSubStore{}
 	env.LoadSubscriptionCache = func(_ context.Context, id string) (json.RawMessage, error) {
 		cache, _ := caches.Value(id).(*convert.JObj)

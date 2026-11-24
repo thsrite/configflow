@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 
+	"configflow/internal/convert"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -59,10 +61,26 @@ func parseTraffic(header string) (*Traffic, error) {
 }
 
 // DefaultRefreshEnv wires production source owners without legacy JSON documents.
-func DefaultRefreshEnv() *RefreshEnv {
-	return &RefreshEnv{Clock: substore.SystemClock, RuleClient: rulefetch.DefaultClient, HTTP: substore.RequestsClient{}, RandomHex: func() string { return substore.Default().Env.RandomHex() }, Sources: SourceOwners{
+func DefaultRefreshEnv() *RefreshEnv { return DefaultRefreshEnvFor(nil, nil) }
+
+// DefaultRefreshEnvFor wires production source owners bound to explicit
+// Repository and Sub-Store service instances.
+func DefaultRefreshEnvFor(r *repo.Repository, sub *substore.Service) *RefreshEnv {
+	var conv convert.NodeConverter
+	if sub != nil {
+		conv = sub.Client
+	}
+	return &RefreshEnv{Clock: substore.SystemClock, RuleClient: rulefetch.DefaultClient, HTTP: substore.RequestsClient{}, RandomHex: func() string {
+		if sub != nil && sub.Env != nil && sub.Env.RandomHex != nil {
+			return sub.Env.RandomHex()
+		}
+		return substore.NewEnv().RandomHex()
+	}, Sources: SourceOwners{
 		Fetch: func(ctx context.Context, id, url string, options substore.FetchOptions) (*SourceResult, error) {
-			result, err := substore.Default().Client.Fetch(ctx, id, url, "", options)
+			if sub == nil {
+				return nil, errors.New("refresh: substore service is nil")
+			}
+			result, err := sub.Client.Fetch(ctx, id, url, "", options)
 			if err != nil || result == nil {
 				return nil, err
 			}
@@ -122,13 +140,48 @@ func DefaultRefreshEnv() *RefreshEnv {
 					return nil, err
 				}
 			}
-			cache, err := substore.SaveCache(ctx, id, nodes, receipt)
+			target := r
+			if target == nil {
+				var err error
+				target, err = repo.GetRepository(ctx)
+				if err != nil {
+					return nil, err
+				}
+			}
+			var cache *substore.Cache
+			var err error
+			if sub != nil {
+				cache, err = sub.SaveCache(ctx, target, id, nodes, receipt)
+			} else {
+				cache, err = substore.SaveCache(ctx, target, id, nodes, receipt)
+			}
 			return sourceCache(cache, err)
 		},
-		LoadNodes:        loadNodeCache,
-		LoadCacheSummary: substore.LoadCacheSummary,
-		FilterNodes:      subs.FilterNodes,
-		Converter:        substore.NativeConverter(),
+		LoadNodes: func(ctx context.Context, id string) (*NodeCache, error) {
+			target := r
+			if target == nil {
+				var err error
+				target, err = repo.GetRepository(ctx)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return loadNodeCache(ctx, target, id)
+		},
+		SharedLoader: true,
+		LoadCacheSummary: func(ctx context.Context, id string) (*substore.CacheSummary, error) {
+			target := r
+			if target == nil {
+				var err error
+				target, err = repo.GetRepository(ctx)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return substore.LoadCacheSummary(ctx, target, id)
+		},
+		FilterNodes: subs.FilterNodes,
+		Converter:   conv,
 	}}
 }
 
@@ -147,8 +200,8 @@ type nodeCacheView struct {
 
 // loadNodeCache returns the subscription's stored nodes, shared by every
 // reader of the unchanged file: callers must not modify the result.
-func loadNodeCache(ctx context.Context, id string) (*NodeCache, error) {
-	source, err := substore.LoadCacheShared(ctx, id)
+func loadNodeCache(ctx context.Context, r *repo.Repository, id string) (*NodeCache, error) {
+	source, err := substore.LoadCacheShared(ctx, r, id)
 	if err != nil || source == nil {
 		nodeCacheViews.Lock()
 		delete(nodeCacheViews.views, id)

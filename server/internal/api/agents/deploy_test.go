@@ -37,7 +37,7 @@ func newDeployHTTPWith(t *testing.T, options agentfake.Options) (*httpxtest.Serv
 	}
 	lifecycle.Start(context.Background())
 	t.Cleanup(func() { lifecycle.Stop(8 * time.Second) })
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	deploy.Wire()
 	options.AgentID, options.Token, options.ConfigPath = "publish-agent", "synthetic-publish-token", "installed.yaml"
 	fake := agentfake.New(options)

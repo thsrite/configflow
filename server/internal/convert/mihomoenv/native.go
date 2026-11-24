@@ -10,6 +10,7 @@ import (
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
+	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
 )
@@ -22,19 +23,13 @@ func (c liveNativeConverter) ConvertProxy(ctx context.Context, text string) (*ya
 	var converter convert.NodeConverter
 	if c.sub != nil {
 		converter = c.sub.Client
-	} else {
-		converter = substore.NativeConverter()
 	}
 	return convert.OptionalNodeConverter(converter).ConvertProxy(lifecycle.Detach(ctx), text)
 }
 
-// NativeEnv constructs the production typed MihomoEnvironment using the
-// process default Sub-Store and provider services.
-func NativeEnv() convert.MihomoEnvironment { return NativeEnvFor(nil, nil) }
-
 // NativeEnvFor constructs the production typed MihomoEnvironment directly from
 // explicit typed service instances without legacy JSON transcoding.
-func NativeEnvFor(sub *substore.Service, pv *provider.Service) convert.MihomoEnvironment {
+func NativeEnvFor(r *repo.Repository, sub *substore.Service, pv *provider.Service) convert.MihomoEnvironment {
 	env := convert.DefaultMihomoEnvironment()
 	env.Converter = liveNativeConverter{sub: sub}
 	env.ProviderInterval = func(settings model.MihomoSettings) (int64, error) {
@@ -52,8 +47,7 @@ func NativeEnvFor(sub *substore.Service, pv *provider.Service) convert.MihomoEnv
 		return refresh.CheckInterval(refresh.DefaultProviderInterval, msgProviderInterval)
 	}
 	env.DownloadedText = func(ctx context.Context, url string) (string, bool) {
-		r, err := repo.GetRepository(ctx)
-		if err != nil {
+		if r == nil {
 			return "", false
 		}
 		data, err := r.ReadSharedBytes(ctx, refresh.DownloadCachePath(url))
@@ -80,6 +74,13 @@ func NativeEnvFor(sub *substore.Service, pv *provider.Service) convert.MihomoEnv
 		_, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{})
 		return err
 	}
-	env.BindTypedSubscriptionCache(substore.LoadCacheJSON, substore.LoadSubscriptionCacheShared)
+	env.BindTypedSubscriptionCache(
+		func(ctx context.Context, id string) (json.RawMessage, error) {
+			return substore.LoadCacheJSON(ctx, r, id)
+		},
+		func(ctx context.Context, id string) (*subs.SubscriptionCache, error) {
+			return substore.LoadSubscriptionCacheShared(ctx, r, id)
+		},
+	)
 	return env
 }

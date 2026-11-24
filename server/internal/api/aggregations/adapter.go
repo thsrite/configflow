@@ -329,9 +329,13 @@ func (n *numericCount) raw() (json.RawMessage, error) {
 }
 func (h *Handler) cachedCount(ctx context.Context, shared *model.Shared, aggregation model.Aggregation) (countReply, error) {
 	result := countReply{Success: true, Subscriptions: map[string]json.RawMessage{}}
+	r, repoErr := h.repo(ctx)
+	if repoErr != nil {
+		return result, repoErr
+	}
 	var total numericCount
 	for _, id := range aggregation.Subscriptions {
-		cache, err := substore.LoadCache(h.withRepo(ctx), id)
+		cache, err := substore.LoadCache(ctx, r, id)
 		if err != nil {
 			return result, err
 		}

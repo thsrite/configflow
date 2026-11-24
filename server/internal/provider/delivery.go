@@ -339,7 +339,11 @@ func DialerRecord(ctx context.Context, sub model.Subscription) (*subs.DialersDat
 	if sub.ID == "" {
 		return nil, &InputError{Field: "subscription.id"}
 	}
-	cache, err := substore.LoadCache(ctx, sub.ID)
+	r, err := repo.GetRepository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cache, err := substore.LoadCache(ctx, r, sub.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +498,11 @@ func prepareSubscription(ctx context.Context, sub model.Subscription, snapshot *
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		cache, err := substore.LoadCache(ctx, sub.ID)
+		r, err := repo.GetRepository(ctx)
+		if err != nil {
+			return nil, err
+		}
+		cache, err := substore.LoadCache(ctx, r, sub.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -674,6 +682,10 @@ type sourceFlight struct {
 // PrepareBundle freezes configuration once, fetches each source once and validates
 // every emitted copy before returning staged cache and artifact writes.
 func PrepareBundle(ctx context.Context, config *model.Config, main *yamlx.Node, opts DeliveryOptions) ([]*Artifact, error) {
+	return prepareBundleWith(ctx, Default(), config, main, opts)
+}
+
+func prepareBundleWith(ctx context.Context, svc *Service, config *model.Config, main *yamlx.Node, opts DeliveryOptions) ([]*Artifact, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -681,7 +693,10 @@ func PrepareBundle(ctx context.Context, config *model.Config, main *yamlx.Node, 
 	if config == nil {
 		return nil, &InputError{Field: "config"}
 	}
-	env := currentDeliveryEnv()
+	if svc == nil {
+		svc = Default()
+	}
+	env := svc.DeliveryEnv()
 	requestedID, requestedName := "", ""
 	if opts.Requested != nil {
 		requestedID, requestedName = opts.Requested.identity()
@@ -859,7 +874,7 @@ func PrepareBundle(ctx context.Context, config *model.Config, main *yamlx.Node, 
 				id := strings.Split(path[strings.LastIndex(path, "/aggregations/")+len("/aggregations/"):], "/")[0]
 				for _, agg := range config.Aggregations {
 					if agg.ID == id {
-						result, err := currentAggregationRenderer()(ctx, agg, config, main, snapshot, fetchSource(env.AggregationFetch))
+						result, err := svc.AggregationRenderer()(ctx, agg, config, main, snapshot, fetchSource(env.AggregationFetch))
 						if err != nil {
 							return nil, err
 						}
@@ -982,13 +997,31 @@ func PrepareBundle(ctx context.Context, config *model.Config, main *yamlx.Node, 
 
 // CommitWrites publishes only while the originating Runtime remains live.
 func CommitWrites(ctx context.Context, updates []CacheWrite) error {
+	return commitWritesWith(ctx, nil, nil, updates)
+}
+
+func commitWritesWith(ctx context.Context, r *repo.Repository, sub *substore.Service, updates []CacheWrite) error {
 	ctx = lifecycle.Detach(ctx)
 	for _, update := range updates {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if _, err := substore.SaveCache(ctx, update.SubID, update.Nodes, update.Metadata); err != nil {
-			return err
+		target := r
+		if target == nil {
+			var err error
+			target, err = repo.GetRepository(ctx)
+			if err != nil {
+				return err
+			}
+		}
+		if sub != nil {
+			if _, err := sub.SaveCache(ctx, target, update.SubID, update.Nodes, update.Metadata); err != nil {
+				return err
+			}
+		} else {
+			if _, err := substore.SaveCache(ctx, target, update.SubID, update.Nodes, update.Metadata); err != nil {
+				return err
+			}
 		}
 	}
 	return ctx.Err()
@@ -997,6 +1030,15 @@ func CommitWrites(ctx context.Context, updates []CacheWrite) error {
 // CommitArtifacts deduplicates staged writes and retains shutdown cancellation
 // through each repository leaf lock and atomic file commit.
 func CommitArtifacts(ctx context.Context, profileID string, bundle []*Artifact) error {
+	return commitArtifactsWith(ctx, nil, nil, profileID, bundle)
+}
+
+// CommitArtifacts on Service publishes staged writes through s's Repo and SubStore.
+func (s *Service) CommitArtifacts(ctx context.Context, profileID string, bundle []*Artifact) error {
+	return commitArtifactsWith(ctx, s.repo, s.substore, profileID, bundle)
+}
+
+func commitArtifactsWith(ctx context.Context, r *repo.Repository, sub *substore.Service, profileID string, bundle []*Artifact) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -1022,12 +1064,15 @@ func CommitArtifacts(ctx context.Context, profileID string, bundle []*Artifact) 
 	for _, id := range order {
 		list = append(list, updates[id])
 	}
-	if err := CommitWrites(ctx, list); err != nil {
+	if err := commitWritesWith(ctx, r, sub, list); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return err
+	if r == nil {
+		var err error
+		r, err = repo.GetRepository(ctx)
+		if err != nil {
+			return err
+		}
 	}
 	for _, id := range artifactOrder {
 		if err := ctx.Err(); err != nil {

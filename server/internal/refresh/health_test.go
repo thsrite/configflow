@@ -262,7 +262,7 @@ func TestScheduledDownloadStoresHostsNextToNodes(t *testing.T) {
 	if _, _, _, err := DownloadNodes(f.ctx, airSub(t)); err != nil {
 		t.Fatal(err)
 	}
-	cache, err := substore.LoadCache(f.ctx, "air")
+	cache, err := substore.LoadCache(f.ctx, f.repo, "air")
 	if err != nil || cache == nil {
 		t.Fatal(cache, err)
 	}

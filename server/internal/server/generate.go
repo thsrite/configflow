@@ -27,8 +27,13 @@ type generateServices struct {
 }
 
 func newGenerateServices(r *repo.Repository, rt *lifecycle.Runtime, tk *tasks.Registry) (*generateServices, error) {
-	sub := substore.NewService(substore.NewEnv())
-	substore.SetDefault(sub)
+	var subEnv *substore.Env
+	if r != nil {
+		subEnv = substore.NewEnvFor(r)
+	} else {
+		subEnv = substore.NewEnv()
+	}
+	sub := substore.NewService(subEnv)
 
 	rf := refresh.New(refresh.Options{
 		Repo:     r,
@@ -46,6 +51,7 @@ func newGenerateServices(r *repo.Repository, rt *lifecycle.Runtime, tk *tasks.Re
 	agg := aggregations.New(aggregations.ServiceOptions{
 		Provider: pv,
 		Repo:     r,
+		SubStore: sub,
 	})
 	if err := pv.SetAggregations(agg.RenderProvider); err != nil {
 		return nil, err
@@ -75,8 +81,8 @@ func newDeployService(opts deploy.Options) *deploy.Service {
 	return dp
 }
 
-func wireConvertOnce(gen *generateServices) error {
-	if err := mihomoenv.WireWith(gen.substore, gen.provider); err != nil && !errors.Is(err, convert.ErrMihomoEnvironmentAlreadySet) {
+func wireConvertOnce(r *repo.Repository, gen *generateServices) error {
+	if err := mihomoenv.WireWith(r, gen.substore, gen.provider); err != nil && !errors.Is(err, convert.ErrMihomoEnvironmentAlreadySet) {
 		return err
 	}
 	if err := convert.SetMihomoIntegrations(gateway.Hooks()); err != nil && !errors.Is(err, convert.ErrMihomoIntegrationsAlreadySet) {

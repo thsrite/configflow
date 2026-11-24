@@ -29,7 +29,7 @@ func (h *Handler) substore() *substore.Service {
 	if h != nil && h.SubStore != nil {
 		return h.SubStore
 	}
-	return substore.Default()
+	return substore.NewService(substore.NewEnv())
 }
 
 func (h *Handler) webdav() *webdav.Service {

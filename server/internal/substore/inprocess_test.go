@@ -178,7 +178,7 @@ func TestCacheRemovalPreservesPythonLock(t *testing.T) {
 	for _, prune := range []bool{false, true} {
 		t.Run(map[bool]string{false: "delete", true: "prune"}[prune], func(t *testing.T) {
 			ctx, r := sharedRepo(t)
-			path, err := CachePath(ctx, "drop")
+			path, err := CachePath(ctx, r, "drop")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -200,10 +200,10 @@ func TestCacheRemovalPreservesPythonLock(t *testing.T) {
 					return nil
 				})
 				if err == nil {
-					_, err = PruneOrphanCaches(ctx)
+					_, err = PruneOrphanCaches(ctx, r)
 				}
 			} else {
-				_, err = DeleteSubscriptionCache(ctx, "drop")
+				_, err = DeleteSubscriptionCache(ctx, r, "drop")
 			}
 			if err != nil {
 				t.Fatal(err)

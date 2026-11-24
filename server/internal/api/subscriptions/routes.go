@@ -87,7 +87,7 @@ func (h *Handler) handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 			if len(entry.History) > 0 {
 				view.LastFetch = entry.History[len(entry.History)-1]
 			}
-			cached, err := loadCacheSummary(ctx, sub.ID)
+			cached, err := h.loadCacheSummary(ctx, sub.ID)
 			if err != nil {
 				return nil, err
 			}
@@ -322,7 +322,7 @@ func (h *Handler) subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	sub := list[index]
 	if source, _ := c.Arg("source"); source == "cache" {
-		cached, err := loadCacheSummary(ctx, id)
+		cached, err := h.loadCacheSummary(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -392,7 +392,7 @@ func (h *Handler) fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		detail := failureDetail(err)
 		fetchError = &detail
-		cached, err = loadCache(ctx, sub.ID)
+		cached, err = h.loadCache(ctx, sub.ID)
 		if err != nil {
 			return nil, err
 		}

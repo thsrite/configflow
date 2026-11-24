@@ -167,7 +167,7 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	}
 	t.Cleanup(provider.SetLocations(deploy.Locations{}))
 	generation.Wire()
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	previousClock := notifications.Clock
 	notifications.Clock = fixedClock{}.Now
 	t.Cleanup(func() { notifications.Clock = previousClock })
@@ -238,7 +238,7 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	}
 	env.RandomHex = func() string { return "00000001" }
 	service := substore.NewService(env)
-	t.Cleanup(substore.SetDefault(service))
+	_ = service
 	re := refresh.DefaultRefreshEnv()
 	re.Clock = fixedClock{}
 	re.HTTP = env.HTTP

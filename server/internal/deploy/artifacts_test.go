@@ -35,7 +35,7 @@ func artifactManager(t *testing.T) (context.Context, *agents.Manager) {
 }
 
 func TestManualArtifactRuntime(t *testing.T) {
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	for _, engine := range []configgen.Engine{configgen.Mihomo, configgen.Surge, configgen.Loon, configgen.MosDNS, configgen.OxiDNS} {
 		for _, shutdown := range []bool{true, false} {
 			t.Run(string(engine)+map[bool]string{true: "/shutdown", false: "/disconnect"}[shutdown], func(t *testing.T) {
@@ -87,6 +87,7 @@ func TestManualArtifactRuntime(t *testing.T) {
 
 func TestManualArtifactUsesOwnerRepository(t *testing.T) {
 	ctx, m := artifactManager(t)
+	mihomoenv.OverrideForTest(t, m.Repository(), nil, nil)
 	_, foreign := artifactManager(t)
 	if _, err := foreign.Repository().UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
 		p.Surge.CustomConfig = "[General]\nloglevel=warning\n# foreign-profile-secret"
@@ -121,7 +122,7 @@ func TestManualArtifactUsesOwnerRepository(t *testing.T) {
 }
 
 func TestManualArtifactShutdownBeforePreviewCommit(t *testing.T) {
-	mihomoenv.Wire()
+	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	base, m := artifactManager(t)
 	startGlobalPublishRuntime(t, base)
 	ctx := lifecycle.BindRequest(base)
