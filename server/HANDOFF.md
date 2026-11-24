@@ -156,6 +156,11 @@ X1 NewApp keeps pre-W1 startup set; X2 test host). W6 full gate core PASS; compa
 (C04 Python harness still stubbed easytier redaction). Reports: review-w0-8.md, review-w5-6.md. Remaining W9–W11 after
 R line. R line (Neon b46ff673, go-o17-r) at R5; R3/R4 done in parallel and folded in. Rehearsal: pure-Go golden replay
 for the other 20 difftest packages added.
+2026-11-24: O17 3.7 R line MERGED (review-r: routers split into 13 layered packages device/ros/ikuai/spec/oplock/
+dnsguard/fixedip/clientlist/routeedit/rospolicy/ipv6/routers/rulesync, layers_test.go; proddiff new=0, routerdiff 2685
+overlapping recipes 0 status changes; Opus review R2/R8 adversarial: nil StateReader fail closed, router_rule_sync slot
+asserted in production assembly; review-r.md). Full gate: compare PASS on 1c423f113, core PASS after fixes. Lessons
+written to AGENT-BRIEF (45-min cap, no full routerdiff by agents, no wildcard deletes). W9 running (Neon, go-o17-w9).
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
