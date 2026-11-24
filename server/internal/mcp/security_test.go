@@ -52,7 +52,8 @@ func TestToolWriteUsesOriginalRuntime(t *testing.T) {
 			request, disconnect := context.WithCancel(runtime.BindRequest(base))
 			defer disconnect()
 			app := httpx.New()
-			Register(app.Router)
+			app.Repo = r
+			NewHandler(r).Register(app.Router)
 			apisubscriptions.Register(app.Router)
 			auth.Install(app)
 			reached, release := make(chan struct{}), make(chan struct{})
@@ -140,7 +141,7 @@ func TestTextContentUsesSharedCredentialRedaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := json.RawMessage(`{"username":"operator","config_token":"synthetic-panel-secret","url":"https://example.test/r?token=synthetic-rule-secret","message":"synthetic-rule-secret","rule_proxy_token":"synthetic-rule-secret"}`)
-	content, err := publicText(ctx, before)
+	content, err := NewHandler(r).publicText(ctx, before)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +164,8 @@ func FuzzTransportJSON(f *testing.F) {
 	}
 	ctx := repo.WithRepository(context.Background(), r)
 	app := httpx.New()
-	Register(app.Router)
+	app.Repo = r
+	NewHandler(r).Register(app.Router)
 	f.Fuzz(func(t *testing.T, raw string) {
 		if len(raw) > 65536 {
 			return
@@ -200,7 +202,8 @@ func TestMalformedCredentialNeverBecomesAnonymousAccess(t *testing.T) {
 				t.Fatal(err)
 			}
 			app := httpx.New()
-			Register(app.Router)
+			app.Repo = r
+			NewHandler(r).Register(app.Router)
 			for _, credential := range []string{"", "123", "synthetic-internal"} {
 				req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)).WithContext(repo.WithRepository(context.Background(), r))
 				if credential != "" {
@@ -251,7 +254,8 @@ func TestMalformedSystemConfigCannotAuthorizeMCP(t *testing.T) {
 				t.Fatal(err)
 			}
 			app := httpx.New()
-			Register(app.Router)
+			app.Repo = r
+			NewHandler(r).Register(app.Router)
 			req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)).WithContext(repo.WithRepository(context.Background(), r))
 			w := httptest.NewRecorder()
 			app.ServeHTTP(w, req)

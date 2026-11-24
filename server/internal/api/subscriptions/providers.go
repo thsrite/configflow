@@ -84,7 +84,7 @@ func hasDialer(proxies []proxy) bool {
 	return false
 }
 func (h *Handler) combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
-	if rejected, err := authorize(c); err != nil || rejected != nil {
+	if rejected, err := h.authorize(c); err != nil || rejected != nil {
 		return rejected, err
 	}
 	ctx := materializeContext(h.withRepo(c.Context()))
@@ -159,7 +159,7 @@ func (h *Handler) combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	return providerResponse(all, "", combinedHeader(details, len(all)))
 }
 func (h *Handler) subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
-	if rejected, err := authorize(c); err != nil || rejected != nil {
+	if rejected, err := h.authorize(c); err != nil || rejected != nil {
 		return rejected, err
 	}
 	id := c.Param("sub_id")

@@ -11,7 +11,6 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/configgen"
-	"configflow/internal/repo"
 )
 
 // Artifact is the manual export view of a frozen release candidate. Artifact
@@ -26,9 +25,8 @@ type Artifact struct {
 // GenerateArtifact materializes one pinned profile through the shared generator
 // and stores its immutable bytes with the Manager's A14 preview owner.
 func GenerateArtifact(ctx context.Context, m *agents.Manager, profileID string, engine configgen.Engine, baseURL string) (out Artifact, err error) {
-	ctx = repo.WithRepository(ctx, m.Repository())
 	err = RunDetached(ctx, "manual-artifact", func(ctx context.Context) error {
-		candidate, err := configgen.Capture(ctx, profileID, engine, baseURL)
+		candidate, err := configgen.Capture(ctx, m.Repository(), profileID, engine, baseURL)
 		if err != nil {
 			return err
 		}

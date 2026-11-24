@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"errors"
+
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -9,8 +11,8 @@ import (
 
 // ValidateSystemTokenOrJWT accepts internal calls, Bearer JWTs and configuration
 // capabilities, while rejecting current and retired internal rule-proxy tokens.
-// A nil system reads the request's repository snapshot.
-func ValidateSystemTokenOrJWT(c *httpx.Ctx, config *model.System) (ValidateResult, error) {
+// A nil system reads the repository snapshot from r.
+func ValidateSystemTokenOrJWT(c *httpx.Ctx, r *repo.Repository, config *model.System) (ValidateResult, error) {
 	if c.IsInternalCall() {
 		return ValidateResult{Valid: true}, nil
 	}
@@ -18,10 +20,10 @@ func ValidateSystemTokenOrJWT(c *httpx.Ctx, config *model.System) (ValidateResul
 	if err := ctx.Err(); err != nil {
 		return ValidateResult{}, err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return ValidateResult{}, err
+	if r == nil {
+		return ValidateResult{}, errors.New("auth: repository is nil")
 	}
+	var err error
 	var settings *model.SystemConfig
 	if config != nil {
 		settings = &config.SystemConfig

@@ -273,7 +273,7 @@ func (h *Handler) download(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if rejected, err := authorize(c); err != nil || rejected != nil {
+	if rejected, err := h.authorize(c); err != nil || rejected != nil {
 		return rejected, err
 	}
 	if agg == nil {

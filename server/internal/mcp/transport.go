@@ -38,10 +38,21 @@ var catalog []byte
 
 var logger = logx.Get("backend.mcp_server.server")
 
+// Handler serves ConfigFlow's stateless MCP JSON-RPC HTTP transport with an
+// explicit repository instance.
+type Handler struct {
+	Repo *repo.Repository
+}
+
+// NewHandler constructs an MCP Handler backed by r.
+func NewHandler(r *repo.Repository) *Handler {
+	return &Handler{Repo: r}
+}
+
 // Register installs all six explicit MCP transport entries.
-func Register(r *httpx.Router) {
+func (h *Handler) Register(r *httpx.Router) {
 	for _, path := range []string{"/mcp", "/mcp/"} {
-		r.POST(path, "mcp.handle_mcp", handle)
+		r.POST(path, "mcp.handle_mcp", h.handle)
 		r.Handle([]string{http.MethodGet, http.MethodDelete}, path, "mcp.unsupported_transport", unsupported)
 	}
 }
@@ -86,10 +97,10 @@ type toolResult struct {
 	IsError bool          `json:"isError"`
 }
 
-func authenticate(c *httpx.Ctx) (bool, error) {
-	r, err := repo.GetRepository(c.Context())
-	if err != nil {
-		return false, err
+func (h *Handler) authenticate(c *httpx.Ctx) (bool, error) {
+	r := h.Repo
+	if r == nil {
+		return false, errors.New("mcp: repository is nil")
 	}
 	var settings json.RawMessage
 	if err := r.View(c.Context(), func(doc *model.Document) error {
@@ -150,8 +161,8 @@ func authenticate(c *httpx.Ctx) (bool, error) {
 	return !malformed && token == "", nil
 }
 
-func handle(c *httpx.Ctx) (*httpx.Response, error) {
-	ok, err := authenticate(c)
+func (h *Handler) handle(c *httpx.Ctx) (*httpx.Response, error) {
+	ok, err := h.authenticate(c)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +190,7 @@ func handle(c *httpx.Ctx) (*httpx.Response, error) {
 		responses := []rpcResponse{}
 		for _, raw := range batch {
 			if b := bytes.TrimSpace(raw); len(b) > 0 && b[0] == '{' {
-				if res := dispatch(c, raw); res != nil {
+				if res := h.dispatch(c, raw); res != nil {
 					responses = append(responses, *res)
 				}
 			}
@@ -192,13 +203,13 @@ func handle(c *httpx.Ctx) (*httpx.Response, error) {
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return httpx.JSONStatus(400, rpcError(nil, -32600, msgRoot)), nil
 	}
-	res := dispatch(c, trimmed)
+	res := h.dispatch(c, trimmed)
 	if res == nil {
 		return httpx.Empty(202), nil
 	}
 	return httpx.JSON(res), nil
 }
-func dispatch(c *httpx.Ctx, raw json.RawMessage) (response *rpcResponse) {
+func (h *Handler) dispatch(c *httpx.Ctx, raw json.RawMessage) (response *rpcResponse) {
 	var m message
 	if jsondecode.Unmarshal(raw, &m) != nil {
 		return nil
@@ -256,7 +267,7 @@ func dispatch(c *httpx.Ctx, raw json.RawMessage) (response *rpcResponse) {
 	case "tools/list":
 		result = packed(object{"tools": catalog})
 	case "tools/call":
-		result, err = execute(c, m.Params)
+		result, err = h.execute(c, m.Params)
 	default:
 		r := rpcError(m.ID, -32601, fmt.Sprintf(msgUnknownMethod, method))
 		return &r
@@ -278,7 +289,7 @@ func dispatch(c *httpx.Ctx, raw json.RawMessage) (response *rpcResponse) {
 type invalidParams struct{ message string }
 
 func (e *invalidParams) Error() string { return e.message }
-func execute(c *httpx.Ctx, params json.RawMessage) (json.RawMessage, error) {
+func (h *Handler) execute(c *httpx.Ctx, params json.RawMessage) (json.RawMessage, error) {
 	var p callParams
 	if !unset(params) && jsondecode.Unmarshal(params, &p) != nil {
 		return nil, errors.New(msgType)
@@ -302,7 +313,7 @@ func execute(c *httpx.Ctx, params json.RawMessage) (json.RawMessage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	invocation, err := newInvocation(ctx, c.App(), argsRaw)
+	invocation, err := newInvocation(ctx, h.Repo, c.App(), argsRaw)
 	var payload json.RawMessage
 	if err == nil {
 		payload, err = invocation.run(ctx, name)
@@ -317,22 +328,20 @@ func execute(c *httpx.Ctx, params json.RawMessage) (json.RawMessage, error) {
 		payload = text(fmt.Sprintf(msgCallFailed, api.status, api.message))
 		// Python logs the business failure as a warning; internal tokens
 		// never reach the log.
-		if r, repoErr := repo.GetRepository(ctx); repoErr == nil {
-			if logged, err := redact.RedactSecretsInText(ctx, r, api.message); err == nil {
-				logger.Warningf(logToolFailed, name, logged)
-			}
+		if logged, err := redact.RedactSecretsInText(ctx, h.Repo, api.message); err == nil {
+			logger.Warningf(logToolFailed, name, logged)
 		}
 	}
-	content, err := publicText(ctx, payload)
+	content, err := h.publicText(ctx, payload)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(toolResult{Content: []textContent{{Type: "text", Text: content}}, IsError: failed})
 }
-func publicText(ctx context.Context, payload json.RawMessage) (string, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return "", err
+func (h *Handler) publicText(ctx context.Context, payload json.RawMessage) (string, error) {
+	r := h.Repo
+	if r == nil {
+		return "", errors.New("mcp: repository is nil")
 	}
 	sysCfg, err := r.SystemConfig(ctx)
 	if err != nil {

@@ -34,7 +34,7 @@ func TestTextContentKeepsLiteralHTMLCharacters(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := publicText(ctx, tc.payload)
+			got, err := NewHandler(r).publicText(ctx, tc.payload)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -55,7 +55,8 @@ func TestNullIDRequestIsAnswered(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := httpx.New()
-	Register(app.Router)
+	app.Repo = r
+	NewHandler(r).Register(app.Router)
 	req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":null,"method":"ping"}`)).WithContext(repo.WithRepository(context.Background(), r))
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, req)
@@ -86,7 +87,8 @@ func TestToolFailureIsLoggedWithoutInternalToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := httpx.New()
-	Register(app.Router)
+	app.Repo = r
+	NewHandler(r).Register(app.Router)
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"manage_node","arguments":{"action":"synthetic-rule-secret","id":"node-a"}}}`
 	req := httptest.NewRequest("POST", "/mcp", strings.NewReader(body)).WithContext(ctx)
 	w := httptest.NewRecorder()

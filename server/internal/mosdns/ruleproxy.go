@@ -197,11 +197,10 @@ func failure(status int, message string) *RuleProxyResponse {
 // RuleProxy serves a device's rule download: the original rule file (or
 // the profile's inline source) converted for MosDNS. Declared remote
 // sources come from their validated cache; a source that cannot be fetched
-// is a 502 rather than an old cache (it could roll devices back). ctx must
-// carry the request's repository scope.
-func RuleProxy(ctx context.Context, request RuleProxyRequest) *RuleProxyResponse {
+// is a 502 rather than an old cache (it could roll devices back).
+func RuleProxy(ctx context.Context, r *repo.Repository, request RuleProxyRequest) *RuleProxyResponse {
 	ctx = lifecycle.Detach(ctx) // cache writes and task records finish
-	response, err := ruleProxy(ctx, request)
+	response, err := ruleProxy(ctx, r, request)
 	if err == nil {
 		return response
 	}
@@ -248,12 +247,11 @@ func isBadRequest(err error) bool {
 	return true
 }
 
-func ruleProxy(ctx context.Context, request RuleProxyRequest) (*RuleProxyResponse, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+func ruleProxy(ctx context.Context, r *repo.Repository, request RuleProxyRequest) (*RuleProxyResponse, error) {
+	if r == nil {
+		return nil, errors.New("mosdns: repository is nil")
 	}
-	id, err := repo.ResolveProfileID(ctx, "")
+	id, err := r.ResolveProfileID(ctx, "")
 	if err != nil {
 		return nil, err
 	}

@@ -11,22 +11,25 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/routersplit"
 	"configflow/internal/setupflow"
 )
 
 // ServiceOptions configures an onboarding Service with explicit collaborators.
 type ServiceOptions struct {
-	DNSLoop         DNSLoopChecker
-	AdoptOwnedWrite AdoptOwnedWrite
+	DNSLoop          DNSLoopChecker
+	AdoptOwnedWrite  AdoptOwnedWrite
+	ReadSplitContext func(context.Context, *repo.Repository, string) (*routersplit.Context, error)
 }
 
 // Service owns onboarding reads and the atomic two-service profile write.
 // It retains no context; detached writes are bound to the Runtime generation.
 type Service struct {
-	Repository      *repo.Repository
-	DNSLoop         DNSLoopChecker
-	AdoptOwnedWrite AdoptOwnedWrite
-	explicitAdopter bool
+	Repository       *repo.Repository
+	DNSLoop          DNSLoopChecker
+	AdoptOwnedWrite  AdoptOwnedWrite
+	ReadSplitContext func(context.Context, *repo.Repository, string) (*routersplit.Context, error)
+	explicitAdopter  bool
 }
 
 // New constructs an onboarding Service with explicit collaborators. A nil
@@ -34,10 +37,11 @@ type Service struct {
 // session exists, without falling back to the package-level hook.
 func New(r *repo.Repository, opts ServiceOptions) *Service {
 	return &Service{
-		Repository:      r,
-		DNSLoop:         opts.DNSLoop,
-		AdoptOwnedWrite: opts.AdoptOwnedWrite,
-		explicitAdopter: true,
+		Repository:       r,
+		DNSLoop:          opts.DNSLoop,
+		AdoptOwnedWrite:  opts.AdoptOwnedWrite,
+		ReadSplitContext: opts.ReadSplitContext,
+		explicitAdopter:  true,
 	}
 }
 
@@ -101,7 +105,7 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 		}
 		modeSource = beforeNative
 	}
-	mode, err := takeover(ctx, s.Repository, op.ProfileID, modeSource)
+	mode, err := s.takeover(ctx, s.Repository, op.ProfileID, modeSource)
 	if err != nil {
 		if op.Write && !op.Preview && adopter == nil && errors.Is(err, setupflow.ErrReadSession) {
 			return nil, ErrSetupUnavailable

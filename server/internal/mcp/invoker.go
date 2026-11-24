@@ -140,7 +140,7 @@ type invocation struct {
 	profile  string
 }
 
-func newInvocation(ctx context.Context, app *httpx.App, raw json.RawMessage) (*invocation, error) {
+func newInvocation(ctx context.Context, r *repo.Repository, app *httpx.App, raw json.RawMessage) (*invocation, error) {
 	i := &invocation{app: app}
 	var original object
 	if json.Unmarshal(raw, &original) != nil {
@@ -155,10 +155,10 @@ func newInvocation(ctx context.Context, app *httpx.App, raw json.RawMessage) (*i
 	if jsondecode.Unmarshal(raw, &i.args) != nil || jsondecode.Unmarshal(raw, &i.original) != nil {
 		return nil, bad(msgType)
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+	if r == nil {
+		return nil, fmt.Errorf("mcp: repository is nil")
 	}
+	var err error
 	i.profile, err = r.DefaultProfileID(ctx)
 	if err != nil {
 		return nil, err

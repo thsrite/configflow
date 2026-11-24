@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 
@@ -51,9 +52,7 @@ func TestProfileSessionsDirectAndOverride(t *testing.T) {
 	if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "home", Name: "home"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	restore := SetSessionReader(nil)
-	defer restore()
-	// With no override, ReadContext reads setupflow sessions directly.
+	// With no sessions stored, ReadContext reads setupflow sessions directly.
 	direct, err := ReadContext(ctx, r, "home")
 	if err != nil {
 		t.Fatalf("ReadContext direct: %v", err)
@@ -69,16 +68,13 @@ func TestProfileSessionsDirectAndOverride(t *testing.T) {
 		t.Fatalf("no profile: %v %v", source, err)
 	}
 	sessionRaw := json.RawMessage(`[{"id":"s1","goal":"router","completed":1}]`)
-	var sessions []Session
-	if err := json.Unmarshal(sessionRaw, &sessions); err != nil {
+	dir := filepath.Join(r.DataDir(), "setup-sessions")
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	SetSessionReader(func(_ context.Context, got *repo.Repository, profileID string) ([]Session, error) {
-		if got != r || profileID != "home" {
-			t.Errorf("hook got %p %q", got, profileID)
-		}
-		return sessions, nil
-	})
+	if err := os.WriteFile(filepath.Join(dir, "s1.json"), []byte(`{"id":"s1","profile_id":"home","goal":"router","completed":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	legacy, err := ReadContext(ctx, r, "home")
 	if err != nil {
 		t.Fatal(err)

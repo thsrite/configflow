@@ -31,12 +31,12 @@ func reviewN811AgentRecord(t *testing.T, id string, deployments int) model.Agent
 	return agent
 }
 
-func reviewN811OutdatedBytes(t *testing.T, ctx context.Context) uint64 {
+func reviewN811OutdatedBytes(t *testing.T, ctx context.Context, r *repo.Repository) uint64 {
 	t.Helper()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	for range 20 {
-		reports, err := outdatedAgents(ctx, "default")
+		reports, err := outdatedAgents(ctx, r, "default")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -90,24 +90,21 @@ func TestReviewN811CoreAgentOfMatchesJSONDecode(t *testing.T) {
 // path: inspecting agents under repo.View must not marshal an Agent's entire
 // deployment history just to read CoreAgent fields.
 func TestReviewN811OutdatedAgentsSkipAgentHistory(t *testing.T) {
-	setup := func(deployments int) context.Context {
+	setup := func(deployments int) (context.Context, *repo.Repository) {
 		r, err := repo.Open(t.TempDir(), repo.Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		// // Allocation measurements exclude the test-only view guard's encodings.
 		r.SetViewGuard(nil)
-		ctx := repo.WithScope(repo.WithRepository(t.Context(), r))
+		ctx := repo.WithScope(t.Context())
 		if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
 			system.Agents = []model.Agent{reviewN811AgentRecord(t, "agent-1", deployments)}
 			return nil
 		}); err != nil {
 			t.Fatal(err)
 		}
-		store, err := trafficstore.GetNative(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
+		store := trafficstore.NewNative(r.DataDir())
 		if _, err := store.Add(ctx, "agent-1", &trafficstore.Report{
 			Status:        "running",
 			MihomoVersion: json.RawMessage(`"v1.18.0"`),
@@ -117,14 +114,15 @@ func TestReviewN811OutdatedAgentsSkipAgentHistory(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Warm up repository document cache and traffic status cache.
-		if reports, err := outdatedAgents(ctx, "default"); err != nil || len(reports) != 1 {
+		if reports, err := outdatedAgents(ctx, r, "default"); err != nil || len(reports) != 1 {
 			t.Fatalf("warmup outdatedAgents = %+v, %v", reports, err)
 		}
-		return ctx
+		return ctx, r
 	}
-	smallCtx, largeCtx := setup(1), setup(2000)
-	smallBytes := reviewN811OutdatedBytes(t, smallCtx)
-	largeBytes := reviewN811OutdatedBytes(t, largeCtx)
+	smallCtx, smallRepo := setup(1)
+	largeCtx, largeRepo := setup(2000)
+	smallBytes := reviewN811OutdatedBytes(t, smallCtx, smallRepo)
+	largeBytes := reviewN811OutdatedBytes(t, largeCtx, largeRepo)
 	// The history is ~2 MB; marshaling it even once per call exceeds this bound.
 	if largeBytes > smallBytes+64*1024 {
 		t.Fatalf("outdatedAgents allocates %d bytes with a large history (%d with a small one)", largeBytes, smallBytes)

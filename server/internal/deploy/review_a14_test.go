@@ -3,13 +3,10 @@ package deploy
 import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/lifecycle/lifecycletest"
-	"context"
 	"testing"
 	"time"
 
 	"configflow/internal/agents/agentfake"
-	"configflow/internal/repo"
-	"configflow/internal/routersplit"
 )
 
 // A14 review L1: unforced provider details share the one-write-per-second
@@ -48,28 +45,5 @@ func TestReviewA14UnforcedProgressIsThrottled(t *testing.T) {
 	p.Phase("正在校验节点来源与拨号引用关系（2 个文件）")
 	if got := message(); got != "正在校验节点来源与拨号引用关系（2 个文件）" {
 		t.Fatal("forced phase was throttled", got)
-	}
-}
-
-// A14 + A20: deploy.Wire must not register a second setup-session reader;
-// setupflow.Wire owns routersplit's hook.
-func TestWireKeepsTheSingleSetupSessionReader(t *testing.T) {
-	ctx := testContext(t)
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	calls := 0
-	restore := routersplit.SetSessionReader(func(context.Context, *repo.Repository, string) ([]routersplit.Session, error) {
-		calls++
-		return nil, nil
-	})
-	t.Cleanup(restore)
-	Wire()
-	if _, err = routersplit.ReadContext(ctx, r, "default"); err != nil {
-		t.Fatal(err)
-	}
-	if calls != 1 {
-		t.Fatal("deploy.Wire replaced the shared setup-session reader")
 	}
 }

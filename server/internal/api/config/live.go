@@ -12,7 +12,6 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
-	"configflow/internal/repo"
 	"configflow/internal/rules"
 )
 
@@ -39,7 +38,7 @@ func (h *Handler) live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, 
 	if err != nil {
 		return nil, err
 	}
-	profileID, err := repo.ResolveProfileID(c.Context(), c.ProfileID)
+	profileID, err := repository.ResolveProfileID(c.Context(), c.ProfileID)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +47,7 @@ func (h *Handler) live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, 
 		return nil, err
 	}
 	system := model.System{SystemConfig: config.SystemConfig, Backup: config.Backup}
-	result, err := auth.ValidateSystemTokenOrJWT(c, &system)
+	result, err := auth.ValidateSystemTokenOrJWT(c, repository, &system)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +71,7 @@ func (h *Handler) live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, 
 
 		}
 	}
-	out, err := configgen.RenderConfig(c.Context(), config, engine, base)
+	out, err := configgen.RenderConfig(c.Context(), repository, config, engine, base)
 	if err != nil {
 		var reference *rules.StrategyReferenceError
 		if errors.As(err, &reference) {

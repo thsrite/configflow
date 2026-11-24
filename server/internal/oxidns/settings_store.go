@@ -63,12 +63,11 @@ func settingsETag(value *Node) string {
 
 // ReadSettings reads a draft without saving normalization/defaults. HEAD uses
 // this same owner entry point; a body on HEAD never reaches SaveSettings.
-func ReadSettings(ctx context.Context, profileID string) (StoredSettings, error) {
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return StoredSettings{}, err
+func ReadSettings(ctx context.Context, repository *repo.Repository, profileID string) (StoredSettings, error) {
+	if repository == nil {
+		return StoredSettings{}, errors.New("oxidns: repository is nil")
 	}
-	id, err := repo.ResolveProfileID(ctx, profileID)
+	id, err := repository.ResolveProfileID(ctx, profileID)
 	if err != nil {
 		return StoredSettings{}, err
 	}
@@ -99,10 +98,13 @@ func ReadSettings(ctx context.Context, profileID string) (StoredSettings, error)
 
 // SaveSettings owns the detached whole-object transaction. The stale-validator
 // check and follow invalidation both use the freshly locked complete snapshot.
-func SaveSettings(ctx context.Context, profileID string, value *Node, expected string) (SavedSettings, error) {
+func SaveSettings(ctx context.Context, repository *repo.Repository, profileID string, value *Node, expected string) (SavedSettings, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return SavedSettings{}, err
+	}
+	if repository == nil {
+		return SavedSettings{}, errors.New("oxidns: repository is nil")
 	}
 	if !isMap(value) {
 		return SavedSettings{}, fail(SettingsObjectMessage)
@@ -111,11 +113,7 @@ func SaveSettings(ctx context.Context, profileID string, value *Node, expected s
 	if err != nil {
 		return SavedSettings{}, err
 	}
-	id, err := repo.ResolveProfileID(ctx, profileID)
-	if err != nil {
-		return SavedSettings{}, err
-	}
-	repository, err := repo.GetRepository(ctx)
+	id, err := repository.ResolveProfileID(ctx, profileID)
 	if err != nil {
 		return SavedSettings{}, err
 	}

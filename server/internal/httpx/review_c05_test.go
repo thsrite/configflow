@@ -91,7 +91,15 @@ func c05EqualJSON(t *testing.T, got any, want json.RawMessage) {
 
 func c05Observe(c *httpx.Ctx) (*httpx.Response, error) {
 	if strings.Contains(c.Path(), "/proxies") || strings.HasSuffix(c.Path(), "/provider") {
-		result, err := auth.ValidateSystemTokenOrJWT(c, &model.System{SystemConfig: model.SystemConfig{ConfigToken: "c05-config-token"}})
+		r := c.App().Repo
+		if r == nil {
+			var err error
+			r, err = repo.GetRepository(c.Context())
+			if err != nil {
+				return nil, err
+			}
+		}
+		result, err := auth.ValidateSystemTokenOrJWT(c, r, &model.System{SystemConfig: model.SystemConfig{ConfigToken: "c05-config-token"}})
 		if err != nil {
 			return nil, err
 		}

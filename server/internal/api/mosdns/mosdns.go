@@ -304,8 +304,12 @@ func (h *Handler) save(ctx context.Context, section string, in model.MosDNSSetti
 }
 
 func (h *Handler) ruleProxy(c *httpx.Ctx) (*httpx.Response, error) {
+	r, err := h.repository(c.Context())
+	if err != nil {
+		return nil, err
+	}
 	header, _ := c.Header("Authorization")
-	result := mosdns.RuleProxy(c.Context(), mosdns.RuleProxyRequest{
+	result := mosdns.RuleProxy(c.Context(), r, mosdns.RuleProxyRequest{
 		Auth: mosdns.AuthRequest{Internal: c.IsInternalCall(), Authorization: header, Token: c.ArgDefault("token", "")},
 		URL:  c.ArgDefault("url", ""), Part: c.ArgDefault("part", ""), SourceID: c.ArgDefault("source_id", ""),
 		HostURL: c.HostURL(),

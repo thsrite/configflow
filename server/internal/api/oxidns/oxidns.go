@@ -130,8 +130,12 @@ func userFailure(err error, native bool) (*httpx.Response, error) {
 	return response, nil
 }
 func (h *Handler) settings(c *httpx.Ctx) (*httpx.Response, error) {
+	r, err := h.repository(c.Context())
+	if err != nil {
+		return nil, err
+	}
 	if c.Method() == http.MethodGet || c.Method() == http.MethodHead {
-		value, err := engine.ReadSettings(c.Context(), c.ProfileID)
+		value, err := engine.ReadSettings(c.Context(), r, c.ProfileID)
 		if err != nil {
 			return userFailure(err, false)
 		}
@@ -145,7 +149,7 @@ func (h *Handler) settings(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return httpx.Message(http.StatusBadRequest, false, engine.SettingsObjectMessage), nil
 	}
-	saved, err := engine.SaveSettings(c.Context(), c.ProfileID, node, c.HeaderDefault("If-Match", ""))
+	saved, err := engine.SaveSettings(c.Context(), r, c.ProfileID, node, c.HeaderDefault("If-Match", ""))
 	if errors.Is(err, engine.ErrSettingsChanged) {
 		return httpx.JSONStatus(http.StatusConflict, struct {
 			Success bool   `json:"success"`

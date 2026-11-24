@@ -31,7 +31,7 @@ func TestGenerationOwnerRuntime(t *testing.T) {
 				} else {
 					cancel()
 				}
-				result, err := Build(ctx, "default", engine, "")
+				result, err := Build(ctx, r, "default", engine, "")
 				if shutdown {
 					if err == nil {
 						t.Fatal("shutdown generated download")

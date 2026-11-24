@@ -4,6 +4,7 @@ package gatewayonboarding
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -26,10 +27,11 @@ func Register(r *httpx.Router) {
 // Handler registers routes with their Repository, pure DNS-check and ownership
 // collaborators. Register supplies the shared checker in production.
 type Handler struct {
-	Repo            *repo.Repository
-	DNSLoop         onboarding.DNSLoopChecker
-	AdoptOwnedWrite onboarding.AdoptOwnedWrite
-	explicitAdopter bool
+	Repo             *repo.Repository
+	DNSLoop          onboarding.DNSLoopChecker
+	AdoptOwnedWrite  onboarding.AdoptOwnedWrite
+	ReadSplitContext func(context.Context, *repo.Repository, string) (*routersplit.Context, error)
+	explicitAdopter  bool
 }
 
 // NewHandler constructs a Handler with explicit collaborators. A nil
@@ -89,9 +91,9 @@ func (h Handler) handle(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	var service *onboarding.Service
 	if h.explicitAdopter {
-		service = onboarding.New(r, onboarding.ServiceOptions{DNSLoop: h.DNSLoop, AdoptOwnedWrite: h.AdoptOwnedWrite})
+		service = onboarding.New(r, onboarding.ServiceOptions{DNSLoop: h.DNSLoop, AdoptOwnedWrite: h.AdoptOwnedWrite, ReadSplitContext: h.ReadSplitContext})
 	} else {
-		service = &onboarding.Service{Repository: r, DNSLoop: h.DNSLoop, AdoptOwnedWrite: h.AdoptOwnedWrite}
+		service = &onboarding.Service{Repository: r, DNSLoop: h.DNSLoop, AdoptOwnedWrite: h.AdoptOwnedWrite, ReadSplitContext: h.ReadSplitContext}
 	}
 	data, err := service.Execute(c.Context(), op)
 	if err != nil {

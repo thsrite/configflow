@@ -55,6 +55,7 @@ func TestPythonToolAdapterContracts(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {
 			app := httpx.New()
+			app.Repo = r
 			var calls []observedCall
 			app.Router.Handle([]string{"GET", "POST", "PUT", "DELETE"}, "/api/<path:p>", "test.echo", func(c *httpx.Ctx) (*httpx.Response, error) {
 				raw, err := io.ReadAll(c.Request.Body)
@@ -101,7 +102,7 @@ func TestPythonToolAdapterContracts(t *testing.T) {
 					Data json.RawMessage `json:"data"`
 				}{body}), nil
 			})
-			invocation, err := newInvocation(ctx, app, tc.Arguments)
+			invocation, err := newInvocation(ctx, r, app, tc.Arguments)
 			if err != nil {
 				t.Fatal(err)
 			}

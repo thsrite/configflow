@@ -19,7 +19,8 @@ func TestAuditRPCExactMembers(t *testing.T) {
 	}
 	ctx := repo.WithRepository(context.Background(), db)
 	app := httpx.New()
-	Register(app.Router)
+	app.Repo = db
+	NewHandler(db).Register(app.Router)
 	for _, tc := range []struct {
 		raw    string
 		status int

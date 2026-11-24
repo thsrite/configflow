@@ -38,7 +38,7 @@ func TestSystemTokenUsesOriginalCredentialTypes(t *testing.T) {
 					if err != nil {
 						return nil, err
 					}
-					result, err := auth.ValidateSystemTokenOrJWT(c, system)
+					result, err := auth.ValidateSystemTokenOrJWT(c, r, system)
 					if err != nil {
 						return nil, err
 					}

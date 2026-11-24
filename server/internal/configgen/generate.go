@@ -62,7 +62,7 @@ type Download struct {
 }
 
 // RenderConfig generates from a typed resolved configuration snapshot.
-func RenderConfig(ctx context.Context, config *model.Config, engine Engine, baseURL string) (Output, error) {
+func RenderConfig(ctx context.Context, r *repo.Repository, config *model.Config, engine Engine, baseURL string) (Output, error) {
 	var out Output
 	var err error
 	switch engine {
@@ -77,7 +77,7 @@ func RenderConfig(ctx context.Context, config *model.Config, engine Engine, base
 						if config != nil {
 							profileID = config.ProfileID
 						}
-						if outdated, readErr := outdatedAgents(ctx, profileID); readErr == nil {
+						if outdated, readErr := outdatedAgents(ctx, r, profileID); readErr == nil {
 							if raw, mErr := json.Marshal(outdated); mErr == nil {
 								if node, yErr := yamlx.FromJSON(raw); yErr == nil {
 									yamlx.Set(dns, "outdated_agents", node)
@@ -116,17 +116,16 @@ func RenderConfig(ctx context.Context, config *model.Config, engine Engine, base
 
 // Build owns manual download materialization. After Detach every call capable
 // of persisting data is preceded by the Runtime cancellation check.
-func Build(ctx context.Context, id string, engine Engine, baseURL string) (Download, error) {
+func Build(ctx context.Context, repository *repo.Repository, id string, engine Engine, baseURL string) (Download, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return Download{}, err
 	}
 	faultprobe.Point(ctx, faultprobe.GenerateBuild)
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return Download{}, err
+	if repository == nil {
+		return Download{}, errors.New("configgen: repository is nil")
 	}
-	profileID, err := repo.ResolveProfileID(ctx, id)
+	profileID, err := repository.ResolveProfileID(ctx, id)
 	if err != nil {
 		return Download{}, err
 	}
@@ -134,21 +133,21 @@ func Build(ctx context.Context, id string, engine Engine, baseURL string) (Downl
 	if err != nil {
 		return Download{}, err
 	}
-	return build(ctx, config, engine, baseURL)
+	return build(ctx, repository, config, engine, baseURL)
 }
 
-func build(ctx context.Context, config *model.Config, engine Engine, baseURL string) (Download, error) {
+func build(ctx context.Context, r *repo.Repository, config *model.Config, engine Engine, baseURL string) (Download, error) {
 	if err := ctx.Err(); err != nil {
 		return Download{}, err
 	}
-	out, err := RenderConfig(ctx, config, engine, baseURL)
+	out, err := RenderConfig(ctx, r, config, engine, baseURL)
 	if err != nil {
 		return Download{}, err
 	}
-	return materialize(ctx, config, out, engine, baseURL)
+	return materialize(ctx, r, config, out, engine, baseURL)
 }
 
-func materialize(ctx context.Context, config *model.Config, out Output, engine Engine, baseURL string) (Download, error) {
+func materialize(ctx context.Context, r *repo.Repository, config *model.Config, out Output, engine Engine, baseURL string) (Download, error) {
 	if err := ctx.Err(); err != nil {
 		return Download{}, err
 	}
@@ -158,13 +157,13 @@ func materialize(ctx context.Context, config *model.Config, out Output, engine E
 		name := map[Engine]string{Mihomo: "config.yaml", Surge: "config.conf", Loon: "loon.lcf"}[engine]
 		result.Name = map[Engine]string{Mihomo: "mihomo.yaml", Surge: "surge.conf", Loon: "loon.lcf"}[engine]
 		result.MIME = map[Engine]string{Mihomo: "application/octet-stream", Surge: "text/plain; charset=utf-8", Loon: "application/octet-stream"}[engine]
-		r, err := repo.GetRepository(ctx)
-		if err != nil {
-			return Download{}, err
+		if r == nil {
+			return Download{}, errors.New("configgen: repository is nil")
 		}
 		if err := ctx.Err(); err != nil {
 			return Download{}, err
 		}
+		var err error
 		result.Path, err = r.WriteGenerated(ctx, config.ProfileID, name, []byte(out.Content))
 		if err != nil {
 			return Download{}, err
@@ -233,10 +232,9 @@ func coreAgentOf(agent *model.Agent) subs.CoreAgent {
 	return core
 }
 
-func outdatedAgents(ctx context.Context, id string) ([]subs.CoreReport, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+func outdatedAgents(ctx context.Context, r *repo.Repository, id string) ([]subs.CoreReport, error) {
+	if r == nil {
+		return nil, errors.New("configgen: repository is nil")
 	}
 	var list []subs.CoreAgent
 	if err := r.View(ctx, func(doc *model.Document) error {
@@ -252,10 +250,7 @@ func outdatedAgents(ctx context.Context, id string) ([]subs.CoreReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, err := trafficstore.GetNative(ctx)
-	if err != nil {
-		return nil, err
-	}
+	store := trafficstore.NewNative(r.DataDir())
 	names := make(map[string]string, len(list))
 	for _, item := range list {
 		names[item.ID] = item.Name

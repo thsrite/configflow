@@ -81,7 +81,7 @@ func TestC29RuntimeShutdownRejectsEveryOwner(t *testing.T) {
 			before := ownedState(t, ctx, r)
 			var err error
 			if owner == "settings" {
-				_, err = SaveSettings(bound, "default", M("worker_threads", I(7)), "")
+				_, err = SaveSettings(bound, r, "default", M("worker_threads", I(7)), "")
 			} else {
 				var result []byte
 				result, err = BuildTypedZIP(bound, &model.Config{Profile: &model.Profile{}}, "plugins: []", nil, []File{{Path: "notes.txt", Content: []byte("must not be packed")}}, "")
@@ -108,7 +108,7 @@ func TestC29RealRuntimeDisconnectCompletesEveryOwner(t *testing.T) {
 	if !errors.Is(request.Err(), context.Canceled) || lifecycle.Detach(request).Err() != nil {
 		t.Fatal("fixture did not isolate request disconnect from Runtime shutdown")
 	}
-	saved, err := SaveSettings(request, "default", M("worker_threads", I(7)), "")
+	saved, err := SaveSettings(request, r, "default", M("worker_threads", I(7)), "")
 	if err != nil {
 		t.Fatal(err)
 	}

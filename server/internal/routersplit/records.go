@@ -8,43 +8,9 @@ import (
 	"context"
 	"encoding/json"
 	"gopkg.in/yaml.v3"
-	"sync"
 )
 
-// HookMissingError means the setup-session provider was not registered.
-type HookMissingError struct{ Hook, Provider string }
-
-func (e *HookMissingError) Error() string {
-	return "common.router_split: " + e.Hook + " is not available (provided by " + e.Provider + ")"
-}
-
-// SessionReader reads setup-owned session records before a profile transaction.
-type SessionReader func(context.Context, *repo.Repository, string) ([]Session, error)
-
-var sessionReaderState struct {
-	sync.RWMutex
-	read SessionReader
-}
-
-// SetSessionReader installs the typed setup owner and returns a restoration.
-func SetSessionReader(read SessionReader) func() {
-	sessionReaderState.Lock()
-	old := sessionReaderState.read
-	sessionReaderState.read = read
-	sessionReaderState.Unlock()
-	return func() { sessionReaderState.Lock(); sessionReaderState.read = old; sessionReaderState.Unlock() }
-}
 func readSessions(ctx context.Context, r *repo.Repository, id string) (*Context, error) {
-	sessionReaderState.RLock()
-	read := sessionReaderState.read
-	sessionReaderState.RUnlock()
-	if read != nil {
-		rows, err := read(ctx, r, id)
-		if err != nil {
-			return nil, err
-		}
-		return SessionContext(rows)
-	}
 	sessions, err := setupflow.ProfileSessions(ctx, r.DataDir(), id)
 	if err != nil {
 		return nil, err

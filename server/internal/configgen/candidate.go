@@ -3,6 +3,7 @@ package configgen
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -23,16 +24,15 @@ type Candidate struct {
 // Capture pins the resolved profile and revision before generation. Render and
 // archive creation reuse Build's implementation; generated paths are never read
 // back, since another request may replace them immediately.
-func Capture(ctx context.Context, profileID string, engine Engine, baseURL string) (Candidate, error) {
+func Capture(ctx context.Context, r *repo.Repository, profileID string, engine Engine, baseURL string) (Candidate, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return Candidate{}, err
 	}
-	id, err := repo.ResolveProfileID(ctx, profileID)
-	if err != nil {
-		return Candidate{}, err
+	if r == nil {
+		return Candidate{}, errors.New("configgen: repository is nil")
 	}
-	r, err := repo.GetRepository(ctx)
+	id, err := r.ResolveProfileID(ctx, profileID)
 	if err != nil {
 		return Candidate{}, err
 	}
@@ -44,7 +44,7 @@ func Capture(ctx context.Context, profileID string, engine Engine, baseURL strin
 	if err != nil {
 		return Candidate{}, err
 	}
-	download, err := build(ctx, config, engine, baseURL)
+	download, err := build(ctx, r, config, engine, baseURL)
 	if err != nil {
 		return Candidate{}, err
 	}

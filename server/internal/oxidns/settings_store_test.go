@@ -41,7 +41,7 @@ func TestC29SaveSettingsDetachesBeforeRepositoryLock(t *testing.T) {
 	request, cancel := context.WithCancel(runtime.BindRequest(repo.WithScope(repo.WithRepository(context.Background(), r))))
 	cancel()
 	result := make(chan error, 1)
-	go func() { _, err := SaveSettings(request, "default", M("worker_threads", I(6)), ""); result <- err }()
+	go func() { _, err := SaveSettings(request, r, "default", M("worker_threads", I(6)), ""); result <- err }()
 	close(release)
 	if err := <-holder; err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestC29SaveSettingsDetachesBeforeRepositoryLock(t *testing.T) {
 }
 func TestC29IfMatchSerializesWholeDraftSaves(t *testing.T) {
 	ctx, r := settingsRepository(t)
-	before, err := ReadSettings(ctx, "default")
+	before, err := ReadSettings(ctx, r, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestC29IfMatchSerializesWholeDraftSaves(t *testing.T) {
 		go func(threads int64) {
 			defer wait.Done()
 			<-start
-			_, err := SaveSettings(repo.WithScope(repo.WithRepository(context.Background(), r)), "default", M("worker_threads", I(threads)), before.ETag)
+			_, err := SaveSettings(repo.WithScope(context.Background()), r, "default", M("worker_threads", I(threads)), before.ETag)
 			results <- err
 		}(threads)
 	}
@@ -113,11 +113,11 @@ func TestC29IfMatchSerializesWholeDraftSaves(t *testing.T) {
 	if after != revision+1 {
 		t.Fatalf("stale save committed: before=%d after=%d", revision, after)
 	}
-	current, err := ReadSettings(repo.WithScope(ctx), "default")
+	current, err := ReadSettings(repo.WithScope(ctx), r, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved, err := SaveSettings(ctx, "default", M("worker_threads", I(3)), " W/"+current.ETag+" ")
+	saved, err := SaveSettings(ctx, r, "default", M("worker_threads", I(3)), " W/"+current.ETag+" ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestStoredSettingsProjectionKeepsStoredValidator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	read, err := ReadSettings(repo.WithScope(ctx), "default")
+	read, err := ReadSettings(repo.WithScope(ctx), r, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,10 +146,10 @@ func TestStoredSettingsProjectionKeepsStoredValidator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = SaveSettings(repo.WithScope(ctx), "default", projected, read.ETag); err != nil {
+	if _, err = SaveSettings(repo.WithScope(ctx), r, "default", projected, read.ETag); err != nil {
 		t.Fatalf("editor cannot repair compatible stored settings: %v", err)
 	}
-	if _, err = SaveSettings(repo.WithScope(ctx), "default", projected, read.ETag); !errors.Is(err, ErrSettingsChanged) {
+	if _, err = SaveSettings(repo.WithScope(ctx), r, "default", projected, read.ETag); !errors.Is(err, ErrSettingsChanged) {
 		t.Fatalf("old stored validator remained valid after repair: %v", err)
 	}
 }

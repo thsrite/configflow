@@ -22,7 +22,6 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/routersplit"
 	"configflow/internal/setup"
-	"configflow/internal/setupflow"
 	"configflow/internal/yamlx"
 )
 
@@ -340,7 +339,21 @@ func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 			name = "intervening-revision"
 		}
 		t.Run(name, func(t *testing.T) {
-			s := testServer(t)
+			var readSplit func(context.Context, *repo.Repository, string) (*routersplit.Context, error)
+			if concurrent {
+				calls := 0
+				readSplit = func(ctx context.Context, r *repo.Repository, profileID string) (*routersplit.Context, error) {
+					calls++
+					if calls == 1 {
+						name := "Concurrent metadata"
+						if _, err := r.UpdateProfileMetadataRecord(ctx, profileID, repo.ProfileMetadataUpdate{Name: &name}); err != nil {
+							return nil, err
+						}
+					}
+					return routersplit.ReadContext(ctx, r, profileID)
+				}
+			}
+			s := testServerWithSplitReader(t, readSplit)
 			authForOracle(t)
 			admin := s.Login()
 			request := &http.Request{Header: http.Header{}}
@@ -385,29 +398,6 @@ func TestFlaskAdoptionRevisionCondition(t *testing.T) {
 			if concurrent {
 				attempts = 1
 				t.Setenv("A21_CONCURRENT_WRITE", "1")
-				calls := 0
-				t.Cleanup(routersplit.SetSessionReader(func(ctx context.Context, r *repo.Repository, profileID string) ([]routersplit.Session, error) {
-					calls++
-					if calls == 1 {
-						name := "Concurrent metadata"
-						if _, err := r.UpdateProfileMetadataRecord(ctx, profileID, repo.ProfileMetadataUpdate{Name: &name}); err != nil {
-							return nil, err
-						}
-					}
-					sessions, err := setupflow.ProfileSessions(ctx, r.DataDir(), profileID)
-					if err != nil {
-						return nil, err
-					}
-					out := make([]routersplit.Session, 0, len(sessions))
-					for _, session := range sessions {
-						var v routersplit.Session
-						if err := json.Unmarshal(session.Raw, &v); err != nil {
-							return nil, err
-						}
-						out = append(out, v)
-					}
-					return out, nil
-				}))
 			}
 			o := newOracle(t, s, trace)
 			if err := os.WriteFile(path, record, 0600); err != nil {

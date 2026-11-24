@@ -91,7 +91,14 @@ func markerState(config Document) (string, error) {
 	return state, nil
 }
 func fullTunDocument(document *yamlx.Node) bool { return routersplit.FullTunShape(document) }
-func takeover(ctx context.Context, r *repo.Repository, id string, config Document) (string, error) {
+func (s *Service) readSplitContext(ctx context.Context, r *repo.Repository, id string) (*routersplit.Context, error) {
+	if s != nil && s.ReadSplitContext != nil {
+		return s.ReadSplitContext(ctx, r, id)
+	}
+	return routersplit.ReadContext(ctx, r, id)
+}
+
+func (s *Service) takeover(ctx context.Context, r *repo.Repository, id string, config Document) (string, error) {
 	raw, err := nativeConfig(config)
 	if err != nil {
 		return "", err
@@ -108,7 +115,7 @@ func takeover(ctx context.Context, r *repo.Repository, id string, config Documen
 		return "", err
 	}
 	if settings.Enabled {
-		state, err := readSplitState(ctx, r, id, raw.Profile)
+		state, err := s.readSplitState(ctx, r, id, raw.Profile)
 		if err != nil {
 			return "", err
 		}
@@ -117,7 +124,7 @@ func takeover(ctx context.Context, r *repo.Repository, id string, config Documen
 		}
 		return "selective", nil
 	}
-	evidence, err := routersplit.ReadContext(ctx, r, id)
+	evidence, err := s.readSplitContext(ctx, r, id)
 	if err != nil {
 		return "", err
 	}
@@ -267,8 +274,8 @@ func validationMessage(err error) (string, bool) {
 	return "", false
 }
 
-func readSplitState(ctx context.Context, r *repo.Repository, id string, p *model.Profile) (routersplit.SplitState, error) {
-	evidence, err := routersplit.ReadContext(ctx, r, id)
+func (s *Service) readSplitState(ctx context.Context, r *repo.Repository, id string, p *model.Profile) (routersplit.SplitState, error) {
+	evidence, err := s.readSplitContext(ctx, r, id)
 	if err != nil {
 		return routersplit.SplitState{}, err
 	}

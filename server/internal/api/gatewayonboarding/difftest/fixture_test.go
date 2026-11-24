@@ -17,17 +17,25 @@ import (
 	"configflow/internal/gateway/onboarding"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
+	"configflow/internal/repo"
+	"configflow/internal/routersplit"
 	"configflow/internal/setup"
 )
 
 const validForm = `{"rule_set_ids":[],"direct_rule_set_ids":[],"proxy_rule_set_ids":[],"local_dns":"https://192.0.2.53/dns-query"}`
 
 func testServer(t *testing.T) *httpxtest.Server {
+	return testServerWithSplitReader(t, nil)
+}
+
+func testServerWithSplitReader(t *testing.T, readSplit func(context.Context, *repo.Repository, string) (*routersplit.Context, error)) *httpxtest.Server {
 	t.Helper()
 	gateway.Wire()
 	mihomoenv.Wire()
-	t.Cleanup(onboarding.SetAdoptOwnedWrite(setup.AdoptOwnedWrite))
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apionboarding.Register)})
+	h := apionboarding.NewHandler(nil, onboarding.CheckDNSLoop, setup.AdoptOwnedWrite)
+	h.ReadSplitContext = readSplit
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(h.Register)})
+	h.Repo = s.Repo
 	ctx := s.Context()
 	err := s.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
 		return c.SetJSON("nodes", json.RawMessage(`[{"id":"n","name":"Example","type":"ss","server":"192.0.2.2","port":443,"cipher":"aes-128-gcm","password":"synthetic-node-secret"}]`))

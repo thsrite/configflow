@@ -196,8 +196,12 @@ func (h *Handler) resourceUsage(ctx context.Context, id string) (*httpx.Response
 	v, err := r.ResourceUsage(ctx, "subscription_aggregations", id)
 	return httpx.JSON(v), err
 }
-func authorize(c *httpx.Ctx) (*httpx.Response, error) {
-	result, err := auth.ValidateSystemTokenOrJWT(c, nil)
+func (h *Handler) authorize(c *httpx.Ctx) (*httpx.Response, error) {
+	r, err := h.repo(c.Context())
+	if err != nil {
+		return nil, err
+	}
+	result, err := auth.ValidateSystemTokenOrJWT(c, r, nil)
 	if err != nil {
 		return nil, err
 	}

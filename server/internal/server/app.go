@@ -21,6 +21,7 @@ import (
 	"configflow/internal/discovery"
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
+	"configflow/internal/mcp"
 	"configflow/internal/notifications"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
@@ -129,7 +130,10 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	}
 	nt.MarkStarted()
 	httpApp := httpx.New()
+	httpApp.Repo = opts.Repo
+	httpApp.Runtime = rt
 	api := apiHandlers{
+		mcp:    mcp.NewHandler(opts.Repo),
 		agents: newAgentAPIHandler(opts, ag, gen),
 		w10b:   newW10bHandlers(opts, ag, gen, rs, rtrSvc),
 		w10c:   newW10cHandlers(opts, tk, nt, ag, gen, rs),

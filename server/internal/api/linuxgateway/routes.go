@@ -136,7 +136,7 @@ func (h *Handler) provider(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	system := model.System{SystemConfig: native.SystemConfig, Backup: native.Backup}
-	validation, err := auth.ValidateSystemTokenOrJWT(c, &system)
+	validation, err := auth.ValidateSystemTokenOrJWT(c, repository, &system)
 	if err != nil {
 		return nil, err
 	}

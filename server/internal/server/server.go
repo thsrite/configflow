@@ -26,6 +26,7 @@ import (
 
 // apiHandlers holds the explicitly constructed handler of every api package.
 type apiHandlers struct {
+	mcp    *mcp.Handler
 	agents *apiagents.Handler
 	w10b   w10bHandlers
 	w10c   *w10cHandlers
@@ -36,7 +37,7 @@ type apiHandlers struct {
 func registerRoutes(r *httpx.Router, h apiHandlers) {
 	w10b, w10c := h.w10b, h.w10c
 	routePackages := []func(*httpx.Router){
-		mcp.Register,
+		h.mcp.Register,
 		w10c.auth.Register,
 		w10c.clientdevices.Register,
 		w10c.nodes.Register,

@@ -91,7 +91,7 @@ func TestCFG09ReceiptFailureAfterDownload(t *testing.T) {
 					wantStatus = 500
 				}
 				if boundary == "public" {
-					response := RuleProxy(ctx, request)
+					response := RuleProxy(ctx, r, request)
 					if response.Status != wantStatus {
 						t.Fatalf("status=%d want%d: %v", response.Status, wantStatus, response.JSON)
 					}
@@ -102,7 +102,7 @@ func TestCFG09ReceiptFailureAfterDownload(t *testing.T) {
 						t.Fatalf("URL rejection changed: %v", response.JSON)
 					}
 				} else {
-					_, err := ruleProxy(ctx, request)
+					_, err := ruleProxy(ctx, r, request)
 					if scenario == "valid" {
 						if err != nil {
 							t.Fatal(err)

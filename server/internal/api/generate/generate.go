@@ -112,6 +112,10 @@ func (h *Handler) generate(c *httpx.Ctx, engine configgen.Engine, preview bool) 
 		return httpx.Message(500, false, err.Error()), nil
 	}
 
+	repository, err := h.repository(c.Context())
+	if err != nil {
+		return nil, err
+	}
 	if !preview {
 		if engine == configgen.MosDNS {
 			base = strings.TrimSpace(base)
@@ -125,17 +129,13 @@ func (h *Handler) generate(c *httpx.Ctx, engine configgen.Engine, preview bool) 
 			}
 			base = strings.TrimRight(base, "/")
 		}
-		file, err := configgen.Build(c.Context(), c.ProfileID, engine, base)
+		file, err := configgen.Build(c.Context(), repository, c.ProfileID, engine, base)
 		if err != nil {
 			return failure(engine, err, preview)
 		}
 		return httpx.File(httpx.FileOptions{Path: file.Path, Data: file.Data, DownloadName: file.Name, AsAttachment: true, MimeType: file.MIME})
 	}
-	repository, err := h.repository(c.Context())
-	if err != nil {
-		return nil, err
-	}
-	profileID, err := repo.ResolveProfileID(c.Context(), c.ProfileID)
+	profileID, err := repository.ResolveProfileID(c.Context(), c.ProfileID)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (h *Handler) generate(c *httpx.Ctx, engine configgen.Engine, preview bool) 
 	if err != nil {
 		return nil, err
 	}
-	out, err := configgen.RenderConfig(c.Context(), config, engine, base)
+	out, err := configgen.RenderConfig(c.Context(), repository, config, engine, base)
 	if err != nil {
 		return failure(engine, err, preview)
 	}

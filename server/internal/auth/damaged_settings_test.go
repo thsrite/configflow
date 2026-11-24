@@ -16,10 +16,11 @@ import (
 func TestSystemTokenRefusesDamagedSettingsFromCallerSnapshot(t *testing.T) {
 	for _, settings := range []string{`null`, `123`, `"malformed"`, `["unexpected"]`} {
 		t.Run(settings, func(t *testing.T) {
-			s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
+			var s *httpxtest.Server
+			s = httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 				r.GET("/static/damaged-token", "test.damaged_token", func(c *httpx.Ctx) (*httpx.Response, error) {
 					var system model.System
-					result, err := auth.ValidateSystemTokenOrJWT(c, &system)
+					result, err := auth.ValidateSystemTokenOrJWT(c, s.Repo, &system)
 					if err != nil {
 						return nil, err
 					}

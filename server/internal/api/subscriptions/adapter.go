@@ -285,8 +285,12 @@ func reorder(current []model.Subscription, body json.RawMessage) ([]model.Subscr
 	out, missing := rules.Reorder(current, request.IDs, request.Position, func(item model.Subscription) string { return item.ID })
 	return out, missing, nil
 }
-func authorize(c *httpx.Ctx) (*httpx.Response, error) {
-	v, err := auth.ValidateSystemTokenOrJWT(c, nil)
+func (h *Handler) authorize(c *httpx.Ctx) (*httpx.Response, error) {
+	r, err := h.repo(c.Context())
+	if err != nil {
+		return nil, err
+	}
+	v, err := auth.ValidateSystemTokenOrJWT(c, r, nil)
 	if err != nil {
 		return nil, err
 	}
