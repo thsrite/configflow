@@ -119,6 +119,8 @@ R 线改动点（N4）。本次在 .32 上用 `go@9fc421b20` 与本分支各构�
   于是 `SnapshotItems: 任务模块尚未就绪：router_rule_sync`。生产 `server/app.go` 两个都调，不受影响；作者没有跑 `notifications` 包，
   preflight 抓到。测试补调 `routerrulesync.Wire()`。其他调 `routers.Wire()` 的测试（`clients`、`api/clientdevices`、`api/config`）
   不依赖该槽，preflight 全量通过。
+  生产组装：`server.New` 启动时 `tasks.Validate` 会因缺槽拒绝启动（临时删掉 `app.go` 的 `routerrulesync.Wire()` 实测：
+  `New: 任务模块尚未就绪：router_rule_sync`）；另在 `production_wiring_test` 显式断言该槽的行构造器与执行器（单独提交）。
 
 以下三条在 `ed41c0fe8`：
 
