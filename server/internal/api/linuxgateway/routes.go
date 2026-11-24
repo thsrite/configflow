@@ -143,12 +143,7 @@ func (h *Handler) provider(c *httpx.Ctx) (*httpx.Response, error) {
 	if !validation.Valid {
 		return httpx.Message(401, false, validation.Message), nil
 	}
-	var gw *gateway.Config
-	if h != nil && h.RuleReader != nil {
-		gw = gateway.NewConfigWithReader(native, h.RuleReader)
-	} else {
-		gw = gateway.NewConfig(native)
-	}
+	gw := gateway.NewConfigWithReader(repository, native, h.RuleReader)
 	var content string
 	if strings.Contains(c.Request.URL.Path, "/linux-gateway/source/") {
 		content, err = gw.SourceYAML(c.Context(), c.Param("rule_id"), nil)

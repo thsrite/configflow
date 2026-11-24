@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/gateway/onboarding"
@@ -18,10 +19,9 @@ import (
 )
 
 // TestNewHandlerNilAdopterFailsClosed verifies that NewHandler with a nil
-// AdoptOwnedWrite fails closed with 503 when a pending setup session exists,
-// even if the package-level hook is installed (O17 rule 2.2-1).
+// AdoptOwnedWrite fails closed with 503 when a pending setup session exists.
 func TestNewHandlerNilAdopterFailsClosed(t *testing.T) {
-	gateway.Wire()
+	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	dir := t.TempDir()
 	r, err := repo.OpenDefault(dir)
@@ -34,14 +34,6 @@ func TestNewHandlerNilAdopterFailsClosed(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-
-	// Install a package-level hook that would succeed if consulted.
-	called := false
-	restore := onboarding.SetAdoptOwnedWrite(func(context.Context, *repo.Repository, string, json.RawMessage, json.RawMessage) error {
-		called = true
-		return nil
-	})
-	t.Cleanup(restore)
 
 	// Create a pending setup session for the default profile.
 	sessionsDir := filepath.Join(dir, "setup-sessions")
@@ -66,8 +58,5 @@ func TestNewHandlerNilAdopterFailsClosed(t *testing.T) {
 	}
 	if res.Status != 503 {
 		t.Fatalf("status = %d, want 503 (body=%s)", res.Status, res.Body)
-	}
-	if called {
-		t.Fatal("package-level AdoptOwnedWrite hook was called despite NewHandler(..., nil)")
 	}
 }

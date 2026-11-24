@@ -13,11 +13,9 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
-	"configflow/internal/agents"
 	"configflow/internal/agents/diag"
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
@@ -60,29 +58,6 @@ func New(r *repo.Repository, opts Options) *RuleSyncService {
 		Download:  opts.Download,
 		Spawner:   opts.Spawner,
 	}
-}
-
-var (
-	defaultSyncMu      sync.RWMutex
-	defaultSyncService = New(nil, Options{})
-)
-
-// Default returns the process default RuleSyncService (transitional bridge
-// until W10/W11).
-func Default() *RuleSyncService {
-	defaultSyncMu.RLock()
-	defer defaultSyncMu.RUnlock()
-	return defaultSyncService
-}
-
-// UseService installs svc as the process default RuleSyncService.
-func UseService(svc *RuleSyncService) {
-	if svc == nil {
-		return
-	}
-	defaultSyncMu.Lock()
-	defaultSyncService = svc
-	defaultSyncMu.Unlock()
 }
 
 // HasIPv6Hosts reports whether the IPv6 host fetcher is wired.
@@ -130,7 +105,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 	defer d.ReuseAddressReads()()
 	timestamp := syncNow(work)
 	err := func() error {
-		_, records, err := loadSyncSources(work, config, r, nil)
+		_, records, err := loadSyncSources(work, s.Repo, config, r, nil)
 		if err != nil {
 			return err
 		}
@@ -338,7 +313,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string,
 		if download == nil {
 			download = (&RuleSyncDownloads{}).Download
 		}
-		contents, records, err := loadSyncSources(ctx, config, r, download)
+		contents, records, err := loadSyncSources(ctx, s.Repo, config, r, download)
 		if err != nil {
 			return err
 		}
@@ -474,7 +449,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string,
 		if err != nil {
 			return err
 		}
-		if err = writeSyncSources(ctx, sources, contents, config); err != nil {
+		if err = writeSyncSources(ctx, s.Repo, sources, contents, config); err != nil {
 			return err
 		}
 		receipt.Status = "synced"
@@ -714,18 +689,6 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 	}
 	transferred = true
 	return nil
-}
-
-func newSyncService(ctx context.Context, ipv6Hosts routers.IPv6HostFetcher) (*RuleSyncService, error) {
-	db, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	manager, err := agents.New(ctx, db)
-	if err != nil {
-		return nil, err
-	}
-	return New(db, Options{Agents: routers.ManagerAgentSource{Manager: manager}, IPv6Hosts: ipv6Hosts}), nil
 }
 
 func syncSelectedOrder(config json.RawMessage, r *spec.Router) []string {

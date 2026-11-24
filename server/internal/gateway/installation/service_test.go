@@ -22,6 +22,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
+	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
 	"configflow/internal/gateway"
@@ -47,7 +48,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	gateway.Wire()
+	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	deploy.Wire()
 	r, err := repo.Open(t.TempDir(), repo.Options{})

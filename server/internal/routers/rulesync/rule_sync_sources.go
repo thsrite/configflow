@@ -11,6 +11,7 @@ import (
 	"configflow/internal/rulefetch"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -78,7 +79,7 @@ func syncValidate(ctx context.Context, content string, source syncSource, config
 
 // syncCacheRead uses the rule owner's validated, read-only peek. It never
 // migrates a legacy path or changes mtime; keep generation off ReadCache.
-func syncCacheRead(ctx context.Context, source syncSource, config json.RawMessage) (string, error) {
+func syncCacheRead(ctx context.Context, r *repo.Repository, source syncSource, config json.RawMessage) (string, error) {
 	rule, err := syncRule(source.Library.Raw)
 	if err != nil {
 		return "", err
@@ -87,9 +88,8 @@ func syncCacheRead(ctx context.Context, source syncSource, config json.RawMessag
 	if err != nil {
 		return "", err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return "", err
+	if r == nil {
+		return "", errors.New("routers/rulesync: repository is nil")
 	}
 	raw, err := rulefetch.PeekCacheWithFormat(ctx, r, rule, cfg, "")
 	if err != nil {
@@ -106,7 +106,7 @@ func syncCacheRead(ctx context.Context, source syncSource, config json.RawMessag
 	}
 	return strings.TrimPrefix(string(raw), "\ufeff"), nil
 }
-func syncCacheWrite(ctx context.Context, source syncSource, content string, config json.RawMessage) error {
+func syncCacheWrite(ctx context.Context, r *repo.Repository, source syncSource, content string, config json.RawMessage) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -118,16 +118,15 @@ func syncCacheWrite(ctx context.Context, source syncSource, content string, conf
 	if err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return err
+	if r == nil {
+		return errors.New("routers/rulesync: repository is nil")
 	}
 	_, err = rulefetch.WriteCache(ctx, r, rule, rulefetch.Content{Data: []byte(content), Text: true}, cfg)
 	return err
 }
 
 // writeSyncSources is the service's actual post-readback cache-write loop.
-func writeSyncSources(ctx context.Context, sources []syncSource, contents map[string]string, config json.RawMessage) error {
+func writeSyncSources(ctx context.Context, r *repo.Repository, sources []syncSource, contents map[string]string, config json.RawMessage) error {
 	ctx, err := withSyncEnvironment(ctx, config)
 	if err != nil {
 		return err
@@ -138,7 +137,7 @@ func writeSyncSources(ctx context.Context, sources []syncSource, contents map[st
 			continue
 		}
 		seen[source.Source.ID] = true
-		if err = syncCacheWrite(ctx, source, contents[source.Item.ID], config); err != nil {
+		if err = syncCacheWrite(ctx, r, source, contents[source.Item.ID], config); err != nil {
 			return err
 		}
 	}

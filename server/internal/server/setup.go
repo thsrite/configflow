@@ -8,10 +8,8 @@ import (
 	"strings"
 
 	"configflow/internal/agents"
-	"configflow/internal/gateway"
 	"configflow/internal/gateway/host"
 	"configflow/internal/gateway/installation"
-	"configflow/internal/gateway/onboarding"
 	"configflow/internal/jsondecode"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
@@ -21,48 +19,18 @@ import (
 	"configflow/internal/setup"
 )
 
-// wireRuleSource installs the shared rulesource Service for gateway providers
-// without importing internal/api/rules.
-func wireRuleSource(rs *rulesource.Service) {
-	gateway.SetRuleSourceReader(rs.ReadGateway)
-}
-
-// wireSetupContentWith joins the shared rulesource owner for setup route reads:
-// the full-TUN warm-up reads and the offline reads of the gateway completion
-// check (spec.RulesetContent before O17 W9).
-func wireSetupContentWith(rs *rulesource.Service) {
-	setup.RegisterExternalOwners(setup.ExternalOwners{ReadOfflineRouteContent: func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
-		var raw json.RawMessage
-		if library != nil {
-			raw = library.Raw
+// buildSetupOwners constructs setup.ExternalOwners directly from the wired
+// server instances (O17 W11 / review L5), with no global registry or assembly
+// snapshot. Preserves ReadOfflineRouteContent (f49f11acc).
+func buildSetupOwners(ag *agentServices, rs *rulesource.Service, rtr *routers.Service) setup.ExternalOwners {
+	resolveManager := func(ctx context.Context, r *repo.Repository) (*agents.Manager, error) {
+		if ag != nil && ag.manager != nil {
+			return ag.manager, nil
 		}
-		return rs.ReadOfflineJSON(ctx, profile, item.Raw, raw)
-	}})
-	setup.RegisterExternalOwners(setup.ExternalOwners{ReadRouteContent: func(ctx context.Context, config json.RawMessage, item spec.RuleSet, library *spec.LibraryRule, options setup.RouteReadOptions) (string, error) {
-		var raw json.RawMessage
-		if library != nil {
-			raw = library.Raw
-		}
-		return rs.ReadJSON(ctx, config, item.Raw, raw, rulesource.ContentOptions{
-			AllowNetwork:   options.AllowNetwork,
-			ConnectTimeout: options.ConnectTimeout,
-			ReadTimeout:    options.ReadTimeout,
-		})
-	}})
-}
-
-// wireSetupOnboarding installs setup's direct onboarding DNSOwner (O17 D4)
-// and registers C36's adoption callback for onboarding writes.
-func wireSetupOnboarding() {
-	onboarding.SetAdoptOwnedWrite(setup.AdoptOwnedWrite)
-	setup.RegisterExternalOwners(setup.ExternalOwners{DNS: setup.DefaultDNSOwner()})
-}
-
-// wireSetupInstallation supplies C36 with actual durable publication evidence
-// and A20's status transport. All callbacks are read-only and keep cancellation.
-func wireSetupInstallation() {
+		return agents.Get(repo.WithRepository(ctx, r))
+	}
 	service := func(ctx context.Context, r *repo.Repository) (*installation.Service, error) {
-		m, e := agents.Get(repo.WithRepository(ctx, r))
+		m, e := resolveManager(ctx, r)
 		if e != nil {
 			return nil, e
 		}
@@ -79,66 +47,80 @@ func wireSetupInstallation() {
 		}
 		return e
 	}
-	setup.RegisterExternalOwners(setup.ExternalOwners{Installation: &setup.InstallationOwner{
-		Latest: func(ctx context.Context, r *repo.Repository, profile string) (*setup.InstallationState, error) {
-			s, e := service(ctx, r)
-			if e != nil {
-				return nil, e
+	return setup.ExternalOwners{
+		DNS: setup.DefaultDNSOwner(),
+		ReadOfflineRouteContent: func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
+			var raw json.RawMessage
+			if library != nil {
+				raw = library.Raw
 			}
-			b, e := s.Latest(ctx, profile)
-			if e != nil {
-				return nil, ownerError(ctx, s, e)
-			}
-			var response struct {
-				Session json.RawMessage `json:"session"`
-			}
-			if e = jsondecode.Unmarshal(b, &response); e != nil {
-				return nil, e
-			}
-			return installationState(response.Session)
+			return rs.ReadOfflineJSON(ctx, profile, item.Raw, raw)
 		},
-		HasInstallation: func(ctx context.Context, r *repo.Repository, profile string) (bool, error) {
-			s := &installation.Service{Repository: r}
-			v, e := s.HasInstallation(ctx, profile)
-			return v, ownerError(ctx, s, e)
+		ReadRouteContent: func(ctx context.Context, config json.RawMessage, item spec.RuleSet, library *spec.LibraryRule, options setup.RouteReadOptions) (string, error) {
+			var raw json.RawMessage
+			if library != nil {
+				raw = library.Raw
+			}
+			return rs.ReadJSON(ctx, config, item.Raw, raw, rulesource.ContentOptions{
+				AllowNetwork:   options.AllowNetwork,
+				ConnectTimeout: options.ConnectTimeout,
+				ReadTimeout:    options.ReadTimeout,
+			})
 		},
-		GatewayStatus: func(ctx context.Context, r *repo.Repository, id, profile string) (setup.GatewayStatus, error) {
-			s, e := service(ctx, r)
-			if e != nil {
-				return setup.GatewayStatus{}, e
-			}
-			bridge := host.Bridge{Repository: r, Manager: s.Manager}
-			reply, e := bridge.Call(ctx, id, "status", "GET", profile, nil)
-			if ctx.Err() != nil {
-				return setup.GatewayStatus{}, ctx.Err()
-			}
-			if e != nil {
-				return setup.GatewayStatus{}, ownerError(ctx, s, e)
-			}
-			return gatewayStatus(reply), nil
+		Installation: &setup.InstallationOwner{
+			Latest: func(ctx context.Context, r *repo.Repository, profile string) (*setup.InstallationState, error) {
+				s, e := service(ctx, r)
+				if e != nil {
+					return nil, e
+				}
+				b, e := s.Latest(ctx, profile)
+				if e != nil {
+					return nil, ownerError(ctx, s, e)
+				}
+				var response struct {
+					Session json.RawMessage `json:"session"`
+				}
+				if e = jsondecode.Unmarshal(b, &response); e != nil {
+					return nil, e
+				}
+				return installationState(response.Session)
+			},
+			HasInstallation: func(ctx context.Context, r *repo.Repository, profile string) (bool, error) {
+				s := &installation.Service{Repository: r}
+				v, e := s.HasInstallation(ctx, profile)
+				return v, ownerError(ctx, s, e)
+			},
+			GatewayStatus: func(ctx context.Context, r *repo.Repository, id, profile string) (setup.GatewayStatus, error) {
+				s, e := service(ctx, r)
+				if e != nil {
+					return setup.GatewayStatus{}, e
+				}
+				bridge := host.Bridge{Repository: r, Manager: s.Manager}
+				reply, e := bridge.Call(ctx, id, "status", "GET", profile, nil)
+				if ctx.Err() != nil {
+					return setup.GatewayStatus{}, ctx.Err()
+				}
+				if e != nil {
+					return setup.GatewayStatus{}, ownerError(ctx, s, e)
+				}
+				return gatewayStatus(reply), nil
+			},
 		},
-	}})
-}
-
-// wireSetupRouter supplies C36's managed-router completion with the router
-// owner's read-only preview: the same inspection and release plan as
-// POST /api/routers/<id>/plan, so "synced" means that plan is empty and has no
-// blockers.
-func wireSetupRouter(rtr *routers.Service) {
-	setup.RegisterExternalOwners(setup.ExternalOwners{VerifyRouter: func(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *spec.Router) (setup.RouterVerification, error) {
-		return verifySetupRouter(ctx, rtr, r, profileID, config, router)
-	}})
+		VerifyRouter: func(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *spec.Router) (setup.RouterVerification, error) {
+			m, err := resolveManager(ctx, r)
+			if err != nil {
+				return setup.RouterVerification{}, err
+			}
+			return verifySetupRouter(ctx, rtr, m, r, profileID, config, router)
+		},
+	}
 }
 
 // verifySetupRouter inspects one router of the setup profile without writing to
 // the device or the Agents. Device and plan failures (*routers.RouterError)
 // become the wizard's 502 with the router's own message, as on the router page.
-func verifySetupRouter(ctx context.Context, rtr *routers.Service, r *repo.Repository, profileID string, config json.RawMessage, router *spec.Router) (setup.RouterVerification, error) {
-	m, err := agents.Get(repo.WithRepository(ctx, r))
-	if err != nil {
-		return setup.RouterVerification{}, err
-	}
-	if err = router.ValidateForDevice(); err != nil {
+func verifySetupRouter(ctx context.Context, rtr *routers.Service, m *agents.Manager, r *repo.Repository, profileID string, config json.RawMessage, router *spec.Router) (setup.RouterVerification, error) {
+	if err := router.ValidateForDevice(); err != nil {
 		return setup.RouterVerification{}, routerFailure(err)
 	}
 	d := routers.NewDriver(router)

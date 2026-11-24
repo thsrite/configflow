@@ -21,7 +21,7 @@ const maxBody = 262144
 
 // Register adds the wizard's read, preview and atomic save routes.
 func Register(r *httpx.Router) {
-	Handler{DNSLoop: onboarding.CheckDNSLoop}.Register(r)
+	(&Handler{DNSLoop: onboarding.CheckDNSLoop}).Register(r)
 }
 
 // Handler registers routes with their Repository, pure DNS-check and ownership
@@ -48,7 +48,7 @@ func NewHandler(r *repo.Repository, dnsLoop onboarding.DNSLoopChecker, adopt onb
 }
 
 // Register adds all onboarding methods with the same authentication policy.
-func (h Handler) Register(r *httpx.Router) {
+func (h *Handler) Register(r *httpx.Router) {
 	r.Handle([]string{"GET", "POST"}, "/api/profiles/<profile_id>/gateway-onboarding", "profiles.gateway_onboarding", auth.Require(h.handle))
 	r.POST("/api/profiles/<profile_id>/gateway-onboarding/preview", "profiles.gateway_onboarding", auth.Require(h.handle))
 }
@@ -74,7 +74,7 @@ func body(c *httpx.Ctx) (json.RawMessage, error) {
 	}
 	return raw, nil
 }
-func (h Handler) handle(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) handle(c *httpx.Ctx) (*httpx.Response, error) {
 	r := h.Repo
 	var err error
 	if r == nil {

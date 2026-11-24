@@ -10,8 +10,6 @@ import (
 )
 
 func TestNewWithOptionsNilOwnersFailClosed(t *testing.T) {
-	t.Cleanup(RegisterExternalOwners(ExternalOwners{DNS: DefaultDNSOwner()}))
-
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)

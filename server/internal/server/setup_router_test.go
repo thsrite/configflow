@@ -14,17 +14,29 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/agents"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/routers/routerfake"
 	"configflow/internal/setup"
 	"configflow/internal/testjson"
 )
 
 func TestSetupOwnersAllRegisteredByApp(t *testing.T) {
-	t.Cleanup(setup.SetExternalOwners(setup.ExternalOwners{}))
-	NewApp()
-	owners := setup.RegisteredOwners()
+	r, err := repo.Open(t.TempDir(), repo.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Close)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	app, err := New(context.Background(), Options{Repo: r, Runtime: rt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Agents.Close)
+	owners := app.SetupOwners
 	if owners.DNS == nil || owners.Installation == nil || owners.ReadRouteContent == nil || owners.ReadOfflineRouteContent == nil || owners.VerifyRouter == nil {
 		t.Fatalf("production wiring left a setup owner unregistered: dns=%t installation=%t content=%t router=%t",
 			owners.DNS != nil, owners.Installation != nil, owners.ReadRouteContent != nil, owners.VerifyRouter != nil)
@@ -83,8 +95,13 @@ func TestVerifySetupRouterUsesRouterPlan(t *testing.T) {
 			if err = json.Unmarshal(b, &r); err != nil {
 				t.Fatal(err)
 			}
+			m, err := agents.New(srv.Context(), srv.Repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(m.Close)
 			got := outcome(t, func() (setup.RouterVerification, error) {
-				return verifySetupRouter(srv.Context(), nil, srv.Repo, "default", raw, &r)
+				return verifySetupRouter(srv.Context(), nil, m, srv.Repo, "default", raw, &r)
 			})
 			t.Logf("%s: %+v", tt.name, got)
 			if got.Empty != tt.want.Empty || got.Status != tt.want.Status || len(got.Blockers) != len(tt.want.Blockers) {

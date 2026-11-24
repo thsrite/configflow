@@ -39,10 +39,10 @@ type Options struct {
 	Owners ExternalOwners
 }
 
-// New constructs the wizard using the bundled first-start template and the
-// process-registered ExternalOwners.
+// New constructs the wizard with no external owners (all owner-dependent
+// operations fail closed with HTTP 503). Use NewWithOptions to supply owners.
 func New(r *repo.Repository) (*Service, error) {
-	return NewWithOptions(r, Options{Owners: externalOwners()})
+	return NewWithOptions(r, Options{})
 }
 
 // NewWithOptions constructs the wizard with explicit external owners instead

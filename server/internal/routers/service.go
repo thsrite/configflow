@@ -3,7 +3,6 @@ package routers
 import (
 	"context"
 	"encoding/json"
-	"sync"
 
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
@@ -53,29 +52,6 @@ func New(r *repo.Repository, opts Options) *Service {
 		opts:    opts,
 		pending: cache,
 	}
-}
-
-var (
-	defaultSvcMu   sync.RWMutex
-	defaultService = New(nil, Options{})
-)
-
-// Default returns the process default routers Service (transitional bridge for
-// handlers not yet converted to explicit constructors before W10/W11).
-func Default() *Service {
-	defaultSvcMu.RLock()
-	defer defaultSvcMu.RUnlock()
-	return defaultService
-}
-
-// UseService installs svc as the process default routers Service.
-func UseService(svc *Service) {
-	if svc == nil {
-		return
-	}
-	defaultSvcMu.Lock()
-	defaultService = svc
-	defaultSvcMu.Unlock()
 }
 
 // HasIPv6Hosts reports whether the IPv6 host fetcher is wired.

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/weburl"
 )
 
@@ -106,8 +107,8 @@ type Config struct {
 	nodesSlice       []model.Node
 	rawLibrary       []model.RuleLibraryItem
 	hasLibrary       bool
+	repo             *repo.Repository
 	ruleSourceReader RuleSourceReader
-	hasCustomReader  bool
 }
 
 // Settings is the profile's gateway setting (gateway_settings): an *Error

@@ -11,7 +11,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -278,21 +277,16 @@ func dumpPayload(payload []string) (string, error) {
 }
 
 // ErrRulesetContentUnavailable is returned while no RuleSourceReader is
-// set (config C32 sets it); reading rule contents then fails closed.
+// set; reading rule contents then fails closed.
 var ErrRulesetContentUnavailable = errors.New("gateway: rule set content reader is not available (config C32)")
 
-var (
-	contentMu        sync.RWMutex
-	ruleSourceReader RuleSourceReader
-)
-
-// NewConfigWithReader constructs a Config bound to an explicit RuleSourceReader.
-// Passing a nil reader fails closed with ErrRulesetContentUnavailable without
-// falling back to the package-level hook.
-func NewConfigWithReader(config *model.Config, reader RuleSourceReader) *Config {
+// NewConfigWithReader constructs a Config bound to an explicit Repository and
+// RuleSourceReader. Passing a nil reader fails closed with
+// ErrRulesetContentUnavailable.
+func NewConfigWithReader(r *repo.Repository, config *model.Config, reader RuleSourceReader) *Config {
 	c := NewConfig(config)
+	c.repo = r
 	c.ruleSourceReader = reader
-	c.hasCustomReader = true
 	return c
 }
 
@@ -301,14 +295,7 @@ func NewConfigWithReader(config *model.Config, reader RuleSourceReader) *Config 
 // (an explicitly empty source); a failed download is an *Error, so Mihomo
 // keeps its previous provider.
 func (c *Config) storedContent(ctx context.Context, item, library *Rule, requireCache bool) (string, error) {
-	var sourceReader RuleSourceReader
-	if c.hasCustomReader {
-		sourceReader = c.ruleSourceReader
-	} else {
-		contentMu.RLock()
-		sourceReader = ruleSourceReader
-		contentMu.RUnlock()
-	}
+	sourceReader := c.ruleSourceReader
 	if sourceReader == nil {
 		return "", ErrRulesetContentUnavailable
 	}
@@ -356,11 +343,10 @@ func (c *Config) storedContent(ctx context.Context, item, library *Rule, require
 	if entries == nil {
 		entries = []model.RuleLibraryItem{}
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return "", err
+	if c.repo == nil {
+		return "", errors.New("gateway: repository is nil")
 	}
-	path, err := rulefetch.CacheReadPath(ctx, r, targetRule, entries)
+	path, err := rulefetch.CacheReadPath(ctx, c.repo, targetRule, entries)
 	if err != nil {
 		return "", err
 	}

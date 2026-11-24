@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/httpx/httpxtest"
@@ -31,7 +32,7 @@ func decodeBody(t *testing.T, res *httpxtest.Result) map[string]any {
 
 func testServer(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	gateway.Wire()
+	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(Register)})
 	ctx := s.Context()

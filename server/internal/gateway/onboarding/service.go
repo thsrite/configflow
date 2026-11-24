@@ -74,9 +74,6 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 		return nil, err
 	}
 	adopter := s.AdoptOwnedWrite
-	if !s.explicitAdopter && adopter == nil {
-		adopter = currentAdopter()
-	}
 	raw, revision, err := s.Repository.PublishConfig(ctx, op.ProfileID, true)
 	if err != nil {
 		return nil, err

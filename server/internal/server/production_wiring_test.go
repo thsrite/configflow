@@ -11,15 +11,10 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
-	"configflow/internal/gateway"
-	"configflow/internal/gateway/onboarding"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
-	routerrulesync "configflow/internal/routers/rulesync"
-	"configflow/internal/setup"
 	"configflow/internal/tasks"
 )
 
@@ -52,9 +47,6 @@ func nilFuncFields(v any) []string {
 func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 	t.Cleanup(convert.ResetMihomoEnvironmentForTest(t))
 	t.Cleanup(convert.ResetMihomoIntegrationsForTest(t))
-	t.Cleanup(setup.SetExternalOwners(setup.ExternalOwners{}))
-	t.Cleanup(onboarding.SetAdoptOwnedWrite(nil))
-	t.Cleanup(gateway.SetRuleSourceReader(nil))
 	previousRepoHooks := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previousRepoHooks) })
 	agents.ResetHooks()
@@ -96,15 +88,13 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		{"aggregations service", app.Aggregations != nil},
 		{"deploy service is instantiated", app.Deploy != nil},
 		{"rule source service is instantiated", app.RuleSource != nil},
-		{"onboarding adoption owner", onboarding.RegisteredAdoptOwnedWrite() != nil},
-		{"gateway rule source reader", gateway.RegisteredRuleSourceReader() != nil},
-		{"routers service is the default", app.Routers != nil && routers.Default() == app.Routers},
+		{"routers service is instantiated", app.Routers != nil},
 		{"routers rule content loader", app.Routers != nil && app.Routers.HasRules()},
 		{"routers IPv6 host fetcher", app.Routers != nil && app.Routers.HasIPv6Hosts()},
 		{"routers manual baseline capturer", app.Routers != nil && app.Routers.HasManualBaseline()},
 		{"routers notifications service", app.Routers != nil && app.Routers.HasNotifications()},
 		{"routers repository", app.Routers != nil && app.Routers.HasRepository()},
-		{"router rule sync service is the default", app.RouterSync != nil && routerrulesync.Default() == app.RouterSync},
+		{"router rule sync service is instantiated", app.RouterSync != nil},
 		{"router rule sync IPv6 host fetcher", app.RouterSync != nil && app.RouterSync.HasIPv6Hosts()},
 		{"router rule sync repository", app.RouterSync != nil && app.RouterSync.Repo == app.Repo},
 		{"router rule sync Agent source", app.RouterSync != nil && app.RouterSync.Agents != nil},
@@ -125,7 +115,7 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 			t.Errorf("%s.Validate after New: %v", name, err)
 		}
 	}
-	owners := setup.RegisteredOwners()
+	owners := app.SetupOwners
 	if owners.DNS == nil || owners.Installation == nil || owners.ReadRouteContent == nil || owners.ReadOfflineRouteContent == nil || owners.VerifyRouter == nil {
 		t.Errorf("setup owners: dns=%t installation=%t content=%t router=%t",
 			owners.DNS != nil, owners.Installation != nil, owners.ReadRouteContent != nil, owners.VerifyRouter != nil)

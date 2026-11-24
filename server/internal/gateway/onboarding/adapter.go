@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"net/netip"
 	"os"
-	"sync"
 
 	"configflow/internal/convert"
 	"configflow/internal/gateway"
@@ -195,29 +194,6 @@ type DNSLoopChecker func(*yamlx.Node, []netip.Addr) (bool, error)
 // locks and ownership proof. before/after are complete native profile JSON.
 type AdoptOwnedWrite func(context.Context, *repo.Repository, string, json.RawMessage, json.RawMessage) error
 
-var adoptHook struct {
-	sync.RWMutex
-	fn AdoptOwnedWrite
-}
-
-// SetAdoptOwnedWrite registers C36's owner. It returns a restoration function.
-func SetAdoptOwnedWrite(fn AdoptOwnedWrite) func() {
-	adoptHook.Lock()
-	previous := adoptHook.fn
-	adoptHook.fn = fn
-	adoptHook.Unlock()
-	return func() { adoptHook.Lock(); adoptHook.fn = previous; adoptHook.Unlock() }
-}
-
-// RegisteredAdoptOwnedWrite returns the package-level owner installed by
-// server wiring (wiring checks; removed with the hook in W11).
-func RegisteredAdoptOwnedWrite() AdoptOwnedWrite { return currentAdopter() }
-
-func currentAdopter() AdoptOwnedWrite {
-	adoptHook.RLock()
-	defer adoptHook.RUnlock()
-	return adoptHook.fn
-}
 func pendingSetup(ctx context.Context, r *repo.Repository, id string) bool {
 	sessions, err := setupflow.ProfileSessions(ctx, r.DataDir(), id)
 	if err != nil {

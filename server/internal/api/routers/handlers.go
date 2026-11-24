@@ -83,14 +83,14 @@ func (h *Handler) routerService() *core.Service {
 	if h != nil && h.routers != nil {
 		return h.routers
 	}
-	return core.Default()
+	return core.New(h.repo, core.Options{})
 }
 
 func (h *Handler) syncService() *routerrulesync.RuleSyncService {
 	if h != nil && h.rulesync != nil {
 		return h.rulesync
 	}
-	return routerrulesync.Default()
+	return routerrulesync.New(h.repo, routerrulesync.Options{})
 }
 
 // Register installs all R15 routes on the shared Flask-priority matcher. Static
@@ -394,7 +394,11 @@ func (h *Handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	recordNotice(c, raw, r, value.Report, plan)
 	if plan.Empty && len(plan.Blockers) == 0 {
-		baseline, err := routerrulesync.NeedsBaseline(c.Context(), c.ProfileID, r)
+		db, err := h.repository(c.Context())
+		if err != nil {
+			return nil, err
+		}
+		baseline, err := (routerrulesync.RuleSyncStore{DataDir: db.DataDir()}).NeedsBaseline(c.Context(), c.ProfileID, r)
 		if err != nil {
 			return nil, err
 		}

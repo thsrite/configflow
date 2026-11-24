@@ -58,13 +58,13 @@ func TestDefaultContentReader(t *testing.T) {
 		t.Fatalf("without a reader: %v", err)
 	}
 	var calls int
-	t.Cleanup(gateway.SetRuleSourceReader(func(_ context.Context, item model.RuleConfig, library *model.RuleLibraryItem, cfg *rulefetch.SourceConfig) (string, error) {
+	reader := func(_ context.Context, item model.RuleConfig, library *model.RuleLibraryItem, cfg *rulefetch.SourceConfig) (string, error) {
 		calls++
 		if item.ID != "r" || library == nil || library.ID != "lib" || cfg == nil || cfg.Settings.ServerDomain != "https://config.example" {
 			t.Errorf("reader arguments: %+v %+v %+v", item, library, cfg)
 		}
 		return "", nil
-	}))
+	}
 	rulesDir, err := r.SharedRulesDir()
 	if err != nil {
 		t.Fatal(err)
@@ -77,21 +77,21 @@ func TestDefaultContentReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	source["name"] = "Renamed source"
-	payload, err := gateway.NewFixtureConfig(config).ProviderPayload(ctx, "r", nil)
+	payload, err := gateway.NewFixtureConfig(config).WithTestRuleReader(r, reader).ProviderPayload(ctx, "r", nil)
 	if err != nil || len(payload) != 0 {
 		t.Fatalf("empty cached source: %v %v", payload, err)
 	}
 	if err := os.Remove(filepath.Join(rulesDir, rules.CacheFilename(testjson.Decode[model.RuleConfig](t, source)))); err != nil {
 		t.Fatal(err)
 	}
-	_, err = gateway.NewFixtureConfig(config).ProviderPayload(ctx, "r", nil)
+	_, err = gateway.NewFixtureConfig(config).WithTestRuleReader(r, reader).ProviderPayload(ctx, "r", nil)
 	var gwErr *gateway.Error
 	if !errors.As(err, &gwErr) || !strings.Contains(gwErr.Message, "无法读取") {
 		t.Fatalf("missing cache: %v", err)
 	}
 	// The overlap check treats an empty remote set as unreadable, without the
 	// cache requirement.
-	warnings, err := gateway.NewFixtureConfig(config).DirectOverlapWarnings(ctx, nil)
+	warnings, err := gateway.NewFixtureConfig(config).WithTestRuleReader(r, reader).DirectOverlapWarnings(ctx, nil)
 	if err != nil || len(warnings) != 1 || !strings.HasPrefix(warnings[0], "未能读取「Renamed source」") {
 		t.Fatalf("overlap: %q %v", warnings, err)
 	}
@@ -279,27 +279,26 @@ func TestHooks(t *testing.T) {
 
 func TestN811RuleReaderRestoreFailsClosed(t *testing.T) {
 	typedCalls := 0
-	t.Cleanup(gateway.SetRuleSourceReader(nil))
-	restore := gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
+	reader := func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
 		typedCalls++
 		if item.ID != "r" || library == nil || library.ID != "lib" || config.Settings.ServerDomain != "https://config.example" {
 			t.Fatal("typed snapshot lost source identity")
 		}
 		return "198.51.100.0/24", nil
-	})
+	}
 	raw := snapshot(true)
 	source := raw["rule_library"].([]any)[0].(map[string]any)
 	source["source_type"] = "url"
 	source["url"] = "https://example.com/rules"
 	delete(source, "content")
-	config := gateway.NewFixtureConfig(raw)
+	config := gateway.NewFixtureConfig(raw).WithTestRuleReader(nil, reader)
 	if _, err := config.ProviderPayload(t.Context(), "r", nil); err != nil {
 		t.Fatal(err)
 	}
 	if typedCalls != 1 {
 		t.Fatalf("readers called typed=%d", typedCalls)
 	}
-	restore()
+	config.WithTestRuleReader(nil, nil)
 	if _, err := config.ProviderPayload(t.Context(), "r", nil); !errors.Is(err, gateway.ErrRulesetContentUnavailable) {
 		t.Fatalf("after restore expected ErrRulesetContentUnavailable, got %v", err)
 	}
@@ -315,14 +314,14 @@ func TestN811ReaderProjectionExcludesUnconsumedContent(t *testing.T) {
 	raw["rule_library"] = append(raw["rule_library"].([]any), map[string]any{"id": "unused", "name": "Unused", "content": strings.Repeat("x", 1<<20)})
 	raw["nodes"] = []any{map[string]any{"id": "unused", "params": map[string]any{"password": strings.Repeat("x", 1<<20)}}}
 	calls := 0
-	t.Cleanup(gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
+	reader := func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
 		calls++
 		if len(config.Library) != 2 || config.Library[1].ID != "unused" || config.Library[1].Name != "Unused" || config.Library[1].Content != nil {
 			t.Fatal("reader did not receive only cache identity metadata")
 		}
 		return "198.51.100.0/24", nil
-	}))
-	if _, err := gateway.NewFixtureConfig(raw).ProviderPayload(t.Context(), "r", nil); err != nil {
+	}
+	if _, err := gateway.NewFixtureConfig(raw).WithTestRuleReader(nil, reader).ProviderPayload(t.Context(), "r", nil); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 1 {
@@ -364,7 +363,7 @@ func TestReviewN811ReaderProjectionPreservesFormatInferenceWithoutBody(t *testin
 	}
 
 	calls := 0
-	t.Cleanup(gateway.SetRuleSourceReader(func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
+	reader := func(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
 		calls++
 		if library != nil {
 			t.Fatalf("expected standalone ruleset without library_rule_id, got %+v", library)
@@ -377,9 +376,9 @@ func TestReviewN811ReaderProjectionPreservesFormatInferenceWithoutBody(t *testin
 		}
 		data, err := rulefetch.ReadCache(ctx, r, item, config)
 		return string(data), err
-	}))
+	}
 
-	payload, err := gateway.NewFixtureConfig(raw).ProviderPayload(ctx, "r", nil)
+	payload, err := gateway.NewFixtureConfig(raw).WithTestRuleReader(r, reader).ProviderPayload(ctx, "r", nil)
 	if err != nil {
 		t.Fatalf("ProviderPayload failed format inference on cached YAML: %v", err)
 	}

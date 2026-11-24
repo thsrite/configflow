@@ -18,7 +18,6 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
-	"configflow/internal/repo"
 )
 
 // RuleSyncBaseline pins source versions and complete device ownership proofs.
@@ -196,13 +195,4 @@ func (s RuleSyncStore) NeedsBaseline(ctx context.Context, profile string, r *spe
 }
 func syncNow(ctx context.Context) string {
 	return lifecycle.ClockFrom(ctx).Now().UTC().Format("2006-01-02T15:04:05+00:00")
-}
-
-// NeedsBaseline is the R15 preview adapter for the current repository's receipts.
-func NeedsBaseline(ctx context.Context, profile string, r *spec.Router) (bool, error) {
-	db, err := repo.GetRepository(ctx)
-	if err != nil {
-		return false, err
-	}
-	return (RuleSyncStore{DataDir: db.DataDir()}).NeedsBaseline(ctx, profile, r)
 }

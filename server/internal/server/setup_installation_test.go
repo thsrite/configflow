@@ -17,15 +17,25 @@ import (
 	apisetup "configflow/internal/api/setup"
 	"configflow/internal/gateway/host"
 	"configflow/internal/gateway/installation"
+	"configflow/internal/gateway/onboarding"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/setup"
 	"configflow/internal/testjson"
 )
 
 func TestSetupInstallationServerRegistrationUsesRealOwner(t *testing.T) {
-	t.Cleanup(setup.SetExternalOwners(setup.ExternalOwners{}))
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apisetup.Register, apiagents.Register, apionboarding.Register)})
+	var setupHandler *apisetup.Handler
+	var onboardingHandler *apionboarding.Handler
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(func(r *httpx.Router) {
+		setupHandler = apisetup.NewHandler(nil, nil)
+		setupHandler.Register(r)
+		apiagents.Register(r)
+		onboardingHandler = &apionboarding.Handler{DNSLoop: onboarding.CheckDNSLoop}
+		onboardingHandler.Register(r)
+	})})
 	admin := srv.Login()
 	ctx := srv.Context()
 	const id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -34,8 +44,17 @@ func TestSetupInstallationServerRegistrationUsesRealOwner(t *testing.T) {
 	// Keep C36's own wizard path and session. Without A22 an abandon preview has
 	// no installation evidence; the production wire must replace this 503.
 	srv.Post("/api/setup/"+id+"/abandon", httpxtest.JSON(map[string]bool{"dry_run": true}), admin).WantStatus(503)
-	NewApp()
-	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	app, err := New(context.Background(), Options{Repo: srv.Repo, Runtime: rt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Agents.Close)
+	setupHandler.Repo = srv.Repo
+	setupHandler.Owners = &app.SetupOwners
+	onboardingHandler.Repo = srv.Repo
+	onboardingHandler.AdoptOwnedWrite = setup.AdoptOwnedWrite
+	err = srv.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
 		c.Nodes = []model.Node{testjson.Decode[model.Node](t, map[string]any{
 			"id": "n", "name": "Example", "type": "ss", "server": "192.0.2.2", "port": 443,
 			"cipher": "aes-128-gcm", "password": "synthetic-node-secret",

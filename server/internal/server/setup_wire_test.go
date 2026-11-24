@@ -13,7 +13,9 @@ import (
 	apionboarding "configflow/internal/api/gatewayonboarding"
 	apisetup "configflow/internal/api/setup"
 	"configflow/internal/gateway/onboarding"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/setup"
 	"configflow/internal/testjson"
@@ -21,9 +23,14 @@ import (
 )
 
 func TestSetupServerOwnerRegistrationRemovesUnavailable(t *testing.T) {
-	t.Cleanup(setup.SetExternalOwners(setup.ExternalOwners{}))
-	t.Cleanup(onboarding.SetAdoptOwnedWrite(nil))
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apisetup.Register, apionboarding.Register), Auth: true})
+	var setupHandler *apisetup.Handler
+	var onboardingHandler *apionboarding.Handler
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
+		setupHandler = apisetup.NewHandler(nil, nil)
+		setupHandler.Register(r)
+		onboardingHandler = &apionboarding.Handler{DNSLoop: onboarding.CheckDNSLoop}
+		onboardingHandler.Register(r)
+	}), Auth: true})
 	admin := srv.Login()
 	const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	const profileID = "setup_aaaaaaaaaaaaaaaaaaaa"
@@ -37,9 +44,18 @@ func TestSetupServerOwnerRegistrationRemovesUnavailable(t *testing.T) {
 	}
 	// Exercise the actual application wiring, including both C32 and A21. No
 	// no-op DNS/adoption callbacks are installed by this success control.
-	NewApp()
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	app, err := New(context.Background(), Options{Repo: srv.Repo, Runtime: rt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Agents.Close)
+	setupHandler.Repo = srv.Repo
+	setupHandler.Owners = &app.SetupOwners
+	onboardingHandler.Repo = srv.Repo
+	onboardingHandler.AdoptOwnedWrite = setup.AdoptOwnedWrite
 	ctx := srv.Context()
-	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
+	err = srv.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
 		c.Nodes = []model.Node{testjson.Decode[model.Node](t, map[string]any{
 			"id": "n", "name": "Synthetic", "type": "ss", "server": "192.0.2.2", "port": 443,
 			"cipher": "aes-128-gcm", "password": "synthetic-node-password",

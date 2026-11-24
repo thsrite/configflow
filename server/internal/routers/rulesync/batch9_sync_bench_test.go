@@ -41,13 +41,13 @@ func BenchmarkBatch9SyncSources(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				if _, records, err := loadSyncSources(ctx, config, router, nil); err != nil || len(records) != count {
+				if _, records, err := loadSyncSources(ctx, db, config, router, nil); err != nil || len(records) != count {
 					b.Fatalf("source fixture: %d %v", len(records), err)
 				}
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
-					if _, records, err := loadSyncSources(ctx, config, router, nil); err != nil || len(records) != count {
+					if _, records, err := loadSyncSources(ctx, db, config, router, nil); err != nil || len(records) != count {
 						b.Fatalf("source plan: %d %v", len(records), err)
 					}
 				}

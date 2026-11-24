@@ -114,7 +114,7 @@ func (d *RuleSyncDownloads) Download(ctx context.Context, raw, config json.RawMe
 	d.size += len(content)
 	return content, nil
 }
-func loadSyncSources(ctx context.Context, config json.RawMessage, r *spec.Router, download RuleSyncDownload) (map[string]string, map[string]*RuleSyncRecord, error) {
+func loadSyncSources(ctx context.Context, db *repo.Repository, config json.RawMessage, r *spec.Router, download RuleSyncDownload) (map[string]string, map[string]*RuleSyncRecord, error) {
 	var envErr error
 	ctx, envErr = withSyncEnvironment(ctx, config)
 	if envErr != nil {
@@ -136,7 +136,7 @@ func loadSyncSources(ctx context.Context, config json.RawMessage, r *spec.Router
 			if download != nil && source.Source.SourceType == "url" {
 				content, err = download(ctx, source.Library.Raw, config)
 			} else {
-				content, err = syncCacheRead(ctx, source, config)
+				content, err = syncCacheRead(ctx, db, source, config)
 			}
 			if err != nil {
 				return nil, nil, err

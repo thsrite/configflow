@@ -48,8 +48,6 @@ func wireRouters(opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *no
 		ManualBaseline: rr.CaptureManual,
 		Notifications:  nt,
 	})
-	routers.UseService(rtr)
-	routerrulesync.UseService(rr)
 
 	tk.SetRowBuilder(tasks.SlotRouters, rr.TaskRows)
 	tk.SetRunner(tasks.SlotRouters, rr.TaskRunner())

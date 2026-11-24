@@ -11,32 +11,16 @@ import (
 	"time"
 
 	"configflow/internal/lifecycle"
-	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 )
 
-// CaptureManual returns a routers.ManualBaselineCapturer bound to s. When s has
-// no wired Repository (legacy NewApp test path), it resolves the request
-// repository on demand.
+// CaptureManual returns a routers.ManualBaselineCapturer bound to s.
 func (s *RuleSyncService) CaptureManual(ctx context.Context, profile string, config json.RawMessage, r *spec.Router, d routers.Driver, desired *spec.Desired) error {
-	target := s
-	if target == nil || target.Repo == nil {
-		var hosts routers.IPv6HostFetcher
-		if target != nil {
-			hosts = target.IPv6Hosts
-		}
-		var err error
-		target, err = newSyncService(ctx, hosts)
-		if err != nil {
-			return err
-		}
+	if s == nil || s.Repo == nil {
+		return errors.New("routers/rulesync: repository is nil")
 	}
-	err := target.Capture(ctx, profile, config, r, d, desired)
-	if err == nil && s != nil && target != s {
-		s.pacer.wake.Notify()
-	}
-	return err
+	return s.Capture(ctx, profile, config, r, d, desired)
 }
 
 // Loop returns the periodic loop specification registered by server assembly on
@@ -50,16 +34,10 @@ func (s *RuleSyncService) Loop() lifecycle.Periodic {
 		Wake:       &s.pacer.wake,
 		OnStart:    func(context.Context) { s.pacer.wake.Clear(); s.pacer.pause.Store(0) },
 		Round: func(ctx context.Context) error {
-			if s.Repo != nil {
-				return s.RunRound(ctx)
+			if s == nil || s.Repo == nil {
+				return errors.New("routers/rulesync: repository is nil")
 			}
-			service, err := newSyncService(ctx, s.IPv6Hosts)
-			if err != nil {
-				return err
-			}
-			err = service.RunRound(ctx)
-			s.pacer.pause.Store(service.pacer.pause.Load())
-			return err
+			return s.RunRound(ctx)
 		},
 	}
 }
@@ -69,19 +47,10 @@ func (s *RuleSyncService) Loop() lifecycle.Periodic {
 func (s *RuleSyncService) TaskRunner() tasks.RunFunc {
 	return func(ctx context.Context, _ string, resource string) error {
 		profile, id, _ := strings.Cut(resource, ":")
-		target := s
-		if target == nil || target.Repo == nil || target.Agents == nil {
-			var hosts routers.IPv6HostFetcher
-			if target != nil {
-				hosts = target.IPv6Hosts
-			}
-			var err error
-			target, err = newSyncService(lifecycle.Detach(ctx), hosts)
-			if err != nil {
-				return err
-			}
+		if s == nil || s.Repo == nil || s.Agents == nil {
+			return errors.New("routers/rulesync: service dependencies are nil")
 		}
-		err := target.StartJob(ctx, profile, id)
+		err := s.StartJob(ctx, profile, id)
 		var re *device.RouterError
 		if errors.As(err, &re) {
 			return &tasks.Conflict{Message: re.Error()}
@@ -92,17 +61,10 @@ func (s *RuleSyncService) TaskRunner() tasks.RunFunc {
 
 // TaskRows builds the scheduled-task rows for tasks.SlotRouters.
 func (s *RuleSyncService) TaskRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
-	var db *repo.Repository
-	if s != nil {
-		db = s.Repo
+	if s == nil || s.Repo == nil {
+		return nil, errors.New("routers/rulesync: repository is nil")
 	}
-	if db == nil {
-		var err error
-		db, err = repo.GetRepository(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
+	db := s.Repo
 	profiles, err := spec.RouterProfiles(ctx, db)
 	if err != nil {
 		return nil, err

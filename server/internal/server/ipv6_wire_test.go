@@ -39,21 +39,19 @@ func (ipv6HostClient) Do(_ context.Context, r agents.Request) (*agents.Response,
 	return &agents.Response{StatusCode: 200, Body: []byte(`{"success":true,"interface":"eth0","addresses":[{"address":"2001:db8::2","usable":true}]}`)}, nil
 }
 func TestIPv6RouterHostOwnerRegistration(t *testing.T) {
-	NewApp()
 	fixture := httpxtest.New(t, httpxtest.Options{})
-	m, e := agents.Get(fixture.Context())
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	app, e := New(context.Background(), Options{Repo: fixture.Repo, Runtime: rt})
 	if e != nil {
 		t.Fatal(e)
 	}
-	m.SetClient(ipv6HostClient{})
-	host, e := routers.Default().IPv6Host(fixture.Context(), &routers.GatewayAgent{Agent: &model.Agent{ID: "source", Host: "192.0.2.2", Port: model.Int(8080), Token: "synthetic-source-token", ServiceType: "mihomo", ProfileID: "default"}})
+	t.Cleanup(app.Agents.Close)
+	app.Agents.SetClient(ipv6HostClient{})
+	host, e := app.Routers.IPv6Host(fixture.Context(), &routers.GatewayAgent{Agent: &model.Agent{ID: "source", Host: "192.0.2.2", Port: model.Int(8080), Token: "synthetic-source-token", ServiceType: "mihomo", ProfileID: "default"}})
 	if e != nil || host.Interface != "eth0" || len(host.Addresses) != 1 {
 		t.Fatal("R13 IPv6 host still unavailable", host, e)
 	}
-	if _, e = agents.Init(fixture.Context()); e != nil {
-		t.Fatal(e)
-	}
-	names := lifecycle.Names()
+	names := rt.Names()
 	if !slices.Contains(names, "ipv6-verification-scheduler") {
 		t.Fatal("A23 scheduler not registered", names)
 	}

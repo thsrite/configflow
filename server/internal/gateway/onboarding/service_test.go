@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/lifecycle"
@@ -22,7 +23,7 @@ import (
 
 func testService(t *testing.T) *Service {
 	t.Helper()
-	gateway.Wire()
+	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
@@ -113,7 +114,7 @@ func TestSetupReadinessContract(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := testService(t)
-			t.Cleanup(SetAdoptOwnedWrite(nil))
+			s.AdoptOwnedWrite = nil
 			if tc.session != "" {
 				writeSession(t, s, tc.session)
 			}
@@ -285,7 +286,7 @@ func TestAdopterHookReceivesOneCommittedRevision(t *testing.T) {
 	s := testService(t)
 	writeSession(t, s, `{"profile_id":"default","goal":"gateway"}`)
 	calls := 0
-	t.Cleanup(SetAdoptOwnedWrite(func(ctx context.Context, r *repo.Repository, id string, before, after json.RawMessage) error {
+	s.AdoptOwnedWrite = func(ctx context.Context, r *repo.Repository, id string, before, after json.RawMessage) error {
 		calls++
 		var a, b struct {
 			Revision int64 `json:"_revision"`
@@ -296,7 +297,7 @@ func TestAdopterHookReceivesOneCommittedRevision(t *testing.T) {
 			t.Fatal("wrong adoption boundary")
 		}
 		return nil
-	}))
+	}
 	if _, err := s.Execute(context.Background(), testOperation()); err != nil {
 		t.Fatal(err)
 	}

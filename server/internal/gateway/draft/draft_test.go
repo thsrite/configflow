@@ -25,7 +25,7 @@ import (
 
 func draftService(t *testing.T) *Service {
 	t.Helper()
-	gateway.Wire()
+	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {

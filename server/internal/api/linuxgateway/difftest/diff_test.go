@@ -33,6 +33,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -238,10 +239,15 @@ func newWorld(t *testing.T, sessions ...string) *world {
 	t.Cleanup(fake.Close)
 	_, portText, _ := net.SplitHostPort(strings.TrimPrefix(fake.URL, "http://"))
 	port, _ := strconv.Atoi(portText)
-	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: "a20-secret", Register: httpxtest.Routes(apiagents.Register, apigateway.Register)})
-	gateway.Wire()
+	var gwHandler *apigateway.Handler
+	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: "a20-secret", Register: httpxtest.Routes(apiagents.Register, func(r *httpx.Router) {
+		gwHandler = apigateway.NewHandler(nil, nil, nil)
+		gwHandler.Register(r)
+	})})
+	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
-	gateway.SetRuleSourceReader(rulesource.New(rulesource.Options{Repo: w.srv.Repo}).ReadGateway)
+	gwHandler.Repo = w.srv.Repo
+	gwHandler.RuleReader = rulesource.New(rulesource.Options{Repo: w.srv.Repo}).ReadGateway
 	ctx := w.srv.Context()
 	r := w.srv.Repo
 	_, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "home", Name: "Home"}, "")

@@ -11,10 +11,7 @@ import (
 	"configflow/internal/repo"
 )
 
-func TestNewNilAdopterFailsClosedDespiteGlobalHook(t *testing.T) {
-	t.Cleanup(SetAdoptOwnedWrite(func(context.Context, *repo.Repository, string, json.RawMessage, json.RawMessage) error {
-		return nil
-	}))
+func TestNewNilAdopterFailsClosed(t *testing.T) {
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)

@@ -71,10 +71,10 @@ func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *spec.Router)
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(t.Context(), db)
-	if err = syncCacheWrite(ctx, sources[0], r14Old, cfg); err != nil {
+	if err = syncCacheWrite(ctx, db, sources[0], r14Old, cfg); err != nil {
 		t.Fatal(err)
 	}
-	_, records, err := loadSyncSources(ctx, cfg, router, nil)
+	_, records, err := loadSyncSources(ctx, service.Repo, cfg, router, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestO17FollowupCaptureWakesRuleSyncLoop(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := spec.FindSyncRouter(cfg, r.ID)
-	_, records, err := loadSyncSources(ctx, cfg, router, nil)
+	_, records, err := loadSyncSources(ctx, service.Repo, cfg, router, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

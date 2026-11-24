@@ -49,21 +49,13 @@ type w10cHandlers struct {
 	notifications     *apinotifications.Handler
 }
 
-func newW10cHandlers(opts Options, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service, wd *webdav.Service, disc *discovery.Service) *w10cHandlers {
+func newW10cHandlers(opts Options, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service, wd *webdav.Service, disc *discovery.Service, setupOwners *setup.ExternalOwners) *w10cHandlers {
 	var ruleReader gateway.RuleSourceReader
 	if rs != nil {
 		ruleReader = rs.ReadGateway
 	}
-	var onboardingHandler *apigatewayonboarding.Handler
-	var setupHandler *apisetup.Handler
-	if opts.Repo != nil {
-		onboardingHandler = apigatewayonboarding.NewHandler(opts.Repo, onboarding.CheckDNSLoop, setup.AdoptOwnedWrite)
-		owners := setup.RegisteredOwners()
-		setupHandler = apisetup.NewHandler(opts.Repo, &owners)
-	} else {
-		onboardingHandler = &apigatewayonboarding.Handler{DNSLoop: onboarding.CheckDNSLoop}
-		setupHandler = apisetup.NewHandler(nil, nil)
-	}
+	onboardingHandler := apigatewayonboarding.NewHandler(opts.Repo, onboarding.CheckDNSLoop, setup.AdoptOwnedWrite)
+	setupHandler := apisetup.NewHandler(opts.Repo, setupOwners)
 	return &w10cHandlers{
 		auth:              apiauth.NewHandler(),
 		clientdevices:     apiclientdevices.NewHandler(opts.Repo, ag.manager),

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	apionboarding "configflow/internal/api/gatewayonboarding"
+	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/gateway/onboarding"
@@ -30,7 +31,7 @@ func testServer(t *testing.T) *httpxtest.Server {
 
 func testServerWithSplitReader(t *testing.T, readSplit func(context.Context, *repo.Repository, string) (*routersplit.Context, error)) *httpxtest.Server {
 	t.Helper()
-	gateway.Wire()
+	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	h := apionboarding.NewHandler(nil, onboarding.CheckDNSLoop, setup.AdoptOwnedWrite)
 	h.ReadSplitContext = readSplit

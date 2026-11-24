@@ -30,6 +30,7 @@ import (
 	routerrulesync "configflow/internal/routers/rulesync"
 	"configflow/internal/routers/spec"
 	"configflow/internal/rulesource"
+	"configflow/internal/setup"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/webdav"
@@ -68,6 +69,7 @@ type App struct {
 	RouterSync    *routerrulesync.RuleSyncService
 	WebDAV        *webdav.Service
 	Discovery     *discovery.Service
+	SetupOwners   setup.ExternalOwners
 	Settings      *apisettings.Handler
 
 	api apiHandlers // the mounted route handlers (production-wiring tests)
@@ -131,6 +133,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	setupOwners := buildSetupOwners(ag, rs, rtrSvc.routers)
 	if err := gen.deploy.Validate(); err != nil {
 		return nil, err
 	}
@@ -148,7 +151,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		mcp:    mcp.NewHandler(opts.Repo),
 		agents: newAgentAPIHandler(opts, ag, gen, disc),
 		w10b:   newW10bHandlers(opts, ag, gen, rs, rtrSvc),
-		w10c:   newW10cHandlers(opts, tk, nt, ag, gen, rs, wd, disc),
+		w10c:   newW10cHandlers(opts, tk, nt, ag, gen, rs, wd, disc, &setupOwners),
 	}
 	registerRoutes(httpApp.Router, api)
 	auth.Install(httpApp)
@@ -177,6 +180,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		RouterSync:    rtrSvc.rulesync,
 		WebDAV:        wd,
 		Discovery:     disc,
+		SetupOwners:   setupOwners,
 		Settings:      api.w10c.settings,
 		api:           api,
 	}, nil
@@ -193,11 +197,6 @@ func wireOtherSubsystems(opts Options, rt *lifecycle.Runtime, tk *tasks.Registry
 		return nil, err
 	}
 	rtrSvc := wireRouters(opts, rt, tk, nt, ag, rs)
-	wireSetupContentWith(rs)
-	wireSetupOnboarding()
-	wireSetupInstallation()
-	wireSetupRouter(rtrSvc.routers)
-	wireRuleSource(rs)
 	return rtrSvc, nil
 }
 

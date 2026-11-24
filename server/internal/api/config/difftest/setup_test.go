@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	apisetup "configflow/internal/api/setup"
+	"configflow/internal/httpx"
+	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/setup"
 )
 
@@ -63,9 +65,10 @@ func TestSetupFlaskHTTPStateAndAuthentication(t *testing.T) {
 	// Keep the fail-closed dependency contract explicitly isolated. The full
 	// batch tree now wires A22, so it also exercises real abandonment below.
 	func() {
-		restore := setup.SetExternalOwners(setup.ExternalOwners{})
-		defer restore()
-		response := sendGo(t, w.srv, request{Method: "POST", Path: path + "/abandon", Body: body(map[string]any{}), Headers: map[string]string{"Authorization": w.token, "Content-Type": "application/json"}})
+		unwired := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, DataDir: w.srv.DataDir, Register: httpxtest.Routes(func(r *httpx.Router) {
+			apisetup.NewHandler(w.srv.Repo, &setup.ExternalOwners{}).Register(r)
+		})})
+		response := sendGo(t, unwired, request{Method: "POST", Path: path + "/abandon", Body: body(map[string]any{}), Headers: map[string]string{"Authorization": w.token, "Content-Type": "application/json"}})
 		if response.Status != 503 || response.Body.(map[string]any)["message"] != "等待首次使用向导模块" {
 			t.Fatalf("missing installation owner: %+v", response)
 		}

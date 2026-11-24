@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/agents"
 	api "configflow/internal/api/routers"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/notifications"
@@ -372,9 +373,15 @@ func runHTTPBoundary(t *testing.T, fake *routerfake.Fake, seed routerfake.State,
 	oracle := r15Python(t, dir, input)
 	pythonTables := fake.Snapshot().Tables
 	fake.Reset(seed)
-	rs := rulesource.New(rulesource.Options{})
-	rr := routerrulesync.New(nil, routerrulesync.Options{})
-	rtr := core.New(nil, core.Options{
+	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go")})
+	mgr, err := agents.New(s.Context(), s.Repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mgr.Close)
+	rs := rulesource.New(rulesource.Options{Repo: s.Repo})
+	rr := routerrulesync.New(s.Repo, routerrulesync.Options{Agents: core.ManagerAgentSource{Manager: mgr}})
+	rtr := core.New(s.Repo, core.Options{
 		Rules: func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
 			var libRaw json.RawMessage
 			if library != nil {
@@ -384,7 +391,7 @@ func runHTTPBoundary(t *testing.T, fake *routerfake.Fake, seed routerfake.State,
 		},
 		ManualBaseline: rr.CaptureManual,
 	})
-	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.NewHandler(rtr, rr).Register)})
+	api.New(api.Deps{Repo: s.Repo, Agents: mgr, Routers: rtr, RuleSync: rr}).Register(s.App.Router)
 	previousHooks := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: core.JobLockRecord}})
 	t.Cleanup(func() { repo.SetHooks(previousHooks) })
 	t.Cleanup(notifications.SetInputs(notifications.Inputs{Summarize: core.NotificationSummary}))

@@ -245,10 +245,10 @@ func TestR14SourceSelectionAndCacheIdentity(t *testing.T) {
 	if err != nil || len(sources) != 2 {
 		t.Fatal(err, sources)
 	}
-	if err = syncCacheWrite(ctx, sources[1], "DOMAIN,other.example.com", config); err != nil {
+	if err = syncCacheWrite(ctx, s.Repo, sources[1], "DOMAIN,other.example.com", config); err != nil {
 		t.Fatal(err)
 	}
-	contents, records, err := loadSyncSources(ctx, config, r, nil)
+	contents, records, err := loadSyncSources(ctx, s.Repo, config, r, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

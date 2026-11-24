@@ -3,7 +3,6 @@ package setup
 import (
 	"context"
 	"encoding/json"
-	"sync"
 	"time"
 
 	"configflow/internal/gateway/onboarding"
@@ -131,25 +130,6 @@ type ExternalOwners struct {
 	VerifyRouter func(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *routers.Router) (RouterVerification, error)
 }
 
-var ownersState struct {
-	sync.RWMutex
-	value ExternalOwners
-}
-
-// SetExternalOwners atomically installs native callbacks and returns a restore
-// function. Server wiring joins A21/A22/C32 to this package without import cycles.
-func SetExternalOwners(owners ExternalOwners) func() {
-	ownersState.Lock()
-	previous := ownersState.value
-	ownersState.value = copyOwners(owners)
-	ownersState.Unlock()
-	return func() {
-		ownersState.Lock()
-		ownersState.value = previous
-		ownersState.Unlock()
-	}
-}
-
 func copyOwners(owners ExternalOwners) ExternalOwners {
 	if owners.DNS != nil {
 		dns := *owners.DNS
@@ -162,44 +142,7 @@ func copyOwners(owners ExternalOwners) ExternalOwners {
 	return owners
 }
 
-// RegisteredOwners returns a copy of the currently installed owners, so the
-// server can assert at startup and in tests that every owner is wired.
-func RegisteredOwners() ExternalOwners { return externalOwners() }
-
-func externalOwners() ExternalOwners {
-	ownersState.RLock()
-	defer ownersState.RUnlock()
-	return copyOwners(ownersState.value)
-}
-
 func unavailable() error { return failure(msgAwaitOwner, 503) }
-
-// RegisterExternalOwners installs only the non-nil owners in a server wiring
-// step, retaining callbacks registered by earlier modules. SetExternalOwners is
-// available to isolate tests or replace the entire configuration explicitly.
-func RegisterExternalOwners(owners ExternalOwners) func() {
-	ownersState.Lock()
-	previous := ownersState.value
-	next := copyOwners(previous)
-	if owners.DNS != nil {
-		next.DNS = owners.DNS
-	}
-	if owners.Installation != nil {
-		next.Installation = owners.Installation
-	}
-	if owners.ReadRouteContent != nil {
-		next.ReadRouteContent = owners.ReadRouteContent
-	}
-	if owners.VerifyRouter != nil {
-		next.VerifyRouter = owners.VerifyRouter
-	}
-	if owners.ReadOfflineRouteContent != nil {
-		next.ReadOfflineRouteContent = owners.ReadOfflineRouteContent
-	}
-	ownersState.value = copyOwners(next)
-	ownersState.Unlock()
-	return func() { ownersState.Lock(); ownersState.value = previous; ownersState.Unlock() }
-}
 
 // ownerValidation preserves a pure owner's error chain and the wizard's 400
 // boundary. Transport/status callbacks return *Error for their public status.

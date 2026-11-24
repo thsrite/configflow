@@ -24,6 +24,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
 	apiagents "configflow/internal/api/agents"
+	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
 	"configflow/internal/gateway"
@@ -120,7 +121,7 @@ func (o *oracle) call(t *testing.T, method, path, body, token string) pyAnswer {
 }
 func setup(t *testing.T) (*httpxtest.Server, string, installation.Record, map[string]json.RawMessage) {
 	t.Helper()
-	gateway.Wire()
+	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	deploy.Wire()
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apiagents.Register)})

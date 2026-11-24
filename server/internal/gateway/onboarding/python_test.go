@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/oxidns"
@@ -109,7 +110,7 @@ func equalJSON(t *testing.T, label string, got, want json.RawMessage) {
 // read-state and install readiness. DNS-loop wiring is tested after C34 merges;
 // this independent corpus contains no Mihomo loop and injects that seam only.
 func TestPythonPreparation(t *testing.T) {
-	gateway.Wire()
+	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	rows := pythonRows(t)
 	t.Logf("real Python boundary cases: %d", len(rows))

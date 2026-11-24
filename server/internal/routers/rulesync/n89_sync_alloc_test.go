@@ -35,6 +35,7 @@ func (c noSyncEnvironment) Value(key any) any {
 
 type syncAllocationFixture struct {
 	ctx      context.Context
+	db       *repo.Repository
 	config   json.RawMessage
 	router   *spec.Router
 	download RuleSyncDownload
@@ -91,7 +92,7 @@ func syncAllocationInput(t testing.TB, n, padding int, remote, dropEnvironment b
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(context.Background(), db)
-	out := syncAllocationFixture{ctx: ctx, config: raw, router: r}
+	out := syncAllocationFixture{ctx: ctx, db: db, config: raw, router: r}
 	if remote {
 		downloader := &RuleSyncDownloads{Client: &rulefetch.Client{Transport: rulefetch.HTTPTransport{}}}
 		out.download = func(ctx context.Context, rule, config json.RawMessage) (string, error) {
@@ -101,7 +102,7 @@ func syncAllocationInput(t testing.TB, n, padding int, remote, dropEnvironment b
 			return downloader.Download(ctx, rule, config)
 		}
 	}
-	if _, records, err := loadSyncSources(out.ctx, out.config, out.router, out.download); err != nil || len(records) != n {
+	if _, records, err := loadSyncSources(out.ctx, out.db, out.config, out.router, out.download); err != nil || len(records) != n {
 		t.Fatalf("pipeline fixture: records=%d err=%v", len(records), err)
 	}
 	return out
@@ -155,7 +156,7 @@ func measureSyncAllocations(t testing.TB, samples, runs int, fn func()) syncAllo
 func measureSyncPipeline(t testing.TB, fixture syncAllocationFixture, samples, runs int) syncAllocationStats {
 	t.Helper()
 	return measureSyncAllocations(t, samples, runs, func() {
-		_, records, err := loadSyncSources(fixture.ctx, fixture.config, fixture.router, fixture.download)
+		_, records, err := loadSyncSources(fixture.ctx, fixture.db, fixture.config, fixture.router, fixture.download)
 		if err != nil || len(records) != len(fixture.router.IPRuleSets) {
 			t.Fatal("pipeline failed", err)
 		}
@@ -201,7 +202,7 @@ func BenchmarkSyncSourcePipeline(b *testing.B) {
 				b.ReportAllocs()
 				b.ResetTimer()
 				for b.Loop() {
-					if _, _, err := loadSyncSources(f.ctx, f.config, f.router, f.download); err != nil {
+					if _, _, err := loadSyncSources(f.ctx, f.db, f.config, f.router, f.download); err != nil {
 						b.Fatal(err)
 					}
 				}
@@ -251,7 +252,7 @@ func TestN89SyncCachePeekDoesNotMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(t.Context(), db)
-	contents, records, err := loadSyncSources(ctx, config, r, nil)
+	contents, records, err := loadSyncSources(ctx, db, config, r, nil)
 	if err != nil || records["r"] == nil || contents["r"] != string(content) {
 		t.Fatalf("legacy peek failed: %v %#v", err, records)
 	}
@@ -283,11 +284,11 @@ func TestN89SyncWritePipelineAllocations(t *testing.T) {
 		for _, source := range sources {
 			contents[source.Item.ID] = "IP-CIDR,203.0.113.0/24"
 		}
-		if err = writeSyncSources(f.ctx, sources, contents, f.config); err != nil {
+		if err = writeSyncSources(f.ctx, f.db, sources, contents, f.config); err != nil {
 			t.Fatal(err)
 		}
 		return measureSyncAllocations(t, 2, 2, func() {
-			if err := writeSyncSources(f.ctx, sources, contents, f.config); err != nil {
+			if err := writeSyncSources(f.ctx, f.db, sources, contents, f.config); err != nil {
 				t.Fatal(err)
 			}
 		})
