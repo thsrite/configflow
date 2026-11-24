@@ -27,7 +27,7 @@ func wireRuleSource(rs *rulesource.Service) {
 	if rs == nil {
 		rs = rulesource.Default()
 	}
-	routers.RulesetContent = func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
+	spec.RulesetContent = func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
 		var libRaw json.RawMessage
 		if library != nil {
 			libRaw = library.Raw

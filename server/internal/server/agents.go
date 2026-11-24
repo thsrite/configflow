@@ -130,7 +130,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	// service injection (W9 routers, W10 api handlers). The monitor bridge
 	// dispatches through mon so mon's two-phase HA owner is the only one.
 	monitor.SetHARulesJSON(mon.PairRules)
-	rosipv6.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (rosipv6.IPv6Host, error) {
+	routers.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (rosipv6.IPv6Host, error) {
 		if agent == nil {
 			return ip.Host(ctx, nil)
 		}
@@ -170,7 +170,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 
 func wireIPv6On(rt *lifecycle.Runtime) {
 	agentipv6.WireOn(rt, apiagents.ContentChecker)
-	rosipv6.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (rosipv6.IPv6Host, error) {
+	routers.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (rosipv6.IPv6Host, error) {
 		m, err := agents.Get(ctx)
 		if err != nil {
 			return rosipv6.IPv6Host{}, err

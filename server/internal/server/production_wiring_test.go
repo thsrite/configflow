@@ -19,6 +19,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
+	"configflow/internal/routers/spec"
 	"configflow/internal/rulesource"
 	"configflow/internal/setup"
 	"configflow/internal/substore"
@@ -60,9 +61,9 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 	previousRepoHooks := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previousRepoHooks) })
 	agents.ResetHooks()
-	content, ipv6Host := routers.RulesetContent, routers.IPv6HostRequest
-	routers.RulesetContent, routers.IPv6HostRequest = nil, nil
-	t.Cleanup(func() { routers.RulesetContent, routers.IPv6HostRequest = content, ipv6Host })
+	content, ipv6Host := spec.RulesetContent, routers.IPv6HostRequest
+	spec.RulesetContent, routers.IPv6HostRequest = nil, nil
+	t.Cleanup(func() { spec.RulesetContent, routers.IPv6HostRequest = content, ipv6Host })
 	t.Cleanup(func() {
 		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
 			t.Error(err)
@@ -103,7 +104,7 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		{"rule source service is the default", app.RuleSource != nil && rulesource.Default() == app.RuleSource},
 		{"onboarding adoption owner", onboarding.RegisteredAdoptOwnedWrite() != nil},
 		{"gateway rule source reader", gateway.RegisteredRuleSourceReader() != nil},
-		{"routers rule set content", routers.RulesetContent != nil},
+		{"routers rule set content", spec.RulesetContent != nil},
 		{"routers IPv6 host", routers.IPv6HostRequest != nil},
 	}
 	for _, c := range checks {

@@ -1,12 +1,12 @@
 package routers
 
 import (
-	"encoding/json"
 	"configflow/internal/routers/device"
-	"configflow/internal/routers/ros"
-	"configflow/internal/routers/spec"
-	"configflow/internal/routers/rospolicy"
 	"configflow/internal/routers/ipv6"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
+	"encoding/json"
 )
 
 type natPlanEvidence struct {
