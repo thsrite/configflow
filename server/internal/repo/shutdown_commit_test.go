@@ -25,7 +25,7 @@ func commitRuntime(t *testing.T) (*repo.Repository, *lifecycle.Runtime, context.
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 	runtime.Start(ctx)
 	t.Cleanup(func() { runtime.Shutdown(context.Background()) })

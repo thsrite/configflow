@@ -103,7 +103,7 @@ func fixtureNew(t *testing.T, options Options, paired bool, deviceOptions map[st
 	if e != nil {
 		t.Fatal(e)
 	}
-	ctx := repo.WithRepository(t.Context(), r)
+	ctx := t.Context()
 	segment := agentfake.NewSegment("primary")
 	client := &transport{urls: map[string]string{}}
 	devices := map[string]*agentfake.Agent{}
@@ -154,7 +154,7 @@ func fixtureNew(t *testing.T, options Options, paired bool, deviceOptions map[st
 	if e != nil {
 		t.Fatal(e)
 	}
-	m, e := agents.New(ctx, r, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
+	m, e := agents.New(ctx, r, agents.Options{ReceiptMatches: deploy.ReceiptMatcher(r)})
 	if e != nil {
 		t.Fatal(e)
 	}

@@ -323,7 +323,7 @@ func TestStoredDotPathAutomaticFailureHasClearTaskMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitWorker(t, worker)
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	snap, err := notifications.New(notifications.Options{Repo: r}).TaskStatus(ctx, r.DataDir()).Read()
 	if err != nil {
 		t.Fatal(err)

@@ -51,7 +51,7 @@ func TestProfileMetadataRecordHonorsCancellation(t *testing.T) {
 	r := newRepo(t)
 	request, disconnect := context.WithCancel(t.Context())
 	disconnect()
-	if id, err := ResolveProfileID(WithRepository(request, r), "default"); err != nil || id != "default" {
+	if id, err := r.ResolveProfileID(request, "default"); err != nil || id != "default" {
 		t.Fatalf("disconnected profile resolution failed: %q, %v", id, err)
 	}
 	if _, err := r.ProfileMetadataRecord(request, "default"); !errors.Is(err, context.Canceled) {
@@ -59,7 +59,7 @@ func TestProfileMetadataRecordHonorsCancellation(t *testing.T) {
 	}
 	work, shutdown := context.WithCancel(t.Context())
 	shutdown()
-	if _, err := ResolveProfileID(WithRepository(ctxx.WithParent(request, work), r), "default"); !errors.Is(err, context.Canceled) {
+	if _, err := r.ResolveProfileID(ctxx.WithParent(request, work), "default"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("profile resolution ignored work shutdown: %v", err)
 	}
 }

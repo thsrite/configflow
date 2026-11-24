@@ -162,7 +162,7 @@ func newFixture(t *testing.T, o Options, targetOptions agentfake.Options) *fixtu
 	if e != nil {
 		t.Fatal(e)
 	}
-	ctx := repo.WithScope(repo.WithRepository(t.Context(), r))
+	ctx := repo.WithScope(t.Context())
 	source := newPeer(t, "source", "mihomo", agentfake.Options{})
 	target := newPeer(t, "target", "oxidns", targetOptions)
 	e = r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
@@ -182,7 +182,7 @@ func newFixture(t *testing.T, o Options, targetOptions agentfake.Options) *fixtu
 	if e != nil {
 		t.Fatal(e)
 	}
-	m, e := agents.New(ctx, r, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
+	m, e := agents.New(ctx, r, agents.Options{ReceiptMatches: deploy.ReceiptMatcher(r)})
 	if e != nil {
 		t.Fatal(e)
 	}

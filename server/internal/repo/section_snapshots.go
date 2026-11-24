@@ -257,21 +257,3 @@ func (r *Repository) SaveScopedSharedRecord(ctx context.Context, snapshot, basel
 	ResetConfigContext(ctx)
 	return nil
 }
-
-// SharedConfig delegates to the context/default repository (transitional; removed in W11).
-func SharedConfig(ctx context.Context) (*model.Shared, error) {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return repository.ScopedSharedConfig(ctx)
-}
-
-// SaveSharedRecord delegates to the context/default repository (transitional; removed in W11).
-func SaveSharedRecord(ctx context.Context, snapshot, baseline *model.Shared) error {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return err
-	}
-	return repository.SaveScopedSharedRecord(ctx, snapshot, baseline)
-}

@@ -23,7 +23,7 @@ func TestNewAppWiresRuleContentForGatewayProviders(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(app.Agents.Close)
-	ctx, cancel := context.WithCancel(repo.WithScope(repo.WithRepository(context.Background(), r)))
+	ctx, cancel := context.WithCancel(repo.WithScope(context.Background()))
 	cancel()
 	raw := []byte(`{"profile_id":"default","mihomo":{"linux_gateway":{"enabled":true,"rule_set_ids":["selected"]}},"rule_configs":[{"id":"selected","itemType":"ruleset","library_rule_id":"nets","behavior":"ipcidr","enabled":true,"policy":"DIRECT"}],"rule_library":[{"id":"nets","name":"Nets","source_type":"content","behavior":"ipcidr","format":"text","content":"192.0.2.0/24\n","enabled":true}]}`)
 	native, err := model.DecodeConfig(raw)

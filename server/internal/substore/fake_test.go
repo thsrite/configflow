@@ -20,7 +20,6 @@ import (
 	schedclock "configflow/internal/clock"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
-	"configflow/internal/repo"
 )
 
 // fakeSubStore emulates the Sub-Store endpoints the client and the runtime
@@ -361,14 +360,6 @@ func newHarness(t *testing.T, opts harnessOptions) *harness {
 	base := t.TempDir()
 	h := &harness{t: t, store: newFakeSubStore(t), clock: newFakeClock(), vars: map[string]string{},
 		builtin: filepath.Join(base, "opt"), data: filepath.Join(base, "data")}
-	// Standalone helpers that call GetMode without a bound context must use
-	// this fixture's native repository, never the package directory or another test.
-	repository, err := repo.Open(h.data, repo.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	repo.SetRepository(repository)
-	t.Cleanup(func() { repo.SetRepository(nil) })
 	h.commands = &fakeCommands{store: h.store, runVersion: opts.version}
 	if h.commands.runVersion == "" {
 		h.commands.runVersion = "2.40.0"

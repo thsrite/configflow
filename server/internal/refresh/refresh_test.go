@@ -154,7 +154,7 @@ func setup(t *testing.T, subInterval any) *fixture {
 		t.Fatal(err)
 	}
 	f := &fixture{t: t, repo: r, clock: &fakeClock{now: time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC)}}
-	f.ctx = repo.WithRepository(context.Background(), r)
+	f.ctx = context.Background()
 	err = r.UpdateShared(f.ctx, func(_ context.Context, shared *model.Shared) error {
 		shared.Subscriptions = []model.Subscription{testjson.Decode[model.Subscription](t, map[string]any{
 			"id": "s", "name": "Feed", "url": subURL, "enabled": true, "interval": subInterval,
@@ -417,7 +417,7 @@ func TestFailedRuleRefreshSurvivesAReloadWithReasonAndRetainedCache(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.repo, f.ctx = reopened, repo.WithRepository(context.Background(), reopened)
+	f.repo, f.ctx = reopened, context.Background()
 	rows := f.listRows()
 	row := rows["rule_source:rule"]
 	want := map[string]any{
@@ -662,7 +662,7 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 		t.Fatal(err)
 	}
 	reopened, _ := repo.Open(f.repo.DataDir(), repo.Options{})
-	f.repo, f.ctx = reopened, repo.WithRepository(context.Background(), reopened)
+	f.repo, f.ctx = reopened, context.Background()
 	second, err := f.svc.FetchSource(f.ctx, f.sub(), fetch)
 	if err != nil {
 		t.Fatal(err)

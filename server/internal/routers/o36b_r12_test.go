@@ -19,8 +19,6 @@ import (
 // StartPublish delivers its result.
 func TestO36bR12TrackedPublicationUsesSharedJobLock(t *testing.T) {
 	_, db, req, before := r12ReviewSetup(t, nil)
-	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
-	defer repo.SetHooks(previous)
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Mode: lifecycle.ModeManual})
 	runtime.Start(t.Context())
 	defer runtime.Shutdown(t.Context())
@@ -34,7 +32,7 @@ func TestO36bR12TrackedPublicationUsesSharedJobLock(t *testing.T) {
 	}()
 	factory := req.NewDriver
 	req.NewDriver = func(r *spec.Router) Driver { close(entered); <-resume; return factory(r) }
-	held, unlock, err := oplock.RouterJobLock(repo.WithRepository(runtime.BindRequest(t.Context()), db), req.ProfileID, req.RouterID, req.Router)
+	held, unlock, err := oplock.RouterJobLock(runtime.BindRequest(t.Context()), req.ProfileID, req.RouterID, req.Router)
 	if err != nil {
 		t.Fatal(err)
 	}

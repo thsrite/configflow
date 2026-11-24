@@ -350,7 +350,7 @@ func (s *Service) PairRules(ctx context.Context, id, method string) (out *RuleRe
 			if active(a) {
 				return refuse(msgRulesBusy)
 			}
-			receipt, e := deploy.NewReceipts(s.m.Repository().DataDir()).LoadAgent(ctx, a.Agent, false)
+			receipt, e := deploy.NewReceipts(s.m.Repository()).LoadAgent(ctx, a.Agent, false)
 			if e != nil {
 				return e
 			}

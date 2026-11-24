@@ -335,8 +335,6 @@ func TestHTTPAndStorageParity(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	repo.SetRepository(r)
-	t.Cleanup(func() { repo.SetRepository(nil) })
 	t.Setenv("DATA_DIR", goDir)
 	prev := auth.Configure(auth.Config{})
 	t.Cleanup(func() { auth.Configure(prev) })

@@ -36,7 +36,7 @@ func recordPendingNotice(ctx context.Context, nt *notifications.Service, db *rep
 	if nt == nil {
 		return
 	}
-	work := lifecycle.Detach(repo.WithRepository(ctx, db))
+	work := lifecycle.Detach(ctx)
 	if work.Err() != nil {
 		return
 	}

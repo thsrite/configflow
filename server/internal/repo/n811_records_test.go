@@ -241,7 +241,7 @@ func TestN811ResolvedWritesLifetimeAndRollback(t *testing.T) {
 
 func TestN811SharedConfigPreservesConcurrentEdits(t *testing.T) {
 	r := recordRepository(t)
-	base := repo.WithRepository(context.Background(), r)
+	base := context.Background()
 	if err := r.UpdateShared(base, func(_ context.Context, shared *model.Shared) error {
 		shared.Nodes = []model.Node{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}}
 		return nil
@@ -249,20 +249,20 @@ func TestN811SharedConfigPreservesConcurrentEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	first, second := repo.WithScope(base), repo.WithScope(base)
-	left, err := repo.SharedConfig(first)
+	left, err := r.ScopedSharedConfig(first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	right, err := repo.SharedConfig(second)
+	right, err := r.ScopedSharedConfig(second)
 	if err != nil {
 		t.Fatal(err)
 	}
 	left.Nodes[0].Name = "Edited A"
 	right.Nodes[1].Name = "Edited B"
-	if err := repo.SaveSharedRecord(first, left, nil); err != nil {
+	if err := r.SaveScopedSharedRecord(first, left, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.SaveSharedRecord(second, right, nil); err != nil {
+	if err := r.SaveScopedSharedRecord(second, right, nil); err != nil {
 		t.Fatal(err)
 	}
 	result, err := r.Shared(base)
@@ -272,7 +272,7 @@ func TestN811SharedConfigPreservesConcurrentEdits(t *testing.T) {
 	if result.Nodes[0].Name != "Edited A" || result.Nodes[1].Name != "Edited B" {
 		t.Fatalf("concurrent edits lost: %+v", result.Nodes)
 	}
-	if err := repo.SaveSharedRecord(second, right, nil); !errors.Is(err, repo.ErrInUse) {
+	if err := r.SaveScopedSharedRecord(second, right, nil); !errors.Is(err, repo.ErrInUse) {
 		t.Fatalf("successful save did not reset the Scope baseline: %v", err)
 	}
 }

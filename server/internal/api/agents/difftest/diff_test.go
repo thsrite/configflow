@@ -278,8 +278,6 @@ func startGoWith(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo.SetRepository(r)
-	t.Cleanup(func() { repo.SetRepository(nil) })
 	full, err := server.New(context.Background(), server.Options{Repo: r, Runtime: requestRuntime})
 	if err != nil {
 		t.Fatal(err)

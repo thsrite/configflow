@@ -68,7 +68,7 @@ func TestO17FollowupHALeftoverExportRestoreDisableCleansDevice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	restoredCtx := repo.WithRepository(t.Context(), restoredRepo)
+	restoredCtx := t.Context()
 	if _, err := restoredRepo.ImportAllJSON(restoredCtx, exported); err != nil {
 		t.Fatal(err)
 	}

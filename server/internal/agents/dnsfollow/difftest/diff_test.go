@@ -185,7 +185,7 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := agents.New(ctx, srv.Repo, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
+	m, err := agents.New(ctx, srv.Repo, agents.Options{ReceiptMatches: deploy.ReceiptMatcher(srv.Repo)})
 	if err != nil {
 		t.Fatal(err)
 	}

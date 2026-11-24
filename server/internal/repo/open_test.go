@@ -351,9 +351,8 @@ func TestRestoredOlderDatabaseIsNeverServedFromCache(t *testing.T) {
 
 func TestDeletingAProfileWithoutDerivedFilesKeepsItsJson(t *testing.T) {
 	// This storage fixture has no publisher; explicitly provide its cleanup gate.
-	previous := SetHooks(Hooks{RecordHooks: RecordHooks{JobLockRecord: func(context.Context, string, string, model.Router) (func(), bool) { return func() {}, true }}})
-	defer SetHooks(previous)
 	r := newRepo(t)
+	r.options.RouterJobLock = func(context.Context, string, string, model.Router) (func(), bool) { return func() {}, true }
 	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "gone", Name: "Gone", Description: "含凭据"}, ""))(t)
 	_, _, err := r.SaveProfileFieldsJSON(bg, "gone", json.RawMessage(`{"routers": {"items": [
 		{"id": "r", "name": "Router", "type": "routeros", "endpoint": "https://r.example",

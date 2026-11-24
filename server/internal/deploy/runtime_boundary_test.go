@@ -18,7 +18,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/provider"
-	"configflow/internal/repo"
 )
 
 func startGlobalPublishRuntime(t *testing.T, ctx context.Context) {
@@ -107,7 +106,7 @@ func TestShutdownRejectsEveryPublishCommit(t *testing.T) {
 		{"rollback", func() error { _, e := f.m.RollbackDeploymentModel(ctx, "publish-agent", "closed"); return e }},
 		{"recover", func() error { _, e := f.m.RecoverDeploymentModel(ctx, "publish-agent", "closed"); return e }},
 		{"receipt", func() error {
-			return NewReceipts(f.m.Repository().DataDir()).Capture(ctx, "publish-agent", b, f.source, "https://panel.example.com", nil)
+			return NewReceipts(f.m.Repository()).Capture(ctx, "publish-agent", b, f.source, "https://panel.example.com", nil)
 		}},
 		{"preview", func() error {
 			_, e := NewPreviews(f.m.Repository().DataDir(), nil).Save(ctx, PreviewInput{Target: target, Source: f.source, Bundle: b, Members: []Target{target}})
@@ -230,11 +229,11 @@ func TestDisconnectedBoundRequestCompletesPublicationAndArtifacts(t *testing.T) 
 	if _, err = NewPreviews(f.m.Repository().DataDir(), nil).Save(ctx, PreviewInput{Target: target, Source: f.source, Bundle: b, Members: []Target{target}}); err != nil {
 		t.Fatal(err)
 	}
-	receipts := NewReceipts(f.m.Repository().DataDir())
+	receipts := NewReceipts(f.m.Repository())
 	if err = receipts.Capture(ctx, "publish-agent", b, f.source, "https://panel.example.com", nil); err != nil {
 		t.Fatal(err)
 	}
-	repository, _ := repo.GetRepository(f.ctx)
+	repository := f.m.Repository()
 	if _, err = os.Stat(filepath.Join(repository.DataDir(), ".generated-previews")); err != nil {
 		t.Fatal(err)
 	}

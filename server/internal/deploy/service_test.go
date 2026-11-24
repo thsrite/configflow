@@ -15,7 +15,7 @@ func TestServicePublishFailsClosedWithoutPairPublisher(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		enabled := true
 		s.Agents = []model.Agent{{

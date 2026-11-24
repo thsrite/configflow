@@ -25,7 +25,7 @@ func TestO10R6ReviewPublicSecretsMatchEncodedView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "second", Name: "Second"}, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -135,15 +135,16 @@ func TestO10R6ReviewPublicSecretsMatchEncodedView(t *testing.T) {
 // credential is the router password (plain records keep no undeclared
 // members, O18 T1c).
 func TestO10R6ReviewCredentialsBelongToTheirRecords(t *testing.T) {
-	r, err := repo.OpenDefault(t.TempDir())
+	// A password change replaces the connection: the publication lock is free.
+	r, err := repo.OpenDefaultWithOptions(t.TempDir(), repo.Options{
+		RouterJobLock: func(context.Context, string, string, model.Router) (func(), bool) {
+			return func() {}, true
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	// A password change replaces the connection: the publication lock is free.
-	defer repo.SetHooks(repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: func(context.Context, string, string, model.Router) (func(), bool) {
-		return func() {}, true
-	}}}))
 	rotate := func(i int) error {
 		_, err := r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
 			return p.SetJSON("routers", json.RawMessage(fmt.Sprintf(`{"items":[{"id":"r1","type":"routeros","endpoint":"http://192.0.2.1","username":"admin","password":"synthetic-rot-%d"}]}`, i)))

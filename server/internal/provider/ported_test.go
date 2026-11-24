@@ -31,7 +31,7 @@ func repoContext(t *testing.T) (context.Context, *repo.Repository) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return repo.WithRepository(context.Background(), r), r
+	return context.Background(), r
 }
 
 func testService(r *repo.Repository) *Service {
@@ -397,7 +397,7 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx = repo.WithRepository(context.Background(), reopened)
+	ctx = context.Background()
 	pv2 := testService(reopened)
 	second, err := pv2.PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{Fetch: fetchReturning(content, "direct_yaml", &calls)})
 	if err != nil {

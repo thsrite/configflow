@@ -71,7 +71,7 @@ var syncWorkers = lockx.NewKeyed[string](lockx.LevelJob, "routers:rule-sync")
 
 func (s *RuleSyncService) store() RuleSyncStore { return RuleSyncStore{DataDir: s.Repo.DataDir()} }
 func (s *RuleSyncService) context(ctx context.Context) context.Context {
-	return repo.WithRepository(lifecycle.Detach(ctx), s.Repo)
+	return lifecycle.Detach(ctx)
 }
 func (s *RuleSyncService) driver(r *spec.Router) *routers.RouterOS {
 	if s.NewDriver != nil {

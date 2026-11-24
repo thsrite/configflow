@@ -19,7 +19,7 @@ func TestGenerationOwnerRuntime(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				base := repo.WithScope(repo.WithRepository(t.Context(), r))
+				base := repo.WithScope(t.Context())
 				rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 				rt.Start(t.Context())
 				t.Cleanup(func() { rt.Shutdown(t.Context()) })

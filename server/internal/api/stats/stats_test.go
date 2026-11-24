@@ -20,7 +20,7 @@ func overviewOf(t *testing.T, app *httpx.App, repository *repo.Repository, heade
 	if header != "" {
 		request.Header = map[string][]string{"X-ConfigFlow-Profile": {header}}
 	}
-	res, err := app.Invoke(repo.WithRepository(context.Background(), repository), request)
+	res, err := app.Invoke(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
 	}

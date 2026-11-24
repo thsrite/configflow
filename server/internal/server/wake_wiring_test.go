@@ -44,7 +44,7 @@ func TestNewConnectsAgentLoopWakeSources(t *testing.T) {
 		t.Fatal("app.Refresh is nil")
 	}
 
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		s.Agents = append(s.Agents, model.Agent{
 			ID: "wake-1", Name: "wake-1", Host: "192.0.2.20", Port: model.Int(8080),

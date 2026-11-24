@@ -850,7 +850,7 @@ func writeSharedJSONFile(t *testing.T, ctx context.Context, r *repo.Repository, 
 
 func scenarioRow(t *testing.T, kind string, in map[string]any, rawMain json.RawMessage, rawCaches, rawDownloads map[string]json.RawMessage, row map[string]any, r *repo.Repository) (map[string]any, func(*testing.T, map[string]string)) {
 	root := r.DataDir()
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	for id, cache := range rawCaches {
 		writeSharedJSONFile(t, ctx, r, "subscribes/"+id+".json", cache)
 	}

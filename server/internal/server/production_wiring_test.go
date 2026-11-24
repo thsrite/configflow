@@ -46,8 +46,6 @@ func nilFuncFields(v any) []string {
 func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 	t.Cleanup(convert.ResetMihomoEnvironmentForTest(t))
 	t.Cleanup(convert.ResetMihomoIntegrationsForTest(t))
-	previousRepoHooks := repo.SetHooks(repo.Hooks{})
-	t.Cleanup(func() { repo.SetHooks(previousRepoHooks) })
 	t.Cleanup(func() {
 		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
 			t.Error(err)
@@ -60,8 +58,6 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(r.Close)
-	repo.SetRepository(r)
-	t.Cleanup(func() { repo.SetRepository(nil) })
 	rt := lifecycle.NewProcessRuntime(lifecycle.Options{})
 	if err := lifecycle.UseRuntime(rt); err != nil {
 		t.Fatal(err)
@@ -154,9 +150,7 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	installed := repo.SetHooks(repo.Hooks{})
 	exported, err := r.ExportAllJSON(ctx, true)
-	repo.SetHooks(installed)
 	if err != nil {
 		t.Fatalf("desensitized export without global hooks: %v", err)
 	}

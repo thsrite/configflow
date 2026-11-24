@@ -309,7 +309,7 @@ func TestAgentRegistrationDoesNotOverwriteSystemAgentsFromProfileSnapshot(t *tes
 	e.editSystem(func(system *model.System) {
 		system.Agents = []model.Agent{{ID: "stable", Name: "stable", Host: "10.0.0.1", ProfileID: "default"}}
 	})
-	ctx := repo.WithScope(repo.WithRepository(context.Background(), e.repo))
+	ctx := repo.WithScope(context.Background())
 	alpha := "alpha"
 	repo.SetRequest(ctx, repo.RequestInfo{Endpoint: "agents.handle_agents", HeaderProfile: &alpha})
 	defer repo.ResetConfigContext(ctx)

@@ -23,6 +23,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
+	"configflow/internal/repo"
 	core "configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
 	routerrulesync "configflow/internal/routers/rulesync"
@@ -120,7 +121,7 @@ func TestR15PublishHTTPDisconnectAndShutdownAfterWrite(t *testing.T) {
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Mode: lifecycle.ModeManual})
 			runtime.Start(t.Context())
 			defer runtime.Shutdown(t.Context())
-			s := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
+			s := httpxtest.New(t, httpxtest.Options{RepoOptions: repo.Options{RouterJobLock: core.JobLockRecord}, Setup: func(app *httpx.App) {
 				app.AfterRequest(func(c *httpx.Ctx, r *httpx.Response) {
 					if c.Path() == "/api/routers/router-one/apply" {
 						close(finished)
@@ -138,7 +139,6 @@ func TestR15PublishHTTPDisconnectAndShutdownAfterWrite(t *testing.T) {
 			rtr := core.New(s.Repo, core.Options{Notifications: nt})
 			rr := routerrulesync.New(s.Repo, routerrulesync.Options{Notifications: nt})
 			api.New(api.Deps{Repo: s.Repo, Agents: mgr, Routers: rtr, RuleSync: rr, Notifications: nt}).Register(s.App.Router)
-			wireRouterTestHooks(t)
 			createSpare(t, s)
 			saveFixtureConfig(t, s, inputConfig(device.URL))
 			addGateway(t, s)

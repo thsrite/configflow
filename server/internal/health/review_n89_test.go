@@ -33,7 +33,7 @@ func TestReviewN89DeleteHooksRespectOwnerLifetime(t *testing.T) {
 				runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 				runtime.Start(context.Background())
 				t.Cleanup(func() { runtime.Shutdown(context.Background()) })
-				ctx, disconnect := context.WithCancel(repo.WithRepository(runtime.BindRequest(context.Background()), r))
+				ctx, disconnect := context.WithCancel(runtime.BindRequest(context.Background()))
 				defer disconnect()
 				path := filepath.Join(r.DataDir(), tc.name, "synthetic.json")
 				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -77,7 +77,7 @@ func TestReviewN89RealWorkerLifetimeControlsPersistence(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				base := repo.WithRepository(context.Background(), r)
+				base := context.Background()
 				if err := r.UpdateShared(base, func(_ context.Context, shared *model.Shared) error {
 					shared.Nodes = []model.Node{{ID: "synthetic", Name: "Synthetic", Type: "http", Server: "example.test", Port: model.IntPtr(80)}}
 					return nil
@@ -197,7 +197,7 @@ func TestReviewN89DNSWriteRespectsOwnerLifetime(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			base := repo.WithRepository(context.Background(), r)
+			base := context.Background()
 			before, err := r.System(base)
 			if err != nil {
 				t.Fatal(err)

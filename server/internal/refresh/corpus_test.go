@@ -477,7 +477,7 @@ func checkScenario(t *testing.T, clock *fakeClock, row map[string]any, native ma
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	files := mapObj(row, "files")
 	if text, ok := files["health"].(string); ok {
 		_, _ = r.WriteSharedText(ctx, HealthFile, []byte(text))

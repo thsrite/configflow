@@ -9,7 +9,6 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/deploy/contentsync"
 	"configflow/internal/lifecycle"
-	"configflow/internal/repo"
 	"configflow/internal/substore"
 )
 
@@ -60,9 +59,9 @@ func (p *contentPool) checker(m *core.Manager) *contentsync.Checker {
 	if c := p.checkers[m]; c != nil {
 		return c
 	}
-	receipts := deploy.NewReceipts(m.Repository().DataDir())
+	receipts := deploy.NewReceipts(m.Repository())
 	c := contentsync.New(contentsync.Options{Prepare: func(ctx context.Context, t deploy.Target, s *deploy.Source, url, id string) (*deploy.Bundle, error) {
-		return prepareContent(repo.WithRepository(ctx, m.Repository()), m, t, s, url, id)
+		return prepareContent(ctx, m, t, s, url, id)
 	}, LoadReceipt: func(ctx context.Context, t deploy.Target) (*deploy.Receipt, error) {
 		return receipts.LoadAgent(ctx, t.Record, true)
 	}, DefaultProfileID: m.Repository().DefaultProfileID})

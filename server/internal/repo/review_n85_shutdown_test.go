@@ -23,7 +23,7 @@ func TestReviewN85TypedUpdateRuntimeBoundary(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				base := repo.WithRepository(context.Background(), r)
+				base := context.Background()
 				runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 				runtime.Start(base)
 				t.Cleanup(func() { runtime.Shutdown(context.Background()) })

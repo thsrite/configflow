@@ -41,7 +41,7 @@ func TestFaultStateRequiresLoopbackAndPrivateToken(t *testing.T) {
 		{"remote", "192.0.2.1:1", token, 403},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "http://example.com/__faults/state", nil).WithContext(repo.WithRepository(t.Context(), repository))
+			req := httptest.NewRequest("GET", "http://example.com/__faults/state", nil).WithContext(t.Context())
 			req.RemoteAddr = tt.remote
 			req.Header.Set(faultprobe.TokenHeader, tt.token)
 			out := httptest.NewRecorder()

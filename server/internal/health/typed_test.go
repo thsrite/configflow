@@ -122,7 +122,7 @@ func TestHealthNativeOwnersHaveNoLegacyDependency(t *testing.T) {
 
 func seedSharedRaw(t *testing.T, r *repo.Repository, rawJSON string) context.Context {
 	t.Helper()
-	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+	ctx := repo.WithScope(context.Background())
 	var patch model.Fields
 	if err := json.Unmarshal([]byte(rawJSON), &patch); err != nil {
 		t.Fatal(err)

@@ -91,7 +91,7 @@ func syncAllocationInput(t testing.TB, n, padding int, remote, dropEnvironment b
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), db)
+	ctx := context.Background()
 	out := syncAllocationFixture{ctx: ctx, db: db, config: raw, router: r}
 	if remote {
 		downloader := &RuleSyncDownloads{Client: &rulefetch.Client{Transport: rulefetch.HTTPTransport{}}}
@@ -251,7 +251,7 @@ func TestN89SyncCachePeekDoesNotMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(t.Context(), db)
+	ctx := t.Context()
 	contents, records, err := loadSyncSources(ctx, db, config, r, nil)
 	if err != nil || records["r"] == nil || contents["r"] != string(content) {
 		t.Fatalf("legacy peek failed: %v %#v", err, records)

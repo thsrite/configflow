@@ -92,13 +92,6 @@ func c05EqualJSON(t *testing.T, got any, want json.RawMessage) {
 func c05Observe(c *httpx.Ctx) (*httpx.Response, error) {
 	if strings.Contains(c.Path(), "/proxies") || strings.HasSuffix(c.Path(), "/provider") {
 		r := c.App().Repo
-		if r == nil {
-			var err error
-			r, err = repo.GetRepository(c.Context())
-			if err != nil {
-				return nil, err
-			}
-		}
 		result, err := auth.ValidateSystemTokenOrJWT(c, r, &model.System{SystemConfig: model.SystemConfig{ConfigToken: "c05-config-token"}})
 		if err != nil {
 			return nil, err
@@ -114,15 +107,16 @@ func c05Observe(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return &value
 	}
-	profile, err := repo.ResolveProfile(c.Context(), arg("explicit"), arg("fallback"))
+	r := c.App().Repo
+	profile, err := r.ResolveProfile(c.Context(), arg("explicit"), arg("fallback"))
 	if err != nil {
 		return nil, err
 	}
-	first, err := repo.Config(c.Context(), profile)
+	first, err := r.ScopedConfig(c.Context(), profile)
 	if err != nil {
 		return nil, err
 	}
-	second, err := repo.Config(c.Context(), profile)
+	second, err := r.ScopedConfig(c.Context(), profile)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +235,7 @@ func TestC05ReviewProfileHelperReferences(t *testing.T) {
 					}
 					contexts[key] = ctx
 				}
-				got, err := repo.ResolveProfile(ctx, row.Explicit, row.Fallback)
+				got, err := server.Repo.ResolveProfile(ctx, row.Explicit, row.Fallback)
 				if row.Error != "" {
 					kind := repo.ErrValidation
 					if row.Error == "ProfileNotFound" {

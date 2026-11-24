@@ -79,7 +79,7 @@ func TestRealFlaskHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		s.SystemConfig.ConfigToken = "synthetic-mcp-admin"
 		s.SystemConfig.RuleProxyToken = "synthetic-internal"

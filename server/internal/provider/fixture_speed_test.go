@@ -38,13 +38,13 @@ func corpusRepositoryFactory(t *testing.T) func(*testing.T) *repo.Repository {
 func TestCorpusRepositoryCopiesCannotLeakState(t *testing.T) {
 	factory := corpusRepositoryFactory(t)
 	clean := factory(t)
-	ctx := repo.WithRepository(context.Background(), clean)
+	ctx := context.Background()
 	before, err := clean.ExportAllJSON(ctx, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	dirty := factory(t)
-	dirtyCtx := repo.WithRepository(context.Background(), dirty)
+	dirtyCtx := context.Background()
 	if _, err := dirty.WriteSharedJSON(dirtyCtx, "subscribes/leaked.json", map[string]any{"value": "dirty"}); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestCorpusRepositoryCopiesCannotLeakState(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range []*repo.Repository{clean, factory(t)} {
-		currentCtx := repo.WithRepository(context.Background(), r)
+		currentCtx := context.Background()
 		after, err := r.ExportAllJSON(currentCtx, false)
 		if err != nil {
 			t.Fatal(err)

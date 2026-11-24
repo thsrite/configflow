@@ -93,7 +93,7 @@ func fixedService(t *testing.T) (*FixedIPService, *routerfake.Fake, FixedIPInten
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(t.Context(), db)
+	ctx := t.Context()
 	_, err = db.UpdateProfile(ctx, "default", func(_ context.Context, doc *model.Profile) error {
 		if err := doc.SetJSON("device_notes", json.RawMessage(`{"192.0.2.21":"Synthetic"}`)); err != nil {
 			return err
@@ -226,7 +226,7 @@ func (d *fixedAfterWrite) ApplyFixedIP(ctx context.Context, op *fixedip.Operatio
 }
 func TestR17BatchLocksAndRollback(t *testing.T) {
 	s, f, intent := fixedService(t)
-	ctx := repo.WithRepository(t.Context(), s.Repo)
+	ctx := t.Context()
 	_, err := s.Repo.UpdateProfile(ctx, "default", func(_ context.Context, current *model.Profile) error {
 		clone := current.Routers.Items[0]
 		clone.ID = "clone"

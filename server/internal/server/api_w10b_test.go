@@ -68,16 +68,6 @@ func TestW10bHandlersUseInjectedDependencies(t *testing.T) {
 		}
 	})
 
-	// Point process-global locators elsewhere so any handler falling back to
-	// repo.GetRepository / agents.Get would read the empty store or fail.
-	other, err := repo.Open(t.TempDir(), RepoOptions())
-	if err != nil {
-		t.Fatalf("repo.Open(other): %v", err)
-	}
-	t.Cleanup(other.Close)
-	repo.SetRepository(other)
-	t.Cleanup(func() { repo.SetRepository(nil) })
-
 	auth.Configure(auth.Config{})
 
 	tests := []struct {

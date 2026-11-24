@@ -15,7 +15,7 @@ func TestScopedRecordTransactions(t *testing.T) {
 			r, ctx := scRepository(t)
 			marker := func(ctx context.Context, id string) string {
 				t.Helper()
-				value, err := Config(ctx, id)
+				value, err := r.ScopedConfig(ctx, id)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -55,9 +55,9 @@ func TestScopedRecordTransactions(t *testing.T) {
 			}
 			var err error
 			if kind == "single" || kind == "single-failure" {
-				err = UpdateConfig(ctx, "default", edit)
+				err = r.UpdateScopedConfig(ctx, "default", edit)
 			} else {
-				err = UpdateSharedConfigs(ctx, func(_ context.Context, shared *model.Shared) error {
+				err = r.UpdateScopedSharedConfigs(ctx, func(_ context.Context, shared *model.Shared) error {
 					return shared.SetJSON("rule_library", []byte(`[]`))
 				}, func(ctx context.Context, _ string, _, after *model.Config) error {
 					return edit(ctx, after)

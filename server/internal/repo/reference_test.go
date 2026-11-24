@@ -519,14 +519,15 @@ func TestReferenceRouterCommitGuard(t *testing.T) {
 		}
 		calls := []any{}
 		held := 0
-		previousHooks := SetHooks(Hooks{RecordHooks: RecordHooks{JobLockRecord: func(_ context.Context, profileID, routerID string, _ model.Router) (func(), bool) {
+		previousLock := r.options.RouterJobLock
+		r.options.RouterJobLock = func(_ context.Context, profileID, routerID string, _ model.Router) (func(), bool) {
 			calls = append(calls, []any{profileID, routerID})
 			if refuse[routerKey{profileID, routerID}] {
 				return nil, false
 			}
 			held++
 			return func() { held-- }, true
-		}}})
+		}
 		previous := must(decodeDocObj(t, routers(record.Value("old"))))(t)
 		oldRecords, err := routerRecordsIn(previous)
 		var release func()
@@ -539,7 +540,7 @@ func TestReferenceRouterCommitGuard(t *testing.T) {
 		if release != nil {
 			release()
 		}
-		SetHooks(previousHooks)
+		r.options.RouterJobLock = previousLock
 		refOutcome(t, label, record, nil, err)
 		wantCalls := refText(t, record.Value("calls"))
 		// HR O18 T1c (M3 ruling): a router endpoint stored as null or a

@@ -139,7 +139,7 @@ func c27Repository(t *testing.T, native bool) (*repo.Repository, context.Context
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	p := c27Snapshot(t, native)
 	fields, err := json.Marshal(map[string]json.RawMessage{
 		"rule_configs": mustMarshal(t, p.ruleConfigs()),

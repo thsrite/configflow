@@ -16,7 +16,7 @@ func knownFormatInput(tb testing.TB, payload int) (context.Context, *repo.Reposi
 	if err != nil {
 		tb.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	rule := model.RuleConfig{
 		ID:         "r1",
 		Name:       "Synthetic",

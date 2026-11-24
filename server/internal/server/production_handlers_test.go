@@ -108,8 +108,6 @@ func TestProductionHandlersHaveNoNilDependencies(t *testing.T) {
 // the locator is redirected rather than broken.
 func TestProductionGlobalRoutesDoNotUseRepositoryLocator(t *testing.T) {
 	app := newProductionApp(t)
-	repo.SetRepository(app.Repo)
-	t.Cleanup(func() { repo.SetRepository(nil) })
 	app.Runtime.RunStartup(context.Background())
 	t.Cleanup(func() { app.Runtime.Stop(30 * time.Second) })
 	previous := auth.Configure(auth.Config{})
@@ -121,9 +119,12 @@ func TestProductionGlobalRoutesDoNotUseRepositoryLocator(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(other.Close)
-	if _, err := repo.PrepareConfig(repo.WithRepository(context.Background(), other)); err != nil {
-		t.Fatal(err)
+	otherRT := lifecycle.NewProcessRuntime(lifecycle.Options{})
+	otherApp, err := New(context.Background(), Options{Repo: other, Runtime: otherRT})
+	if err != nil {
+		t.Fatalf("New(other): %v", err)
 	}
+	t.Cleanup(otherApp.Agents.Close)
 
 	var routes []string
 	for _, route := range app.HTTP.Router.Routes() {
@@ -133,24 +134,24 @@ func TestProductionGlobalRoutesDoNotUseRepositoryLocator(t *testing.T) {
 		}
 		routes = append(routes, route.Path)
 	}
-	serve := func() map[string]string {
+	serve := func(target *App) map[string]string {
 		out := map[string]string{}
 		for _, path := range routes {
 			rec := httptest.NewRecorder()
-			app.HTTP.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			target.HTTP.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 			out[path] = strconv.Itoa(rec.Code) + " " + timestamp.ReplaceAllString(rec.Body.String(), "<time>")
 		}
 		return out
 	}
-	want := serve()
-	repo.SetRepository(other)
-	got := serve()
+	want := serve(app)
+	otherGot := serve(otherApp)
+	got := serve(app)
 	if len(routes) < 20 {
 		t.Fatalf("only %d global GET routes served", len(routes))
 	}
 	for _, path := range routes {
 		if got[path] != want[path] {
-			t.Errorf("GET %s depends on the process repository:\nwith App repo: %.400s\nwith other:    %.400s", path, want[path], got[path])
+			t.Errorf("GET %s changed after serving another App:\nbefore: %.400s\nafter:  %.400s", path, want[path], got[path])
 		}
 	}
 	for _, marker := range []string{"w10-profile", "w10-node", "w10-library"} {
@@ -160,6 +161,11 @@ func TestProductionGlobalRoutesDoNotUseRepositoryLocator(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("no global route showed the seeded %s", marker)
+		}
+		for path, body := range otherGot {
+			if strings.Contains(body, marker) {
+				t.Errorf("other App leaked %s on GET %s", marker, path)
+			}
 		}
 	}
 }
@@ -193,8 +199,6 @@ var timestamp = regexp.MustCompile(`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(\+00:
 // probe running unauthenticatedSweep).
 func TestProductionAuthGateMatchesGo(t *testing.T) {
 	app := newProductionApp(t)
-	repo.SetRepository(app.Repo)
-	t.Cleanup(func() { repo.SetRepository(nil) })
 	app.Runtime.RunStartup(context.Background())
 	t.Cleanup(func() { app.Runtime.Stop(30 * time.Second) })
 	want, err := os.ReadFile("testdata/auth_open_go.txt")

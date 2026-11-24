@@ -32,11 +32,7 @@ func testRefresh(t *testing.T) *refresh.Service {
 
 func testContext(t *testing.T) context.Context {
 	t.Helper()
-	r, err := repo.OpenDefault(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return repo.WithRepository(context.Background(), r)
+	return context.Background()
 }
 func TestPythonBuild(t *testing.T) {
 	t.Parallel()
@@ -197,7 +193,7 @@ func TestBuildSharedSourcesAndProgress(t *testing.T) {
 		calls.Store(0)
 		peak.Store(0)
 		main := yamlx.Map(yamlx.Str("plugins"), yamlx.Seq())
-		in := BuildInput{Target: Target{ID: "example", ServiceType: "mosdns", ProfileID: "alpha"}, Source: testSource(t, map[string]any{"profile_id": "alpha"})}
+		in := BuildInput{Target: Target{ID: "example", ServiceType: "mosdns", ProfileID: "alpha"}, Source: testSource(t, map[string]any{"profile_id": "alpha"}), Refresh: testRefresh(t)}
 		for i := range 16 {
 			p := fmt.Sprintf("rules/%d", i)
 			u := srv.URL + "/source"

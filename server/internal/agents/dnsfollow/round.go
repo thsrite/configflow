@@ -15,7 +15,7 @@ import (
 // survives browser closure.
 func (s *Service) Tick(ctx context.Context) error {
 	return deploy.RunDetached(ctx, "dns-follow-round", func(ctx context.Context) error {
-		ctx = repo.WithScope(repo.WithRepository(ctx, s.m.Repository()))
+		ctx = repo.WithScope(ctx)
 		defer repo.ResetConfigContext(ctx)
 		idle, err := s.round(ctx)
 		s.waker.Done(err != nil || !idle)

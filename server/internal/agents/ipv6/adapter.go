@@ -18,7 +18,6 @@ import (
 	healthcheck "configflow/internal/health/check"
 	"configflow/internal/model"
 	"configflow/internal/redact"
-	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 )
 
@@ -283,11 +282,11 @@ func (s *Service) receipt(ctx context.Context, a Document) (*deploy.Receipt, err
 	if e != nil {
 		return nil, e
 	}
-	return deploy.NewReceipts(s.Manager.Repository().DataDir()).LoadAgent(ctx, o, false)
+	return deploy.NewReceipts(s.Manager.Repository()).LoadAgent(ctx, o, false)
 }
 
 func (s *Service) systemSecrets(ctx context.Context) (redact.Secrets, error) {
-	ctx = repo.WithRepository(ctx, s.Manager.Repository())
+	// ctx already carries runtime ownership; repository is passed explicitly.
 	settings, e := s.Manager.Repository().SystemConfig(ctx)
 	if e != nil {
 		return nil, e

@@ -35,7 +35,7 @@ func xcScope(r *Repository) *xcScopeState {
 	st, ok := xcScopes[r]
 	if !ok {
 		st = &xcScopeState{
-			ctx:       WithScope(WithRepository(bg, r)),
+			ctx:       WithScope(bg),
 			snapshots: map[string]*testObj{},
 			baselines: map[string]json.RawMessage{},
 		}
@@ -203,17 +203,18 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 				return json.Marshal(map[string]json.RawMessage{key: raw})
 			}
 		}
-		previous := SetHooks(Hooks{RecordHooks: RecordHooks{
-			SanitizeExternalDocument: func(_ context.Context, _ *Repository, payload *model.Document, systemConfig model.SystemConfig) (*model.Document, error) {
+		previousExport := r.options.Export
+		r.options.Export = testExportSanitizer{
+			sanitize: func(_ context.Context, _ *Repository, payload *model.Document, systemConfig model.SystemConfig) (*model.Document, error) {
 				capturedSettings = systemConfig
 				return payload, nil
 			},
-			RedactOxidnsJSON:  wrap("redacted_oxidns"),
-			RedactRoutersJSON: wrap("redacted_routers"),
-		}})
+			oxidns:  wrap("redacted_oxidns"),
+			routers: wrap("redacted_routers"),
+		}
 		var raw json.RawMessage
 		raw, err = r.ExportAllJSON(bg, true)
-		SetHooks(previous)
+		r.options.Export = previousExport
 		if err == nil {
 			result = testObjKV("sanitized", parseJSONVal(t, raw), "system_config", xcObjFromRecord(t, &capturedSettings))
 		}
@@ -260,11 +261,11 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 		result = testObjKV("text", string(data), "mode", fmt.Sprintf("0o%o", info.Mode().Perm()))
 	case "cfg_get_config":
 		var resolvedID string
-		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+		if resolvedID, err = r.ResolveProfileID(sctx, id); err == nil {
 			snap, cached := st.snapshots[resolvedID]
 			if !cached {
 				var cfg *model.Config
-				if cfg, err = Config(sctx, resolvedID); err == nil {
+				if cfg, err = r.ScopedConfig(sctx, resolvedID); err == nil {
 					cfg, err = xcConfigForPython(t, sctx, r, resolvedID, cfg)
 				}
 				if err == nil {
@@ -281,14 +282,14 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 		}
 	case "cfg_save_config":
 		var resolvedID string
-		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+		if resolvedID, err = r.ResolveProfileID(sctx, id); err == nil {
 			payload := arg("config")
 			if payload == nil {
 				if snap, ok := st.snapshots[resolvedID]; ok {
 					payload = snap
 				} else {
 					var cfg *model.Config
-					if cfg, err = Config(sctx, resolvedID); err == nil {
+					if cfg, err = r.ScopedConfig(sctx, resolvedID); err == nil {
 						cfg, err = xcConfigForPython(t, sctx, r, resolvedID, cfg)
 					}
 					if err == nil {
@@ -307,7 +308,7 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 		}
 	case "cfg_save_with_guard":
 		var resolvedID string
-		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+		if resolvedID, err = r.ResolveProfileID(sctx, id); err == nil {
 			var revision int64
 			if _, revision, err = r.SaveProfileFieldsJSON(sctx, resolvedID, xcRawOrNil(t, arg("config")), st.baselines[resolvedID]); err == nil {
 				st.reset()
@@ -317,8 +318,8 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 		}
 	case "cfg_update_config_transaction":
 		var resolvedID string
-		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
-			if err = UpdateConfig(sctx, resolvedID, func(_ context.Context, config *model.Config) error {
+		if resolvedID, err = r.ResolveProfileID(sctx, id); err == nil {
+			if err = r.UpdateScopedConfig(sctx, resolvedID, func(_ context.Context, config *model.Config) error {
 				return xcApplyRecordPatch(t, config, ProfileFields, config.Profile.SetJSON, op.Value("patch"))
 			}); err == nil {
 				delete(st.snapshots, resolvedID)
@@ -331,14 +332,14 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 		}
 	case "cfg_safe_import_config":
 		var resolvedID string
-		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+		if resolvedID, err = r.ResolveProfileID(sctx, id); err == nil {
 			if _, err = r.ImportProfileJSON(sctx, resolvedID, xcRawOrNil(t, arg("data"))); err == nil {
 				st.reset()
 			}
 		}
 	case "cfg_get_shared_config":
 		var shared *model.Shared
-		if shared, err = SharedConfig(sctx); err == nil {
+		if shared, err = r.ScopedSharedConfig(sctx); err == nil {
 			st.sharedBase, err = copyRecord(shared)
 			if err == nil {
 				result = xcObjFromRecord(t, shared)
@@ -360,7 +361,7 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 		} else {
 			base = st.sharedBase
 		}
-		if err = SaveSharedRecord(sctx, snap, base); err == nil {
+		if err = r.SaveScopedSharedRecord(sctx, snap, base); err == nil {
 			st.reset()
 			result = true
 		}
@@ -381,7 +382,7 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 			selector = func(*model.Shared, []*model.Profile) ([]string, error) { return list, nil }
 		} else {
 			var resolvedID string
-			if resolvedID, err = ResolveProfileID(sctx, ""); err != nil {
+			if resolvedID, err = r.ResolveProfileID(sctx, ""); err != nil {
 				return nil, err, true
 			}
 			selector = func(*model.Shared, []*model.Profile) ([]string, error) { return []string{resolvedID}, nil }
@@ -434,10 +435,10 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 	case "cfg_reset":
 		st.reset()
 	case "cfg_resolve":
-		result, err = ResolveProfile(sctx, xcOptionalString(op, "id"), xcOptionalString(op, "fallback"))
+		result, err = r.ResolveProfile(sctx, xcOptionalString(op, "id"), xcOptionalString(op, "fallback"))
 	case "cfg_get_resource_config":
 		var resolvedID string
-		if resolvedID, err = ResolveProfileID(sctx, id); err == nil {
+		if resolvedID, err = r.ResolveProfileID(sctx, id); err == nil {
 			roots := ResourceRoots{op.GetString("kind"): nil}
 			if resourceID := xcOptionalString(op, "resource_id"); resourceID != nil {
 				roots[op.GetString("kind")] = []string{*resourceID}

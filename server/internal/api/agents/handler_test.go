@@ -31,18 +31,10 @@ func TestHandlerUsesInjectedDepsWithoutGlobalLocators(t *testing.T) {
 	}
 	t.Cleanup(r.Close)
 
-	// Point the global repository and DATA_DIR at a completely separate empty
-	// directory so any accidental fallback to repo.GetRepository, agents.Get,
-	// or repo.DataDir reads/writes the wrong store and fails the assertions.
+	// Point DATA_DIR at a completely separate empty directory so any accidental
+	// fallback to repo.DataDir reads/writes the wrong store and fails.
 	otherDir := t.TempDir()
-	otherRepo, err := repo.OpenDefault(otherDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(otherRepo.Close)
 	t.Setenv("DATA_DIR", otherDir)
-	repo.SetRepository(otherRepo)
-	t.Cleanup(func() { repo.SetRepository(nil) })
 
 	ctx := context.Background()
 	ts := trafficstore.NewService(dir)
@@ -120,7 +112,12 @@ func TestHandlerUsesInjectedDepsWithoutGlobalLocators(t *testing.T) {
 	}
 	id := created.Data.ID
 
-	// Verify the agent was written to the injected repo, not otherRepo.
+	// Verify the agent was written to the injected repo, not otherDir.
+	otherRepo, err := repo.OpenDefault(otherDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(otherRepo.Close)
 	otherMgr, err := core.New(ctx, otherRepo, core.Options{})
 	if err != nil {
 		t.Fatal(err)

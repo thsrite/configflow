@@ -104,7 +104,7 @@ func seedPublication(t *testing.T, s *Service, ctx context.Context, did string) 
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = deploy.NewReceipts(s.Manager.Repository().DataDir()).Capture(ctx, "source", bundle, source, "https://panel.example", nil); e != nil {
+	if e = deploy.NewReceipts(s.Manager.Repository()).Capture(ctx, "source", bundle, source, "https://panel.example", nil); e != nil {
 		t.Fatal(e)
 	}
 	e = s.update(ctx, "source", func(_ context.Context, a Document, _ []Document) error {

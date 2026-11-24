@@ -115,7 +115,7 @@ func testRepo(t *testing.T, world map[string]any) (context.Context, *repo.Reposi
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+	ctx := repo.WithScope(context.Background())
 	if library, _ := world["rule_library"].([]any); len(library) > 0 {
 		if err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 			shared.RuleLibrary = testjson.Decode[[]model.RuleLibraryItem](t, library)

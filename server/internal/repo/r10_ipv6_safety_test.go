@@ -16,9 +16,8 @@ const r10RoutesManifest = `{"version":1,"gateway":"fe80::4%bridge","resources":[
 func r10Repository(t *testing.T) (*Repository, *rsJobLocks) {
 	t.Helper()
 	locks := &rsJobLocks{mu: sync.Mutex{}, held: map[string]bool{}}
-	previous := SetHooks(Hooks{RecordHooks: RecordHooks{JobLockRecord: locks.acquire}})
-	t.Cleanup(func() { SetHooks(previous) })
 	r := newRepo(t)
+	r.options.RouterJobLock = locks.acquire
 	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "live", Name: "Synthetic"}, ""))(t)
 	_, _, err := r.SaveProfileFieldsJSON(bg, "live", json.RawMessage(`{"routers":{"items":[`+r10Connection+`]}}`), nil)
 	noError(t, err)
@@ -175,8 +174,7 @@ func TestR10MissingJobLockRefusesProtectedTransactions(t *testing.T) {
 			r10Persist(t, r, l, field)
 			replacement := rsRouterObj(t, r)
 			replacement.Set("username", "replacement-api")
-			previous := SetHooks(Hooks{})
-			t.Cleanup(func() { SetHooks(previous) })
+			r.options.RouterJobLock = nil
 			before := must(r.Store().Fingerprint())(t)
 			wantError(t, rsReplaceRouters(t, r, "fields", mustMarshalJSON(t, testObjKV("items", []any{replacement}))), ErrInUse, "路由器正在发布或同步")
 			if got := must(r.Store().Fingerprint())(t); got != before {

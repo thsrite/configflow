@@ -101,7 +101,7 @@ func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTT
 	}); err != nil {
 		t.Fatal(err)
 	}
-	f.manager, err = core.New(f.s.Context(), f.s.Repo, core.Options{ReceiptMatches: deploy.ReceiptMatches})
+	f.manager, err = core.New(f.s.Context(), f.s.Repo, core.Options{ReceiptMatches: deploy.ReceiptMatcher(f.s.Repo)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTT
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err = deploy.NewReceipts(f.s.DataDir).Capture(f.s.Context(), "content-agent", old, source, "https://original.example.test/prefix", nil); err != nil {
+		if err = deploy.NewReceipts(f.s.Repo).Capture(f.s.Context(), "content-agent", old, source, "https://original.example.test/prefix", nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -238,7 +238,7 @@ func TestContentHTTPDiffPagingStoredRedactionAndSubstoreInvalidation(t *testing.
 		fmt.Fprintf(&lines, "DOMAIN,fresh-%03d.example.test\n", i)
 	}
 	f.candidate.Store(contentBundle(t, "mode: global\nsecret: external-user-secret\n", lines.String()))
-	_, err := fixtureSaveSubscriptionNodes(f.s.Context(), f.sub, "synthetic-feed", []any{}, map[string]any{"hosts": map[string]any{"entries": map[string]any{"host.example.test": "192.0.2.4"}}})
+	_, err := fixtureSaveSubscriptionNodes(f.s.Context(), f.s.Repo, f.sub, "synthetic-feed", []any{}, map[string]any{"hosts": map[string]any{"entries": map[string]any{"host.example.test": "192.0.2.4"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func TestContentHTTPMissingReceiptUsesDigests(t *testing.T) {
 	}
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, sub *substore.Service, id string, value any, metadata map[string]any) (map[string]any, error) {
+func fixtureSaveSubscriptionNodes(ctx context.Context, r *repo.Repository, sub *substore.Service, id string, value any, metadata map[string]any) (map[string]any, error) {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
@@ -359,7 +359,6 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, sub *substore.Service, id
 			return nil, err
 		}
 	}
-	r, _ := repo.GetRepository(ctx)
 	cache, err := sub.SaveCache(ctx, r, id, nodes, receipt)
 	if err != nil {
 		return nil, err

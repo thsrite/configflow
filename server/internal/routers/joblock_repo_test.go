@@ -27,15 +27,17 @@ func rawRouterJSON(t *testing.T, router model.Router) json.RawMessage {
 	return b
 }
 
-func jobRepository(t *testing.T) (*repo.Repository, context.Context, model.Router) {
+func jobRepository(t *testing.T, withLock bool) (*repo.Repository, context.Context, model.Router) {
 	t.Helper()
-	previous := repo.SetHooks(repo.Hooks{})
-	t.Cleanup(func() { repo.SetHooks(previous) })
-	r, err := repo.Open(t.TempDir(), repo.Options{})
+	opts := repo.Options{}
+	if withLock {
+		opts.RouterJobLock = JobLockRecord
+	}
+	r, err := repo.Open(t.TempDir(), opts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(t.Context(), r)
+	ctx := t.Context()
 	if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "live", Name: "Synthetic"}, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -83,15 +85,15 @@ func jobUpdate(r *repo.Repository, ctx context.Context, change string, connectio
 }
 
 func TestO36bWireUnlocksRepository(t *testing.T) {
-	r, ctx, connection := jobRepository(t)
+	r, ctx, connection := jobRepository(t, false)
 	if err := jobUpdate(r, ctx, "password", connection); !errors.Is(err, repo.ErrInUse) {
 		t.Fatal("unwired hook must stay fail-closed", err)
 	}
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
-	if err := jobUpdate(r, ctx, "password", connection); err != nil {
+	r2, ctx2, conn2 := jobRepository(t, true)
+	if err := jobUpdate(r2, ctx2, "password", conn2); err != nil {
 		t.Fatal("wired idle device was rejected", err)
 	}
-	current, err := r.Profile(ctx, "live")
+	current, err := r2.Profile(ctx2, "live")
 	if err != nil || len(current.Routers.Items) != 1 || current.Routers.Items[0].Password != "synthetic-replacement" {
 		t.Fatal("idle connection repair was not persisted", err)
 	}
@@ -100,8 +102,7 @@ func TestO36bWireUnlocksRepository(t *testing.T) {
 func TestO36bRepositorySharesPublicationKey(t *testing.T) {
 	for _, change := range []string{"password", "manifest", "delete"} {
 		t.Run(change, func(t *testing.T) {
-			r, ctx, connection := jobRepository(t)
-			repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
+			r, ctx, connection := jobRepository(t, true)
 			violations := lockx.Violations()
 			_, release, err := oplock.RouterJobLock(ctx, "other-profile", "alias", jobConnection("http://192.0.2.40"))
 			if err != nil {
@@ -131,8 +132,7 @@ func TestO36bRepositorySharesPublicationKey(t *testing.T) {
 }
 
 func TestO36bCallerHeldSettingsAndPublication(t *testing.T) {
-	r, ctx, connection := jobRepository(t)
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
+	r, ctx, connection := jobRepository(t, true)
 	violations := lockx.Violations()
 	device := jobConnection("http://192.0.2.40")
 	held, release, err := oplock.RouterJobLock(ctx, "live", "router", device)
@@ -166,10 +166,9 @@ func TestO36bCallerHeldSettingsAndPublication(t *testing.T) {
 }
 
 func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
-	r, base, connection := jobRepository(t)
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
+	r, base, connection := jobRepository(t, true)
 	_, request, _ := o36bRuntime(t)
-	base = repo.WithRepository(request, r)
+	base = request
 	fake := routerfake.New(nil)
 	server := httptest.NewServer(fake)
 	defer server.Close()

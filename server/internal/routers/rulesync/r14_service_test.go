@@ -24,21 +24,14 @@ import (
 const r14Old = "IP-CIDR,198.51.100.0/24\nIP-CIDR6,2001:db8:1::/48\nDOMAIN-SUFFIX,example.com"
 const r14New = "IP-CIDR,203.0.113.0/24\nIP-CIDR6,2001:db8:2::/48\nDOMAIN-SUFFIX,new.example.com"
 
-func r14Hook(t *testing.T) {
-	t.Helper()
-	old := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{
-		JobLockRecord: func(ctx context.Context, profile, id string, raw model.Router) (func(), bool) {
-			var r spec.Router
-			_ = json.Unmarshal(device.JSON(raw), &r)
-			_, release, lockErr := oplock.RouterJobLock(ctx, profile, id, &r)
-			return release, lockErr == nil
-		},
-	}})
-	t.Cleanup(func() { repo.SetHooks(old) })
+func r14JobLock(ctx context.Context, profile, id string, raw model.Router) (func(), bool) {
+	var r spec.Router
+	_ = json.Unmarshal(device.JSON(raw), &r)
+	_, release, lockErr := oplock.RouterJobLock(ctx, profile, id, &r)
+	return release, lockErr == nil
 }
 func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *spec.Router) {
 	t.Helper()
-	r14Hook(t)
 	f := routerfake.New(nil)
 	f.Reset(r08State())
 	http := httptest.NewServer(f)
@@ -50,18 +43,21 @@ func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *spec.Router)
 	r.Endpoint = http.URL
 	r.SetSource(nil)
 	raw := device.JSON(map[string]any{"routers": map[string]any{"items": []*spec.Router{&r}}, "rule_library": []any{map[string]any{"id": "lib", "name": "Synthetic", "source_type": "url", "url": "https://example.com/ips", "behavior": "classical", "enabled": true}}, "rule_configs": []any{map[string]any{"id": "remote", "itemType": "ruleset", "library_rule_id": "lib", "enabled": true, "policy": "PROXY"}}})
-	db, err := repo.Open(t.TempDir(), repo.Options{InitialSettings: func() *model.Config {
-		cfg, err := model.DecodeConfig(raw)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return cfg
-	}})
+	db, err := repo.Open(t.TempDir(), repo.Options{
+		RouterJobLock: r14JobLock,
+		InitialSettings: func() *model.Config {
+			cfg, err := model.DecodeConfig(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return cfg
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	service := &RuleSyncService{Repo: db, Agents: r12Source{gateway: &routers.GatewayAgent{Agent: &model.Agent{ID: "gateway", Host: r08Gateway, ServiceType: "mihomo", ProfileID: "default"}}}, Download: func(context.Context, json.RawMessage, json.RawMessage) (string, error) { return r14New, nil }}
-	cfg, err := syncConfig(repo.WithRepository(t.Context(), db), db, "default")
+	cfg, err := syncConfig(t.Context(), db, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +66,7 @@ func r14Fixture(t *testing.T) (*RuleSyncService, *routerfake.Fake, *spec.Router)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(t.Context(), db)
+	ctx := t.Context()
 	if err = syncCacheWrite(ctx, db, sources[0], r14Old, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +136,7 @@ func TestR14FailuresBeforeWrites(t *testing.T) {
 	for _, mode := range []string{"download", "invalid", "controls", "running", "missing", "disabled"} {
 		t.Run(mode, func(t *testing.T) {
 			s, f, r := r14Fixture(t)
-			ctx := repo.WithRepository(t.Context(), s.Repo)
+			ctx := t.Context()
 			receipt, _ := s.store().Read(ctx, "default", r.ID)
 			switch mode {
 			case "download":
@@ -282,7 +278,7 @@ func FuzzR14Classify(f *testing.F) {
 
 func TestO17FollowupCaptureWakesRuleSyncLoop(t *testing.T) {
 	service, _, r := r14Fixture(t)
-	ctx := repo.WithRepository(t.Context(), service.Repo)
+	ctx := t.Context()
 	// Remove the captured receipt so the first round sleeps for RuleSyncMaxPause.
 	if err := os.Remove(service.store().path("default", r.ID)); err != nil {
 		t.Fatal(err)
@@ -353,7 +349,7 @@ func TestO17FollowupCaptureWakesRuleSyncLoop(t *testing.T) {
 
 func TestO17FollowupBusySyncRetriesWithin30Seconds(t *testing.T) {
 	service, _, r := r14Fixture(t)
-	ctx := repo.WithRepository(t.Context(), service.Repo)
+	ctx := t.Context()
 	// Hold the router job lock to simulate a round racing with an in-flight publish.
 	_, release, err := oplock.RouterJobLock(ctx, "default", r.ID, r)
 	if err != nil {
@@ -371,7 +367,7 @@ func TestO17FollowupBusySyncRetriesWithin30Seconds(t *testing.T) {
 
 func TestO17FollowupRestoredRouterRuleSyncFailClosed(t *testing.T) {
 	service, fake, r := r14Fixture(t)
-	ctx := repo.WithRepository(t.Context(), service.Repo)
+	ctx := t.Context()
 	// Simulate importing a configuration-only backup: export and re-import so
 	// the router gets state_restored_at while a stale local receipt exists.
 	backup, err := service.Repo.ExportAllJSON(ctx, false)

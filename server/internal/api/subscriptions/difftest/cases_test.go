@@ -55,7 +55,7 @@ func seedGraph(t *testing.T, chain string, second bool, cached bool) func(contex
 		})
 		must(t, err)
 		if cached {
-			err := fixtureSaveSubscriptionNodes(ctx, "s", []any{node("old")}, nil)
+			err := fixtureSaveSubscriptionNodes(ctx, r, "s", []any{node("old")}, nil)
 			must(t, err)
 		}
 	}
@@ -280,7 +280,7 @@ func TestCachePreviewNeverRefreshes(t *testing.T) {
 				if state == "non-list" {
 					_, err = r.WriteSharedJSON(ctx, "subscribes/s.json", map[string]any{"subscription_id": "s", "updated_at": "2026-01-01T00:00:00+00:00", "count": 0, "nodes": list, "metadata": metadata})
 				} else {
-					err = fixtureSaveSubscriptionNodes(ctx, "s", list, metadata)
+					err = fixtureSaveSubscriptionNodes(ctx, r, "s", list, metadata)
 				}
 				must(t, err)
 			}
@@ -540,7 +540,7 @@ func TestEveryGlobalRouteRequiresJWT(t *testing.T) {
 func TestFetchWithNullCacheNodes(t *testing.T) {
 	w := newWorld(t, func(ctx context.Context, r *repo.Repository) {
 		seedGraph(t, "none", false, false)(ctx, r)
-		err := fixtureSaveSubscriptionNodes(ctx, "s", nil, nil)
+		err := fixtureSaveSubscriptionNodes(ctx, r, "s", nil, nil)
 		must(t, err)
 	}, nil)
 	w.control.Offline = true
@@ -566,7 +566,7 @@ func TestUTF8BOMRequestBodies(t *testing.T) {
 	}
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata any) error {
+func fixtureSaveSubscriptionNodes(ctx context.Context, r *repo.Repository, id string, value any, metadata any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -586,6 +586,6 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 			return err
 		}
 	}
-	_, err = substore.SaveCache(ctx, func() *repo.Repository { r, _ := repo.GetRepository(ctx); return r }(), id, nodes, receipt)
+	_, err = substore.SaveCache(ctx, r, id, nodes, receipt)
 	return err
 }

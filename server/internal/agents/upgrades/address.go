@@ -20,7 +20,6 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/redact"
-	"configflow/internal/repo"
 )
 
 // VerifyTimeout is the address probe timeout in seconds.
@@ -144,7 +143,7 @@ func FollowModel(ctx context.Context, m *agents.Manager, a *model.Agent, reporte
 	addressMu.Unlock()
 	// Keep both repository values and the originating runtime; Background would
 	// allow an old generation to start a new job after shutdown.
-	base := repo.WithRepository(ctx, m.Repository())
+	base := ctx
 	if err := startThread(base, "agent-address", func(worker context.Context) { followInBackground(worker, m, id, host) }); err != nil {
 		addressMu.Lock()
 		if attempts[id] == (attempt{host, member, at}) {

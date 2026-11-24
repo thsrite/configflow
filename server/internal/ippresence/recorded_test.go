@@ -400,7 +400,7 @@ func newReplayRepository(t *testing.T) *replayRepository {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &replayRepository{r: r, ctx: repo.WithRepository(context.Background(), r), root: root}
+	return &replayRepository{r: r, ctx: context.Background(), root: root}
 }
 
 func (f *replayRepository) reset(t *testing.T, rules recordedRules) (context.Context, string) {

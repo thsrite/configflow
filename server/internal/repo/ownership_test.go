@@ -84,8 +84,7 @@ func TestRepositoryRecordsL3Process(t *testing.T) {
 
 func TestMissingJobLockFailsClosed(t *testing.T) {
 	r, _ := rsRepository(t)
-	old := SetHooks(Hooks{})
-	defer SetHooks(old)
+	r.options.RouterJobLock = nil
 	head := must(r.Head(bg))(t)
 	router := rsRouter(t, r)
 	router.Endpoint = "http://192.0.2.5"

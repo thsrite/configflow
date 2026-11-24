@@ -9,9 +9,9 @@ import (
 
 func TestPrepareConfigReturnsDefaultView(t *testing.T) {
 	r := newRepo(t)
-	ctx := WithScope(WithRepository(context.Background(), r))
+	ctx := WithScope(context.Background())
 	defer ResetConfigContext(ctx)
-	prepared, err := PrepareConfig(ctx)
+	prepared, err := r.PrepareConfig(ctx)
 	if err != nil || prepared == nil {
 		t.Fatalf("prepare: document=%v, err=%v", prepared != nil, err)
 	}

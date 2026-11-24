@@ -24,7 +24,7 @@ func listRepo(t *testing.T) (context.Context, *repo.Repository, string, model.Ru
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	var entry model.RuleLibraryItem
 	if err := json.Unmarshal([]byte(`{"id":"lib-tiktok","name":"TikTok","source_type":"url","url":"https://rules.test/TikTok.list","behavior":"classical","format":"text"}`), &entry); err != nil {
 		t.Fatal(err)

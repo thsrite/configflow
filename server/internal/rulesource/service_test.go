@@ -14,7 +14,7 @@ func TestServiceReadInlineAndOffline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+	ctx := repo.WithScope(context.Background())
 	svc := New(Options{Repo: r})
 
 	cfgRaw := json.RawMessage(`{"profile_id":"default","rule_library":[{"id":"lib1","name":"Lib","source_type":"content","behavior":"ipcidr","format":"text","content":"192.0.2.0/24\n"}]}`)

@@ -24,7 +24,7 @@ func PinnedWithheld(ctx context.Context, r *repo.Repository, receipts *deploy.Re
 		return false, e
 	}
 	if receipts == nil {
-		receipts = deploy.NewReceipts(r.DataDir())
+		receipts = deploy.NewReceipts(r)
 	}
 	ids := map[string]bool{}
 	for _, id := range ruleIDs {

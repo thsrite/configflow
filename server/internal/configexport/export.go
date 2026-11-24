@@ -155,13 +155,3 @@ func (e Exporter) RedactRoutersJSON(raw json.RawMessage) (json.RawMessage, error
 	}
 	return e.RedactRouters(raw)
 }
-
-// Wire installs native export sanitization collaborators on deprecated global
-// repo hooks for tests that open a repository without repo.Options.Export.
-func Wire() {
-	exp := Exporter{}
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{
-		SanitizeExternalDocument: exp.SanitizeExternalDocument,
-		RedactOxidnsJSON:         exp.RedactOxiDNSJSON,
-	}})
-}

@@ -84,7 +84,7 @@ func BenchmarkOxiDNSMetadataChain(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), repository)
+	ctx := context.Background()
 	for i := 0; i < 128; i++ {
 		id := fmt.Sprintf("set-%d", i)
 		item := map[string]any{"id": id, "name": id, "source_type": "url", "behavior": "classical", "url": "https://rules.example/" + id}
@@ -116,7 +116,7 @@ func TestMetadataChainAllocationBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(t.Context(), repository)
+	ctx := t.Context()
 	for i := 0; i < 128; i++ {
 		id := fmt.Sprintf("set-%d", i)
 		item := map[string]any{"id": id, "name": id, "source_type": "url", "behavior": "classical", "url": "https://rules.example/" + id}

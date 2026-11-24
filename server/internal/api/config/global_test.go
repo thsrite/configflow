@@ -17,14 +17,14 @@ import (
 
 func exportApp(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	previous := repo.SetHooks(repo.Hooks{})
-	t.Cleanup(func() { repo.SetHooks(previous) })
-	configexport.Wire()
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{
-		RedactRoutersJSON: func(raw json.RawMessage) (json.RawMessage, error) { return spec.RedactRouters(raw) },
-		JobLockRecord:     routers.JobLockRecord,
-	}})
-	s := httpxtest.New(t, httpxtest.Options{})
+	s := httpxtest.New(t, httpxtest.Options{
+		RepoOptions: repo.Options{
+			Export: configexport.Exporter{
+				RedactRouters: func(raw json.RawMessage) (json.RawMessage, error) { return spec.RedactRouters(raw) },
+			},
+			RouterJobLock: routers.JobLockRecord,
+		},
+	})
 	New(Deps{Repo: s.Repo}).Register(s.App.Router)
 	return s
 }

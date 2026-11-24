@@ -166,7 +166,7 @@ func TestO36bJobHookInsideRepositoryAndLegacySentinel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, free, err := oplock.RouterJobLock(repo.WithRepository(t.Context(), repository), "sentinel", "r", nil)
+	_, free, err := oplock.RouterJobLock(t.Context(), "sentinel", "r", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

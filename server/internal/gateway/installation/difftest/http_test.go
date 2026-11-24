@@ -146,7 +146,7 @@ func setup(t *testing.T) (*httpxtest.Server, *agents.Manager, string, installati
 	on := onboarding.Service{Repository: s.Repo}
 	_, e = on.Execute(ctx, onboarding.Operation{ProfileID: "default", BaseURL: origin, Write: true, Body: raw(map[string]any{"rule_set_ids": []string{}, "direct_rule_set_ids": []string{}, "proxy_rule_set_ids": []string{}, "local_dns": "https://192.0.2.53/dns-query"})})
 	must(t, e)
-	m, e := agents.New(ctx, s.Repo, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
+	m, e := agents.New(ctx, s.Repo, agents.Options{ReceiptMatches: deploy.ReceiptMatcher(s.Repo)})
 	must(t, e)
 	t.Cleanup(m.Close)
 	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)

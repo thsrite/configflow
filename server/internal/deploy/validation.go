@@ -3,6 +3,7 @@ package deploy
 import (
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/repo"
 	"configflow/internal/version"
 	"configflow/internal/yamlx"
 	"encoding/json"
@@ -79,8 +80,15 @@ func truthNodeInclude(n *oxidns.Node) bool { return truth(yamlx.Get(n, "include"
 
 // ReceiptMatches accepts only server-owned evidence for the current resolved
 // binding and the exact task archive/content identity. Missing identities fail.
-func ReceiptMatches(agent *model.Agent, state *model.Deployment) bool {
-	return receiptMatches(agent, state)
+func ReceiptMatches(r *repo.Repository, agent *model.Agent, state *model.Deployment) bool {
+	return receiptMatches(r, agent, state)
+}
+
+// ReceiptMatcher binds r to ReceiptMatches for agents.Options.ReceiptMatches.
+func ReceiptMatcher(r *repo.Repository) func(*model.Agent, *model.Deployment) bool {
+	return func(agent *model.Agent, state *model.Deployment) bool {
+		return receiptMatches(r, agent, state)
+	}
 }
 
 // PublicDeployment returns the public localized task without private baselines.

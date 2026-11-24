@@ -16,6 +16,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 func baseAgent() *model.Agent {
@@ -59,6 +60,8 @@ type fakeManager struct {
 }
 
 type fakeSnapshotKey struct{}
+
+func (m *fakeManager) Repository() *repo.Repository { return nil }
 
 func (m *fakeManager) ReadAgent(ctx context.Context, id string, _ bool) (*model.Agent, error) {
 	if snapshot, ok := ctx.Value(fakeSnapshotKey{}).(map[string]*model.Agent); ok {

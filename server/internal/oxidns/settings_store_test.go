@@ -20,7 +20,7 @@ func settingsRepository(t *testing.T) (context.Context, *repo.Repository) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return repo.WithScope(repo.WithRepository(context.Background(), r)), r
+	return repo.WithScope(context.Background()), r
 }
 func TestC29SaveSettingsDetachesBeforeRepositoryLock(t *testing.T) {
 	ctx, r := settingsRepository(t)
@@ -38,7 +38,7 @@ func TestC29SaveSettingsDetachesBeforeRepositoryLock(t *testing.T) {
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Grace: 2 * time.Second})
 	runtime.Start(ctx)
 	t.Cleanup(func() { runtime.Shutdown(context.Background()) })
-	request, cancel := context.WithCancel(runtime.BindRequest(repo.WithScope(repo.WithRepository(context.Background(), r))))
+	request, cancel := context.WithCancel(runtime.BindRequest(repo.WithScope(context.Background())))
 	cancel()
 	result := make(chan error, 1)
 	go func() { _, err := SaveSettings(request, r, "default", M("worker_threads", I(6)), ""); result <- err }()

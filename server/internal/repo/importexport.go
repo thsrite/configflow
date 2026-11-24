@@ -253,11 +253,6 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 		sanitizeDoc = r.options.Export.SanitizeExternalDocument
 		redactOxiDNS = r.options.Export.RedactOxiDNSJSON
 		redactRouters = r.options.Export.RedactRoutersJSON
-	} else {
-		h := recordHooks()
-		sanitizeDoc = h.SanitizeExternalDocument
-		redactOxiDNS = h.RedactOxidnsJSON
-		redactRouters = h.RedactRoutersJSON
 	}
 	if sanitizeDoc == nil || redactOxiDNS == nil || redactRouters == nil {
 		return nil, repositoryError(msgExportHooksMissing)

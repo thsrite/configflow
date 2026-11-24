@@ -246,9 +246,6 @@ func startGo(t *testing.T, dataDir string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo.SetRepository(r)
-	t.Cleanup(func() { repo.SetRepository(nil) })
-
 	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 	app, err := server.New(context.Background(), server.Options{Repo: r, Runtime: rt})
 	if err != nil {

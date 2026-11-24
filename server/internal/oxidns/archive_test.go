@@ -16,7 +16,6 @@ import (
 
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
-	"configflow/internal/repo"
 	"configflow/internal/testgolden"
 	"configflow/internal/yamlx"
 )
@@ -66,11 +65,7 @@ func TestC29ArchivePythonBoundary(t *testing.T) {
 	oracle := testgolden.NewLines(t, "server/internal/oxidns/testdata/c29_archive.py")
 	referenceFetches := map[string]int{}
 
-	r, err := repo.Open(t.TempDir(), repo.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	raw := json.RawMessage(`{"profile_id":"default","system_config":{"server_domain":"http://config.example","rule_proxy_token":"c29-private"},"rule_configs":[{"library_rule_id":"inline","enabled":true}],"rule_library":[{"id":"inline","name":"Inline","source_type":"content","content":"DOMAIN,inline.example\nDOMAIN-SUFFIX,suffix.example","format":"text","behavior":"classical"}]}`)
 	configs, err := mosdns.ConfigFromJSON(raw)
 	if err != nil {

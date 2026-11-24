@@ -50,7 +50,7 @@ func TestPythonToolAdapterContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	covered := map[string]bool{}
 	for _, tc := range cases {
 		t.Run(tc.Name, func(t *testing.T) {

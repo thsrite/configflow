@@ -25,7 +25,6 @@ import (
 	"testing"
 
 	"configflow/internal/model"
-	"configflow/internal/repo"
 	"configflow/internal/testjson"
 )
 
@@ -44,11 +43,7 @@ type depsHarness struct {
 
 func newDepsHarness(t *testing.T) *depsHarness {
 	h := newHarness(t, harnessOptions{builtin: true, version: "2.40.0"})
-	r, err := repo.Open(t.TempDir(), repo.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dh := &depsHarness{harness: h, d: h.service.Dependencies, ctx: repo.WithRepository(context.Background(), r),
+	dh := &depsHarness{harness: h, d: h.service.Dependencies, ctx: context.Background(),
 		runtime: filepath.Join(h.data, "sub-store", "runtime")}
 	h.unsetenv("SUB_STORE_URL")
 	dh.github = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

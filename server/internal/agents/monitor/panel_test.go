@@ -21,6 +21,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
 
@@ -481,7 +482,7 @@ func installLatest(t *testing.T) *latestFake {
 		}
 		return &rulefetch.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(reply.(string)))}, nil
 	}
-	downloadSettings = func(context.Context) (*model.SystemConfig, error) {
+	downloadSettings = func(context.Context, *repo.Repository) (*model.SystemConfig, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		result := map[string]any{}
@@ -695,7 +696,7 @@ func TestCoreUpdateCheckFetchesGithubOnceForConcurrentRequests(t *testing.T) {
 	results := make(chan [2]string, 6)
 	for range 6 {
 		go func() {
-			latest, failure, err := cachedLatest(ctx, "release", "v1.19.32", false)
+			latest, failure, err := cachedLatest(ctx, nil, "release", "v1.19.32", false)
 			if err != nil {
 				t.Error(err)
 			}
@@ -721,14 +722,14 @@ func TestCoreUpdateCheckFetchesGithubOnceForConcurrentRequests(t *testing.T) {
 		t.Fatal(fetches)
 	}
 	// A manual check started after that fetch finished asks GitHub again.
-	if latest, failure, _ := cachedLatest(ctx, "release", "v1.19.32", true); latest != "v1.19.33" || failure != "" || len(fetches) != 2 {
+	if latest, failure, _ := cachedLatest(ctx, nil, "release", "v1.19.32", true); latest != "v1.19.33" || failure != "" || len(fetches) != 2 {
 		t.Fatal(latest, failure, fetches)
 	}
 }
 
 func TestAnExpiredCacheAnswersAtOnceWhileAnotherRequestRefreshes(t *testing.T) {
 	installLatest(t)
-	settings, _ := downloadSettings(ctx)
+	settings, _ := downloadSettings(ctx, nil)
 	coreLatest["release"] = &coreCached{finishedAt: 0, latest: "v1.19.33", settings: settings}
 	monotonic = func() float64 { return CoreCheckTTL + 10 }
 	previous := latestCoreVersion
@@ -742,7 +743,7 @@ func TestAnExpiredCacheAnswersAtOnceWhileAnotherRequestRefreshes(t *testing.T) {
 		t.Fatal("locked")
 	}
 	defer lock.Unlock()
-	if latest, failure, _ := cachedLatest(ctx, "release", "v1.19.32", false); latest != "v1.19.33" || failure != "" {
+	if latest, failure, _ := cachedLatest(ctx, nil, "release", "v1.19.32", false); latest != "v1.19.33" || failure != "" {
 		t.Fatal(latest, failure)
 	}
 }
@@ -756,7 +757,7 @@ func TestFailureCacheCountsFromWhenTheFetchEnded(t *testing.T) {
 		*clock += 30
 		return "", &rulefetch.FetchError{Class: "ConnectTimeout"}
 	}
-	if _, failure, _ := cachedLatest(ctx, "release", "v1.19.32", false); failure == "" {
+	if _, failure, _ := cachedLatest(ctx, nil, "release", "v1.19.32", false); failure == "" {
 		t.Fatal("no failure")
 	}
 	if coreLatest["release"].finishedAt != 1030 {

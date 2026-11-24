@@ -106,7 +106,7 @@ func TestO9R2NonGETSurvivesClientDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootCtx := repo.WithRepository(repo.WithScope(context.Background()), r)
+	rootCtx := repo.WithScope(context.Background())
 	rt.Start(rootCtx)
 	t.Cleanup(func() { rt.Shutdown(context.Background()) })
 	baseCtx := rt.BindRequest(rootCtx)
@@ -187,7 +187,7 @@ func TestO9R2CallAgentNoRedirects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx := repo.WithRepository(repo.WithScope(context.Background()), r)
+			ctx := repo.WithScope(context.Background())
 			m, err := New(ctx, r)
 			if err != nil {
 				t.Fatal(err)

@@ -25,53 +25,49 @@ import (
 
 var running = false
 
-func subscriptionRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	shared, err := repository.Shared(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var rows []*tasks.Task
-	for _, sub := range shared.Subscriptions {
-		key := "subscription:" + sub.ID
-		enabled := model.Flag(sub.Enabled, true) && strings.TrimSpace(sub.URL) != ""
-		history, err := tasks.ProjectHistory(statuses.Entry(key))
+func subscriptionRows(repository *repo.Repository) func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) {
+	return func(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
+		shared, err := repository.Shared(ctx)
 		if err != nil {
 			return nil, err
 		}
-		intervalRaw, _ := json.Marshal(sub.Interval)
-		link := "/subscriptions"
-		rows = append(rows, &tasks.Task{
-			Key:                  key,
-			Category:             "subscription",
-			Name:                 sub.Name,
-			ResourceID:           sub.ID,
-			Enabled:              enabled,
-			IntervalSeconds:      intervalRaw,
-			NotificationsEnabled: new(enabled),
-			Running:              running,
-			Link:                 &link,
-			HistoryData:          history,
-		})
+		var rows []*tasks.Task
+		for _, sub := range shared.Subscriptions {
+			key := "subscription:" + sub.ID
+			enabled := model.Flag(sub.Enabled, true) && strings.TrimSpace(sub.URL) != ""
+			history, err := tasks.ProjectHistory(statuses.Entry(key))
+			if err != nil {
+				return nil, err
+			}
+			intervalRaw, _ := json.Marshal(sub.Interval)
+			link := "/subscriptions"
+			rows = append(rows, &tasks.Task{
+				Key:                  key,
+				Category:             "subscription",
+				Name:                 sub.Name,
+				ResourceID:           sub.ID,
+				Enabled:              enabled,
+				IntervalSeconds:      intervalRaw,
+				NotificationsEnabled: new(enabled),
+				Running:              running,
+				Link:                 &link,
+				HistoryData:          history,
+			})
+		}
+		return rows, nil
 	}
-	return rows, nil
 }
 
 func none(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }
 
-func storedAgents(ctx context.Context) ([]model.Agent, error) {
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+func storedAgents(repository *repo.Repository) func(context.Context) ([]model.Agent, error) {
+	return func(ctx context.Context) ([]model.Agent, error) {
+		system, err := repository.System(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return system.Agents, nil
 	}
-	system, err := repository.System(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return system.Agents, nil
 }
 
 func summarize(_ *notifications.RouterReport, plan json.RawMessage) (*notifications.RouterSummary, error) {
@@ -102,14 +98,18 @@ type fixture struct {
 
 func setup(t *testing.T) *fixture {
 	running = false
-	srv := httpxtest.New(t, httpxtest.Options{})
+	srv := httpxtest.New(t, httpxtest.Options{
+		RepoOptions: repo.Options{
+			RouterJobLock: func(context.Context, string, string, model.Router) (func(), bool) { return func() {}, true },
+		},
+	})
 	reg := tasks.NewRegistry(srv.Repo, nil)
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents,
 		tasks.SlotDomains, tasks.SlotMetrics} {
 		reg.SetRowBuilder(slot, none)
 	}
-	reg.SetRowBuilder(tasks.SlotSubscriptions, subscriptionRows)
-	svc := notifications.New(notifications.Options{Repo: srv.Repo, Tasks: reg, Rows: reg.List, Agents: storedAgents, Summarize: summarize})
+	reg.SetRowBuilder(tasks.SlotSubscriptions, subscriptionRows(srv.Repo))
+	svc := notifications.New(notifications.Options{Repo: srv.Repo, Tasks: reg, Rows: reg.List, Agents: storedAgents(srv.Repo), Summarize: summarize})
 	apinotifications.NewHandler(reg, svc, srv.Repo).Register(srv.App.Router)
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
 		return shared.SetJSON("subscriptions", json.RawMessage(`[{"id":"feed","name":"常用订阅","url":"https://test.invalid/?token=private","enabled":true,"interval":3600}]`))
@@ -659,9 +659,6 @@ func TestRouterReadIsNotReplayedByRepeatedChecksAndMarkerClearsOnRemoval(t *test
 		t.Fatal(len(rows))
 	}
 	readAll(rows)
-	// This notification fixture owns no publisher; explicitly permit catalog cleanup.
-	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: func(context.Context, string, string, model.Router) (func(), bool) { return func() {}, true }}})
-	defer repo.SetHooks(previous)
 	_, err := f.srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, cfg *model.Profile) error {
 		cfg.Routers.Items = []model.Router{}
 		return nil

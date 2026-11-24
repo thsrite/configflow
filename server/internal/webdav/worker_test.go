@@ -158,7 +158,7 @@ func TestCommitHookRunsOutsideLockAndUploadFailureCannotRollback(t *testing.T) {
 		defer cancel()
 		_ = worker.Close(ctx)
 	})
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	backupRaw, err := json.Marshal(map[string]any{
 		"webdav_url": server.URL, "webdav_username": "fixture-user", "webdav_password": "fixture-secret",
 		"webdav_path": "/one/two/", "auto_backup": true,

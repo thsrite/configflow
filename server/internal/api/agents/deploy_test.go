@@ -81,7 +81,7 @@ func newDeployHTTPWithManager(t *testing.T, options agentfake.Options) (*httpxte
 	}); err != nil {
 		t.Fatal(err)
 	}
-	m, err := core.New(s.Context(), s.Repo, core.Options{ReceiptMatches: deploy.ReceiptMatches})
+	m, err := core.New(s.Context(), s.Repo, core.Options{ReceiptMatches: deploy.ReceiptMatcher(s.Repo)})
 	if err != nil {
 		t.Fatal(err)
 	}

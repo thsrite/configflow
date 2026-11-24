@@ -373,7 +373,7 @@ func runHTTPBoundary(t *testing.T, fake *routerfake.Fake, seed routerfake.State,
 	oracle := r15Python(t, dir, input)
 	pythonTables := fake.Snapshot().Tables
 	fake.Reset(seed)
-	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go")})
+	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), RepoOptions: repo.Options{RouterJobLock: core.JobLockRecord}})
 	mgr, err := agents.New(s.Context(), s.Repo)
 	if err != nil {
 		t.Fatal(err)
@@ -394,8 +394,6 @@ func runHTTPBoundary(t *testing.T, fake *routerfake.Fake, seed routerfake.State,
 		Notifications:  nt,
 	})
 	api.New(api.Deps{Repo: s.Repo, Agents: mgr, Routers: rtr, RuleSync: rr, Notifications: nt}).Register(s.App.Router)
-	previousHooks := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: core.JobLockRecord}})
-	t.Cleanup(func() { repo.SetHooks(previousHooks) })
 	var plan, route, workspace map[string]any
 	created := ""
 	for i, step := range requests {

@@ -187,7 +187,7 @@ func golang(t *testing.T, d *devices, requestBody string) any {
 	if e != nil {
 		t.Fatal(e)
 	}
-	m, e = agents.New(ctx, srv.Repo, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
+	m, e = agents.New(ctx, srv.Repo, agents.Options{ReceiptMatches: deploy.ReceiptMatcher(srv.Repo)})
 	if e != nil {
 		t.Fatal(e)
 	}

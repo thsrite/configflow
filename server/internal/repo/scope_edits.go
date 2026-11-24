@@ -51,21 +51,3 @@ func (r *Repository) UpdateScopedSharedConfigs(ctx context.Context, sharedEdit f
 	ResetConfigContext(ctx)
 	return nil
 }
-
-// UpdateConfig delegates to the context/default repository (transitional; removed in W11).
-func UpdateConfig(ctx context.Context, profileID string, fn func(context.Context, *model.Config) error) error {
-	r, err := GetRepository(ctx)
-	if err != nil {
-		return err
-	}
-	return r.UpdateScopedConfig(ctx, profileID, fn)
-}
-
-// UpdateSharedConfigs delegates to the context/default repository (transitional; removed in W11).
-func UpdateSharedConfigs(ctx context.Context, sharedEdit func(context.Context, *model.Shared) error, profileEdit func(context.Context, string, *model.Config, *model.Config) error, selector func(*model.Shared, []*model.Profile) ([]string, error)) error {
-	r, err := GetRepository(ctx)
-	if err != nil {
-		return err
-	}
-	return r.UpdateScopedSharedConfigs(ctx, sharedEdit, profileEdit, selector)
-}

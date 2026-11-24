@@ -478,7 +478,7 @@ func Build(ctx context.Context, in BuildInput) (*Bundle, error) {
 			return nil, err
 		}
 	}
-	profile, err := resolvedBuildProfile(ctx, in.Source, in.Target)
+	profile, err := resolvedBuildProfile(ctx, in.Repo, in.Source, in.Target)
 	if err != nil {
 		return nil, err
 	}

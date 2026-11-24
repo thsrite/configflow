@@ -359,7 +359,7 @@ func TestPreflightPassesThroughTheGate(t *testing.T) {
 
 func TestInvokeUsesTheInternalTokenAndSkipsAuthentication(t *testing.T) {
 	srv := routerServer(t, true)
-	ctx := repo.WithRepository(context.Background(), srv.Repo)
+	ctx := context.Background()
 	res, err := srv.App.Invoke(ctx, httpx.InvokeRequest{Method: "GET", Path: "/api/scoped"})
 	if err != nil || res.Status != 200 {
 		t.Fatalf("%v %d %s", err, res.Status, res.Body)

@@ -65,7 +65,7 @@ func TestNativeImportsCommitThroughRepositoryAndPreserveExistingFields(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx := repo.WithRepository(context.Background(), r)
+			ctx := context.Background()
 			rawShared, err := json.Marshal(row.Shared)
 			if err != nil {
 				t.Fatal(err)

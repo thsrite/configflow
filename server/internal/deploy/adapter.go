@@ -181,16 +181,15 @@ func (s *Source) unavailable(paths []string) []string {
 	}
 	return oxidns.UnavailableRulesets(profile, paths)
 }
-func resolvedBuildProfile(ctx context.Context, src *Source, t Target) (string, error) {
+func resolvedBuildProfile(ctx context.Context, r *repo.Repository, src *Source, t Target) (string, error) {
 	if id := src.ProfileID(); id != "" {
 		return id, nil
 	}
 	if t.ProfileID != "" {
 		return t.ProfileID, nil
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return "", err
+	if r == nil {
+		return "", fmt.Errorf("deploy: repository is nil")
 	}
 	return r.DefaultProfileID(ctx)
 }
@@ -241,13 +240,13 @@ func receiptAgentRaw(agent *model.Agent) receiptAgentView {
 	}
 	return view
 }
-func receiptAgent(ctx context.Context, agent *model.Agent) (receiptAgentView, error) {
+func receiptAgent(ctx context.Context, r *repo.Repository, agent *model.Agent) (receiptAgentView, error) {
 	view := receiptAgentRaw(agent)
 	if view.ProfileID == "" {
-		r, err := repo.GetRepository(ctx)
-		if err != nil {
-			return view, err
+		if r == nil {
+			return view, fmt.Errorf("deploy: repository is nil")
 		}
+		var err error
 		view.ProfileID, err = r.DefaultProfileID(ctx)
 		if err != nil {
 			return view, err
@@ -336,11 +335,11 @@ func advanceApplied(ctx context.Context, m *agents.Manager, agent *model.Agent, 
 	return accepted, err
 }
 
-func receiptMatches(agent *model.Agent, state *model.Deployment) bool {
+func receiptMatches(r *repo.Repository, agent *model.Agent, state *model.Deployment) bool {
 	if agent == nil || state == nil {
 		return false
 	}
-	view, err := receiptAgent(context.Background(), agent)
+	view, err := receiptAgent(context.Background(), r, agent)
 	if err != nil || view.ID == "" || view.ServiceType != "oxidns" {
 		return false
 	}

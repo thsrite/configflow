@@ -260,7 +260,7 @@ func TestReferenceCorpus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	failures := 0
 	classified, accepted := map[string]int{}, map[string]int{}
 	native := nativeExpectations(t, "testdata/corpus.json")

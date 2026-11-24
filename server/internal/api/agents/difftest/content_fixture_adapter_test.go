@@ -46,7 +46,7 @@ func seedContentBaseline(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+	ctx := repo.WithScope(context.Background())
 	old := contentDiffBundle(t, false)
 	fp, err := deploy.Fingerprint(old.Manifest())
 	if err != nil {
@@ -92,7 +92,7 @@ func seedContentBaseline(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = deploy.NewReceipts(dir).Capture(ctx, "agent-1", old, src, "https://original.example.test/prefix", nil); err != nil {
+	if err = deploy.NewReceipts(r).Capture(ctx, "agent-1", old, src, "https://original.example.test/prefix", nil); err != nil {
 		t.Fatal(err)
 	}
 }

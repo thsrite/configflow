@@ -13,13 +13,12 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
 
 func TestR14ManifestRollbackPersistsLatestState(t *testing.T) {
 	s, _, r := r14Fixture(t)
-	ctx := repo.WithRepository(t.Context(), s.Repo)
+	ctx := t.Context()
 	held, unlock, lockErr := oplock.RouterJobLock(ctx, "default", r.ID, r)
 	if lockErr != nil {
 		t.Fatal("busy")
@@ -173,7 +172,7 @@ func TestR14SpawnRejectionReleasesAdmission(t *testing.T) {
 }
 func TestR14TasksRows(t *testing.T) {
 	s, _, r := r14Fixture(t)
-	ctx := repo.WithRepository(t.Context(), s.Repo)
+	ctx := t.Context()
 	for _, status := range []string{"synced", "running", "queued", "paused", "failed", "waiting"} {
 		t.Run(status, func(t *testing.T) {
 			receipt, err := s.store().Read(ctx, "default", r.ID)
@@ -207,7 +206,7 @@ func TestR14TasksRows(t *testing.T) {
 }
 func TestR14SourceSelectionAndCacheIdentity(t *testing.T) {
 	s, _, r := r14Fixture(t)
-	ctx := repo.WithRepository(t.Context(), s.Repo)
+	ctx := t.Context()
 	err := s.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 		shared.RuleLibrary = append(shared.RuleLibrary, model.RuleLibraryItem{
 			ID:         "collision",

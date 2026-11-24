@@ -21,7 +21,7 @@ func statsRepository(t *testing.T) (*repo.Repository, context.Context) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r, repo.WithScope(repo.WithRepository(context.Background(), r))
+	return r, repo.WithScope(context.Background())
 }
 
 func TestHEADHasGETHeadersAndNeverCreatesOrReplacesHistory(t *testing.T) {

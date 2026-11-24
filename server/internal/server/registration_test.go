@@ -79,7 +79,7 @@ func TestNewRegistersEachLifecycleTaskOnce(t *testing.T) {
 	}
 	check("after New", goShutdowns)
 
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	rt.RunStartup(ctx)
 	// webdav-worker-init registers the auto-backup hook when it runs (as on go).
 	check("after RunStartup", append(slices.Clone(goShutdowns), "webdav-auto-backup"))

@@ -91,11 +91,12 @@ func TestReviewN88dOpusRecaptureShutdownKeepsReferencedArchive(t *testing.T) {
 	for _, boundary := range []int{1, 2} {
 		t.Run(fmt.Sprintf("write=%d", boundary), func(t *testing.T) {
 			base := testContext(t)
-			r, err := repo.GetRepository(base)
+			r, err := repo.OpenDefault(t.TempDir())
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner := NewReceipts(r.DataDir())
+			t.Cleanup(r.Close)
+			owner := NewReceipts(r)
 			source := testSource(t, map[string]any{"profile_id": "profile-example"})
 			first, second := sample(t, "mihomo", 3), sample(t, "mihomo", 4)
 			if err = owner.Capture(base, "agent-example", first, source, "https://panel.example.com", nil); err != nil {

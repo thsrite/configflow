@@ -29,7 +29,7 @@ func setupRepository(t *testing.T) (*repo.Repository, context.Context) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return r, repo.WithScope(repo.WithRepository(t.Context(), r))
+	return r, repo.WithScope(t.Context())
 }
 
 func TestRecordPreservesUnknownAndExplicitClear(t *testing.T) {

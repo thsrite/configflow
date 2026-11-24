@@ -45,7 +45,7 @@ func seed(t *testing.T, used bool, pattern string) func(context.Context, *repo.R
 			})
 			must(t, err)
 		}
-		err = fixtureSaveSubscriptionNodes(ctx, "s", []any{node("cached")}, nil)
+		err = fixtureSaveSubscriptionNodes(ctx, r, "s", []any{node("cached")}, nil)
 		must(t, err)
 	}
 }
@@ -312,7 +312,7 @@ func TestCorruptNodeCacheCannotProducePartialProvider(t *testing.T) {
 	w.call("GENERATE", "a", input, true)
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata any) error {
+func fixtureSaveSubscriptionNodes(ctx context.Context, r *repo.Repository, id string, value any, metadata any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -332,6 +332,6 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 			return err
 		}
 	}
-	_, err = substore.SaveCache(ctx, func() *repo.Repository { r, _ := repo.GetRepository(ctx); return r }(), id, nodes, receipt)
+	_, err = substore.SaveCache(ctx, r, id, nodes, receipt)
 	return err
 }

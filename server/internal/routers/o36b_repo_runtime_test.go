@@ -107,15 +107,14 @@ func TestO36bRepositoryRuntimeCommitBoundary(t *testing.T) {
 					name = operation + "/" + point + "/shutdown"
 				}
 				t.Run(name, func(t *testing.T) {
-					r, base, connection := jobRepository(t)
-					repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
+					r, base, connection := jobRepository(t, true)
 					if operation == "withdrawal" {
 						if err := o36bRouterCommit(base, r, connection, "publication"); err != nil {
 							t.Fatal(err)
 						}
 					}
 					runtime, request, disconnect := o36bRuntime(t)
-					ctx := repo.WithRepository(request, r)
+					ctx := request
 					before, files := o36bRepositoryState(t, r)
 					violations := lockx.Violations()
 					stop := func() {

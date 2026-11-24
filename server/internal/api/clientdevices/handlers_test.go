@@ -41,10 +41,8 @@ func fixture(t *testing.T) (*httpxtest.Server, *routerfake.Fake) {
 	f.Reset(rosState())
 	device := httptest.NewServer(f)
 	t.Cleanup(device.Close)
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, SecretKey: "synthetic-fixed-secret"})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, SecretKey: "synthetic-fixed-secret", RepoOptions: repo.Options{RouterJobLock: routers.JobLockRecord}})
 	api.NewHandler(s.Repo, nil).Register(s.App.Router)
-	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: routers.JobLockRecord}})
-	t.Cleanup(func() { repo.SetHooks(previous) })
 	routersRaw, _ := json.Marshal(map[string]any{"items": []any{map[string]any{"id": "router-one", "name": "Synthetic", "type": "routeros", "endpoint": device.URL, "username": "synthetic-user", "password": "synthetic-pass", "verify_tls": false}}})
 	_, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
 		if err := current.SetJSON("device_notes", json.RawMessage(`{"192.0.2.21":"Synthetic"}`)); err != nil {

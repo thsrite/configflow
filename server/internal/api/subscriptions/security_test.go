@@ -50,7 +50,7 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := fixtureSaveSubscriptionNodes(ctx, "s", []any{map[string]any{"id": "cached", "name": "Remote", "type": "http", "server": "example.com", "port": 80}}, nil); err != nil {
+	if err := fixtureSaveSubscriptionNodes(ctx, srv.Repo, "s", []any{map[string]any{"id": "cached", "name": "Remote", "type": "http", "server": "example.com", "port": 80}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"/api/subscriptions/s/proxies?token=synthetic-pull-token", "/api/subscriptions/proxies?token=synthetic-pull-token"} {
@@ -128,7 +128,7 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 	}
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata map[string]any) error {
+func fixtureSaveSubscriptionNodes(ctx context.Context, r *repo.Repository, id string, value any, metadata map[string]any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -148,6 +148,6 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 			return err
 		}
 	}
-	_, err = substore.SaveCache(ctx, func() *repo.Repository { r, _ := repo.GetRepository(ctx); return r }(), id, nodes, receipt)
+	_, err = substore.SaveCache(ctx, r, id, nodes, receipt)
 	return err
 }

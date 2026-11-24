@@ -59,7 +59,7 @@ func newGatewayGuardFixture(t *testing.T, config json.RawMessage) (context.Conte
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+	ctx := repo.WithScope(context.Background())
 	if config != nil {
 		if _, _, err = r.SaveProfileFieldsJSON(ctx, "default", config, nil); err != nil {
 			t.Fatal(err)

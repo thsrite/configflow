@@ -279,7 +279,7 @@ func (s *Service) withheld(ctx context.Context, profileID string, ids []string, 
 			if err != nil {
 				return false, err
 			}
-			return rulesync.PinnedWithheld(ctx, r, deploy.NewReceipts(r.DataDir()), profileID, ruleIDs)
+			return rulesync.PinnedWithheld(ctx, r, deploy.NewReceipts(r), profileID, ruleIDs)
 		}
 	}
 	v, err := check(ctx, profileID, ids)

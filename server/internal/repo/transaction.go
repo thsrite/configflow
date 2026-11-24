@@ -222,13 +222,10 @@ func (r *Repository) workingModel(ctx context.Context) (*model.Document, bool, e
 	return r.systemInView(ctx, tx.document), true, nil
 }
 
-// configurationCommitted dispatches the post-commit observer on native,
-// immutable snapshots. Compatibility conversion is confined to recordHooks.
+// configurationCommitted dispatches the post-commit observers on native,
+// immutable snapshots.
 func (r *Repository) configurationCommitted(base storedEntry, proposed *model.Document) {
 	observers := r.snapshotObservers()
-	if legacy := recordHooks().ConfigurationCommittedRecords; legacy != nil {
-		observers = append(observers, legacy)
-	}
 	if len(observers) == 0 || proposed == nil {
 		return
 	}

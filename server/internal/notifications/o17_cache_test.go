@@ -13,7 +13,7 @@ func TestO17FollowupRouterSignaturesCacheUsesSameConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(t.Context(), r)
+	ctx := t.Context()
 	if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
 		system.Agents = []model.Agent{{
 			ID:          "a1",

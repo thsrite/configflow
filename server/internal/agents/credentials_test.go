@@ -66,7 +66,7 @@ func TestSystemSecretsMatchesExternalPayloadSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	const proxy = "http://alice:synthetic-proxy-secret@proxy.example.com:8080"
 	if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		s.SystemConfig.RuleFetchProxy = proxy

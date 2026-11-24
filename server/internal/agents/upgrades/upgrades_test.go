@@ -35,7 +35,7 @@ func newUpgradeEnv(t *testing.T) *upgradeEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	m, err := agents.New(ctx, r)
 	if err != nil {
 		t.Fatal(err)

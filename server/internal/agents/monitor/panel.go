@@ -407,13 +407,12 @@ func coreCachedOf(channel string) *coreCached {
 
 // downloadSettings is _download_settings: only the download proxy and
 // mirror settings, not the whole system section with the Agents.
-var downloadSettings = func(ctx context.Context) (*model.SystemConfig, error) {
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+var downloadSettings = func(ctx context.Context, repository *repo.Repository) (*model.SystemConfig, error) {
+	if repository == nil {
+		return nil, errors.New("agents/monitor: repository is nil")
 	}
 	var settings model.SystemConfig
-	err = repository.View(ctx, func(document *model.Document) error {
+	err := repository.View(ctx, func(document *model.Document) error {
 		source := &document.System.SystemConfig
 		settings.RuleFetchProxy, settings.GitHubProxyDomain, settings.ServerDomain = source.RuleFetchProxy, source.GitHubProxyDomain, source.ServerDomain
 		return nil
@@ -558,12 +557,12 @@ func usable(cached *coreCached, current string, now float64, settings *model.Sys
 
 // cachedLatest is _cached_latest(channel, current, force): (version,
 // error) from the cache unless forced or no longer usable.
-func cachedLatest(ctx context.Context, channel, current string, force bool) (string, string, error) {
+func cachedLatest(ctx context.Context, r *repo.Repository, channel, current string, force bool) (string, string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", "", err
 	}
 	requested := monotonic()
-	settings, err := downloadSettings(ctx)
+	settings, err := downloadSettings(ctx, r)
 	if err != nil {
 		return "", "", err
 	}
@@ -667,7 +666,7 @@ func CoreUpdateCheck(ctx context.Context, m Registry, id string, force bool) (*P
 	if strings.HasPrefix(current, "alpha") {
 		channel = "alpha"
 	}
-	latest, failure, err := cachedLatest(ctx, channel, current, force)
+	latest, failure, err := cachedLatest(ctx, m.Repository(), channel, current, force)
 	if err != nil {
 		return nil, err
 	}

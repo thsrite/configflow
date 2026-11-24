@@ -52,7 +52,7 @@ func newFixture(t *testing.T) *fixture {
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	must(t, err)
-	ctx := repo.WithRepository(repo.WithScope(context.Background()), r)
+	ctx := repo.WithScope(context.Background())
 	err = r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 		return json.Unmarshal([]byte(`[{"id":"n","name":"Synthetic","type":"ss","server":"192.0.2.2","port":443,"cipher":"aes-128-gcm","password":"synthetic-node-secret"}]`), &shared.Nodes)
 	})
@@ -71,7 +71,7 @@ func newFixture(t *testing.T) *fixture {
 	on := onboarding.Service{Repository: r}
 	_, err = on.Execute(ctx, onboarding.Operation{ProfileID: "default", BaseURL: testOrigin, Write: true, Body: jsonresp.Value(map[string]any{"rule_set_ids": []string{}, "direct_rule_set_ids": []string{}, "proxy_rule_set_ids": []string{}, "local_dns": "https://192.0.2.53/dns-query"})})
 	must(t, err)
-	m, err := agents.New(ctx, r, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
+	m, err := agents.New(ctx, r, agents.Options{ReceiptMatches: deploy.ReceiptMatcher(r)})
 	must(t, err)
 	t.Cleanup(m.Close)
 	s := &Service{Repository: r, Manager: m, Render: func(o installer.GatewayInstallOptions) (string, error) {

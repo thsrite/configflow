@@ -12,6 +12,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/jsonresp"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 
 	"golang.org/x/text/encoding/charmap"
 )
@@ -21,6 +22,7 @@ type Registry interface {
 	WithReadSnapshot(context.Context, func(context.Context) error) error
 	ReadAgent(context.Context, string, bool) (*model.Agent, error)
 	DataDir() string
+	Repository() *repo.Repository
 	Client() agents.Client
 }
 

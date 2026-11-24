@@ -30,9 +30,7 @@ func (s *stubExporter) RedactRoutersJSON(raw json.RawMessage) (json.RawMessage, 
 }
 
 func TestOptionsExportSanitizerAndFailClosed(t *testing.T) {
-	defer SetHooks(SetHooks(Hooks{}))
-
-	// Negative control: nil Export and empty global hooks must fail closed.
+	// Negative control: nil Export must fail closed.
 	rNil, err := Open(t.TempDir(), Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +55,6 @@ func TestOptionsExportSanitizerAndFailClosed(t *testing.T) {
 }
 
 func TestOptionsRouterJobLockAndFailClosed(t *testing.T) {
-	defer SetHooks(SetHooks(Hooks{}))
 	ctx := context.Background()
 
 	// Negative control: nil RouterJobLock and empty global hooks fail closed on router connection change.
@@ -107,7 +104,6 @@ func TestOptionsRouterJobLockAndFailClosed(t *testing.T) {
 }
 
 func TestOnConfigurationCommittedObserver(t *testing.T) {
-	defer SetHooks(SetHooks(Hooks{}))
 	r, err := Open(t.TempDir(), Options{})
 	if err != nil {
 		t.Fatal(err)

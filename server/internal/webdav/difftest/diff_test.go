@@ -276,7 +276,7 @@ func newWorldSaved(t *testing.T, retention map[string]any) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = pr.UpdateSystem(repo.WithRepository(context.Background(), pr), func(_ context.Context, s *model.System) error {
+	err = pr.UpdateSystem(context.Background(), func(_ context.Context, s *model.System) error {
 		s.Backup.WebDAVURL = pd.server.URL
 		return nil
 	})

@@ -22,7 +22,7 @@ func BenchmarkBatch9SyncSources(b *testing.B) {
 				if err != nil {
 					b.Fatal(err)
 				}
-				ctx := repo.WithRepository(context.Background(), db)
+				ctx := context.Background()
 				if err := db.UpdateShared(ctx, func(_ context.Context, s *model.Shared) error {
 					s.Subscriptions = append(s.Subscriptions, model.Subscription{ID: "padding", Name: strings.Repeat("x", padding)})
 					return nil

@@ -120,6 +120,7 @@ func label(name string) string {
 
 // snapshot contains only the typed metadata needed by archive callbacks.
 type snapshot struct {
+	repo         *repo.Repository
 	ProfileID    string
 	SystemConfig model.SystemConfig
 	RuleConfigs  []model.RuleConfig
@@ -259,8 +260,12 @@ func (s *snapshot) localPath(ctx context.Context, raw, baseURL string) (string, 
 	}
 	profileID := s.ProfileID
 	if profileID == "" {
-		if profileID, err = repo.GetDefaultProfileID(ctx); err != nil {
-			return "", false, err
+		if s.repo != nil {
+			if profileID, err = s.repo.DefaultProfileID(ctx); err != nil {
+				return "", false, err
+			}
+		} else {
+			profileID = "default"
 		}
 	}
 	for _, path := range paths {
@@ -413,6 +418,7 @@ func BuildZIP(ctx context.Context, config *model.Config, yamlContent string, dow
 		return nil, archiveErr("MosDNS 配置快照缺失")
 	}
 	snap := snapshotOf(config)
+	snap.repo = opts.Repo
 	files := map[string][]byte{}
 	var order []string
 	total := 0

@@ -32,7 +32,7 @@ func TestToolWriteUsesOriginalRuntime(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			base := repo.WithRepository(context.Background(), r)
+			base := context.Background()
 			if err := r.UpdateShared(base, func(_ context.Context, s *model.Shared) error {
 				return json.Unmarshal([]byte(`[{"id":"synthetic","name":"Before","url":"https://example.test/sub"}]`), &s.Subscriptions)
 			}); err != nil {
@@ -132,7 +132,7 @@ func TestTextContentUsesSharedCredentialRedaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		s.SystemConfig.ConfigToken = "synthetic-panel-secret"
 		s.SystemConfig.RuleProxyToken = "synthetic-rule-secret"
@@ -162,7 +162,7 @@ func FuzzTransportJSON(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	app := httpx.New()
 	app.Repo = r
 	NewHandler(r).Register(app.Router)
@@ -205,7 +205,7 @@ func TestMalformedCredentialNeverBecomesAnonymousAccess(t *testing.T) {
 			app.Repo = r
 			NewHandler(r).Register(app.Router)
 			for _, credential := range []string{"", "123", "synthetic-internal"} {
-				req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)).WithContext(repo.WithRepository(context.Background(), r))
+				req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)).WithContext(context.Background())
 				if credential != "" {
 					req.Header.Set("Authorization", "Bearer "+credential)
 				}
@@ -256,7 +256,7 @@ func TestMalformedSystemConfigCannotAuthorizeMCP(t *testing.T) {
 			app := httpx.New()
 			app.Repo = r
 			NewHandler(r).Register(app.Router)
-			req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)).WithContext(repo.WithRepository(context.Background(), r))
+			req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`)).WithContext(context.Background())
 			w := httptest.NewRecorder()
 			app.ServeHTTP(w, req)
 			if w.Code != 401 {

@@ -103,7 +103,7 @@ func TestReadsDisabledAndFailedCommitsDoNotSchedule(t *testing.T) {
 	worker := testWorker(t, 0, func(context.Context, Snapshot) error { uploads++; return nil })
 	r.OnConfigurationCommitted(commitObserver(worker))
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
 		return profile.SetJSON("mihomo", json.RawMessage(`{"custom_config":"mode: rule"}`))
 	})

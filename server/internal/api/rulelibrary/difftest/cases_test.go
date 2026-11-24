@@ -40,7 +40,7 @@ func seed(t *testing.T) func(context.Context, *repo.Repository) {
 		for _, name := range []string{"HK 01", "HK 02", "JP 01", "广告", "US hidden", "HK 01"} {
 			nodes = append(nodes, map[string]any{"name": name, "type": "ss"})
 		}
-		if err = fixtureSaveSubscriptionNodes(ctx, "feed", nodes, nil); err != nil {
+		if err = fixtureSaveSubscriptionNodes(ctx, r, "feed", nodes, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -97,7 +97,7 @@ func TestRuleLibraryReadCreateHTTPParity(t *testing.T) {
 	w.call("POST", "/api/rule-library/reorder", `{"ids":["missing"]}`, true)
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata any) error {
+func fixtureSaveSubscriptionNodes(ctx context.Context, r *repo.Repository, id string, value any, metadata any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -117,6 +117,6 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 			return err
 		}
 	}
-	_, err = substore.SaveCache(ctx, func() *repo.Repository { r, _ := repo.GetRepository(ctx); return r }(), id, nodes, receipt)
+	_, err = substore.SaveCache(ctx, r, id, nodes, receipt)
 	return err
 }

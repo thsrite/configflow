@@ -63,7 +63,7 @@ func TestPythonPrivateStoresLoad(t *testing.T) {
 	if err = json.Unmarshal(expected.Agent, &agent); err != nil {
 		t.Fatal(err)
 	}
-	r := NewReceipts(root)
+	r := &Receipts{dataDir: root, writeFile: atomicWrite}
 	receipt, err := r.LoadAgent(context.Background(), &agent, true)
 	if err != nil || receipt == nil {
 		t.Fatal(receipt, err)
@@ -120,10 +120,11 @@ func TestPythonPrivateStoresLoad(t *testing.T) {
 
 func TestPreviewsFrozenIdentityExpiryAndQuota(t *testing.T) {
 	ctx := testContext(t)
-	repository, err := repo.GetRepository(ctx)
+	repository, err := repo.OpenDefault(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(repository.Close)
 	m, err := agents.New(ctx, repository)
 	if err != nil {
 		t.Fatal(err)
@@ -243,7 +244,11 @@ func TestPreviewsFrozenIdentityExpiryAndQuota(t *testing.T) {
 
 func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	ctx := testContext(t)
-	repository, _ := repo.GetRepository(ctx)
+	repository, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(repository.Close)
 	m, err := agents.New(ctx, repository)
 	if err != nil {
 		t.Fatal(err)
@@ -272,7 +277,7 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := NewReceipts(repository.DataDir())
+	r := NewReceipts(repository)
 	if err = r.Capture(ctx, agent["id"].(string), b, source, "https://panel.example", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -334,8 +339,6 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	if got, err := r.LoadAgent(ctx, fixtureAgent(alias), true); err != nil || got == nil {
 		t.Fatal("resolved default receipt rejected", got, err)
 	}
-	repo.SetRepository(repository)
-	t.Cleanup(func() { repo.SetRepository(nil) })
 	proof := ValidationReceipt{Version: 1, RulesSHA256: RulesFingerprint(), AgentID: alias["id"].(string), DeploymentID: "resolved-default", ProfileID: "alpha", ServiceType: "oxidns", SHA256: strings.Repeat("a", 64), Fingerprint: "v1:" + strings.Repeat("b", 64)}
 	raw, _ := encodeJSON(proof)
 	var proofMap map[string]any
@@ -344,17 +347,17 @@ func TestReceiptsCaptureAdvanceAndDefaultProfile(t *testing.T) {
 	}
 	alias["service_type"] = "oxidns"
 	task := map[string]any{"deployment_id": proof.DeploymentID, "profile_id": "alpha", "service_type": "oxidns", "sha256": proof.SHA256, "prepared_content": map[string]any{"fingerprint": proof.Fingerprint}, "oxidns_validation_receipt": proofMap}
-	if !ReceiptMatches(fixtureAgent(alias), fixtureTask(task)) {
+	if !ReceiptMatches(repository, fixtureAgent(alias), fixtureTask(task)) {
 		t.Fatal("resolved non-default-named binding proof refused")
 	}
 	// A stored receipt member the record does not declare is dropped on
 	// load (O18 T1b); the declared proof still decides.
 	proofMap["unexpected"] = true
-	if !ReceiptMatches(fixtureAgent(alias), fixtureTask(task)) {
+	if !ReceiptMatches(repository, fixtureAgent(alias), fixtureTask(task)) {
 		t.Fatal("undeclared receipt member changed the proof")
 	}
 	proofMap["sha256"] = strings.Repeat("c", 64)
-	if ReceiptMatches(fixtureAgent(alias), fixtureTask(task)) {
+	if ReceiptMatches(repository, fixtureAgent(alias), fixtureTask(task)) {
 		t.Fatal("changed receipt accepted")
 	}
 
@@ -384,8 +387,12 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 		t.Fatal("invalid rule digest")
 	}
 	ctx := testContext(t)
-	repository, _ := repo.GetRepository(ctx)
-	m, err := agents.New(ctx, repository, agents.Options{ReceiptMatches: ReceiptMatches})
+	repository, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(repository.Close)
+	m, err := agents.New(ctx, repository, agents.Options{ReceiptMatches: ReceiptMatcher(repository)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,11 +429,11 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 	fp, _ := Fingerprint(b.manifest)
 	task := map[string]any{"deployment_id": b.manifest.DeploymentID, "profile_id": "default", "service_type": "oxidns", "status": "ready", "success": true, "submitted": true, "sha256": sha, "prepared_content": map[string]any{"fingerprint": fp}, "oxidns_validation_receipt": proofMap}
 	agent := map[string]any{"id": target.ID, "profile_id": "default", "service_type": "oxidns", "host": parts[0], "port": parts[1], "token": "synthetic-token", "deployments": map[string]any{b.manifest.DeploymentID: task}, "latest_deployment": cloneMap(t, task)}
-	if !ReceiptMatches(fixtureAgent(agent), fixtureTask(task)) {
+	if !ReceiptMatches(repository, fixtureAgent(agent), fixtureTask(task)) {
 		t.Fatal("valid proof refused")
 	}
 	proofMap["rules_sha256"] = "python-era-proof"
-	if ReceiptMatches(fixtureAgent(agent), fixtureTask(task)) {
+	if ReceiptMatches(repository, fixtureAgent(agent), fixtureTask(task)) {
 		t.Fatal("old validator proof accepted")
 	}
 	err = repository.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
@@ -466,7 +473,11 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 
 func TestFinalizeBundleUsesFrozenDeviceBytes(t *testing.T) {
 	ctx := testContext(t)
-	repository, _ := repo.GetRepository(ctx)
+	repository, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(repository.Close)
 	m, err := agents.New(ctx, repository)
 	if err != nil {
 		t.Fatal(err)

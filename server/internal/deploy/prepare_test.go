@@ -41,7 +41,11 @@ func TestPythonPrepare(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := testContext(t)
-	r, _ := repo.GetRepository(ctx)
+	r, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Close)
 	m, err := agents.New(ctx, r)
 	if err != nil {
 		t.Fatal(err)

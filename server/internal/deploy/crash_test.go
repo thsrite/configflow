@@ -33,7 +33,7 @@ func TestPublishChild(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	m, e := agents.New(ctx, r)
 	if e != nil {
 		t.Fatal(e)

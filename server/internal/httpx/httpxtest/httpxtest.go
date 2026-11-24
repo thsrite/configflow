@@ -58,6 +58,8 @@ type Options struct {
 	// DefaultFactories opens the repository like production
 	// (repo.OpenDefault); otherwise like ProfileRepository(tmp_path).
 	DefaultFactories bool
+	// RepoOptions configures the test repository (e.g. Export, RouterJobLock).
+	RepoOptions repo.Options
 	// Setup runs after the routes are registered (add hooks, error handlers).
 	Setup func(app *httpx.App)
 }
@@ -85,9 +87,9 @@ func New(t testing.TB, options Options) *Server {
 	var repository *repo.Repository
 	var err error
 	if options.DefaultFactories {
-		repository, err = repo.OpenDefault(dataDir)
+		repository, err = repo.OpenDefaultWithOptions(dataDir, options.RepoOptions)
 	} else {
-		repository, err = repo.Open(dataDir, repo.Options{})
+		repository, err = repo.Open(dataDir, options.RepoOptions)
 	}
 	if err != nil {
 		t.Fatalf("open repository: %v", err)
@@ -125,7 +127,7 @@ func New(t testing.TB, options Options) *Server {
 	}
 	s := &Server{T: t, App: app, Repo: repository, DataDir: dataDir}
 	s.handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		app.ServeHTTP(w, req.WithContext(repo.WithRepository(req.Context(), repository)))
+		app.ServeHTTP(w, req)
 	})
 	return s
 }
@@ -133,7 +135,7 @@ func New(t testing.TB, options Options) *Server {
 // Context returns a context bound to the test repository (for direct
 // package calls next to HTTP requests).
 func (s *Server) Context() context.Context {
-	return repo.WithScope(repo.WithRepository(context.Background(), s.Repo))
+	return repo.WithScope(context.Background())
 }
 
 // Handler is the application bound to the test repository.

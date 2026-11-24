@@ -97,7 +97,7 @@ func run() (resultErr error) {
 		return err
 	}
 	records := system.Agents
-	receipts := deploy.NewReceipts(data)
+	receipts := deploy.NewReceipts(repository)
 	plans := []plan{}
 	migrated := map[int]bool{}
 	for i := range records {

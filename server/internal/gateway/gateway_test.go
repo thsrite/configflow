@@ -47,7 +47,7 @@ func TestDefaultContentReader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	config := snapshot(true)
 	source := config["rule_library"].([]any)[0].(map[string]any)
 	source["source_type"] = "url"
@@ -334,7 +334,7 @@ func TestReviewN811ReaderProjectionPreservesFormatInferenceWithoutBody(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	raw := snapshot(true)
 	raw["system_config"].(map[string]any)["rule_proxy_token"] = "synthetic-secret-token"
 	// Standalone ruleset referencing a library entry only by name (no library_rule_id, no format, no .yaml suffix).

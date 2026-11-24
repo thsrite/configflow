@@ -73,19 +73,18 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 	noError(t, err)
 	scAppendAgent(t, r, `{"id": "a", "name": "A", "profile_id": "default", "token": "agent-token"}`)
 
-	defer SetHooks(SetHooks(Hooks{}))
 	_, err = r.ExportAllJSON(bg, true)
 	wantError(t, err, ErrRepository, "脱敏")
 
 	var sanitizedWith model.SystemConfig
-	SetHooks(Hooks{RecordHooks: RecordHooks{
-		SanitizeExternalDocument: func(_ context.Context, _ *Repository, payload *model.Document, systemConfig model.SystemConfig) (*model.Document, error) {
+	r.options.Export = testExportSanitizer{
+		sanitize: func(_ context.Context, _ *Repository, payload *model.Document, systemConfig model.SystemConfig) (*model.Document, error) {
 			sanitizedWith = systemConfig
 			return payload, nil
 		},
-		RedactOxidnsJSON:  func(json.RawMessage) (json.RawMessage, error) { return []byte(`"oxidns-redacted"`), nil },
-		RedactRoutersJSON: func(json.RawMessage) (json.RawMessage, error) { return []byte(`{"items":[],"redacted":true}`), nil },
-	}})
+		oxidns:  func(json.RawMessage) (json.RawMessage, error) { return []byte(`"oxidns-redacted"`), nil },
+		routers: func(json.RawMessage) (json.RawMessage, error) { return []byte(`{"items":[],"redacted":true}`), nil },
+	}
 	result := parseJSONObj(t, must(r.ExportAllJSON(bg, true))(t))
 	system := result.GetObject("system")
 	settings := system.GetObject("system_config")
@@ -158,8 +157,8 @@ func TestExportSanitizerUsesExportRepositorySnapshot(t *testing.T) {
 	scAppendAgent(t, other, `{"id":"other-agent","name":"Other","profile_id":"default","token":"synthetic-other-token"}`)
 	called := false
 	pass := func(v json.RawMessage) (json.RawMessage, error) { return v, nil }
-	defer SetHooks(SetHooks(Hooks{RecordHooks: RecordHooks{
-		SanitizeExternalDocument: func(ctx context.Context, bound *Repository, payload *model.Document, settings model.SystemConfig) (*model.Document, error) {
+	r.options.Export = testExportSanitizer{
+		sanitize: func(ctx context.Context, bound *Repository, payload *model.Document, settings model.SystemConfig) (*model.Document, error) {
 			called = true
 			if bound != r || r.lockedSnapshot(ctx) == nil {
 				t.Fatal("sanitizer lost export repository snapshot")
@@ -175,15 +174,15 @@ func TestExportSanitizerUsesExportRepositorySnapshot(t *testing.T) {
 			wantJSONEqual(t, settings, original)
 			return payload, nil
 		},
-		RedactOxidnsJSON:  pass,
-		RedactRoutersJSON: pass,
-	}}))
-	must(r.ExportAllJSON(WithRepository(bg, other), true))(t)
+		oxidns:  pass,
+		routers: pass,
+	}
+	must(r.ExportAllJSON(bg, true))(t)
 	if !called {
 		t.Fatal("sanitizer not called")
 	}
 	called = false
-	full := parseJSONObj(t, must(r.ExportAllJSON(WithRepository(bg, other), false))(t))
+	full := parseJSONObj(t, must(r.ExportAllJSON(bg, false))(t))
 	if called || len(full.GetObject("system").GetList("agents")) != 1 {
 		t.Fatal("full restorable export was sanitized")
 	}
@@ -199,18 +198,17 @@ func TestN811TypedExportHooksRunOnce(t *testing.T) {
 	pass := func(name string) func(json.RawMessage) (json.RawMessage, error) {
 		return func(raw json.RawMessage) (json.RawMessage, error) { calls[name]++; return raw, nil }
 	}
-	defer SetHooks(SetHooks(Hooks{
-		RecordHooks: RecordHooks{
-			RedactOxidnsJSON: pass("oxidns"), RedactRoutersJSON: pass("routers"),
-			SanitizeExternalDocument: func(_ context.Context, _ *Repository, d *model.Document, s model.SystemConfig) (*model.Document, error) {
-				calls["sanitize"]++
-				if s.RuleProxyToken == "" || d.System.SystemConfig.RuleProxyToken != "" {
-					t.Fatal("sanitizer did not receive original settings and redacted payload")
-				}
-				return d, nil
-			},
+	r.options.Export = testExportSanitizer{
+		oxidns:  pass("oxidns"),
+		routers: pass("routers"),
+		sanitize: func(_ context.Context, _ *Repository, d *model.Document, s model.SystemConfig) (*model.Document, error) {
+			calls["sanitize"]++
+			if s.RuleProxyToken == "" || d.System.SystemConfig.RuleProxyToken != "" {
+				t.Fatal("sanitizer did not receive original settings and redacted payload")
+			}
+			return d, nil
 		},
-	}))
+	}
 	raw := must(r.ExportAllJSON(bg, true))(t)
 	for _, name := range []string{"oxidns", "routers", "sanitize"} {
 		if calls[name] != 1 {
@@ -223,7 +221,6 @@ func TestN811TypedExportHooksRunOnce(t *testing.T) {
 }
 
 func TestN811TypedCommitHooksRunOnceInOrder(t *testing.T) {
-	defer SetHooks(SetHooks(Hooks{}))
 	r := newRepo(t)
 	_, err := r.UpdateProfile(bg, "default", func(_ context.Context, profile *model.Profile) error {
 		return profile.SetJSON("routers", []byte(`{"items":[{"id":"router","name":"Router","type":"routeros","endpoint":"http://192.0.2.1","username":"operator","password":"old"}]}`))
@@ -234,26 +231,23 @@ func TestN811TypedCommitHooksRunOnceInOrder(t *testing.T) {
 	})
 	noError(t, err)
 	locks, releases, commits := 0, 0, 0
-	SetHooks(Hooks{
-		RecordHooks: RecordHooks{
-			JobLockRecord: func(_ context.Context, profileID, routerID string, router model.Router) (func(), bool) {
-				locks++
-				if profileID != "default" || routerID != "router" || router.Password != "old" {
-					t.Fatal("job lock did not receive committed router identity")
-				}
-				return func() { releases++ }, true
-			},
-			ConfigurationCommittedRecords: func(repository *Repository, previous, current *model.Document) {
-				commits++
-				if repository != r || previous.Profiles[0].Routers.Items[0].Password != "old" || current.Profiles[0].Routers.Items[0].Password != "new" {
-					t.Fatal("commit observer did not receive old and committed generations")
-				}
-				if releases != 1 {
-					t.Fatal("commit observer ran before router lock release")
-				}
-			},
-		},
+	r.options.RouterJobLock = func(_ context.Context, profileID, routerID string, router model.Router) (func(), bool) {
+		locks++
+		if profileID != "default" || routerID != "router" || router.Password != "old" {
+			t.Fatal("job lock did not receive committed router identity")
+		}
+		return func() { releases++ }, true
+	}
+	unsub := r.OnConfigurationCommitted(func(repository *Repository, previous, current *model.Document) {
+		commits++
+		if repository != r || previous.Profiles[0].Routers.Items[0].Password != "old" || current.Profiles[0].Routers.Items[0].Password != "new" {
+			t.Fatal("commit observer did not receive old and committed generations")
+		}
+		if releases != 1 {
+			t.Fatal("commit observer ran before router lock release")
+		}
 	})
+	defer unsub()
 	_, err = r.UpdateProfile(bg, "default", func(_ context.Context, profile *model.Profile) error {
 		profile.Routers.Items[0].Password = "new"
 		return nil
@@ -262,4 +256,20 @@ func TestN811TypedCommitHooksRunOnceInOrder(t *testing.T) {
 	if locks != 1 || releases != 1 || commits != 1 {
 		t.Fatalf("locks=%d releases=%d commits=%d; want one each", locks, releases, commits)
 	}
+}
+
+type testExportSanitizer struct {
+	sanitize func(context.Context, *Repository, *model.Document, model.SystemConfig) (*model.Document, error)
+	oxidns   func(json.RawMessage) (json.RawMessage, error)
+	routers  func(json.RawMessage) (json.RawMessage, error)
+}
+
+func (e testExportSanitizer) SanitizeExternalDocument(ctx context.Context, r *Repository, doc *model.Document, cfg model.SystemConfig) (*model.Document, error) {
+	return e.sanitize(ctx, r, doc, cfg)
+}
+func (e testExportSanitizer) RedactOxiDNSJSON(raw json.RawMessage) (json.RawMessage, error) {
+	return e.oxidns(raw)
+}
+func (e testExportSanitizer) RedactRoutersJSON(raw json.RawMessage) (json.RawMessage, error) {
+	return e.routers(raw)
 }

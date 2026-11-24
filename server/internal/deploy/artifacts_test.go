@@ -25,7 +25,7 @@ func artifactManager(t *testing.T) (context.Context, *agents.Manager) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithScope(repo.WithRepository(t.Context(), r))
+	ctx := repo.WithScope(t.Context())
 	m, err := agents.New(ctx, r)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestManualArtifactUsesOwnerRepository(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	request := repo.WithRepository(ctx, foreign.Repository())
+	request := ctx
 	artifact, err := New(Options{}).GenerateArtifact(request, m, "default", configgen.Surge, "")
 	if err != nil {
 		t.Fatal(err)

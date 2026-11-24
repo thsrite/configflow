@@ -64,7 +64,7 @@ func TestReviewO18T1dLegacyCacheWithoutURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	fields := map[string]json.RawMessage{
 		"subscriptions": json.RawMessage(`[{"id":"s1","name":"S","url":"https://example.com/a"}]`),
 		"nodes":         json.RawMessage(`[]`),

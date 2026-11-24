@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"configflow/internal/httpx"
-	"configflow/internal/repo"
 )
 
 func TestLogStatPermissionFailureDoesNotBecomeMissingOrFallback(t *testing.T) {
@@ -40,7 +39,7 @@ func TestLogStatPermissionFailureDoesNotBecomeMissingOrFallback(t *testing.T) {
 	if _, err := os.Stat(path); !errors.Is(err, fs.ErrPermission) {
 		t.Fatal("fixture did not deny directory traversal", err)
 	}
-	ctx := repo.WithRepository(context.Background(), c.repo)
+	ctx := context.Background()
 	if _, err := c.repo.System(ctx); err != nil {
 		t.Fatal("database must remain readable", err)
 	}

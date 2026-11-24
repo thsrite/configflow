@@ -396,7 +396,7 @@ func fixedWriteBindings(current json.RawMessage, bindings map[string]*fixedip.Bi
 // Apply owns L1/L2, re-plans authenticated intent, writes the devices and commits
 // metadata with an optimistic guard. Ordinary failures reverse the batch.
 func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err error) {
-	ctx = repo.WithRepository(lifecycle.Detach(ctx), s.Repo)
+	ctx = lifecycle.Detach(ctx)
 	defer func() {
 		if err != nil && ctx.Err() != nil {
 			err = ctx.Err()

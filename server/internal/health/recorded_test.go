@@ -249,7 +249,7 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 					defaults = r
 				}
 			}
-			ctx = repo.WithScope(repo.WithRepository(ctx, r))
+			ctx = repo.WithScope(ctx)
 			if len(system) > 0 {
 				if err := r.UpdateSystem(ctx, func(_ context.Context, current *model.System) error {
 					existingRaw, err := json.Marshal(current.SystemConfig)

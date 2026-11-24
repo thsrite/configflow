@@ -13,9 +13,6 @@ import (
 )
 
 func TestRepositoryOptionsWireRouterRedactionAndJobLock(t *testing.T) {
-	previous := repo.SetHooks(repo.Hooks{})
-	defer repo.SetHooks(previous)
-
 	raw, err := spec.RedactRouters(json.RawMessage(`{"items":[{"id":"synthetic","name":"Synthetic","password":"synthetic-password","endpoint":"https://router.example.com"}]}`))
 	if err != nil || strings.Contains(string(raw), "synthetic-password") || !strings.Contains(string(raw), "Synthetic") {
 		t.Fatal("typed redaction was not called", err)

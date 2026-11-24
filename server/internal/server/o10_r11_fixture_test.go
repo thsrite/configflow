@@ -15,7 +15,6 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
-	"configflow/internal/repo"
 	"configflow/internal/substore"
 )
 
@@ -297,6 +296,6 @@ func (f *o10Fixture) do(method, path, token string, body any) *httptest.Response
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	recorder := httptest.NewRecorder()
-	f.app.ServeHTTP(recorder, req.WithContext(repo.WithRepository(req.Context(), f.srv.Repo)))
+	f.app.ServeHTTP(recorder, req.WithContext(req.Context()))
 	return recorder
 }

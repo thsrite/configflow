@@ -24,7 +24,7 @@ func TestReviewStoreDeleteOfADirectoryFailsLikeOSRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	stores := DeletedStores(r.DataDir())
 	for _, c := range []struct {
 		dir   string
@@ -63,7 +63,7 @@ func TestReviewCancelledRequestFinishesTheLatencyTest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := repo.WithRepository(context.Background(), r)
+	base := context.Background()
 	if err := r.UpdateShared(base, func(_ context.Context, shared *model.Shared) error {
 		shared.Nodes = []model.Node{testjson.Decode[model.Node](t, map[string]any{
 			"id": "n1", "name": "A", "type": "ss", "server": "a.test", "port": 1,

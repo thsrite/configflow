@@ -44,7 +44,11 @@ func newPublish(t *testing.T, o agentfake.Options, wrap func(http.Handler) http.
 	host, port, _ := net.SplitHostPort(u.Host)
 	n, _ := strconv.Atoi(port)
 	ctx := testContext(t)
-	r, _ := repo.GetRepository(ctx)
+	r, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Close)
 	e := r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
 		enabled := true
 		sys.Agents = []model.Agent{{
@@ -63,7 +67,7 @@ func newPublish(t *testing.T, o agentfake.Options, wrap func(http.Handler) http.
 	if e != nil {
 		t.Fatal(e)
 	}
-	m, e := agents.New(ctx, r, agents.Options{ReceiptMatches: ReceiptMatches})
+	m, e := agents.New(ctx, r, agents.Options{ReceiptMatches: ReceiptMatcher(r)})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -131,7 +135,7 @@ func TestPublishBoundary(t *testing.T) {
 	if applied == nil || applied.DeploymentID != "stage" || applied.ConfigPath != "installed.yaml" {
 		t.Fatal(a)
 	}
-	receipt, e := NewReceipts(f.m.Repository().DataDir()).LoadAgent(f.ctx, a, true)
+	receipt, e := NewReceipts(f.m.Repository()).LoadAgent(f.ctx, a, true)
 	if e != nil || receipt == nil {
 		t.Fatal("receipt", e)
 	}

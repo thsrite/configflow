@@ -120,7 +120,7 @@ func TestPinnedWithheldHookIsBestEffort(t *testing.T) {
 					return false, agents.ErrNotPorted
 				}
 			}
-			out, err := svc.SetPolicy(repo.WithScope(repo.WithRepository(ctx, s.Repo)), "other", request[policyRequest](record{"ids": json.RawMessage(`["rule_1"]`), "policy": stringJSON("PROXY")}), "http://localhost")
+			out, err := svc.SetPolicy(repo.WithScope(ctx), "other", request[policyRequest](record{"ids": json.RawMessage(`["rule_1"]`), "policy": stringJSON("PROXY")}), "http://localhost")
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -199,9 +199,6 @@ func startGo(t *testing.T, dataDir string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo.SetRepository(r)
-	t.Cleanup(func() { repo.SetRepository(nil) })
-
 	full, err := server.New(context.Background(), server.Options{Repo: r})
 	if err != nil {
 		t.Fatal(err)

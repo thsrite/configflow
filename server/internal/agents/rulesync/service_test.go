@@ -29,7 +29,7 @@ func fixtureService(t *testing.T) (context.Context, *Service) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	e = r.UpdateSystem(ctx, func(_ context.Context, sys *model.System) error {
 		enabled := true
 		sys.Agents = []model.Agent{{

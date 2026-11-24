@@ -10,7 +10,6 @@ import (
 
 	"configflow/internal/httpx"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 )
 
 func TestReviewLogFailuresRedactStoredTokens(t *testing.T) {
@@ -23,7 +22,7 @@ func TestReviewLogFailuresRedactStoredTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), c.repo)
+	ctx := context.Background()
 	for _, token := range []string{secret, url.QueryEscape(secret), url.QueryEscape(url.QueryEscape(secret))} {
 		c.handler.LogFilePath = func() (string, error) { return "", &os.PathError{Op: "stat", Path: token, Err: os.ErrPermission} }
 		for _, endpoint := range []string{"tail", "info", "clear"} {

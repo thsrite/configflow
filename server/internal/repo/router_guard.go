@@ -179,9 +179,6 @@ func (r *Repository) routerGuard(ctx context.Context, previous *model.Document, 
 		}
 	}
 	jobLock := r.options.RouterJobLock
-	if jobLock == nil {
-		jobLock = recordHooks().JobLockRecord
-	}
 	connections := map[[2]string]bool{}
 	for _, key := range changed {
 		if lockedRouters[key] {

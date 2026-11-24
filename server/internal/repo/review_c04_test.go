@@ -100,8 +100,8 @@ func TestImportClientProfileNilResult(t *testing.T) {
 	}
 }
 
-func c04Resolve(ctx context.Context, explicit, fallback *string) []any {
-	id, err := ResolveProfile(ctx, explicit, fallback)
+func c04Resolve(r *Repository, ctx context.Context, explicit, fallback *string) []any {
+	id, err := r.ResolveProfile(ctx, explicit, fallback)
 	if err != nil {
 		return []any{xcErrorClass(err), err.Error()}
 	}
@@ -116,19 +116,19 @@ func c04Text(text string) *string { return &text }
 func TestResolveProfileMemoKeepsNoneApartFromExplicitIDs(t *testing.T) {
 	r := newRepo(t)
 	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "work", Name: "W"}, ""))(t)
-	ctx := WithScope(WithRepository(bg, r))
+	ctx := WithScope(bg)
 	SetRequest(ctx, RequestInfo{QueryProfile: c04Text("work")})
-	wantJSONEqual(t, c04Resolve(ctx, nil, nil), []any{"work"})
-	wantJSONEqual(t, c04Resolve(ctx, c04Text("\x00"), nil), []any{"ProfileValidationError", "Invalid profile id"})
-	wantJSONEqual(t, c04Resolve(ctx, c04Text("default"), nil), []any{"default"})
-	wantJSONEqual(t, c04Resolve(ctx, nil, nil), []any{"work"})
+	wantJSONEqual(t, c04Resolve(r, ctx, nil, nil), []any{"work"})
+	wantJSONEqual(t, c04Resolve(r, ctx, c04Text("\x00"), nil), []any{"ProfileValidationError", "Invalid profile id"})
+	wantJSONEqual(t, c04Resolve(r, ctx, c04Text("default"), nil), []any{"default"})
+	wantJSONEqual(t, c04Resolve(r, ctx, nil, nil), []any{"work"})
 
-	ctx = WithScope(WithRepository(bg, r))
+	ctx = WithScope(bg)
 	SetRequest(ctx, RequestInfo{})
-	wantJSONEqual(t, c04Resolve(ctx, nil, nil), []any{"default"})
-	wantJSONEqual(t, c04Resolve(ctx, c04Text("\x00"), nil), []any{"ProfileValidationError", "Invalid profile id"})
-	wantJSONEqual(t, c04Resolve(ctx, nil, c04Text("work")), []any{"work"})
-	wantJSONEqual(t, c04Resolve(ctx, c04Text(""), nil), []any{"ProfileValidationError", "Invalid profile id"})
+	wantJSONEqual(t, c04Resolve(r, ctx, nil, nil), []any{"default"})
+	wantJSONEqual(t, c04Resolve(r, ctx, c04Text("\x00"), nil), []any{"ProfileValidationError", "Invalid profile id"})
+	wantJSONEqual(t, c04Resolve(r, ctx, nil, c04Text("work")), []any{"work"})
+	wantJSONEqual(t, c04Resolve(r, ctx, c04Text(""), nil), []any{"ProfileValidationError", "Invalid profile id"})
 }
 
 // A commit between taking the memo and storing a result (another request
@@ -137,7 +137,7 @@ func TestResolveProfileMemoKeepsNoneApartFromExplicitIDs(t *testing.T) {
 func TestResolveProfileResultValidatedBeforeACommitIsNotTrusted(t *testing.T) {
 	r := newRepo(t)
 	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "work", Name: "W"}, ""))(t)
-	ctx := WithScope(WithRepository(bg, r))
+	ctx := WithScope(bg)
 	SetRequest(ctx, RequestInfo{})
 	scope := ScopeOf(ctx)
 	scope.mu.Lock()
@@ -145,7 +145,7 @@ func TestResolveProfileResultValidatedBeforeACommitIsNotTrusted(t *testing.T) {
 	scope.mu.Unlock()
 	noError(t, r.DeleteProfile(bg, "work", ""))
 	scope.remember(memo, resolvedKey{explicit: true, id: "work"}, "work")
-	wantJSONEqual(t, c04Resolve(ctx, c04Text("work"), nil), []any{"ProfileNotFound", "'work'"})
+	wantJSONEqual(t, c04Resolve(r, ctx, c04Text("work"), nil), []any{"ProfileNotFound", "'work'"})
 }
 
 // create_rule_library_item keeps the cache lock through the commit and the
@@ -159,14 +159,15 @@ func TestCreateRuleLibraryItemHoldsCacheLockThroughCommit(t *testing.T) {
 	rule := decodeJSON[model.RuleLibraryItem](t, `{"id":"lib9","name":"L","source_type":"content"}`)
 	path := must(r.SharedPath(filepath.Join("rules", rules.CacheFilename(decodeJSON[model.RuleConfig](t, `{"id":"lib9","name":"L","source_type":"content"}`)))))(t)
 	checked := false
-	defer SetHooks(SetHooks(Hooks{RecordHooks: RecordHooks{ConfigurationCommittedRecords: func(*Repository, *model.Document, *model.Document) {
+	unsub := r.OnConfigurationCommitted(func(*Repository, *model.Document, *model.Document) {
 		_, release, acquired := fileLocks.TryLock(bg, resolvePath(path))
 		if acquired {
 			release()
 			t.Error("cache lock not held after the commit")
 		}
 		checked = true
-	}}}))
+	})
+	defer unsub()
 	must(r.CreateRuleLibraryRecord(bg, rule, []byte("DOMAIN,a\n")))(t)
 	if !checked {
 		t.Fatal("commit hook not called")

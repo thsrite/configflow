@@ -398,7 +398,7 @@ func replayRecordedRows(t *testing.T, rows []map[string]any, template string) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx = repo.WithScope(repo.WithRepository(ctx, r))
+			ctx = repo.WithScope(ctx)
 		}
 		if before := mapObj(row, "before"); before != nil {
 			seedFiles(t, ctx, r, before)

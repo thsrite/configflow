@@ -35,7 +35,7 @@ func (s r12Source) ReturnAgent(*GatewayAgent) ReturnAgent { return s.client }
 func r12Repository(t *testing.T, r *spec.Router, yaml string) *repo.Repository {
 	t.Helper()
 	raw := device.JSON(map[string]any{"mihomo": map[string]any{"custom_config": yaml}, "routers": map[string]any{"items": []*spec.Router{r}}})
-	db, err := repo.Open(t.TempDir(), repo.Options{})
+	db, err := repo.Open(t.TempDir(), repo.Options{RouterJobLock: JobLockRecord})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,9 +136,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 				}})
 				return d
 			}}
-			previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
-			defer repo.SetHooks(previous)
-			held, unlock, e := oplock.RouterJobLock(repo.WithRepository(ctx, db), "default", r.ID, r)
+			held, unlock, e := oplock.RouterJobLock(ctx, "default", r.ID, r)
 			if e != nil {
 				t.Fatal(e)
 			}

@@ -322,7 +322,7 @@ func TestModeIsReadFromTheSettingsAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
 		system.Agents = append(system.Agents, model.Agent{
 			ID: "agent", Name: "Agent", Token: "agent-token", ProfileID: "default",
@@ -366,7 +366,7 @@ func TestSaveModeChangesOnlyTheMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+	ctx := repo.WithScope(context.Background())
 	before := must[*model.System](t)(r.System(ctx))
 	if err := saveMode(ctx, r, "always"); err != nil {
 		t.Fatal(err)

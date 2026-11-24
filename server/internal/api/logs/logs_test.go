@@ -46,7 +46,7 @@ func newLogClient(t *testing.T) *logClient {
 
 func (c *logClient) get(path string) (int, map[string]any) {
 	c.t.Helper()
-	ctx := repo.WithRepository(context.Background(), c.repo)
+	ctx := context.Background()
 	res, err := c.app.Invoke(ctx, httpx.InvokeRequest{Method: "GET", Path: path[:strings.IndexByte(path+"?", '?')],
 		Query: queryOf(path)})
 	if err != nil {
@@ -255,7 +255,7 @@ func TestInfoAndClear(t *testing.T) {
 	if jsonInt(data["size"]) != 1536*1024 || data["size_mb"].(json.Number).String() != "1.5" || modified == "" {
 		t.Fatalf("%#v", data)
 	}
-	ctx := repo.WithRepository(context.Background(), client.repo)
+	ctx := context.Background()
 	res, _ := client.app.Invoke(ctx, httpx.InvokeRequest{Method: "POST", Path: "/api/logs/clear"})
 	wantCleared := map[string]any{"message": "日志已清空", "success": true}
 	if !testjson.Equal(wantCleared, json.RawMessage(res.Body)) || !strings.HasPrefix(string(res.Body), `{"message":"日志`) {

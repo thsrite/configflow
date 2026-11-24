@@ -102,7 +102,7 @@ func TestLostUploadAndHandoffRepliesResumeWithoutReposting(t *testing.T) {
 			if !lost {
 				t.Fatal("fault never fired")
 			}
-			m, e := agents.New(f.ctx, f.r, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
+			m, e := agents.New(f.ctx, f.r, agents.Options{ReceiptMatches: deploy.ReceiptMatcher(f.r)})
 			if e != nil {
 				t.Fatal(e)
 			}

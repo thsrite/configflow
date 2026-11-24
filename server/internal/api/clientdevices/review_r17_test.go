@@ -41,10 +41,8 @@ func TestReviewR17ValidationOrderMatchesFlask(t *testing.T) {
 	dir := t.TempDir()
 	expected := pythonHTTP(t, dir, cfg, requests)
 	f.Reset(seed)
-	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), SecretKey: "synthetic-fixed-secret"})
+	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), SecretKey: "synthetic-fixed-secret", RepoOptions: repo.Options{RouterJobLock: routers.JobLockRecord}})
 	api.NewHandler(s.Repo, nil).Register(s.App.Router)
-	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: routers.JobLockRecord}})
-	t.Cleanup(func() { repo.SetHooks(previous) })
 	for i, request := range requests {
 		t.Run(request.Method+request.Path, func(t *testing.T) {
 			result := s.Do(request.Method, request.Path, httpxtest.JSON(request.Body))

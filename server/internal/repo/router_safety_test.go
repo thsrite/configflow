@@ -60,9 +60,8 @@ func (l *rsJobLocks) hold(t *testing.T, router model.Router) func() {
 func rsRepository(t *testing.T) (*Repository, *rsJobLocks) {
 	t.Helper()
 	locks := &rsJobLocks{held: map[string]bool{}}
-	previous := SetHooks(Hooks{RecordHooks: RecordHooks{JobLockRecord: locks.acquire}})
-	t.Cleanup(func() { SetHooks(previous) })
 	r := newRepo(t)
+	r.options.RouterJobLock = locks.acquire
 	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "live", Name: "Live"}, ""))(t)
 	_, _, err := r.SaveProfileFieldsJSON(bg, "live", json.RawMessage(`{"routers":{"items":[`+rsConnection+`]}}`), nil)
 	noError(t, err)

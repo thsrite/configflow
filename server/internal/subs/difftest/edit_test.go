@@ -19,7 +19,6 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 	"configflow/internal/subs"
 	"configflow/internal/yamlx"
 )
@@ -145,11 +144,8 @@ func goRelinkOutcome(t *testing.T, tc editCase) editOutcome {
 			newName := payload.New
 			failAfter := payload.FailAfter
 			var changed []string
-			repository, err := repo.GetRepository(c.Context())
-			if err != nil {
-				return nil, err
-			}
-			_, err = repository.UpdateProfile(context.WithoutCancel(c.Context()), "default", func(_ context.Context, p *model.Profile) error {
+			repository := c.App().Repo
+			_, err := repository.UpdateProfile(context.WithoutCancel(c.Context()), "default", func(_ context.Context, p *model.Profile) error {
 				name := "Disabled"
 				if newName != nil {
 					name = *newName

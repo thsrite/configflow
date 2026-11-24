@@ -230,7 +230,7 @@ func TestO10SaveSystemConfigAndBackupMergeAndShutdownSemantics(t *testing.T) {
 			rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 			rt.Start(ctx)
 			defer rt.Shutdown(ctx)
-			reqCtx, disconnect := context.WithCancel(rt.BindRequest(repo.WithRepository(ctx, r)))
+			reqCtx, disconnect := context.WithCancel(rt.BindRequest(ctx))
 			defer disconnect()
 
 			cur, err := r.SystemConfig(ctx)

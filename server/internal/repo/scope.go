@@ -31,46 +31,6 @@ func DataDir() string {
 	return "."
 }
 
-var (
-	repositoryMu      sync.Mutex
-	defaultRepository *Repository
-)
-
-type repositoryKey struct{}
-
-// WithRepository makes repository the one the package-level functions use
-// for ctx, instead of the process-wide one. Tests use it to run in parallel.
-func WithRepository(ctx context.Context, repository *Repository) context.Context {
-	return context.WithValue(ctx, repositoryKey{}, repository)
-}
-
-// GetRepository is get_repository(): the repository bound to ctx by
-// WithRepository, else the process-wide one, opened on first use with
-// OpenDefault(DataDir()).
-func GetRepository(ctx context.Context) (*Repository, error) {
-	if repository, ok := ctx.Value(repositoryKey{}).(*Repository); ok && repository != nil {
-		return repository, nil
-	}
-	repositoryMu.Lock()
-	defer repositoryMu.Unlock()
-	if defaultRepository == nil {
-		repository, err := OpenDefault(DataDir())
-		if err != nil {
-			return nil, err
-		}
-		defaultRepository = repository
-	}
-	return defaultRepository, nil
-}
-
-// SetRepository is set_repository(): replace the process-wide repository
-// (nil: reopen on next use). Scopes notice the change and drop their caches.
-func SetRepository(repository *Repository) {
-	repositoryMu.Lock()
-	defaultRepository = repository
-	repositoryMu.Unlock()
-}
-
 // RequestInfo describes the HTTP request a Scope belongs to, as far as
 // profile selection needs it. The HTTP layer fills it from its router.
 type RequestInfo struct {
@@ -335,9 +295,6 @@ func (r *Repository) PrepareConfig(ctx context.Context) (*model.Config, error) {
 func (r *Repository) prepareConfig(ctx context.Context) error {
 	ResetConfigContext(ctx)
 	domainFn := r.options.DefaultServerDomain
-	if domainFn == nil {
-		domainFn = currentHooks().DefaultServerDomain
-	}
 	_, dockerErr := os.Stat("/.dockerenv")
 	_, podmanErr := os.Stat("/run/.containerenv")
 	if dockerErr != nil && podmanErr != nil && domainFn != nil {
@@ -356,51 +313,6 @@ func (r *Repository) prepareConfig(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// ResolveProfile delegates to the context/default repository (transitional; removed in W11).
-func ResolveProfile(ctx context.Context, explicit, fallback *string) (string, error) {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return "", err
-	}
-	return repository.ResolveProfile(ctx, explicit, fallback)
-}
-
-// ResolveProfileID delegates to the context/default repository (transitional; removed in W11).
-func ResolveProfileID(ctx context.Context, explicit string) (string, error) {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return "", err
-	}
-	return repository.ResolveProfileID(ctx, explicit)
-}
-
-// GetDefaultProfileID is get_default_profile_id().
-func GetDefaultProfileID(ctx context.Context) (string, error) {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return "", err
-	}
-	return repository.DefaultProfileID(ctx)
-}
-
-// Config delegates to the context/default repository (transitional; removed in W11).
-func Config(ctx context.Context, profileID string) (*model.Config, error) {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return repository.ScopedConfig(ctx, profileID)
-}
-
-// PrepareConfig performs configuration startup preparation.
-func PrepareConfig(ctx context.Context) (*model.Config, error) {
-	repository, err := GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return repository.PrepareConfig(ctx)
 }
 
 const sharedBaselineKey = "@shared"

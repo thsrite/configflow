@@ -20,13 +20,13 @@ func scRepository(t *testing.T) (*Repository, context.Context) {
 	t.Helper()
 	r := newRepo(t)
 	must(r.CreateProfileRecord(bg, ProfileCreation{ID: "other", Name: "Other"}, ""))(t)
-	return r, WithRepository(WithScope(bg), r)
+	return r, WithScope(bg)
 }
 
 // scRequest is app.test_request_context(path, headers=...): a new Scope for
 // a request without a matched route (endpoint None).
 func scRequest(r *Repository, header string) context.Context {
-	ctx := WithRepository(WithScope(bg), r)
+	ctx := WithScope(bg)
 	info := RequestInfo{}
 	if header != "" {
 		info.HeaderProfile = &header
@@ -65,16 +65,16 @@ func TestReadsAndSavesNeverModifyTheCommittedDocument(t *testing.T) {
 	before := mustMarshalJSON(t, source)
 
 	// Config borrows the snapshot: editors change a decoded copy.
-	config := must(Config(ctx, "default"))(t)
+	config := must(r.ScopedConfig(ctx, "default"))(t)
 	baseline := mustMarshalJSON(t, config)
 	edited := must(model.DecodeConfig(baseline))(t)
 	edited.Profile.ProxyGroups[0].Name = "Changed"
 	_, _, err = r.SaveProfileFieldsJSON(bg, "default", mustMarshalJSON(t, edited), baseline)
 	noError(t, err)
 
-	shared := must(SharedConfig(ctx))(t)
+	shared := must(r.ScopedSharedConfig(ctx))(t)
 	shared.Nodes[0].Name = "Changed"
-	noError(t, SaveSharedRecord(ctx, shared, nil))
+	noError(t, r.SaveScopedSharedRecord(ctx, shared, nil))
 
 	system := must(r.System(bg))(t)
 	system.SystemConfig.ServerDomain = "https://changed.example"
@@ -94,7 +94,7 @@ func TestReadsAndSavesNeverModifyTheCommittedDocument(t *testing.T) {
 
 func TestProfileBaselineIsTheReadViewAndKeepsConcurrentEdits(t *testing.T) {
 	r, ctx := scRepository(t)
-	config := must(Config(ctx, "default"))(t)
+	config := must(r.ScopedConfig(ctx, "default"))(t)
 	readView := mustMarshalJSON(t, config)
 	config.Profile.Mihomo.CustomConfig = "mixed-port: 7901"
 	groupJSON := json.RawMessage(`{"id": "g", "name": "Concurrent", "type": "select"}`)
@@ -111,12 +111,12 @@ func TestProfileBaselineIsTheReadViewAndKeepsConcurrentEdits(t *testing.T) {
 
 func TestSharedBaselineKeepsConcurrentEdits(t *testing.T) {
 	r, ctx := scRepository(t)
-	shared := must(SharedConfig(ctx))(t)
+	shared := must(r.ScopedSharedConfig(ctx))(t)
 	noError(t, shared.SetJSON("nodes", []byte(`[{"id": "mine", "name": "Mine"}]`)))
 	noError(t, r.UpdateShared(bg, func(_ context.Context, current *model.Shared) error {
 		return current.SetJSON("subscriptions", []byte(`[{"id": "s", "name": "Concurrent", "url": "https://example.test/s"}]`))
 	}))
-	noError(t, SaveSharedRecord(ctx, shared, nil))
+	noError(t, r.SaveScopedSharedRecord(ctx, shared, nil))
 	saved := must(r.Shared(bg))(t)
 	wantJSONEqual(t, saved.Nodes, json.RawMessage(`[{"id": "mine", "name": "Mine"}]`))
 	if len(saved.Subscriptions) != 1 || saved.Subscriptions[0].ID != "s" {
@@ -129,7 +129,7 @@ func TestTransactionReadsKeepAnEagerSharedBaseline(t *testing.T) {
 	var viewRaw []byte
 	var captured model.Fields
 	noError(t, r.Update(ctx, func(ctx context.Context, d *model.Document) error {
-		view := must(SharedConfig(ctx))(t)
+		view := must(r.ScopedSharedConfig(ctx))(t)
 		viewRaw = mustMarshalJSON(t, view)
 		captured = ScopeOf(ctx).recordBaselines[sharedBaselineKey]
 		d.Shared.Nodes = append(d.Shared.Nodes, model.Node{ID: "n1", Name: "Changed in transaction"})
@@ -145,23 +145,23 @@ func TestRequestReusesTheValidatedProfile(t *testing.T) {
 	start := r.metadataReads.Load()
 	ctx := scRequest(r, "other")
 	ResetConfigContext(ctx)
-	if got := must(ResolveProfileID(ctx, ""))(t); got != "other" {
+	if got := must(r.ResolveProfileID(ctx, ""))(t); got != "other" {
 		t.Fatalf("got %q", got)
 	}
-	config := must(Config(ctx, ""))(t)
+	config := must(r.ScopedConfig(ctx, ""))(t)
 	if config.ProfileID != "other" {
 		t.Fatalf("profile_id %q", config.ProfileID)
 	}
-	if must(Config(ctx, "other"))(t) != config {
+	if must(r.ScopedConfig(ctx, "other"))(t) != config {
 		t.Fatal("the request's snapshot was not reused")
 	}
-	if got := must(ResolveProfileID(ctx, "other"))(t); got != "other" {
+	if got := must(r.ResolveProfileID(ctx, "other"))(t); got != "other" {
 		t.Fatalf("got %q", got)
 	}
-	if got := must(ResolveProfileID(ctx, "default"))(t); got != "default" {
+	if got := must(r.ResolveProfileID(ctx, "default"))(t); got != "default" {
 		t.Fatalf("got %q", got)
 	}
-	if got := must(ResolveProfileID(ctx, "default"))(t); got != "default" {
+	if got := must(r.ResolveProfileID(ctx, "default"))(t); got != "default" {
 		t.Fatalf("got %q", got)
 	}
 	if calls := r.metadataReads.Load() - start; calls != 2 {
@@ -173,19 +173,19 @@ func TestDeletingAProfileInTheSameRequestIsNoticed(t *testing.T) {
 	r, _ := scRepository(t)
 	ctx := scRequest(r, "other")
 	ResetConfigContext(ctx)
-	if got := must(ResolveProfileID(ctx, ""))(t); got != "other" {
+	if got := must(r.ResolveProfileID(ctx, ""))(t); got != "other" {
 		t.Fatalf("got %q", got)
 	}
-	if got := must(ResolveProfileID(ctx, "other"))(t); got != "other" {
+	if got := must(r.ResolveProfileID(ctx, "other"))(t); got != "other" {
 		t.Fatalf("got %q", got)
 	}
-	must(Config(ctx, ""))(t)
+	must(r.ScopedConfig(ctx, ""))(t)
 	noError(t, r.DeleteProfile(bg, "other", ""))
-	_, err := ResolveProfileID(ctx, "")
+	_, err := r.ResolveProfileID(ctx, "")
 	wantError(t, err, ErrNotFound, "")
-	_, err = ResolveProfileID(ctx, "other")
+	_, err = r.ResolveProfileID(ctx, "other")
 	wantError(t, err, ErrNotFound, "")
-	_, err = Config(ctx, "")
+	_, err = r.ScopedConfig(ctx, "")
 	wantError(t, err, ErrNotFound, "")
 }
 
@@ -193,11 +193,11 @@ func TestSwitchingTheDefaultInTheSameRequestIsNoticed(t *testing.T) {
 	r, _ := scRepository(t)
 	ctx := scRequest(r, "")
 	ResetConfigContext(ctx)
-	if got := must(ResolveProfileID(ctx, ""))(t); got != "default" {
+	if got := must(r.ResolveProfileID(ctx, ""))(t); got != "default" {
 		t.Fatalf("got %q", got)
 	}
 	must(r.SetDefaultProfile(bg, "other"))(t)
-	if got := must(ResolveProfileID(ctx, ""))(t); got != "other" {
+	if got := must(r.ResolveProfileID(ctx, ""))(t); got != "other" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -205,13 +205,13 @@ func TestSwitchingTheDefaultInTheSameRequestIsNoticed(t *testing.T) {
 func TestAnotherRequestDoesNotReuseTheValidatedProfile(t *testing.T) {
 	r, _ := scRepository(t)
 	outer := scRequest(r, "other")
-	if got := must(ResolveProfileID(outer, ""))(t); got != "other" {
+	if got := must(r.ResolveProfileID(outer, ""))(t); got != "other" {
 		t.Fatalf("got %q", got)
 	}
-	if got := must(ResolveProfileID(scRequest(r, ""), ""))(t); got != "default" {
+	if got := must(r.ResolveProfileID(scRequest(r, ""), ""))(t); got != "default" {
 		t.Fatalf("got %q", got)
 	}
-	if got := must(ResolveProfileID(outer, ""))(t); got != "other" {
+	if got := must(r.ResolveProfileID(outer, ""))(t); got != "other" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -220,7 +220,7 @@ func TestAnotherRequestDoesNotReuseTheValidatedProfile(t *testing.T) {
 // the profile unless the request is global, run, reset.
 func scHandle(t *testing.T, r *Repository, route RequestRoute, header string, handler func(ctx context.Context)) (profileHeader string) {
 	t.Helper()
-	ctx := WithRepository(WithScope(bg), r)
+	ctx := WithScope(bg)
 	info := RequestInfo{Endpoint: route.Endpoint, Global: IsGlobalRequest(route)}
 	if header != "" {
 		info.HeaderProfile = &header
@@ -228,7 +228,7 @@ func scHandle(t *testing.T, r *Repository, route RequestRoute, header string, ha
 	SetRequest(ctx, info)
 	ResetConfigContext(ctx)
 	if !info.Global {
-		profileHeader = must(ResolveProfileID(ctx, ""))(t)
+		profileHeader = must(r.ResolveProfileID(ctx, ""))(t)
 	}
 	handler(ctx)
 	ResetConfigContext(ctx)
@@ -240,8 +240,8 @@ func TestFullRequestValidatesTheProfileOnce(t *testing.T) {
 	start := r.metadataReads.Load()
 	route := RequestRoute{Endpoint: "rules.list_rules", Blueprint: "rules", Path: "/api/rules"}
 	header := scHandle(t, r, route, "other", func(ctx context.Context) {
-		config := must(Config(ctx, ""))(t)
-		if must(Config(ctx, must(ResolveProfileID(ctx, ""))(t)))(t) != config {
+		config := must(r.ScopedConfig(ctx, ""))(t)
+		if must(r.ScopedConfig(ctx, must(r.ResolveProfileID(ctx, ""))(t)))(t) != config {
 			t.Fatal("the request's snapshot was not reused")
 		}
 		if config.ProfileID != "other" {
@@ -260,11 +260,11 @@ func TestGlobalRequestFollowsADefaultSwitch(t *testing.T) {
 	r, _ := scRepository(t)
 	route := RequestRoute{Endpoint: "settings.switch_default", Blueprint: "settings", Path: "/api/settings/default-profile"}
 	header := scHandle(t, r, route, "", func(ctx context.Context) {
-		if got := must(ResolveProfileID(ctx, ""))(t); got != "default" {
+		if got := must(r.ResolveProfileID(ctx, ""))(t); got != "default" {
 			t.Fatalf("got %q", got)
 		}
 		must(r.SetDefaultProfile(ctx, "other"))(t)
-		if got := must(ResolveProfileID(ctx, ""))(t); got != "other" {
+		if got := must(r.ResolveProfileID(ctx, ""))(t); got != "other" {
 			t.Fatalf("got %q", got)
 		}
 	})
@@ -297,7 +297,7 @@ func TestTransactionWorkingCopyIsValidatedWithoutTheMemo(t *testing.T) {
 	r, _ := scRepository(t)
 	ctx := scRequest(r, "other")
 	ResetConfigContext(ctx)
-	if got := must(ResolveProfileID(ctx, "other"))(t); got != "other" {
+	if got := must(r.ResolveProfileID(ctx, "other"))(t); got != "other" {
 		t.Fatalf("got %q", got)
 	}
 	abort := errors.New("abort")
@@ -310,14 +310,14 @@ func TestTransactionWorkingCopyIsValidatedWithoutTheMemo(t *testing.T) {
 		}
 		document.Profiles = kept
 		// commit_count only grows after the commit: never answer from the memo here.
-		_, err := ResolveProfileID(ctx, "other")
+		_, err := r.ResolveProfileID(ctx, "other")
 		wantError(t, err, ErrNotFound, "")
 		return abort
 	})
 	if err != abort {
 		t.Fatalf("got %v", err)
 	}
-	if got := must(ResolveProfileID(ctx, "other"))(t); got != "other" {
+	if got := must(r.ResolveProfileID(ctx, "other"))(t); got != "other" {
 		t.Fatalf("got %q", got)
 	}
 }

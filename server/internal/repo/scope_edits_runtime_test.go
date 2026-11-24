@@ -45,7 +45,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 					if _, err := r.CreateProfileRecord(bg, repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 						t.Fatal(err)
 					}
-					base := repo.WithScope(repo.WithRepository(bg, r))
+					base := repo.WithScope(bg)
 					runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 					runtime.Start(bg)
 					defer runtime.Shutdown(bg)
@@ -53,7 +53,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 					defer disconnect()
 
 					for _, id := range []string{"default", "other"} {
-						if _, err := repo.Config(request, id); err != nil {
+						if _, err := r.ScopedConfig(request, id); err != nil {
 							t.Fatal(err)
 						}
 						if err := r.UpdateConfig(bg, id, func(_ context.Context, config *model.Config) error {
@@ -73,7 +73,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 					}
 					var errTx error
 					if sharedPath {
-						errTx = repo.UpdateSharedConfigs(request, func(_ context.Context, shared *model.Shared) error {
+						errTx = r.UpdateScopedSharedConfigs(request, func(_ context.Context, shared *model.Shared) error {
 							return shared.SetJSON("rule_library", []byte(`[]`))
 						}, func(_ context.Context, _ string, _, after *model.Config) error {
 							return after.Profile.SetJSON("mihomo", []byte(`{"custom_config":"ok"}`))
@@ -84,7 +84,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 							// Shutdown must fail fast before profile validation/reads.
 							profileArg = "bad/profile"
 						}
-						errTx = repo.UpdateConfig(request, profileArg, func(_ context.Context, config *model.Config) error {
+						errTx = r.UpdateScopedConfig(request, profileArg, func(_ context.Context, config *model.Config) error {
 							return config.Profile.SetJSON("mihomo", []byte(`{"custom_config":"ok"}`))
 						})
 					}
@@ -100,7 +100,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 							t.Fatal("shutdown transaction modified storage")
 						}
 						// Cached pre-external snapshot must still be intact.
-						snap, err := repo.Config(base, "default")
+						snap, err := r.ScopedConfig(base, "default")
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -115,14 +115,14 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 					if afterHead == beforeHead {
 						t.Fatal("disconnected request did not commit")
 					}
-					defSnap, err := repo.Config(base, "default")
+					defSnap, err := r.ScopedConfig(base, "default")
 					if err != nil {
 						t.Fatal(err)
 					}
 					if got := mihomoMarker(t, defSnap); got != "ok" {
 						t.Fatalf("default marker after disconnect commit = %q, want ok", got)
 					}
-					otherSnap, err := repo.Config(base, "other")
+					otherSnap, err := r.ScopedConfig(base, "other")
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -141,19 +141,19 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 	t.Run("shared-record-baseline-three-way-merge", func(t *testing.T) {
 		r := recordRepository(t)
 		bg := context.Background()
-		ctx := repo.WithScope(repo.WithRepository(bg, r))
+		ctx := repo.WithScope(bg)
 		if err := r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
 			shared.Nodes = []model.Node{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}}
 			return nil
 		}); err != nil {
 			t.Fatal(err)
 		}
-		snap, err := repo.SharedConfig(ctx)
+		snap, err := r.ScopedSharedConfig(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
 		// Single-profile UpdateConfig must preserve Scope's shared record baseline.
-		if err := repo.UpdateConfig(ctx, "default", func(_ context.Context, config *model.Config) error {
+		if err := r.UpdateScopedConfig(ctx, "default", func(_ context.Context, config *model.Config) error {
 			return config.Profile.SetJSON("mihomo", []byte(`{"custom_config":"one"}`))
 		}); err != nil {
 			t.Fatal(err)
@@ -167,7 +167,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 		}
 		// Failed UpdateSharedConfigs must preserve Scope's shared record baseline.
 		stop := errors.New("abort shared")
-		if err := repo.UpdateSharedConfigs(ctx, func(_ context.Context, shared *model.Shared) error {
+		if err := r.UpdateScopedSharedConfigs(ctx, func(_ context.Context, shared *model.Shared) error {
 			return stop
 		}, func(_ context.Context, _ string, _, _ *model.Config) error {
 			return nil
@@ -175,7 +175,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 			t.Fatalf("expected stop, got %v", err)
 		}
 		snap.Nodes[0].Name = "Scoped A"
-		if err := repo.SaveSharedRecord(ctx, snap, nil); err != nil {
+		if err := r.SaveScopedSharedRecord(ctx, snap, nil); err != nil {
 			t.Fatalf("three-way merge failed after UpdateConfig and failed UpdateSharedConfigs: %v", err)
 		}
 		merged, err := r.Shared(bg)
@@ -186,11 +186,11 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 			t.Fatalf("concurrent edits lost: %+v", merged.Nodes)
 		}
 		// Re-capture baseline; successful UpdateSharedConfigs must clear it so stale save fails with 409.
-		staleSnap, err := repo.SharedConfig(ctx)
+		staleSnap, err := r.ScopedSharedConfig(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.UpdateSharedConfigs(ctx, func(_ context.Context, shared *model.Shared) error {
+		if err := r.UpdateScopedSharedConfigs(ctx, func(_ context.Context, shared *model.Shared) error {
 			shared.Nodes[0].Name = "Tx A"
 			return nil
 		}, func(_ context.Context, _ string, _, _ *model.Config) error {
@@ -198,7 +198,7 @@ func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
 		}, nil); err != nil {
 			t.Fatal(err)
 		}
-		if err := repo.SaveSharedRecord(ctx, staleSnap, nil); !errors.Is(err, repo.ErrInUse) {
+		if err := r.SaveScopedSharedRecord(ctx, staleSnap, nil); !errors.Is(err, repo.ErrInUse) {
 			t.Fatalf("UpdateSharedConfigs did not clear shared record baseline: %v", err)
 		}
 	})

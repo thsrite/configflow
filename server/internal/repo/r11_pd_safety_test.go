@@ -89,8 +89,7 @@ func TestR11PDAbsentJobLockFailsClosed(t *testing.T) {
 	release()
 	replacement := rsRouterObj(t, r)
 	replacement.Set("username", "replacement-api")
-	old := SetHooks(Hooks{})
-	defer SetHooks(old)
+	r.options.RouterJobLock = nil
 	before := must(r.Store().Fingerprint())(t)
 	wantError(t, rsReplaceRouters(t, r, "fields", mustMarshalJSON(t, testObjKV("items", []any{replacement}))), ErrInUse, "")
 	if must(r.Store().Fingerprint())(t) != before {

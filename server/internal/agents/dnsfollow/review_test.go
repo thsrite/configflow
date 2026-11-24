@@ -130,7 +130,7 @@ func TestSourceMovingAfterDraftWriteStillRebindsSignature(t *testing.T) {
 		s, _ := o["native_config"].(string)
 		return s
 	}
-	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{ConfigurationCommittedRecords: func(_ *repo.Repository, before, after *model.Document) {
+	unsub := f.r.OnConfigurationCommitted(func(_ *repo.Repository, before, after *model.Document) {
 		if fired || before == nil || after == nil || draft(before) == draft(after) || !strings.Contains(draft(after), "127.0.0.1:2053") {
 			return
 		}
@@ -139,8 +139,8 @@ func TestSourceMovingAfterDraftWriteStillRebindsSignature(t *testing.T) {
 		f.editAgent(t, "source", func(a *model.Agent) {
 			_ = model.SetStoredMember(&a, "latest_deployment", []byte(`{"deployment_id":"source-newer","status":"preparing"}`))
 		})
-	}}})
-	defer repo.SetHooks(previous)
+	})
+	defer unsub()
 	f.publishSource(t, "source-next")
 	if e := f.s.Tick(f.ctx); e != nil {
 		t.Fatal(e)
@@ -326,15 +326,15 @@ func TestShutdownAfterDraftCommitResumesWithoutSecondUpload(t *testing.T) {
 		s, _ := o["native_config"].(string)
 		return s
 	}
-	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{ConfigurationCommittedRecords: func(_ *repo.Repository, before, after *model.Document) {
+	unsub := f.r.OnConfigurationCommitted(func(_ *repo.Repository, before, after *model.Document) {
 		if fired || draft(before) == draft(after) || !strings.Contains(draft(after), "127.0.0.1:2053") {
 			return
 		}
 		fired = true
 		close(arrived)
 		<-release
-	}}})
-	defer repo.SetHooks(previous)
+	})
+	defer unsub()
 	done := make(chan error, 1)
 	go func() { done <- f.s.Tick(lifecycle.BindRequest(f.ctx)) }()
 	select {

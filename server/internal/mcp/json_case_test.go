@@ -17,7 +17,7 @@ func TestAuditRPCExactMembers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), db)
+	ctx := context.Background()
 	app := httpx.New()
 	app.Repo = db
 	NewHandler(db).Register(app.Router)

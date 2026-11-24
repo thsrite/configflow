@@ -7,6 +7,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/refresh"
+	"configflow/internal/repo"
 	"encoding/json"
 )
 
@@ -173,6 +174,7 @@ type Progress struct {
 
 // BuildInput captures all inputs to one immutable bundle.
 type BuildInput struct {
+	Repo                  *repo.Repository
 	Target                Target
 	Source                *Source
 	ConfigContent         string

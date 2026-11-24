@@ -20,15 +20,20 @@ const maxReceiptBytes = 512 << 20
 // Receipts owns one data directory's rule-sync baselines. L4 locks serialize
 // files/pruning per Agent, never repository reads or writes.
 type Receipts struct {
+	repo      *repo.Repository
 	dataDir   string
 	writeFile func(context.Context, string, []byte) error
 }
 
 var receiptDirectoryLocks leafLocks
 
-// NewReceipts creates the single receipt owner for a repository data directory.
-func NewReceipts(dataDir string) *Receipts {
-	return &Receipts{dataDir: dataDir, writeFile: atomicWrite}
+// NewReceipts creates the single receipt owner for a repository.
+func NewReceipts(r *repo.Repository) *Receipts {
+	dir := ""
+	if r != nil {
+		dir = r.DataDir()
+	}
+	return &Receipts{repo: r, dataDir: dir, writeFile: atomicWrite}
 }
 func (r *Receipts) root(agentID string) string {
 	return filepath.Join(r.dataDir, ".agent-rule-sync", digest([]byte(agentID)))
@@ -50,11 +55,10 @@ func (r *Receipts) Capture(ctx context.Context, agentID string, b *Bundle, src *
 	if _, err := Fingerprint(b.manifest); err != nil {
 		return err
 	}
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return err
+	if r.repo == nil {
+		return fmt.Errorf("deploy: repository is nil")
 	}
-	retained, err := retainedReceipts(ctx, repository, agentID, b.manifest.DeploymentID)
+	retained, err := retainedReceipts(ctx, r.repo, agentID, b.manifest.DeploymentID)
 	if err != nil {
 		return err
 	}
@@ -145,7 +149,7 @@ func (r *Receipts) LoadAgent(ctx context.Context, agent *model.Agent, withBundle
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	view, err := receiptAgent(ctx, agent)
+	view, err := receiptAgent(ctx, r.repo, agent)
 	if err != nil {
 		return nil, err
 	}

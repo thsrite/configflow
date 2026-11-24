@@ -72,10 +72,10 @@ func TestN811SectionEditsPreserveUnchangedBytes(t *testing.T) {
 func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T) {
 	s := fixture(t)
 	ctx := repo.WithScope(s.Context())
-	if _, err := repo.Config(ctx, "default"); err != nil {
+	if _, err := s.Repo.ScopedConfig(ctx, "default"); err != nil {
 		t.Fatal(err)
 	}
-	sharedSnap, err := repo.SharedConfig(ctx)
+	sharedSnap, err := s.Repo.ScopedSharedConfig(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 		t.Fatalf("expected stop error, got %v", err)
 	}
 	// Failed transactions must not reset the Scope snapshot or baseline.
-	cached, err := repo.Config(ctx, "default")
+	cached, err := s.Repo.ScopedConfig(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,14 +107,14 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	refreshed, err := repo.Config(ctx, "default")
+	refreshed, err := s.Repo.ScopedConfig(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(refreshed.RuleLibrary) != 1 {
 		t.Fatalf("editShared did not invalidate Scope cache: %v", refreshed.RuleLibrary)
 	}
-	if err := repo.SaveSharedRecord(ctx, sharedSnap, nil); !errors.Is(err, repo.ErrInUse) {
+	if err := s.Repo.SaveScopedSharedRecord(ctx, sharedSnap, nil); !errors.Is(err, repo.ErrInUse) {
 		t.Fatalf("editShared did not clear Scope shared baseline: %v", err)
 	}
 	if err := editSystem(s.Repo, ctx, func(system *model.System) error {
@@ -123,7 +123,7 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	afterSystem, err := repo.Config(ctx, "default")
+	afterSystem, err := s.Repo.ScopedConfig(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -242,7 +242,7 @@ func publishDirectWith(ctx context.Context, m *agents.Manager, id string, b *Bun
 		}
 	}
 	if o.SourceSnapshot != nil && (t.ServiceType == "mihomo" || t.ServiceType == "oxidns") {
-		if err = NewReceipts(m.Repository().DataDir()).Capture(ctx, id, contentBundle, o.SourceSnapshot, o.BaseURL, contentBundle.Comparison()); err != nil {
+		if err = NewReceipts(m.Repository()).Capture(ctx, id, contentBundle, o.SourceSnapshot, o.BaseURL, contentBundle.Comparison()); err != nil {
 			return nil, err
 		}
 	}

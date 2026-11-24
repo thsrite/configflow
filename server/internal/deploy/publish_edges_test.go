@@ -71,7 +71,7 @@ func TestOxiDNSPublicationAttestsBeforeActivation(t *testing.T) {
 	}
 	a := f.agent(t)
 	state, ok := a.Deployments.Get("checked")
-	if !ok || !ReceiptMatches(a, &state) {
+	if !ok || !ReceiptMatches(f.m.Repository(), a, &state) {
 		t.Fatal("trusted validation receipt missing")
 	}
 	if a.AppliedContent != nil {

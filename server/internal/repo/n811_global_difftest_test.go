@@ -47,8 +47,6 @@ func TestN811GlobalFlaskBoundaries(t *testing.T) {
 	}
 	for _, conflict := range []bool{false, true} {
 		t.Run(fmt.Sprint("ownership-conflict=", conflict), func(t *testing.T) {
-			previousHooks := repo.SetHooks(repo.Hooks{})
-			t.Cleanup(func() { repo.SetHooks(previousHooks) })
 			const secret = "n811-synthetic-jwt-key"
 			srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret})
 			full, err := server.New(srv.Context(), server.Options{Repo: srv.Repo})

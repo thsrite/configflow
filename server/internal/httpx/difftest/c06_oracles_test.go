@@ -99,7 +99,7 @@ json.dump({'rows':out, 'snapshot':snapshot}, sys.stdout, ensure_ascii=False)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+	ctx := repo.WithScope(context.Background())
 	err = r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
 		system.SystemConfig.RuleProxyToken = secrets[0]
 		system.SystemConfig.RetiredRuleProxyTokens = []string{secrets[1], secrets[2]}
@@ -235,7 +235,7 @@ json.dump(out, sys.stdout)
 				request.Header.Set("Authorization", "Bearer "+credential.token)
 			}
 			response := httptest.NewRecorder()
-			app.ServeHTTP(response, request.WithContext(repo.WithRepository(request.Context(), r)))
+			app.ServeHTTP(response, request.WithContext(request.Context()))
 			if response.Code != credential.status {
 				t.Fatalf("%s %s endpoint=%s: status=%d Python gate=%d body=%s", row.Method, row.Path, row.Endpoint, response.Code, credential.status, response.Body)
 			}

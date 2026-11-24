@@ -61,7 +61,7 @@ func TestManagerPairPublisherFailClosedAndTwoPhase(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(r.Close)
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 
 	if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		return s.SetJSON("agents", json.RawMessage(`[{
@@ -150,7 +150,7 @@ func TestManagerOptionsMetricsAndDeletedStores(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(r.Close)
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		return s.SetJSON("agents", json.RawMessage(`[{"id":"a1","name":"A1","service_type":"mihomo","profile_id":"default","host":"192.0.2.10","port":8080,"token":"synthetic-token"}]`))
 	}); err != nil {

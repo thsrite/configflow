@@ -23,7 +23,7 @@ func TestTextContentKeepsLiteralHTMLCharacters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	tests := []struct {
 		name    string
 		payload json.RawMessage
@@ -57,7 +57,7 @@ func TestNullIDRequestIsAnswered(t *testing.T) {
 	app := httpx.New()
 	app.Repo = r
 	NewHandler(r).Register(app.Router)
-	req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":null,"method":"ping"}`)).WithContext(repo.WithRepository(context.Background(), r))
+	req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":null,"method":"ping"}`)).WithContext(context.Background())
 	w := httptest.NewRecorder()
 	app.ServeHTTP(w, req)
 	if w.Code != 200 || !nativeEqual(w.Body.Bytes(), json.RawMessage(`{"jsonrpc":"2.0","id":null,"result":{}}`)) {
@@ -79,7 +79,7 @@ func TestToolFailureIsLoggedWithoutInternalToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		s.SystemConfig.RuleProxyToken = "synthetic-rule-secret"
 		return nil

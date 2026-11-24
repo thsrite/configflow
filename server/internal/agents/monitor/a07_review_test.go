@@ -101,7 +101,7 @@ func TestReviewCoreUpdateDigitLimitFollowsPython(t *testing.T) {
 		m, client := panelManager(t, panelAgentRecord("version", "1.8.60-go"))
 		client.add(jsonResponse(map[string]any{"version": current}, 200))
 		if cached {
-			settings, _ := downloadSettings(context.Background())
+			settings, _ := downloadSettings(context.Background(), nil)
 			coreLatest["release"] = &coreCached{finishedAt: monotonic(), latest: "v1.2.3", settings: settings}
 		}
 		latest.add("v1.2.3\n", "v1.2.3\n")
@@ -229,7 +229,7 @@ func TestReviewRankingLoopRunsUnderInstanceLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), repository)
+	ctx := context.Background()
 	owner, err := instance.Acquire(ctx, repository.DataDir())
 	if err != nil {
 		t.Fatal(err)

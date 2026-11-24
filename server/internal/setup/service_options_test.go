@@ -14,7 +14,7 @@ func TestNewWithOptionsNilOwnersFailClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	svc, err := NewWithOptions(r, Options{})
 	if err != nil {
 		t.Fatal(err)

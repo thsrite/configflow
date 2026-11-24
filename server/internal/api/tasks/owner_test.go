@@ -22,7 +22,7 @@ func TestIntervalOwnerKeepsDisconnectButRejectsStoppedGeneration(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+			ctx := repo.WithScope(context.Background())
 			err = r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 				raw, err := json.Marshal([]any{map[string]any{"id": "s", "interval": 86400}})
 				if err != nil {

@@ -173,7 +173,7 @@ type world struct {
 
 func newWorld(t *testing.T, row map[string]any, r *repo.Repository) *world {
 	w := &world{t: t, row: row, root: r.DataDir(), answers: map[string][]map[string]any{}}
-	w.repo, w.ctx = r, repo.WithRepository(context.Background(), r)
+	w.repo, w.ctx = r, context.Background()
 	for rel, content := range mapObj(row, "files") {
 		text, ok := content.(string)
 		if !ok {

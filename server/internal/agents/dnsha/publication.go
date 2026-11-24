@@ -134,7 +134,7 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 		return refuse(msgInFlightIdentity)
 	}
 	if b == nil && j.Kind != nil && *j.Kind == "rules" {
-		receipt, e := deploy.NewReceipts(s.m.Repository().DataDir()).LoadAgent(ctx, owner.Agent, true)
+		receipt, e := deploy.NewReceipts(s.m.Repository()).LoadAgent(ctx, owner.Agent, true)
 		if e != nil {
 			return e
 		}

@@ -64,7 +64,7 @@ func (s *Service) deployService() *deploy.Service {
 // New builds a rule-sync owner for one manager.
 func New(m *agents.Manager, r *deploy.Receipts, o Options) *Service {
 	if r == nil {
-		r = deploy.NewReceipts(m.Repository().DataDir())
+		r = deploy.NewReceipts(m.Repository())
 	}
 	if o.Now == nil {
 		o.Now = time.Now

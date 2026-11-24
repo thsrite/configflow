@@ -50,7 +50,7 @@ func TestO9EveryNonPublicRouteRequiresLogin(t *testing.T) {
 				continue
 			}
 			req := httptest.NewRequest(method, "http://config.example"+path, nil)
-			req = req.WithContext(repo.WithRepository(req.Context(), repository))
+			req = req.WithContext(req.Context())
 			w := httptest.NewRecorder()
 			app.ServeHTTP(w, req)
 			if w.Code != 401 {

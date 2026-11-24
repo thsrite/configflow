@@ -80,7 +80,7 @@ func TestGeneratePeeksLegacyCacheAfterRuntimeShutdown(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx := repo.WithRepository(context.Background(), r)
+			ctx := context.Background()
 			raw := []byte(`{"rule_configs":[{"id":"policy","name":"Synthetic","itemType":"ruleset","url":"https://rules.example.com/list.txt","source_type":"url","format":"text","library_rule_id":"r1","behavior":"classical"}],"rule_library":[{"id":"r1","name":"Synthetic","source_type":"url","url":"https://rules.example.com/list.txt","format":"text","behavior":"classical"}],"system_config":{"rule_proxy_token":"synthetic-capability"},"oxidns":{"proxy_rulesets":["policy"],"local_dns":"udp://192.0.2.53","remote_dns":"udp://192.0.2.54"}}`)
 			var fixture struct {
 				Library []model.RuleLibraryItem `json:"rule_library"`
@@ -118,8 +118,6 @@ func TestGeneratePeeksLegacyCacheAfterRuntimeShutdown(t *testing.T) {
 					t.Fatal("not bound to stopped Runtime")
 				}
 			}
-			repo.SetRepository(r)
-			t.Cleanup(func() { repo.SetRepository(nil) })
 			profile, err := oxidns.ProfileFromJSON(raw)
 			if err != nil {
 				t.Fatal(err)

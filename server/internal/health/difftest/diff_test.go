@@ -68,7 +68,7 @@ func seed(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	err = r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 		rawNodes, err := json.Marshal(shared.Nodes)
 		if err != nil {
@@ -111,7 +111,7 @@ func seed(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = fixtureSaveSubscriptionNodes(ctx, "s1", []any{
+	err = fixtureSaveSubscriptionNodes(ctx, r, "s1", []any{
 		map[string]any{"name": "HK 01", "type": "ss", "server": "hk.invalid", "port": 443,
 			"params": map[string]any{"cipher": "aes-128-gcm", "password": "p"}},
 		map[string]any{"name": "广告", "type": "ss", "server": "ad.invalid", "port": 443},
@@ -188,9 +188,6 @@ func startGo(t *testing.T, dataDir string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo.SetRepository(r)
-	t.Cleanup(func() { repo.SetRepository(nil) })
-
 	full, err := server.New(context.Background(), server.Options{Repo: r})
 	if err != nil {
 		t.Fatal(err)
@@ -521,7 +518,7 @@ func TestWorkerJSONComparisonRejectsChangedValues(t *testing.T) {
 	}
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata any) error {
+func fixtureSaveSubscriptionNodes(ctx context.Context, r *repo.Repository, id string, value any, metadata any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -541,6 +538,6 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 			return err
 		}
 	}
-	_, err = substore.SaveCache(ctx, func() *repo.Repository { r, _ := repo.GetRepository(ctx); return r }(), id, nodes, receipt)
+	_, err = substore.SaveCache(ctx, r, id, nodes, receipt)
 	return err
 }

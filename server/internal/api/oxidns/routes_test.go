@@ -7,7 +7,6 @@ import (
 
 	api "configflow/internal/api/oxidns"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/repo"
 	"configflow/internal/server"
 )
 
@@ -43,7 +42,7 @@ func TestC29RouteRegistrationHasOneOwner(t *testing.T) {
 			req := httptest.NewRequest("POST", prefix+"/"+suffix, strings.NewReader(`{}`))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
-			app.ServeHTTP(rec, req.WithContext(repo.WithRepository(req.Context(), srv.Repo)))
+			app.ServeHTTP(rec, req.WithContext(req.Context()))
 			want := 400
 			if suffix == "settings" {
 				want = 200

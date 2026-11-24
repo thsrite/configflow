@@ -7,7 +7,6 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/repo"
 )
 
 func TestSystemTokenUsesOriginalCredentialTypes(t *testing.T) {
@@ -25,29 +24,24 @@ func TestSystemTokenUsesOriginalCredentialTypes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
-				r.GET("/static/native-token", "test.native_token", func(c *httpx.Ctx) (*httpx.Response, error) {
-					// The caller's snapshot is the repository's (O18 T1c): a
-					// stored token that is not text reads as empty and marks
-					// the settings damaged.
-					r, err := repo.GetRepository(c.Context())
-					if err != nil {
-						return nil, err
-					}
-					system, err := r.System(c.Context())
-					if err != nil {
-						return nil, err
-					}
-					result, err := auth.ValidateSystemTokenOrJWT(c, r, system)
-					if err != nil {
-						return nil, err
-					}
-					if !result.Valid {
-						return httpx.Message(401, false, result.Message), nil
-					}
-					return httpx.JSON(map[string]bool{"success": true}), nil
-				})
-			})})
+			s := httpxtest.New(t, httpxtest.Options{})
+			s.App.Router.GET("/static/native-token", "test.native_token", func(c *httpx.Ctx) (*httpx.Response, error) {
+				// The caller's snapshot is the repository's (O18 T1c): a
+				// stored token that is not text reads as empty and marks
+				// the settings damaged.
+				system, err := s.Repo.System(c.Context())
+				if err != nil {
+					return nil, err
+				}
+				result, err := auth.ValidateSystemTokenOrJWT(c, s.Repo, system)
+				if err != nil {
+					return nil, err
+				}
+				if !result.Valid {
+					return httpx.Message(401, false, result.Message), nil
+				}
+				return httpx.JSON(map[string]bool{"success": true}), nil
+			})
 			storeSettings(t, s.Repo.DatabasePath(), tt.raw)
 			s.Get("/static/native-token?token=" + tt.query).WantStatus(tt.status)
 		})

@@ -47,11 +47,6 @@ func TestW10cProductionHandlersUseInjectedDependencies(t *testing.T) {
 	}
 	app.Settings.MarkStarted()
 
-	// Handlers serve requests without a process-global repository when the
-	// request context carries no repository.
-	repo.SetRepository(nil)
-	t.Cleanup(func() { repo.SetRepository(nil) })
-
 	for _, tc := range []struct {
 		method, path string
 		want         int

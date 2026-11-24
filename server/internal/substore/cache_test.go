@@ -37,7 +37,7 @@ func sharedRepo(t *testing.T) (context.Context, *repo.Repository) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	enabled := true
 	err = r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 		shared.Subscriptions = []model.Subscription{

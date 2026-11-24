@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"configflow/internal/convert"
 	"configflow/internal/model"
 )
 
@@ -15,16 +14,6 @@ import (
 // Python's export_all, and a stored one keeps the members of the plain export
 // with only its secrets replaced.
 func TestDesensitizedExportEasyTierMember(t *testing.T) {
-	defer SetHooks(SetHooks(Hooks{RecordHooks: RecordHooks{
-		SanitizeExternalDocument: func(_ context.Context, _ *Repository, doc *model.Document, _ model.SystemConfig) (*model.Document, error) {
-			return doc, nil
-		},
-		RedactOxidnsJSON:  func(raw json.RawMessage) (json.RawMessage, error) { return raw, nil },
-		RedactRoutersJSON: func(raw json.RawMessage) (json.RawMessage, error) { return raw, nil },
-		// Ignored since O17 W0 (repo calls convert directly); required before it.
-		RedactEasytierJSON: convert.RedactEasyTierJSON,
-	}}))
-
 	tests := []struct {
 		id      string
 		fields  string // profile fields saved after creation; empty saves nothing
@@ -43,7 +32,15 @@ func TestDesensitizedExportEasyTierMember(t *testing.T) {
 		},
 	}
 	ctx := context.Background()
-	r, err := Open(t.TempDir(), Options{})
+	r, err := Open(t.TempDir(), Options{
+		Export: testExportSanitizer{
+			sanitize: func(_ context.Context, _ *Repository, doc *model.Document, _ model.SystemConfig) (*model.Document, error) {
+				return doc, nil
+			},
+			oxidns:  func(raw json.RawMessage) (json.RawMessage, error) { return raw, nil },
+			routers: func(raw json.RawMessage) (json.RawMessage, error) { return raw, nil },
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

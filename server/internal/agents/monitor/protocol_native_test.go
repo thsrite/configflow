@@ -11,6 +11,7 @@ import (
 	"configflow/internal/jsonresp"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 )
 
 type nativeRegistry struct {
@@ -25,8 +26,9 @@ func (m *nativeRegistry) ReadAgent(context.Context, string, bool) (*model.Agent,
 func (m *nativeRegistry) WithReadSnapshot(ctx context.Context, fn func(context.Context) error) error {
 	return fn(ctx)
 }
-func (m *nativeRegistry) DataDir() string       { return "" }
-func (m *nativeRegistry) Client() agents.Client { return m.client }
+func (m *nativeRegistry) DataDir() string              { return "" }
+func (m *nativeRegistry) Repository() *repo.Repository { return nil }
+func (m *nativeRegistry) Client() agents.Client        { return m.client }
 
 type nativeClient struct {
 	response *agents.Response

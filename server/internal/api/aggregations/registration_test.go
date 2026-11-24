@@ -39,7 +39,7 @@ func TestFullApplicationRegistersAggregationRoutes(t *testing.T) {
 		}
 		result := httptest.NewRecorder()
 		request := httptest.NewRequest(method, path, nil)
-		request = request.WithContext(repo.WithRepository(request.Context(), repository))
+		request = request.WithContext(request.Context())
 		app.ServeHTTP(result, request)
 		if result.Code != 401 {
 			t.Fatalf("%s %s status %d", method, path, result.Code)

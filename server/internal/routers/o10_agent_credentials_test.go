@@ -21,7 +21,7 @@ func TestO10RouterRedactionKeepsAgentRecordCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	agents := `[{"id":"a-oxi","name":"Oxi","host":"192.0.2.10","service_type":"oxidns","profile_id":"default","token":"synthetic-agent-token",` +
 		`"deployments":{"d1":{"id":"d1","status":"success","password":"synthetic-history-pass"}},` +
 		`"future":{"secret":"synthetic-unknown-secret"}}]`

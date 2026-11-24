@@ -33,7 +33,7 @@ func o10RuleSyncFixture(t *testing.T, deployments int) (context.Context, *Servic
 		`"deployments":{` + strings.Join(history, ",") + `},` +
 		`"ipv6_verifications":{"v1":{"id":"v1","status":"ok","summary":` + fmt.Sprintf("%q", payload) + `}},` +
 		`"latest_deployment":{"id":"d0","status":"success","config":` + fmt.Sprintf("%q", payload) + `}}]`
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		return s.SetJSON("agents", json.RawMessage(agentsJSON))
 	}); err != nil {

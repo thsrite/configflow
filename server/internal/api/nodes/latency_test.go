@@ -202,7 +202,7 @@ func (f *fixture) saveShared(pairs ...any) {
 
 func (f *fixture) cache(subID string, nodeList ...any) {
 	f.t.Helper()
-	if err := fixtureSaveSubscriptionNodes(f.ctx(), subID, nodeList, nil); err != nil {
+	if err := fixtureSaveSubscriptionNodes(f.ctx(), f.srv.Repo, subID, nodeList, nil); err != nil {
 		f.t.Fatal(err)
 	}
 }
@@ -1174,7 +1174,7 @@ func (f *fixture) collectCandidates() ([]string, map[string]map[string]any, erro
 	return keys, out, nil
 }
 
-func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, metadata map[string]any) error {
+func fixtureSaveSubscriptionNodes(ctx context.Context, r *repo.Repository, id string, value any, metadata map[string]any) error {
 	raw, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -1194,6 +1194,6 @@ func fixtureSaveSubscriptionNodes(ctx context.Context, id string, value any, met
 			return err
 		}
 	}
-	_, err = substore.SaveCache(ctx, func() *repo.Repository { r, _ := repo.GetRepository(ctx); return r }(), id, nodes, receipt)
+	_, err = substore.SaveCache(ctx, r, id, nodes, receipt)
 	return err
 }

@@ -33,11 +33,6 @@ func TestServerWiresAgentAPIHandler(t *testing.T) {
 	}
 	t.Cleanup(app.Agents.Close)
 
-	// Clear global repository so the wired /api/agents handler proves it uses
-	// the App's injected instances rather than process-wide locators.
-	repo.SetRepository(nil)
-	t.Cleanup(func() { repo.SetRepository(nil) })
-
 	for _, path := range []string{"/api/agents?summary=1", "/api/agents/latest-version", "/api/agents/gateway-installations?profile_id=default"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()

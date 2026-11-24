@@ -51,7 +51,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	m, err := agents.New(ctx, opts.Repo, agents.Options{
 		Metrics:        mt,
 		Publication:    mon,
-		ReceiptMatches: deploy.ReceiptMatches,
+		ReceiptMatches: deploy.ReceiptMatcher(opts.Repo),
 		DeletedStores:  deletedStores,
 	})
 	if err != nil {

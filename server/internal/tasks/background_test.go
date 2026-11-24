@@ -41,7 +41,7 @@ func TestBackgroundSurvivesDisconnectWithFreshScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, cancel := context.WithCancel(repo.WithScope(repo.WithRepository(context.Background(), store)))
+	request, cancel := context.WithCancel(repo.WithScope(context.Background()))
 	defer cancel()
 	original := repo.ScopeOf(request)
 	entered, gate := make(chan struct{}), make(chan struct{})

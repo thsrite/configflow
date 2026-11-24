@@ -46,7 +46,7 @@ func TestTaskStatusRetainsOwnerLifetimeAfterPrecheck(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx := repo.WithScope(repo.WithRepository(t.Context(), r))
+			ctx := repo.WithScope(t.Context())
 			m, err := agents.New(ctx, r)
 			if err != nil {
 				t.Fatal(err)

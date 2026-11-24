@@ -48,7 +48,7 @@ func TestProfileSessionsDirectAndOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	if _, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "home", Name: "home"}, ""); err != nil {
 		t.Fatal(err)
 	}

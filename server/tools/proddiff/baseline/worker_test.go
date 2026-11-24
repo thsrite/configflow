@@ -29,7 +29,7 @@ func TestBaselineWorkerIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	old := pythonBaseline(t)
 	m := old.Manifest()
 	fingerprint, err := deploy.Fingerprint(m)
@@ -67,7 +67,7 @@ func TestBaselineWorkerIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = deploy.NewReceipts(data).Capture(ctx, m.AgentID, old, source, "https://panel.example.com", nil); err != nil {
+	if err = deploy.NewReceipts(r).Capture(ctx, m.AgentID, old, source, "https://panel.example.com", nil); err != nil {
 		t.Fatal(err)
 	}
 	before, err := r.Store().Load()

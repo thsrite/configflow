@@ -26,15 +26,9 @@ func decodeJSON(t *testing.T, res *httpxtest.Result) map[string]any {
 	return out
 }
 
-func wireRouterTestHooks(t *testing.T) {
-	t.Helper()
-	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: core.JobLockRecord}})
-	t.Cleanup(func() { repo.SetHooks(previous) })
-}
-
 func fixture(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, RepoOptions: repo.Options{RouterJobLock: core.JobLockRecord}})
 	m, err := agents.New(s.Context(), s.Repo, agents.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +38,6 @@ func fixture(t *testing.T) *httpxtest.Server {
 	rtr := core.New(s.Repo, core.Options{Notifications: nt})
 	rr := routerrulesync.New(s.Repo, routerrulesync.Options{Notifications: nt})
 	api.New(api.Deps{Repo: s.Repo, Agents: m, Routers: rtr, RuleSync: rr, Notifications: nt}).Register(s.App.Router)
-	wireRouterTestHooks(t)
 	return s
 }
 func routerBody(endpoint string) map[string]any {

@@ -18,7 +18,7 @@ func TestTypedSettingsRuntimeOwnership(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			root := repo.WithScope(repo.WithRepository(context.Background(), repository))
+			root := repo.WithScope(context.Background())
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Grace: time.Second})
 			runtime.Start(root)
 			t.Cleanup(func() { runtime.Shutdown(context.Background()) })
@@ -58,7 +58,7 @@ func TestTypedSettingsShutdownWhileWaitingForTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := repo.WithScope(repo.WithRepository(context.Background(), repository))
+	root := repo.WithScope(context.Background())
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Grace: time.Second})
 	runtime.Start(root)
 	t.Cleanup(func() { runtime.Shutdown(context.Background()) })
