@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"regexp"
 	"slices"
@@ -185,3 +186,48 @@ func seedDistinctData(t *testing.T, r *repo.Repository) {
 // timestamp matches the response clocks (checked_at, timestamp) that differ
 // between the two passes on their own.
 var timestamp = regexp.MustCompile(`\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(\+00:00|Z)?`)
+
+// TestProductionAuthGateMatchesGo enables panel login and serves every route
+// of the production assembly without credentials: the routes that do not
+// answer 401 (public endpoints and paths, and handlers with their own token
+// checks) are exactly those of branch go before O17 W10
+// (testdata/auth_open_go.txt, dumped from 98a05aebd with an uncommitted
+// probe running unauthenticatedSweep).
+func TestProductionAuthGateMatchesGo(t *testing.T) {
+	app := newProductionApp(t)
+	repo.SetRepository(app.Repo)
+	t.Cleanup(func() { repo.SetRepository(nil) })
+	app.Runtime.RunStartup(context.Background())
+	t.Cleanup(func() { app.Runtime.Stop(30 * time.Second) })
+	want, err := os.ReadFile("testdata/auth_open_go.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(unauthenticatedSweep(t, app), "\n") + "\n"
+	if got != string(want) {
+		t.Errorf("routes answering without credentials changed:\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// unauthenticatedSweep serves every route of the production assembly once
+// without credentials while panel login is enabled and returns, in route
+// order, "METHOD path endpoint" for the routes that did not answer 401.
+func unauthenticatedSweep(t *testing.T, app *App) []string {
+	t.Helper()
+	previous := auth.Configure(auth.Config{AdminUsername: "admin", AdminPassword: "secret-for-tests", SecretKey: "k"})
+	t.Cleanup(func() { auth.Configure(previous) })
+	param := regexp.MustCompile(`<(?:[a-z]+:)?([A-Za-z_]+)>`)
+	var open []string
+	for _, route := range app.HTTP.Router.Routes() {
+		method := route.Methods[0]
+		path := param.ReplaceAllString(route.Path, "x")
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "application/json")
+		app.HTTP.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			open = append(open, method+" "+route.Path+" "+route.Endpoint)
+		}
+	}
+	return open
+}
