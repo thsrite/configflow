@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/rulesource"
 )
 
 func TestPublicRulesetContentTimeoutsAndOffline(t *testing.T) {
 	srv := fixture(t)
-	config, err := repo.Config(srv.Context(), "other")
+	rs := rulesource.New(rulesource.Options{Repo: srv.Repo})
+	config, err := srv.Repo.Config(srv.Context(), "other", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +28,7 @@ func TestPublicRulesetContentTimeoutsAndOffline(t *testing.T) {
 	t.Run("offline", func(t *testing.T) {
 		transport := &refusingTransport{}
 		rulefetch.DefaultClient = &rulefetch.Client{Transport: transport}
-		value, err := ReadRulesetContent(srv.Context(), configRaw, item, nil, ContentOptions{})
+		value, err := rs.ReadJSON(srv.Context(), configRaw, item, nil, rulesource.ContentOptions{})
 		if err != nil || value != "" || transport.calls.Load() != 0 {
 			t.Fatal("offline source used network", value, err)
 		}
@@ -49,7 +50,7 @@ func TestPublicRulesetContentTimeoutsAndOffline(t *testing.T) {
 			}
 		})}
 		started := time.Now()
-		value, err := ReadRulesetContent(srv.Context(), configRaw, item, nil, ContentOptions{AllowNetwork: true, ConnectTimeout: 20 * time.Millisecond, ReadTimeout: 20 * time.Second})
+		value, err := rs.ReadJSON(srv.Context(), configRaw, item, nil, rulesource.ContentOptions{AllowNetwork: true, ConnectTimeout: 20 * time.Millisecond, ReadTimeout: 20 * time.Second})
 		if err != nil || value != "" || calls.Load() != 1 || time.Since(started) > time.Second {
 			t.Fatalf("connect timeout not bounded: %q %v calls=%d", value, err, calls.Load())
 		}
@@ -72,7 +73,7 @@ func TestPublicRulesetContentTimeoutsAndOffline(t *testing.T) {
 		ctx, cancel := context.WithTimeout(srv.Context(), 150*time.Millisecond)
 		defer cancel()
 		started := time.Now()
-		value, err := ReadRulesetContent(ctx, configRaw, body, nil, ContentOptions{AllowNetwork: true, ConnectTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second})
+		value, err := rs.ReadJSON(ctx, configRaw, body, nil, rulesource.ContentOptions{AllowNetwork: true, ConnectTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second})
 		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatal(err)
 		}
@@ -85,6 +86,7 @@ func TestPublicRulesetContentTimeoutsAndOffline(t *testing.T) {
 // TestPublicRulesetContentCapturedRecords covers the captured-record decoder boundary.
 func TestPublicRulesetContentCapturedRecords(t *testing.T) {
 	app := fixture(t)
+	rs := rulesource.New(rulesource.Options{Repo: app.Repo})
 	validConfig := json.RawMessage(`{}`)
 	validItem := json.RawMessage(`{"id":"captured-source","name":"Captured","source_type":"content","behavior":"domain","format":"text","content":"+.item.example\n"}`)
 	validLibrary := json.RawMessage(`{"id":"captured-library","name":"Captured library","source_type":"content","behavior":"domain","format":"text","content":"+.library.example\n"}`)
@@ -110,7 +112,7 @@ func TestPublicRulesetContentCapturedRecords(t *testing.T) {
 		{name: "non-object-library", config: validConfig, item: validItem, library: json.RawMessage(`42`), invalid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ReadRulesetContent(app.Context(), tc.config, tc.item, tc.library, ContentOptions{AllowNetwork: true})
+			got, err := rs.ReadJSON(app.Context(), tc.config, tc.item, tc.library, rulesource.ContentOptions{AllowNetwork: true})
 			if tc.invalid {
 				if err == nil {
 					t.Fatalf("invalid captured record accepted: %q", got)
@@ -122,7 +124,7 @@ func TestPublicRulesetContentCapturedRecords(t *testing.T) {
 	}
 	stopped, cancel := context.WithCancel(app.Context())
 	cancel()
-	if _, err := ReadRulesetContent(stopped, json.RawMessage(`{`), validItem, nil, ContentOptions{}); !errors.Is(err, context.Canceled) {
+	if _, err := rs.ReadJSON(stopped, json.RawMessage(`{`), validItem, nil, rulesource.ContentOptions{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancellation lost before decoding: %v", err)
 	}
 	if transport.calls.Load() != 0 {

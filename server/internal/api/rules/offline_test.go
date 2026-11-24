@@ -29,7 +29,7 @@ func TestRouterOfflineSourceOrderAndZeroNetwork(t *testing.T) {
 	previousClient := rulefetch.DefaultClient
 	rulefetch.DefaultClient = &rulefetch.Client{Transport: transport}
 	t.Cleanup(func() { rulefetch.DefaultClient = previousClient })
-	rs := rulesource.New(rulesource.Options{})
+	rs := rulesource.New(rulesource.Options{Repo: s.Repo})
 	readOffline := func(ctx context.Context, profile json.RawMessage, item routers.RuleSet, library *routers.LibraryRule) (string, error) {
 		var libRaw json.RawMessage
 		if library != nil {
@@ -78,7 +78,7 @@ func TestRouterOfflineSourceOrderAndZeroNetwork(t *testing.T) {
 }
 func TestRouterMissingCacheIsAnIncompletePlan(t *testing.T) {
 	s := fixture(t)
-	rs := rulesource.New(rulesource.Options{})
+	rs := rulesource.New(rulesource.Options{Repo: s.Repo})
 	config := map[string]any{"profile_id": "other", "rule_configs": []any{map[string]any{"id": "remote", "name": "Remote", "itemType": "ruleset", "library_rule_id": "offline", "policy": "PROXY"}}, "rule_library": []any{map[string]any{"id": "offline", "name": "Remote", "source_type": "url", "url": "http://127.0.0.1:1/forbidden", "behavior": "ipcidr", "format": "text"}}}
 	raw, _ := json.Marshal(config)
 	ctx := repo.WithScope(s.Context())

@@ -29,7 +29,6 @@ import (
 
 	apiagents "configflow/internal/api/agents"
 	apigateway "configflow/internal/api/linuxgateway"
-	apirules "configflow/internal/api/rules"
 	"configflow/internal/auth"
 	"configflow/internal/convert"
 	"configflow/internal/convert/mihomoenv"
@@ -38,6 +37,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routersplit"
+	"configflow/internal/rulesource"
 	"configflow/internal/yamlx"
 )
 
@@ -241,7 +241,7 @@ func newWorld(t *testing.T, sessions ...string) *world {
 	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: "a20-secret", Register: httpxtest.Routes(apiagents.Register, apigateway.Register)})
 	gateway.Wire()
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
-	apirules.Wire()
+	gateway.SetRuleSourceReader(rulesource.New(rulesource.Options{Repo: w.srv.Repo}).ReadGateway)
 	ctx := w.srv.Context()
 	r := w.srv.Repo
 	_, err := r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "home", Name: "Home"}, "")

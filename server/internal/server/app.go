@@ -102,7 +102,6 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		return nil, err
 	}
 	rs := rulesource.New(rulesource.Options{Repo: opts.Repo})
-	rulesource.UseService(rs)
 	registerStartup(rt, gen.substore, ag.manager, ag.metrics, process)
 	wd := webdav.NewService(nil)
 	wd.Repo = opts.Repo

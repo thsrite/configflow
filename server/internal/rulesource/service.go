@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -53,33 +52,11 @@ func New(opts Options) *Service {
 	return &Service{repo: opts.Repo, client: opts.Client}
 }
 
-func (s *Service) repository(ctx context.Context) (*repo.Repository, error) {
+func (s *Service) repository() (*repo.Repository, error) {
 	if s != nil && s.repo != nil {
 		return s.repo, nil
 	}
-	return repo.GetRepository(ctx)
-}
-
-var (
-	defaultSvcMu   sync.RWMutex
-	defaultService = New(Options{})
-)
-
-// Default returns the process default rulesource Service.
-func Default() *Service {
-	defaultSvcMu.RLock()
-	defer defaultSvcMu.RUnlock()
-	return defaultService
-}
-
-// UseService installs svc as the process default rulesource Service.
-func UseService(svc *Service) {
-	if svc == nil {
-		return
-	}
-	defaultSvcMu.Lock()
-	defaultService = svc
-	defaultSvcMu.Unlock()
+	return nil, errors.New("rulesource: repository is nil")
 }
 
 // FetchConfig builds the minimal rulefetch.SourceConfig needed for cache and
@@ -98,7 +75,7 @@ func (s *Service) Read(ctx context.Context, config *rulefetch.SourceConfig, item
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	r, err := s.repository(ctx)
+	r, err := s.repository()
 	if err != nil {
 		return "", err
 	}
@@ -258,11 +235,11 @@ func (s *Service) ReadOfflineJSON(ctx context.Context, profile, item, library js
 func (s *Service) ReadGateway(ctx context.Context, item model.RuleConfig, library *model.RuleLibraryItem, config *rulefetch.SourceConfig) (string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if config == nil {
-		r, err := repo.GetRepository(ctx)
+		r, err := s.repository()
 		if err != nil {
 			return "", err
 		}
-		id, err := repo.ResolveProfileID(ctx, "")
+		id, err := r.ResolveProfileID(ctx, "")
 		if err != nil {
 			return "", err
 		}

@@ -385,7 +385,7 @@ func (w *world) callHeaders(method, path, body string, headers map[string]string
 		if err != nil {
 			t.Fatal(err)
 		}
-		rs := rulesource.Default()
+		rs := rulesource.New(rulesource.Options{Repo: w.srv.Repo})
 		ctx := w.srv.Context()
 		loader := func(item routers.RuleSet, library *routers.LibraryRule) (string, error) {
 			var libRaw json.RawMessage

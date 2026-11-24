@@ -21,7 +21,6 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	routerrulesync "configflow/internal/routers/rulesync"
-	"configflow/internal/rulesource"
 	"configflow/internal/setup"
 	"configflow/internal/tasks"
 )
@@ -98,7 +97,7 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		{"provider service is the default", app.Provider != nil && provider.Default() == app.Provider},
 		{"aggregations service", app.Aggregations != nil},
 		{"deploy service is the default", app.Deploy != nil && deploy.Default() == app.Deploy},
-		{"rule source service is the default", app.RuleSource != nil && rulesource.Default() == app.RuleSource},
+		{"rule source service is instantiated", app.RuleSource != nil},
 		{"onboarding adoption owner", onboarding.RegisteredAdoptOwnedWrite() != nil},
 		{"gateway rule source reader", gateway.RegisteredRuleSourceReader() != nil},
 		{"routers service is the default", app.Routers != nil && routers.Default() == app.Routers},

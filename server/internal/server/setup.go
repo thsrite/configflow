@@ -24,9 +24,6 @@ import (
 // wireRuleSource installs the shared rulesource Service for gateway providers
 // without importing internal/api/rules.
 func wireRuleSource(rs *rulesource.Service) {
-	if rs == nil {
-		rs = rulesource.Default()
-	}
 	gateway.SetRuleSourceReader(rs.ReadGateway)
 }
 
@@ -34,9 +31,6 @@ func wireRuleSource(rs *rulesource.Service) {
 // the full-TUN warm-up reads and the offline reads of the gateway completion
 // check (spec.RulesetContent before O17 W9).
 func wireSetupContentWith(rs *rulesource.Service) {
-	if rs == nil {
-		rs = rulesource.Default()
-	}
 	setup.RegisterExternalOwners(setup.ExternalOwners{ReadOfflineRouteContent: func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
 		var raw json.RawMessage
 		if library != nil {

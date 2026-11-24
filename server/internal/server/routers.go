@@ -26,9 +26,6 @@ type routerServices struct {
 // Notifications), registers the router-rule-sync periodic loop on rt and the
 // SlotRouters task row builder and runner on tk.
 func wireRouters(opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, rs *rulesource.Service) *routerServices {
-	if rs == nil {
-		rs = rulesource.Default()
-	}
 	ipv6Hosts := routerIPv6HostFetcher(ag)
 	rulesLoader := func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
 		var libRaw json.RawMessage

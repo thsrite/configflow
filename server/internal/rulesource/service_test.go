@@ -15,7 +15,7 @@ func TestServiceReadInlineAndOffline(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
-	svc := New(Options{})
+	svc := New(Options{Repo: r})
 
 	cfgRaw := json.RawMessage(`{"profile_id":"default","rule_library":[{"id":"lib1","name":"Lib","source_type":"content","behavior":"ipcidr","format":"text","content":"192.0.2.0/24\n"}]}`)
 	itemRaw := json.RawMessage(`{"id":"r1","library_rule_id":"lib1","behavior":"ipcidr"}`)

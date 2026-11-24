@@ -13,7 +13,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"configflow/internal/gateway"
 	"configflow/internal/jsondecode"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -29,22 +28,28 @@ import (
 
 type sourceOptions = rulesource.ReadOptions
 
-func (s *Service) reader() *rulesource.Service {
+func (s *Service) reader(ctx context.Context) *rulesource.Service {
 	if s != nil && s.ruleSource != nil {
 		return s.ruleSource
 	}
-	if s != nil && s.client != nil {
-		return rulesource.New(rulesource.Options{Client: s.client})
+	var r *repo.Repository
+	var client *rulefetch.Client
+	if s != nil {
+		r = s.repo
+		client = s.client
 	}
-	return rulesource.Default()
+	if r == nil {
+		r, _ = repo.GetRepository(ctx)
+	}
+	return rulesource.New(rulesource.Options{Repo: r, Client: client})
 }
 
 func (s *Service) sourceContent(ctx context.Context, config *rulefetch.SourceConfig, item model.RuleConfig, library *model.RuleLibraryItem, options sourceOptions) (string, error) {
-	return s.reader().Read(ctx, config, item, library, options)
+	return s.reader(ctx).Read(ctx, config, item, library, options)
 }
 
 func (s *Service) fetch(ctx context.Context, config *rulefetch.SourceConfig, host string, timeout time.Duration) func(string) (rulefetch.Content, error) {
-	return s.reader().FetchWithTimeouts(ctx, config, host, timeout, timeout, false)
+	return s.reader(ctx).FetchWithTimeouts(ctx, config, host, timeout, timeout, false)
 }
 func (s *Service) local(ctx context.Context, id, name, target, host string) (delivery, error) {
 	config, err := scopedLocalConfig(ctx, id)
@@ -254,12 +259,6 @@ func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, fun
 		item := items[index]
 		return s.sourceContent(ctx, fetchConfig(config), item, library[item.LibraryRuleID], sourceOptions{Host: host})
 	}, nil
-}
-
-// Wire installs the shared rulesource reader for gateway providers.
-func Wire() {
-	rs := rulesource.Default()
-	gateway.SetRuleSourceReader(rs.ReadGateway)
 }
 
 func (s *Service) resolvedConfig(ctx context.Context, id string) (*model.Config, error) {
