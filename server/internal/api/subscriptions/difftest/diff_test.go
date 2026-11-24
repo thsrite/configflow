@@ -168,6 +168,7 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	c := &control{Sources: sources}
 	var pv *provider.Service
 	var subSvc *substore.Service
+	var handler *subscriptions.Handler
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Setup: func(app *httpx.App) {
 		env := substore.NewEnvFor(app.Repo)
 		mutated := false
@@ -205,7 +206,8 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 			DeliveryEnv: &provider.DeliveryEnv{NodeID: func() string { return "node_00000001" }},
 		})
 		nodes.NewHandler(app.Repo, subSvc).Register(app.Router)
-		subscriptions.NewHandler(app.Repo, subSvc, pv, nil, nil).Register(app.Router)
+		handler = subscriptions.NewHandler(app.Repo, subSvc, pv, nil, nil)
+		handler.Register(app.Router)
 	}})
 	mihomoenv.OverrideForTest(t, srv.Repo, subSvc, pv)
 	ctx := srv.Context()
@@ -233,6 +235,9 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 		},
 	})
 	rf = refresh.New(refresh.Options{Repo: srv.Repo, SubStore: subSvc, Env: re, Notifications: nt})
+	// As in server.New: the handler records fetch outcomes through the same
+	// refresh and notification services as the task rows above.
+	handler.Refresh, handler.Notifications = rf, nt
 	err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		s.SystemConfig.ConfigToken = "c30-pull"
 		s.SystemConfig.RuleProxyToken = "c30-internal"

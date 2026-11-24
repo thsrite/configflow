@@ -156,6 +156,9 @@ type world struct {
 	token        string
 	t            *testing.T
 	extraHeaders map[string]string
+	// agg is the aggregation service the routes use (provider with source
+	// locations and the aggregation renderer), as wired by server.New.
+	agg *generation.Service
 }
 
 func node(id string) map[string]any {
@@ -265,7 +268,7 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &world{srv, startOracle(t, pyDir), c, "Bearer " + token, t, nil}
+	return &world{srv, startOracle(t, pyDir), c, "Bearer " + token, t, nil, aggSvc}
 }
 func native(v any) any {
 	data, err := json.Marshal(v)
@@ -609,7 +612,7 @@ func (w *world) generate(body string) *httpxtest.Result {
 	if err := json.Unmarshal([]byte(body), &args); err != nil {
 		t.Fatal(err)
 	}
-	out, err := generation.New(generation.ServiceOptions{Repo: w.srv.Repo}).Generate(w.srv.Context(), args.Aggregation, args.Config, generation.Options{Main: args.Main, SourcePrepared: args.Prepared, Fetch: func(_ context.Context, id, url string) (*refresh.SourceResult, error) {
+	out, err := w.agg.Generate(w.srv.Context(), args.Aggregation, args.Config, generation.Options{Main: args.Main, SourcePrepared: args.Prepared, Fetch: func(_ context.Context, id, url string) (*refresh.SourceResult, error) {
 		if w.control.Offline {
 			return nil, fmt.Errorf("synthetic offline")
 		}

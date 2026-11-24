@@ -24,15 +24,11 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/api/domaindiscovery"
 	"configflow/internal/auth"
-	"configflow/internal/discovery"
-	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	"configflow/internal/lifecycle"
 	"configflow/internal/model/modeltest"
 	"configflow/internal/repo"
-	"configflow/internal/tasks"
+	"configflow/internal/server"
 	"configflow/internal/testjson"
 )
 
@@ -331,22 +327,23 @@ func TestHTTPAndStorageParity(t *testing.T) {
 		}
 	}
 	py := startPython(t, pyDir)
-	r, e := repo.OpenDefault(goDir)
+	r, e := repo.OpenDefaultWithOptions(goDir, server.RepoOptions())
 	if e != nil {
 		t.Fatal(e)
 	}
+	t.Cleanup(r.Close)
 	t.Setenv("DATA_DIR", goDir)
 	prev := auth.Configure(auth.Config{})
 	t.Cleanup(func() { auth.Configure(prev) })
-	app := httpx.New()
-	app.Repo = r
-	disc := discovery.New(discovery.Options{Repo: r})
-	domaindiscovery.NewHandler(r, disc).Register(app.Router)
-	auth.Install(app)
-	goServer := httptest.NewServer(app)
+	// The production assembly: discovery gets the Agent manager and traffic
+	// store it has in cmd/configflow, not a partial hand-built service.
+	full, e := server.New(context.Background(), server.Options{Repo: r})
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(full.Agents.Close)
+	goServer := httptest.NewServer(full.HTTP)
 	defer goServer.Close()
-	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
-	disc.Register(rt, tasks.NewRegistry(r, rt))
 	type request struct{ method, path, body string }
 	rs := []request{
 		{"POST", "apply", `[1]`}, {"POST", "probe", `[1]`}, {"PUT", "website/note", `[1]`}, {"POST", "website/identify", `[1]`},
