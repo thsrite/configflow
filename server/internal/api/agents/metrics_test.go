@@ -24,11 +24,7 @@ import (
 
 func metricsServer(t *testing.T) (*httpxtest.Server, *agents.Manager, httpxtest.Option) {
 	t.Helper()
-	reset := func() { metrics.Reset(); agents.ResetRuntime(); agents.ResetHooks() }
-	reset()
-	t.Cleanup(reset)
-	metrics.Wire()
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apiagents.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
 	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		return system.SetJSON("agents", mustRawJSON(t, []any{map[string]any{
 			"id": "agent_1", "name": "Edge", "service_type": "mihomo",
@@ -38,10 +34,13 @@ func metricsServer(t *testing.T) (*httpxtest.Server, *agents.Manager, httpxtest.
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := agents.Get(s.Context())
+	mt := metrics.New(metrics.Options{Repo: s.Repo})
+	m, err := agents.New(s.Context(), s.Repo, agents.Options{Metrics: mt})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo, Agents: m, Metrics: mt}).Register(s.App.Router)
 	return s, m, s.Login()
 }
 

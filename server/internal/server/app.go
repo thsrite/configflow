@@ -223,8 +223,6 @@ func registerStartup(rt *lifecycle.Runtime, sub *substore.Service, m *agents.Man
 		}})
 	}
 	if mt != nil {
-		rt.RegisterStartup(mt.Startup(m))
-	} else {
-		metrics.RegisterStartupOn(rt)
+		rt.RegisterStartup(mt.Startup())
 	}
 }

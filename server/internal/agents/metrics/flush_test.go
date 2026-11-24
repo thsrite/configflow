@@ -4,11 +4,9 @@ import (
 	"configflow/internal/timefmt"
 	"context"
 	"encoding/json"
-	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -28,33 +26,6 @@ import (
 
 func bigOf(i int64) *big.Int { return big.NewInt(i) }
 
-// fresh is a fresh process: no histories, no flush state, the registry
-// hooks of this package only.
-func fresh(t *testing.T) {
-	t.Helper()
-	reset := func() {
-		// A tracked manual job may have released its key just before Runtime
-		// finishes scope cleanup. Reconfigure only after that work is idle.
-		deadline := time.Now().Add(5 * time.Second)
-		for {
-			err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()})
-			if err == nil {
-				break
-			}
-			if !errors.Is(err, lifecycle.ErrRunning) || time.Now().After(deadline) {
-				t.Fatal(err)
-			}
-			time.Sleep(time.Millisecond)
-		}
-		Reset()
-		agents.ResetRuntime()
-		agents.ResetHooks()
-	}
-	reset()
-	t.Cleanup(reset)
-	Wire()
-}
-
 func seedAgent(t *testing.T, ctx context.Context, r *repo.Repository, heartbeat bool) {
 	t.Helper()
 	agentMap := map[string]any{
@@ -73,23 +44,23 @@ func seedAgent(t *testing.T, ctx context.Context, r *repo.Repository, heartbeat 
 	}
 }
 
-// agentManager is the agent_manager(tmp_path) helper: a repository with one
-// Agent and its manager.
-func agentManager(t *testing.T) (*agents.Manager, *repo.Repository, context.Context) {
+// agentManager builds an isolated repository, metrics Service, and Agent Manager.
+func agentManager(t *testing.T) (*Service, *agents.Manager, *repo.Repository, context.Context) {
 	t.Helper()
-	fresh(t)
 	r, err := repo.Open(filepath.Join(t.TempDir(), "config"), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+	ctx := repo.WithScope(context.Background())
 	t.Cleanup(func() { repo.ResetConfigContext(ctx) })
 	seedAgent(t, ctx, r, true)
-	m, err := agents.New(ctx, r)
+	svc := New(Options{Repo: r})
+	m, err := agents.New(ctx, r, agents.Options{Metrics: svc})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return m, r, ctx
+	t.Cleanup(m.Close)
+	return svc, m, r, ctx
 }
 
 func heartbeat(t *testing.T, ctx context.Context, m *agents.Manager, metrics map[string]any) {
@@ -106,9 +77,9 @@ func exists(path string) bool {
 }
 
 func TestHeartbeatsStayInMemoryAndDeletingAnAgentDropsItsHistory(t *testing.T) {
-	m, _, ctx := agentManager(t)
+	svc, m, _, ctx := agentManager(t)
 	heartbeat(t, ctx, m, sample(1))
-	h := ForManager(m)
+	h := svc.History()
 	path := filepath.Join(h.DataDir, "agent_1_metrics.jsonl")
 	if exists(path) || len(get(t, h, "agent_1", nil)) != 1 {
 		t.Fatal("heartbeat")
@@ -127,21 +98,19 @@ func TestHeartbeatsStayInMemoryAndDeletingAnAgentDropsItsHistory(t *testing.T) {
 }
 
 func TestAgentManagerKeepsHistoryInItsRepositoryDataDirectory(t *testing.T) {
-	m, r, ctx := agentManager(t)
-	if ForManager(m).DataDir != filepath.Join(r.DataDir(), "metrics") {
-		t.Fatal(ForManager(m).DataDir)
+	svc, m, r, ctx := agentManager(t)
+	if svc.History().DataDir != filepath.Join(r.DataDir(), "metrics") {
+		t.Fatal(svc.History().DataDir)
 	}
 	heartbeat(t, ctx, m, sample(1))
-	ForManager(m).Flush()
+	svc.History().Flush()
 	if !exists(filepath.Join(r.DataDir(), "metrics", "agent_1_metrics.jsonl")) {
 		t.Fatal("not in the data directory")
 	}
 }
 
 func TestBuildingAnAgentManagerDoesNotTouchSavedHistory(t *testing.T) {
-	// Only service start (init_agent_manager) loads and cleans; building a
-	// manager or its history does not. (The LEGACY_DIRS half is not ported.)
-	fresh(t)
+	// Only service start loads and cleans; building a manager or its history does not.
 	dataDir := filepath.Join(t.TempDir(), "config")
 	metricsDir := filepath.Join(dataDir, "metrics")
 	os.MkdirAll(metricsDir, 0o755)
@@ -152,81 +121,74 @@ func TestBuildingAnAgentManagerDoesNotTouchSavedHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	seedAgent(t, ctx, r, true)
-	m, err := agents.New(ctx, r)
+	svc := New(Options{Repo: r})
+	m, err := agents.New(ctx, r, agents.Options{Metrics: svc})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ForManager(m).DataDir != metricsDir {
-		t.Fatal(ForManager(m).DataDir)
+	t.Cleanup(m.Close)
+	if svc.History().DataDir != metricsDir {
+		t.Fatal(svc.History().DataDir)
 	}
 	if got := strings.Join(names(t, metricsDir), ","); got != ".agent_1_compacting.tmp,agent_1_metrics.json,someone_else_metrics.jsonl" {
 		t.Fatal(got)
 	}
 }
 
-// test_service_startup_adopts_old_files_before_loading without the
-// Startup loads and
-// migrates the saved history, once.
+// Startup loads and migrates the saved history, once.
 func TestServiceStartupLoadsAndMigratesSavedHistory(t *testing.T) {
-	fresh(t)
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	seedAgent(t, ctx, r, false)
 	metricsDir := filepath.Join(r.DataDir(), "metrics")
 	os.MkdirAll(metricsDir, 0o755)
 	recent := pointAt(naiveNow().Add(-time.Minute), 4)
 	text, _ := json.Marshal(map[string]any{"metrics": []any{recent}})
 	os.WriteFile(filepath.Join(metricsDir, "agent_1_metrics.json"), text, 0o644)
-	m, err := agents.Init(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: historyStartupRegistry()})
+	svc := New(Options{Repo: r})
+	reg := lifecycle.NewRegistry()
+	reg.RegisterStartup(svc.Startup())
+	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: reg})
 	runtime.RunStartup(ctx)
-	wantEqual(t, "loaded", get(t, ForManager(m), "agent_1", nil), []any{recent})
+	wantEqual(t, "loaded", get(t, svc.History(), "agent_1", nil), []any{recent})
 	if got := strings.Join(names(t, metricsDir), ","); got != "agent_1_metrics.jsonl" {
 		t.Fatal(got)
 	}
 	// Startup runs once per generation.
 	runtime.RunStartup(ctx)
-	if len(get(t, ForManager(m), "agent_1", nil)) != 1 {
+	if len(get(t, svc.History(), "agent_1", nil)) != 1 {
 		t.Fatal("loaded twice")
 	}
-	if got := LoadSavedHistory(ctx, m); got == nil || got.Loaded != 1 || got.Migrated != 0 {
+	if got := svc.LoadSavedHistory(ctx); got == nil || got.Loaded != 1 || got.Migrated != 0 {
 		t.Fatal(got)
 	}
 }
 
 // tasksApp is the tasks_app fixture: the task routes with this package's
 // row and the other slots empty.
-func tasksApp(t *testing.T) (*httpxtest.Server, *agents.Manager) {
+func tasksApp(t *testing.T) (*httpxtest.Server, *Service, *agents.Manager, *tasks.Registry) {
 	t.Helper()
-	fresh(t)
+	srv := httpxtest.New(t, httpxtest.Options{})
+	seedAgent(t, srv.Context(), srv.Repo, false)
+	tk := tasks.NewRegistry(srv.Repo, nil)
 	none := func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains} {
-		t.Cleanup(tasks.SetRowBuilder(slot, none))
+		tk.SetRowBuilder(slot, none)
 	}
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apitasks.RegisterAlways)})
-	seedAgent(t, srv.Context(), srv.Repo, false)
-	m, err := agents.Get(srv.Context())
+	svc := New(Options{Repo: srv.Repo, Tasks: tk})
+	svc.RegisterTasks(tk)
+	m, err := agents.New(srv.Context(), srv.Repo, agents.Options{Metrics: svc})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return srv, m
-}
-
-func TestReviewTaskFixtureRestoresMissingSlots(t *testing.T) {
-	fresh(t)
-	before := tasks.Missing()
-	t.Run("fixture", func(t *testing.T) { tasksApp(t) })
-	if after := tasks.Missing(); !reflect.DeepEqual(before, after) {
-		t.Fatal("fake task providers leaked", before, after)
-	}
+	t.Cleanup(m.Close)
+	apitasks.NewHandlerWithRepo(tk, srv.Repo).Register(srv.App.Router)
+	return srv, svc, m, tk
 }
 
 func taskRow(t *testing.T, srv *httpxtest.Server) map[string]any {
@@ -247,7 +209,7 @@ func taskRow(t *testing.T, srv *httpxtest.Server) map[string]any {
 	return nil
 }
 
-func waitBackground(t *testing.T) {
+func waitBackground(t *testing.T, _ *tasks.Registry) {
 	t.Helper()
 	for i := 0; i < 1000 && tasks.IsBackground(TaskKey); i++ {
 		time.Sleep(10 * time.Millisecond)
@@ -258,7 +220,7 @@ func waitBackground(t *testing.T) {
 }
 
 func TestTaskRowRunsNowAndSurfacesFailures(t *testing.T) {
-	srv, m := tasksApp(t)
+	srv, svc, m, tk := tasksApp(t)
 	ctx := srv.Context()
 	row := taskRow(t, srv)
 	wantEqual(t, "row", map[string]any{
@@ -281,12 +243,12 @@ func TestTaskRowRunsNowAndSurfacesFailures(t *testing.T) {
 
 	heartbeat(t, ctx, m, sample(1))
 	srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{"key": TaskKey})).WantStatus(202)
-	waitBackground(t)
+	waitBackground(t, tk)
 	row = taskRow(t, srv)
 	if row["last_status"] != "success" || row["last_trigger"] != "manual" || !testjson.Equal(1, row["run_count"]) {
 		t.Fatal(row)
 	}
-	if len(readLines(t, filepath.Join(ForManager(m).DataDir, "agent_1_metrics.jsonl"))) != 1 {
+	if len(readLines(t, filepath.Join(svc.History().DataDir, "agent_1_metrics.jsonl"))) != 1 {
 		t.Fatal("not saved")
 	}
 
@@ -297,7 +259,7 @@ func TestTaskRowRunsNowAndSurfacesFailures(t *testing.T) {
 	}
 	heartbeat(t, ctx, m, sample(2))
 	srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{"key": TaskKey})).WantStatus(202)
-	waitBackground(t)
+	waitBackground(t, tk)
 	row = taskRow(t, srv)
 	if row["last_status"] != "failed" || !testjson.Equal(1, row["failure_count"]) {
 		t.Fatal(row)
@@ -305,13 +267,13 @@ func TestTaskRowRunsNowAndSurfacesFailures(t *testing.T) {
 	if text, _ := row["last_error"].(string); !strings.Contains(text, "文件系统只读") || !strings.Contains(text, "下次保存时重试") {
 		t.Fatal(text)
 	}
-	if ForManager(m).PendingCount() != 1 {
-		t.Fatal(ForManager(m).PendingCount())
+	if svc.History().PendingCount() != 1 {
+		t.Fatal(svc.History().PendingCount())
 	}
 }
 
 func TestIntervalAcceptsOnlyTheOfferedChoicesAndReschedules(t *testing.T) {
-	srv, _ := tasksApp(t)
+	srv, svc, _, _ := tasksApp(t)
 	ctx := srv.Context()
 	for _, value := range []any{120, 900, "600", true, nil, 0} {
 		res := srv.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": TaskKey, "interval_seconds": value})).WantStatus(400)
@@ -326,11 +288,13 @@ func TestIntervalAcceptsOnlyTheOfferedChoicesAndReschedules(t *testing.T) {
 	}
 
 	started := time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC)
-	SetStartedAt(&started)
+	svc.stateMu.Lock()
+	svc.startedAt = &started
+	svc.stateMu.Unlock()
 	if got := taskRow(t, srv)["next_run_at"]; got != "2026-10-24T00:30:00Z" {
 		t.Fatal(got)
 	}
-	if ran, _ := RunDue(ctx, started.Add(10*time.Minute)); ran {
+	if ran, _ := svc.RunDue(ctx, started.Add(10*time.Minute)); ran {
 		t.Fatal("ran early")
 	}
 	res := srv.Put("/api/tasks/interval", httpxtest.JSON(map[string]any{"key": TaskKey, "interval_seconds": 300})).WantStatus(200)
@@ -341,7 +305,7 @@ func TestIntervalAcceptsOnlyTheOfferedChoicesAndReschedules(t *testing.T) {
 	if raw, ok, _ := model.EncodeMember(&system.SystemConfig, Setting); !ok || !testjson.Equal(300, raw) {
 		t.Fatalf("%s", raw)
 	}
-	if ran, err := RunDue(ctx, started.Add(10*time.Minute)); !ran || err != nil {
+	if ran, err := svc.RunDue(ctx, started.Add(10*time.Minute)); !ran || err != nil {
 		t.Fatal(ran, err)
 	}
 	entry := readReceipt(t, srv.DataDir)
@@ -352,24 +316,24 @@ func TestIntervalAcceptsOnlyTheOfferedChoicesAndReschedules(t *testing.T) {
 	_ = srv.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
 		return system.SystemConfig.SetJSON(Setting, json.RawMessage(`7`))
 	})
-	if got, _ := currentIntervalSeconds(ctx); got != 1800 {
+	if got, _ := svc.currentIntervalSeconds(ctx); got != 1800 {
 		t.Fatal(got)
 	}
 }
 
 func TestFailedStatusRecordDoesNotRerunEveryTick(t *testing.T) {
-	srv, m := tasksApp(t)
+	srv, svc, m, _ := tasksApp(t)
 	ctx := srv.Context()
-	previous := recordStatus
-	t.Cleanup(func() { recordStatus = previous })
-	recordStatus = func(context.Context, string, taskstatus.Result) error {
+	svc.recordStatus = func(context.Context, string, taskstatus.Result) error {
 		return &os.PathError{Op: "open", Err: syscall.ENOSPC}
 	}
 	current := time.Now().UTC()
 	before := current.Add(-31 * time.Minute)
-	SetStartedAt(&before)
+	svc.stateMu.Lock()
+	svc.startedAt = &before
+	svc.stateMu.Unlock()
 	heartbeat(t, ctx, m, sample(1))
-	if ran, err := RunDue(ctx, current); !ran || err != nil {
+	if ran, err := svc.RunDue(ctx, current); !ran || err != nil {
 		t.Fatal(ran, err)
 	}
 	entry := readReceipt(t, srv.DataDir)
@@ -377,20 +341,20 @@ func TestFailedStatusRecordDoesNotRerunEveryTick(t *testing.T) {
 		t.Fatal(entry)
 	}
 	// The next tick waits a full interval from this attempt, not from startup.
-	if ran, _ := RunDue(ctx, current.Add(TickSeconds*time.Second)); ran {
+	if ran, _ := svc.RunDue(ctx, current.Add(TickSeconds*time.Second)); ran {
 		t.Fatal("reran")
 	}
-	if ran, _ := RunDue(ctx, current.Add(31*time.Minute)); !ran {
+	if ran, _ := svc.RunDue(ctx, current.Add(31*time.Minute)); !ran {
 		t.Fatal("did not run")
 	}
 }
 
 func TestHistoryOfAgentsRemovedByImportIsDroppedOnTheNextSave(t *testing.T) {
-	srv, m := tasksApp(t)
+	srv, svc, m, _ := tasksApp(t)
 	ctx := srv.Context()
-	h := ForManager(m)
+	h := svc.History()
 	heartbeat(t, ctx, m, sample(1))
-	if _, err := FlushNow(ctx, "manual", true); err != nil {
+	if _, err := svc.FlushNow(ctx, "manual", true); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(h.DataDir, "agent_1_metrics.jsonl")
@@ -402,7 +366,7 @@ func TestHistoryOfAgentsRemovedByImportIsDroppedOnTheNextSave(t *testing.T) {
 		system.Agents = []model.Agent{}
 		return nil
 	})
-	if _, err := FlushNow(ctx, "manual", true); err != nil {
+	if _, err := svc.FlushNow(ctx, "manual", true); err != nil {
 		t.Fatal(err)
 	}
 	if exists(path) || len(get(t, h, "agent_1", nil)) != 0 || h.PendingCount() != 0 {
@@ -411,17 +375,14 @@ func TestHistoryOfAgentsRemovedByImportIsDroppedOnTheNextSave(t *testing.T) {
 	wantFlush(t, h, 0, 0, 0)
 }
 
-// test_stop_signal_handler_saves_then_exits: the stop path saves and
-// records a "shutdown" run. (The repeated-signal default action is
-// Python's signal handling; main owns signals in Go.)
 func TestShutdownSavesAndRecordsTheRun(t *testing.T) {
-	srv, m := tasksApp(t)
+	srv, svc, m, _ := tasksApp(t)
 	ctx := srv.Context()
 	heartbeat(t, ctx, m, sample(1))
-	if result := SaveOnShutdown(ctx, true); result == nil || result.Appended != 1 {
+	if result := svc.SaveOnShutdown(ctx, true); result == nil || result.Appended != 1 {
 		t.Fatal(result)
 	}
-	if ForManager(m).PendingCount() != 0 {
+	if svc.History().PendingCount() != 0 {
 		t.Fatal("pending")
 	}
 	entry := readReceipt(t, srv.DataDir)
@@ -429,23 +390,20 @@ func TestShutdownSavesAndRecordsTheRun(t *testing.T) {
 		t.Fatal(entry)
 	}
 	// record_idle=False records nothing without new data; True always does.
-	SaveOnShutdown(ctx, false)
+	svc.SaveOnShutdown(ctx, false)
 	if again := readReceipt(t, srv.DataDir); receiptCount(again.RunCount) != 1 {
 		t.Fatal(again)
 	}
-	SaveOnShutdown(ctx, true)
+	svc.SaveOnShutdown(ctx, true)
 	if again := readReceipt(t, srv.DataDir); receiptCount(again.RunCount) != 2 {
 		t.Fatal(again)
 	}
 }
 
-// test_stop_signal_during_a_shutdown_save_is_ignored_instead_of_deadlocking:
-// in Go a shutdown save that meets a running save waits for it; neither
-// deadlocks and nothing is left pending.
 func TestShutdownSaveDuringARunningSaveDoesNotDeadlock(t *testing.T) {
-	srv, m := tasksApp(t)
+	srv, svc, m, _ := tasksApp(t)
 	ctx := srv.Context()
-	h := ForManager(m)
+	h := svc.History()
 	heartbeat(t, ctx, m, sample(1))
 	h.Flush()
 	heartbeat(t, ctx, m, sample(2))
@@ -458,9 +416,9 @@ func TestShutdownSaveDuringARunningSaveDoesNotDeadlock(t *testing.T) {
 		return previous(ctx, path, lines)
 	}
 	done := make(chan struct{}, 2)
-	go func() { FlushNow(ctx, "schedule", true); done <- struct{}{} }()
+	go func() { svc.FlushNow(ctx, "schedule", true); done <- struct{}{} }()
 	<-entered
-	go func() { SaveOnShutdown(ctx, false); done <- struct{}{} }()
+	go func() { svc.SaveOnShutdown(ctx, false); done <- struct{}{} }()
 	heartbeat(t, ctx, m, sample(3))
 	close(release)
 	for i := 0; i < 2; i++ {
@@ -475,22 +433,13 @@ func TestShutdownSaveDuringARunningSaveDoesNotDeadlock(t *testing.T) {
 	}
 }
 
-// test_real_startup_path_saves_on_sigterm_without_waiting_for_busy_threads
-// in process: service start (init_agent_manager loads and migrates), the
-// loops, a heartbeat, then the stop path main runs on SIGTERM
-// (lifecycle.Stop) saves and records the run. The Ctrl+C and debug
-// reloader variants are Python process mechanics (signal handlers, the
-// Werkzeug reloader) with no Go counterpart.
 func TestStartAndStopPathLoadsSavesAndRecords(t *testing.T) {
-	fresh(t)
 	dataDir := t.TempDir()
 	r, err := repo.Open(dataDir, repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo.SetRepository(r)
-	t.Cleanup(func() { repo.SetRepository(nil) })
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	seedAgent(t, ctx, r, false)
 	metricsDir := filepath.Join(dataDir, "metrics")
 	os.MkdirAll(metricsDir, 0o755)
@@ -499,17 +448,27 @@ func TestStartAndStopPathLoadsSavesAndRecords(t *testing.T) {
 	os.WriteFile(filepath.Join(metricsDir, "agent_1_metrics.json"), text, 0o644)
 	os.WriteFile(filepath.Join(metricsDir, "deleted_metrics.jsonl"), []byte(dumps(t, oldPoint)+"\n"), 0o644)
 
-	m, err := agents.Init(ctx)
+	svc := New(Options{Repo: r})
+	m, err := agents.New(ctx, r, agents.Options{Metrics: svc})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.Join(lifecycle.Names(), ","), "metrics-history-flush") {
-		t.Fatal(lifecycle.Names())
+	t.Cleanup(m.Close)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.RegisterStartup(svc.Startup())
+	rt.RegisterPeriodic(svc.Loop())
+	for _, hook := range svc.ShutdownHooks() {
+		rt.RegisterShutdown(hook)
 	}
-	RegisterStartup()
-	lifecycle.Start(ctx)
+	if !strings.Contains(strings.Join(rt.Names(), ","), "metrics-history-flush") {
+		t.Fatal(rt.Names())
+	}
+	rt.RunStartup(ctx)
+	rt.Start(ctx)
 	heartbeat(t, ctx, m, map[string]any{"cpu": map[string]any{"usage_percent": 7}})
-	lifecycle.Stop(10 * time.Second)
+	stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rt.Shutdown(stopCtx)
 
 	if got := strings.Join(names(t, metricsDir), ","); got != "agent_1_metrics.jsonl" {
 		t.Fatal(got)
@@ -526,11 +485,8 @@ func TestStartAndStopPathLoadsSavesAndRecords(t *testing.T) {
 	}
 }
 
-// app.py saved twice on a stop signal (the handler with record_idle=True,
-// then after serve() returned with record_idle=False): a save that keeps
-// failing is recorded twice, a successful one once.
 func TestShutdownFailureIsTriedAndRecordedTwiceLikeTheSignalPath(t *testing.T) {
-	srv, m := tasksApp(t)
+	srv, svc, m, _ := tasksApp(t)
 	ctx := srv.Context()
 	heartbeat(t, ctx, m, sample(1))
 	previous, previousReplace := appendLines, replaceFile
@@ -539,29 +495,23 @@ func TestShutdownFailureIsTriedAndRecordedTwiceLikeTheSignalPath(t *testing.T) {
 	appendLines = func(context.Context, string, []string) error { return full }
 	// the second save rewrites the file (the failed append is not trusted)
 	replaceFile = func(string, string) error { return full }
-	shutdownFlush(ctx, true)
-	shutdownFlush(ctx, false)
+	svc.shutdownFlush(ctx, true)
+	svc.shutdownFlush(ctx, false)
 	entry := readReceipt(t, srv.DataDir)
 	if entry.LastStatus == nil || *entry.LastStatus != "failed" || entry.LastTrigger == nil || *entry.LastTrigger != "shutdown" ||
 		receiptCount(entry.RunCount) != 2 || receiptCount(entry.FailureCount) != 2 || receiptCount(entry.ConsecutiveFailures) != 2 {
 		t.Fatal(entry)
 	}
-	if ForManager(m).PendingCount() != 1 {
-		t.Fatal(ForManager(m).PendingCount())
+	if svc.History().PendingCount() != 1 {
+		t.Fatal(svc.History().PendingCount())
 	}
 	appendLines, replaceFile = previous, previousReplace
-	shutdownFlush(ctx, true)
-	shutdownFlush(ctx, false)
+	svc.shutdownFlush(ctx, true)
+	svc.shutdownFlush(ctx, false)
 	entry = readReceipt(t, srv.DataDir)
 	if entry.LastStatus == nil || *entry.LastStatus != "success" || receiptCount(entry.RunCount) != 3 || receiptCount(entry.ConsecutiveFailures) != 0 {
 		t.Fatal(entry)
 	}
-}
-
-func historyStartupRegistry() *lifecycle.Registry {
-	reg := lifecycle.NewRegistry()
-	reg.RegisterStartup(historyStartup())
-	return reg
 }
 
 func agentModelForTest(t testing.TB, value any) *model.Agent {

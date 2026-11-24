@@ -11,7 +11,8 @@ import (
 )
 
 func TestSaveOperationWaitKeepsShutdownCancellation(t *testing.T) {
-	_, release, err := runMu.Lock(context.Background(), time.Second)
+	svc := New(Options{DataDir: t.TempDir()})
+	_, release, err := svc.runMu.Lock(context.Background(), time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +23,7 @@ func TestSaveOperationWaitKeepsShutdownCancellation(t *testing.T) {
 	bound := ctxx.WithParent(request, job)
 	disconnect()
 	done := make(chan error, 1)
-	go func() { _, err := FlushNow(bound, "manual", false); done <- err }()
+	go func() { _, err := svc.FlushNow(bound, "manual", false); done <- err }()
 	select {
 	case err := <-done:
 		t.Fatal("request disconnect aborted save operation", err)

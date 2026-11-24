@@ -17,7 +17,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/agents"
 	"configflow/internal/model"
 	"configflow/internal/testjson"
 )
@@ -420,15 +419,14 @@ func TestDeleteAndRetainRemoveAgents(t *testing.T) {
 // test_deleting_an_agent_deletes_its_traffic_history (the route parts of
 // the Python tests are in internal/api/agents).
 func TestFlushTaskSavesTrafficHistoryAndDropsDeletedAgents(t *testing.T) {
-	manager, r, ctx := agentManager(t)
-	wireTrafficForTest(t)
+	svc, _, r, ctx := agentManager(t)
 	defer SetTrafficNow(func() float64 { return trafficNOW })()
-	_ = TrafficForManager(manager).AddTraffic(ctx, "agent_1", cleanAt(t, trafficReport([]any{usage()}, nil, 2)))
-	result, err := FlushNow(ctx, "manual", false)
+	_ = svc.Traffic().AddTraffic(ctx, "agent_1", cleanAt(t, trafficReport([]any{usage()}, nil, 2)))
+	result, err := svc.FlushNow(ctx, "manual", false)
 	if err != nil || result.TrafficRows == nil || *result.TrafficRows != 1 {
 		t.Fatalf("%+v %v", result, err)
 	}
-	history := TrafficForManager(manager)
+	history := svc.Traffic()
 	if _, err := os.Stat(history.Path); err != nil || history.PendingCount() != 0 {
 		t.Fatal("not saved")
 	}
@@ -439,20 +437,19 @@ func TestFlushTaskSavesTrafficHistoryAndDropsDeletedAgents(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := FlushNow(ctx, "manual", false); err != nil {
+	if _, err := svc.FlushNow(ctx, "manual", false); err != nil {
 		t.Fatal(err)
 	}
 	eq(t, "rows", queryInts(t, openDB(t, history.Path), "SELECT COUNT(*) FROM traffic_usage"), [][]int64{{0}})
 }
 
 func TestDeletingAnAgentDeletesItsTrafficHistory(t *testing.T) {
-	manager, _, ctx := agentManager(t)
-	wireTrafficForTest(t)
-	_ = TrafficForManager(manager).AddTraffic(ctx, "agent_1", cleanAt(t, trafficReport([]any{usage()}, nil, 2)))
+	svc, manager, _, ctx := agentManager(t)
+	_ = svc.Traffic().AddTraffic(ctx, "agent_1", cleanAt(t, trafficReport([]any{usage()}, nil, 2)))
 	if ok, err := manager.DeleteAgent(ctx, "agent_1"); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
-	if TrafficForManager(manager).PendingCount() != 0 {
+	if svc.Traffic().PendingCount() != 0 {
 		t.Fatal("pending kept")
 	}
 }
@@ -460,13 +457,12 @@ func TestDeletingAnAgentDeletesItsTrafficHistory(t *testing.T) {
 // A failed traffic save is reported as 流量记录：… next to the monitoring
 // history result (TrafficHistoryFlushError).
 func TestFlushTaskReportsTrafficFailure(t *testing.T) {
-	manager, _, ctx := agentManager(t)
-	wireTrafficForTest(t)
-	history := TrafficForManager(manager)
+	svc, _, _, ctx := agentManager(t)
+	history := svc.Traffic()
 	_ = history.AddTraffic(ctx, "agent_1", cleanAt(t, trafficReport([]any{usage()}, nil, 2)))
 	defer history.SetBrokenConnect(errors.New("database is locked"))()
 	defer SetTrafficNow(func() float64 { return trafficNOW })()
-	_, err := FlushNow(ctx, "manual", false)
+	_, err := svc.FlushNow(ctx, "manual", false)
 	if err == nil || err.Error() != "流量记录：database is locked" {
 		t.Fatalf("err %v", err)
 	}
@@ -518,14 +514,3 @@ func TestAgentSupported(t *testing.T) {
 		}
 	}
 }
-
-// wireTrafficForTest is WireTraffic with its process-wide parts undone at
-// the end of the test (the hooks are reset by fresh).
-func wireTrafficForTest(t *testing.T) {
-	t.Helper()
-	ResetTraffic()
-	t.Cleanup(ResetTraffic)
-	WireTraffic()
-}
-
-var _ = agents.Get

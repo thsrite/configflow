@@ -63,8 +63,10 @@ func TestServiceProcess(t *testing.T) {
 	}()
 	firstSaved := make(chan struct{})
 	detachedCancelled := make(chan struct{})
+	var srvApp *server.App
 	opts := runOptions{
 		onApp: func(srv *server.App) {
+			srvApp = srv
 			srv.Refresh.SetEnv(schedulerObserver(srv.Repo, srv.SubStore, func() { outbound.Add(1); trace("outbound") }))
 		},
 		listen: func(network, _ string) (net.Listener, error) {
@@ -81,7 +83,7 @@ func TestServiceProcess(t *testing.T) {
 			lifecycle.RegisterStartup(lifecycle.Startup{Name: "test-observe-startup", Run: func(ctx context.Context) error {
 				// All production startup work, including history loading, is done.
 				trace("startup")
-				_, err := metrics.For(dir).AddSample(ctx, "edge", json.RawMessage(`{"cpu":{"usage_percent":1}}`))
+				_, err := srvApp.Metrics.History().AddSample(ctx, "edge", json.RawMessage(`{"cpu":{"usage_percent":1}}`))
 				return err
 			}})
 			lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-observe-first", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
@@ -93,7 +95,7 @@ func TestServiceProcess(t *testing.T) {
 						runs = c.Int64()
 					}
 				}
-				if err != nil || runs != 1 || metrics.For(dir).PendingCount() != 0 {
+				if err != nil || runs != 1 || srvApp.Metrics.History().PendingCount() != 0 {
 					t.Errorf("first flush did not precede drain: entry=%v err=%v", entry, err)
 				}
 				trace("first")
@@ -135,7 +137,7 @@ func TestServiceProcess(t *testing.T) {
 						runs = c.Int64()
 					}
 				}
-				if err != nil || runs != want || metrics.For(dir).PendingCount() != 0 {
+				if err != nil || runs != want || srvApp.Metrics.History().PendingCount() != 0 {
 					t.Errorf("last flush did not follow work: entry=%v err=%v", entry, err)
 				}
 				trace("last")
@@ -147,7 +149,7 @@ func TestServiceProcess(t *testing.T) {
 						t.Error("publish cancelled before drain completed")
 						return
 					}
-					_, err := metrics.For(dir).AddSample(ctx, "edge", json.RawMessage(`{"cpu":{"usage_percent":2}}`))
+					_, err := srvApp.Metrics.History().AddSample(ctx, "edge", json.RawMessage(`{"cpu":{"usage_percent":2}}`))
 					if err != nil {
 						t.Error(err)
 					}

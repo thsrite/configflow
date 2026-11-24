@@ -101,14 +101,14 @@ func (d Deps) metricsHistory(m *core.Manager) *metrics.History {
 	if d.Metrics != nil {
 		return d.Metrics.History()
 	}
-	return metrics.ForManager(m)
+	return metrics.New(metrics.Options{Repo: m.Repository()}).History()
 }
 
 func (d Deps) trafficHistory(m *core.Manager) *metrics.TrafficHistory {
-	if d.Repo != nil {
-		return metrics.TrafficFor(d.Repo.DataDir())
+	if d.Metrics != nil {
+		return d.Metrics.Traffic()
 	}
-	return metrics.TrafficForManager(m)
+	return metrics.New(metrics.Options{Repo: m.Repository()}).Traffic()
 }
 
 func (d Deps) trafficStore(ctx context.Context) (*trafficstore.NativeStore, error) {

@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"configflow/internal/agents"
+	"configflow/internal/lifecycle"
+	"configflow/internal/repo"
 	"configflow/internal/tasks"
 )
 
@@ -86,28 +89,44 @@ func TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer(t *testing.T) {
 // the save inside 监控历史保存) and the traffic store the DELETE route
 // clears first.
 func TestNewAppWiresTheTrafficStores(t *testing.T) {
-	agents.ResetHooks()
-	t.Cleanup(agents.ResetHooks)
-	NewApp()
-	if names := agents.AgentDeletedHookNames(); len(names) == 0 || names[0] != "traffic_store" {
-		t.Errorf("DELETE /api/agents/<id> store hooks %q, want traffic_store first", names)
+	r, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if agents.CurrentHooks().DeleteTrafficHistoryContext == nil {
-		t.Error("delete_agent: traffic_history.delete (A05) not registered")
+	t.Cleanup(r.Close)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	app, err := New(context.Background(), Options{Repo: r, Runtime: rt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Agents.Close)
+	stores := app.Agents.DeletedStores()
+	if len(stores) == 0 || stores[0].Name != "traffic_store" {
+		t.Errorf("DELETE /api/agents/<id> store hooks %+v, want traffic_store first", stores)
+	}
+	if app.Metrics == nil || app.Metrics.Traffic() == nil {
+		t.Error("delete_agent: traffic_history (A05) not wired")
 	}
 }
 
 // A04: the full application wires the metrics history into the registry
 // (heartbeat metrics, Agent deletion) and provides the metrics task row.
 func TestNewAppWiresTheMetricsHistory(t *testing.T) {
-	agents.ResetHooks()
-	t.Cleanup(agents.ResetHooks)
-	NewApp()
-	hooks := agents.CurrentHooks()
-	if hooks.AddMetricsJSON == nil || hooks.DeleteMetricsHistoryContext == nil {
-		t.Fatal("metrics_history hooks not registered")
+	r, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, slot := range tasks.Missing() {
+	t.Cleanup(r.Close)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	app, err := New(context.Background(), Options{Repo: r, Runtime: rt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Agents.Close)
+	if app.Metrics == nil || app.Metrics.History() == nil {
+		t.Fatal("metrics_history service not wired")
+	}
+	for _, slot := range app.Tasks.Missing() {
 		if slot == tasks.SlotMetrics {
 			t.Fatal("metrics_history task row not provided")
 		}

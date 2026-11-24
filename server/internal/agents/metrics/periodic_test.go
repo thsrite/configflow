@@ -42,13 +42,11 @@ func receiptCount(raw []byte) int64 {
 }
 
 func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
-	_, r, ctx := agentManager(t)
+	svc, _, r, ctx := agentManager(t)
 	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
-	oldNow := utcNow
-	utcNow = clock.Now
-	defer func() { utcNow = oldNow }()
+	svc.utcNow = clock.Now
 	reg := lifecycle.NewRegistry()
-	spec := flushPeriodic()
+	spec := svc.Loop()
 	original := spec.Round
 	rounds := make(chan struct{}, 8)
 	spec.Round = func(ctx context.Context) error {
@@ -58,7 +56,7 @@ func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
 		return err
 	}
 	reg.RegisterPeriodic(spec)
-	reg.RegisterShutdown(lifecycle.ShutdownHook{Name: "first", Phase: lifecycle.PhaseStopSignal, Run: func(ctx context.Context) { shutdownFlush(ctx, true) }})
+	reg.RegisterShutdown(lifecycle.ShutdownHook{Name: "first", Phase: lifecycle.PhaseStopSignal, Run: func(ctx context.Context) { svc.shutdownFlush(ctx, true) }})
 	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: reg, Clock: clock})
 	defer runner.Shutdown(ctx)
 	receive := func() {
@@ -73,7 +71,7 @@ func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
 		}
 	}
 	runner.Start(ctx)
-	if got := NextFlushAt(nil, 1800); got == nil || !got.Equal(clock.Now().Add(1800*time.Second)) {
+	if got := svc.NextFlushAt(nil, 1800); got == nil || !got.Equal(clock.Now().Add(1800*time.Second)) {
 		t.Fatal("no activation baseline", got)
 	}
 	awaitFlush(t, func() bool { return clock.Pending() == 1 })
@@ -101,7 +99,7 @@ func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
 	clock.Advance(570 * time.Second)
 	receive()
 	awaitFlush(t, func() bool { return clock.Pending() == 1 })
-	if err := SetFlushInterval(ctx, 300); err != nil {
+	if err := svc.SetFlushInterval(ctx, 300); err != nil {
 		t.Fatal(err)
 	}
 	receive() // Signal wakes without advancing the clock; the new interval is reread.
@@ -114,15 +112,15 @@ func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
 	if entry.LastTrigger == nil || *entry.LastTrigger != "shutdown" || receiptCount(entry.RunCount) != 2 {
 		t.Fatal("shutdown used the wrong repository", entry)
 	}
-	if !isStopping() {
+	if !svc.isStopping() {
 		t.Fatal("shutdown did not stop owner")
 	}
 	clock.Advance(time.Hour)
 	runner.Start(ctx)
-	if isStopping() {
+	if svc.isStopping() {
 		t.Fatal("restart did not reset stopping")
 	}
-	if got := NextFlushAt(nil, 300); got == nil || !got.Equal(clock.Now().Add(300*time.Second)) {
+	if got := svc.NextFlushAt(nil, 300); got == nil || !got.Equal(clock.Now().Add(300*time.Second)) {
 		t.Fatal("restart retained old baseline", got)
 	}
 	awaitFlush(t, func() bool { return clock.Pending() == 1 })
@@ -142,20 +140,20 @@ func TestFlushPeriodicActivationWakeAndRestart(t *testing.T) {
 }
 
 func TestManualFlushDoesNotInitializeSchedule(t *testing.T) {
-	_, _, ctx := agentManager(t)
+	svc, _, _, ctx := agentManager(t)
 	clock := lifecycletest.NewClock(time.Now())
 	reg := lifecycle.NewRegistry()
-	reg.RegisterPeriodic(flushPeriodic())
+	reg.RegisterPeriodic(svc.Loop())
 	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: reg, Clock: clock, Mode: lifecycle.ModeManual})
 	runner.Start(ctx)
 	defer runner.Shutdown(ctx)
 	if err := runner.RunRound(ctx, "metrics-history-flush"); err != nil {
 		t.Fatal(err)
 	}
-	if clock.Pending() != 0 || NextFlushAt(nil, 300) != nil {
+	if clock.Pending() != 0 || svc.NextFlushAt(nil, 300) != nil {
 		t.Fatal("manual mode invented activation")
 	}
-	rows, err := BuildRows(ctx, taskstatus.Snapshot{})
+	rows, err := svc.BuildRows(ctx, taskstatus.Snapshot{})
 	if err != nil || len(rows) == 0 || rows[0].NextRunAt != nil {
 		t.Fatal("manual row invented next_run_at", rows, err)
 	}

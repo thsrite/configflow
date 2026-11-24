@@ -7,34 +7,23 @@ package metrics
 // more when the service stops, so a graceful stop loses nothing. Every run,
 // including failures such as a full disk or a read-only directory, is
 // recorded in task_status for the task list.
-//
-// Python's stop-signal handling (handle_stop_signal, exit_after_stop_signal,
-// install_signal_handlers: save on SIGTERM/SIGINT, then exit without waiting
-// for busy threads; a second Ctrl+C force-quits) is the Go server's shutdown
-// path: main stops on SIGTERM/SIGINT and lifecycle.Stop runs the shutdown
-// hook registered by Wire (FlushOnShutdown) after the HTTP servers stopped.
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
-	"configflow/internal/agents"
 	"configflow/internal/faultprobe"
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
-	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
-	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
-	"encoding/json"
-	"strconv"
 )
 
 var flushLogger = logx.Get("backend.agents.metrics_flush")
@@ -53,45 +42,6 @@ const (
 // IntervalChoices is INTERVAL_CHOICES.
 var IntervalChoices = []int64{300, 600, 1800, 3600}
 
-var (
-	// runMu is the L2 save operation, spanning history I/O and its receipt.
-	runMu   = lockx.NewMutex(lockx.LevelDevice, "metrics-history-save")
-	running atomic.Bool
-	// wake coalesces interval edits without launching overlapping rounds.
-	wake lifecycle.Signal
-
-	stateMu sync.Mutex
-	// startedAt is _started_at: when the loop started (nil before).
-	startedAt *time.Time
-	// attemptedAt is _attempted_at: when this process last started a save,
-	// so that a run whose record could not be written does not rerun every
-	// tick.
-	attemptedAt *time.Time
-	// stopping is _stopping: the service is stopping.
-	stopping bool
-)
-
-// utcNow is datetime.now(timezone.utc) (tests replace it).
-var utcNow = func() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
-
-// ResetFlushState restores the process-wide flush state of a fresh process
-// (tests; Python's tests patched the module globals).
-func ResetFlushState() {
-	stateMu.Lock()
-	startedAt, attemptedAt, stopping = nil, nil, false
-	stateMu.Unlock()
-	wake.Clear()
-}
-
-// SetStartedAt sets _started_at (tests).
-func SetStartedAt(t *time.Time) {
-	stateMu.Lock()
-	startedAt = t
-	stateMu.Unlock()
-}
-
-func setWake() { wake.Notify() }
-
 var errInterval = &tasks.Invalid{Message: msgFlushInterval}
 
 func allowedInterval(value int64) bool {
@@ -103,6 +53,15 @@ func allowedInterval(value int64) bool {
 	return false
 }
 
+func (s *Service) nowUTC() time.Time {
+	if s != nil && s.utcNow != nil {
+		return s.utcNow()
+	}
+	return time.Now().UTC().Truncate(time.Microsecond)
+}
+
+func (s *Service) setWake() { s.wake.Notify() }
+
 // FlushInterval reads the exact stored setting, retaining the established default.
 func FlushInterval(system *model.System) int64 {
 	stored := system.SystemConfig.MetricsHistoryFlushInterval
@@ -111,12 +70,12 @@ func FlushInterval(system *model.System) int64 {
 	}
 	return int64(*stored)
 }
-func currentIntervalSeconds(ctx context.Context) (int64, error) {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return 0, err
+
+func (s *Service) currentIntervalSeconds(ctx context.Context) (int64, error) {
+	if s == nil || s.repo == nil {
+		return 0, repo.ErrRepository
 	}
-	settings, err := r.SystemConfig(ctx)
+	settings, err := s.repo.SystemConfig(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -124,7 +83,7 @@ func currentIntervalSeconds(ctx context.Context) (int64, error) {
 }
 
 // SetFlushInterval updates the native setting and wakes the scheduler.
-func SetFlushInterval(ctx context.Context, seconds int64) error {
+func (s *Service) SetFlushInterval(ctx context.Context, seconds int64) error {
 	if !allowedInterval(seconds) {
 		return errInterval
 	}
@@ -132,12 +91,11 @@ func SetFlushInterval(ctx context.Context, seconds int64) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return err
+	if s == nil || s.repo == nil {
+		return repo.ErrRepository
 	}
-	err = r.UpdateSystem(ctx, func(ctx context.Context, s *model.System) error {
-		raw, err := json.Marshal(s)
+	err := s.repo.UpdateSystem(ctx, func(ctx context.Context, sys *model.System) error {
+		raw, err := json.Marshal(sys)
 		if err != nil {
 			return err
 		}
@@ -151,16 +109,23 @@ func SetFlushInterval(ctx context.Context, seconds int64) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		return s.SystemConfig.SetJSON(Setting, json.RawMessage(strconv.FormatInt(seconds, 10)))
+		return sys.SystemConfig.SetJSON(Setting, json.RawMessage(strconv.FormatInt(seconds, 10)))
 	})
 	if err == nil {
-		setWake()
+		s.setWake()
 	}
 	return err
 }
 
 // IsRunning is is_running().
-func IsRunning() bool { return running.Load() }
+func (s *Service) IsRunning() bool { return s.running.Load() }
+
+// SetStartedAt records the loop start time on s (for tests that inspect NextFlushAt without starting the loop).
+func (s *Service) SetStartedAt(t *time.Time) {
+	s.stateMu.Lock()
+	s.startedAt = t
+	s.stateMu.Unlock()
+}
 
 // parseTimeKeepingOffset reads a receipt time keeping its offset, so the
 // next due time is shown in the zone of the last run.
@@ -170,10 +135,10 @@ func parseTimeKeepingOffset(value string) (time.Time, bool) {
 
 // NextFlushAt is next_run_at(entry, interval): the due time of the next
 // scheduled run; nil before the loop has started.
-func NextFlushAt(entry *taskstatus.Receipt, interval int64) *time.Time {
-	stateMu.Lock()
-	candidates := []*time.Time{nil, startedAt, attemptedAt}
-	stateMu.Unlock()
+func (s *Service) NextFlushAt(entry *taskstatus.Receipt, interval int64) *time.Time {
+	s.stateMu.Lock()
+	candidates := []*time.Time{nil, s.startedAt, s.attemptedAt}
+	s.stateMu.Unlock()
 	text := ""
 	if entry != nil && entry.LastRunAt != nil {
 		text = *entry.LastRunAt
@@ -206,20 +171,27 @@ func (e *TrafficHistoryFlushError) Error() string {
 
 func (e *TrafficHistoryFlushError) Unwrap() error { return e.Err }
 
-// recordStatus is task_status.record (tests replace it).
-var recordStatus = func(ctx context.Context, dataDir string, result taskstatus.Result) error {
-	_, err := notifications.TaskStatus(ctx, dataDir).SaveResult(ctx, TaskKey, result)
+func (s *Service) saveTaskStatus(ctx context.Context, dataDir string, result taskstatus.Result) error {
+	if s.recordStatus != nil {
+		return s.recordStatus(ctx, dataDir, result)
+	}
+	var store *taskstatus.Store
+	if s.notifications != nil {
+		store = s.notifications.TaskStatus(ctx, dataDir)
+	} else {
+		store = taskstatus.New(dataDir)
+	}
+	_, err := store.SaveResult(ctx, TaskKey, result)
 	return err
 }
 
 // record is _record: a status that cannot be written is only logged.
-func record(ctx context.Context, result taskstatus.Result) {
+func (s *Service) record(ctx context.Context, result taskstatus.Result) {
 	err := func() error {
-		repository, err := repo.GetRepository(ctx)
-		if err != nil {
-			return err
+		if s.dataDir == "" {
+			return repo.ErrRepository
 		}
-		return recordStatus(ctx, repository.DataDir(), result)
+		return s.saveTaskStatus(ctx, s.dataDir, result)
 	}()
 	if err != nil {
 		// 磁盘满时运行记录也可能写不进去；日志里仍能看到保存结果
@@ -242,32 +214,31 @@ func errorText(err error) string {
 	return fmt.Sprintf("%T", err)
 }
 
-// FlushNow saves (trigger, record_idle): save every Agent's new points and
-// return the counts of History.Flush (plus "traffic_rows" once A05 wires
-// the traffic history). The result, or the reason it failed, lands in
-// task_status; a failed run keeps the points in memory for the next one and
-// returns the first error.
-func FlushNow(ctx context.Context, trigger string, recordIdle bool) (*SaveResult, error) {
+// FlushNow saves every Agent's new metrics and traffic points and records the
+// result in task_status; a failed run keeps the points in memory for the next
+// one and returns the first error.
+func (s *Service) FlushNow(ctx context.Context, trigger string, recordIdle bool) (*SaveResult, error) {
 	ctx = lifecycle.Detach(ctx)
-	ctx, release, err := runMu.Lock(ctx, 0)
+	ctx, release, err := s.runMu.Lock(ctx, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	running.Store(true)
-	defer running.Store(false)
-	attempt := utcNow()
-	stateMu.Lock()
-	attemptedAt = &attempt
-	stateMu.Unlock()
+	s.running.Store(true)
+	defer s.running.Store(false)
+	attempt := s.nowUTC()
+	s.stateMu.Lock()
+	s.attemptedAt = &attempt
+	s.stateMu.Unlock()
 	started, clock := taskstatus.NowISO(), time.Now()
 	var failures []error
 	result := &SaveResult{}
-	manager, err := agents.Get(ctx)
 	var agentIDs []string
 	var minimalSystem model.System
-	if err == nil {
-		err = manager.Repository().View(ctx, func(doc *model.Document) error {
+	if s.repo == nil {
+		err = repo.ErrRepository
+	} else {
+		err = s.repo.View(ctx, func(doc *model.Document) error {
 			agentIDs = nativeAgentIDsFromRecords(doc.System.Agents)
 			raw, present, memberErr := repo.SystemMemberJSON(&doc.System, "system_config")
 			if memberErr != nil {
@@ -283,22 +254,18 @@ func FlushNow(ctx context.Context, trigger string, recordIdle bool) (*SaveResult
 		failures = append(failures, err)
 	} else {
 		// 导入、恢复或重置配置后已不存在的 Agent，不再保存它们的历史
-		history, historyErr := historyContext(ctx, manager.Repository().DataDir())
-		if historyErr != nil {
-			return nil, historyErr
-		}
-		if _, err := history.RetainMetricsAgents(ctx, agentIDs); err != nil {
+		if _, err := s.history.RetainMetricsAgents(ctx, agentIDs); err != nil {
 			return nil, err
 		}
 		faultprobe.Point(ctx, faultprobe.MetricsFlush)
-		counts, err := history.FlushContext(ctx)
+		counts, err := s.history.FlushContext(ctx)
 		if err != nil {
 			failures = append(failures, err)
 		} else {
 			result.FlushResult = counts
 		}
 		// 流量记录与监控历史一起保存；一项失败不影响另一项
-		rows, err := flushTraffic(ctx, manager, agentIDs, &minimalSystem)
+		rows, err := s.flushTraffic(ctx, agentIDs, &minimalSystem)
 		if err != nil {
 			failures = append(failures, &TrafficHistoryFlushError{err})
 		} else {
@@ -313,75 +280,74 @@ func FlushNow(ctx context.Context, trigger string, recordIdle bool) (*SaveResult
 		}
 		reason := strings.Join(reasons, "；")
 		flushLogger.Warningf("监控历史保存失败：%s", reason)
-		record(ctx, taskstatus.Result{OK: false, StartedAt: started, Trigger: trigger, Error: reason, DurationMs: duration})
+		s.record(ctx, taskstatus.Result{OK: false, StartedAt: started, Trigger: trigger, Error: reason, DurationMs: duration})
 		return nil, failures[0]
 	}
 	if recordIdle || result.Appended != 0 || result.Compacted != 0 || (result.TrafficRows != nil && *result.TrafficRows != 0) {
-		record(ctx, taskstatus.Result{OK: true, StartedAt: started, Trigger: trigger, DurationMs: duration})
+		s.record(ctx, taskstatus.Result{OK: true, StartedAt: started, Trigger: trigger, DurationMs: duration})
 	}
 	return result, nil
 }
 
-// RunDue is run_due(now): run once if the interval has passed; the interval
-// is read every time. ran is true when a run started (err is its failure).
-func RunDue(ctx context.Context, current time.Time) (ran bool, err error) {
-	repository, err := repo.GetRepository(ctx)
+// RunDue runs one flush if the interval has passed; the interval is read every
+// time. ran is true when a run started (err is its failure).
+func (s *Service) RunDue(ctx context.Context, current time.Time) (ran bool, err error) {
+	if s.repo == nil {
+		return false, repo.ErrRepository
+	}
+	snapshot, err := taskstatus.New(s.dataDir).Read()
 	if err != nil {
 		return false, err
 	}
-	snapshot, err := taskstatus.New(repository.DataDir()).Read()
+	interval, err := s.currentIntervalSeconds(ctx)
 	if err != nil {
 		return false, err
 	}
-	interval, err := currentIntervalSeconds(ctx)
-	if err != nil {
-		return false, err
-	}
-	due := NextFlushAt(snapshot.Entry(TaskKey), interval)
+	due := s.NextFlushAt(snapshot.Entry(TaskKey), interval)
 	if due == nil || due.After(current) {
 		return false, nil
 	}
-	_, err = FlushNow(ctx, "schedule", true)
+	_, err = s.FlushNow(ctx, "schedule", true)
 	return true, err
 }
 
-func isStopping() bool {
-	stateMu.Lock()
-	defer stateMu.Unlock()
-	return stopping
+func (s *Service) isStopping() bool {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.stopping
 }
 
-func flushPeriodic() lifecycle.Periodic {
+func (s *Service) flushPeriodic() lifecycle.Periodic {
 	return lifecycle.Periodic{
 		Name: "metrics-history-flush", Start: lifecycle.AtBoot,
-		FirstDelay: TickSeconds * time.Second, Wake: &wake,
+		FirstDelay: TickSeconds * time.Second, Wake: &s.wake,
 		Interval: func(context.Context) time.Duration { return TickSeconds * time.Second },
 		OnStart: func(context.Context) {
-			wake.Clear()
-			stateMu.Lock()
-			t := utcNow()
-			startedAt, attemptedAt, stopping = &t, nil, false
-			stateMu.Unlock()
+			s.wake.Clear()
+			s.stateMu.Lock()
+			t := s.nowUTC()
+			s.startedAt, s.attemptedAt, s.stopping = &t, nil, false
+			s.stateMu.Unlock()
 		},
 		Round: func(ctx context.Context) error {
-			if isStopping() {
+			if s.isStopping() {
 				return nil
 			}
 			// Run owns recording and logging of ordinary save failures.
-			_, _ = RunDue(ctx, utcNow())
+			_, _ = s.RunDue(ctx, s.nowUTC())
 			return nil
 		},
 	}
 }
 
-// SaveOnShutdown is flush_on_shutdown(record_idle): the final save when
-// the service stops; never fails (nil result when the save failed).
-func SaveOnShutdown(ctx context.Context, recordIdle bool) *SaveResult {
-	stateMu.Lock()
-	stopping = true
-	stateMu.Unlock()
-	setWake()
-	result, err := FlushNow(ctx, "shutdown", recordIdle)
+// SaveOnShutdown is the final save when the service stops; never fails (nil
+// result when the save failed).
+func (s *Service) SaveOnShutdown(ctx context.Context, recordIdle bool) *SaveResult {
+	s.stateMu.Lock()
+	s.stopping = true
+	s.stateMu.Unlock()
+	s.setWake()
+	result, err := s.FlushNow(ctx, "shutdown", recordIdle)
 	if err != nil {
 		return nil
 	}
@@ -391,15 +357,19 @@ func SaveOnShutdown(ctx context.Context, recordIdle bool) *SaveResult {
 	return result
 }
 
-// LoadSavedHistory is load_history(): read the saved history back at service
-// start (and migrate the old format); nil when it failed (logged).
-func LoadSavedHistory(ctx context.Context, manager *agents.Manager) *LoadResult {
+// LoadSavedHistory reads the saved history back at service start (and migrates
+// the old format); nil when it failed (logged).
+func (s *Service) LoadSavedHistory(ctx context.Context) *LoadResult {
 	ctx = lifecycle.Detach(ctx)
 	if ctx.Err() != nil {
 		return nil
 	}
+	if s.repo == nil {
+		flushLogger.Warningf("监控历史加载失败：%s", repo.ErrRepository)
+		return nil
+	}
 	var agentIDs []string
-	err := manager.Repository().ViewAgents(ctx, func(records []model.Agent) error {
+	err := s.repo.ViewAgents(ctx, func(records []model.Agent) error {
 		agentIDs = nativeAgentIDsFromRecords(records)
 		return nil
 	})
@@ -407,11 +377,7 @@ func LoadSavedHistory(ctx context.Context, manager *agents.Manager) *LoadResult 
 		flushLogger.Warningf("监控历史加载失败：%s", err)
 		return nil
 	}
-	history, err := historyContext(ctx, manager.Repository().DataDir())
-	if err != nil {
-		return nil
-	}
-	result, err := history.LoadContext(ctx, agentIDs)
+	result, err := s.history.LoadContext(ctx, agentIDs)
 	if err != nil {
 		flushLogger.Warningf("监控历史加载失败：%s", err)
 		return nil
@@ -419,11 +385,10 @@ func LoadSavedHistory(ctx context.Context, manager *agents.Manager) *LoadResult 
 	return &result
 }
 
-// BuildRows is routes/tasks._metrics_row(statuses): the one system-level row of
-// the task list.
-func BuildRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
+// BuildRows builds the one system-level row of the task list.
+func (s *Service) BuildRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
 	entry := statuses.Entry(TaskKey)
-	interval, err := currentIntervalSeconds(ctx)
+	interval, err := s.currentIntervalSeconds(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -432,13 +397,17 @@ func BuildRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task
 		return nil, err
 	}
 	link := "/agents"
-	return []*tasks.Task{{Key: TaskKey, Category: "metrics_history", Name: msgFlushTask, Detail: msgFlushDetail, Enabled: true, Editable: true, CanRun: true, Running: tasks.IsBackground(TaskKey) || IsRunning(), IntervalSeconds: json.RawMessage(strconv.FormatInt(interval, 10)), NextRunAt: flushISO(NextFlushAt(entry, interval)), Link: &link, HistoryData: history}}, nil
+	return []*tasks.Task{{Key: TaskKey, Category: "metrics_history", Name: msgFlushTask, Detail: msgFlushDetail, Enabled: true, Editable: true, CanRun: true, Running: tasks.IsBackground(TaskKey) || s.IsRunning(), IntervalSeconds: json.RawMessage(strconv.FormatInt(interval, 10)), NextRunAt: flushISO(s.NextFlushAt(entry, interval)), Link: &link, HistoryData: history}}, nil
 }
 
 // runNow is the "run now" of routes/tasks.run_task for this task.
-func runNow(ctx context.Context, key, _ string) error {
-	return tasks.StartBackground(ctx, key, func(ctx context.Context) error {
-		_, err := FlushNow(ctx, "manual", true)
+func (s *Service) runNow(ctx context.Context, key, _ string) error {
+	if s.tasks == nil {
+		_, err := s.FlushNow(ctx, "manual", true)
+		return err
+	}
+	return s.tasks.StartBackground(ctx, key, func(ctx context.Context) error {
+		_, err := s.FlushNow(ctx, "manual", true)
 		return err
 	})
 }

@@ -35,8 +35,8 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/agents/metrics"
 	"configflow/internal/auth"
+	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -249,22 +249,26 @@ func startGo(t *testing.T, dataDir string) string {
 	repo.SetRepository(r)
 	t.Cleanup(func() { repo.SetRepository(nil) })
 
-	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains} {
-		t.Cleanup(tasks.SetRowBuilder(slot, none))
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	app, err := server.New(context.Background(), server.Options{Repo: r, Runtime: rt})
+	if err != nil {
+		t.Fatal(err)
 	}
-	app := server.NewApp()
+	t.Cleanup(app.Agents.Close)
+	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains} {
+		app.Tasks.SetRowBuilder(slot, none)
+	}
 	// Flask's metrics flush loop started with the app (its row shows the
 	// next save); the Go loops are not started here.
 	started := time.Now()
-	metrics.SetStartedAt(&started)
-	t.Cleanup(func() { metrics.SetStartedAt(nil) })
-	if !app.Router.HasEndpoint("tasks.get_tasks") {
-		t.Fatalf("task routes not registered; missing %v", tasks.Missing())
+	app.Metrics.SetStartedAt(&started)
+	if !app.HTTP.Router.HasEndpoint("tasks.get_tasks") {
+		t.Fatalf("task routes not registered; missing %v", app.Tasks.Missing())
 	}
-	if _, err := repo.PrepareConfig(repo.WithScope(context.Background())); err != nil {
+	if _, err := r.PrepareConfig(repo.WithScope(context.Background())); err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(app)
+	srv := httptest.NewServer(app.HTTP)
 	t.Cleanup(srv.Close)
 	return srv.URL
 }

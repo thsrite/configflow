@@ -57,8 +57,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 			Refresh:  gen.refresh,
 		})
 		agents.RegisterHooks(agents.Hooks{ReceiptMatches: deploy.ReceiptMatches})
-		metrics.WireOn(rt)
-		metrics.WireTraffic()
+		metrics.New(metrics.Options{}).RegisterTasks(tk)
 		if err := nt.SetAgents(agents.NotificationAgents); err != nil {
 			return nil, err
 		}
@@ -68,7 +67,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 
 	dataDir := opts.Repo.DataDir()
 	ts := trafficstore.NewService(dataDir)
-	mt := metrics.New(dataDir, ts)
+	mt := metrics.New(metrics.Options{Repo: opts.Repo, TrafficStore: ts, Notifications: nt, Tasks: tk})
 	mon := monitor.New(dataDir)
 
 	deletedStores := append([]agents.NamedDeleter{mt.TrafficStoreDeleter()}, health.DeletedStores(dataDir)...)

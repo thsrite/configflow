@@ -159,7 +159,7 @@ func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.
 func wireAllO10T3Slots(t *testing.T, r *repo.Repository, m *agents.Manager, agentReads *atomic.Int32) {
 	t.Helper()
 	agents.Wire()
-	metrics.Wire()
+	metrics.New(metrics.Options{Repo: r}).RegisterTasks(tasks.Default())
 	refresh.New(refresh.Options{Repo: r}).Register(lifecycle.Current(), tasks.Default())
 	rr := routerrulesync.New(r, routerrulesync.Options{})
 	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRouters, rr.TaskRows))

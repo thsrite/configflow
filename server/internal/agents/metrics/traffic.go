@@ -43,11 +43,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"configflow/internal/agents"
 	"configflow/internal/discovery"
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/model"
 	"configflow/internal/pathx"
 	"configflow/internal/rules"
 	"encoding/json"
@@ -563,34 +563,32 @@ func NewTrafficHistory(dataDir string) *TrafficHistory {
 	}
 }
 
-var (
-	trafficHistoriesMu sync.Mutex
-	trafficHistories   = map[string]*TrafficHistory{}
-)
-
-// TrafficFor returns the TrafficHistory of a repository data directory
-// (os.path.join(repository.data_dir, 'metrics')), creating it on first use.
-func TrafficFor(dataDir string) *TrafficHistory {
-	trafficHistoriesMu.Lock()
-	defer trafficHistoriesMu.Unlock()
-	h := trafficHistories[dataDir]
-	if h == nil {
-		h = NewTrafficHistory(filepath.Join(dataDir, "metrics"))
-		trafficHistories[dataDir] = h
+func retentionDaysJSON(raw json.RawMessage) (int64, error) {
+	present, err := model.Truthy(raw)
+	if err != nil {
+		return 0, err
 	}
-	return h
-}
-
-// TrafficForManager is manager.traffic_history.
-func TrafficForManager(m *agents.Manager) *TrafficHistory {
-	return TrafficFor(m.Repository().DataDir())
-}
-
-// ResetTraffic forgets every TrafficHistory (tests).
-func ResetTraffic() {
-	trafficHistoriesMu.Lock()
-	trafficHistories = map[string]*TrafficHistory{}
-	trafficHistoriesMu.Unlock()
+	if !present {
+		return DefaultRetention, nil
+	}
+	var fields model.Fields
+	if jsondecode.Unmarshal(raw, &fields) != nil {
+		return 0, ErrTrafficSettingsShape
+	}
+	value, present := fields.Get(RetentionSetting)
+	if !present {
+		return DefaultRetention, nil
+	}
+	var days int64
+	if jsondecode.Unmarshal(value, &days) != nil {
+		return DefaultRetention, nil
+	}
+	for _, choice := range RetentionChoices {
+		if days == choice {
+			return days, nil
+		}
+	}
+	return DefaultRetention, nil
 }
 
 // SetBrokenConnect makes every database access of h fail with err until

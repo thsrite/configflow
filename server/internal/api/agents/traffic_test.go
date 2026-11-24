@@ -35,6 +35,7 @@ const trafficToken = "agent-token-0123456789abcdef"
 type trafficEnv struct {
 	s       *httpxtest.Server
 	manager *agents.Manager
+	metrics *metrics.Service
 	admin   []httpxtest.Option
 }
 
@@ -42,18 +43,9 @@ type trafficEnv struct {
 // (mihomo, 1.8.51-go) and dns (oxidns). With login, admin holds the login.
 func newTrafficEnv(t *testing.T, login bool) trafficEnv {
 	t.Helper()
-	reset := func() {
-		metrics.Reset()
-		metrics.ResetTraffic()
-		trafficstore.ResetCache()
-		agents.ResetRuntime()
-		agents.ResetHooks()
-	}
-	reset()
-	t.Cleanup(reset)
-	metrics.Wire()
-	metrics.WireTraffic()
-	s := httpxtest.New(t, httpxtest.Options{Auth: login, Register: httpxtest.Routes(apiagents.Register)})
+	trafficstore.ResetCache()
+	t.Cleanup(trafficstore.ResetCache)
+	s := httpxtest.New(t, httpxtest.Options{Auth: login})
 	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		return system.SetJSON("agents", mustRawJSON(t, []any{
 			map[string]any{
@@ -69,11 +61,18 @@ func newTrafficEnv(t *testing.T, login bool) trafficEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := agents.Get(s.Context())
+	ts := trafficstore.NewService(s.Repo.DataDir())
+	mt := metrics.New(metrics.Options{Repo: s.Repo, TrafficStore: ts})
+	m, err := agents.New(s.Context(), s.Repo, agents.Options{
+		Metrics:       mt,
+		DeletedStores: []agents.NamedDeleter{mt.TrafficStoreDeleter()},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := trafficEnv{s: s, manager: m}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo, Agents: m, Metrics: mt, Traffic: ts}).Register(s.App.Router)
+	env := trafficEnv{s: s, manager: m, metrics: mt}
 	if login {
 		env.admin = []httpxtest.Option{s.Login()}
 	}
@@ -151,7 +150,7 @@ func TestSwitchReportsAndHeartbeat(t *testing.T) {
 
 	// 关闭并删除数据
 	s.Put(url, httpxtest.JSON(map[string]any{"enabled": false, "clear": true})).WantStatus(200)
-	result, err := metrics.TrafficForManager(e.manager).QueryTraffic(s.Context(), "gw", "24h", "source", nil)
+	result, err := e.metrics.Traffic().QueryTraffic(s.Context(), "gw", "24h", "source", nil)
 	if err != nil || len(result.Rows) != 0 {
 		t.Fatal("not cleared", err)
 	}
@@ -202,11 +201,11 @@ func TestTrafficHistoryRoutesAnswerUnknownAndBadPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := metrics.TrafficForManager(e.manager).AddTraffic(s.Context(), "gw", metrics.DecodeTrafficReport(raw, nil)); err != nil {
+	if err := e.metrics.Traffic().AddTraffic(s.Context(), "gw", metrics.DecodeTrafficReport(raw, nil)); err != nil {
 		t.Fatal(err)
 	}
 	wantBodyJSON(t, s.Delete("/api/agents/gw/traffic-history").WantStatus(200), map[string]any{"success": true})
-	if metrics.TrafficForManager(e.manager).PendingCount() != 0 {
+	if e.metrics.Traffic().PendingCount() != 0 {
 		t.Fatal("not cleared")
 	}
 	// The Agent body limit: 4 MiB.

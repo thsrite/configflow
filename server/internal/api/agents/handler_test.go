@@ -67,7 +67,7 @@ func TestHandlerUsesInjectedDepsWithoutGlobalLocators(t *testing.T) {
 
 	ctx := context.Background()
 	ts := trafficstore.NewService(dir)
-	mt := metrics.New(dir, ts)
+	mt := metrics.New(metrics.Options{Repo: r, TrafficStore: ts})
 	mon := monitor.New(dir)
 	m, err := core.New(ctx, r, core.Options{
 		Metrics:     mt,
