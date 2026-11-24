@@ -57,7 +57,11 @@ func newWorld(t *testing.T) *world {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(apilogs.Register, apistats.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret})
+	apilogs.NewHandler().Register(s.App.Router)
+	statsHandler := apistats.NewHandler(s.Repo)
+	statsHandler.Now = func() time.Time { return fixed }
+	statsHandler.Register(s.App.Router)
 	reg := tasks.NewRegistry(s.Repo, nil)
 	rf := refresh.New(refresh.Options{Repo: s.Repo})
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
@@ -79,10 +83,9 @@ func newWorld(t *testing.T) *world {
 	nt := notifications.New(notifications.Options{Repo: s.Repo, Tasks: reg, Rows: reg.Available, MissingTasks: reg.Missing, Agents: func(context.Context) ([]model.Agent, error) { return nil, nil }})
 	apitasks.NewHandlerWithRepo(reg, s.Repo).Register(s.App.Router)
 	apinotifications.NewHandler(reg, nt, s.Repo).Register(s.App.Router)
-	previousNow, previousClock := apistats.Now, notifications.Clock
-	apistats.Now = func() time.Time { return fixed }
+	previousClock := notifications.Clock
 	notifications.Clock = func() time.Time { return fixed }
-	t.Cleanup(func() { apistats.Now = previousNow; notifications.Clock = previousClock })
+	t.Cleanup(func() { notifications.Clock = previousClock })
 	err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, shared *model.Shared) error {
 		if err := shared.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Synthetic feed","url":"https://feed.example.com/sub","interval":3600,"enabled":true}]`)); err != nil {
 			return err

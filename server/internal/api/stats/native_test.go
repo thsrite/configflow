@@ -14,11 +14,10 @@ import (
 
 func TestNativeHistoryInterchangeAndExactCounters(t *testing.T) {
 	repository, ctx := statsRepository(t)
-	previous := Now
-	t.Cleanup(func() { Now = previous })
 	clock := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
-	Now = func() time.Time { return clock }
-	if _, err := NewHandler(repository).recordHistory(ctx, Counts{Nodes: 2}, true); err != nil {
+	h := NewHandler(repository)
+	h.Now = func() time.Time { return clock }
+	if _, err := h.recordHistory(ctx, Counts{Nodes: 2}, true); err != nil {
 		t.Fatal(err)
 	}
 	path, err := repository.ProfilePath("default", HistoryFile)
@@ -33,7 +32,7 @@ json.dump(v,open(p,'w'))`
 		t.Fatalf("Python: %s %v", out, err)
 	}
 	clock = clock.Add(SampleInterval)
-	history, err := NewHandler(repository).recordHistory(ctx, Counts{Nodes: 3}, true)
+	history, err := h.recordHistory(ctx, Counts{Nodes: 3}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,10 +54,7 @@ v=json.load(open(sys.argv[1]));assert v['samples'][0]['nodes'] is None;assert v[
 
 func TestNativeOverviewOverflowIsMissingAndPreservesSamples(t *testing.T) {
 	repository, ctx := statsRepository(t)
-	previous := Now
-	t.Cleanup(func() { Now = previous })
 	clock := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
-	Now = func() time.Time { return clock }
 	path, err := repository.ProfilePath("default", HistoryFile)
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +67,10 @@ func TestNativeOverviewOverflowIsMissingAndPreservesSamples(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := httpx.New()
-	Register(app.Router)
+	app.Repo = repository
+	h := NewHandler(repository)
+	h.Now = func() time.Time { return clock }
+	h.Register(app.Router)
 	result, err := app.Invoke(ctx, httpx.InvokeRequest{Method: "GET", Path: "/api/stats/overview"})
 	if err != nil {
 		t.Fatal(err)

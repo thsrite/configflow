@@ -13,7 +13,7 @@ import (
 	"configflow/internal/provider"
 )
 
-func writeTestManifest(app *httpx.App, _ *provider.Service) error {
+func writeTestManifest(app *httpx.App, _ *provider.Service, _ func()) error {
 	if os.Getenv(faultprobe.ControlEnv) == "" {
 		return nil
 	}

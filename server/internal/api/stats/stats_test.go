@@ -43,10 +43,11 @@ func TestOverviewCountsAndHistorySampling(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := httpx.New()
-	Register(app.Router)
+	app.Repo = repository
 	clock := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
-	Now = func() time.Time { return clock }
-	defer func() { Now = time.Now }()
+	h := NewHandler(repository)
+	h.Now = func() time.Time { return clock }
+	h.Register(app.Router)
 
 	status, body := overviewOf(t, app, repository, "")
 	data := body["data"].(map[string]any)

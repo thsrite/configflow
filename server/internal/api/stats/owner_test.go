@@ -27,7 +27,8 @@ func statsRepository(t *testing.T) (*repo.Repository, context.Context) {
 func TestHEADHasGETHeadersAndNeverCreatesOrReplacesHistory(t *testing.T) {
 	r, ctx := statsRepository(t)
 	app := httpx.New()
-	Register(app.Router)
+	app.Repo = r
+	NewHandler(r).Register(app.Router)
 	path, err := r.ProfilePath("default", HistoryFile)
 	if err != nil {
 		t.Fatal(err)
@@ -72,15 +73,14 @@ func TestSamplingOwnerRuntimeAndCancellationBeforeCommit(t *testing.T) {
 			} else {
 				cancel()
 			}
-			previous := Now
-			t.Cleanup(func() { Now = previous })
-			Now = func() time.Time {
+			h := NewHandler(r)
+			h.Now = func() time.Time {
 				if mode == "shutdown after observation" {
 					runtime.Shutdown(context.Background())
 				}
 				return time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
 			}
-			_, err := NewHandler(nil).recordHistory(request, Counts{Nodes: 1}, true)
+			_, err := h.recordHistory(request, Counts{Nodes: 1}, true)
 			path, _ := r.ProfilePath("default", HistoryFile)
 			_, statErr := os.Stat(path)
 			if mode == "disconnect" {
@@ -96,12 +96,11 @@ func TestSamplingOwnerRuntimeAndCancellationBeforeCommit(t *testing.T) {
 
 func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	r, ctx := statsRepository(t)
-	previous := Now
-	t.Cleanup(func() { Now = previous })
 	clock := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
-	Now = func() time.Time { return clock }
+	h := NewHandler(r)
+	h.Now = func() time.Time { return clock }
 	for range HistorySize + 5 {
-		if _, err := NewHandler(nil).recordHistory(ctx, Counts{Nodes: 1}, true); err != nil {
+		if _, err := h.recordHistory(ctx, Counts{Nodes: 1}, true); err != nil {
 			t.Fatal(err)
 		}
 		clock = clock.Add(SampleInterval)
@@ -130,7 +129,7 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 20 {
 		wg.Go(func() {
-			if _, err := NewHandler(nil).recordHistory(ctx, Counts{Nodes: 2}, true); err != nil {
+			if _, err := h.recordHistory(ctx, Counts{Nodes: 2}, true); err != nil {
 				t.Error(err)
 			}
 		})
@@ -142,7 +141,7 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{bad"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewHandler(nil).recordHistory(ctx, Counts{Nodes: 3}, true); err != nil {
+	if _, err := h.recordHistory(ctx, Counts{Nodes: 3}, true); err != nil {
 		t.Fatal("corrupt optional history prevented overview", err)
 	}
 	if err := os.Remove(path); err != nil {
@@ -151,7 +150,7 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewHandler(nil).recordHistory(ctx, Counts{Nodes: 4}, true); err != nil {
+	if _, err := h.recordHistory(ctx, Counts{Nodes: 4}, true); err != nil {
 		t.Fatal("optional history write failure prevented overview", err)
 	}
 }

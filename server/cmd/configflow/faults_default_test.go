@@ -22,7 +22,7 @@ func TestProductionHasNoFaultRoutes(t *testing.T) {
 	}
 	t.Cleanup(srv.Agents.Close)
 	app := srv.HTTP
-	if err := writeTestManifest(app, nil); err != nil {
+	if err := writeTestManifest(app, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, route := range app.Router.Routes() {

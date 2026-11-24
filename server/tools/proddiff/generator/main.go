@@ -284,7 +284,6 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("open generator copy: %w", err)
 	}
-	repo.SetRepository(repository)
 	// Use the same public wiring as the command; deliberately never call lifecycle.Start.
 	srv, err := server.New(context.Background(), server.Options{Repo: repository})
 	if err != nil {

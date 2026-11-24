@@ -36,18 +36,18 @@ func TestRequestSeenAfterProfileAndAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo.SetRepository(r)
+	t.Cleanup(r.Close)
 	auth.Configure(auth.Config{AdminUsername: "test-admin", AdminPassword: "test-password", SecretKey: "synthetic-signing-key"})
 	reg := lifecycle.NewRegistry()
 	ran := make(chan struct{}, 2)
 	reg.RegisterPeriodic(lifecycle.Periodic{Name: "request-gated", Start: lifecycle.AfterFirstRequest,
 		Round: func(context.Context) error { ran <- struct{}{}; return nil }})
-	if err := lifecycle.Configure(lifecycle.Options{Registry: reg}); err != nil {
-		t.Fatal(err)
-	}
-	lifecycle.Start(context.Background())
-	defer lifecycle.Stop(time.Second)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: reg})
+	rt.Start(context.Background())
+	defer rt.Stop(time.Second)
 	app := httpx.New()
+	app.Repo = r
+	app.Runtime = rt
 	auth.Install(app)
 	app.Router.GET("/api/profiles/<profile_id>/protected", "test.protected", func(*httpx.Ctx) (*httpx.Response, error) { return httpx.Empty(200), nil })
 	app.Router.POST("/api/agents/<agent_id>/heartbeat", "agents.agent_heartbeat", func(*httpx.Ctx) (*httpx.Response, error) { return httpx.Empty(200), nil })

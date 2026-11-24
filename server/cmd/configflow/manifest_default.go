@@ -7,4 +7,4 @@ import (
 	"configflow/internal/provider"
 )
 
-func writeTestManifest(*httpx.App, *provider.Service) error { return nil }
+func writeTestManifest(*httpx.App, *provider.Service, func()) error { return nil }

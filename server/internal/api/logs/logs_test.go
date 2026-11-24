@@ -22,10 +22,11 @@ import (
 // cannot import httpxtest, which wires it).
 
 type logClient struct {
-	t    *testing.T
-	app  *httpx.App
-	repo *repo.Repository
-	path string
+	t       *testing.T
+	app     *httpx.App
+	handler *Handler
+	repo    *repo.Repository
+	path    string
 }
 
 func newLogClient(t *testing.T) *logClient {
@@ -35,15 +36,13 @@ func newLogClient(t *testing.T) *logClient {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "app.log")
-	previous := LogFilePath
-	LogFilePath = func() (string, error) { return path, nil }
-	t.Cleanup(func() { LogFilePath = previous; openFile = defaultOpen })
 	app := httpx.New()
-	Register(app.Router)
-	return &logClient{t, app, repository, path}
+	app.Repo = repository
+	h := NewHandler()
+	h.LogFilePath = func() (string, error) { return path, nil }
+	h.Register(app.Router)
+	return &logClient{t, app, h, repository, path}
 }
-
-var defaultOpen = openFile
 
 func (c *logClient) get(path string) (int, map[string]any) {
 	c.t.Helper()
@@ -166,7 +165,7 @@ func TestTailReadsFullCountWithoutReadingFileIntoAList(t *testing.T) {
 	client := newLogClient(t)
 	os.WriteFile(client.path, nil, 0o644)
 	var opened []*countingFile
-	openFile = func(path string) (io.ReadCloser, error) {
+	client.handler.OpenFile = func(path string) (io.ReadCloser, error) {
 		f := &countingFile{lines: 50000}
 		opened = append(opened, f)
 		return f, nil
@@ -213,7 +212,7 @@ func TestTailReadErrorAndInvalidLevelKeepExistingErrorResponse(t *testing.T) {
 	if status != 500 || data["success"] != false {
 		t.Fatalf("%d %#v", status, data)
 	}
-	openFile = func(string) (io.ReadCloser, error) { return nil, errors.New("synthetic read failure") }
+	client.handler.OpenFile = func(string) (io.ReadCloser, error) { return nil, errors.New("synthetic read failure") }
 	status, data = client.get("/api/logs/tail")
 	want := map[string]any{"success": false, "error": "synthetic read failure", "logs": []any{}, "total_lines": 0}
 	if status != 500 || !testjson.Equal(want, data) {

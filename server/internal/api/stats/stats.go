@@ -7,6 +7,7 @@ import (
 	"configflow/internal/timefmt"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -29,38 +30,35 @@ type Handler struct {
 	Now  func() time.Time
 }
 
-// NewHandler constructs a Handler for r (nil falls back to the context/default
-// repository until W11 removes the locators).
+// NewHandler constructs a Handler for r.
 func NewHandler(r *repo.Repository) *Handler { return &Handler{Repo: r} }
 
-func (h *Handler) repo(ctx context.Context) (*repo.Repository, error) {
+func (h *Handler) repo(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.Repo != nil {
 		return h.Repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/stats: repository is nil")
 }
 
 func (h *Handler) resolveProfileID(ctx context.Context) (string, error) {
-	if h != nil && h.Repo != nil {
-		ctx = repo.WithRepository(ctx, h.Repo)
+	r, err := h.repo(ctx)
+	if err != nil {
+		return "", err
 	}
-	return repo.ResolveProfileID(ctx, "")
+	return r.ResolveProfileID(ctx, "")
 }
 
 func (h *Handler) now() time.Time {
 	if h != nil && h.Now != nil {
 		return h.Now()
 	}
-	return Now()
+	return time.Now()
 }
 
 // Register adds the overview route to r.
 func (h *Handler) Register(r *httpx.Router) {
 	r.GET("/api/stats/overview", "stats.get_overview", h.getOverview)
 }
-
-// Register adds the overview route.
-func Register(r *httpx.Router) { NewHandler(nil).Register(r) }
 
 // Sampling and retention constants.
 const (
@@ -71,9 +69,6 @@ const (
 
 // Keys is the order of overview series.
 var Keys = []string{"subscriptions", "nodes", "proxyGroups", "rules"}
-
-// Now is the sampling clock.
-var Now = time.Now
 
 // Counts is the current typed catalog projection.
 type Counts struct {

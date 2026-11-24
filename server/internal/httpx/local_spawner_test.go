@@ -23,11 +23,11 @@ func TestRegisterLocalUsesDefaultSpawner(t *testing.T) {
 		}
 		return
 	}
-	if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
-		t.Fatal(err)
-	}
-	defer lifecycle.Stop(time.Second)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	rt.Start(context.Background())
+	defer rt.Stop(time.Second)
 	app := httpx.New()
+	app.Runtime = rt
 	entered, release := make(chan struct{}), make(chan struct{})
 	origin := make(chan *lifecycle.Runtime, 1)
 	defer func() {
@@ -56,20 +56,20 @@ func TestRegisterLocalUsesDefaultSpawner(t *testing.T) {
 		done <- err
 	}()
 	<-entered
-	rt := <-origin
-	if rt == nil {
+	got := <-origin
+	if got == nil {
 		t.Fatal("production local callback is not inside a Runtime job")
 	}
 	waiting, cancel := context.WithCancel(t.Context())
 	cancel()
-	if err := rt.WaitIdle(waiting); !errors.Is(err, context.Canceled) {
+	if err := got.WaitIdle(waiting); !errors.Is(err, context.Canceled) {
 		t.Fatal("production RegisterLocal did not inject default Spawner", err)
 	}
 	close(release)
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.WaitIdle(t.Context()); err != nil {
+	if err := got.WaitIdle(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 }

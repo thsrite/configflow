@@ -112,8 +112,7 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	if err != nil {
 		return err
 	}
-	repo.SetRepository(repository)
-	work := repo.WithRepository(context.WithoutCancel(ctx), repository)
+	work := context.WithoutCancel(ctx)
 	backend := newHTTPServer(nil)
 	var web *http.Server
 	var manager *weblistener.Manager
@@ -124,9 +123,6 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 		return drainServers(ctx, backend, web)
 	}
 	rt := lifecycle.NewProcessRuntime(lifecycle.Options{Grace: grace, Drain: drain})
-	if err := lifecycle.UseRuntime(rt); err != nil {
-		return err
-	}
 	defer rt.Stop(grace)
 	srv, err := server.New(work, server.Options{Repo: repository, Runtime: rt})
 	if err != nil {
@@ -160,7 +156,7 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "stop-signal-saved", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
 		markFirstSave.Do(func() { close(firstSaveDone) })
 	}})
-	if err := writeTestManifest(app, srv.Provider); err != nil {
+	if err := writeTestManifest(app, srv.Provider, srv.InstallProddiffContentObserver); err != nil {
 		return err
 	}
 	rt.RunStartup(work)

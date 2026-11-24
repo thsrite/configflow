@@ -80,13 +80,13 @@ func TestServiceProcess(t *testing.T) {
 			}
 		},
 		register: func(app *httpx.App) {
-			lifecycle.RegisterStartup(lifecycle.Startup{Name: "test-observe-startup", Run: func(ctx context.Context) error {
+			srvApp.Runtime.RegisterStartup(lifecycle.Startup{Name: "test-observe-startup", Run: func(ctx context.Context) error {
 				// All production startup work, including history loading, is done.
 				trace("startup")
 				_, err := srvApp.Metrics.History().AddSample(ctx, "edge", json.RawMessage(`{"cpu":{"usage_percent":1}}`))
 				return err
 			}})
-			lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-observe-first", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
+			srvApp.Runtime.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-observe-first", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
 				snap, err := taskstatus.New(dir).Read()
 				entry := snap.Entry(metrics.TaskKey)
 				var runs int64
@@ -104,7 +104,7 @@ func TestServiceProcess(t *testing.T) {
 			if mode == "signal-during-save" {
 				// Registered after metrics' first save and before main's marker: a
 				// slow first save during which a second signal arrives.
-				lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-slow-first-save", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
+				srvApp.Runtime.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-slow-first-save", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
 					trace("save-start")
 					deadline := time.Now().Add(5 * time.Second)
 					for time.Now().Before(deadline) {
@@ -117,7 +117,7 @@ func TestServiceProcess(t *testing.T) {
 					trace("save-end")
 				}})
 			}
-			lifecycle.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-observe-last", Phase: lifecycle.PhaseAfterDrain, Run: func(context.Context) {
+			srvApp.Runtime.RegisterShutdown(lifecycle.ShutdownHook{Name: "test-observe-last", Phase: lifecycle.PhaseAfterDrain, Run: func(context.Context) {
 				if mode == "detached-handler" {
 					select {
 					case <-detachedCancelled:
@@ -143,7 +143,7 @@ func TestServiceProcess(t *testing.T) {
 				trace("last")
 			}})
 			app.Router.POST("/__test/publish", "test.publish", func(c *httpx.Ctx) (*httpx.Response, error) {
-				err := lifecycle.Spawn(c.Context(), "synthetic-publish", func(ctx context.Context) {
+				err := srvApp.Runtime.Spawn(c.Context(), "synthetic-publish", func(ctx context.Context) {
 					<-firstSaved
 					if ctx.Err() != nil {
 						t.Error("publish cancelled before drain completed")

@@ -24,7 +24,7 @@ func TestProddiffContentWaits(t *testing.T) {
 			var once sync.Once
 			release := func() { once.Do(func() { close(f.gate) }) }
 			defer release()
-			InstallProddiffContentObserver(f.s.App)
+			NewHandler(Deps{Repo: f.s.Repo, Agents: f.manager}).InstallProddiffContentObserver(f.s.App)
 			done := make(chan *httpxtest.Result, 1)
 			go func() { done <- f.get(path) }()
 			deadline := time.Now().Add(5 * time.Second)

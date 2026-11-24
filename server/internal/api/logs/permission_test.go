@@ -32,7 +32,7 @@ func TestLogStatPermissionFailureDoesNotBecomeMissingOrFallback(t *testing.T) {
 	}
 	t.Setenv("DATA_DIR", c.repo.DataDir())
 	t.Setenv("LOG_FILE", path)
-	LogFilePath = getLogFilePath
+	c.handler.LogFilePath = getLogFilePath
 	if err := os.Chmod(folder, 0); err != nil {
 		t.Fatal(err)
 	}

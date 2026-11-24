@@ -25,7 +25,7 @@ func TestProddiffWaitsForFreshProvider(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
 		zero := 0.0
 		pv = provider.New(provider.Options{Repo: app.Repo, ResponseSeconds: &zero})
-		if err := writeTestManifest(app, pv); err != nil {
+		if err := writeTestManifest(app, pv, nil); err != nil {
 			t.Fatal(err)
 		}
 		app.Router.GET("/provider", "synthetic.provider", func(c *httpx.Ctx) (*httpx.Response, error) {

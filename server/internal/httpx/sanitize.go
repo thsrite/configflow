@@ -3,13 +3,13 @@ package httpx
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
 
 	"configflow/internal/jsonresp"
 	"configflow/internal/redact"
-	"configflow/internal/repo"
 )
 
 // External returns metadata through the same global JSON exit as JSON. Policy
@@ -107,15 +107,10 @@ func writeJSON(c *Ctx, r *Response) error {
 	if nonFinite {
 		r.body = text
 	}
-	rRepo := c.app.Repo
-	if rRepo == nil {
-		var err error
-		rRepo, err = repo.GetRepository(c.ctx)
-		if err != nil {
-			return err
-		}
+	if c.app == nil || c.app.Repo == nil {
+		return errors.New("httpx: repository is nil")
 	}
-	secrets, err := redact.ExternalPayloadSecrets(c.ctx, rRepo, nil)
+	secrets, err := redact.ExternalPayloadSecrets(c.ctx, c.app.Repo, nil)
 	if err != nil {
 		return err
 	}

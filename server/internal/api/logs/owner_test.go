@@ -30,9 +30,9 @@ func TestClearOwnerRuntimeAndFinalCommitCheck(t *testing.T) {
 				cancel()
 			}
 			if mode == "shutdown after lookup" {
-				LogFilePath = func() (string, error) { r.Shutdown(context.Background()); return c.path, nil }
+				c.handler.LogFilePath = func() (string, error) { r.Shutdown(context.Background()); return c.path, nil }
 			}
-			_, err := NewHandler().clearLog(request)
+			_, err := c.handler.clearLog(request)
 			after, readErr := os.ReadFile(c.path)
 			if readErr != nil {
 				t.Fatal(readErr)

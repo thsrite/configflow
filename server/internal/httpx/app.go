@@ -80,13 +80,17 @@ func (a *App) HandleError(h ErrorHandler) {
 
 // RegisterLocal makes the app the target of localhttp.Do (in-process
 // callbacks to this server's own /api URLs).
-func (a *App) RegisterLocal() { localhttp.Register(a, lifecycle.DefaultSpawner{}) }
+func (a *App) RegisterLocal() { localhttp.Register(a, a.Runtime) }
 
 // ServeHTTP runs one request through the pipeline. The request is bound to the
 // live lifecycle generation, so work an owner detaches from it (PORTING 4b)
 // still stops at the shutdown cancellation phase.
 func (a *App) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	ctx := repo.WithScope(lifecycle.BindRequest(req.Context()))
+	reqCtx := req.Context()
+	if a.Runtime != nil {
+		reqCtx = a.Runtime.BindRequest(reqCtx)
+	}
+	ctx := repo.WithScope(reqCtx)
 	defer repo.ResetConfigContext(ctx)
 	c := a.newCtx(ctx, req)
 	r := a.process(c)
@@ -249,8 +253,10 @@ func (a *App) finalize(c *Ctx, r *Response) {
 
 // requestSeen runs after profile resolution and the auth gate installed at
 // index 0. Public heartbeats count; rejected profiles or credentials do not.
-func requestSeen(_ *Ctx) (*Response, error) {
-	lifecycle.RequestSeen()
+func requestSeen(c *Ctx) (*Response, error) {
+	if c.app != nil && c.app.Runtime != nil {
+		c.app.Runtime.RequestSeen()
+	}
 	return nil, nil
 }
 
@@ -282,7 +288,10 @@ func profileContext(c *Ctx) (*Response, error) {
 		c.ProfileID = ""
 		return nil, nil
 	}
-	id, err := repo.ResolveProfile(c.ctx, nil, nil)
+	if c.app == nil || c.app.Repo == nil {
+		return nil, errors.New("httpx: repository is nil")
+	}
+	id, err := c.app.Repo.ResolveProfile(c.ctx, nil, nil)
 	if err != nil {
 		return nil, err
 	}

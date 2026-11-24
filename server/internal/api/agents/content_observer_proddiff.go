@@ -17,12 +17,6 @@ const contentObserverTimeout = 120 * time.Second
 
 var errContentObservation = errors.New("proddiff content sync did not settle")
 
-// InstallProddiffContentObserver compares settled content results in this build
-// only. Production routes, async admission and cache TTLs remain unchanged.
-func InstallProddiffContentObserver(app *httpx.App) {
-	NewHandler(Deps{}).InstallProddiffContentObserver(app)
-}
-
 // InstallProddiffContentObserver installs the proddiff content-sync observer
 // backed by h's handlers.
 func (h *Handler) InstallProddiffContentObserver(app *httpx.App) {

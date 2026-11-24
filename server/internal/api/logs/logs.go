@@ -24,8 +24,8 @@ import (
 	"configflow/internal/rules"
 )
 
-// Handler serves the /api/logs routes. Nil hook fields fall back to the
-// package-level defaults until W11 removes the test seams.
+// Handler serves the /api/logs routes. Nil hook fields use the production
+// log-path lookup and os.Open directly.
 type Handler struct {
 	LogFilePath func() (string, error)
 	OpenFile    func(string) (io.ReadCloser, error)
@@ -38,14 +38,14 @@ func (h *Handler) logFilePath() (string, error) {
 	if h != nil && h.LogFilePath != nil {
 		return h.LogFilePath()
 	}
-	return LogFilePath()
+	return getLogFilePath()
 }
 
 func (h *Handler) openLogFile(path string) (io.ReadCloser, error) {
 	if h != nil && h.OpenFile != nil {
 		return h.OpenFile(path)
 	}
-	return openFile(path)
+	return os.Open(path)
 }
 
 // Register adds the logs blueprint routes to r.
@@ -54,15 +54,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.GET("/api/logs/info", "logs.get_log_info", h.getLogInfo)
 	r.POST("/api/logs/clear", "logs.clear_logs", h.clearLogs)
 }
-
-// Register adds the logs blueprint.
-func Register(r *httpx.Router) { NewHandler().Register(r) }
-
-// LogFilePath is get_log_file_path(); tests replace it.
-var LogFilePath = getLogFilePath
-
-// openFile is open(); tests replace it.
-var openFile = func(path string) (io.ReadCloser, error) { return os.Open(path) }
 
 func getLogFilePath() (string, error) {
 	dataDir := os.Getenv("DATA_DIR")

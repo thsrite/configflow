@@ -212,6 +212,7 @@ json.dump(out, sys.stdout)
 		t.Fatal(err)
 	}
 	app := httpx.New()
+	app.Repo = r
 	for _, route := range routes {
 		app.Router.Handle(route.Methods, route.Path, route.Endpoint, func(*httpx.Ctx) (*httpx.Response, error) {
 			return httpx.JSON(struct {

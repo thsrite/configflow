@@ -77,9 +77,9 @@ var nilByDesign = map[string]string{
 	"api.w10b.rules.service.pinnedCheck":        "test seam; nil = rulesync pinned check",
 	"api.w10b.rulelibrary.service.replaceCache": "test seam; nil = rulefetch default replace",
 	"api.w10c.settings.wl":                      "D5: SetWebListener after New (cmd/configflow)",
-	"api.w10c.logs.LogFilePath":                 "test seam; nil = logs.LogFilePath",
+	"api.w10c.logs.LogFilePath":                 "test seam; nil = getLogFilePath",
 	"api.w10c.logs.OpenFile":                    "test seam; nil = os.Open",
-	"api.w10c.stats.Now":                        "test seam; nil = stats.Now clock",
+	"api.w10c.stats.Now":                        "test seam; nil = time.Now",
 }
 
 // TestProductionHandlersHaveNoNilDependencies checks that every dependency

@@ -25,7 +25,7 @@ func TestReviewLogFailuresRedactStoredTokens(t *testing.T) {
 	}
 	ctx := repo.WithRepository(context.Background(), c.repo)
 	for _, token := range []string{secret, url.QueryEscape(secret), url.QueryEscape(url.QueryEscape(secret))} {
-		LogFilePath = func() (string, error) { return "", &os.PathError{Op: "stat", Path: token, Err: os.ErrPermission} }
+		c.handler.LogFilePath = func() (string, error) { return "", &os.PathError{Op: "stat", Path: token, Err: os.ErrPermission} }
 		for _, endpoint := range []string{"tail", "info", "clear"} {
 			method := "GET"
 			if endpoint == "clear" {
