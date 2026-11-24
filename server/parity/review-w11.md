@@ -136,3 +136,29 @@ CONFIGFLOW_DIFF=1 CONFIGFLOW_PY=~/cf-test/.venv/bin/python go test $(go list ./.
 CONFIGFLOW_DIFF=1 … go test -run TestN811GlobalFlaskBoundaries ./internal/repo/ → ownership-conflict=false/true 都 PASS
 ```
 （`-race`、pyref check、proddiff gate、preflight 的结果见交回消息末尾。）
+
+## 6. W11 第 5 步复核 OxiDNS classical 缓存
+
+检查从 `go@f381bc2fd` 切到 W11 后，`Profile.Repo` 缺失是否改变 OxiDNS 写入、生成或签名。协调者在 `final-w@80711a9a6` 独立修复了规则库列表 `has_ip_part`，它是这次调用链中唯一直接消费探测值的生产输出。
+
+- 旧版 `classicalWithoutIP` 用后台 context 调用只读 peek，生产进程通过 `repo.SetRepository` 取到同一仓库。W11 的 nil 仓库会把 URL 内容当作未知，`hasIPPart` 因此返回可能含 IP。内联内容仍直接解析。
+- `legacyContentAware` 在旧版和 W11 都没有调用方。routing catalog 会调 `hasIPPart`，但只把结果用于 `ruleRecord.shapes` 中的一个候选形状。一个可读的 classical 记录总有 `legacyAll` 产生的「域名＋IP」和当前规则产生的「域名」。缓存命中无 IP 时添加后者，其余情况添加前者。两个键已经存在，IP-only 依旧不合法。资源归属、下载与撤回使用 `records.parts` 和 `atoms`，两个字段来自 `legacyAll`。
+- rules 的规则编辑、删除及 DNS 写入会进入 native routing 识别。proxygroups 只在已有跟随标记且去向发生变化时进入 `ApplyRuleDNS`，rulelibrary 在来源变化影响 native 分流时以 lenient 模式进入。strict 的冲突及 lenient 的警告都依赖同一识别结果。模板分支及依赖未变化时的提前返回不读 catalog。
+- deploy 的 Agent 配置及 bundle、rulesync 的候选构造、native 投影及签名、dnsfollow 的已应用配置比对、gateway onboarding 和 setup 校验、OxiDNS draft/render、routers preview、configgen、proddiff generator 的 YAML 和资源描述走同一套 native 路由识别或只使用资源路径。模板生成使用 `legacyNone`。规则集归属、设置 revision、设备备注和 Agent 投影也不消费缓存探测结果。由代码检查确认这些调用无需补同一 repo。
+- 写事务中的 profile 构造保留现有路径。缓存缺失时路径解析可能进入 `repo.View`；若底层读取失败，`readEntry` 会重试并尝试拿 L3。当前探测传的是后台 context，直接在写事务里接入 repo 会丢失持锁信息。此次没有增加读缓存、迁移或写盘路径。
+
+`TestClassicalCacheDoesNotChangeNativeRouting` 用同一合成草稿对比旧 `by-id` 缓存经验证无 IP 和 profile 无 repo 时探测为未知的结果。域名和域名＋IP 草稿生成的 YAML、严格 DNS 更新产出的 replacement settings JSON 均逐字节一致。IP-only 的冲突类型、报错文本和保留 IP match 的生成结果也一致。探测前后比较文档、revision、提交次数、文件内容与 mtime，验证旧缓存未迁移。字节实测覆盖共用 OxiDNS 入口，HTTP、Agent 和 proddiff 的上层调用通过代码追踪确认。
+
+在测试服务器 .64 上，合成用例三组均 PASS，`gofmt -l` 无输出，`go vet ./...` 和 `go vet -tags configflow_proddiff,configflow_difftest ./tools/proddiff/...` 通过。
+
+包级 race 运行在 ippresence 通过后主动结束，改为以下定向 race。六包全部 `ok`，用时 1.052–10.216s。覆盖合成缓存、锁定草稿回滚、发布前校验、DNS 联动、native graph 校验及 router 拒绝处理。
+
+```sh
+RT_HOST=sunbroke@192.168.0.64 rt -- timeout 10m bash -lc 'cd server && test -z "$(gofmt -l internal/ippresence/generation_peek_test.go)" && go test -race -count=1 -timeout 5m -run "^(TestClassicalCacheDoesNotChangeNativeRouting|TestGeneratePeeksLegacyCacheAfterRuntimeShutdown|TestC27ReviewLockedTransactionRollsBack|TestC27ReviewNativeIdentitiesRemainEditable|TestOxiDNSPublicationAttestsBeforeActivation|TestConfirmedFollowChangesOnlySelectedUpstream|TestNativeGraphSafety|TestReviewR15OxidnsAndRepositoryRejectionsAre400)$" -v ./internal/ippresence ./internal/oxidns ./internal/deploy ./internal/agents/dnsfollow ./internal/gateway/onboarding ./internal/api/routers'
+```
+
+在 .32 上使用合成夹具运行以下 HTTP 差分用例。rules 写入和自定义分流拒绝、proxygroups 跟随写入、rulelibrary native parking 四项全部 PASS。两包末行分别为 `ok configflow/internal/api/rules/difftest 7.737s` 和 `ok configflow/internal/api/rulelibrary/difftest 7.471s`。
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- timeout 10m bash -lc 'cd server && CONFIGFLOW_DIFF=1 CONFIGFLOW_PY="$HOME/cf-test/.venv/bin/python" go test -count=1 -timeout 5m -run "^(TestTemplateAndNativeDNSWrites|TestCustomNativeRoutingPreservesCommittedMetadata|TestProxyGroupFollowDNSHTTPParity|TestLibraryNativeParkingHTTPParity)$" -v ./internal/api/rules/difftest ./internal/api/rulelibrary/difftest'
+```
