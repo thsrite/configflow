@@ -1,6 +1,6 @@
 {
-  "capturedAt": "2026-10-29T01:54:27.968Z",
-  "source": "当前仓库真实 Vue 前端 + Flask API",
+  "capturedAt": "2026-11-24T06:44:29.124Z",
+  "source": "当前仓库真实 Vue 前端 + Go 面板（server/cmd/configflow）",
   "mock": false,
   "captures": [
     {
@@ -12,7 +12,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "first-run-router.jpg",
@@ -23,7 +23,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "first-run-gateway.jpg",
@@ -34,18 +34,18 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "panel-service-settings.jpg",
-      "scene": "系统设置：演示服务域名；独立开发服务不支持容器监听端口设置",
+      "scene": "系统设置：演示服务域名（RFC 5737 地址）；独立开发服务不支持容器监听端口设置",
       "viewport": {
         "width": 1280,
         "height": 1700
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "agent-shell-single-default.jpg",
@@ -56,7 +56,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "agent-shell-single-choices.jpg",
@@ -67,7 +67,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "agent-shell-aio.jpg",
@@ -78,7 +78,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "agent-docker-single.jpg",
@@ -89,7 +89,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "agent-docker-aio.jpg",
@@ -100,7 +100,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "oxidns-docker-ha-prepare.jpg",
@@ -111,8 +111,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。",
-      "recapturedAt": "2026-11-21T08:18:31.864Z"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "oxidns-docker-ha-host.jpg",
@@ -123,7 +122,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "oxidns-docker-ha-macvlan.jpg",
@@ -134,7 +133,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "oxidns-ha-pair-empty.jpg",
@@ -145,7 +144,7 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
     },
     {
       "file": "oxidns-shell-ha-prepare.jpg",
@@ -156,7 +155,30 @@
       },
       "actualUI": true,
       "mock": false,
-      "note": "隔离临时数据库；地址与名称为演示填写；未执行设备安装、配置发布或 HA 配对。"
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
+    },
+    {
+      "file": "agents-backup-restored-desktop-light.jpg",
+      "scene": "Agent 页：从不含运行记录的备份恢复后（桌面浅色），顶部横幅与卡片待重新发布标记",
+      "viewport": {
+        "width": 1280,
+        "height": 1000
+      },
+      "actualUI": true,
+      "mock": false,
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。"
+    },
+    {
+      "file": "agents-backup-restored-mobile-dark.jpg",
+      "scene": "Agent 页：从不含运行记录的备份恢复后（手机深色），顶部横幅与卡片待重新发布标记",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "actualUI": true,
+      "mock": false,
+      "note": "隔离临时数据库（Go 面板）；地址与名称为合成演示数据；未执行设备安装、配置发布或 HA 配对。",
+      "recapturedAt": "2026-11-24T06:46:15.849Z"
     }
   ],
   "browserErrors": []

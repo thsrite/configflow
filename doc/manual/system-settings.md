@@ -78,6 +78,10 @@ Host 模式的后端或 Sub-Store 被其他应用占用时，只修改本页 Web
 
 对每台 Agent 点一次 **推送** 即可解除提示。删除 Agent 不受限制。
 
+![从不含运行记录的备份恢复后的 Agent 页（桌面浅色）：顶部提示横幅与每张卡片的「待重新发布」标记](../img/guide/agents-backup-restored-desktop-light.jpg)
+
+![从不含运行记录的备份恢复后的 Agent 页（手机深色）：顶部提示横幅与卡片标记](../img/guide/agents-backup-restored-mobile-dark.jpg)
+
 ### 推荐的升级顺序
 
 1. 在本页 **导出全部数据**，记录当前镜像版本和访问地址。

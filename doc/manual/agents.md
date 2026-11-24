@@ -51,6 +51,10 @@ v3.0.0 起的「导出全部数据」与 WebDAV 备份只保存配置，不包�
 
 对每台普通 Agent 成功点一次 **推送**（DNS 高可用成员走成对发布），即可自动清除提示并恢复正常。详见 [v3.0.0 升级说明](../guide/upgrade-v3.md#backup-restore)。
 
+![从不含运行记录的备份恢复后的 Agent 页（桌面浅色）：顶部横幅列出尚未重新发布的 Agent，每张卡片标题下方标出「待重新发布：运行记录未包含在备份里」](../img/guide/agents-backup-restored-desktop-light.jpg)
+
+![从不含运行记录的备份恢复后的 Agent 页（手机深色）：顶部横幅与卡片内的「待重新发布」标记](../img/guide/agents-backup-restored-mobile-dark.jpg)
+
 ### 顶部三个按钮
 
 | 按钮 | 用途和生效时机 |
