@@ -23,7 +23,7 @@ func TestPairFailureMessageHook(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := pairFailureMessage(f.ctx, f.m, tt.cause)
+			got, ok := f.s.PairFailureMessage(f.ctx, tt.cause)
 			if ok != tt.wantOK || got != tt.want {
 				t.Fatalf("hook = %q %v, want %q %v", got, ok, tt.want, tt.wantOK)
 			}

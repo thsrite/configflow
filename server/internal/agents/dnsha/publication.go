@@ -150,7 +150,7 @@ func (s *Service) step(ctx context.Context, j *model.HAJournal) error {
 		if e != nil {
 			return e
 		}
-		b, e = rulesync.PrepareCandidate(ctx, owner.target, source, baseline, rulesync.Settings{Library: true}, j.OwnerDeploymentID, true)
+		b, e = rulesync.PrepareCandidateWith(ctx, s.deployService().RefreshFor(s.m), owner.target, source, baseline, rulesync.Settings{Library: true}, j.OwnerDeploymentID, true)
 		if e != nil {
 			return e
 		}

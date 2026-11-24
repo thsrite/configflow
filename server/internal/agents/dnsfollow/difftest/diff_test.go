@@ -172,8 +172,7 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 	agents.ResetHooks()
 	agents.ResetRuntime()
 	t.Cleanup(func() { agents.ResetHooks(); agents.ResetRuntime() })
-	deploy.Wire()
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true, Register: httpxtest.Routes(apiagents.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true})
 	ctx := srv.Context()
 	err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		return json.Unmarshal(mustJSON(t, []any{source.record(), target.record()}), &s.Agents)
@@ -187,11 +186,13 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := agents.Get(ctx)
+	m, err := agents.New(ctx, srv.Repo, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(m.Close)
+	owner := dnsfollow.New(m, dnsfollow.Options{})
+	apiagents.NewHandler(apiagents.Deps{Repo: srv.Repo, Agents: m, DNSFollow: owner}).Register(srv.App.Router)
 	publish := func(id, ident string, baseline bool) {
 		a, e := m.ReadAgent(ctx, id, true)
 		if e != nil {
@@ -232,8 +233,6 @@ func goRun(t *testing.T, scenario, body string, source, target *device) any {
 	}
 	publish("target", "target-baseline", true)
 	publish("source", "source-before-binding", false)
-	// HTTP uses the manager pool; use its real owner with a deterministic clock.
-	owner := dnsfollow.ForManager(m)
 	// The clock does not affect comparisons: only event/updated_at timestamps are normalized below.
 	admin := srv.Login()
 	path := "/api/agents/target/dns-follow"

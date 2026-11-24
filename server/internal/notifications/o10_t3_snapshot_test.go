@@ -156,19 +156,19 @@ func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.
 	return srv, m
 }
 
-func wireAllO10T3Slots(t *testing.T, r *repo.Repository, agentReads *atomic.Int32) {
+func wireAllO10T3Slots(t *testing.T, r *repo.Repository, m *agents.Manager, agentReads *atomic.Int32) {
 	t.Helper()
 	agents.Wire()
-	rulesync.Wire()
-	dnsfollow.Register()
 	metrics.Wire()
 	refresh.New(refresh.Options{Repo: r}).Register(lifecycle.Current(), tasks.Default())
-	rr := routerrulesync.New(nil, routerrulesync.Options{})
+	rr := routerrulesync.New(r, routerrulesync.Options{})
 	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRouters, rr.TaskRows))
 	t.Cleanup(tasks.SetRunner(tasks.SlotRouters, rr.TaskRunner()))
+	rsync := rulesync.New(m, nil, rulesync.Options{})
+	follow := dnsfollow.New(m, dnsfollow.Options{})
 	// O17 W5 removed the self-installing Agent row slot (SetRuleSyncRow /
 	// SetDNSFollowRow); server assembly installs it through agenttasks.
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotAgents, agenttasks.BuildRows(agents.Get, rulesync.TaskRow, dnsfollow.TaskRow)))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotAgents, agenttasks.BuildRows(func(context.Context) (*agents.Manager, error) { return m, nil }, rsync.TaskRow, follow.TaskRow)))
 	t.Cleanup(notifications.SetInputs(notifications.Inputs{
 		Rows:         tasks.Available,
 		MissingTasks: tasks.Missing,
@@ -194,7 +194,7 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 	var reads atomic.Int32
 	smallSrv, smallMgr := seedO10T3Server(t, 1)
 	largeSrv, largeMgr := seedO10T3Server(t, 300)
-	wireAllO10T3Slots(t, largeSrv.Repo, &reads)
+	wireAllO10T3Slots(t, largeSrv.Repo, largeMgr, &reads)
 	discovery.New(discovery.Options{Repo: largeSrv.Repo}).Register(nil, tasks.Default())
 
 	// Record a failed subscription receipt on both so SnapshotItems exercises

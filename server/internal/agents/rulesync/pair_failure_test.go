@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/agents"
 	"configflow/internal/deploy"
 	"configflow/internal/model"
 )
@@ -20,14 +19,6 @@ func (e *pairRefusal) Error() string { return e.message }
 // states the owner's reason instead of the generic failure.
 func TestPairRefusalReasonReachesSyncState(t *testing.T) {
 	const reason = "主备配置基线不同，请先完整发布一次主备配置，再自动同步规则"
-	restore := SetPairFailureMessage(func(_ context.Context, _ *agents.Manager, e error) (string, bool) {
-		var refusal *pairRefusal
-		if errors.As(e, &refusal) {
-			return refusal.message, true
-		}
-		return "", false
-	})
-	defer restore()
 	tests := []struct {
 		name  string
 		cause error
@@ -39,6 +30,13 @@ func TestPairRefusalReasonReachesSyncState(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newWorkerFixture(t, "mihomo")
+			f.s.pair.FailureMessage = func(_ context.Context, e error) (string, bool) {
+				var refusal *pairRefusal
+				if errors.As(e, &refusal) {
+					return refusal.message, true
+				}
+				return "", false
+			}
 			if _, e := f.s.Configure(f.ctx, "device", []byte(`{"library":false,"rules":true}`)); e != nil {
 				t.Fatal(e)
 			}

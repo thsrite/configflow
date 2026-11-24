@@ -93,6 +93,11 @@ func (s *Service) providerFor(m *agents.Manager) *provider.Service {
 	return provider.New(provider.Options{Repo: m.Repository(), SubStore: sub, Refresh: s.refreshFor(m), Locations: Locations{}})
 }
 
+// RefreshFor returns s's refresh Service, or a repository-scoped fallback for tests.
+func (s *Service) RefreshFor(m *agents.Manager) *refresh.Service {
+	return s.refreshFor(m)
+}
+
 func (s *Service) refreshFor(m *agents.Manager) *refresh.Service {
 	if s != nil && s.refresh != nil {
 		return s.refresh

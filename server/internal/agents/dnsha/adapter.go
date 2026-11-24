@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"configflow/internal/agents"
-	"configflow/internal/agents/rulesync"
 	"configflow/internal/deploy"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -298,33 +297,6 @@ func (s *Service) routersUsing(ctx context.Context, ids []string) ([]model.HARou
 		return nil
 	})
 	return result, err
-}
-
-// pairFailureMessage names an HA refusal met by an automatic rule sync with the
-// same sanitized Chinese message the manual rule update shows (lab L3-D3).
-func pairFailureMessage(ctx context.Context, m *agents.Manager, e error) (string, bool) {
-	var refusal *Error
-	if !errors.As(e, &refusal) {
-		return "", false
-	}
-	return ForManager(m).FailureMessage(ctx, refusal), true
-}
-
-// Wire installs all cross-module hooks, with manager dispatch at the boundary.
-func Wire(m *agents.Manager) { ForManager(m) }
-func installHooks() {
-	agents.RegisterHooks(agents.Hooks{
-		HADeployment: func(ctx context.Context, m *agents.Manager, id, did string) (*model.Deployment, error) {
-			return ForManager(m).PairDeployment(ctx, id, did)
-		},
-		HAActivate: func(ctx context.Context, m *agents.Manager, id, did string) (*model.Deployment, error) {
-			return ForManager(m).ActivatePair(ctx, id, did)
-		},
-		HAServiceOperationTyped: func(ctx context.Context, m *agents.Manager, id string, op func() (json.RawMessage, error), uninstall bool) (json.RawMessage, error) {
-			return ForManager(m).ServiceOperationJSON(ctx, id, op, uninstall)
-		},
-	})
-	rulesync.SetPairFailureMessage(pairFailureMessage)
 }
 
 // RuleResult is the Agent rule-update envelope for an HA publication.

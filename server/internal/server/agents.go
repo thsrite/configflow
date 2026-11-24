@@ -47,7 +47,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 		// the Manager receipt check use the package-level fallbacks.
 		gen.deploy = newDeployService(deploy.Options{
 			Pair: func(ctx context.Context, m *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
-				return dnsha.ForManager(m).PublishPair(ctx, id, b, o)
+				return dnsha.New(m, dnsha.Options{}).PublishPair(ctx, id, b, o)
 			},
 			IPv6: func(ctx context.Context, m *agents.Manager, id, did string, src *deploy.Source) error {
 				return agentipv6.NewService(m, apiagents.ContentChecker).EnrollSource(ctx, m, id, did, src)
@@ -57,18 +57,12 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 			Refresh:  gen.refresh,
 		})
 		agents.RegisterHooks(agents.Hooks{ReceiptMatches: deploy.ReceiptMatches})
-		rulesync.WireOn(rt)
-		// Finished rule-source refreshes wake the package rule-sync loop, on
-		// this App's refresh Service (no once-only subscription).
-		gen.refresh.OnRulesRefreshed(rulesync.WakeLoop)
-		dnsfollow.RegisterOn(rt)
-		dnsha.RegisterOn(rt)
 		metrics.WireOn(rt)
 		metrics.WireTraffic()
 		if err := nt.SetAgents(agents.NotificationAgents); err != nil {
 			return nil, err
 		}
-		tk.SetRowBuilder(tasks.SlotAgents, agenttasks.BuildRows(agents.Get, rulesync.TaskRow, dnsfollow.TaskRow))
+		tk.SetRowBuilder(tasks.SlotAgents, agenttasks.BuildRows(agents.Get, (*rulesync.Service)(nil).TaskRow, (*dnsfollow.Service)(nil).TaskRow))
 		return &agentServices{}, nil
 	}
 
@@ -89,7 +83,6 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	}
 
 	ha := dnsha.New(m, dnsha.Options{})
-	dnsha.RegisterInstance(m, ha)
 	if err := m.SetPairPublisher(ha); err != nil {
 		m.Close()
 		return nil, err
@@ -108,16 +101,15 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	}
 
 	up := upgrades.New(m)
-	follow := dnsfollow.New(m, dnsfollow.Options{})
-	dnsfollow.RegisterInstance(m, follow)
+	follow := dnsfollow.New(m, dnsfollow.Options{Notifications: nt})
 	rsync := rulesync.New(m, nil, rulesync.Options{
-		Monitor: mon,
+		Monitor:       mon,
+		Notifications: nt,
 		Pair: rulesync.PairHooks{
 			Advance:        func(ctx context.Context, id string) { _, _ = ha.Advance(ctx, id) },
 			FailureMessage: ha.PairFailureMessage,
 		},
 	})
-	rulesync.UseService(rsync)
 
 	gen.refresh.OnRulesRefreshed(rsync.WakeLoop)
 
@@ -150,8 +142,8 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	tk.SetRunner("dns_follow", follow.Runner())
 	tk.SetRowBuilder(tasks.SlotAgents, agenttasks.BuildRows(
 		func(context.Context) (*agents.Manager, error) { return m, nil },
-		rulesync.TaskRow,
-		dnsfollow.TaskRow,
+		rsync.TaskRow,
+		follow.TaskRow,
 	))
 
 	return &agentServices{

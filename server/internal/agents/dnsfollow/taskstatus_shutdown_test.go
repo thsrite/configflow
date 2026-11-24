@@ -130,7 +130,7 @@ func TestTaskRowPropagatesInvalidHistory(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"dns_follow:target":{"run_count":{"invalid":true}}}`), &statuses); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := agentTaskRow(t.Context(), &a, statuses); !errors.Is(err, tasks.ErrInvalidHistory) {
+	if _, err := agentTaskRow(t.Context(), nil, &a, statuses); !errors.Is(err, tasks.ErrInvalidHistory) {
 		t.Fatal("invalid history was ignored", err)
 	}
 }

@@ -11,26 +11,28 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
+	"configflow/internal/notifications"
 	"configflow/internal/repo"
 )
 
 // PollInterval is the production reconciliation interval.
 const PollInterval = 5 * time.Second
 
-// Options configures the clock and the normal A14 preparation boundary.
+// Options configures the clock, notifications service, and normal A14 preparation boundary.
 type Options struct {
-	Now     func() time.Time
-	Prepare func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
+	Now           func() time.Time
+	Prepare       func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
+	Notifications *notifications.Service
 }
 
 // Service owns follow reconciliation for one registry manager.
 type Service struct {
-	m       *agents.Manager
-	Deploy  *deploy.Service
-	now     func() time.Time
-	prepare func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
-	// waker paces the dns-follow loop (shared by every Service: one loop).
-	waker *agents.Waker
+	m             *agents.Manager
+	Deploy        *deploy.Service
+	notifications *notifications.Service
+	now           func() time.Time
+	prepare       func(context.Context, *agents.Manager, deploy.Target, *deploy.Source, deploy.PrepareOptions) (*deploy.Prepared, error)
+	waker         *agents.Waker
 }
 
 func (s *Service) deployService() *deploy.Service {
@@ -39,11 +41,6 @@ func (s *Service) deployService() *deploy.Service {
 	}
 	return deploy.New(deploy.Options{})
 }
-
-// loop wakes the dns-follow loop on configuration and Agent state commits
-// and when an Agent comes online (design/o17-runtime-state.md 2.6); while a
-// follow publication is in flight it polls every PollInterval.
-var loop = agents.NewWaker(PollInterval, agents.IdleFallback)
 
 var followLocks = lockx.NewKeyed[string](lockx.LevelJob, "dns-follow")
 
@@ -56,7 +53,7 @@ func New(m *agents.Manager, o Options) *Service {
 	if m != nil {
 		w.Watch(m, repo.ChangeConfig|repo.ChangeState, true)
 	}
-	s := &Service{m: m, now: o.Now, prepare: o.Prepare, waker: w}
+	s := &Service{m: m, notifications: o.Notifications, now: o.Now, prepare: o.Prepare, waker: w}
 	if s.prepare == nil {
 		s.prepare = func(ctx context.Context, m *agents.Manager, t deploy.Target, src *deploy.Source, opt deploy.PrepareOptions) (*deploy.Prepared, error) {
 			return s.deployService().PrepareContent(ctx, m, t, src, opt)

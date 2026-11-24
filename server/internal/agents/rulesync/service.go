@@ -27,29 +27,31 @@ type PairHooks struct {
 	FailureMessage func(context.Context, error) (string, bool)
 }
 
-// Options injects a wall clock, candidate preparation, monitor service, and
-// optional HA pair callbacks for deterministic workers.
+// Options injects a wall clock, candidate preparation, monitor service,
+// notifications service, and optional HA pair callbacks for deterministic workers.
 type Options struct {
-	Now     func() time.Time
-	Prepare PrepareFunc
-	Pair    PairHooks
-	Monitor *monitor.Service
+	Now           func() time.Time
+	Prepare       PrepareFunc
+	Pair          PairHooks
+	Monitor       *monitor.Service
+	Notifications *notifications.Service
 }
 
 // Service owns lightweight comparison memory and at most two concurrent workers.
 type Service struct {
-	m           *agents.Manager
-	Deploy      *deploy.Service
-	monitor     *monitor.Service
-	receipts    *deploy.Receipts
-	now         func() time.Time
-	prepare     PrepareFunc
-	pair        PairHooks
-	waker       *agents.Waker
-	mu          sync.Mutex
-	comparisons map[string]comparison
-	pending     map[string]bool
-	cursor      int
+	m             *agents.Manager
+	Deploy        *deploy.Service
+	monitor       *monitor.Service
+	notifications *notifications.Service
+	receipts      *deploy.Receipts
+	now           func() time.Time
+	prepare       PrepareFunc
+	pair          PairHooks
+	waker         *agents.Waker
+	mu            sync.Mutex
+	comparisons   map[string]comparison
+	pending       map[string]bool
+	cursor        int
 }
 
 func (s *Service) deployService() *deploy.Service {
@@ -67,24 +69,28 @@ func New(m *agents.Manager, r *deploy.Receipts, o Options) *Service {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	if o.Prepare == nil {
-		o.Prepare = PrepareCandidate
-	}
 	w := agents.NewWaker(PollInterval, IdleFallback)
 	if m != nil {
 		w.Watch(m, repo.ChangeConfig|repo.ChangeState, true)
 	}
-	return &Service{
-		m:           m,
-		monitor:     o.Monitor,
-		receipts:    r,
-		now:         o.Now,
-		prepare:     o.Prepare,
-		pair:        o.Pair,
-		waker:       w,
-		comparisons: map[string]comparison{},
-		pending:     map[string]bool{},
+	s := &Service{
+		m:             m,
+		monitor:       o.Monitor,
+		notifications: o.Notifications,
+		receipts:      r,
+		now:           o.Now,
+		prepare:       o.Prepare,
+		pair:          o.Pair,
+		waker:         w,
+		comparisons:   map[string]comparison{},
+		pending:       map[string]bool{},
 	}
+	if s.prepare == nil {
+		s.prepare = func(ctx context.Context, target deploy.Target, source *deploy.Source, baseline Baseline, settings Settings, deploymentID string, forceRefresh bool) (*deploy.Bundle, error) {
+			return PrepareCandidateWith(ctx, s.deployService().RefreshFor(s.m), target, source, baseline, settings, deploymentID, forceRefresh)
+		}
+	}
+	return s
 }
 
 // PublicState intentionally exposes no task identity, token, keys or snapshots.
@@ -247,7 +253,6 @@ func (s *Service) done(busy bool) {
 	if s.waker != nil {
 		s.waker.Done(busy)
 	}
-	loop.Done(busy)
 }
 
 // Round observes presence and admits at most two tracked workers in
@@ -404,9 +409,17 @@ func (s *Service) saveState(ctx context.Context, id string, next model.RuleSyncS
 		if e = ctx.Err(); e != nil {
 			return e
 		}
-		_, e = notifications.TaskStatus(ctx, s.m.Repository().DataDir()).SaveResult(ctx, "agent_rule_sync:"+id, taskstatus.Result{OK: next.Status == "succeeded", Trigger: "event", Error: next.Message})
+		_, e = s.taskStatusStore(ctx).SaveResult(ctx, "agent_rule_sync:"+id, taskstatus.Result{OK: next.Status == "succeeded", Trigger: "event", Error: next.Message})
 	}
 	return e
+}
+
+func (s *Service) taskStatusStore(ctx context.Context) *taskstatus.Store {
+	dir := s.m.Repository().DataDir()
+	if s.notifications != nil {
+		return s.notifications.TaskStatus(ctx, dir)
+	}
+	return taskstatus.New(dir)
 }
 func stateWithoutTime(state *model.RuleSyncState, replacement bool) (json.RawMessage, error) {
 	raw, e := json.Marshal(state)

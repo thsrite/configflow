@@ -325,12 +325,12 @@ func TestRetryNullSourceAndPrivateProjection(t *testing.T) {
 		t.Fatal(string(b))
 	}
 	rec := f.target.record()
-	row, err := agentTaskRow(f.ctx, &rec, taskstatus.Snapshot{})
+	row, err := f.s.TaskRow(f.ctx, &rec, taskstatus.Snapshot{})
 	if err != nil || row != nil {
 		t.Fatal(row, err)
 	}
 	raw, _ := f.m.ReadAgent(f.ctx, "target", true)
-	row, err = agentTaskRow(f.ctx, raw, taskstatus.Snapshot{})
+	row, err = f.s.TaskRow(f.ctx, raw, taskstatus.Snapshot{})
 	if err != nil || row.CanRun || row.StateMessage != msgRetryQueued {
 		t.Fatal(row, err)
 	}

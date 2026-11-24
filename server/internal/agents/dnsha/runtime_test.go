@@ -204,9 +204,6 @@ func TestShutdownAtAcceptedDeviceWriteResumesJournal(t *testing.T) {
 			// New Runtime and owner resume persisted intent, including accepted yield/apply.
 			restart := newRuntime(t, f.ctx)
 			f.s = New(f.m, Options{})
-			services.Lock()
-			services.byManager[f.m] = f.s
-			services.Unlock()
 			var status string
 			for range 16 {
 				j, e := f.s.Advance(restart.BindRequest(f.ctx), "primary")

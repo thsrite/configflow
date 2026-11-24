@@ -3,7 +3,6 @@ package dnsfollow
 import (
 	"context"
 
-	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
 	"configflow/internal/tasks"
 )
@@ -36,24 +35,5 @@ func (s *Service) Runner() tasks.RunFunc {
 			return &tasks.Invalid{Message: s.FailureMessage(ctx, err)}
 		}
 		return err
-	}
-}
-
-// RegisterInstance binds an externally constructed Service to m so transitional
-// ForManager(m) lookups share the same instance until W10 removes ForManager.
-func RegisterInstance(m *agents.Manager, s *Service) {
-	if m == nil || s == nil {
-		return
-	}
-	services.Lock()
-	defer services.Unlock()
-	if m.OnClose(func() {
-		services.Lock()
-		if services.byManager[m] == s {
-			delete(services.byManager, m)
-		}
-		services.Unlock()
-	}) {
-		services.byManager[m] = s
 	}
 }

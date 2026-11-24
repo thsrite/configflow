@@ -57,7 +57,7 @@ func taskRowMust(t *testing.T, f *fixture) *tasks.Task {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := agentTaskRow(f.ctx, a, taskstatus.Snapshot{})
+	row, err := f.s.TaskRow(f.ctx, a, taskstatus.Snapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}

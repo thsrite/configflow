@@ -5,55 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync"
 
-	"configflow/internal/agents"
-	"configflow/internal/agents/rulesync"
 	"configflow/internal/deploy"
-	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 )
-
-var services = struct {
-	sync.Mutex
-	byManager map[*agents.Manager]*Service
-}{byManager: map[*agents.Manager]*Service{}}
-
-// ForManager shares the owner between HTTP hooks and boot reconciliation.
-func ForManager(m *agents.Manager) *Service {
-	services.Lock()
-	defer services.Unlock()
-	if s := services.byManager[m]; s != nil {
-		return s
-	}
-	s := New(m, Options{})
-	if m.OnClose(func() { services.Lock(); delete(services.byManager, m); services.Unlock() }) {
-		services.byManager[m] = s
-		loop.Watch(m, repo.ChangeConfig|repo.ChangeState, true)
-	}
-	return s
-}
-
-// Register supplies HA hooks and the 0/2-second boot loop on the default runtime.
-func Register() { RegisterOn(lifecycle.Current()) }
-
-// RegisterOn supplies HA hooks and the 0/2-second boot loop on rt.
-func RegisterOn(rt *lifecycle.Runtime) {
-	if rt == nil {
-		rt = lifecycle.Current()
-	}
-	installHooks()
-	agents.OnManagerInit(func(_ context.Context, m *agents.Manager) { Wire(m) })
-	rulesync.SetPairAdvance(func(ctx context.Context, m *agents.Manager, id string) { _, _ = ForManager(m).Advance(ctx, id) })
-	rt.RegisterPeriodic(lifecycle.Periodic{Name: "oxidns-ha-publish", Start: lifecycle.AtBoot, Interval: loop.Interval, Wake: loop.Signal(), Round: func(ctx context.Context) error {
-		m, e := agents.Get(ctx)
-		if e != nil {
-			return e
-		}
-		return ForManager(m).Reconcile(ctx)
-	}})
-}
 
 // PublishPair reserves a pair, leaving single-device publications to deploy.
 func (s *Service) PublishPair(ctx context.Context, id string, b *deploy.Bundle, o deploy.PublishOptions) (out *model.Deployment, handled bool, err error) {

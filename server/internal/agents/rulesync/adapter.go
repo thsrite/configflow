@@ -207,11 +207,15 @@ func logState(ctx context.Context, m *agents.Manager, record *model.Agent, statu
 }
 
 // TaskRow projects one Agent's rule-sync task row for /api/tasks.
-func TaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
-	return agentTaskRow(ctx, a, statuses)
+func (s *Service) TaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
+	var m *agents.Manager
+	if s != nil {
+		m = s.m
+	}
+	return agentTaskRow(ctx, m, a, statuses)
 }
 
-func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
+func agentTaskRow(ctx context.Context, m *agents.Manager, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
 	if !recordSupported(a) {
 		return nil, nil
 	}
@@ -228,11 +232,7 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 		return nil, err
 	}
 	sysSecrets, sysErr, ok := agents.RowSystemSecrets(ctx)
-	if !ok {
-		m, err := agents.Get(ctx)
-		if err != nil {
-			return nil, err
-		}
+	if !ok && m != nil {
 		sysSecrets, sysErr = systemSecrets(ctx, m)
 	}
 	sanitize := func(text string) string {
@@ -242,7 +242,7 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 		// Every stored Agent record's credentials, histories included: a
 		// superset of this record's own, which the row collected before O10.
 		var r *repo.Repository
-		if m, err := agents.Get(ctx); err == nil && m != nil {
+		if m != nil {
 			r = m.Repository()
 		}
 		if agentSecrets, err := agents.RowAgentSecrets(ctx, r); err == nil {

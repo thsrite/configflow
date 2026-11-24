@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"configflow/internal/agents"
 	"configflow/internal/agents/rulesync"
 )
 
@@ -12,12 +11,14 @@ func TestBothRuleWorkersAdvanceExactlyOnePair(t *testing.T) {
 	f := fixtureNew(t, Options{}, true, nil)
 	f.publish(t, "primary", "rule-worker-pair", true)
 	calls := 0
-	restore := rulesync.SetPairAdvance(func(ctx context.Context, m *agents.Manager, id string) {
-		calls++
-		_, _ = ForManager(m).Advance(ctx, id)
+	sync := rulesync.New(f.m, nil, rulesync.Options{
+		Pair: rulesync.PairHooks{
+			Advance: func(ctx context.Context, id string) {
+				calls++
+				_, _ = f.s.Advance(ctx, id)
+			},
+		},
 	})
-	defer restore()
-	sync := rulesync.New(f.m, nil, rulesync.Options{})
 	for range 12 {
 		for _, id := range []string{"secondary", "primary"} {
 			if e := sync.Run(f.ctx, id); e != nil {

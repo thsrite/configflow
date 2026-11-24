@@ -248,7 +248,7 @@ func TestTaskRowAndPinnedWithheld(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	row, e := agentTaskRow(ctx, record, taskstatus.Snapshot{})
+	row, e := f.s.TaskRow(ctx, record, taskstatus.Snapshot{})
 	if e != nil {
 		t.Fatal(e)
 	}

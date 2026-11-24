@@ -72,7 +72,7 @@ func (d Deps) dnsFollowService(ctx context.Context) (*dnsfollow.Service, error) 
 	if err != nil {
 		return nil, err
 	}
-	return dnsfollow.ForManager(m), nil
+	return dnsfollow.New(m, dnsfollow.Options{}), nil
 }
 
 func (d Deps) dnsHAService(ctx context.Context) (*dnsha.Service, error) {
@@ -83,14 +83,18 @@ func (d Deps) dnsHAService(ctx context.Context) (*dnsha.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return dnsha.ForManager(m), nil
+	return dnsha.New(m, dnsha.Options{}), nil
 }
 
 func (d Deps) ruleSyncService(ctx context.Context) (*rulesync.Service, error) {
 	if d.RuleSync != nil {
 		return d.RuleSync, nil
 	}
-	return rulesync.Get(ctx)
+	m, err := d.manager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return rulesync.New(m, nil, rulesync.Options{}), nil
 }
 
 func (d Deps) metricsHistory(m *core.Manager) *metrics.History {

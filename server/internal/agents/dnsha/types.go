@@ -50,10 +50,6 @@ func (s *Service) deployService() *deploy.Service {
 	return deploy.New(deploy.Options{})
 }
 
-// loop wakes the legacy package-level pair publication loop on configuration
-// and Agent state commits and when an Agent comes online.
-var loop = agents.NewWaker(PollInterval, agents.IdleFallback)
-
 var haLocks = lockx.NewKeyed[string](lockx.LevelJob, "oxidns-ha")
 var pairLocks = lockx.NewKeyed[string](lockx.LevelJob, "oxidns-ha-pair")
 

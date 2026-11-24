@@ -15,7 +15,6 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/logx"
 	"configflow/internal/model"
-	"configflow/internal/notifications"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
@@ -370,11 +369,19 @@ func (s *Service) appendEvents(events []model.OperationEvent, status, message, a
 	return agents.AppendOperationEvent(events, status, message, at, s.secrets(list)), nil
 }
 
+func (s *Service) taskStatusStore(ctx context.Context) *taskstatus.Store {
+	dir := s.m.Repository().DataDir()
+	if s.notifications != nil {
+		return s.notifications.TaskStatus(ctx, dir)
+	}
+	return taskstatus.New(dir)
+}
+
 func (s *Service) recordOutcome(ctx context.Context, id, status, message string) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
-	store := notifications.TaskStatus(ctx, s.m.Repository().DataDir())
+	store := s.taskStatusStore(ctx)
 	_, err := store.SaveResult(ctx, "dns_follow:"+id, taskstatus.Result{OK: status == "succeeded", Trigger: "event", Error: message})
 	return err
 }
@@ -437,12 +444,16 @@ func (s *Service) saveDraft(ctx context.Context, profile string, fn func(context
 	return e
 }
 
-// TaskRow projects one Agent's DNS-follow task row for /api/tasks.
-func TaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
-	return agentTaskRow(ctx, a, statuses)
+// TaskRow builds one dns_follow task row for a using s's repository for secret redaction.
+func (s *Service) TaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
+	var r *repo.Repository
+	if s != nil && s.m != nil {
+		r = s.m.Repository()
+	}
+	return agentTaskRow(ctx, r, a, statuses)
 }
 
-func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
+func agentTaskRow(ctx context.Context, r *repo.Repository, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
 	if a.ServiceType != "oxidns" {
 		return nil, nil
 	}
@@ -490,7 +501,6 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 	link := "/agents"
 	row := &tasks.Task{Key: key, Category: "dns_follow", Name: label, ResourceID: id, Enabled: enabled, ScheduleText: msgSchedule, CanRun: enabled && status == "failed", RunHint: hint, Running: running(status), Link: &link, StateMessage: stateMessage, HistoryData: history}
 	// Every stored Agent record's credentials, histories included, as before O10.
-	r, _ := repo.GetRepository(ctx)
 	secrets, err := agents.RowAgentSecrets(ctx, r)
 	if err != nil {
 		return nil, err

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"configflow/internal/agents"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/lifecycle"
 )
@@ -45,23 +44,4 @@ func (s *Service) PairFailureMessage(ctx context.Context, cause error) (string, 
 		return "", false
 	}
 	return s.FailureMessage(ctx, refusal), true
-}
-
-// RegisterInstance binds an externally constructed Service to m so transitional
-// ForManager(m) lookups share the same instance until W10 removes ForManager.
-func RegisterInstance(m *agents.Manager, s *Service) {
-	if m == nil || s == nil {
-		return
-	}
-	services.Lock()
-	defer services.Unlock()
-	if m.OnClose(func() {
-		services.Lock()
-		if services.byManager[m] == s {
-			delete(services.byManager, m)
-		}
-		services.Unlock()
-	}) {
-		services.byManager[m] = s
-	}
 }

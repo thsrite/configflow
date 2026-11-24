@@ -24,6 +24,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/agents/agentfake"
 	"configflow/internal/agents/dnsha"
+	"configflow/internal/agents/monitor"
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/deploy"
 	"configflow/internal/httpx/httpxtest"
@@ -170,12 +171,9 @@ func python(t *testing.T, d *devices, request string) any {
 }
 func golang(t *testing.T, d *devices, requestBody string) any {
 	t.Helper()
-	agents.ResetHooks()
-	agents.ResetRuntime()
-	t.Cleanup(func() { agents.ResetHooks(); agents.ResetRuntime() })
-	deploy.Wire()
-	dnsha.Register()
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: false, Register: httpxtest.Routes(apiagents.Register)})
+	var m *agents.Manager
+	var ha *dnsha.Service
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: false})
 	ctx := srv.Context()
 	e := srv.Repo.UpdateSystem(ctx, func(_ context.Context, doc *model.System) error {
 		return json.Unmarshal(mustJSON(t, d.records), &doc.Agents)
@@ -189,10 +187,24 @@ func golang(t *testing.T, d *devices, requestBody string) any {
 	if e != nil {
 		t.Fatal(e)
 	}
-	m, e := agents.Get(ctx)
+	m, e = agents.New(ctx, srv.Repo, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
 	if e != nil {
 		t.Fatal(e)
 	}
+	t.Cleanup(m.Close)
+	ha = dnsha.New(m, dnsha.Options{})
+	if e = m.SetPairPublisher(ha); e != nil {
+		t.Fatal(e)
+	}
+	mon := monitor.New(srv.Repo.DataDir())
+	if e = mon.SetHARules(ha.PairRulesJSON); e != nil {
+		t.Fatal(e)
+	}
+	dp := deploy.New(deploy.Options{Pair: func(ctx context.Context, _ *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
+		return ha.PublishPair(ctx, id, b, o)
+	}})
+	ha.Deploy = dp
+	apiagents.NewHandler(apiagents.Deps{Repo: srv.Repo, Agents: m, DNSHA: ha, Monitor: mon, Deploy: dp}).Register(srv.App.Router)
 	m.SetClient(localClient{d.urls})
 	for _, id := range []string{"primary", "secondary"} {
 		if _, e = m.ObserveHeartbeat(ctx, id, agentModelForTest(t, map[string]any{"service_status": "running"})); e != nil {
@@ -226,7 +238,7 @@ func golang(t *testing.T, d *devices, requestBody string) any {
 	last := replies[len(replies)-1].(map[string]any)
 	if last["status"] == 202 {
 		for range 14 {
-			if _, e = dnsha.ForManager(m).Advance(ctx, "primary"); e != nil {
+			if _, e = ha.Advance(ctx, "primary"); e != nil {
 				t.Fatal(e)
 			}
 		}

@@ -154,7 +154,7 @@ func fixtureNew(t *testing.T, options Options, paired bool, deviceOptions map[st
 	if e != nil {
 		t.Fatal(e)
 	}
-	m, e := agents.New(ctx, r)
+	m, e := agents.New(ctx, r, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -165,12 +165,11 @@ func fixtureNew(t *testing.T, options Options, paired bool, deviceOptions map[st
 			t.Fatal(e)
 		}
 	}
-	deploy.Wire()
-	installHooks()
-	f := &fixture{ctx, r, m, New(m, options), segment, devices, client}
-	services.Lock()
-	services.byManager[m] = f.s
-	services.Unlock()
+	s := New(m, options)
+	if e := m.SetPairPublisher(s); e != nil {
+		t.Fatal(e)
+	}
+	f := &fixture{ctx, r, m, s, segment, devices, client}
 	if paired {
 		segment.Configure("primary", "secondary")
 	}

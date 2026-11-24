@@ -183,12 +183,15 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	oldHooks := agents.CurrentHooks()
-	dnsha.Register()
-	t.Cleanup(func() { agents.ResetHooks(); agents.RegisterHooks(oldHooks) })
-	f.s.Deploy = deploy.New(deploy.Options{Pair: func(ctx context.Context, m *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
-		return dnsha.ForManager(m).PublishPair(ctx, id, b, o)
+	ha := dnsha.New(f.m, dnsha.Options{})
+	if e = f.m.SetPairPublisher(ha); e != nil {
+		t.Fatal(e)
+	}
+	dp = deploy.New(deploy.Options{Pair: func(ctx context.Context, _ *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
+		return ha.PublishPair(ctx, id, b, o)
 	}})
+	ha.Deploy = dp
+	f.s.Deploy = dp
 	_, e = f.s.Configure(f.ctx, "target", json.RawMessage(`{"source_agent_id":"source","upstream_tag":"forward_remote","upstream_index":0,"connection":"network","address":"192.0.2.10"}`))
 	if e != nil {
 		t.Fatal(e)
@@ -199,7 +202,7 @@ func TestDNSFollowPublishesBothHAMembersThroughRealOwner(t *testing.T) {
 		t.Fatal(e)
 	}
 	for range 14 {
-		if _, e = dnsha.ForManager(f.m).Advance(f.ctx, "target"); e != nil {
+		if _, e = ha.Advance(f.ctx, "target"); e != nil {
 			t.Fatal(e)
 		}
 		if e = f.s.Tick(f.ctx); e != nil {

@@ -6,19 +6,39 @@ import (
 	"testing"
 
 	"configflow/internal/agents"
+	"configflow/internal/model"
 )
+
+type countingPairPublisher struct {
+	*Service
+	serviceOpCalls int
+}
+
+func (c *countingPairPublisher) PairDeployment(ctx context.Context, id, did string) (*model.Deployment, error) {
+	return c.Service.PairDeployment(ctx, id, did)
+}
+
+func (c *countingPairPublisher) ActivatePair(ctx context.Context, id, did string) (*model.Deployment, error) {
+	return c.Service.ActivatePair(ctx, id, did)
+}
+
+func (c *countingPairPublisher) ServiceOperationJSON(ctx context.Context, id string, op func() (json.RawMessage, error), uninstall bool) (json.RawMessage, error) {
+	c.serviceOpCalls++
+	return c.Service.ServiceOperationJSON(ctx, id, op, uninstall)
+}
 
 func TestN810NativeServiceOperationRespectsBusyMemberLease(t *testing.T) {
 	f := fixtureNew(t, Options{}, true, nil)
-	agents.ResetHooks()
-	t.Cleanup(agents.ResetHooks)
-	calls := 0
-	agents.RegisterHooks(agents.Hooks{
-		HAServiceOperationTyped: func(ctx context.Context, m *agents.Manager, id string, run func() (json.RawMessage, error), uninstall bool) (json.RawMessage, error) {
-			calls++
-			return f.s.ServiceOperationJSON(ctx, id, run, uninstall)
-		},
-	})
+	m, err := agents.New(f.ctx, f.r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	m.SetClient(f.client)
+	counted := &countingPairPublisher{Service: New(m, Options{})}
+	if err := m.SetPairPublisher(counted); err != nil {
+		t.Fatal(err)
+	}
 	key := f.r.DataDir() + "\x00member:secondary"
 	_, release, ok := pairLocks.TryLock(f.ctx, key)
 	if !ok {
@@ -26,7 +46,7 @@ func TestN810NativeServiceOperationRespectsBusyMemberLease(t *testing.T) {
 	}
 	defer release()
 	for _, operation := range []agents.DirectOperation{agents.RestartService, agents.UninstallService} {
-		result, err := f.m.RunServiceOperation(f.ctx, "secondary", operation, nil, nil)
+		result, err := m.RunServiceOperation(f.ctx, "secondary", operation, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,7 +62,7 @@ func TestN810NativeServiceOperationRespectsBusyMemberLease(t *testing.T) {
 			t.Fatalf("busy member bypassed lease: %s", result)
 		}
 	}
-	if calls != 2 {
-		t.Fatalf("typed hook calls=%d", calls)
+	if counted.serviceOpCalls != 2 {
+		t.Fatalf("typed hook calls=%d", counted.serviceOpCalls)
 	}
 }

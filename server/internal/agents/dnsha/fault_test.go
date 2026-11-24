@@ -102,7 +102,7 @@ func TestLostUploadAndHandoffRepliesResumeWithoutReposting(t *testing.T) {
 			if !lost {
 				t.Fatal("fault never fired")
 			}
-			m, e := agents.New(f.ctx, f.r)
+			m, e := agents.New(f.ctx, f.r, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -110,9 +110,9 @@ func TestLostUploadAndHandoffRepliesResumeWithoutReposting(t *testing.T) {
 			m.SetClient(f.client)
 			f.m = m
 			f.s = New(m, Options{})
-			services.Lock()
-			services.byManager[m] = f.s
-			services.Unlock()
+			if e := m.SetPairPublisher(f.s); e != nil {
+				t.Fatal(e)
+			}
 			last := f.drain(t, 14)
 			if last.Status != "succeeded" || len(f.uploads()) != 2 {
 				t.Fatal(last, len(f.uploads()))
