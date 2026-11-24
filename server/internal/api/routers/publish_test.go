@@ -21,7 +21,6 @@ import (
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	core "configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -124,7 +123,7 @@ func TestR15PublishHTTPDisconnectAndShutdownAfterWrite(t *testing.T) {
 					}
 				})
 			}})
-			core.Wire()
+			wireRouterTestHooks(t)
 			createSpare(t, s)
 			saveFixtureConfig(t, s, inputConfig(device.URL))
 			addGateway(t, s)

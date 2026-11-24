@@ -187,7 +187,7 @@ func TestR14TasksRows(t *testing.T) {
 			if err = s.store().Write(ctx, "default", r.ID, receipt); err != nil {
 				t.Fatal(err)
 			}
-			rows, err := ruleSyncTasks(ctx, taskstatus.Snapshot{})
+			rows, err := s.TaskRows(ctx, taskstatus.Snapshot{})
 			if err != nil || len(rows) != 1 {
 				t.Fatal(err, rows)
 			}

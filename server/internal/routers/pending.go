@@ -14,19 +14,23 @@ import (
 	"configflow/internal/agents/diag"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
+	"configflow/internal/notifications"
 	"configflow/internal/repo"
 )
 
 // PendingRequest selects an Agent and an optional explicit profile. A non-nil
 // empty profile is invalid, never an alias for the all-profile scope.
 type PendingRequest struct {
-	AgentID   string
-	ProfileID *string
-	Refresh   bool
-	Repo      *repo.Repository
-	Agents    AgentSource
-	Cache     *PendingCache
-	NewDriver func(*spec.Router) Driver
+	AgentID       string
+	ProfileID     *string
+	Refresh       bool
+	Repo          *repo.Repository
+	Agents        AgentSource
+	Cache         *PendingCache
+	NewDriver     func(*spec.Router) Driver
+	Rules         RuleContentLoader
+	IPv6Hosts     IPv6HostFetcher
+	Notifications *notifications.Service
 }
 
 // PendingResponse is the handler-independent upstream-router reminder payload.
@@ -206,7 +210,7 @@ func readPendingRouter(ctx context.Context, req PendingRequest, target pendingTa
 		return out
 	}
 	defer driver.Close()
-	in, err := Inspect(ctx, InspectRequest{ProfileID: target.profile.ID, Config: target.config, Router: target.router, Driver: driver, Agents: req.Agents, Repo: req.Repo})
+	in, err := Inspect(ctx, InspectRequest{ProfileID: target.profile.ID, Config: target.config, Router: target.router, Driver: driver, Rules: req.Rules, IPv6Hosts: req.IPv6Hosts, Agents: req.Agents, Repo: req.Repo})
 	var plan *Plan
 	if err == nil {
 		plan, err = BuildPlan(ctx, target.router, in, driver)

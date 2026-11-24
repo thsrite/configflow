@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	apirules "configflow/internal/api/rules"
-	"configflow/internal/gateway"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	routers "configflow/internal/routers/spec"
 )
 
 func TestRouterOfflineMissingCacheMatchesPython(t *testing.T) {
@@ -42,10 +39,6 @@ func TestRouterOfflineMissingCacheMatchesPython(t *testing.T) {
 		}
 	}
 	w := newWorld(t, setup)
-	previous := routers.RulesetContent
-	t.Cleanup(func() { routers.RulesetContent = previous })
-	t.Cleanup(gateway.SetRuleSourceReader(nil))
-	apirules.Wire()
 	reply := w.call("DESIRED", "other", `{"gateway":"192.0.2.1","rule_ids":["selected"]}`, false)
 	warnings := reply.Body.(map[string]any)["blocking_warnings"].([]any)
 	if len(warnings) != 1 || warnings[0] != "规则集「Offline」没有本地缓存，未计入其中的 IP 段" {

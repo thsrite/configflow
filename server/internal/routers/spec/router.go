@@ -2,7 +2,6 @@ package spec
 
 import (
 	"bytes"
-	"cmp"
 	"configflow/internal/routers/device"
 	"crypto/rand"
 	"encoding/hex"
@@ -304,8 +303,8 @@ func NormalizePDGuard(raw json.RawMessage, routerType string) (PDGuard, error) {
 	return guard, nil
 }
 
-// NewRouterID returns a fresh router id (replaceable in tests).
-var NewRouterID = func() string {
+// DefaultRouterID returns a fresh random router identifier.
+func DefaultRouterID() string {
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
 	return "router_" + hex.EncodeToString(b)
@@ -315,6 +314,12 @@ var NewRouterID = func() string {
 // returns the record to store, with Python's checks in Python's order. An
 // empty password keeps the stored one. Errors are *ValidationError.
 func Normalize(body []byte, existing *Router) (*Router, error) {
+	return NormalizeWithID(body, existing, nil)
+}
+
+// NormalizeWithID is Normalize with an optional generator for new router IDs
+// (nil uses DefaultRouterID).
+func NormalizeWithID(body []byte, existing *Router, newID func() string) (*Router, error) {
 	var payload map[string]json.RawMessage
 	if json.Unmarshal(body, &payload) != nil || payload == nil {
 		return nil, device.Invalid("路由器参数必须是对象")
@@ -429,7 +434,13 @@ func Normalize(body []byte, existing *Router) (*Router, error) {
 	if pd.Enabled || pdSet {
 		r.IPv6PDGuard = &pd
 	}
-	r.ID = cmp.Or(r.ID, NewRouterID())
+	if r.ID == "" {
+		if newID != nil {
+			r.ID = newID()
+		} else {
+			r.ID = DefaultRouterID()
+		}
+	}
 	return r, nil
 }
 

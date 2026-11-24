@@ -46,7 +46,7 @@ func TestIPv6RouterHostOwnerRegistration(t *testing.T) {
 		t.Fatal(e)
 	}
 	m.SetClient(ipv6HostClient{})
-	host, e := routers.IPv6HostRequest(fixture.Context(), &routers.GatewayAgent{Agent: &model.Agent{ID: "source", Host: "192.0.2.2", Port: model.Int(8080), Token: "synthetic-source-token", ServiceType: "mihomo", ProfileID: "default"}})
+	host, e := routers.Default().IPv6Host(fixture.Context(), &routers.GatewayAgent{Agent: &model.Agent{ID: "source", Host: "192.0.2.2", Port: model.Int(8080), Token: "synthetic-source-token", ServiceType: "mihomo", ProfileID: "default"}})
 	if e != nil || host.Interface != "eth0" || len(host.Addresses) != 1 {
 		t.Fatal("R13 IPv6 host still unavailable", host, e)
 	}

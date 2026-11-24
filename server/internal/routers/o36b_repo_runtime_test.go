@@ -108,7 +108,7 @@ func TestO36bRepositoryRuntimeCommitBoundary(t *testing.T) {
 				}
 				t.Run(name, func(t *testing.T) {
 					r, base, connection := jobRepository(t)
-					Wire()
+					repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
 					if operation == "withdrawal" {
 						if err := o36bRouterCommit(base, r, connection, "publication"); err != nil {
 							t.Fatal(err)

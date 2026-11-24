@@ -8,8 +8,9 @@ import (
 	"encoding/json"
 )
 
-// jobLockHook tries only the existing L1 router publication lease under L3.
-func jobLockHook(ctx context.Context, profileID, routerID string, router model.Router) (func(), bool) {
+// JobLockRecord tries only the existing L1 router publication lease under L3.
+// Wired into repo.Options.RouterJobLock by server assembly.
+func JobLockRecord(ctx context.Context, profileID, routerID string, router model.Router) (func(), bool) {
 	connection := &spec.Router{RouterSettings: spec.RouterSettings{Type: routerStoredText(&router, "type"), Endpoint: routerStoredText(&router, "endpoint")}}
 	_, release, err := oplock.RouterJobLock(ctx, profileID, routerID, connection)
 	return release, err == nil

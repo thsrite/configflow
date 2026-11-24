@@ -26,6 +26,8 @@ type InspectRequest struct {
 	Router    *spec.Router
 	Driver    Driver
 	Loader    spec.ContentLoader
+	Rules     RuleContentLoader
+	IPv6Hosts IPv6HostFetcher
 	Agents    AgentSource
 	Repo      *repo.Repository
 }
@@ -38,9 +40,11 @@ type Inspection struct {
 	Report  *Report
 }
 
-// IPv6HostRequest is supplied by A23; missing wiring fails closed for this stage.
-var IPv6HostRequest = func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) {
-	return ipv6.IPv6Host{}, device.Error(messageIPv6HostUnavailable)
+func fetchIPv6Host(ctx context.Context, fetcher IPv6HostFetcher, agent *GatewayAgent) (ipv6.IPv6Host, error) {
+	if fetcher == nil {
+		return ipv6.IPv6Host{}, device.Error(messageIPv6HostUnavailable)
+	}
+	return fetcher(ctx, agent)
 }
 
 // Inspect reads device and Agent state, never writes to either.
@@ -87,7 +91,14 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	if gateway != nil && gateway.Agent != nil {
 		host = gateway.Host
 	}
-	desired, err := spec.ComputeDesired(ctx, req.Config, host, r.StaticRuleSets(), req.Loader)
+	loader := req.Loader
+	if loader == nil && req.Rules != nil {
+		rules := req.Rules
+		loader = func(item spec.RuleSet, library *spec.LibraryRule) (string, error) {
+			return rules(ctx, req.Config, item, library)
+		}
+	}
+	desired, err := spec.ComputeDesired(ctx, req.Config, host, r.StaticRuleSets(), loader)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +136,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		}
 	}
 	if policy {
-		desired.ROSPolicy, err = rospolicy.InspectROSPolicyDesired(ctx, req.Config, r, desired, req.Loader)
+		desired.ROSPolicy, err = rospolicy.InspectROSPolicyDesired(ctx, req.Config, r, desired, loader)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +174,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		var ipv6Host *ipv6.IPv6Host
 		hostReport := func() ipv6.IPv6Host {
 			if ipv6Host == nil {
-				v := inspectIPv6Host(ctx, req.ProfileID, req.Config, gateway)
+				v := inspectIPv6Host(ctx, req.ProfileID, req.Config, gateway, req.IPv6Hosts)
 				ipv6Host = &v
 			}
 			return *ipv6Host
@@ -284,7 +295,7 @@ func inspectionDNS(ctx context.Context, source AgentSource, id string) (device.D
 	}
 	return device.DNSAgentSettings(id, dns), nil
 }
-func inspectIPv6Host(ctx context.Context, profileID string, config json.RawMessage, a *GatewayAgent) ipv6.IPv6Host {
+func inspectIPv6Host(ctx context.Context, profileID string, config json.RawMessage, a *GatewayAgent, fetcher IPv6HostFetcher) ipv6.IPv6Host {
 	var cfg struct {
 		ProfileID string `json:"profile_id"`
 	}
@@ -298,7 +309,7 @@ func inspectIPv6Host(ctx context.Context, profileID string, config json.RawMessa
 	if a.ServiceType != "mihomo" || (a.Enabled != nil && !*a.Enabled) {
 		return ipv6.IPv6Host{Error: messageIPv6InvalidGateway}
 	}
-	h, err := IPv6HostRequest(ctx, a)
+	h, err := fetchIPv6Host(ctx, fetcher, a)
 	if err != nil {
 		return ipv6.IPv6Host{Error: releaseErrorText(err)}
 	}

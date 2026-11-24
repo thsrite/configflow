@@ -20,7 +20,6 @@ import (
 	"configflow/internal/redact"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
-	routers "configflow/internal/routers/spec"
 	"configflow/internal/rulefetch"
 	shared "configflow/internal/rules"
 	"configflow/internal/rulesetfmt"
@@ -246,16 +245,9 @@ func (s *Service) scanRows(ctx context.Context, id, host string) ([]scanRow, fun
 	}, nil
 }
 
-// Wire installs the shared rulesource readers for routers and gateway providers.
+// Wire installs the shared rulesource reader for gateway providers.
 func Wire() {
 	rs := rulesource.Default()
-	routers.RulesetContent = func(ctx context.Context, profile json.RawMessage, item routers.RuleSet, library *routers.LibraryRule) (string, error) {
-		var libRaw json.RawMessage
-		if library != nil {
-			libRaw = library.Raw
-		}
-		return rs.ReadOfflineJSON(ctx, profile, item.Raw, libRaw)
-	}
 	gateway.SetRuleSourceReader(rs.ReadGateway)
 }
 

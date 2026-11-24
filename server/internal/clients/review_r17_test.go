@@ -8,32 +8,25 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/repo"
 	"configflow/internal/routers"
 )
 
 // TestReviewR17RepositoryHookSharesJobLock is the O3-6b integration guard: the
-// repository commit guard's JobLock (registered by routers.Wire) and Apply's L1
+// repository commit guard's JobLock (routers.JobLockRecord) and Apply's L1
 // must be one table. If a second router-job table appears after batch-6 lands,
 // Apply would no longer see the hook's holder and this test fails.
 func TestReviewR17RepositoryHookSharesJobLock(t *testing.T) {
 	s, f, intent := fixedService(t)
-	routers.Wire()
 	preview, err := s.Preview(t.Context(), "default", intent)
 	if err != nil {
 		t.Fatal(err)
-	}
-	hooks := repo.SetHooks(repo.Hooks{})
-	repo.SetHooks(hooks)
-	if hooks.JobLockRecord == nil {
-		t.Fatal("routers.Wire registered no repository JobLockRecord")
 	}
 	profile, err := s.Repo.Profile(t.Context(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
 	router := profile.Routers.Items[0]
-	release, ok := hooks.JobLockRecord(t.Context(), "default", "router-one", router)
+	release, ok := routers.JobLockRecord(t.Context(), "default", "router-one", router)
 	if !ok {
 		t.Fatal("repository hook could not take an idle router job lock")
 	}

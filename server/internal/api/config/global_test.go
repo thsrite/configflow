@@ -12,6 +12,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
+	"configflow/internal/routers/spec"
 )
 
 func exportApp(t *testing.T) *httpxtest.Server {
@@ -19,7 +20,10 @@ func exportApp(t *testing.T) *httpxtest.Server {
 	previous := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previous) })
 	configexport.Wire()
-	routers.Wire()
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{
+		RedactRoutersJSON: func(raw json.RawMessage) (json.RawMessage, error) { return spec.RedactRouters(raw) },
+		JobLockRecord:     routers.JobLockRecord,
+	}})
 	return httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(Register)})
 }
 

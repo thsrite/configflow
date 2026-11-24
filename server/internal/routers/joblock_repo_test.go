@@ -87,7 +87,7 @@ func TestO36bWireUnlocksRepository(t *testing.T) {
 	if err := jobUpdate(r, ctx, "password", connection); !errors.Is(err, repo.ErrInUse) {
 		t.Fatal("unwired hook must stay fail-closed", err)
 	}
-	Wire()
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
 	if err := jobUpdate(r, ctx, "password", connection); err != nil {
 		t.Fatal("wired idle device was rejected", err)
 	}
@@ -101,7 +101,7 @@ func TestO36bRepositorySharesPublicationKey(t *testing.T) {
 	for _, change := range []string{"password", "manifest", "delete"} {
 		t.Run(change, func(t *testing.T) {
 			r, ctx, connection := jobRepository(t)
-			Wire()
+			repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
 			violations := lockx.Violations()
 			_, release, err := oplock.RouterJobLock(ctx, "other-profile", "alias", jobConnection("http://192.0.2.40"))
 			if err != nil {
@@ -132,7 +132,7 @@ func TestO36bRepositorySharesPublicationKey(t *testing.T) {
 
 func TestO36bCallerHeldSettingsAndPublication(t *testing.T) {
 	r, ctx, connection := jobRepository(t)
-	Wire()
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
 	violations := lockx.Violations()
 	device := jobConnection("http://192.0.2.40")
 	held, release, err := oplock.RouterJobLock(ctx, "live", "router", device)
@@ -167,7 +167,7 @@ func TestO36bCallerHeldSettingsAndPublication(t *testing.T) {
 
 func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
 	r, base, connection := jobRepository(t)
-	Wire()
+	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
 	_, request, _ := o36bRuntime(t)
 	base = repo.WithRepository(request, r)
 	fake := routerfake.New(nil)

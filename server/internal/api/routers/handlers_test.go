@@ -10,6 +10,7 @@ import (
 	api "configflow/internal/api/routers"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	core "configflow/internal/routers"
 )
@@ -23,10 +24,17 @@ func decodeJSON(t *testing.T, res *httpxtest.Result) map[string]any {
 	return out
 }
 
+func wireRouterTestHooks(t *testing.T) {
+	t.Helper()
+	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: core.JobLockRecord}})
+	t.Cleanup(func() { repo.SetHooks(previous) })
+	t.Cleanup(notifications.SetInputs(notifications.Inputs{Summarize: core.NotificationSummary}))
+}
+
 func fixture(t *testing.T) *httpxtest.Server {
 	t.Helper()
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(api.Register)})
-	core.Wire()
+	wireRouterTestHooks(t)
 	return s
 }
 func routerBody(endpoint string) map[string]any {

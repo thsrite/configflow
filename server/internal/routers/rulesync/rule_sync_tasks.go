@@ -16,40 +16,92 @@ import (
 	"configflow/internal/taskstatus"
 )
 
-func Wire() {
-	routers.CaptureManual = func(ctx context.Context, profile string, config json.RawMessage, r *spec.Router, d routers.Driver, desired *spec.Desired) error {
-		service, err := newSyncService(ctx)
+// CaptureManual returns a routers.ManualBaselineCapturer bound to s. When s has
+// no wired Repository (legacy NewApp test path), it resolves the request
+// repository on demand.
+func (s *RuleSyncService) CaptureManual(ctx context.Context, profile string, config json.RawMessage, r *spec.Router, d routers.Driver, desired *spec.Desired) error {
+	target := s
+	if target == nil || target.Repo == nil {
+		var hosts routers.IPv6HostFetcher
+		if target != nil {
+			hosts = target.IPv6Hosts
+		}
+		var err error
+		target, err = newSyncService(ctx, hosts)
 		if err != nil {
 			return err
 		}
-		return service.Capture(ctx, profile, config, r, d, desired)
 	}
-	tasks.SetRowBuilder(tasks.SlotRouters, ruleSyncTasks)
-	tasks.SetRunner(tasks.SlotRouters, func(ctx context.Context, _ string, resource string) error {
-		profile, id, _ := strings.Cut(resource, ":")
-		service, err := newSyncService(lifecycle.Detach(ctx))
-		if err != nil {
+	err := target.Capture(ctx, profile, config, r, d, desired)
+	if err == nil && s != nil && target != s {
+		s.pacer.wake.Notify()
+	}
+	return err
+}
+
+// Loop returns the periodic loop specification registered by server assembly on
+// the application Runtime.
+func (s *RuleSyncService) Loop() lifecycle.Periodic {
+	return lifecycle.Periodic{
+		Name:       "router-rule-sync",
+		Start:      lifecycle.AtBoot,
+		FirstDelay: 30 * time.Second,
+		Interval:   s.pauseDuration,
+		Wake:       &s.pacer.wake,
+		OnStart:    func(context.Context) { s.pacer.wake.Clear(); s.pacer.pause.Store(0) },
+		Round: func(ctx context.Context) error {
+			if s.Repo != nil {
+				return s.RunRound(ctx)
+			}
+			service, err := newSyncService(ctx, s.IPv6Hosts)
+			if err != nil {
+				return err
+			}
+			err = service.RunRound(ctx)
+			s.pacer.pause.Store(service.pacer.pause.Load())
 			return err
+		},
+	}
+}
+
+// TaskRunner returns the tasks.RunFunc for tasks.SlotRouters registered by
+// server assembly on the application tasks.Registry.
+func (s *RuleSyncService) TaskRunner() tasks.RunFunc {
+	return func(ctx context.Context, _ string, resource string) error {
+		profile, id, _ := strings.Cut(resource, ":")
+		target := s
+		if target == nil || target.Repo == nil || target.Agents == nil {
+			var hosts routers.IPv6HostFetcher
+			if target != nil {
+				hosts = target.IPv6Hosts
+			}
+			var err error
+			target, err = newSyncService(lifecycle.Detach(ctx), hosts)
+			if err != nil {
+				return err
+			}
 		}
-		err = service.StartJob(ctx, profile, id)
+		err := target.StartJob(ctx, profile, id)
 		var re *device.RouterError
 		if errors.As(err, &re) {
 			return &tasks.Conflict{Message: re.Error()}
 		}
 		return err
-	})
-	lifecycle.RegisterPeriodic(lifecycle.Periodic{Name: "router-rule-sync", Start: lifecycle.AtBoot, FirstDelay: 30 * time.Second, Interval: ruleSyncPause, Wake: &ruleSyncLoop.wake, OnStart: func(context.Context) { ruleSyncLoop.wake.Clear(); ruleSyncLoop.pause.Store(0) }, Round: func(ctx context.Context) error {
-		service, err := newSyncService(ctx)
-		if err != nil {
-			return err
-		}
-		return service.RunRound(ctx)
-	}})
+	}
 }
-func ruleSyncTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
-	db, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+
+// TaskRows builds the scheduled-task rows for tasks.SlotRouters.
+func (s *RuleSyncService) TaskRows(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
+	var db *repo.Repository
+	if s != nil {
+		db = s.Repo
+	}
+	if db == nil {
+		var err error
+		db, err = repo.GetRepository(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	profiles, err := spec.RouterProfiles(ctx, db)
 	if err != nil {

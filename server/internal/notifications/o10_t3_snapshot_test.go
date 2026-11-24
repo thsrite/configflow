@@ -162,16 +162,16 @@ func wireAllO10T3Slots(t *testing.T, agentReads *atomic.Int32) {
 	metrics.Wire()
 	discovery.Wire()
 	refresh.Wire()
-	routers.Wire()
-	// O17 R10a moved the router rule-sync task slot and CaptureManual out of
-	// routers.Wire into routers/rulesync.Wire (server/app.go calls both).
-	routerrulesync.Wire()
+	rr := routerrulesync.New(nil, routerrulesync.Options{})
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRouters, rr.TaskRows))
+	t.Cleanup(tasks.SetRunner(tasks.SlotRouters, rr.TaskRunner()))
 	// O17 W5 removed the self-installing Agent row slot (SetRuleSyncRow /
 	// SetDNSFollowRow); server assembly installs it through agenttasks.
 	t.Cleanup(tasks.SetRowBuilder(tasks.SlotAgents, agenttasks.BuildRows(agents.Get, rulesync.TaskRow, dnsfollow.TaskRow)))
 	t.Cleanup(notifications.SetInputs(notifications.Inputs{
 		Rows:         tasks.Available,
 		MissingTasks: tasks.Missing,
+		Summarize:    routers.NotificationSummary,
 		Agents: func(ctx context.Context) ([]model.Agent, error) {
 			if agentReads != nil {
 				agentReads.Add(1)

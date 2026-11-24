@@ -72,9 +72,7 @@ func r12Gateway() *GatewayAgent {
 	return &GatewayAgent{Agent: agent}
 }
 func TestR12RuntimePublicationBoundaries(t *testing.T) {
-	originalHost := IPv6HostRequest
-	IPv6HostRequest = func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) { return r10Host(), nil }
-	defer func() { IPv6HostRequest = originalHost }()
+	ipv6Hosts := func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) { return r10Host(), nil }
 	for _, mode := range []string{"disconnect", "shutdown_before_write", "shutdown_after_write", "shutdown_in_commit", "disconnect_in_commit"} {
 		t.Run(mode, func(t *testing.T) {
 			f := routerfake.New(nil)
@@ -91,7 +89,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 			cfg, r, before := r12Config(t, db)
 			source := r12Source{gateway: r12Gateway()}
 			previewDriver := NewRouterOS(server.URL, r.Username, r.Password, false)
-			inspection, e := Inspect(t.Context(), InspectRequest{ProfileID: "default", Config: cfg, Router: r, Driver: previewDriver, Agents: source, Repo: db})
+			inspection, e := Inspect(t.Context(), InspectRequest{ProfileID: "default", Config: cfg, Router: r, Driver: previewDriver, IPv6Hosts: ipv6Hosts, Agents: source, Repo: db})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -112,7 +110,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 			triggered := false
 			callsAtShutdown := 0
 			var publicationDriver *RouterOS
-			req := PublishRequest{ProfileID: "default", RouterID: r.ID, Expected: plan.Fingerprint, Router: r, Repo: db, Agents: source, NewDriver: func(r *spec.Router) Driver {
+			req := PublishRequest{ProfileID: "default", RouterID: r.ID, Expected: plan.Fingerprint, Router: r, Repo: db, Agents: source, IPv6Hosts: ipv6Hosts, NewDriver: func(r *spec.Router) Driver {
 				d := NewRouterOS(server.URL, r.Username, r.Password, false)
 				publicationDriver = d
 				d.SetHTTP(&r09AfterReadHTTP{DeviceHTTP: d.HTTP(), after: func(method, url string) {
@@ -138,9 +136,8 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 				}})
 				return d
 			}}
-			previous := repo.SetHooks(repo.Hooks{})
+			previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
 			defer repo.SetHooks(previous)
-			Wire()
 			held, unlock, e := oplock.RouterJobLock(repo.WithRepository(ctx, db), "default", r.ID, r)
 			if e != nil {
 				t.Fatal(e)

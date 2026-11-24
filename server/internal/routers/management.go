@@ -24,8 +24,9 @@ import (
 // ManagementService owns router configuration and manual-route writes. Existing
 // router writes require the caller's L1 job context; the service acquires L2.
 type ManagementService struct {
-	Repo      *repo.Repository
-	NewDriver func(*spec.Router) Driver
+	Repo        *repo.Repository
+	NewDriver   func(*spec.Router) Driver
+	NewRouterID func() string
 }
 
 var managementLogger = logx.Get("backend.routes.routers")
@@ -101,7 +102,7 @@ func (s *ManagementService) Create(ctx context.Context, profile string, body jso
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r, err := spec.Normalize(body, nil)
+	r, err := spec.NormalizeWithID(body, nil, s.NewRouterID)
 	if err != nil {
 		return nil, err
 	}

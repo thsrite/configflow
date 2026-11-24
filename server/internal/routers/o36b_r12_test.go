@@ -19,9 +19,8 @@ import (
 // StartPublish delivers its result.
 func TestO36bR12TrackedPublicationUsesSharedJobLock(t *testing.T) {
 	_, db, req, before := r12ReviewSetup(t, nil)
-	previous := repo.SetHooks(repo.Hooks{})
+	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: JobLockRecord}})
 	defer repo.SetHooks(previous)
-	Wire()
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Mode: lifecycle.ModeManual})
 	runtime.Start(t.Context())
 	defer runtime.Shutdown(t.Context())

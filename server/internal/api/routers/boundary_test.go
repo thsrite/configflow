@@ -2,8 +2,7 @@ package routers_test
 
 import (
 	"bytes"
-	routerrulesync "configflow/internal/routers/rulesync"
-	"configflow/internal/testjson"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -17,10 +16,15 @@ import (
 	"time"
 
 	api "configflow/internal/api/routers"
-	apirules "configflow/internal/api/rules"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/notifications"
+	"configflow/internal/repo"
 	core "configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
+	routerrulesync "configflow/internal/routers/rulesync"
+	"configflow/internal/routers/spec"
+	"configflow/internal/rulesource"
+	"configflow/internal/testjson"
 	"configflow/internal/yamlx"
 )
 
@@ -368,10 +372,22 @@ func runHTTPBoundary(t *testing.T, fake *routerfake.Fake, seed routerfake.State,
 	oracle := r15Python(t, dir, input)
 	pythonTables := fake.Snapshot().Tables
 	fake.Reset(seed)
-	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.Register)})
-	core.Wire()
-	routerrulesync.Wire()
-	apirules.Wire()
+	rs := rulesource.New(rulesource.Options{})
+	rr := routerrulesync.New(nil, routerrulesync.Options{})
+	rtr := core.New(nil, core.Options{
+		Rules: func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
+			var libRaw json.RawMessage
+			if library != nil {
+				libRaw = library.Raw
+			}
+			return rs.ReadOfflineJSON(ctx, profile, item.Raw, libRaw)
+		},
+		ManualBaseline: rr.CaptureManual,
+	})
+	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.NewHandler(rtr, rr).Register)})
+	previousHooks := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: core.JobLockRecord}})
+	t.Cleanup(func() { repo.SetHooks(previousHooks) })
+	t.Cleanup(notifications.SetInputs(notifications.Inputs{Summarize: core.NotificationSummary}))
 	var plan, route, workspace map[string]any
 	created := ""
 	for i, step := range requests {

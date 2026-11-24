@@ -27,14 +27,46 @@ import (
 	routerrulesync "configflow/internal/routers/rulesync"
 )
 
-type handler struct{ pending *core.PendingCache }
+// Handler serves authenticated router and upstream-reminder HTTP routes using
+// explicit router orchestration and rule-sync services.
+type Handler struct {
+	routers  *core.Service
+	rulesync *routerrulesync.RuleSyncService
+	pending  *core.PendingCache
+}
 
 var logger = logx.Get("backend.routes.routers")
 
+// NewHandler constructs a router HTTP Handler with explicit services. Nil
+// services fall back to the transitional process defaults until W10/W11.
+func NewHandler(svc *core.Service, syncSvc *routerrulesync.RuleSyncService) *Handler {
+	return &Handler{
+		routers:  svc,
+		rulesync: syncSvc,
+		pending:  core.NewPendingCache(nil, nil),
+	}
+}
+
+func (h *Handler) routerService() *core.Service {
+	if h != nil && h.routers != nil {
+		return h.routers
+	}
+	return core.Default()
+}
+
+func (h *Handler) syncService() *routerrulesync.RuleSyncService {
+	if h != nil && h.rulesync != nil {
+		return h.rulesync
+	}
+	return routerrulesync.Default()
+}
+
 // Register installs all R15 routes on the shared Flask-priority matcher. Static
 // segments win per segment; method mismatches may fall through to a path route.
-func Register(r *httpx.Router) {
-	h := &handler{pending: core.NewPendingCache(nil, nil)}
+func Register(r *httpx.Router) { NewHandler(nil, nil).Register(r) }
+
+// Register mounts all router routes on r.
+func (h *Handler) Register(r *httpx.Router) {
 	r.Handle([]string{"GET", "POST"}, "/api/routers", "routers.list_or_create_routers", h.auth(h.collection))
 	r.Handle([]string{"GET", "POST"}, "/api/routers/gateway-forwarding", "routers.gateway_forwarding", h.auth(h.forwarding))
 	r.Handle([]string{"PUT", "DELETE"}, "/api/routers/<router_id>", "routers.update_or_delete_router", h.auth(h.job(h.settings)))
@@ -51,9 +83,9 @@ func Register(r *httpx.Router) {
 	r.Handle([]string{"GET", "PUT", "POST"}, "/api/routers/<router_id>/rule-sync", "routers.router_rule_sync", h.auth(h.settingsJob(h.sync)))
 	r.GET("/api/agents/<agent_id>/upstream-routers", "agents.upstream_router_pending", h.auth(h.upstream))
 }
-func service(c *httpx.Ctx) (*core.ManagementService, error) {
+func (h *Handler) service(c *httpx.Ctx) (*core.ManagementService, error) {
 	db, err := repo.GetRepository(c.Context())
-	return &core.ManagementService{Repo: db}, err
+	return h.routerService().Management(db), err
 }
 func manager(c *httpx.Ctx) (*agents.Manager, error) { return agents.Get(c.Context()) }
 func body(c *httpx.Ctx) json.RawMessage             { var raw json.RawMessage; _ = c.BindSilent(&raw); return raw }
@@ -82,17 +114,17 @@ func stringValue(raw json.RawMessage) (string, bool) {
 	}
 	return *s, true
 }
-func selected(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *spec.Router, error) {
-	return selectedFrom(c, (*core.ManagementService).Records)
+func (h *Handler) selected(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *spec.Router, error) {
+	return h.selectedFrom(c, (*core.ManagementService).Records)
 }
 
 // selectedConfig is selected with the resolved configuration in the view.
-func selectedConfig(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *spec.Router, error) {
-	return selectedFrom(c, (*core.ManagementService).ConfigRecords)
+func (h *Handler) selectedConfig(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *spec.Router, error) {
+	return h.selectedFrom(c, (*core.ManagementService).ConfigRecords)
 }
 
-func selectedFrom(c *httpx.Ctx, read func(*core.ManagementService, context.Context, string) (*core.ConfigView, error)) (*core.ManagementService, *core.ConfigView, *spec.Router, error) {
-	s, err := service(c)
+func (h *Handler) selectedFrom(c *httpx.Ctx, read func(*core.ManagementService, context.Context, string) (*core.ConfigView, error)) (*core.ManagementService, *core.ConfigView, *spec.Router, error) {
+	s, err := h.service(c)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -165,7 +197,7 @@ func failure(c *httpx.Ctx, cfg *core.ConfigView, err error, status int, noStore 
 	}{false, message}, status, noStore)
 }
 func notFound() (*httpx.Response, error) { return httpx.Message(404, false, messageMissing), nil }
-func (h *handler) job(next httpx.HandlerFunc) httpx.HandlerFunc {
+func (h *Handler) job(next httpx.HandlerFunc) httpx.HandlerFunc {
 	return func(c *httpx.Ctx) (*httpx.Response, error) {
 		ctx := lifecycle.Detach(c.Context())
 		if err := ctx.Err(); err != nil {
@@ -174,7 +206,7 @@ func (h *handler) job(next httpx.HandlerFunc) httpx.HandlerFunc {
 		original := c.Context()
 		c.SetContext(ctx)
 		defer c.SetContext(original)
-		_, cfg, r, err := selected(c)
+		_, cfg, r, err := h.selected(c)
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +226,7 @@ func (h *handler) job(next httpx.HandlerFunc) httpx.HandlerFunc {
 		return next(c)
 	}
 }
-func (h *handler) settingsJob(next httpx.HandlerFunc) httpx.HandlerFunc {
+func (h *Handler) settingsJob(next httpx.HandlerFunc) httpx.HandlerFunc {
 	return func(c *httpx.Ctx) (*httpx.Response, error) {
 		if c.Method() == "PUT" || c.Method() == "DELETE" {
 			return h.job(next)(c)
@@ -202,8 +234,8 @@ func (h *handler) settingsJob(next httpx.HandlerFunc) httpx.HandlerFunc {
 		return next(c)
 	}
 }
-func (h *handler) collection(c *httpx.Ctx) (*httpx.Response, error) {
-	s, err := service(c)
+func (h *Handler) collection(c *httpx.Ctx) (*httpx.Response, error) {
+	s, err := h.service(c)
 	if err != nil {
 		return nil, err
 	}
@@ -230,8 +262,8 @@ func (h *handler) collection(c *httpx.Ctx) (*httpx.Response, error) {
 		Routers []spec.RouterView `json:"routers"`
 	}{true, views}, 200, false)
 }
-func (h *handler) settings(c *httpx.Ctx) (*httpx.Response, error) {
-	s, cfg, r, err := selected(c)
+func (h *Handler) settings(c *httpx.Ctx) (*httpx.Response, error) {
+	s, cfg, r, err := h.selected(c)
 	if err != nil {
 		return nil, err
 	}
@@ -252,8 +284,8 @@ func (h *handler) settings(c *httpx.Ctx) (*httpx.Response, error) {
 		Router  spec.RouterView `json:"router"`
 	}{true, next.View()}, 200, false)
 }
-func (h *handler) probe(c *httpx.Ctx) (*httpx.Response, error) {
-	s, cfg, r, err := selected(c)
+func (h *Handler) probe(c *httpx.Ctx) (*httpx.Response, error) {
+	s, cfg, r, err := h.selected(c)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +306,7 @@ func (h *handler) probe(c *httpx.Ctx) (*httpx.Response, error) {
 		Message string           `json:"message"`
 	}{result.OK, result, result.Message}, status, false)
 }
-func inspect(c *httpx.Ctx, db *repo.Repository, cfg json.RawMessage, r *spec.Router) (core.Driver, *core.Inspection, error) {
+func (h *Handler) inspectRouter(c *httpx.Ctx, db *repo.Repository, cfg json.RawMessage, r *spec.Router) (core.Driver, *core.Inspection, error) {
 	m, err := manager(c)
 	if err != nil {
 		return nil, nil, err
@@ -286,14 +318,14 @@ func inspect(c *httpx.Ctx, db *repo.Repository, cfg json.RawMessage, r *spec.Rou
 	if d == nil {
 		return nil, nil, &device.RouterError{Message: messageMissing}
 	}
-	value, err := core.Inspect(c.Context(), core.InspectRequest{ProfileID: c.ProfileID, Config: cfg, Router: r, Driver: d, Agents: core.ManagerAgentSource{Manager: m}, Repo: db})
+	value, err := h.routerService().Inspect(c.Context(), core.InspectRequest{ProfileID: c.ProfileID, Config: cfg, Router: r, Driver: d, Agents: core.ManagerAgentSource{Manager: m}, Repo: db})
 	return d, value, err
 }
 func stamp(c *httpx.Ctx) string {
 	return lifecycle.ClockFrom(c.Context()).Now().Local().Format("2006-01-02T15:04:05")
 }
-func (h *handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
-	s, cfg, r, err := selectedConfig(c)
+func (h *Handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
+	s, cfg, r, err := h.selectedConfig(c)
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +336,7 @@ func (h *handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, value, err := inspect(c, s.Repo, raw, r)
+	d, value, err := h.inspectRouter(c, s.Repo, raw, r)
 	if d != nil {
 		defer d.Close()
 	}
@@ -337,8 +369,8 @@ func (h *handler) inspect(c *httpx.Ctx) (*httpx.Response, error) {
 		GeneratedAt string     `json:"generated_at"`
 	}{true, plan, stamp(c)}, 200, false)
 }
-func (h *handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
-	s, cfg, r, err := selected(c)
+func (h *Handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
+	s, cfg, r, err := h.selected(c)
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +400,7 @@ func (h *handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 	// The publication runs as a tracked Runtime owner: at shutdown the
 	// Runtime waits for it after cancelling, so an interrupted release still
 	// records its aborted last_release (lab L5-D3, D-R12-3).
-	started, err := core.StartPublish(c.Context(), core.PublishRequest{ProfileID: c.ProfileID, RouterID: r.ID, Expected: confirmation.Fingerprint, Router: r, Repo: s.Repo, Agents: core.ManagerAgentSource{Manager: m}}, nil)
+	started, err := h.routerService().StartPublish(c.Context(), core.PublishRequest{ProfileID: c.ProfileID, RouterID: r.ID, Expected: confirmation.Fingerprint, Router: r, Repo: s.Repo, Agents: core.ManagerAgentSource{Manager: m}}, nil)
 	if err != nil {
 		return failure(c, cfg, err, 0, false)
 	}
@@ -396,8 +428,8 @@ func (h *handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return public(c, cfg, response, status, false)
 }
-func (h *handler) routes(c *httpx.Ctx) (*httpx.Response, error) {
-	_, cfg, r, err := selected(c)
+func (h *Handler) routes(c *httpx.Ctx) (*httpx.Response, error) {
+	_, cfg, r, err := h.selected(c)
 	if err != nil {
 		return nil, err
 	}
@@ -426,8 +458,8 @@ func (h *handler) routes(c *httpx.Ctx) (*httpx.Response, error) {
 		Routes  []*routeedit.PublicRoute `json:"routes"`
 	}{true, publicRows}, 200, false)
 }
-func (h *handler) routeChange(c *httpx.Ctx) (*httpx.Response, error) {
-	s, cfg, r, err := selected(c)
+func (h *Handler) routeChange(c *httpx.Ctx) (*httpx.Response, error) {
+	s, cfg, r, err := h.selected(c)
 	if err != nil {
 		return nil, err
 	}
@@ -455,8 +487,8 @@ func (h *handler) routeChange(c *httpx.Ctx) (*httpx.Response, error) {
 		Message string                 `json:"message"`
 	}{true, result, message}, 200, false)
 }
-func (h *handler) policy(c *httpx.Ctx) (*httpx.Response, error) {
-	s, cfg, r, err := selected(c)
+func (h *Handler) policy(c *httpx.Ctx) (*httpx.Response, error) {
+	s, cfg, r, err := h.selected(c)
 	if err != nil {
 		return nil, err
 	}
@@ -488,8 +520,8 @@ func (h *handler) policy(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return public(c, cfg, map[string]any{"success": true, "policy": map[string]any{"objects": objects, "source_agents": sources}, "generated_at": stamp(c)}, 200, true)
 }
-func (h *handler) upstream(c *httpx.Ctx) (*httpx.Response, error) {
-	s, err := service(c)
+func (h *Handler) upstream(c *httpx.Ctx) (*httpx.Response, error) {
+	s, err := h.service(c)
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +538,7 @@ func (h *handler) upstream(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	c.Set("routers.public-seeds", secrets)
-	value, err := core.AgentRouters(c.Context(), core.PendingRequest{AgentID: c.Param("agent_id"), ProfileID: profile, Refresh: c.ArgDefault("refresh", "") == "1" || c.ArgDefault("refresh", "") == "true", Repo: s.Repo, Agents: core.ManagerAgentSource{Manager: m}, Cache: h.pending})
+	value, err := h.routerService().AgentRouters(c.Context(), core.PendingRequest{AgentID: c.Param("agent_id"), ProfileID: profile, Refresh: c.ArgDefault("refresh", "") == "1" || c.ArgDefault("refresh", "") == "true", Repo: s.Repo, Agents: core.ManagerAgentSource{Manager: m}, Cache: h.pending})
 	if errors.Is(err, core.ErrPendingTimeout) {
 		return httpx.Message(504, false, messagePendingTimeout).NoStore(), nil
 	}
@@ -518,8 +550,8 @@ func (h *handler) upstream(c *httpx.Ctx) (*httpx.Response, error) {
 		*core.PendingResponse
 	}{true, value}, 200, true)
 }
-func (h *handler) sync(c *httpx.Ctx) (*httpx.Response, error) {
-	s, cfg, r, err := selected(c)
+func (h *Handler) sync(c *httpx.Ctx) (*httpx.Response, error) {
+	s, cfg, r, err := h.selected(c)
 	if err != nil {
 		return nil, err
 	}
@@ -538,7 +570,7 @@ func (h *handler) sync(c *httpx.Ctx) (*httpx.Response, error) {
 		if err = s.SaveSyncSettings(c.Context(), c.ProfileID, r, raw); err != nil {
 			return failure(c, cfg, err, 409, false)
 		}
-		_, cfg, r, err = selected(c)
+		_, cfg, r, err = h.selected(c)
 		if err != nil {
 			return nil, err
 		}
@@ -566,7 +598,10 @@ func (h *handler) sync(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return nil, err
 		}
-		runner := routerrulesync.RuleSyncService{Repo: s.Repo, Agents: core.ManagerAgentSource{Manager: m}}
+		runner := routerrulesync.New(s.Repo, routerrulesync.Options{
+			Agents:    core.ManagerAgentSource{Manager: m},
+			IPv6Hosts: h.syncService().IPv6Hosts,
+		})
 		if err = runner.StartJob(c.Context(), c.ProfileID, r.ID); err != nil {
 			return failure(c, cfg, err, 409, false)
 		}
@@ -581,8 +616,8 @@ func (h *handler) sync(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return public(c, cfg, map[string]any{"success": true, "settings": map[string]any{"auto_rule_sync": r.AutoRuleSync, "rule_sync_interval": r.RuleSyncInterval}, "sync": receipt.Public(r.AutoRuleSync)}, status, true)
 }
-func (h *handler) forwarding(c *httpx.Ctx) (*httpx.Response, error) {
-	s, err := service(c)
+func (h *Handler) forwarding(c *httpx.Ctx) (*httpx.Response, error) {
+	s, err := h.service(c)
 	if err != nil {
 		return nil, err
 	}
@@ -656,7 +691,7 @@ func publicSeeds(c *httpx.Ctx) (redact.Secrets, bool) {
 // auth admits a mutation with a detached context before metadata preflight.
 // Domain write owners detach again themselves; this also protects the adapter's
 // selected-router/link/receipt reads from an already disconnected browser.
-func (h *handler) auth(next httpx.HandlerFunc) httpx.HandlerFunc {
+func (h *Handler) auth(next httpx.HandlerFunc) httpx.HandlerFunc {
 	return auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 		if c.Method() != "POST" && c.Method() != "PUT" && c.Method() != "DELETE" {
 			return next(c)

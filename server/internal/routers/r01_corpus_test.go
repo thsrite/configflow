@@ -24,7 +24,6 @@ import (
 // user message compare by message; Python-internal exceptions (TypeError …)
 // only require Go to reject the input too.
 func TestR01Corpus(t *testing.T) {
-	spec.NewRouterID = func() string { return "router_GEN" }
 	file, err := os.Open("testdata/r01_corpus.jsonl.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +178,7 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 		if string(args.Existing) != "null" {
 			existing = decode[*spec.Router](t, args.Existing)
 		}
-		return spec.Normalize(args.Payload, existing)
+		return spec.NormalizeWithID(args.Payload, existing, func() string { return "router_GEN" })
 	case "public_view":
 		r := decode[spec.Router](t, in)
 		return r.View(), nil

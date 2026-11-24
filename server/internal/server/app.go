@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/dnsfollow"
@@ -27,6 +28,7 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	routerrulesync "configflow/internal/routers/rulesync"
+	"configflow/internal/routers/spec"
 	"configflow/internal/rulesource"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
@@ -62,6 +64,8 @@ type App struct {
 	Aggregations  *aggregations.Service
 	Deploy        *deploy.Service
 	RuleSource    *rulesource.Service
+	Routers       *routers.Service
+	RouterSync    *routerrulesync.RuleSyncService
 }
 
 // New wires the application, registers ordered startup steps and background
@@ -81,7 +85,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		return nil, err
 	}
 	tk := tasks.NewRegistry(opts.Repo, rt)
-	nt := notifications.New(notifications.Options{Repo: opts.Repo, Tasks: tk})
+	nt := notifications.New(notifications.Options{Repo: opts.Repo, Tasks: tk, Summarize: routers.NotificationSummary})
 	tasks.UseRegistry(tk)
 	notifications.UseService(nt)
 	gen, err := newGenerateServices(opts.Repo, rt, tk)
@@ -101,10 +105,15 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	} else {
 		configexport.Wire()
 		wireCore()
+		repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{
+			RedactRoutersJSON: func(raw json.RawMessage) (json.RawMessage, error) { return spec.RedactRouters(raw) },
+			JobLockRecord:     routers.JobLockRecord,
+		}})
 		webdav.WireTasksAndStartupOn(rt)
 		webdav.Wire()
 	}
-	if err := wireOtherSubsystems(rt, tk, gen, rs); err != nil {
+	rtrSvc, err := wireOtherSubsystems(opts, rt, tk, nt, ag, gen, rs)
+	if err != nil {
 		return nil, err
 	}
 	if err := gen.deploy.Validate(); err != nil {
@@ -118,9 +127,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	}
 	nt.MarkStarted()
 	httpApp := httpx.New()
-	for _, register := range routePackages {
-		register(httpApp.Router)
-	}
+	registerRoutes(httpApp.Router, rtrSvc.routers, rtrSvc.rulesync)
 	apitasks.NewHandler(tk).Register(httpApp.Router)
 	apinotifications.NewHandler(tk, nt, opts.Repo).Register(httpApp.Router)
 	auth.Install(httpApp)
@@ -145,27 +152,28 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		Aggregations:  gen.aggregations,
 		Deploy:        gen.deploy,
 		RuleSource:    rs,
+		Routers:       rtrSvc.routers,
+		RouterSync:    rtrSvc.rulesync,
 	}, nil
 }
 
 // wireOtherSubsystems registers the generation-pipeline loops and task rows
-// (W7) and the subsystems not yet instantiated (W8-W10). Agent-domain
-// services are wired exactly once in wireAgents.
-func wireOtherSubsystems(rt *lifecycle.Runtime, tk *tasks.Registry, gen *generateServices, rs *rulesource.Service) error {
+// (W7), routers and router rule-sync services (W9), and the subsystems not yet
+// instantiated (W10). Agent-domain services are wired exactly once in wireAgents.
+func wireOtherSubsystems(opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service) (*routerServices, error) {
 	gen.substore.Register(rt)
 	gen.refresh.Register(rt, tk)
 	discovery.WireOn(rt)
 	if err := wireConvertOnce(gen); err != nil {
-		return err
+		return nil, err
 	}
-	routers.Wire()        // routers R01: repo.Hooks.RedactRouters
-	routerrulesync.Wire() // routers R14: automatic remote rule sync loop + CaptureManual (W9)
+	rtrSvc := wireRouters(opts, rt, tk, nt, ag, rs)
 	wireSetupContentWith(rs)
 	wireSetupOnboarding()
 	wireSetupInstallation()
-	wireSetupRouter()
+	wireSetupRouter(rtrSvc.routers)
 	wireRuleSource(rs)
-	return nil
+	return rtrSvc, nil
 }
 
 // registerStartup installs the synchronous startup steps in their required

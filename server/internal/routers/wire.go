@@ -10,13 +10,10 @@ import (
 	"encoding/json"
 )
 
-// Wire installs native notifications and the shared publication lock.
-func Wire() {
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{RedactRoutersJSON: func(raw json.RawMessage) (json.RawMessage, error) { return spec.RedactRouters(raw) }, JobLockRecord: jobLockHook}})
-	notifications.SetInputs(notifications.Inputs{Summarize: pendingSummary})
-}
-
-func pendingSummary(report *notifications.RouterReport, plan json.RawMessage) (*notifications.RouterSummary, error) {
+// NotificationSummary projects a router report and release plan into the
+// notifications summary format. Wired into notifications.Options.Summarize by
+// server assembly.
+func NotificationSummary(report *notifications.RouterReport, plan json.RawMessage) (*notifications.RouterSummary, error) {
 	raw, err := report.JSON()
 	if err != nil {
 		return nil, err

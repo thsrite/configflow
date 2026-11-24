@@ -32,10 +32,8 @@ type r12FullCase struct {
 }
 
 func TestR12FullInspectionStagesPython(t *testing.T) {
-	old := IPv6HostRequest
 	hostCalls := 0
-	IPv6HostRequest = func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) { hostCalls++; return r10Host(), nil }
-	defer func() { IPv6HostRequest = old }()
+	ipv6Hosts := func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) { hostCalls++; return r10Host(), nil }
 	for _, mode := range []string{"all", "fake_fail", "dhcp_fail", "dns6_fail", "guard_fail", "pd_fail", "pd_skip", "dns6_skip", "ipv4_only"} {
 		t.Run(mode, func(t *testing.T) {
 			s := r11State()
@@ -90,7 +88,7 @@ func TestR12FullInspectionStagesPython(t *testing.T) {
 			d := NewRouterOS(server.URL, "synthetic-user", "synthetic-password", false)
 			defer d.Close()
 			hostCalls = 0
-			inspection, e := Inspect(t.Context(), InspectRequest{ProfileID: "default", Config: cfg, Router: r, Driver: d, Agents: source})
+			inspection, e := Inspect(t.Context(), InspectRequest{ProfileID: "default", Config: cfg, Router: r, Driver: d, IPv6Hosts: ipv6Hosts, Agents: source})
 			if e != nil {
 				t.Fatal(e)
 			}

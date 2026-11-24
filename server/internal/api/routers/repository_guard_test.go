@@ -29,7 +29,7 @@ func TestR15OwnedRecordCredentialRepairUsesRepositoryGuard(t *testing.T) {
 	}))
 	defer device.Close()
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(api.Register, apiconfig.Register, apiprofiles.Register)})
-	core.Wire()
+	wireRouterTestHooks(t)
 	createSpare(t, s)
 	login := s.Login()
 	cfg := inputConfig(device.URL)

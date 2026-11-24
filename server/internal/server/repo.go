@@ -5,12 +5,13 @@ import (
 
 	"configflow/internal/configexport"
 	"configflow/internal/repo"
+	"configflow/internal/routers"
 	"configflow/internal/routers/spec"
 )
 
 // RepoOptions returns the repository Options wired by the server: export
-// sanitization (OxiDNS + routers + external document) and default server
-// domain resolution. RouterJobLock stays on routers.Wire until W9.
+// sanitization (OxiDNS + routers + external document), router publication job
+// lock, and default server domain resolution.
 func RepoOptions() repo.Options {
 	return repo.Options{
 		Export: configexport.Exporter{
@@ -18,6 +19,7 @@ func RepoOptions() repo.Options {
 				return spec.RedactRouters(raw)
 			},
 		},
+		RouterJobLock:       routers.JobLockRecord,
 		DefaultServerDomain: defaultServerDomain,
 	}
 }

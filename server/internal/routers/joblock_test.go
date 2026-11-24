@@ -134,12 +134,12 @@ func TestO36bJobHookInsideRepositoryAndLegacySentinel(t *testing.T) {
 	}
 	defer release()
 	connection := model.Router{Type: "routeros", Endpoint: "http://192.0.2.3/"}
-	unlock, ok := jobLockHook(held, "p", "r", connection)
+	unlock, ok := JobLockRecord(held, "p", "r", connection)
 	if !ok {
 		t.Fatal("L3 commit guard did not acquire L1 try lock")
 	}
 	defer unlock()
-	if _, duplicate := jobLockHook(held, "alias", "alias", connection); duplicate {
+	if _, duplicate := JobLockRecord(held, "alias", "alias", connection); duplicate {
 		t.Fatal("commit guard bypassed the publisher's key")
 	}
 	if lockx.Violations() != violations || violations != 0 {

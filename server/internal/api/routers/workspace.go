@@ -30,8 +30,8 @@ func workspaceRequest(raw json.RawMessage) (core.WorkspaceRequest, bool) {
 	names, _ := stringValue(values["names_revision"])
 	return core.WorkspaceRequest{Revision: revision, NamesRevision: names, Router: values["router"], Policies: values["policies"], BaseURL: base}, true
 }
-func (h *handler) workspace(c *httpx.Ctx) (*httpx.Response, error) {
-	s, cfg, r, err := selectedConfig(c)
+func (h *Handler) workspace(c *httpx.Ctx) (*httpx.Response, error) {
+	s, cfg, r, err := h.selectedConfig(c)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func repositoryFailure(c *httpx.Ctx, cfg *core.ConfigView) func(*httpx.Response,
 		}{false, stored.Error()}, 400, false)
 	}
 }
-func (h *handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg *core.ConfigView, r *spec.Router) (*httpx.Response, error) {
+func (h *Handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg *core.ConfigView, r *spec.Router) (*httpx.Response, error) {
 	var err error
 	if c.Method() == "PUT" {
 		body, ok := workspaceRequest(body(c))
@@ -68,7 +68,7 @@ func (h *handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg *co
 		if err = s.SavePolicyWorkspace(c.Context(), c.ProfileID, r, body); err != nil {
 			return failure(c, cfg, err, 0, false)
 		}
-		_, cfg, r, err = selectedConfig(c)
+		_, cfg, r, err = h.selectedConfig(c)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +97,7 @@ func (h *handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg *co
 		Workspace core.Workspace `json:"workspace"`
 	}{true, value}, 200, true)
 }
-func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 	values, ok := fields(body(c))
 	targets, validTargets := previewTargets(values["targets"])
 	if !ok || !validTargets {
@@ -117,7 +117,7 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.Message(400, false, messagePreviewFormat), nil
 		}
 	}
-	s, err := service(c)
+	s, err := h.service(c)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		selected = append(selected, peer)
 	}
-	d, inspection, err := inspect(c, s.Repo, cfg, r)
+	d, inspection, err := h.inspectRouter(c, s.Repo, cfg, r)
 	if d != nil {
 		defer d.Close()
 	}

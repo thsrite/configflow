@@ -13,6 +13,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,16 +28,65 @@ import (
 	"configflow/internal/weburl"
 )
 
+// Options configures a router RuleSyncService instance.
+type Options struct {
+	Agents    routers.AgentSource
+	IPv6Hosts routers.IPv6HostFetcher
+	NewDriver func(*spec.Router) *routers.RouterOS
+	Download  RuleSyncDownload
+	Spawner   lockx.Spawner
+}
+
 // RuleSyncService owns manual baselines, automatic destination deltas and jobs.
 // Drivers remain real production clients; tests inject a loopback-backed factory.
 type RuleSyncService struct {
 	Repo      *repo.Repository
 	Agents    routers.AgentSource
+	IPv6Hosts routers.IPv6HostFetcher
 	NewDriver func(*spec.Router) *routers.RouterOS
 	Download  RuleSyncDownload
 	// Spawner defaults to the production lifecycle; isolated runtimes may be injected.
 	Spawner lockx.Spawner
+	pacer   ruleSyncPacer
 }
+
+// New constructs a RuleSyncService with explicit dependencies.
+func New(r *repo.Repository, opts Options) *RuleSyncService {
+	return &RuleSyncService{
+		Repo:      r,
+		Agents:    opts.Agents,
+		IPv6Hosts: opts.IPv6Hosts,
+		NewDriver: opts.NewDriver,
+		Download:  opts.Download,
+		Spawner:   opts.Spawner,
+	}
+}
+
+var (
+	defaultSyncMu      sync.RWMutex
+	defaultSyncService = New(nil, Options{})
+)
+
+// Default returns the process default RuleSyncService (transitional bridge
+// until W10/W11).
+func Default() *RuleSyncService {
+	defaultSyncMu.RLock()
+	defer defaultSyncMu.RUnlock()
+	return defaultSyncService
+}
+
+// UseService installs svc as the process default RuleSyncService.
+func UseService(svc *RuleSyncService) {
+	if svc == nil {
+		return
+	}
+	defaultSyncMu.Lock()
+	defaultSyncService = svc
+	defaultSyncMu.Unlock()
+}
+
+// HasIPv6Hosts reports whether the IPv6 host fetcher is wired.
+func (s *RuleSyncService) HasIPv6Hosts() bool { return s != nil && s.IPv6Hosts != nil }
 
 var syncLogger = logx.Get("backend.routers.rule_sync")
 var syncWorkers = lockx.NewKeyed[string](lockx.LevelJob, "routers:rule-sync")
@@ -139,7 +189,7 @@ func (s *RuleSyncService) Capture(ctx context.Context, profile string, config js
 		return s.store().Write(work, profile, r.ID, RuleSyncReceipt{Status: "synced", Message: messageSyncCaptured, SyncedAt: &timestamp, UpdatedAt: &timestamp, Baseline: baseline, Rules: records, RuleOrder: syncSelectedOrder(config, r)})
 	}()
 	if err == nil {
-		ruleSyncLoop.wake.Notify()
+		s.pacer.wake.Notify()
 		return nil
 	}
 	if work.Err() != nil {
@@ -205,6 +255,10 @@ func syncIPv6Delta(state *routers.RouterState, plan *routers.Plan) string {
 
 // Sync detaches client cancellation, takes the common L1, and runs a single job.
 func (s *RuleSyncService) Sync(ctx context.Context, profile, id, trigger string) (RuleSyncStatus, error) {
+	return s.syncWithDownload(ctx, profile, id, trigger, s.Download)
+}
+
+func (s *RuleSyncService) syncWithDownload(ctx context.Context, profile, id, trigger string, download RuleSyncDownload) (RuleSyncStatus, error) {
 	work := s.context(ctx)
 	if err := work.Err(); err != nil {
 		return RuleSyncStatus{}, err
@@ -223,9 +277,9 @@ func (s *RuleSyncService) Sync(ctx context.Context, profile, id, trigger string)
 		return RuleSyncStatus{}, lockErr
 	}
 	defer release()
-	return s.sync(held, profile, id, trigger)
+	return s.sync(held, profile, id, trigger, download)
 }
-func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string) (RuleSyncStatus, error) {
+func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string, download RuleSyncDownload) (RuleSyncStatus, error) {
 	store := s.store()
 	config, err := syncConfig(ctx, s.Repo, profile)
 	if err != nil {
@@ -281,7 +335,6 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 		if err != nil {
 			return err
 		}
-		download := s.Download
 		if download == nil {
 			download = (&RuleSyncDownloads{}).Download
 		}
@@ -362,7 +415,7 @@ func (s *RuleSyncService) sync(ctx context.Context, profile, id, trigger string)
 			return err
 		}
 		d = s.driver(r)
-		inspection, err := routers.Inspect(ctx, routers.InspectRequest{ProfileID: profile, Config: config, Router: r, Driver: d, Loader: syncIPLoader(records), Agents: s.Agents, Repo: s.Repo})
+		inspection, err := routers.Inspect(ctx, routers.InspectRequest{ProfileID: profile, Config: config, Router: r, Driver: d, Loader: syncIPLoader(records), IPv6Hosts: s.IPv6Hosts, Agents: s.Agents, Repo: s.Repo})
 		if err != nil {
 			return err
 		}
@@ -510,10 +563,8 @@ type ruleSyncPacer struct {
 	commits repo.CommitWake
 }
 
-var ruleSyncLoop ruleSyncPacer
-
-func ruleSyncPause(context.Context) time.Duration {
-	if pause := time.Duration(ruleSyncLoop.pause.Load()); pause > 0 {
+func (s *RuleSyncService) pauseDuration(context.Context) time.Duration {
+	if pause := time.Duration(s.pacer.pause.Load()); pause > 0 {
 		return max(pause, time.Second)
 	}
 	return RuleSyncPause
@@ -530,17 +581,17 @@ func (s *RuleSyncService) RunRound(ctx context.Context) error {
 		return nil
 	}
 	defer release()
-	ruleSyncLoop.commits.Follow(s.Repo, repo.ChangeConfig, ruleSyncLoop.wake.Notify)
+	s.pacer.commits.Follow(s.Repo, repo.ChangeConfig, s.pacer.wake.Notify)
 	next := RuleSyncMaxPause
-	defer func() { ruleSyncLoop.pause.Store(int64(next)) }()
+	defer func() { s.pacer.pause.Store(int64(next)) }()
 	profiles, err := spec.RouterProfiles(held, s.Repo)
 	if err != nil {
 		next = RuleSyncPause
 		return err
 	}
-	copyService := *s
-	if copyService.Download == nil {
-		copyService.Download = (&RuleSyncDownloads{}).Download
+	download := s.Download
+	if download == nil {
+		download = (&RuleSyncDownloads{}).Download
 	}
 	for _, profile := range profiles {
 		for _, r := range profile.Routers {
@@ -563,7 +614,7 @@ func (s *RuleSyncService) RunRound(ctx context.Context) error {
 				next = min(next, interval-elapsed)
 				continue
 			}
-			if _, err = copyService.Sync(held, profile.ID, r.ID, "schedule"); err != nil {
+			if _, err = s.syncWithDownload(held, profile.ID, r.ID, "schedule", download); err != nil {
 				if held.Err() != nil {
 					return held.Err()
 				}
@@ -665,7 +716,7 @@ func (s *RuleSyncService) StartJob(ctx context.Context, profile, id string) erro
 	return nil
 }
 
-func newSyncService(ctx context.Context) (*RuleSyncService, error) {
+func newSyncService(ctx context.Context, ipv6Hosts routers.IPv6HostFetcher) (*RuleSyncService, error) {
 	db, err := repo.GetRepository(ctx)
 	if err != nil {
 		return nil, err
@@ -674,7 +725,7 @@ func newSyncService(ctx context.Context) (*RuleSyncService, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &RuleSyncService{Repo: db, Agents: routers.ManagerAgentSource{Manager: manager}}, nil
+	return New(db, Options{Agents: routers.ManagerAgentSource{Manager: manager}, IPv6Hosts: ipv6Hosts}), nil
 }
 
 func syncSelectedOrder(config json.RawMessage, r *spec.Router) []string {

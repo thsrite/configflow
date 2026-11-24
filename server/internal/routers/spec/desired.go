@@ -159,12 +159,6 @@ type Desired struct {
 // library). An error counts as "no local cache", except device.ErrNotPorted.
 type ContentLoader func(item RuleSet, library *LibraryRule) (string, error)
 
-// RulesetContent is the default loader: local cache or inline content, never
-// the network (C32 get_ruleset_content; fails closed until C32 sets it).
-var RulesetContent = func(ctx context.Context, profile json.RawMessage, item RuleSet, library *LibraryRule) (string, error) {
-	return "", device.ErrNotPorted
-}
-
 type desiredProfile struct {
 	ID        json.RawMessage `json:"id"`
 	ProfileID json.RawMessage `json:"profile_id"`
@@ -209,8 +203,9 @@ func ComputeDesired(ctx context.Context, profile json.RawMessage, gateway string
 		return nil, &desiredYAMLError{validation: &device.ValidationError{Message: fmt.Sprintf(messageDesiredYAML, doc.label(), err)}, cause: err}
 	}
 	if loader == nil {
-		loader = func(item RuleSet, library *LibraryRule) (string, error) {
-			return RulesetContent(ctx, profile, item, library)
+		// Fail closed when no rule content loader is supplied and a rule set is selected.
+		loader = func(RuleSet, *LibraryRule) (string, error) {
+			return "", device.ErrNotPorted
 		}
 	}
 	d := &Desired{ProxyGateway: gateway, Warnings: []string{}, BlockingWarnings: []string{}}

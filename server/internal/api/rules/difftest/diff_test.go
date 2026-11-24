@@ -33,6 +33,7 @@ import (
 	"configflow/internal/repo"
 	routers "configflow/internal/routers/spec"
 	shared "configflow/internal/rules"
+	"configflow/internal/rulesource"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 	"configflow/internal/testjson"
@@ -384,7 +385,16 @@ func (w *world) callHeaders(method, path, body string, headers map[string]string
 		if err != nil {
 			t.Fatal(err)
 		}
-		result, err := routers.ComputeDesired(w.srv.Context(), raw, request.Gateway, request.IDs, nil)
+		rs := rulesource.Default()
+		ctx := w.srv.Context()
+		loader := func(item routers.RuleSet, library *routers.LibraryRule) (string, error) {
+			var libRaw json.RawMessage
+			if library != nil {
+				libRaw = library.Raw
+			}
+			return rs.ReadOfflineJSON(ctx, raw, item.Raw, libRaw)
+		}
+		result, err := routers.ComputeDesired(ctx, raw, request.Gateway, request.IDs, loader)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"configflow/internal/lifecycle/lifecycletest"
+	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/routers/routerfake"
 )
@@ -30,7 +31,7 @@ type r13Lab struct {
 
 func r13Fixture(t *testing.T) *r13Lab {
 	t.Helper()
-	Wire()
+	t.Cleanup(notifications.SetInputs(notifications.Inputs{Summarize: NotificationSummary}))
 	makeFake := func(pending bool) (*routerfake.Fake, *httptest.Server) {
 		s := r08State()
 		if pending {

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,7 +20,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
-	"configflow/internal/routers/spec"
+	routerrulesync "configflow/internal/routers/rulesync"
 	"configflow/internal/rulesource"
 	"configflow/internal/setup"
 	"configflow/internal/substore"
@@ -61,9 +62,6 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 	previousRepoHooks := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previousRepoHooks) })
 	agents.ResetHooks()
-	content, ipv6Host := spec.RulesetContent, routers.IPv6HostRequest
-	spec.RulesetContent, routers.IPv6HostRequest = nil, nil
-	t.Cleanup(func() { spec.RulesetContent, routers.IPv6HostRequest = content, ipv6Host })
 	t.Cleanup(func() {
 		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
 			t.Error(err)
@@ -104,9 +102,13 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		{"rule source service is the default", app.RuleSource != nil && rulesource.Default() == app.RuleSource},
 		{"onboarding adoption owner", onboarding.RegisteredAdoptOwnedWrite() != nil},
 		{"gateway rule source reader", gateway.RegisteredRuleSourceReader() != nil},
-		{"routers rule set content", spec.RulesetContent != nil},
-		{"routers IPv6 host", routers.IPv6HostRequest != nil},
-		// O17 R10a: routers/rulesync.Wire (not routers.Wire) installs this slot.
+		{"routers service is the default", app.Routers != nil && routers.Default() == app.Routers},
+		{"routers rule content loader", app.Routers != nil && app.Routers.HasRules()},
+		{"routers IPv6 host fetcher", app.Routers != nil && app.Routers.HasIPv6Hosts()},
+		{"routers manual baseline capturer", app.Routers != nil && app.Routers.HasManualBaseline()},
+		{"router rule sync service is the default", app.RouterSync != nil && routerrulesync.Default() == app.RouterSync},
+		{"router rule sync IPv6 host fetcher", app.RouterSync != nil && app.RouterSync.HasIPv6Hosts()},
+		{"router rule sync periodic loop", slices.Contains(app.Runtime.Names(), "router-rule-sync")},
 		{"router rule sync task rows", app.Tasks.HasRows(tasks.SlotRouters)},
 		{"router rule sync task runner", app.Tasks.Runner(tasks.SlotRouters) != nil},
 	}

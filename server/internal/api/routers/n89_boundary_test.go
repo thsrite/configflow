@@ -9,7 +9,6 @@ import (
 	api "configflow/internal/api/routers"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
-	core "configflow/internal/routers"
 )
 
 // Native request differences are separate from the frozen R15 workflows. Each
@@ -41,7 +40,7 @@ func TestN89NativeRequestBoundary(t *testing.T) {
 				t.Fatalf("Flask boundary changed: %+v", oracle.Responses)
 			}
 			s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.Register)})
-			core.Wire()
+			wireRouterTestHooks(t)
 			before, err := s.Repo.Profile(s.Context(), "default")
 			if err != nil {
 				t.Fatal(err)

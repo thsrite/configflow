@@ -25,14 +25,18 @@ import (
 // PublishRequest is the caller's selected record and expected preview revision.
 // The caller holds L1 and passes its held context; Publish acquires only L2.
 type PublishRequest struct {
-	ProfileID string
-	RouterID  string
-	Expected  string
-	Router    *spec.Router
-	Repo      *repo.Repository
-	Agents    AgentSource
-	NewDriver func(*spec.Router) Driver
-	Loader    spec.ContentLoader
+	ProfileID      string
+	RouterID       string
+	Expected       string
+	Router         *spec.Router
+	Repo           *repo.Repository
+	Agents         AgentSource
+	NewDriver      func(*spec.Router) Driver
+	Loader         spec.ContentLoader
+	Rules          RuleContentLoader
+	IPv6Hosts      IPv6HostFetcher
+	ManualBaseline ManualBaselineCapturer
+	Notifications  *notifications.Service
 }
 
 // PublishStatus identifies the handler-independent release outcome.
@@ -66,10 +70,6 @@ type LastRelease struct {
 	Message     string `json:"message"`
 }
 
-// CaptureManual is wired by R14. Failure is logged, never a successful baseline.
-var CaptureManual = func(context.Context, string, json.RawMessage, *spec.Router, Driver, *spec.Desired) error {
-	return device.ErrNotPorted
-}
 var releaseLogger = logx.Get("backend.routes.routers")
 
 // NewDriver constructs one vendor driver per inspection or publication.
@@ -122,7 +122,14 @@ func captureRelease(ctx context.Context, req PublishRequest, cfg json.RawMessage
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	if err := CaptureManual(ctx, req.ProfileID, cfg, captureRouter(r, d), d, desired); err != nil {
+	capture := req.ManualBaseline
+	var err error
+	if capture == nil {
+		err = device.ErrNotPorted
+	} else {
+		err = capture(ctx, req.ProfileID, cfg, captureRouter(r, d), d, desired)
+	}
+	if err != nil {
 		releaseLogger.Warningf(messageCaptureFailed, ReleaseLabel(r), diag.EventMessage(err.Error(), []any{r.Password}))
 	}
 }
@@ -153,9 +160,14 @@ func captureRouter(r *spec.Router, d Driver) *spec.Router {
 	}
 	return &out
 }
-func refreshRelease(ctx context.Context) {
+func refreshRelease(ctx context.Context, nt *notifications.Service) {
 	if ctx.Err() == nil {
-		notifications.Safely(func() error { return notifications.RefreshTasks(ctx, "") })
+		notifications.Safely(func() error {
+			if nt != nil {
+				return nt.RefreshTasks(ctx, "")
+			}
+			return notifications.RefreshTasks(ctx, "")
+		})
 	}
 }
 func publishError(r *spec.Router, err error) PublishOutcome {
@@ -216,7 +228,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 		return PublishOutcome{Err: device.ErrNotPorted}
 	}
 	defer driver.Close()
-	inspection, err := Inspect(work, InspectRequest{ProfileID: req.ProfileID, Config: config, Router: current, Driver: driver, Loader: req.Loader, Agents: req.Agents, Repo: req.Repo})
+	inspection, err := Inspect(work, InspectRequest{ProfileID: req.ProfileID, Config: config, Router: current, Driver: driver, Loader: req.Loader, Rules: req.Rules, IPv6Hosts: req.IPv6Hosts, Agents: req.Agents, Repo: req.Repo})
 	if err != nil {
 		return publishError(current, err)
 	}
@@ -291,7 +303,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 		return outcome
 	}
 	repo.ResetConfigContext(work)
-	refreshRelease(work)
+	refreshRelease(work, req.Notifications)
 	if plan.Empty {
 		releaseLogger.Infof(messagePublishEmpty, label)
 	} else if result.OK {

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"configflow/internal/model"
-	"configflow/internal/repo"
+	"configflow/internal/routers"
 	"configflow/internal/rulefetch"
 )
 
@@ -79,17 +79,11 @@ func TestR14ReviewStartJobBusyMessage(t *testing.T) {
 // merge next to it, this test fails because Sync no longer sees the hook's lock.
 func TestR14ReviewRepositoryHookSharesJobLock(t *testing.T) {
 	s, _, r := r14Fixture(t)
-	Wire()
-	current := repo.SetHooks(repo.Hooks{})
-	repo.SetHooks(current)
-	if current.JobLockRecord == nil {
-		t.Fatal("routers did not register the job lock hook")
-	}
 	var raw model.Router
 	if err := json.Unmarshal([]byte(`{"id":"`+r.ID+`","type":"routeros","endpoint":"`+r.Endpoint+`/"}`), &raw); err != nil {
 		t.Fatal(err)
 	}
-	release, ok := current.JobLockRecord(t.Context(), "default", r.ID, raw)
+	release, ok := routers.JobLockRecord(t.Context(), "default", r.ID, raw)
 	if !ok {
 		t.Fatal("hook could not take a free job lock")
 	}

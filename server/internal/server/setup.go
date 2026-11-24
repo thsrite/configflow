@@ -21,18 +21,11 @@ import (
 	"configflow/internal/setup"
 )
 
-// wireRuleSource installs the shared rulesource Service for routers and
-// gateway providers without importing internal/api/rules.
+// wireRuleSource installs the shared rulesource Service for gateway providers
+// without importing internal/api/rules.
 func wireRuleSource(rs *rulesource.Service) {
 	if rs == nil {
 		rs = rulesource.Default()
-	}
-	spec.RulesetContent = func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
-		var libRaw json.RawMessage
-		if library != nil {
-			libRaw = library.Raw
-		}
-		return rs.ReadOfflineJSON(ctx, profile, item.Raw, libRaw)
 	}
 	gateway.SetRuleSourceReader(rs.ReadGateway)
 }
@@ -128,14 +121,16 @@ func wireSetupInstallation() {
 // owner's read-only preview: the same inspection and release plan as
 // POST /api/routers/<id>/plan, so "synced" means that plan is empty and has no
 // blockers.
-func wireSetupRouter() {
-	setup.RegisterExternalOwners(setup.ExternalOwners{VerifyRouter: verifySetupRouter})
+func wireSetupRouter(rtr *routers.Service) {
+	setup.RegisterExternalOwners(setup.ExternalOwners{VerifyRouter: func(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *spec.Router) (setup.RouterVerification, error) {
+		return verifySetupRouter(ctx, rtr, r, profileID, config, router)
+	}})
 }
 
 // verifySetupRouter inspects one router of the setup profile without writing to
 // the device or the Agents. Device and plan failures (*routers.RouterError)
 // become the wizard's 502 with the router's own message, as on the router page.
-func verifySetupRouter(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *spec.Router) (setup.RouterVerification, error) {
+func verifySetupRouter(ctx context.Context, rtr *routers.Service, r *repo.Repository, profileID string, config json.RawMessage, router *spec.Router) (setup.RouterVerification, error) {
 	m, err := agents.Get(repo.WithRepository(ctx, r))
 	if err != nil {
 		return setup.RouterVerification{}, err
@@ -148,7 +143,7 @@ func verifySetupRouter(ctx context.Context, r *repo.Repository, profileID string
 		return setup.RouterVerification{}, fmt.Errorf("verify router: unsupported type %q", router.Type)
 	}
 	defer d.Close()
-	inspection, err := routers.Inspect(ctx, routers.InspectRequest{ProfileID: profileID, Config: config, Router: router, Driver: d, Agents: routers.ManagerAgentSource{Manager: m}, Repo: r})
+	inspection, err := rtr.Inspect(ctx, routers.InspectRequest{ProfileID: profileID, Config: config, Router: router, Driver: d, Agents: routers.ManagerAgentSource{Manager: m}, Repo: r})
 	if err != nil {
 		return setup.RouterVerification{}, routerFailure(err)
 	}

@@ -44,34 +44,42 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/mcp"
 	"configflow/internal/repo"
+	"configflow/internal/routers"
+	routerrulesync "configflow/internal/routers/rulesync"
 )
 
-// routePackages are the Register functions of the ported blueprints.
-var routePackages = []func(*httpx.Router){
-	mcp.Register,
-	apiauth.Register,
-	apiclientdevices.Register,
-	apinodes.Register,
-	apisubscriptions.Register,
-	apiaggregations.Register,
-	apirules.Register,
-	apirulelibrary.Register,
-	apiproxygroups.Register,
-	apiagents.Register,
-	apirouters.Register,
-	apiipv6.Register,
-	apilinuxgateway.Register,
-	apiconfig.Register,
-	apigenerate.Register,
-	apiprofiles.Register,
-	apigatewayonboarding.Register,
-	apisettings.Register,
-	apisetup.Register,
-	apilogs.Register,
-	apistats.Register,
-	apimosdns.Register,
-	apioxidns.Register,
-	apidiscovery.Register,
+// registerRoutes mounts every ported blueprint in Flask-blueprint order,
+// injecting explicit service instances for handlers already migrated.
+func registerRoutes(r *httpx.Router, rtr *routers.Service, rr *routerrulesync.RuleSyncService) {
+	routePackages := []func(*httpx.Router){
+		mcp.Register,
+		apiauth.Register,
+		apiclientdevices.Register,
+		apinodes.Register,
+		apisubscriptions.Register,
+		apiaggregations.Register,
+		apirules.Register,
+		apirulelibrary.Register,
+		apiproxygroups.Register,
+		apiagents.Register,
+		apirouters.NewHandler(rtr, rr).Register,
+		apiipv6.Register,
+		apilinuxgateway.Register,
+		apiconfig.Register,
+		apigenerate.Register,
+		apiprofiles.Register,
+		apigatewayonboarding.Register,
+		apisettings.Register,
+		apisetup.Register,
+		apilogs.Register,
+		apistats.Register,
+		apimosdns.Register,
+		apioxidns.Register,
+		apidiscovery.Register,
+	}
+	for _, register := range routePackages {
+		register(r)
+	}
 }
 
 func wireCore() {

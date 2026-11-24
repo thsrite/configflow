@@ -28,9 +28,7 @@ import (
 // previewed on its own driver; the returned request publishes that preview.
 func r12ReviewSetup(t *testing.T, wrap func(*RouterOS)) (*routerfake.Fake, *repo.Repository, PublishRequest, model.Profile) {
 	t.Helper()
-	originalHost := IPv6HostRequest
-	IPv6HostRequest = func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) { return r10Host(), nil }
-	t.Cleanup(func() { IPv6HostRequest = originalHost })
+	ipv6Hosts := func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) { return r10Host(), nil }
 	f := routerfake.New(nil)
 	f.Reset(r11State())
 	server := httptest.NewServer(f)
@@ -45,7 +43,7 @@ func r12ReviewSetup(t *testing.T, wrap func(*RouterOS)) (*routerfake.Fake, *repo
 	cfg, r, before := r12Config(t, db)
 	source := r12Source{gateway: r12Gateway()}
 	preview := NewRouterOS(server.URL, r.Username, r.Password, false)
-	inspection, e := Inspect(t.Context(), InspectRequest{ProfileID: "default", Config: cfg, Router: r, Driver: preview, Agents: source, Repo: db})
+	inspection, e := Inspect(t.Context(), InspectRequest{ProfileID: "default", Config: cfg, Router: r, Driver: preview, IPv6Hosts: ipv6Hosts, Agents: source, Repo: db})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -54,7 +52,7 @@ func r12ReviewSetup(t *testing.T, wrap func(*RouterOS)) (*routerfake.Fake, *repo
 	if e != nil || len(plan.Blockers) > 0 || plan.Empty {
 		t.Fatalf("preview %v %+v", e, plan)
 	}
-	return f, db, PublishRequest{ProfileID: "default", RouterID: r.ID, Expected: plan.Fingerprint, Router: r, Repo: db, Agents: source,
+	return f, db, PublishRequest{ProfileID: "default", RouterID: r.ID, Expected: plan.Fingerprint, Router: r, Repo: db, Agents: source, IPv6Hosts: ipv6Hosts,
 		NewDriver: func(r *spec.Router) Driver {
 			d := NewRouterOS(server.URL, r.Username, r.Password, false)
 			if wrap != nil {
@@ -69,10 +67,8 @@ func r12ReviewSetup(t *testing.T, wrap func(*RouterOS)) (*routerfake.Fake, *repo
 // signature with the stored one and refuses a baseline when they differ.
 func TestR12ReviewCaptureSeesPublishedIPv6Manifest(t *testing.T) {
 	_, db, req, _ := r12ReviewSetup(t, nil)
-	original := CaptureManual
-	t.Cleanup(func() { CaptureManual = original })
 	var captured *spec.Router
-	CaptureManual = func(_ context.Context, _ string, _ json.RawMessage, r *spec.Router, _ Driver, _ *spec.Desired) error {
+	req.ManualBaseline = func(_ context.Context, _ string, _ json.RawMessage, r *spec.Router, _ Driver, _ *spec.Desired) error {
 		captured = r
 		return nil
 	}

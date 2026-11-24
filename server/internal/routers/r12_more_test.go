@@ -75,10 +75,8 @@ func TestR12StartPublishReleasesBeforeDeliveryAndRefusal(t *testing.T) {
 	}
 }
 func TestR12IPv6HostBindingAndFailure(t *testing.T) {
-	old := IPv6HostRequest
-	defer func() { IPv6HostRequest = old }()
 	calls := 0
-	IPv6HostRequest = func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) {
+	fetcher := func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) {
 		calls++
 		return ipv6.IPv6Host{}, errors.New("synthetic host unavailable")
 	}
@@ -94,7 +92,7 @@ func TestR12IPv6HostBindingAndFailure(t *testing.T) {
 		case "disabled":
 			a.Enabled = pointer(false)
 		}
-		h := inspectIPv6Host(t.Context(), "default", json.RawMessage(`{}`), a)
+		h := inspectIPv6Host(t.Context(), "default", json.RawMessage(`{}`), a, fetcher)
 		if h.Error == "" {
 			t.Fatal(mode, "missing fail-closed reason")
 		}

@@ -290,19 +290,13 @@ func TestO17FollowupCaptureWakesRuleSyncLoop(t *testing.T) {
 	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
 	reg := lifecycle.NewRegistry()
 	rounds := make(chan struct{}, 4)
-	reg.RegisterPeriodic(lifecycle.Periodic{
-		Name:       "router-rule-sync",
-		Start:      lifecycle.AtBoot,
-		FirstDelay: 30 * time.Second,
-		Interval:   ruleSyncPause,
-		Wake:       &ruleSyncLoop.wake,
-		OnStart:    func(context.Context) { ruleSyncLoop.wake.Clear(); ruleSyncLoop.pause.Store(0) },
-		Round: func(rctx context.Context) error {
-			err := service.RunRound(rctx)
-			rounds <- struct{}{}
-			return err
-		},
-	})
+	loop := service.Loop()
+	loop.Round = func(rctx context.Context) error {
+		err := service.RunRound(rctx)
+		rounds <- struct{}{}
+		return err
+	}
+	reg.RegisterPeriodic(loop)
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: reg, Clock: clock})
 	runtime.Start(ctx)
 	defer runtime.Shutdown(context.Background())
@@ -322,7 +316,7 @@ func TestO17FollowupCaptureWakesRuleSyncLoop(t *testing.T) {
 	clock.Advance(30 * time.Second)
 	<-rounds
 	awaitTimer()
-	if got := ruleSyncPause(ctx); got != RuleSyncMaxPause {
+	if got := service.pauseDuration(ctx); got != RuleSyncMaxPause {
 		t.Fatalf("pause without baseline = %v, want %v", got, RuleSyncMaxPause)
 	}
 
@@ -370,7 +364,7 @@ func TestO17FollowupBusySyncRetriesWithin30Seconds(t *testing.T) {
 	if err := service.RunRound(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if got := ruleSyncPause(ctx); got > RuleSyncPause || got < time.Second {
+	if got := service.pauseDuration(ctx); got > RuleSyncPause || got < time.Second {
 		t.Fatalf("pause after busy sync = %v, want <= %v", got, RuleSyncPause)
 	}
 }

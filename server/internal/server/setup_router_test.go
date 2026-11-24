@@ -84,7 +84,7 @@ func TestVerifySetupRouterUsesRouterPlan(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := outcome(t, func() (setup.RouterVerification, error) {
-				return verifySetupRouter(srv.Context(), srv.Repo, "default", raw, &r)
+				return verifySetupRouter(srv.Context(), nil, srv.Repo, "default", raw, &r)
 			})
 			t.Logf("%s: %+v", tt.name, got)
 			if got.Empty != tt.want.Empty || got.Status != tt.want.Status || len(got.Blockers) != len(tt.want.Blockers) {
