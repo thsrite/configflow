@@ -30,7 +30,7 @@
                 id="server-domain"
                 v-model="serverDomain"
                 class="min-w-0 bg-background/50 font-mono"
-                placeholder="http://192.168.1.10:5010"
+                placeholder="http://192.0.2.10:5010"
                 @blur="onServerDomainBlur"
               />
               <Button
@@ -62,7 +62,7 @@
                 autocomplete="off"
                 :spellcheck="false"
                 class="min-w-0 bg-background/50 font-mono"
-                placeholder="http://192.168.0.3:7890"
+                placeholder="http://192.0.2.3:7890"
                 @blur="onRuleFetchProxyBlur"
               />
               <Button
