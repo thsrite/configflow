@@ -5,24 +5,23 @@ import (
 	"errors"
 	"strings"
 
-	"configflow/internal/agents"
 	"configflow/internal/auth"
 	"configflow/internal/configgen"
 	"configflow/internal/deploy"
 	"configflow/internal/httpx"
 )
 
-func registerArtifacts(r *httpx.Router) {
+func (h *Handler) registerArtifacts(r *httpx.Router) {
 	for _, route := range []struct{ path, name string }{
 		{"/api/generate/<service>/artifact", "generate.generate_artifact"},
 		{"/api/profiles/<profile_id>/generate/<service>/artifact", "profiles.profile_generate_artifact"},
 	} {
-		r.POST(route.path, route.name, auth.Require(generateArtifact))
+		r.POST(route.path, route.name, auth.Require(h.generateArtifact))
 	}
-	r.GET("/api/generate/artifacts/<preview_id>/<action>", "generate.read_artifact", auth.Require(readArtifact))
+	r.GET("/api/generate/artifacts/<preview_id>/<action>", "generate.read_artifact", auth.Require(h.readArtifact))
 }
 
-func generateArtifact(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) generateArtifact(c *httpx.Ctx) (*httpx.Response, error) {
 	engine := configgen.Engine(c.Param("service"))
 	if !engine.Valid() {
 		return httpx.Message(400, false, msgUnsupported), nil
@@ -54,7 +53,7 @@ func generateArtifact(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		base = strings.TrimRight(base, "/")
 	}
-	m, err := agents.Get(c.Context())
+	m, err := h.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -65,16 +64,16 @@ func generateArtifact(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(artifact).NoStore(), nil
 }
 
-func readArtifact(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) readArtifact(c *httpx.Ctx) (*httpx.Response, error) {
 	action := c.Param("action")
 	if action != "download" && action != "file" {
 		return httpx.Message(404, false, msgUnknownAction), nil
 	}
-	m, err := agents.Get(c.Context())
+	m, err := h.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	pv, err := deploy.LoadPreview(m, c.Param("preview_id"), "manual")
+	pv, err := h.deployService().LoadPreview(m, c.Param("preview_id"), "manual")
 	if err != nil {
 		var changed *deploy.PreviewChanged
 		if errors.As(err, &changed) {

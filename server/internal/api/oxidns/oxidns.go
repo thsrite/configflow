@@ -3,6 +3,7 @@
 package oxidns
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -60,8 +61,32 @@ type nativeResponse struct {
 	Notices []string `json:"notices"`
 }
 
+// Deps supplies the collaborators for the OxiDNS HTTP Handler.
+type Deps struct {
+	Repo *repo.Repository
+}
+
+// Handler serves profile-scoped OxiDNS editor HTTP routes.
+type Handler struct {
+	repo *repo.Repository
+}
+
+// New constructs an OxiDNS Handler with explicit dependencies. Nil fields fall
+// back to transitional process defaults until W11.
+func New(deps Deps) *Handler { return &Handler{repo: deps.Repo} }
+
+func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
+	if h != nil && h.repo != nil {
+		return h.repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
 // Register installs all 18 method/path pairs, including their profile wrappers.
-func Register(router *httpx.Router) {
+func Register(router *httpx.Router) { New(Deps{}).Register(router) }
+
+// Register mounts all 18 OxiDNS method/path pairs on router.
+func (h *Handler) Register(router *httpx.Router) {
 	for _, prefix := range []string{"/api/oxidns", "/api/profiles/<profile_id>/oxidns"} {
 		blueprint := "oxidns."
 		profilePrefix := ""
@@ -69,7 +94,7 @@ func Register(router *httpx.Router) {
 			blueprint = "profiles."
 			profilePrefix = "profile_"
 		}
-		router.Handle([]string{"GET", "POST"}, prefix+"/settings", blueprint+profilePrefix+"oxidns_settings", auth.Require(settings))
+		router.Handle([]string{"GET", "POST"}, prefix+"/settings", blueprint+profilePrefix+"oxidns_settings", auth.Require(h.settings))
 		for _, entry := range []struct{ path, endpoint string }{
 			{"render", "render_oxidns_draft"}, {"validate", "validate_oxidns_draft"},
 			{"editor", "prepare_oxidns_editor"}, {"template-preview", "preview_oxidns_template"},
@@ -77,7 +102,7 @@ func Register(router *httpx.Router) {
 			{"native-settings/apply", "apply_oxidns_native_settings"},
 		} {
 			action := entry.path
-			router.POST(prefix+"/"+action, blueprint+profilePrefix+entry.endpoint, auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) { return draft(c, action) }))
+			router.POST(prefix+"/"+action, blueprint+profilePrefix+entry.endpoint, auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) { return h.draft(c, action) }))
 		}
 	}
 }
@@ -104,7 +129,7 @@ func userFailure(err error, native bool) (*httpx.Response, error) {
 	}
 	return response, nil
 }
-func settings(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) settings(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Method() == http.MethodGet || c.Method() == http.MethodHead {
 		value, err := engine.ReadSettings(c.Context(), c.ProfileID)
 		if err != nil {
@@ -181,13 +206,13 @@ func applied(value engine.Applied) (appliedResponse, error) {
 	settings, err := dynamic(value.Settings)
 	return appliedResponse{commonResponse: view, Settings: settings}, err
 }
-func draft(c *httpx.Ctx, action string) (*httpx.Response, error) {
+func (h *Handler) draft(c *httpx.Ctx, action string) (*httpx.Response, error) {
 	request, settings, baseURL, err := readDraft(c)
 	native := action == "native-settings/apply"
 	if err != nil {
 		return userFailure(err, native)
 	}
-	repository, err := repo.GetRepository(c.Context())
+	repository, err := h.repository(c.Context())
 	if err != nil {
 		return nil, err
 	}

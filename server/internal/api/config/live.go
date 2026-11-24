@@ -16,7 +16,7 @@ import (
 	"configflow/internal/rules"
 )
 
-func registerLive(r *httpx.Router) {
+func (h *Handler) registerLive(r *httpx.Router) {
 	for _, engine := range []configgen.Engine{configgen.Mihomo, configgen.Surge, configgen.Loon, configgen.MosDNS, configgen.OxiDNS} {
 		for _, scoped := range []bool{false, true} {
 			path := "/api/config/"
@@ -29,13 +29,13 @@ func registerLive(r *httpx.Router) {
 			}
 			path += string(engine)
 			name += string(engine) + "_config"
-			r.GET(path, name, func(c *httpx.Ctx) (*httpx.Response, error) { return live(c, engine) })
+			r.GET(path, name, func(c *httpx.Ctx) (*httpx.Response, error) { return h.live(c, engine) })
 		}
 	}
-	r.GET("/api/config/<profile_id>/loon/<filename>", "config.get_profile_loon_named_config", func(c *httpx.Ctx) (*httpx.Response, error) { return live(c, configgen.Loon) })
+	r.GET("/api/config/<profile_id>/loon/<filename>", "config.get_profile_loon_named_config", func(c *httpx.Ctx) (*httpx.Response, error) { return h.live(c, configgen.Loon) })
 }
-func live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, error) {
-	repository, err := repo.GetRepository(c.Context())
+func (h *Handler) live(c *httpx.Ctx, engine configgen.Engine) (*httpx.Response, error) {
+	repository, err := h.repository(c.Context())
 	if err != nil {
 		return nil, err
 	}

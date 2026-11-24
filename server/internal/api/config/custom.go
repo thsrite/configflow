@@ -43,11 +43,11 @@ func (r *customRequest) UnmarshalJSON(raw []byte) error {
 	*r = customRequest{Config: fields["config"], SmartGroups: fields["smart_groups"], Interval: fields["provider_update_interval"], EasyTier: fields["easytier"]}
 	return nil
 }
-func registerCustom(r *httpx.Router) {
+func (h *Handler) registerCustom(r *httpx.Router) {
 	for _, engine := range []string{"mihomo", "surge", "loon", "mosdns", "oxidns"} {
 		r.Handle([]string{"GET", "POST"}, "/api/custom-config/"+engine, "custom_config.handle_custom_"+engine+"_config", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 			if c.Method() != "POST" {
-				out, err := readCustom(c.Context(), c.ProfileID, engine)
+				out, err := h.readCustom(c.Context(), c.ProfileID, engine)
 				if err != nil {
 					return nil, err
 				}
@@ -91,7 +91,7 @@ func registerCustom(r *httpx.Router) {
 				}
 			}
 
-			guard, err := saveCustom(c.Context(), c.ProfileID, engine, body)
+			guard, err := h.saveCustom(c.Context(), c.ProfileID, engine, body)
 			if err != nil {
 				var failure *customError
 				if errors.As(err, &failure) {
@@ -120,8 +120,8 @@ type customError struct {
 func (e *customError) Error() string { return e.message }
 func reject(message string) error    { return &customError{400, message} }
 
-func readCustom(ctx context.Context, id, engine string) (map[string]any, error) {
-	r, err := repo.GetRepository(ctx)
+func (h *Handler) readCustom(ctx context.Context, id, engine string) (map[string]any, error) {
+	r, err := h.repository(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func readCustom(ctx context.Context, id, engine string) (map[string]any, error) 
 		if raw, ok := settings["provider_update_interval"]; ok {
 			out["provider_update_interval"] = raw
 		}
-		reserved, hosts, err := agentContext(ctx, id)
+		reserved, hosts, err := h.agentContext(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -196,12 +196,12 @@ func readCustom(ctx context.Context, id, engine string) (map[string]any, error) 
 	return out, nil
 }
 
-func saveCustom(ctx context.Context, id, engine string, body customRequest) (json.RawMessage, error) {
+func (h *Handler) saveCustom(ctx context.Context, id, engine string, body customRequest) (json.RawMessage, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repository(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +296,7 @@ func saveCustom(ctx context.Context, id, engine string, body customRequest) (jso
 				if err != nil {
 					return nil, reject(err.Error())
 				}
-				reserved, hosts, err := agentContext(ctx, id)
+				reserved, hosts, err := h.agentContext(ctx, id)
 				if err != nil {
 					return nil, err
 				}
@@ -390,8 +390,8 @@ func savedMihomoBase(text string) (*yamlx.Node, error) {
 	}
 	return node, nil
 }
-func agentContext(ctx context.Context, id string) (map[int]string, []string, error) {
-	r, err := repo.GetRepository(ctx)
+func (h *Handler) agentContext(ctx context.Context, id string) (map[int]string, []string, error) {
+	r, err := h.repository(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

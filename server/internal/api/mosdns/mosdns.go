@@ -15,15 +15,42 @@ import (
 	"configflow/internal/repo"
 )
 
+// Deps supplies the collaborators for the MosDNS HTTP Handler.
+type Deps struct {
+	Repo *repo.Repository
+}
+
+// Handler serves MosDNS editor and authenticated rule-proxy HTTP routes.
+type Handler struct {
+	repo *repo.Repository
+}
+
+// New constructs a MosDNS Handler with explicit dependencies. Nil fields fall
+// back to transitional process defaults until W11.
+func New(deps Deps) *Handler { return &Handler{repo: deps.Repo} }
+
+func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
+	if h != nil && h.repo != nil {
+		return h.repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
 // Register adds the MosDNS routes.
-func Register(r *httpx.Router) {
-	r.POST("/api/mosdns/settings", "mosdns.save_mosdns_settings", auth.Require(saveSettings))
+func Register(r *httpx.Router) { New(Deps{}).Register(r) }
+
+// Register mounts the MosDNS routes on r.
+func (h *Handler) Register(r *httpx.Router) {
+	r.POST("/api/mosdns/settings", "mosdns.save_mosdns_settings", auth.Require(h.saveSettings))
 	for _, s := range sections {
-		r.Handle([]string{"GET", "POST"}, "/api/mosdns/"+s.path, "mosdns."+s.endpoint, auth.Require(s.handle))
+		path := s.path
+		r.Handle([]string{"GET", "POST"}, "/api/mosdns/"+path, "mosdns."+s.endpoint, auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
+			return h.handleSection(c, path)
+		}))
 	}
 	// Public: the rule proxy checks its own token or JWT.
-	r.GET("/api/mosdns/rule-proxy", "mosdns.mosdns_rule_proxy", ruleProxy)
-	r.GET("/api/profiles/<profile_id>/mosdns/rule-proxy", "profiles.profile_mosdns_rule_proxy", ruleProxy)
+	r.GET("/api/mosdns/rule-proxy", "mosdns.mosdns_rule_proxy", h.ruleProxy)
+	r.GET("/api/profiles/<profile_id>/mosdns/rule-proxy", "profiles.profile_mosdns_rule_proxy", h.ruleProxy)
 }
 
 type section struct{ path, endpoint string }
@@ -151,9 +178,9 @@ func requestSettings(c *httpx.Ctx, name string) (model.MosDNSSettings, error) {
 	}
 	return profile.MosDNS, nil
 }
-func (s section) handle(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) handleSection(c *httpx.Ctx, path string) (*httpx.Response, error) {
 	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead {
-		r, err := repo.GetRepository(c.Context())
+		r, err := h.repository(c.Context())
 		if err != nil {
 			return nil, err
 		}
@@ -168,28 +195,28 @@ func (s section) handle(c *httpx.Ctx) (*httpx.Response, error) {
 		if c.Request.Method == http.MethodHead {
 			return nil, nil
 		}
-		return sectionResponse(s.path, profile.MosDNS), nil
+		return sectionResponse(path, profile.MosDNS), nil
 	}
-	value, err := requestSettings(c, s.path)
+	value, err := requestSettings(c, path)
 	if err != nil {
 		return nil, err
 	}
-	guard, err := save(c.Context(), s.path, value)
+	guard, err := h.save(c.Context(), path, value)
 	if err != nil {
 		return nil, err
 	}
 	result := successDTO{Success: true}
-	if s.path == "cache-settings" {
+	if path == "cache-settings" {
 		result.Guard = &guard
 	}
 	return httpx.JSON(result), nil
 }
-func saveSettings(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) saveSettings(c *httpx.Ctx) (*httpx.Response, error) {
 	value, err := requestSettings(c, "")
 	if err != nil {
 		return nil, err
 	}
-	guard, err := save(c.Context(), "", value)
+	guard, err := h.save(c.Context(), "", value)
 	if err != nil {
 		return nil, err
 	}
@@ -198,12 +225,12 @@ func saveSettings(c *httpx.Ctx) (*httpx.Response, error) {
 
 // save is the sole write owner. Request cancellation is detached; Runtime
 // shutdown remains visible before the transaction and its final assignment.
-func save(ctx context.Context, section string, in model.MosDNSSettings) (mosdns.PublishGuard, error) {
+func (h *Handler) save(ctx context.Context, section string, in model.MosDNSSettings) (mosdns.PublishGuard, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return mosdns.PublishGuard{}, err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repository(ctx)
 	if err != nil {
 		return mosdns.PublishGuard{}, err
 	}
@@ -276,7 +303,7 @@ func save(ctx context.Context, section string, in model.MosDNSSettings) (mosdns.
 	return mosdns.PublishGuard{ProfileID: id, ServiceType: "mosdns", ConfigRevision: revision}, nil
 }
 
-func ruleProxy(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) ruleProxy(c *httpx.Ctx) (*httpx.Response, error) {
 	header, _ := c.Header("Authorization")
 	result := mosdns.RuleProxy(c.Context(), mosdns.RuleProxyRequest{
 		Auth: mosdns.AuthRequest{Internal: c.IsInternalCall(), Authorization: header, Token: c.ArgDefault("token", "")},

@@ -126,7 +126,7 @@ func TestProfileOwnerRuntimeShutdownAndDisconnect(t *testing.T) {
 			} else {
 				cancel()
 			}
-			_, err := mutate(ctx, func(ctx context.Context, r *repo.Repository) (any, error) {
+			_, err := New(Deps{}).mutate(ctx, func(ctx context.Context, r *repo.Repository) (any, error) {
 				return r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "new", Name: "New"}, "")
 			})
 			if shutdown {

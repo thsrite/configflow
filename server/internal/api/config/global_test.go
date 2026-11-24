@@ -106,7 +106,7 @@ func TestGlobalOwnersRuntimeShutdownAndDisconnect(t *testing.T) {
 				} else {
 					encoded = []byte("null")
 				}
-				_, err = writeGlobal(ctx, encoded, reset)
+				_, err = New(Deps{}).writeGlobal(ctx, encoded, reset)
 				after, readErr := s.Repo.ExportAllJSON(s.Context(), false)
 				if readErr != nil {
 					t.Fatal(readErr)

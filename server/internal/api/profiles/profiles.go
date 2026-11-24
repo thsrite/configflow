@@ -23,172 +23,223 @@ import (
 	"configflow/internal/repo"
 )
 
+// Deps supplies the collaborators for the profiles HTTP Handler.
+type Deps struct {
+	Repo   *repo.Repository
+	Agents *agents.Manager
+}
+
+// Handler serves profile CRUD, import/export, and Agent binding HTTP routes.
+type Handler struct {
+	repo   *repo.Repository
+	agents *agents.Manager
+}
+
+// New constructs a profiles Handler with explicit dependencies. Nil fields fall
+// back to transitional process defaults until W11.
+func New(deps Deps) *Handler {
+	return &Handler{repo: deps.Repo, agents: deps.Agents}
+}
+
+func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
+	if h != nil && h.repo != nil {
+		return h.repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
+func (h *Handler) manager(ctx context.Context) (*agents.Manager, error) {
+	if h != nil && h.agents != nil {
+		return h.agents, nil
+	}
+	return agents.Get(ctx)
+}
+
 // Register installs profile CRUD, imports, exports and binding endpoints.
 // Generation aliases are installed by the generate package.
-func Register(r *httpx.Router) {
-	r.Handle([]string{"GET", "POST"}, "/api/profiles", "profiles.handle_profiles", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		repository, err := repo.GetRepository(c.Context())
+func Register(r *httpx.Router) { New(Deps{}).Register(r) }
+
+// Register mounts profile CRUD, import/export, and binding routes on r.
+func (h *Handler) Register(r *httpx.Router) {
+	r.Handle([]string{"GET", "POST"}, "/api/profiles", "profiles.handle_profiles", auth.Require(h.handleProfiles))
+	r.Handle([]string{"GET", "PUT", "DELETE"}, "/api/profiles/<profile_id>", "profiles.handle_profile", auth.Require(h.handleProfile))
+	r.POST("/api/profiles/<profile_id>/default", "profiles.set_default_profile", auth.Require(h.setDefaultProfile))
+	r.POST("/api/profiles/<profile_id>/clone", "profiles.clone_profile", auth.Require(h.cloneProfile))
+	r.GET("/api/profiles/<profile_id>/agents", "profiles.profile_agent_bindings", auth.Require(h.profileAgentBindings))
+	r.POST("/api/profiles/<profile_id>/agents/rebind", "profiles.rebind_profile_agents", auth.Require(h.rebindProfileAgents))
+	r.GET("/api/profiles/<profile_id>/export", "profiles.export_profile", auth.Require(h.exportProfile))
+	r.POST("/api/profiles/<profile_id>/import", "profiles.import_profile", auth.Require(h.importProfile))
+	r.POST("/api/profiles/import-client", "profiles.import_client_profile", auth.Require(h.importClient))
+}
+
+func (h *Handler) handleProfiles(c *httpx.Ctx) (*httpx.Response, error) {
+	repository, err := h.repository(c.Context())
+	if err != nil {
+		return nil, err
+	}
+	if c.Method() != "POST" {
+		out, err := repository.ListProfileRecords(c.Context())
+		return publicReply(out, err, 200)
+	}
+	body, err := objectBody(c, true)
+	if err != nil {
+		return nil, err
+	}
+	input, err := creation(body, false)
+	if err != nil {
+		return nil, err
+	}
+	cloneFrom, err := optionalID(body["clone_from"])
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
+		return r.CreateProfileRecord(ctx, input, cloneFrom)
+	})
+	return reply(out, err, 201)
+}
+
+func (h *Handler) handleProfile(c *httpx.Ctx) (*httpx.Response, error) {
+	if c.Method() != "PUT" && c.Method() != "DELETE" {
+		r, err := h.repository(c.Context())
 		if err != nil {
 			return nil, err
 		}
-		if c.Method() != "POST" {
-			out, err := repository.ListProfileRecords(c.Context())
-			return publicReply(out, err, 200)
-		}
-		body, err := objectBody(c, true)
-		if err != nil {
-			return nil, err
-		}
+		out, err := r.ProfileMetadataRecord(c.Context(), c.Param("profile_id"))
+		return reply(out, err, 200)
+	}
+	body, err := objectBody(c, true)
+	if err != nil {
+		return nil, err
+	}
+	if c.Method() == "PUT" {
+		out, err := h.mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
+			input, err := metadata(body)
+			if err != nil {
+				return nil, err
+			}
+			return r.UpdateProfileMetadataRecord(ctx, c.Param("profile_id"), input)
+		})
+		return reply(out, err, 200)
+	}
+	target, _ := c.Arg("new_default")
+	if target == "" {
+		target = textField(body["new_default"])
+	}
+	_, err = h.mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
+		return nil, r.DeleteProfile(ctx, c.Param("profile_id"), target)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return httpx.Empty(204), nil
+}
+
+func (h *Handler) setDefaultProfile(c *httpx.Ctx) (*httpx.Response, error) {
+	_, err := h.mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
+		_, err := r.SetDefaultProfile(ctx, c.Param("profile_id"))
+		return nil, err
+	})
+	return reply(struct {
+		Success bool   `json:"success"`
+		Default string `json:"default_profile_id"`
+	}{true, c.Param("profile_id")}, err, 200)
+}
+
+func (h *Handler) cloneProfile(c *httpx.Ctx) (*httpx.Response, error) {
+	body, err := objectBody(c, true)
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
 		input, err := creation(body, false)
 		if err != nil {
 			return nil, err
 		}
-		cloneFrom, err := optionalID(body["clone_from"])
+		return r.CloneProfileRecord(ctx, c.Param("profile_id"), input)
+	})
+	return reply(out, err, 201)
+}
+
+func (h *Handler) profileAgentBindings(c *httpx.Ctx) (*httpx.Response, error) {
+	r, err := h.repository(c.Context())
+	if err != nil {
+		return nil, err
+	}
+	out, err := r.ProfileAgentBindingsRecord(c.Context(), c.Param("profile_id"))
+	return publicReply(out, err, 200)
+}
+
+func (h *Handler) rebindProfileAgents(c *httpx.Ctx) (*httpx.Response, error) {
+	body, err := objectBody(c, false)
+	if err != nil {
+		return nil, err
+	}
+	out, err := h.mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
+		manager, err := h.manager(ctx)
 		if err != nil {
 			return nil, err
 		}
-		out, err := mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
-			return r.CreateProfileRecord(ctx, input, cloneFrom)
-		})
-		return reply(out, err, 201)
-	}))
-	r.Handle([]string{"GET", "PUT", "DELETE"}, "/api/profiles/<profile_id>", "profiles.handle_profile", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		if c.Method() != "PUT" && c.Method() != "DELETE" {
-			r, err := repo.GetRepository(c.Context())
-			if err != nil {
-				return nil, err
-			}
-			out, err := r.ProfileMetadataRecord(c.Context(), c.Param("profile_id"))
-			return reply(out, err, 200)
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		body, err := objectBody(c, true)
+		target, err := optionalID(body["target_profile_id"])
 		if err != nil {
 			return nil, err
 		}
-		if c.Method() == "PUT" {
-			out, err := mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
-				input, err := metadata(body)
-				if err != nil {
-					return nil, err
-				}
-				return r.UpdateProfileMetadataRecord(ctx, c.Param("profile_id"), input)
-			})
-			return reply(out, err, 200)
+		// A non-list or non-string agent_ids is passed as no IDs: RebindProfiles
+		// validates source, target and "same profile" first, as Python does.
+		var ids []string
+		if len(body["agent_ids"]) == 0 || body["agent_ids"][0] != '[' || json.Unmarshal(body["agent_ids"], &ids) != nil {
+			ids = nil
 		}
-		target, _ := c.Arg("new_default")
-		if target == "" {
-			target = textField(body["new_default"])
-		}
-		_, err = mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
-			return nil, r.DeleteProfile(ctx, c.Param("profile_id"), target)
-		})
+		return manager.RebindProfiles(ctx, c.Param("profile_id"), target, ids)
+	})
+	if err == nil {
+		out = struct {
+			Success bool `json:"success"`
+			*agents.ProfileRebinding
+		}{true, out.(*agents.ProfileRebinding)}
+	}
+	return publicReply(out, err, 200)
+}
+
+func (h *Handler) exportProfile(c *httpx.Ctx) (*httpx.Response, error) {
+	r, err := h.repository(c.Context())
+	if err != nil {
+		return nil, err
+	}
+	var out json.RawMessage
+	err = r.WithReadSnapshot(c.Context(), func(ctx context.Context) error {
+		out, err = r.ExportProfileJSON(ctx, c.Param("profile_id"))
 		if err != nil {
-			return nil, err
-		}
-		return httpx.Empty(204), nil
-	}))
-	r.POST("/api/profiles/<profile_id>/default", "profiles.set_default_profile", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		_, err := mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
-			_, err := r.SetDefaultProfile(ctx, c.Param("profile_id"))
-			return nil, err
-		})
-		return reply(struct {
-			Success bool   `json:"success"`
-			Default string `json:"default_profile_id"`
-		}{true, c.Param("profile_id")}, err, 200)
-	}))
-	r.POST("/api/profiles/<profile_id>/clone", "profiles.clone_profile", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, err := objectBody(c, true)
-		if err != nil {
-			return nil, err
-		}
-		out, err := mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
-			input, err := creation(body, false)
-			if err != nil {
-				return nil, err
-			}
-			return r.CloneProfileRecord(ctx, c.Param("profile_id"), input)
-		})
-		return reply(out, err, 201)
-	}))
-	r.GET("/api/profiles/<profile_id>/agents", "profiles.profile_agent_bindings", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		r, err := repo.GetRepository(c.Context())
-		if err != nil {
-			return nil, err
-		}
-		out, err := r.ProfileAgentBindingsRecord(c.Context(), c.Param("profile_id"))
-		return publicReply(out, err, 200)
-	}))
-	r.POST("/api/profiles/<profile_id>/agents/rebind", "profiles.rebind_profile_agents", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, err := objectBody(c, false)
-		if err != nil {
-			return nil, err
-		}
-		out, err := mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
-			manager, err := agents.Get(ctx)
-			if err != nil {
-				return nil, err
-			}
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			target, err := optionalID(body["target_profile_id"])
-			if err != nil {
-				return nil, err
-			}
-			// A non-list or non-string agent_ids is passed as no IDs: RebindProfiles
-			// validates source, target and "same profile" first, as Python does.
-			var ids []string
-			if len(body["agent_ids"]) == 0 || body["agent_ids"][0] != '[' || json.Unmarshal(body["agent_ids"], &ids) != nil {
-				ids = nil
-			}
-			return manager.RebindProfiles(ctx, c.Param("profile_id"), target, ids)
-		})
-		if err == nil {
-			out = struct {
-				Success bool `json:"success"`
-				*agents.ProfileRebinding
-			}{true, out.(*agents.ProfileRebinding)}
-		}
-		return publicReply(out, err, 200)
-	}))
-	r.GET("/api/profiles/<profile_id>/export", "profiles.export_profile", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		r, err := repo.GetRepository(c.Context())
-		if err != nil {
-			return nil, err
-		}
-		var out json.RawMessage
-		err = r.WithReadSnapshot(c.Context(), func(ctx context.Context) error {
-			out, err = r.ExportProfileJSON(ctx, c.Param("profile_id"))
-			if err != nil {
-				return err
-			}
-			out, err = configexport.Sanitize(ctx, out)
 			return err
-		})
+		}
+		out, err = configexport.Sanitize(ctx, out)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return httpx.JSON(out).WithHeader("Content-Disposition", "attachment; filename="+c.Param("profile_id")+".json"), nil
+}
+
+func (h *Handler) importProfile(c *httpx.Ctx) (*httpx.Response, error) {
+	body, err := objectBody(c, false)
+	if err != nil {
+		return nil, err
+	}
+	_, err = h.mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
+		raw, err := json.Marshal(body)
 		if err != nil {
 			return nil, err
 		}
-		return httpx.JSON(out).WithHeader("Content-Disposition", "attachment; filename="+c.Param("profile_id")+".json"), nil
-	}))
-	r.POST("/api/profiles/<profile_id>/import", "profiles.import_profile", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		body, err := objectBody(c, false)
-		if err != nil {
-			return nil, err
-		}
-		_, err = mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
-			raw, err := json.Marshal(body)
-			if err != nil {
-				return nil, err
-			}
-			return r.ImportProfileJSON(ctx, c.Param("profile_id"), raw)
-		})
-		return reply(struct {
-			Success bool   `json:"success"`
-			Profile string `json:"profile_id"`
-		}{true, c.Param("profile_id")}, err, 200)
-	}))
-	r.POST("/api/profiles/import-client", "profiles.import_client_profile", auth.Require(importClient))
+		return r.ImportProfileJSON(ctx, c.Param("profile_id"), raw)
+	})
+	return reply(struct {
+		Success bool   `json:"success"`
+		Profile string `json:"profile_id"`
+	}{true, c.Param("profile_id")}, err, 200)
 }
 
 // Binding summaries can include credentials inside a legacy host or label.
@@ -330,12 +381,12 @@ func metadata(body map[string]json.RawMessage) (repo.ProfileMetadataUpdate, erro
 	}
 	return input, nil
 }
-func mutate(ctx context.Context, commit func(context.Context, *repo.Repository) (any, error)) (any, error) {
+func (h *Handler) mutate(ctx context.Context, commit func(context.Context, *repo.Repository) (any, error)) (any, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repository(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +395,7 @@ func mutate(ctx context.Context, commit func(context.Context, *repo.Repository) 
 	}
 	return commit(ctx, r)
 }
-func importClient(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) importClient(c *httpx.Ctx) (*httpx.Response, error) {
 	body, err := objectBody(c, false)
 	if err != nil {
 		return nil, err
@@ -410,7 +461,7 @@ func importClient(c *httpx.Ctx) (*httpx.Response, error) {
 		return &repo.ClientProfileImport{Shared: additions, Profile: wire.Profile, Details: details}, nil
 	}
 	if !emptyInput(body["dry_run"]) {
-		r, err := repo.GetRepository(c.Context())
+		r, err := h.repository(c.Context())
 		if err != nil {
 			return nil, err
 		}
@@ -430,7 +481,7 @@ func importClient(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
+	out, err := h.mutate(c.Context(), func(ctx context.Context, r *repo.Repository) (any, error) {
 		return r.ImportClientProfileRecord(ctx, input, build)
 	})
 	if err != nil {

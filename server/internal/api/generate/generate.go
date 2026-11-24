@@ -4,14 +4,17 @@
 package generate
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
+	"configflow/internal/agents"
 	"configflow/internal/auth"
 	"configflow/internal/configgen"
 	"configflow/internal/convert"
+	"configflow/internal/deploy"
 	"configflow/internal/httpx"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
@@ -23,9 +26,53 @@ import (
 	"configflow/internal/yamlx"
 )
 
+// Deps supplies the collaborators for the generate HTTP Handler.
+type Deps struct {
+	Repo   *repo.Repository
+	Agents *agents.Manager
+	Deploy *deploy.Service
+}
+
+// Handler serves manual configuration download, preview, and artifact routes.
+type Handler struct {
+	repo   *repo.Repository
+	agents *agents.Manager
+	deploy *deploy.Service
+}
+
+// New constructs a generate Handler with explicit dependencies. Nil fields fall
+// back to transitional process defaults until W11.
+func New(deps Deps) *Handler {
+	return &Handler{repo: deps.Repo, agents: deps.Agents, deploy: deps.Deploy}
+}
+
+func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
+	if h != nil && h.repo != nil {
+		return h.repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
+func (h *Handler) manager(ctx context.Context) (*agents.Manager, error) {
+	if h != nil && h.agents != nil {
+		return h.agents, nil
+	}
+	return agents.Get(ctx)
+}
+
+func (h *Handler) deployService() *deploy.Service {
+	if h != nil && h.deploy != nil {
+		return h.deploy
+	}
+	return deploy.Default()
+}
+
 // Register installs five generators and previews with their profile aliases.
-func Register(r *httpx.Router) {
-	registerArtifacts(r)
+func Register(r *httpx.Router) { New(Deps{}).Register(r) }
+
+// Register mounts five generators, previews, and artifact routes on r.
+func (h *Handler) Register(r *httpx.Router) {
+	h.registerArtifacts(r)
 	for _, prefix := range []struct{ path, blueprint string }{{"/api/generate", "generate"}, {"/api/profiles/<profile_id>/generate", "profiles"}} {
 		for _, engine := range []configgen.Engine{configgen.Mihomo, configgen.Surge, configgen.Loon, configgen.MosDNS, configgen.OxiDNS} {
 			for _, preview := range []bool{false, true} {
@@ -41,12 +88,12 @@ func Register(r *httpx.Router) {
 					name += "generate_"
 				}
 				name += string(engine)
-				r.POST(path, name, auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) { return generate(c, engine, preview) }))
+				r.POST(path, name, auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) { return h.generate(c, engine, preview) }))
 			}
 		}
 	}
 }
-func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Response, error) {
+func (h *Handler) generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Response, error) {
 	var raw json.RawMessage
 	if engine == configgen.OxiDNS {
 		if !c.BindSilent(&raw) {
@@ -84,7 +131,7 @@ func generate(c *httpx.Ctx, engine configgen.Engine, preview bool) (*httpx.Respo
 		}
 		return httpx.File(httpx.FileOptions{Path: file.Path, Data: file.Data, DownloadName: file.Name, AsAttachment: true, MimeType: file.MIME})
 	}
-	repository, err := repo.GetRepository(c.Context())
+	repository, err := h.repository(c.Context())
 	if err != nil {
 		return nil, err
 	}
