@@ -16,7 +16,7 @@ import (
 // with only its secrets replaced.
 func TestDesensitizedExportEasyTierMember(t *testing.T) {
 	defer SetHooks(SetHooks(Hooks{RecordHooks: RecordHooks{
-		SanitizeExternalDocument: func(_ context.Context, doc *model.Document, _ model.SystemConfig) (*model.Document, error) {
+		SanitizeExternalDocument: func(_ context.Context, _ *Repository, doc *model.Document, _ model.SystemConfig) (*model.Document, error) {
 			return doc, nil
 		},
 		RedactOxidnsJSON:  func(raw json.RawMessage) (json.RawMessage, error) { return raw, nil },

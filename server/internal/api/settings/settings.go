@@ -299,7 +299,11 @@ func (h *Handler) handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 	if token == "" {
 		return failure(400, "Token is required or set generate=true"), nil
 	}
-	internal, err := redact.ContainsInternalRuleProxyToken(h.withRepo(c.Context()), token)
+	r, err := h.repo(c.Context())
+	if err != nil {
+		return nil, err
+	}
+	internal, err := redact.ContainsInternalRuleProxyToken(c.Context(), r, token)
 	if err != nil {
 		return nil, err
 	}

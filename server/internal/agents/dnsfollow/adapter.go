@@ -17,6 +17,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/redact"
+	"configflow/internal/repo"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 )
@@ -489,7 +490,8 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 	link := "/agents"
 	row := &tasks.Task{Key: key, Category: "dns_follow", Name: label, ResourceID: id, Enabled: enabled, ScheduleText: msgSchedule, CanRun: enabled && status == "failed", RunHint: hint, Running: running(status), Link: &link, StateMessage: stateMessage, HistoryData: history}
 	// Every stored Agent record's credentials, histories included, as before O10.
-	secrets, err := agents.RowAgentSecrets(ctx)
+	r, _ := repo.GetRepository(ctx)
+	secrets, err := agents.RowAgentSecrets(ctx, r)
 	if err != nil {
 		return nil, err
 	}

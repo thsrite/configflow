@@ -51,7 +51,7 @@ func SystemSecrets(ctx context.Context, r *repo.Repository) (redact.Secrets, err
 	}); err != nil {
 		return nil, err
 	}
-	return redact.ExternalPayloadSecrets(ctx, fields)
+	return redact.ExternalPayloadSecrets(ctx, r, fields)
 }
 
 type rowSecretsKey struct{}
@@ -85,11 +85,11 @@ func withRowSecrets(ctx context.Context, agentSecrets redact.Secrets, agentsErr 
 // deployment and IPv6 verification histories included, as task rows collected
 // them before O10 (redact.AgentRecordCredentials, remembered per store head).
 // Within a task-row pass it reuses the pass's single read.
-func RowAgentSecrets(ctx context.Context) (redact.Secrets, error) {
+func RowAgentSecrets(ctx context.Context, r *repo.Repository) (redact.Secrets, error) {
 	if s, ok := ctx.Value(rowSecretsKey{}).(*rowSecrets); ok && s != nil {
 		return s.agents, s.agentsErr
 	}
-	return redact.AgentRecordCredentials(ctx, nil)
+	return redact.AgentRecordCredentials(ctx, r, nil)
 }
 
 // RowSystemSecrets returns the pre-collected system secrets for the current

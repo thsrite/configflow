@@ -204,7 +204,7 @@ func xcExecuteC04(t *testing.T, r *Repository, op *testObj, arg func(string) *te
 			}
 		}
 		previous := SetHooks(Hooks{RecordHooks: RecordHooks{
-			SanitizeExternalDocument: func(_ context.Context, payload *model.Document, systemConfig model.SystemConfig) (*model.Document, error) {
+			SanitizeExternalDocument: func(_ context.Context, _ *Repository, payload *model.Document, systemConfig model.SystemConfig) (*model.Document, error) {
 				capturedSettings = systemConfig
 				return payload, nil
 			},

@@ -462,9 +462,9 @@ func (s *ManagementService) safeText(ctx context.Context, profile string, r *spe
 	if err != nil {
 		return redact.Redacted
 	}
-	seeds, err := redact.ExternalPayloadSecrets(ctx, nil)
+	seeds, err := redact.ExternalPayloadSecrets(ctx, s.Repo, nil)
 	if err == nil {
-		seeds, err = redact.AgentRecordCredentials(ctx, seeds)
+		seeds, err = redact.AgentRecordCredentials(ctx, s.Repo, seeds)
 	}
 	if err != nil {
 		return redact.Redacted

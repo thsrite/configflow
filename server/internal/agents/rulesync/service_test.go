@@ -488,7 +488,7 @@ func TestTypedRuleSyncSecretsUseSystemConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected, err := redact.ExternalPayloadSecrets(ctx, json.RawMessage(settingsRaw))
+	expected, err := redact.ExternalPayloadSecrets(ctx, s.m.Repository(), json.RawMessage(settingsRaw))
 	if err != nil {
 		t.Fatal(err)
 	}

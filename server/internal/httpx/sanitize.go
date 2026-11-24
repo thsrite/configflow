@@ -9,6 +9,7 @@ import (
 
 	"configflow/internal/jsonresp"
 	"configflow/internal/redact"
+	"configflow/internal/repo"
 )
 
 // External returns metadata through the same global JSON exit as JSON. Policy
@@ -106,7 +107,15 @@ func writeJSON(c *Ctx, r *Response) error {
 	if nonFinite {
 		r.body = text
 	}
-	secrets, err := redact.ExternalPayloadSecrets(c.ctx, nil)
+	rRepo := c.app.Repo
+	if rRepo == nil {
+		var err error
+		rRepo, err = repo.GetRepository(c.ctx)
+		if err != nil {
+			return err
+		}
+	}
+	secrets, err := redact.ExternalPayloadSecrets(c.ctx, rRepo, nil)
 	if err != nil {
 		return err
 	}

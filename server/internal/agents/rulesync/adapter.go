@@ -241,7 +241,11 @@ func agentTaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snaps
 	if sysErr == nil {
 		// Every stored Agent record's credentials, histories included: a
 		// superset of this record's own, which the row collected before O10.
-		if agentSecrets, err := agents.RowAgentSecrets(ctx); err == nil {
+		var r *repo.Repository
+		if m, err := agents.Get(ctx); err == nil && m != nil {
+			r = m.Repository()
+		}
+		if agentSecrets, err := agents.RowAgentSecrets(ctx, r); err == nil {
 			secrets := redact.NewSecrets(sysSecrets, agentSecrets)
 			sanitize = func(text string) string { return safeDisplay(text, secrets) }
 		}

@@ -101,7 +101,7 @@ type Generation struct {
 // back to the repository's current generation.
 func (m *Manager) GenerationCredentials(ctx context.Context, gen Generation) (redact.Secrets, error) {
 	if !gen.read {
-		return redact.AgentRecordCredentials(ctx, nil)
+		return redact.AgentRecordCredentials(ctx, m.repository, nil)
 	}
 	return redact.AgentRegistryCredentials(m.repository, gen.Head, gen.Shared, gen.records)
 }

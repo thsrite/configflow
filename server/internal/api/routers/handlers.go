@@ -181,9 +181,15 @@ func public(c *httpx.Ctx, cfg *core.ConfigView, value any, status int, noStore b
 	}
 	secrets, cached := publicSeeds(c)
 	if !cached {
-		secrets, err = redact.ExternalPayloadSecrets(c.Context(), nil)
+		r := c.App().Repo
+		if r == nil {
+			r, err = repo.GetRepository(c.Context())
+		}
 		if err == nil {
-			secrets, err = redact.AgentRecordCredentials(c.Context(), secrets)
+			secrets, err = redact.ExternalPayloadSecrets(c.Context(), r, nil)
+		}
+		if err == nil {
+			secrets, err = redact.AgentRecordCredentials(c.Context(), r, secrets)
 		}
 	}
 	if err != nil {

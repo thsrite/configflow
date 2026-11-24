@@ -87,7 +87,7 @@ func TestSystemSecretsMatchesExternalPayloadSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, err := redact.ExternalPayloadSecrets(ctx, json.RawMessage(raw))
+	want, err := redact.ExternalPayloadSecrets(ctx, r, json.RawMessage(raw))
 	if err != nil {
 		t.Fatal(err)
 	}

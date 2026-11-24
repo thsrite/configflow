@@ -14,7 +14,7 @@ type stubExporter struct {
 	routerCalls   int
 }
 
-func (s *stubExporter) SanitizeExternalDocument(_ context.Context, doc *model.Document, _ model.SystemConfig) (*model.Document, error) {
+func (s *stubExporter) SanitizeExternalDocument(_ context.Context, _ *Repository, doc *model.Document, _ model.SystemConfig) (*model.Document, error) {
 	s.sanitizeCalls++
 	return doc, nil
 }

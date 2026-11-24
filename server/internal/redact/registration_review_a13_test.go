@@ -17,8 +17,8 @@ func TestReviewRegistrationFinderSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
-	find, err := StoredSecretFinder(ctx)
+	ctx := context.Background()
+	find, err := StoredSecretFinder(ctx, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,13 +36,13 @@ func TestReviewRegistrationFinderSnapshot(t *testing.T) {
 	if len(find("ordinary.example.com")) != 0 {
 		t.Error("ordinary metadata was treated as a credential")
 	}
-	global, err := ExternalPayloadSecrets(ctx, nil)
+	global, err := ExternalPayloadSecrets(ctx, r, nil)
 	if err != nil || ContainsEncodedSecret(key, global) {
 		t.Error("global JSON hook credential policy changed")
 	}
 	const rotated = "synthetic-rotated/key"
 	t.Setenv("AGENT_REGISTRATION_KEY", rotated)
-	next, err := StoredSecretFinder(ctx)
+	next, err := StoredSecretFinder(ctx, r)
 	if err != nil || len(find(key)) == 0 || len(find(rotated)) != 0 || len(next(rotated)) == 0 || len(next(key)) != 0 {
 		t.Error("finder did not retain an independent environment snapshot")
 	}

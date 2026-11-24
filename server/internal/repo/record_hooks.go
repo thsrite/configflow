@@ -47,7 +47,7 @@ type RecordHooks struct {
 	ConfigurationCommittedRecords func(*Repository, *model.Document, *model.Document)
 
 	// SanitizeExternalDocument receives a redacted candidate and original settings.
-	SanitizeExternalDocument func(context.Context, *model.Document, model.SystemConfig) (*model.Document, error)
+	SanitizeExternalDocument func(context.Context, *Repository, *model.Document, model.SystemConfig) (*model.Document, error)
 	// RedactOxidnsJSON redacts schema-free OxiDNS settings.
 	RedactOxidnsJSON func(json.RawMessage) (json.RawMessage, error)
 	// RedactRoutersJSON removes secrets from the routers JSON value.

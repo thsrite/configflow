@@ -36,7 +36,9 @@ type AfterFunc func(c *Ctx, r *Response)
 // App implements http.Handler (the API as the Flask backend served it, for
 // every path); see Edge for the web front end that also serves the SPA.
 type App struct {
-	Router *Router
+	Router  *Router
+	Repo    *repo.Repository
+	Runtime *lifecycle.Runtime
 
 	before        []BeforeFunc
 	after         []AfterFunc

@@ -32,9 +32,9 @@ func TestO10R6ReviewPublicSecretsMatchEncodedView(t *testing.T) {
 	check := func(t *testing.T, contains, absent map[string][]string) {
 		t.Helper()
 		for _, profile := range []string{"default", "second"} {
-			base, err := ExternalPayloadSecrets(ctx, nil)
+			base, err := ExternalPayloadSecrets(ctx, r, nil)
 			if err == nil {
-				base, err = AgentRecordCredentials(ctx, base)
+				base, err = AgentRecordCredentials(ctx, r, base)
 			}
 			if err != nil {
 				t.Fatal(err)

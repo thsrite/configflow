@@ -54,7 +54,7 @@ var DerivedDirs = []string{"providers", "rules", "generated"}
 
 // ExportSanitizer removes secrets from an exported configuration document.
 type ExportSanitizer interface {
-	SanitizeExternalDocument(ctx context.Context, document *model.Document, settings model.SystemConfig) (*model.Document, error)
+	SanitizeExternalDocument(ctx context.Context, r *Repository, document *model.Document, settings model.SystemConfig) (*model.Document, error)
 	RedactOxiDNSJSON(raw json.RawMessage) (json.RawMessage, error)
 	RedactRoutersJSON(raw json.RawMessage) (json.RawMessage, error)
 }

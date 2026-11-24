@@ -79,7 +79,7 @@ func TestDesensitizedExportNeedsRedactionHooks(t *testing.T) {
 
 	var sanitizedWith model.SystemConfig
 	SetHooks(Hooks{RecordHooks: RecordHooks{
-		SanitizeExternalDocument: func(_ context.Context, payload *model.Document, systemConfig model.SystemConfig) (*model.Document, error) {
+		SanitizeExternalDocument: func(_ context.Context, _ *Repository, payload *model.Document, systemConfig model.SystemConfig) (*model.Document, error) {
 			sanitizedWith = systemConfig
 			return payload, nil
 		},
@@ -159,10 +159,8 @@ func TestExportSanitizerUsesExportRepositorySnapshot(t *testing.T) {
 	called := false
 	pass := func(v json.RawMessage) (json.RawMessage, error) { return v, nil }
 	defer SetHooks(SetHooks(Hooks{RecordHooks: RecordHooks{
-		SanitizeExternalDocument: func(ctx context.Context, payload *model.Document, settings model.SystemConfig) (*model.Document, error) {
+		SanitizeExternalDocument: func(ctx context.Context, bound *Repository, payload *model.Document, settings model.SystemConfig) (*model.Document, error) {
 			called = true
-			bound, err := GetRepository(ctx)
-			noError(t, err)
 			if bound != r || r.lockedSnapshot(ctx) == nil {
 				t.Fatal("sanitizer lost export repository snapshot")
 			}
@@ -204,7 +202,7 @@ func TestN811TypedExportHooksRunOnce(t *testing.T) {
 	defer SetHooks(SetHooks(Hooks{
 		RecordHooks: RecordHooks{
 			RedactOxidnsJSON: pass("oxidns"), RedactRoutersJSON: pass("routers"),
-			SanitizeExternalDocument: func(_ context.Context, d *model.Document, s model.SystemConfig) (*model.Document, error) {
+			SanitizeExternalDocument: func(_ context.Context, _ *Repository, d *model.Document, s model.SystemConfig) (*model.Document, error) {
 				calls["sanitize"]++
 				if s.RuleProxyToken == "" || d.System.SystemConfig.RuleProxyToken != "" {
 					t.Fatal("sanitizer did not receive original settings and redacted payload")

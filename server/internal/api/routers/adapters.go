@@ -103,7 +103,7 @@ func publishSnapshot(ctx context.Context, db *repo.Repository, id string) (json.
 // Agent projection a profile view adds holds a subset of the members of the
 // stored Agent records, whose credentials AgentRecordCredentials adds anyway.
 func allProfileSecrets(ctx context.Context, db *repo.Repository) (redact.Secrets, error) {
-	seeds, err := redact.ExternalPayloadSecrets(ctx, nil)
+	seeds, err := redact.ExternalPayloadSecrets(ctx, db, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -122,5 +122,5 @@ func allProfileSecrets(ctx context.Context, db *repo.Repository) (redact.Secrets
 			return nil, err
 		}
 	}
-	return redact.AgentRecordCredentials(ctx, seeds)
+	return redact.AgentRecordCredentials(ctx, db, seeds)
 }

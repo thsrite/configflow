@@ -163,7 +163,7 @@ func (h *Handler) generate(c *httpx.Ctx, engine configgen.Engine, preview bool) 
 		if err != nil {
 			return nil, err
 		}
-		sanitizedValue, err := redact.SanitizeExternalPayload(c.Context(), json.RawMessage(raw), json.RawMessage(rawSys))
+		sanitizedValue, err := redact.SanitizeExternalPayload(c.Context(), repository, json.RawMessage(raw), json.RawMessage(rawSys))
 		if err != nil {
 			return nil, err
 		}

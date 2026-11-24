@@ -317,8 +317,10 @@ func execute(c *httpx.Ctx, params json.RawMessage) (json.RawMessage, error) {
 		payload = text(fmt.Sprintf(msgCallFailed, api.status, api.message))
 		// Python logs the business failure as a warning; internal tokens
 		// never reach the log.
-		if logged, err := redact.RedactSecretsInText(ctx, api.message); err == nil {
-			logger.Warningf(logToolFailed, name, logged)
+		if r, repoErr := repo.GetRepository(ctx); repoErr == nil {
+			if logged, err := redact.RedactSecretsInText(ctx, r, api.message); err == nil {
+				logger.Warningf(logToolFailed, name, logged)
+			}
 		}
 	}
 	content, err := publicText(ctx, payload)
@@ -340,7 +342,7 @@ func publicText(ctx context.Context, payload json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	public, err := redact.SanitizeExternalPayload(ctx, payload, json.RawMessage(settings))
+	public, err := redact.SanitizeExternalPayload(ctx, r, payload, json.RawMessage(settings))
 	if err != nil {
 		return "", err
 	}

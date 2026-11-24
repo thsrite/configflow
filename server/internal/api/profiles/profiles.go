@@ -215,7 +215,7 @@ func (h *Handler) exportProfile(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return err
 		}
-		out, err = configexport.Sanitize(ctx, out)
+		out, err = configexport.Sanitize(ctx, r, out)
 		return err
 	})
 	if err != nil {

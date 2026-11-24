@@ -15,6 +15,7 @@ import (
 	"configflow/internal/textx"
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/url"
 	"os"
@@ -67,6 +68,8 @@ func NewSecrets(lists ...[]string) Secrets {
 // Equal is frozenset equality.
 func (s Secrets) Equal(other Secrets) bool { return slices.Equal(s, other) }
 
+var errNilRepository = errors.New("redact: repository is nil")
+
 // AgentRecordCredentials adds the credential values of every stored Agent
 // record, histories included, to seeds. Resolved configuration views no
 // longer embed the Agent registry, so responses that collected credentials
@@ -74,12 +77,11 @@ func (s Secrets) Equal(other Secrets) bool { return slices.Equal(s, other) }
 // generation. Like the stored token reads, this read-only lookup ignores
 // request cancellation and Runtime shutdown, so an interrupted request still
 // projects a redacted response.
-func AgentRecordCredentials(ctx context.Context, seeds Secrets) (Secrets, error) {
-	ctx = context.WithoutCancel(ctx)
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+func AgentRecordCredentials(ctx context.Context, repository *repo.Repository, seeds Secrets) (Secrets, error) {
+	if repository == nil {
+		return nil, errNilRepository
 	}
+	ctx = context.WithoutCancel(ctx)
 	values, err := repository.AgentRecordCredentials(ctx, func(data json.RawMessage) []string {
 		return collectedCredentials(data)
 	})
@@ -142,10 +144,9 @@ func collectedCredentials(data json.RawMessage) []string { return CollectCredent
 // ExternalPayloadSecrets is _external_payload_secrets(system_config): the
 // rule proxy and Agent tokens stored in the repository, plus the sensitive
 // string fields of systemConfig when given (nil: none).
-func ExternalPayloadSecrets(ctx context.Context, systemConfig any) (Secrets, error) {
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+func ExternalPayloadSecrets(ctx context.Context, repository *repo.Repository, systemConfig any) (Secrets, error) {
+	if repository == nil {
+		return nil, errNilRepository
 	}
 	ruleProxy, err := repository.RuleProxyTokensForSanitization(ctx)
 	if err != nil {
@@ -171,10 +172,9 @@ func ExternalPayloadSecrets(ctx context.Context, systemConfig any) (Secrets, err
 }
 
 // RuleProxyTokens is _repository_rule_proxy_tokens() as a snapshot.
-func RuleProxyTokens(ctx context.Context) (Secrets, error) {
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+func RuleProxyTokens(ctx context.Context, repository *repo.Repository) (Secrets, error) {
+	if repository == nil {
+		return nil, errNilRepository
 	}
 	ruleProxy, err := repository.RuleProxyTokensForSanitization(ctx)
 	if err != nil {
@@ -243,8 +243,8 @@ func pyLen(s string) int {
 }
 
 // ContainsInternalRuleProxyToken is contains_internal_rule_proxy_token.
-func ContainsInternalRuleProxyToken(ctx context.Context, value string) (bool, error) {
-	secrets, err := RuleProxyTokens(ctx)
+func ContainsInternalRuleProxyToken(ctx context.Context, repository *repo.Repository, value string) (bool, error) {
+	secrets, err := RuleProxyTokens(ctx, repository)
 	if err != nil {
 		return false, err
 	}
@@ -252,8 +252,8 @@ func ContainsInternalRuleProxyToken(ctx context.Context, value string) (bool, er
 }
 
 // SanitizeExternalPayload is sanitize_external_payload(payload, system_config).
-func SanitizeExternalPayload(ctx context.Context, payload any, systemConfig any) (any, error) {
-	secrets, err := ExternalPayloadSecrets(ctx, systemConfig)
+func SanitizeExternalPayload(ctx context.Context, repository *repo.Repository, payload any, systemConfig any) (any, error) {
+	secrets, err := ExternalPayloadSecrets(ctx, repository, systemConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -532,11 +532,11 @@ func variants(secret string) []string {
 // RedactSecretsInText is redact_secrets_in_text: replace only the
 // credentials (and their URL-encoded forms) inside multi-line text; a line
 // that still decodes to a credential afterwards is replaced as a whole.
-func RedactSecretsInText(ctx context.Context, text string) (string, error) {
+func RedactSecretsInText(ctx context.Context, repository *repo.Repository, text string) (string, error) {
 	if text == "" {
 		return text, nil
 	}
-	secrets, err := ExternalPayloadSecrets(ctx, nil)
+	secrets, err := ExternalPayloadSecrets(ctx, repository, nil)
 	if err != nil {
 		return "", err
 	}
@@ -575,8 +575,8 @@ type Range struct{ Start, End int }
 // (in code points) of stored credentials inside a text, from one snapshot of
 // them; a text that still decodes to a credential once those are masked is
 // returned as a single range covering it.
-func StoredSecretFinder(ctx context.Context) (func(text string) []Range, error) {
-	secrets, err := ExternalPayloadSecrets(ctx, nil)
+func StoredSecretFinder(ctx context.Context, repository *repo.Repository) (func(text string) []Range, error) {
+	secrets, err := ExternalPayloadSecrets(ctx, repository, nil)
 	if err != nil {
 		return nil, err
 	}

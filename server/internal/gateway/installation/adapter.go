@@ -216,7 +216,6 @@ func publicOwnerError(err error) error {
 	return err
 }
 func (s *Service) secrets(ctx context.Context) (redact.Secrets, error) {
-	ctx = repo.WithRepository(ctx, s.Repository)
 	settingsModel, err := s.Repository.SystemConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -225,7 +224,7 @@ func (s *Service) secrets(ctx context.Context) (redact.Secrets, error) {
 	if err != nil {
 		return nil, err
 	}
-	secrets, err := redact.ExternalPayloadSecrets(ctx, json.RawMessage(settings))
+	secrets, err := redact.ExternalPayloadSecrets(ctx, s.Repository, json.RawMessage(settings))
 	if err != nil {
 		return nil, err
 	}

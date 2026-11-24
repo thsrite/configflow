@@ -296,6 +296,6 @@ func (s *Service) systemSecrets(ctx context.Context) (redact.Secrets, error) {
 	if e != nil {
 		return nil, e
 	}
-	seeds, err := redact.ExternalPayloadSecrets(ctx, json.RawMessage(raw))
+	seeds, err := redact.ExternalPayloadSecrets(ctx, s.Manager.Repository(), json.RawMessage(raw))
 	return redact.NewSecrets(seeds, []string{os.Getenv("AGENT_REGISTRATION_KEY")}), err
 }

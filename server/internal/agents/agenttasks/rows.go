@@ -24,7 +24,7 @@ func BuildRows(getManager func(context.Context) (*agents.Manager, error), builde
 		if err != nil {
 			return nil, err
 		}
-		agentSecrets, agentsErr := redact.AgentRecordCredentials(ctx, nil)
+		agentSecrets, agentsErr := redact.AgentRecordCredentials(ctx, manager.Repository(), nil)
 		sysSecrets, sysErr := agents.SystemSecrets(ctx, manager.Repository())
 		rowCtx := agents.WithRowSecrets(ctx, agentSecrets, agentsErr, sysSecrets, sysErr)
 		rows := []*tasks.Task{}

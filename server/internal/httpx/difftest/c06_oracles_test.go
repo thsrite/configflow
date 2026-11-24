@@ -108,7 +108,7 @@ json.dump({'rows':out, 'snapshot':snapshot}, sys.stdout, ensure_ascii=False)
 	if err != nil {
 		t.Fatal(err)
 	}
-	find, err := redact.StoredSecretFinder(ctx)
+	find, err := redact.StoredSecretFinder(ctx, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ json.dump({'rows':out, 'snapshot':snapshot}, sys.stdout, ensure_ascii=False)
 		return out
 	}
 	for i, text := range texts {
-		actual, err := redact.RedactSecretsInText(ctx, text)
+		actual, err := redact.RedactSecretsInText(ctx, r, text)
 		if err != nil {
 			t.Fatal(err)
 		}

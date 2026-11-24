@@ -35,7 +35,7 @@ func TestO10RouterRedactionKeepsAgentRecordCredentials(t *testing.T) {
 	secrets := []string{"synthetic-agent-token"}
 
 	t.Run("helper", func(t *testing.T) {
-		seeds, err := redact.AgentRecordCredentials(ctx, nil)
+		seeds, err := redact.AgentRecordCredentials(ctx, r, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -103,7 +103,7 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 		return delivery{}, &fault{500, msgLocalFailed}
 	}
 	if source != nil && target == "mihomo" && !utf8.Valid(content) {
-		logger.Warningf(msgLocalUTF8, localLogName(ctx, config, name))
+		logger.Warningf(msgLocalUTF8, s.localLogName(ctx, config, name))
 	} else if source != nil && target == "mihomo" {
 		format, err := rulesetfmt.RuleFormat(shared.LibraryRule(*source), config.RuleLibrary, "")
 		if err != nil {
@@ -119,7 +119,7 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 			for _, warning := range warnings[:min(10, len(warnings))] {
 				lines = append(lines, strconv.Itoa(warning.Line))
 			}
-			logger.Warningf(msgLocalReview, localLogName(ctx, config, name), len(warnings), strings.Join(lines, ", "))
+			logger.Warningf(msgLocalReview, s.localLogName(ctx, config, name), len(warnings), strings.Join(lines, ", "))
 		}
 	}
 	return delivery{Content: content, Stale: stale != nil}, nil
@@ -148,8 +148,12 @@ func (s *Service) populateInlineCache(ctx context.Context, source model.RuleConf
 	}
 }
 
-func localLogName(ctx context.Context, config *model.Config, name string) string {
-	secrets, err := redact.ExternalPayloadSecrets(ctx, config.SystemConfig)
+func (s *Service) localLogName(ctx context.Context, config *model.Config, name string) string {
+	r, err := s.repository(ctx)
+	if err != nil {
+		return redact.Redacted
+	}
+	secrets, err := redact.ExternalPayloadSecrets(ctx, r, config.SystemConfig)
 	if err != nil {
 		return redact.Redacted
 	}

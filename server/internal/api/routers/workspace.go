@@ -201,9 +201,9 @@ func (h *Handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return nil, err
 		}
-		secrets, err := redact.ExternalPayloadSecrets(c.Context(), nil)
+		secrets, err := redact.ExternalPayloadSecrets(c.Context(), s.Repo, nil)
 		if err == nil {
-			secrets, err = redact.AgentRecordCredentials(c.Context(), secrets)
+			secrets, err = redact.AgentRecordCredentials(c.Context(), s.Repo, secrets)
 		}
 		if err != nil {
 			return nil, err

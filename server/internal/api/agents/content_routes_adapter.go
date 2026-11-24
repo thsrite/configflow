@@ -258,7 +258,7 @@ func (h *contentHandler) agentPushDiff(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, err
 		}
 	}
-	find, err := redact.StoredSecretFinder(ctx)
+	find, err := redact.StoredSecretFinder(ctx, m.Repository())
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +289,7 @@ func (h *contentHandler) agentPushDiffEntries(c *httpx.Ctx) (*httpx.Response, er
 		}
 		return httpx.JSON(contentsync.EntriesResult{Status: "stale", Reason: "changed"}).NoStore(), nil
 	}
-	q.Find, err = redact.StoredSecretFinder(ctx)
+	q.Find, err = redact.StoredSecretFinder(ctx, m.Repository())
 	if err != nil {
 		return nil, err
 	}

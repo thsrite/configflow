@@ -19,14 +19,14 @@ import (
 )
 
 // Sanitize returns an external-safe configuration without mutating its source.
-func Sanitize(ctx context.Context, config json.RawMessage) (json.RawMessage, error) {
+func Sanitize(ctx context.Context, r *repo.Repository, config json.RawMessage) (json.RawMessage, error) {
 	var envelope struct {
 		SystemConfig json.RawMessage `json:"system_config"`
 	}
 	if err := json.Unmarshal(config, &envelope); err != nil {
 		return nil, err
 	}
-	result, err := redact.SanitizeExternalPayload(ctx, config, envelope.SystemConfig)
+	result, err := redact.SanitizeExternalPayload(ctx, r, config, envelope.SystemConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ type Exporter struct {
 }
 
 // SanitizeExternalDocument strips tokens and secrets from an exported document.
-func (Exporter) SanitizeExternalDocument(ctx context.Context, document *model.Document, settings model.SystemConfig) (*model.Document, error) {
+func (Exporter) SanitizeExternalDocument(ctx context.Context, r *repo.Repository, document *model.Document, settings model.SystemConfig) (*model.Document, error) {
 	raw, err := json.Marshal(document)
 	if err != nil {
 		return nil, err
@@ -120,7 +120,7 @@ func (Exporter) SanitizeExternalDocument(ctx context.Context, document *model.Do
 	if err != nil {
 		return nil, err
 	}
-	result, err := redact.SanitizeExternalPayload(ctx, json.RawMessage(raw), json.RawMessage(original))
+	result, err := redact.SanitizeExternalPayload(ctx, r, json.RawMessage(raw), json.RawMessage(original))
 	if err != nil {
 		return nil, err
 	}

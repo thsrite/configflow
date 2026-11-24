@@ -177,7 +177,7 @@ type ResourceRemaps map[string]map[string]map[string]string
 func (r *Repository) ExportAllJSON(ctx context.Context, desensitize bool) (json.RawMessage, error) {
 	if desensitize {
 		var result json.RawMessage
-		err := r.WithReadSnapshot(WithRepository(ctx, r), func(held context.Context) error {
+		err := r.WithReadSnapshot(ctx, func(held context.Context) error {
 			var err error
 			result, err = r.exportDocumentJSON(held, true, false)
 			return err
@@ -245,7 +245,7 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 		return model.Marshal(document)
 	}
 	var (
-		sanitizeDoc   func(context.Context, *model.Document, model.SystemConfig) (*model.Document, error)
+		sanitizeDoc   func(context.Context, *Repository, *model.Document, model.SystemConfig) (*model.Document, error)
 		redactOxiDNS  func(json.RawMessage) (json.RawMessage, error)
 		redactRouters func(json.RawMessage) (json.RawMessage, error)
 	)
@@ -356,7 +356,7 @@ func (r *Repository) exportDocumentJSON(ctx context.Context, desensitize, withSt
 			}
 		}
 	}
-	document, err = sanitizeDoc(ctx, document, settings)
+	document, err = sanitizeDoc(ctx, r, document, settings)
 	if err != nil {
 		return nil, err
 	}

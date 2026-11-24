@@ -232,7 +232,7 @@ func (h *upgradesHandler) getAgentLogs(c *httpx.Ctx, m *agents.Manager) (*httpx.
 		if jsondecode.Unmarshal(raw, &text) != nil || text == "" {
 			continue
 		}
-		redacted, err := redact.RedactSecretsInText(ctx, text)
+		redacted, err := redact.RedactSecretsInText(ctx, m.Repository(), text)
 		if err != nil {
 			return nil, err
 		}
