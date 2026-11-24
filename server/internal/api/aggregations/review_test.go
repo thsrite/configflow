@@ -13,6 +13,7 @@ import (
 	generation "configflow/internal/aggregations"
 	"configflow/internal/api/aggregations"
 	"configflow/internal/convert/mihomoenv"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -90,9 +91,30 @@ func TestReviewCatalogCancellation(t *testing.T) {
 func TestReviewDeliveryShutdownDoesNotPublish(t *testing.T) {
 	for _, suffix := range []string{"preview", "provider"} {
 		t.Run(suffix, func(t *testing.T) {
-			generation.Wire()
-			mihomoenv.OverrideForTest(t, nil, nil, nil)
-			srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(aggregations.Register)})
+			started, observed, abort := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			t.Cleanup(func() { close(abort) })
+			sixty := 60.0
+			var pv *provider.Service
+			srv := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
+				pv = provider.New(provider.Options{
+					Repo: app.Repo,
+					DeliveryEnv: &provider.DeliveryEnv{AggregationFetch: func(ctx context.Context, _, _ string) (*refresh.SourceResult, error) {
+						close(started)
+						select {
+						case <-ctx.Done():
+							close(observed)
+							return nil, ctx.Err()
+						case <-abort:
+							return nil, errors.New("test cleanup")
+						}
+					}},
+					ResponseSeconds: &sixty,
+				})
+				aggSvc := generation.New(generation.ServiceOptions{Provider: pv, Repo: app.Repo})
+				_ = pv.SetAggregations(aggSvc.RenderProvider)
+				aggregations.NewHandler(app.Repo, aggSvc, pv, nil).Register(app.Router)
+			}})
+			mihomoenv.OverrideForTest(t, srv.Repo, nil, pv)
 			err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 				if err := s.SetJSON("nodes", json.RawMessage(`[]`)); err != nil {
 					return err
@@ -109,19 +131,6 @@ func TestReviewDeliveryShutdownDoesNotPublish(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			started, observed, abort := make(chan struct{}), make(chan struct{}), make(chan struct{})
-			t.Cleanup(func() { close(abort) })
-			t.Cleanup(provider.SetDeliveryEnv(&provider.DeliveryEnv{AggregationFetch: func(ctx context.Context, _, _ string) (*refresh.SourceResult, error) {
-				close(started)
-				select {
-				case <-ctx.Done():
-					close(observed)
-					return nil, ctx.Err()
-				case <-abort:
-					return nil, errors.New("test cleanup")
-				}
-			}}))
-			t.Cleanup(provider.SetResponseSeconds(60))
 			// Provider Flight uses DefaultSpawner, just as production main does.
 			// Bind the request and shutdown to that same configured Runtime.
 			startDeliveryRuntime(t, srv.Context())

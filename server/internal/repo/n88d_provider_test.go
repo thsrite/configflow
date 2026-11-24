@@ -50,7 +50,8 @@ func TestN88dCommitRuntimeAndLeafLocks(t *testing.T) {
 					bundle[0].CacheUpdates = []provider.CacheWrite{{SubID: "s", Nodes: []model.Node{{Name: "Node", Type: "http", Server: "example.com", Port: model.IntPtr(80)}}}}
 				}
 				done := make(chan error, 1)
-				go func() { done <- provider.CommitArtifacts(request, "default", bundle) }()
+				pv := provider.New(provider.Options{Repo: r})
+				go func() { done <- pv.CommitArtifacts(request, "default", bundle) }()
 				select {
 				case err := <-done:
 					t.Fatalf("escaped real leaf lock: %v", err)

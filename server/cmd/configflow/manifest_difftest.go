@@ -10,9 +10,10 @@ import (
 
 	"configflow/internal/faultprobe"
 	"configflow/internal/httpx"
+	"configflow/internal/provider"
 )
 
-func writeTestManifest(app *httpx.App) error {
+func writeTestManifest(app *httpx.App, _ *provider.Service) error {
 	if os.Getenv(faultprobe.ControlEnv) == "" {
 		return nil
 	}

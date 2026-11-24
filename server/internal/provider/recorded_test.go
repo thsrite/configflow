@@ -439,7 +439,8 @@ func TestRecordedPythonTests(t *testing.T) {
 			continue
 		}
 		var missing []string
-		restoreLocations := SetLocations(newReplayLocations(row, &missing))
+		loc := newReplayLocations(row, &missing)
+		locPV := New(Options{Locations: loc})
 		args := mapList(row, "args")
 		want := map[string]any{}
 		if errVal, hasErr := row["err"]; hasErr {
@@ -459,7 +460,7 @@ func TestRecordedPythonTests(t *testing.T) {
 			}
 			got = recordedOutcome(nil, err)
 		case "parse":
-			nodes, err := ParseNodes(args[0].(string), labelStr(args[1]), labelStr(args[2]))
+			nodes, err := locPV.ParseNodes(args[0].(string), labelStr(args[1]), labelStr(args[2]))
 			var out any
 			if err == nil {
 				out, err = nodesToAny(nodes)
@@ -515,29 +516,31 @@ func TestRecordedPythonTests(t *testing.T) {
 					providers = append(providers, art)
 				}
 				if err == nil {
-					chains, err = ValidateArtifacts(snap, providers)
+					chains, err = locPV.ValidateArtifacts(snap, providers)
 				}
 			}
 			got = recordedOutcome(chains, err)
 		case "prepare_sub", "bundle", "commit_bundle", "commit_updates":
 			w = newWorld(t, row, repository(t))
-			restoreEnv := SetDeliveryEnv(&DeliveryEnv{
-				Fetch:             w.fetcher("default"),
-				SubscriptionFetch: w.fetcher("subscriptions"),
-				AggregationFetch:  w.fetcher("aggregations"),
-				NodeID:            w.nodeID,
-				Converter:         w,
+			pv := New(Options{
+				Repo:         w.repo,
+				Locations:    loc,
+				Aggregations: w.aggregation,
+				DeliveryEnv: &DeliveryEnv{
+					Fetch:             w.fetcher("default"),
+					SubscriptionFetch: w.fetcher("subscriptions"),
+					AggregationFetch:  w.fetcher("aggregations"),
+					NodeID:            w.nodeID,
+					Converter:         w,
+				},
 			})
 			var clock fixedClock
 			if now := mapList(row, "now"); len(now) > 0 {
 				clock.now, _ = time.Parse(time.RFC3339Nano, now[0].(string))
 			}
 			restoreRefresh := setRefreshFixture(clock, w)
-			restoreAgg := SetAggregationRenderer(w.aggregation)
-			got = w.run(fn, args, rawArgs, m)
-			restoreAgg()
+			got = w.run(pv, fn, args, rawArgs, m)
 			restoreRefresh()
-			restoreEnv()
 			if wantCalls := mapList(row, "fetch"); true {
 				var calls []any
 				for _, c := range wantCalls {
@@ -564,7 +567,6 @@ func TestRecordedPythonTests(t *testing.T) {
 		default:
 			t.Fatalf("row %d: unknown fn %q", i, fn)
 		}
-		restoreLocations()
 		if fn == "bundle" {
 			dropTestDoubleCacheUpdates(want, got)
 		}
@@ -583,7 +585,7 @@ func TestRecordedPythonTests(t *testing.T) {
 	t.Logf("recorded calls: %d from %d test files %v, unsupported %d, failures %d", len(rows), len(files), counts, unsupported, failures)
 }
 
-func (w *world) run(fn string, args []any, rawArgs []json.RawMessage, m masker) map[string]any {
+func (w *world) run(pv *Service, fn string, args []any, rawArgs []json.RawMessage, m masker) map[string]any {
 	ctx := w.ctx
 	switch fn {
 	case "prepare_sub":
@@ -596,7 +598,7 @@ func (w *world) run(fn string, args []any, rawArgs []json.RawMessage, m masker) 
 			return recordedOutcome(nil, err)
 		}
 		opts, _ := args[2].(map[string]any)
-		result, err := PrepareSubscription(ctx, sub, snap, SubscriptionOptions{
+		result, err := pv.PrepareSubscription(ctx, sub, snap, SubscriptionOptions{
 			Fetch:                  w.fetcher("fetch"),
 			AllowTransportFallback: mapBool(opts, "allow_transport_fallback"),
 			SourcePrepared:         mapBool(opts, "source_prepared"),
@@ -652,7 +654,7 @@ func (w *world) run(fn string, args []any, rawArgs []json.RawMessage, m masker) 
 		if mapBool(opts, "progress") {
 			bundleOpts.Progress = func(message string, force bool) { progress = append(progress, []any{message, force}) }
 		}
-		bundle, err := PrepareBundle(ctx, cfg, mainNode, bundleOpts)
+		bundle, err := pv.PrepareBundle(ctx, cfg, mainNode, bundleOpts)
 		afterCfg, marshalErr := json.Marshal(cfg)
 		if marshalErr != nil {
 			w.t.Fatal(marshalErr)
@@ -689,13 +691,13 @@ func (w *world) run(fn string, args []any, rawArgs []json.RawMessage, m masker) 
 			}
 			bundle = append(bundle, r)
 		}
-		return recordedOutcome(nil, CommitArtifacts(ctx, profileID, bundle))
+		return recordedOutcome(nil, pv.CommitArtifacts(ctx, profileID, bundle))
 	case "commit_updates":
 		updates, err := cacheWritesFromAny(args[0])
 		if err != nil {
 			return recordedOutcome(nil, err)
 		}
-		return recordedOutcome(nil, CommitWrites(ctx, updates))
+		return recordedOutcome(nil, pv.CommitWrites(ctx, updates))
 	}
 	return nil
 }

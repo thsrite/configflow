@@ -67,11 +67,11 @@ func NativeEnvFor(r *repo.Repository, sub *substore.Service, pv *provider.Servic
 		return text, true
 	}
 	env.Preflight = func(ctx context.Context, config *model.Config, main *yamlx.Node) error {
-		if pv != nil {
-			_, err := pv.PrepareBundle(ctx, config, main, provider.DeliveryOptions{})
-			return err
+		target := pv
+		if target == nil {
+			target = provider.New(provider.Options{Repo: r, SubStore: sub})
 		}
-		_, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{})
+		_, err := target.PrepareBundle(ctx, config, main, provider.DeliveryOptions{})
 		return err
 	}
 	env.BindTypedSubscriptionCache(

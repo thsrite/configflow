@@ -60,7 +60,6 @@ func newGenerateServices(r *repo.Repository, rt *lifecycle.Runtime, tk *tasks.Re
 		return nil, err
 	}
 	pv.MarkStarted()
-	provider.UseService(pv)
 
 	return &generateServices{
 		substore:     sub,

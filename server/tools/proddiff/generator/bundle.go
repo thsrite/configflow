@@ -15,6 +15,7 @@ import (
 	"configflow/internal/oxidns"
 	"configflow/internal/provider"
 	"configflow/internal/repo"
+	"configflow/internal/server"
 	"configflow/internal/yamlx"
 )
 
@@ -32,7 +33,7 @@ func deploySource(config *model.Config) (*deploy.Source, error) {
 
 // deploymentBundle compares the public Build API on a captured production
 // snapshot. Final-device adaptation requires A14 and the L2 guest tests.
-func deploymentBundle(ctx context.Context, repository *repo.Repository, config *model.Config, j job, opts convert.MihomoOptions) (string, error) {
+func deploymentBundle(ctx context.Context, srv *server.App, repository *repo.Repository, config *model.Config, j job, opts convert.MihomoOptions) (string, error) {
 	system, err := repository.System(ctx)
 	if err != nil {
 		return "", err
@@ -61,7 +62,7 @@ func deploymentBundle(ctx context.Context, repository *repo.Repository, config *
 			return "", err
 		}
 		in.ConfigContent = string(data)
-		prepared, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{RenderAll: true, SubscriptionFetch: offlineFetch})
+		prepared, err := srv.Provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{RenderAll: true, SubscriptionFetch: offlineFetch})
 		if err != nil {
 			return "", err
 		}

@@ -11,7 +11,7 @@ import (
 func TestProductionHasNoFaultRoutes(t *testing.T) {
 	t.Setenv("CONFIGFLOW_FAULT_DIR", t.TempDir())
 	app := server.NewApp()
-	if err := writeTestManifest(app); err != nil {
+	if err := writeTestManifest(app, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, route := range app.Router.Routes() {

@@ -120,6 +120,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 		},
 		IPv6:     ip.EnrollSource,
 		SubStore: gen.substore,
+		Provider: gen.provider,
 	})
 
 	// Transitional boundary bridge for packages not yet migrated to explicit

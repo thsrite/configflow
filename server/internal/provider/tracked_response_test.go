@@ -23,7 +23,7 @@ func TestProductionProviderDeadlineKeepsTheSameRender(t *testing.T) {
 	for _, mode := range []string{"missing", "cached", "unreadable"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newServeFixture(t, ResponseSeconds)
-			if currentResponseSeconds() != 12 || cap(pool) != 8 {
+			if f.svc.ResponseSeconds() != 12 || cap(pool) != 8 {
 				t.Fatal("production response limits changed")
 			}
 			if mode != "missing" {
@@ -48,12 +48,12 @@ func TestProductionProviderDeadlineKeepsTheSameRender(t *testing.T) {
 				calls.Add(1)
 				close(entered)
 				<-release
-				return runFlight(ctx, true, "alpha", "aggregation", "agg-1", yamlResponse("proxies: [new]"))
+				return runFlight(ctx, f.srv.Repo, true, "alpha", "aggregation", "agg-1", yamlResponse("proxies: [new]"))
 			})
 			<-entered
 			done := make(chan timedResponse, 1)
 			go func() {
-				resp, err := awaitResponse(f.srv.Context(), clock, result, true, "alpha", "aggregation", "agg-1")
+				resp, err := awaitResponse(f.srv.Context(), f.srv.Repo, f.svc.ResponseSeconds(), clock, result, true, "alpha", "aggregation", "agg-1")
 				done <- timedResponse{resp, err}
 			}()
 			waitFor(t, func() bool { return clock.Pending() == 1 })
@@ -124,7 +124,7 @@ func TestProviderWaitCancellationLeavesRenderAndBufferedResultAlive(t *testing.T
 	ctx, cancel := context.WithCancel(f.srv.Context())
 	done := make(chan error, 1)
 	go func() {
-		_, err := awaitResponse(ctx, clock, results, true, "alpha", "aggregation", "agg-1")
+		_, err := awaitResponse(ctx, f.srv.Repo, f.svc.ResponseSeconds(), clock, results, true, "alpha", "aggregation", "agg-1")
 		done <- err
 	}()
 	waitFor(t, func() bool { return clock.Pending() == 1 })
@@ -142,7 +142,7 @@ func TestProviderWaitCancellationLeavesRenderAndBufferedResultAlive(t *testing.T
 }
 
 func TestProviderPreparationKeepsRuntimeCancellation(t *testing.T) {
-	ctx, _ := repoContext(t)
+	ctx, r := repoContext(t)
 	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 20 * time.Millisecond})
 	runner.Start(ctx)
 	defer runner.Shutdown(context.Background())
@@ -152,7 +152,7 @@ func TestProviderPreparationKeepsRuntimeCancellation(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	defer SetDeliveryEnv(&DeliveryEnv{SubscriptionFetch: fetch, NodeID: SequentialNodeIDs(), Converter: nilNodeConverter{}})()
+	pv := New(Options{Repo: r, DeliveryEnv: &DeliveryEnv{SubscriptionFetch: fetch, NodeID: SequentialNodeIDs(), Converter: nilNodeConverter{}}})
 	cfg, err := configFromMap(map[string]any{
 		"subscriptions": []any{map[string]any{"id": "s", "name": "Feed", "url": "https://example.com/feed", "enabled": true}},
 	})
@@ -168,7 +168,7 @@ func TestProviderPreparationKeepsRuntimeCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := runner.Spawn(ctx, "provider-prepare", func(work context.Context) {
-		_, err := PrepareBundle(work, cfg, mainNode, DeliveryOptions{RenderAll: true})
+		_, err := pv.PrepareBundle(work, cfg, mainNode, DeliveryOptions{RenderAll: true})
 		done <- err
 	}); err != nil {
 		t.Fatal(err)

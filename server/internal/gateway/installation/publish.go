@@ -206,7 +206,8 @@ func (s *Service) publishService(ctx context.Context, r *Record, service string)
 		return nil, err
 	}
 	if len(prepared.Providers) > 0 {
-		if err = provider.CommitArtifacts(ctx, r.ProfileID, prepared.Providers); err != nil {
+		pv := provider.New(provider.Options{Repo: s.Repository})
+		if err = pv.CommitArtifacts(ctx, r.ProfileID, prepared.Providers); err != nil {
 			return nil, err
 		}
 	}

@@ -6,8 +6,8 @@ import (
 )
 
 func TestConfigFindingsPreparationContextWithoutA11Positions(t *testing.T) {
-	t.Cleanup(SetLocations(nil))
-	_, err := ParseNodes("proxies: [bad]", "Synthetic", "")
+	svc := New(Options{})
+	_, err := svc.ParseNodes("proxies: [bad]", "Synthetic", "")
 	if err == nil {
 		t.Fatal("invalid provider accepted")
 	}

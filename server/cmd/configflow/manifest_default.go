@@ -2,6 +2,9 @@
 
 package main
 
-import "configflow/internal/httpx"
+import (
+	"configflow/internal/httpx"
+	"configflow/internal/provider"
+)
 
-func writeTestManifest(*httpx.App) error { return nil }
+func writeTestManifest(*httpx.App, *provider.Service) error { return nil }

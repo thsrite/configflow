@@ -127,7 +127,7 @@ func Register(r *httpx.Router) { NewHandler(nil, nil, nil, nil).Register(r) }
 func (h *Handler) collection(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := h.withRepo(c.Context())
 	if c.Method() == http.MethodGet {
-		shared, err := generation.LoadCatalog(ctx)
+		shared, err := h.aggregationsService(ctx).LoadCatalog(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +171,7 @@ func aggregationsOf(shared *model.Shared) []model.Aggregation {
 
 func (h *Handler) item(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := h.withRepo(c.Context())
-	shared, err := generation.LoadCatalog(ctx)
+	shared, err := h.aggregationsService(ctx).LoadCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func (h *Handler) item(c *httpx.Ctx) (*httpx.Response, error) {
 			}
 		}
 		shared.Aggregations = kept
-		if err := generation.SaveCatalog(ctx, shared); err != nil {
+		if err := h.aggregationsService(ctx).SaveCatalog(ctx, shared); err != nil {
 			return nil, err
 		}
 		return httpx.JSON(map[string]bool{"success": true}), nil
@@ -232,7 +232,7 @@ func (h *Handler) healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
 }
 func (h *Handler) count(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := h.withRepo(c.Context())
-	shared, err := generation.LoadCatalog(ctx)
+	shared, err := h.aggregationsService(ctx).LoadCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +316,7 @@ func renderFailure(err error) *httpx.Response {
 
 func (h *Handler) reorder(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := h.withRepo(c.Context())
-	shared, err := generation.LoadCatalog(ctx)
+	shared, err := h.aggregationsService(ctx).LoadCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +329,7 @@ func (h *Handler) reorder(c *httpx.Ctx) (*httpx.Response, error) {
 		return httpx.Message(404, false, missing), nil
 	}
 	shared.Aggregations = ordered
-	if err := generation.SaveCatalog(ctx, shared); err != nil {
+	if err := h.aggregationsService(ctx).SaveCatalog(ctx, shared); err != nil {
 		if errors.Is(err, repo.ErrRepository) {
 			return nil, err
 		}

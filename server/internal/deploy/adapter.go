@@ -158,7 +158,6 @@ func downloadRef(d convert.ResourceDownload) (RuleRef, string, error) {
 
 // Wire installs deployment preparation diagnostics. A14 adds publication hooks.
 func Wire() {
-	provider.SetLocations(Locations{})
 	agents.RegisterHooks(agents.Hooks{ReceiptMatches: ReceiptMatches})
 }
 
@@ -667,7 +666,11 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 					return &refresh.SourceResult{Text: result.Text, Source: result.Source, FetchedAt: result.FetchedAt, Traffic: refreshTraffic(result.Traffic)}, nil
 				}
 			}
-			p.Providers, e = provider.PrepareBundle(convert.WithConversions(ctx, conversions, false), cfg, main, opts)
+			pv := Default().provider
+			if pv == nil {
+				pv = provider.New(provider.Options{Repo: m.Repository(), SubStore: Default().substore, Locations: Locations{}})
+			}
+			p.Providers, e = pv.PrepareBundle(convert.WithConversions(ctx, conversions, false), cfg, main, opts)
 			if e != nil {
 				return nil, e
 			}
@@ -689,7 +692,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 				for _, id := range order {
 					list = append(list, updates[id])
 				}
-				if e = provider.CommitWrites(ctx, list); e != nil {
+				if e = pv.CommitWrites(ctx, list); e != nil {
 					return nil, e
 				}
 				if o.Progress.Phase != nil {
@@ -703,7 +706,7 @@ func prepareContent(ctx context.Context, m *agents.Manager, t Target, s *Source,
 					return nil, errors.New(msgAlreadyFetched)
 				}
 				opts.Progress = nil
-				p.Providers, e = provider.PrepareBundle(convert.WithConversions(ctx, conversions, true), cfg, main, opts)
+				p.Providers, e = pv.PrepareBundle(convert.WithConversions(ctx, conversions, true), cfg, main, opts)
 				if e != nil {
 					return nil, e
 				}

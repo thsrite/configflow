@@ -31,10 +31,16 @@ func repoContext(t *testing.T) (context.Context, *repo.Repository) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(SetLocations(fakeLocations{}))
-	t.Cleanup(SetDeliveryEnv(&DeliveryEnv{NodeID: SequentialNodeIDs(), Converter: nilNodeConverter{}}))
 	t.Cleanup(setRefreshFixture(fixedClock{corpusNow}, nilNodeConverter{}))
 	return repo.WithRepository(context.Background(), r), r
+}
+
+func testService(r *repo.Repository) *Service {
+	return New(Options{
+		Repo:        r,
+		Locations:   fakeLocations{},
+		DeliveryEnv: &DeliveryEnv{NodeID: SequentialNodeIDs(), Converter: nilNodeConverter{}},
+	})
 }
 
 func emptySnapshot(t *testing.T, main map[string]any) *DeliverySnapshot {
@@ -66,13 +72,14 @@ func wantContains(t *testing.T, detail string, parts ...string) {
 }
 
 func TestInvalidYAMLKeepsSourcePositionAndOriginalProblem(t *testing.T) {
-	repoContext(t)
+	_, r := repoContext(t)
+	pv := testService(r)
 	source := "proxies:\n  - name: Broken\n    type: [http\n"
 	_, parseErr := yamlx.Parse([]byte(source))
 	if parseErr == nil {
 		t.Fatal("invalid fixture accepted")
 	}
-	_, err := ParseNodes(source, "机场 A", "./providers/a.yaml")
+	_, err := pv.ParseNodes(source, "机场 A", "./providers/a.yaml")
 	var strategy *rules.StrategyReferenceError
 	if !errors.As(err, &strategy) || errClass(err) != "DialerReferenceError" {
 		t.Fatalf("err %v (%s)", err, errClass(err))
@@ -82,7 +89,8 @@ func TestInvalidYAMLKeepsSourcePositionAndOriginalProblem(t *testing.T) {
 }
 
 func TestShapesReportExactFieldAndSourceLine(t *testing.T) {
-	repoContext(t)
+	_, r := repoContext(t)
+	pv := testService(r)
 	cases := []struct {
 		text, field, line string
 	}{
@@ -95,7 +103,7 @@ func TestShapesReportExactFieldAndSourceLine(t *testing.T) {
 		{"base: &base\n  type: []\nproxies:\n  - <<: *base\n    name: Merged\n", "proxies[0].type", "2"},
 	}
 	for _, c := range cases {
-		_, err := ParseNodes(c.text, "Feed", "")
+		_, err := pv.ParseNodes(c.text, "Feed", "")
 		if err == nil {
 			t.Fatalf("%q accepted", c.text)
 		}
@@ -104,29 +112,32 @@ func TestShapesReportExactFieldAndSourceLine(t *testing.T) {
 }
 
 func TestUnknownDocumentShapeDoesNotInventALineNumber(t *testing.T) {
-	repoContext(t)
-	_, err := ParseNodes("- not-a-provider\n", "Feed", "")
+	_, r := repoContext(t)
+	pv := testService(r)
+	_, err := pv.ParseNodes("- not-a-provider\n", "Feed", "")
 	wantContains(t, err.Error(), "CTX[订阅|Feed|]", "字段：文档根节点|None|None|")
 }
 
 func TestSourceExcerptAndURLNeverExposeNodeCredentials(t *testing.T) {
-	repoContext(t)
+	_, r := repoContext(t)
+	pv := testService(r)
 	text := "proxies: [{name: Broken, type: [], password: secret-password, uuid: secret-uuid}]"
-	_, err := ParseNodes(text, "Feed", "https://user:secret-login@example.test/feed?token=secret-token")
+	_, err := pv.ParseNodes(text, "Feed", "https://user:secret-login@example.test/feed?token=secret-token")
 	// The excerpt and path redaction are A11's (source_excerpt, failure_text in
 	// preparation_context); this module passes the field's exact position.
 	wantContains(t, err.Error(), "字段：proxies[0].type|1|", "|本次订阅返回的内容|None]")
 }
 
 func TestYAMLErrorOnSecretContinuationReportsLocationWithoutValue(t *testing.T) {
-	repoContext(t)
+	_, r := repoContext(t)
+	pv := testService(r)
 	for _, text := range []string{
 		"proxies:\n  - name: Broken\n    password: \"hidden-first\n      hidden-second\" broken\n",
 		"proxies:\n  - name: Broken\n    uuid: \"hidden-first\n      hidden-second\" broken\n",
 		"proxies: [{name: Broken, password: \"hidden-first\n    hidden-second\" broken}]\n",
 		"proxies: [{name: Broken, password: \"hidden-first\n    hidden-second\\q",
 	} {
-		_, err := ParseNodes(text, "Sensitive", "")
+		_, err := pv.ParseNodes(text, "Sensitive", "")
 		if err == nil || !strings.Contains(err.Error(), "SRC[Provider YAML 内容无效|") || strings.Contains(err.Error(), "|None|None|") {
 			t.Fatalf("%q: %v", text, err)
 		}
@@ -134,19 +145,21 @@ func TestYAMLErrorOnSecretContinuationReportsLocationWithoutValue(t *testing.T) 
 }
 
 func TestClosedQuotedSecretDoesNotHideFollowingNonsecretField(t *testing.T) {
-	repoContext(t)
+	_, r := repoContext(t)
+	pv := testService(r)
 	for _, quote := range []string{`"`, `'`} {
 		flow := "proxies: [{name: Broken, password: " + quote + "hidden-first\n    hidden-second" + quote + ",\n    type: []}]\n"
 		block := "proxies:\n  - name: Broken\n    password: " + quote + "hidden-first\n      hidden-second" + quote + "\n    type: []\n"
 		for text, line := range map[string]string{flow: "3", block: "5"} {
-			_, err := ParseNodes(text, "Feed", "")
+			_, err := pv.ParseNodes(text, "Feed", "")
 			wantContains(t, err.Error(), "字段：proxies[0].type|"+line+"|")
 		}
 	}
 }
 
 func TestValidProviderOutputAndSuccessPathParsingUnchanged(t *testing.T) {
-	repoContext(t)
+	_, r := repoContext(t)
+	pv := testService(r)
 	for _, text := range []string{"{}", "proxies: []", "proxies: [{name: Good, type: http, server: example.test, port: 80}]"} {
 		wantNodes, err := substore.ParseProxyNodes(text)
 		if err != nil {
@@ -156,7 +169,7 @@ func TestValidProviderOutputAndSuccessPathParsingUnchanged(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		gotNodes, err := ParseNodes(text, "Feed", "")
+		gotNodes, err := pv.ParseNodes(text, "Feed", "")
 		if err != nil {
 			t.Fatalf("%q: %v", text, err)
 		}
@@ -194,12 +207,13 @@ func fetchFailing(message string) refresh.FetchSourceFn {
 
 func TestInvalidDownloadDoesNotFallBackToCache(t *testing.T) {
 	ctx, r := repoContext(t)
+	pv := testService(r)
 	// A valid cache exists: content errors must not use it.
 	writeSharedJSONFile(t, ctx, r, "subscribes/s.json", map[string]any{
 		"nodes": []any{map[string]any{"name": "Cached", "type": "http", "server": "c.test", "port": 1}},
 	})
 	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": "https://example.test/sub"})
-	_, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
+	_, err := pv.PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
 		Fetch: fetchReturning("proxies: [{name: Bad, type: []}]", "rendered_yaml", nil), AllowTransportFallback: true,
 		SourcePath: "./providers/s.yaml"})
 	if err == nil {
@@ -212,9 +226,10 @@ func TestInvalidDownloadDoesNotFallBackToCache(t *testing.T) {
 }
 
 func TestMissingCacheRetainsTransportDiagnosticAndSource(t *testing.T) {
-	ctx, _ := repoContext(t)
+	ctx, r := repoContext(t)
+	pv := testService(r)
 	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": "https://example.test/sub"})
-	_, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
+	_, err := pv.PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
 		Fetch: fetchFailing("Connection refused https://user:secret-login@example.test/sub?token=secret-token")})
 	if err == nil {
 		t.Fatal("accepted")
@@ -227,9 +242,10 @@ func TestMissingCacheRetainsTransportDiagnosticAndSource(t *testing.T) {
 }
 
 func TestTransportFallbackStillReturnsEmptyWithoutFalseContentError(t *testing.T) {
-	ctx, _ := repoContext(t)
+	ctx, r := repoContext(t)
+	pv := testService(r)
 	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": "https://example.test/sub"})
-	got, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
+	got, err := pv.PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
 		Fetch: fetchFailing("unavailable"), AllowTransportFallback: true})
 	if err != nil || got.HasName || got.Content != "" || len(got.CacheUpdates) != 0 {
 		t.Fatalf("%+v %v", got, err)
@@ -237,8 +253,9 @@ func TestTransportFallbackStillReturnsEmptyWithoutFalseContentError(t *testing.T
 }
 
 func TestFinalBundleErrorIdentifiesActualProviderFile(t *testing.T) {
-	repoContext(t)
-	_, err := ValidateArtifacts(emptySnapshot(t, nil), []*Artifact{
+	_, r := repoContext(t)
+	pv := testService(r)
+	_, err := pv.ValidateArtifacts(emptySnapshot(t, nil), []*Artifact{
 		{Name: "First", HasName: true, LocalPath: "./providers/first.yaml", Content: "proxies: []"},
 		{Name: "Second", HasName: true, LocalPath: "./providers/second.yaml", Content: "proxies:\n - name: Bad\n   type: 11"},
 	})
@@ -252,7 +269,8 @@ func TestFinalBundleErrorIdentifiesActualProviderFile(t *testing.T) {
 }
 
 func TestPreparedProviderFailureKeepsAliasAndRealOutputPath(t *testing.T) {
-	ctx, _ := repoContext(t)
+	ctx, r := repoContext(t)
+	pv := testService(r)
 	main, err := yamlx.Parse([]byte(`proxy-providers:
   Provider alias: {url: /subscriptions/s/proxies, path: ./providers/actual.yaml}
   Other alias: {url: /subscriptions/s/proxies, path: ./providers/other.yaml}
@@ -264,7 +282,7 @@ func TestPreparedProviderFailureKeepsAliasAndRealOutputPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = PrepareBundle(ctx, cfg, main, DeliveryOptions{RenderAll: true, Prepared: map[string]*Artifact{
+	_, err = pv.PrepareBundle(ctx, cfg, main, DeliveryOptions{RenderAll: true, Prepared: map[string]*Artifact{
 		"Provider alias": {Content: "proxies:\n - name: Invalid\n   type: []", CacheUpdates: []CacheWrite{}}}})
 	if err == nil {
 		t.Fatal("accepted")
@@ -276,13 +294,14 @@ func TestPreparedProviderFailureKeepsAliasAndRealOutputPath(t *testing.T) {
 }
 
 func TestTopologyErrorHasSourceButNoGuessedLine(t *testing.T) {
-	repoContext(t)
+	_, r := repoContext(t)
+	pv := testService(r)
 	main := mustParseYAML(t, `proxies:
   - {name: Entry, type: http, dialer-proxy: Upstream}
   - {name: Upstream, type: http}
 proxy-groups: []
 `)
-	_, err := ValidateArtifacts(emptySnapshot(t, main), []*Artifact{{Name: "Feed", HasName: true,
+	_, err := pv.ValidateArtifacts(emptySnapshot(t, main), []*Artifact{{Name: "Feed", HasName: true,
 		LocalPath: "./providers/feed.yaml", Content: "proxies: [{name: Bad, type: http, dialer-proxy: Missing}]"}})
 	if err == nil {
 		t.Fatal("accepted")
@@ -295,14 +314,15 @@ proxy-groups: []
 
 // test_subscription_regex_filter.py::test_provider_delivers_filtered_proxies_but_caches_raw_nodes
 func TestProviderDeliversFilteredProxiesButCachesRawNodes(t *testing.T) {
-	ctx, _ := repoContext(t)
+	ctx, r := repoContext(t)
+	pv := testService(r)
 	text := `proxies:
   - {name: 香港 01, type: ss, server: 1.1.1.1, port: 1, cipher: aes-128-gcm, password: p}
   - {name: 日本 01, type: ss, server: 1.1.1.2, port: 2, cipher: aes-128-gcm, password: p}
   - {name: 剩余流量 100G, type: ss, server: 1.1.1.3, port: 3, cipher: aes-128-gcm, password: p}
 `
 	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s1", "name": "Air", "url": "http://airport.test/sub", "regex_filter": "香港|日本"})
-	got, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
+	got, err := pv.PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
 		Fetch: fetchReturning(text, "sub_store", nil)})
 	if err != nil {
 		t.Fatal(err)
@@ -341,9 +361,10 @@ func policyCache(t *testing.T, ctx context.Context, r *repo.Repository) *substor
 // test_subscription_refresh_policy.py::test_publish_preparation_uses_cache_and_stages_no_fake_refresh
 func TestPublishPreparationUsesCacheAndStagesNoFakeRefresh(t *testing.T) {
 	ctx, r := repoContext(t)
+	pv := testService(r)
 	before := policyCache(t, ctx, r)
 	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": policyURL, "enabled": true, "interval": 0})
-	got, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
+	got, err := pv.PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{
 		Fetch: func(context.Context, string, string) (*refresh.SourceResult, error) {
 			t.Fatal("publish must not bypass manual mode")
 			return nil, nil
@@ -364,10 +385,11 @@ func TestPublishPreparationUsesCacheAndStagesNoFakeRefresh(t *testing.T) {
 // test_subscription_refresh_policy.py::test_dry_previews_share_download_across_restart_without_changing_validated_nodes
 func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *testing.T) {
 	ctx, r := repoContext(t)
+	pv := testService(r)
 	content := "proxies:\n- cipher: aes-128-gcm\n  name: Remote\n  password: p\n  port: 443\n  server: example.test\n  type: ss\n"
 	calls := 0
 	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": policyURL, "enabled": true, "interval": 259200})
-	first, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{Fetch: fetchReturning(content, "direct_yaml", &calls)})
+	first, err := pv.PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{Fetch: fetchReturning(content, "direct_yaml", &calls)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +398,8 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 		t.Fatal(err)
 	}
 	ctx = repo.WithRepository(context.Background(), reopened)
-	second, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{Fetch: fetchReturning(content, "direct_yaml", &calls)})
+	pv2 := testService(reopened)
+	second, err := pv2.PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{Fetch: fetchReturning(content, "direct_yaml", &calls)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,10 +414,11 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 
 // test_dialer_delivery_staging.py::test_no_chain_direct_subscription_preserves_duplicate_legacy_names (provider half)
 func TestNoChainDirectSubscriptionPreservesDuplicateLegacyNames(t *testing.T) {
-	ctx, _ := repoContext(t)
+	ctx, r := repoContext(t)
+	pv := testService(r)
 	text := "proxies: [{name: Same, type: http, server: a.test, port: 80}, {name: Same, type: http, server: b.test, port: 80}]"
 	sub := testjson.Decode[model.Subscription](t, map[string]any{"id": "s", "name": "Feed", "url": "https://example.test/sub", "interval": 259200})
-	got, err := PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{Fetch: fetchReturning(text, "rendered_yaml", nil)})
+	got, err := pv.PrepareSubscription(ctx, sub, emptySnapshot(t, nil), SubscriptionOptions{Fetch: fetchReturning(text, "rendered_yaml", nil)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -411,9 +435,8 @@ func TestDefaultHooksFailClosedAndPassThrough(t *testing.T) {
 	if got := (PassthroughLocations{}).PreparationContext("m", "n", "p", "k"); got != "k「n」准备失败：m" {
 		t.Fatal(got)
 	}
-	ctx, _ := repoContext(t)
-	SetLocations(nil)
-	defer SetLocations(fakeLocations{})
+	ctx, r := repoContext(t)
+	pv := New(Options{Repo: r})
 	cfg, err := configFromMap(map[string]any{"profile_id": "default", "subscription_aggregations": []any{map[string]any{"id": "agg", "name": "Agg"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -422,7 +445,7 @@ func TestDefaultHooksFailClosedAndPassThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = PrepareBundle(ctx, cfg, main, DeliveryOptions{RenderAll: true})
+	_, err = pv.PrepareBundle(ctx, cfg, main, DeliveryOptions{RenderAll: true})
 	if !errors.Is(err, ErrAggregationProviderMissing) {
 		t.Fatalf("err %v", err)
 	}

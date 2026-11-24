@@ -89,11 +89,12 @@ func (h *Handler) substore() *substore.Service {
 	return substore.NewService(substore.NewEnv())
 }
 
-func (h *Handler) provider() *provider.Service {
+func (h *Handler) provider(ctx context.Context) *provider.Service {
 	if h != nil && h.Provider != nil {
 		return h.Provider
 	}
-	return provider.Default()
+	r, _ := h.repo(ctx)
+	return provider.New(provider.Options{Repo: r, SubStore: h.substore()})
 }
 
 func (h *Handler) listShared(ctx context.Context) ([]model.Subscription, []model.Node, error) {
@@ -366,7 +367,11 @@ func (d *delivery) adapt(ctx context.Context, sub model.Subscription, proxies []
 	if err != nil {
 		return nil, err
 	}
-	out, err := d.snapshot.AdaptNodes(ctx, source, nodes, chains)
+	r, err := d.h.repo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out, err := d.snapshot.AdaptNodes(ctx, r, source, nodes, chains)
 	if err != nil {
 		return nil, err
 	}
@@ -374,11 +379,12 @@ func (d *delivery) adapt(ctx context.Context, sub model.Subscription, proxies []
 }
 func (h *Handler) fetchRaw(ctx context.Context, sub model.Subscription) ([]proxy, *refresh.SourceResult, error) {
 	source := sub
-	result, err := refresh.FetchSource(ctx, source, h.provider().DeliveryEnv().Fetch)
+	pv := h.provider(ctx)
+	result, err := refresh.FetchSource(ctx, source, pv.DeliveryEnv().Fetch)
 	if err != nil {
 		return nil, nil, err
 	}
-	proxies, err := provider.ParseNodes(result.Text, sub.Name, "")
+	proxies, err := pv.ParseNodes(result.Text, sub.Name, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -417,12 +423,12 @@ func (h *Handler) stageNodes(sub model.Subscription, proxies []proxy, result *re
 	}
 	return staged{[]provider.CacheWrite{{SubID: source.ID, Nodes: nodes, Metadata: &receipt}}}, nil
 }
-func commitStaged(ctx context.Context, updates []staged) error {
+func (h *Handler) commitStaged(ctx context.Context, updates []staged) error {
 	var all []provider.CacheWrite
 	for _, update := range updates {
 		all = append(all, update.updates...)
 	}
-	return provider.CommitWrites(ctx, all)
+	return h.provider(ctx).CommitWrites(ctx, all)
 }
 func (h *Handler) cachedProxies(ctx context.Context, sub model.Subscription, nodes []proxy, strict bool) ([]proxy, error) {
 	var typed []model.Node
@@ -520,12 +526,12 @@ func (d *delivery) validateBundle(ctx context.Context, sub *model.Subscription, 
 		}
 		yamlx.Set(main, "proxies", &yamlx.Node{Kind: 2, Tag: "!!seq", Content: append(all, graphs...)})
 	}
-	_, err := d.h.provider().PrepareBundle(d.h.withRepo(ctx), d.config, main, opts)
+	_, err := d.h.provider(ctx).PrepareBundle(d.h.withRepo(ctx), d.config, main, opts)
 	return err
 }
 func (d *delivery) chainedContent(ctx context.Context, sub model.Subscription, format string) (string, error) {
 	ctx = d.h.withRepo(ctx)
-	bundle, err := d.h.provider().PrepareBundle(ctx, d.config, d.main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "subscription", Subscription: &sub}})
+	bundle, err := d.h.provider(ctx).PrepareBundle(ctx, d.config, d.main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "subscription", Subscription: &sub}})
 	if err != nil {
 		return "", err
 	}
@@ -548,13 +554,13 @@ func (d *delivery) chainedContent(ctx context.Context, sub model.Subscription, f
 	if !found {
 		return "", errors.New("provider missing from bundle")
 	}
-	if err := provider.CommitArtifacts(ctx, d.profileID, bundle); err != nil {
+	if err := d.h.provider(ctx).CommitArtifacts(ctx, d.profileID, bundle); err != nil {
 		return "", err
 	}
 	return content, nil
 }
 func (d *delivery) serve(c *httpx.Ctx, id string, render provider.Render) (*httpx.Response, error) {
-	return d.h.provider().Serve(c, "subscription", id, d.profileID, d.head, render)
+	return d.h.provider(c.Context()).Serve(c, "subscription", id, d.profileID, d.head, render)
 }
 func recordFetch(ctx context.Context, id string, ok, fromCache bool, count int) error {
 	ctx = lifecycle.Detach(ctx)

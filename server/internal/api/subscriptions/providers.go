@@ -153,7 +153,7 @@ func (h *Handler) combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 			return providerFailure(ctx, err)
 		}
 	}
-	if err := commitStaged(ctx, updates); err != nil {
+	if err := h.commitStaged(ctx, updates); err != nil {
 		return providerFailure(ctx, err)
 	}
 	return providerResponse(all, "", combinedHeader(details, len(all)))
@@ -227,7 +227,7 @@ func (d *delivery) renderSingle(ctx context.Context, h *Handler, sub model.Subsc
 			if fetchErr == nil && len(raw) > 0 && result.Source != "cache" {
 				update, err := d.h.stageNodes(sub, raw, result, true)
 				if err == nil {
-					err = commitStaged(ctx, []staged{update})
+					err = d.h.commitStaged(ctx, []staged{update})
 				}
 				if err == nil {
 					err = recordFetch(ctx, sub.ID, true, false, len(proxies))

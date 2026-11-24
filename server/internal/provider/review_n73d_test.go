@@ -13,7 +13,7 @@ import (
 )
 
 func TestReviewN73DProviderReaderCauses(t *testing.T) {
-	t.Cleanup(provider.SetLocations(deploy.Locations{}))
+	pv := provider.New(provider.Options{Locations: deploy.Locations{}})
 	var chain strings.Builder
 	chain.WriteString("l0: &l0 [entry]\n")
 	for i := 1; i <= 40; i++ {
@@ -34,7 +34,7 @@ func TestReviewN73DProviderReaderCauses(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, original := yamlx.Parse([]byte(tt.source))
-			proxies, err := provider.ParseNodes(tt.source, "Synthetic", "./providers/example.yaml")
+			proxies, err := pv.ParseNodes(tt.source, "Synthetic", "./providers/example.yaml")
 			if proxies != nil || !errors.Is(err, tt.kind) {
 				t.Fatalf("provider lost reader cause: %v", err)
 			}

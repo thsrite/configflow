@@ -31,6 +31,7 @@ func randomNodeHex() string {
 // typedDelivery shares one Config and main graph across all aggregation nodes.
 type typedDelivery struct {
 	config        *model.Config
+	provider      *provider.Service
 	repo          *repo.Repository
 	substore      *substore.Service
 	sourceFetch   refresh.FetchSourceFn
@@ -100,6 +101,8 @@ func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, op
 	if err == nil {
 		if fetched == nil {
 			err = errors.New("subscription fetch returned no result")
+		} else if d.provider != nil {
+			proxies, err = d.provider.ParseNodes(fetched.Text, source.Name, "")
 		} else {
 			proxies, err = provider.ParseNodes(fetched.Text, source.Name, "")
 		}
@@ -131,11 +134,10 @@ func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, op
 		}
 		logx.Get("backend.routes.aggregations").Warningf(msgSourceFailed, weburl.SafeErrorDetails(err))
 		proxies = nil
-		r := d.repo
-		if r == nil {
-			r, _ = repo.GetRepository(ctx)
+		if d.repo == nil {
+			return sourceResult{err: errors.New("aggregations: repository is nil")}
 		}
-		cache, cacheErr := substore.LoadCache(ctx, r, source.ID)
+		cache, cacheErr := substore.LoadCache(ctx, d.repo, source.ID)
 		if cacheErr != nil {
 			return sourceResult{err: cacheErr}
 		}
@@ -198,16 +200,21 @@ func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, op
 	return sourceResult{nodes: projected, proxies: nativeProxies, updates: updates}
 }
 func (d *typedDelivery) fetch(fetch Fetch) refresh.FetchSourceFn {
-	if fetch == nil {
-		return provider.DefaultDeliveryEnv().Fetch
+	if fetch != nil {
+		return fetch
 	}
-	return fetch
+	if d.provider != nil {
+		return d.provider.DeliveryEnv().Fetch
+	}
+	return func(context.Context, string, string) (*refresh.SourceResult, error) {
+		return nil, errors.New("aggregations: provider service is nil")
+	}
 }
 func (d *typedDelivery) captureRecords(ctx context.Context, selected map[string]bool) error {
 	d.records = map[string]*subs.DialersData{}
 	for _, sub := range d.config.Subscriptions {
 		if selected[sub.ID] {
-			record, err := provider.DialerRecord(ctx, sub)
+			record, err := provider.DialerRecord(ctx, d.repo, sub)
 			if err != nil {
 				return err
 			}
@@ -282,13 +289,7 @@ func (d *typedDelivery) validate(proxies []Proxy, name, format string) error {
 	return nil
 }
 
-// RenderProvider binds the typed provider callback without re-decoding Config in
-// each aggregation or each node. Existing HTTP adapters remain separate codecs.
-func RenderProvider(ctx context.Context, agg model.Aggregation, config *model.Config, main *yamlx.Node, snapshot *provider.DeliverySnapshot, fetch refresh.FetchSourceFn) (*provider.Artifact, error) {
-	return renderProviderWith(ctx, nil, nil, agg, config, main, snapshot, fetch)
-}
-
-func renderProviderWith(ctx context.Context, r *repo.Repository, sub *substore.Service, agg model.Aggregation, config *model.Config, main *yamlx.Node, snapshot *provider.DeliverySnapshot, fetch refresh.FetchSourceFn) (*provider.Artifact, error) {
+func renderProviderWith(ctx context.Context, pv *provider.Service, r *repo.Repository, sub *substore.Service, agg model.Aggregation, config *model.Config, main *yamlx.Node, snapshot *provider.DeliverySnapshot, fetch refresh.FetchSourceFn) (*provider.Artifact, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -304,6 +305,7 @@ func renderProviderWith(ctx context.Context, r *repo.Repository, sub *substore.S
 		}
 	}
 	d := newTypedDelivery(config, main, snapshot)
+	d.provider = pv
 	d.repo = r
 	d.substore = sub
 	res := typedResource(agg.ID, agg.Name, agg.Enabled)

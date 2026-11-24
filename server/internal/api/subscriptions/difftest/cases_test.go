@@ -10,7 +10,6 @@ import (
 
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
-	"configflow/internal/provider"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
 	"configflow/internal/testjson"
@@ -476,7 +475,6 @@ func TestAdversarialProviderURLs(t *testing.T) {
 // C31 is deliberately absent: an activated graph requiring an aggregation
 // must reject the complete delivery before any cache or served artifact changes.
 func TestMissingAggregationDependencyFailsClosed(t *testing.T) {
-	defer provider.SetAggregationRenderer(nil)()
 	setup := func(ctx context.Context, r *repo.Repository) {
 		seedGraph(t, "managed", false, true)(ctx, r)
 		err := r.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {

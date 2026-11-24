@@ -47,7 +47,8 @@ func TestN88dDeliveryRetainsInputsAndSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	yamlx.Set(snapshot.MainNode(), "unrelated", yamlx.Str("changed"))
-	artifacts, err := PrepareBundle(context.Background(), config, main, opts)
+	pv := New(Options{})
+	artifacts, err := pv.PrepareBundle(context.Background(), config, main, opts)
 	if err != nil || len(artifacts) != 8 {
 		t.Fatalf("%d %v", len(artifacts), err)
 	}
@@ -61,11 +62,12 @@ func TestN88dDeliveryRetainsInputsAndSnapshot(t *testing.T) {
 	}
 }
 func TestN88dNoConfigDecodePerProvider(t *testing.T) {
+	pv := New(Options{})
 	measure := func(size int) int64 {
 		config, main, opts := deliveryFixture(16, size)
 		result := testing.Benchmark(func(b *testing.B) {
 			for b.Loop() {
-				if _, err := PrepareBundle(context.Background(), config, main, opts); err != nil {
+				if _, err := pv.PrepareBundle(context.Background(), config, main, opts); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -79,13 +81,14 @@ func TestN88dNoConfigDecodePerProvider(t *testing.T) {
 	t.Logf("unrelated 0/1MiB: %d/%d B/op", base, large)
 }
 func BenchmarkN88dDelivery(b *testing.B) {
+	pv := New(Options{})
 	for _, count := range []int{8, 32, 128} {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {
 			config, main, opts := deliveryFixture(count, 1<<20)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				if _, err := PrepareBundle(context.Background(), config, main, opts); err != nil {
+				if _, err := pv.PrepareBundle(context.Background(), config, main, opts); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -129,7 +132,7 @@ func TestN88dRunFlightShutdownAfterCallback(t *testing.T) {
 	runtime.Start(base)
 	defer runtime.Shutdown(context.Background())
 	ctx := runtime.BindRequest(base)
-	_, err := runFlight(ctx, true, "default", "subscription", "s", func(context.Context) (*httpx.Response, error) {
+	_, err := runFlight(ctx, r, true, "default", "subscription", "s", func(context.Context) (*httpx.Response, error) {
 		runtime.Shutdown(context.Background())
 		return httpx.Bytes(200, "text/yaml", []byte("proxies: []")), nil
 	})
@@ -189,10 +192,11 @@ func FuzzN88dDelivery(f *testing.F) {
 var _ convert.NodeConverter = nilNodeConverter{}
 
 func TestN88dProviderPathsUseSharedURLCompatibility(t *testing.T) {
+	pv := New(Options{})
 	for _, address := range []string{"/subscriptions/s0/proxies?label=50%", "https://user:synthetic^value@example.com/subscriptions/s0/proxies?label=50%", "http://[2001:db8::1%test]/subscriptions/s0/proxies"} {
 		config, main, options := deliveryFixture(1, 0)
 		yamlx.Set(yamlx.Get(yamlx.Get(main, "proxy-providers"), "Feed0"), "url", yamlx.Str(address))
-		bundle, err := PrepareBundle(context.Background(), config, main, options)
+		bundle, err := pv.PrepareBundle(context.Background(), config, main, options)
 		if err != nil || len(bundle) != 1 || bundle[0].URL != address {
 			t.Fatalf("shared URL compatibility lost: %v", err)
 		}

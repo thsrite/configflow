@@ -24,6 +24,7 @@ import (
 type serveFixture struct {
 	t      *testing.T
 	srv    *httpxtest.Server
+	svc    *Service
 	mu     sync.Mutex
 	render Render
 	kind   string
@@ -36,8 +37,9 @@ type serveFixture struct {
 
 func newServeFixture(t *testing.T, seconds float64) *serveFixture {
 	f := &serveFixture{t: t, kind: "aggregation"}
-	f.srv = httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
-		r.GET("/provider", "test.provider", func(c *httpx.Ctx) (*httpx.Response, error) {
+	f.srv = httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
+		f.svc = New(Options{Repo: app.Repo, ResponseSeconds: &seconds})
+		app.Router.GET("/provider", "test.provider", func(c *httpx.Ctx) (*httpx.Response, error) {
 			f.mu.Lock()
 			render, kind, keyFor := f.render, f.kind, f.keyFor
 			if f.renderFor != nil {
@@ -50,9 +52,9 @@ func newServeFixture(t *testing.T, seconds float64) *serveFixture {
 			if keyFor != nil {
 				itemID, head = keyFor(c)
 			}
-			return Serve(c, kind, itemID, profile, head, render)
+			return f.svc.Serve(c, kind, itemID, profile, head, render)
 		})
-	})})
+	}})
 	ctx := f.srv.Context()
 	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 	runner.Start(ctx)
@@ -64,7 +66,6 @@ func newServeFixture(t *testing.T, seconds float64) *serveFixture {
 			t.Fatal(err)
 		}
 	}
-	t.Cleanup(SetResponseSeconds(seconds))
 	// Registered last, so it runs first: a render still running in the
 	// background (released by the test just before it returned) must finish
 	// writing its last good file before the repository's temp directory is

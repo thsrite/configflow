@@ -156,7 +156,7 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "stop-signal-saved", Phase: lifecycle.PhaseStopSignal, Run: func(context.Context) {
 		markFirstSave.Do(func() { close(firstSaveDone) })
 	}})
-	if err := writeTestManifest(app); err != nil {
+	if err := writeTestManifest(app, srv.Provider); err != nil {
 		return err
 	}
 	rt.RunStartup(work)

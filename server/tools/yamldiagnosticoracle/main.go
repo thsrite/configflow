@@ -85,8 +85,7 @@ func run() error {
 	for name, input := range boundary {
 		inputs["control/"+name] = input
 	}
-	restore := provider.SetLocations(deploy.Locations{})
-	defer restore()
+	pv := provider.New(provider.Options{Locations: deploy.Locations{}})
 	type caseRecord struct {
 		Input    json.RawMessage `json:"input"`
 		Message  string          `json:"message"`
@@ -98,7 +97,7 @@ func run() error {
 		if err := json.Unmarshal(raw, &input); err != nil {
 			return err
 		}
-		_, err := provider.ParseNodes(input.Text, labelOf(input.Name), labelOf(input.Path))
+		_, err := pv.ParseNodes(input.Text, labelOf(input.Name), labelOf(input.Path))
 		message := ""
 		if err != nil {
 			message = err.Error()

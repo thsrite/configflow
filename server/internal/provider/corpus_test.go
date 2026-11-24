@@ -516,7 +516,7 @@ func diffText(want, got any) string {
 }
 
 func TestCorpus(t *testing.T) {
-	defer SetLocations(fakeLocations{})()
+	corpusPV := New(Options{Locations: fakeLocations{}})
 	rows, rawRows := loadCorpusWithRaw(t)
 	repository := corpusRepositoryFactory(t)
 	nativeSnapshots := nativeSnapshotExpectations(t, rows)
@@ -547,7 +547,7 @@ func TestCorpus(t *testing.T) {
 			got = outcomeOf(nil, err)
 		case "parse":
 			in, _ := input.(map[string]any)
-			nodes, err := ParseNodes(mapStr(in, "text"), labelStr(in["name"]), labelStr(in["path"]))
+			nodes, err := corpusPV.ParseNodes(mapStr(in, "text"), labelStr(in["name"]), labelStr(in["path"]))
 			var out any
 			if err == nil {
 				out, err = nodesToAny(nodes)
@@ -571,7 +571,7 @@ func TestCorpus(t *testing.T) {
 					}
 					providers = append(providers, art)
 				}
-				return ValidateArtifacts(snap, providers)
+				return corpusPV.ValidateArtifacts(snap, providers)
 			}())
 		case "prepare_sub", "bundle":
 			in, _ := input.(map[string]any)
@@ -858,15 +858,19 @@ func scenarioRow(t *testing.T, kind string, in map[string]any, rawMain json.RawM
 		writeSharedJSONFile(t, ctx, r, refresh.DownloadCachePath(url), doc)
 	}
 	s := &scenario{spec: in}
-	defer SetDeliveryEnv(&DeliveryEnv{
-		Fetch:             s.fetcher("default"),
-		SubscriptionFetch: s.fetcher("subscriptions"),
-		AggregationFetch:  s.fetcher("aggregations"),
-		NodeID:            SequentialNodeIDs(),
-		Converter:         nilNodeConverter{},
-	})()
+	pv := New(Options{
+		Repo:         r,
+		Locations:    fakeLocations{},
+		Aggregations: s.fakeAggregation,
+		DeliveryEnv: &DeliveryEnv{
+			Fetch:             s.fetcher("default"),
+			SubscriptionFetch: s.fetcher("subscriptions"),
+			AggregationFetch:  s.fetcher("aggregations"),
+			NodeID:            SequentialNodeIDs(),
+			Converter:         nilNodeConverter{},
+		},
+	})
 	defer setRefreshFixture(fixedClock{corpusNow}, nilNodeConverter{})()
-	defer SetAggregationRenderer(s.fakeAggregation)()
 
 	var got map[string]any
 	switch kind {
@@ -882,7 +886,7 @@ func scenarioRow(t *testing.T, kind string, in map[string]any, rawMain json.RawM
 			break
 		}
 		opts := mapObj(in, "opts")
-		result, err := PrepareSubscription(ctx, sub, snap, SubscriptionOptions{
+		result, err := pv.PrepareSubscription(ctx, sub, snap, SubscriptionOptions{
 			AllowTransportFallback: mapBool(opts, "allow_transport_fallback"),
 			SourcePrepared:         mapBool(opts, "source_prepared"),
 			SourcePath:             labelStr(opts["source_path"]),
@@ -923,7 +927,7 @@ func scenarioRow(t *testing.T, kind string, in map[string]any, rawMain json.RawM
 			got = outcomeOf(nil, err)
 			break
 		}
-		bundle, err := PrepareBundle(ctx, cfg, mainNode, DeliveryOptions{
+		bundle, err := pv.PrepareBundle(ctx, cfg, mainNode, DeliveryOptions{
 			Requested:              req,
 			RenderAll:              mapBool(opts, "render_all"),
 			AllowTransportFallback: mapBool(opts, "allow_transport_fallback"),
@@ -934,7 +938,7 @@ func scenarioRow(t *testing.T, kind string, in map[string]any, rawMain json.RawM
 			t.Errorf("bundle modified its main graph")
 		}
 		if err == nil {
-			err = CommitArtifacts(ctx, "default", bundle)
+			err = pv.CommitArtifacts(ctx, "default", bundle)
 		}
 		if err != nil {
 			got = outcomeOf(nil, err)

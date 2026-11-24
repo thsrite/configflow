@@ -10,6 +10,10 @@ import (
 	"configflow/internal/yamlx"
 )
 
+func readProviderNodes(text, name, path, kind, sourceLabel string) ([]*yamlx.Node, error) {
+	return readProviderNodesFor(PassthroughLocations{}, text, name, path, kind, sourceLabel, true)
+}
+
 func providerAliasGraphs() []string {
 	var chain strings.Builder
 	chain.WriteString("a0: &a0 [x]\n")
@@ -24,7 +28,7 @@ func TestN73ProviderYAMLGraphs(t *testing.T) {
 	repoContext(t)
 	for i, text := range providerAliasGraphs() {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			if _, err := readProviderNodes(text, "Synthetic", "", "订阅", "本次订阅返回的内容"); err == nil {
+			if _, err := readProviderNodesFor(PassthroughLocations{}, text, "Synthetic", "", "订阅", "本次订阅返回的内容", true); err == nil {
 				t.Fatal("unsafe graph materialized")
 			}
 			if _, err := ParseNodes(text, "Synthetic", ""); err == nil {
@@ -41,8 +45,9 @@ func TestN73ProviderYAMLGraphs(t *testing.T) {
 }
 
 func TestN73ProviderDuplicateDiagnostic(t *testing.T) {
-	repoContext(t)
-	_, err := ParseNodes("proxies: []\nproxies: []\n", "Synthetic", "")
+	_, r := repoContext(t)
+	pv := New(Options{Repo: r, Locations: fakeLocations{}})
+	_, err := pv.ParseNodes("proxies: []\nproxies: []\n", "Synthetic", "")
 	if err == nil || !strings.Contains(err.Error(), "YAML 包含重复键") || !strings.Contains(err.Error(), "第 2 行") {
 		t.Fatalf("duplicate policy lost: %v", err)
 	}
@@ -52,7 +57,7 @@ func FuzzProviderYAML(f *testing.F) {
 	f.Add("proxies: [{name: Synthetic, type: http}]")
 	f.Add("proxies: &p [*p]")
 	f.Fuzz(func(t *testing.T, text string) {
-		_, _ = readProviderNodes(text, "Synthetic", "", "订阅", "本次订阅返回的内容")
+		_, _ = readProviderNodesFor(PassthroughLocations{}, text, "Synthetic", "", "订阅", "本次订阅返回的内容", true)
 		document, err := yamlx.Parse([]byte(text))
 		if err != nil {
 			return
@@ -84,12 +89,12 @@ func TestN73PlainDepthBoundary(t *testing.T) {
 			nested := strings.Repeat("[", depth) + "0" + strings.Repeat("]", depth)
 			started := time.Now()
 			source := "proxies: []\nextra: " + nested
-			_, err := readProviderNodes(source, "Synthetic", "", "订阅", "本次订阅返回的内容")
+			_, err := readProviderNodesFor(PassthroughLocations{}, source, "Synthetic", "", "订阅", "本次订阅返回的内容", true)
 			if (err == nil) != (depth <= 10000) {
 				t.Fatalf("provider loader: %v", err)
 			}
 			_, _ = nodeAtPath(source, FieldPath{{Key: "extra"}})
-			_, err = readProviderNodes("proxies: "+nested, "Synthetic", "", "订阅", "本次订阅返回的内容")
+			_, err = readProviderNodesFor(PassthroughLocations{}, "proxies: "+nested, "Synthetic", "", "订阅", "本次订阅返回的内容", true)
 			if err == nil {
 				t.Fatal("invalid proxy shape materialized")
 			}

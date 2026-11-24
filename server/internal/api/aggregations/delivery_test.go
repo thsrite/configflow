@@ -16,6 +16,7 @@ import (
 	generation "configflow/internal/aggregations"
 	"configflow/internal/api/aggregations"
 	"configflow/internal/convert/mihomoenv"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -46,9 +47,34 @@ func startDeliveryRuntime(t *testing.T, ctx context.Context) {
 }
 
 func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
-	generation.Wire()
-	mihomoenv.OverrideForTest(t, nil, nil, nil)
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(aggregations.Register)})
+	started, secondStarted, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var once, releaseOnce sync.Once
+	var calls atomic.Int32
+	fetch := func(ctx context.Context, id, url string) (*refresh.SourceResult, error) {
+		if calls.Add(1) == 2 {
+			close(secondStarted)
+		}
+		once.Do(func() { close(started) })
+		<-release
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return &refresh.SourceResult{Text: "proxies: [{name: Remote, type: http, server: good.test, port: 80}]", Source: "rendered_yaml"}, nil
+	}
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	zero := 0.0
+	var pv *provider.Service
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Setup: func(app *httpx.App) {
+		pv = provider.New(provider.Options{
+			Repo:            app.Repo,
+			DeliveryEnv:     &provider.DeliveryEnv{AggregationFetch: fetch},
+			ResponseSeconds: &zero,
+		})
+		aggSvc := generation.New(generation.ServiceOptions{Provider: pv, Repo: app.Repo})
+		_ = pv.SetAggregations(aggSvc.RenderProvider)
+		aggregations.NewHandler(app.Repo, aggSvc, pv, nil).Register(app.Router)
+	}})
+	mihomoenv.OverrideForTest(t, srv.Repo, nil, pv)
 	ctx := srv.Context()
 	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, s *model.Shared) error {
 		if err := s.SetJSON("nodes", json.RawMessage(`[]`)); err != nil {
@@ -68,23 +94,6 @@ func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	started, secondStarted, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	var once, releaseOnce sync.Once
-	var calls atomic.Int32
-	fetch := func(ctx context.Context, id, url string) (*refresh.SourceResult, error) {
-		if calls.Add(1) == 2 {
-			close(secondStarted)
-		}
-		once.Do(func() { close(started) })
-		<-release
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return &refresh.SourceResult{Text: "proxies: [{name: Remote, type: http, server: good.test, port: 80}]", Source: "rendered_yaml"}, nil
-	}
-	t.Cleanup(provider.SetDeliveryEnv(&provider.DeliveryEnv{AggregationFetch: fetch}))
-	t.Cleanup(provider.SetResponseSeconds(0))
-	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
 	login := srv.Login()
 	rejected := srv.Get("/api/profiles/default/aggregations/a/provider?token=bad")
 	if rejected.Status != 401 || calls.Load() != 0 {
@@ -150,7 +159,7 @@ func TestRouteFallbackCoalescesAndFinishesAfterCancellation(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	// Render is now fast. Wait for the final provider flight to finish as well.
-	provider.SetResponseSeconds(60)
+	pv.SetResponseSeconds(60)
 	reply := srv.Get("/api/aggregations/a/provider", login)
 	if reply.Status != 200 || !strings.Contains(reply.Text(), "Remote") {
 		t.Fatalf("completed response: %d %s", reply.Status, reply.Body)

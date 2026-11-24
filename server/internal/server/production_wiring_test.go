@@ -16,7 +16,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
-	"configflow/internal/provider"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
@@ -94,7 +93,7 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		{"notifications service is the default", app.Notifications != nil && notifications.Default() == app.Notifications},
 		{"Sub-Store service", app.SubStore != nil && app.SubStore.Repo == app.Repo},
 		{"refresh service is the default", app.Refresh != nil && refresh.Default() == app.Refresh},
-		{"provider service is the default", app.Provider != nil && provider.Default() == app.Provider},
+		{"provider service is instantiated", app.Provider != nil},
 		{"aggregations service", app.Aggregations != nil},
 		{"deploy service is the default", app.Deploy != nil && deploy.Default() == app.Deploy},
 		{"rule source service is instantiated", app.RuleSource != nil},

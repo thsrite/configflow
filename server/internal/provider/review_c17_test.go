@@ -29,7 +29,7 @@ func TestReviewBundleAndCommitFinishWhenTheRequestIsCancelled(t *testing.T) {
 		}
 		return &refresh.SourceResult{Text: content, Source: "direct_yaml", FetchedAt: corpusNowISO}, nil
 	}
-	defer SetDeliveryEnv(&DeliveryEnv{SubscriptionFetch: fetch, NodeID: SequentialNodeIDs(), Converter: nilNodeConverter{}})()
+	pv := New(Options{Repo: r, DeliveryEnv: &DeliveryEnv{SubscriptionFetch: fetch, NodeID: SequentialNodeIDs(), Converter: nilNodeConverter{}}})
 	cfg, err := configFromMap(map[string]any{
 		"subscriptions": []any{map[string]any{"id": "s", "name": "Feed", "url": "https://feed.test/s", "enabled": true}},
 	})
@@ -44,7 +44,7 @@ func TestReviewBundleAndCommitFinishWhenTheRequestIsCancelled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bundle, err := PrepareBundle(ctx, cfg, mainNode, DeliveryOptions{RenderAll: true})
+	bundle, err := pv.PrepareBundle(ctx, cfg, mainNode, DeliveryOptions{RenderAll: true})
 	if err != nil || sawCancelled {
 		t.Fatalf("bundle: %v (fetch saw a cancelled context: %v)", err, sawCancelled)
 	}
@@ -52,7 +52,7 @@ func TestReviewBundleAndCommitFinishWhenTheRequestIsCancelled(t *testing.T) {
 		t.Fatalf("bundle %+v", bundle)
 	}
 	bundle[0].AggregationID = "agg"
-	if err := CommitArtifacts(ctx, "default", bundle); err != nil {
+	if err := pv.CommitArtifacts(ctx, "default", bundle); err != nil {
 		t.Fatal(err)
 	}
 	if cache, _ := substore.LoadCache(base, r, "s"); cache == nil {

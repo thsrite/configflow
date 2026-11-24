@@ -35,7 +35,8 @@ func TestBoundedCollectionDetachesCancellationAndDoesNotMutate(t *testing.T) {
 	ctx, cancel := context.WithCancel(srv.Context())
 	cancel()
 	var active, maximum, calls atomic.Int32
-	result, err := aggregations.Generate(ctx, agg, config, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`), SourcePrepared: true, Fetch: func(ctx context.Context, id, url string) (*refresh.SourceResult, error) {
+	svc := aggregations.New(aggregations.ServiceOptions{Repo: srv.Repo})
+	result, err := svc.Generate(ctx, agg, config, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`), SourcePrepared: true, Fetch: func(ctx context.Context, id, url string) (*refresh.SourceResult, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
@@ -94,8 +95,6 @@ func (f converterHTTP) Do(_ context.Context, r *substore.Request) (*substore.Res
 }
 func TestOneOpaqueMaterializationForMainAndAggregation(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{})
-	aggregations.Wire()
-	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	var calls atomic.Int32
 	env := substore.NewEnv()
 	env.HTTP = converterHTTP{&calls}
@@ -143,13 +142,14 @@ func FuzzAggregationDocument(f *testing.F) {
 	// Input parsing, regex and serialization are exercised through the exported
 	// generator. Supplied main and empty catalog guarantee no upstream I/O.
 	srv := httpxtest.New(f, httpxtest.Options{})
+	svc := aggregations.New(aggregations.ServiceOptions{Repo: srv.Repo})
 	config := json.RawMessage(`{"profile_id":"default","nodes":[],"subscriptions":[],"proxy_groups":[],"rule_configs":[]}`)
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		if len(raw) > 1<<16 {
 			return
 		}
 		before := append([]byte(nil), raw...)
-		_, _ = aggregations.Generate(srv.Context(), raw, config, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`)})
+		_, _ = svc.Generate(srv.Context(), raw, config, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`)})
 		if !bytes.Equal(before, raw) {
 			t.Fatal("input mutated")
 		}
@@ -158,11 +158,13 @@ func FuzzAggregationDocument(f *testing.F) {
 
 func TestPublishedSnapshotSurvivesArtifactReplacement(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{})
-	aggregations.Wire()
-	mihomoenv.OverrideForTest(t, nil, nil, nil)
+	pv := provider.New(provider.Options{Repo: srv.Repo})
+	aggSvc := aggregations.New(aggregations.ServiceOptions{Provider: pv, Repo: srv.Repo})
+	_ = pv.SetAggregations(aggSvc.RenderProvider)
+	mihomoenv.OverrideForTest(t, srv.Repo, nil, pv)
 	agg := json.RawMessage(`{"id":"a","name":"Aggregate","nodes":["n"],"subscriptions":[]}`)
 	cfg := json.RawMessage(`{"profile_id":"default","nodes":[{"id":"n","name":"Original","type":"http","server":"original.test","port":80}],"subscriptions":[],"subscription_aggregations":[{"id":"a","name":"Aggregate","nodes":["n"],"subscriptions":[]}],"proxy_groups":[],"rule_configs":[]}`)
-	result, err := aggregations.Generate(srv.Context(), agg, cfg, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`), Persist: true})
+	result, err := aggSvc.Generate(srv.Context(), agg, cfg, aggregations.Options{Main: json.RawMessage(`{"proxies":[],"proxy-groups":[]}`), Persist: true})
 	if err != nil {
 		t.Fatal(err)
 	}

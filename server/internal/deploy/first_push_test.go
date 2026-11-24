@@ -29,7 +29,6 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mihomoenv.OverrideForTest(t, nil, nil, nil)
-			aggregations.Wire()
 			Wire()
 			f := newPublish(t, agentfake.Options{}, nil)
 			feed := "hosts:\n  node.example.com: entry.example.org\nproxies:\n  - {name: Remote, type: socks5, server: node.example.com, port: 1080, username: user, password: synthetic-secret, udp: true}\n"
@@ -76,14 +75,11 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			}
 			sub := substore.NewService(env)
 			sub.Repo = f.m.Repository()
-			pv := provider.New(provider.Options{Repo: f.m.Repository(), SubStore: sub})
+			pv := provider.New(provider.Options{Repo: f.m.Repository(), SubStore: sub, Locations: Locations{}})
 			aggSvc := aggregations.New(aggregations.ServiceOptions{Provider: pv, Repo: f.m.Repository(), SubStore: sub})
 			_ = pv.SetAggregations(aggSvc.RenderProvider)
-			prevPV := provider.Default()
-			provider.UseService(pv)
-			defer provider.UseService(prevPV)
 			prevDeploy := Default()
-			UseService(New(Options{SubStore: sub}))
+			UseService(New(Options{SubStore: sub, Provider: pv}))
 			defer UseService(prevDeploy)
 			mihomoenv.OverrideForTest(t, f.m.Repository(), sub, pv)
 			rawSource, err := f.source.Raw()
@@ -113,7 +109,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 				if e != nil {
 					t.Fatal(e)
 				}
-				if e = provider.CommitArtifacts(f.ctx, "default", pre.Providers); e != nil {
+				if e = pv.CommitArtifacts(f.ctx, "default", pre.Providers); e != nil {
 					t.Fatal(e)
 				}
 				mu.Lock()
@@ -168,7 +164,7 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			if e = provider.CommitArtifacts(f.ctx, "default", p.Providers); e != nil {
+			if e = pv.CommitArtifacts(f.ctx, "default", p.Providers); e != nil {
 				t.Fatal(e)
 			}
 			cache, e := substore.LoadCache(f.ctx, f.m.Repository(), "selected-sub")

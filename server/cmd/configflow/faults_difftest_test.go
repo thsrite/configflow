@@ -25,7 +25,7 @@ func TestFaultStateRequiresLoopbackAndPrivateToken(t *testing.T) {
 	}
 	t.Setenv(faultprobe.ControlEnv, dir)
 	app := httpx.New()
-	if err := writeTestManifest(app); err != nil {
+	if err := writeTestManifest(app, nil); err != nil {
 		t.Fatal(err)
 	}
 	repository, err := repo.Open(t.TempDir(), repo.Options{})

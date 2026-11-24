@@ -65,7 +65,7 @@ func TestN73NativeDiagnosticInterface(t *testing.T) {
 			t.Fatalf("diagnostic source changed: %s", name)
 		}
 	}
-	t.Cleanup(provider.SetLocations(deploy.Locations{}))
+	pv := provider.New(provider.Options{Locations: deploy.Locations{}})
 	if len(fixture.Cases) != 235 {
 		t.Fatalf("diagnostic reference has %d cases, want 235", len(fixture.Cases))
 	}
@@ -78,7 +78,7 @@ func TestN73NativeDiagnosticInterface(t *testing.T) {
 		if record.Input.Path != nil && record.Input.Path != false && fmt.Sprint(record.Input.Path) != "0" {
 			inPath = fmt.Sprint(record.Input.Path)
 		}
-		_, err := provider.ParseNodes(record.Input.Text, inName, inPath)
+		_, err := pv.ParseNodes(record.Input.Text, inName, inPath)
 		message := ""
 		if err != nil {
 			rejected++

@@ -251,17 +251,14 @@ func ValidateProxyNodes(proxies []*yamlx.Node) error {
 	}
 	return nil
 }
-func readProviderNodes(text, name, path, kind, sourceLabel string) ([]*yamlx.Node, error) {
-	return readProviderNodesFor(text, name, path, kind, sourceLabel, true)
-}
 
 // readProviderNodesFor is readProviderNodes; with own=false the nodes may be
 // shared with other readers and must not be modified.
-func readProviderNodesFor(text, name, path, kind, sourceLabel string, own bool) ([]*yamlx.Node, error) {
+func readProviderNodesFor(loc Locations, text, name, path, kind, sourceLabel string, own bool) ([]*yamlx.Node, error) {
 	if nodes, ok := parsedProviders.lookup(text, own); ok {
 		return nodes, nil
 	}
-	nodes, err := parseProviderNodes(text, name, path, kind, sourceLabel)
+	nodes, err := parseProviderNodes(loc, text, name, path, kind, sourceLabel)
 	if err == nil {
 		if own {
 			parsedProviders.store(text, nodes)
@@ -274,10 +271,10 @@ func readProviderNodesFor(text, name, path, kind, sourceLabel string, own bool) 
 	return nodes, err
 }
 
-func parseProviderNodes(text, name, path, kind, sourceLabel string) ([]*yamlx.Node, error) {
+func parseProviderNodes(loc Locations, text, name, path, kind, sourceLabel string) ([]*yamlx.Node, error) {
 	data, err := yamlx.Parse([]byte(text))
 	wrap := func(err, errorCause error) error {
-		return providerContext(providerSourceError(err, errorCause, text, sourceLabel), name, path, kind)
+		return providerContext(loc, providerSourceError(loc, err, errorCause, text, sourceLabel), name, path, kind)
 	}
 	if err != nil {
 		return nil, wrap(err, yamlCause(err))
@@ -307,12 +304,16 @@ func parseProviderNodes(text, name, path, kind, sourceLabel string) ([]*yamlx.No
 
 // ParseNodes validates source metadata before applying shared engine normalization.
 func ParseNodes(text, name, path string) ([]*yamlx.Node, error) {
+	return parseNodesWith(PassthroughLocations{}, text, name, path)
+}
+
+func parseNodesWith(loc Locations, text, name, path string) ([]*yamlx.Node, error) {
 	if nodes, ok := parsedSubscriptions.lookupEach(text); ok {
 		return nodes, nil
 	}
 	// Parse directly instead of populating parsedProviders with a duplicate
 	// raw-subscription AST: ParseNodes caches its own normalized graphs below.
-	nodes, err := parseProviderNodes(text, name, path, msgSubscription, msgSubscriptionSource)
+	nodes, err := parseProviderNodes(loc, text, name, path, msgSubscription, msgSubscriptionSource)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +332,7 @@ func ParseNodes(text, name, path string) ([]*yamlx.Node, error) {
 }
 
 // DialerRecord freezes a source's cached or downloaded airport topology.
-func DialerRecord(ctx context.Context, sub model.Subscription) (*subs.DialersData, error) {
+func DialerRecord(ctx context.Context, r *repo.Repository, sub model.Subscription) (*subs.DialersData, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -339,9 +340,8 @@ func DialerRecord(ctx context.Context, sub model.Subscription) (*subs.DialersDat
 	if sub.ID == "" {
 		return nil, &InputError{Field: "subscription.id"}
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+	if r == nil {
+		return nil, errors.New("provider: repository is nil")
 	}
 	cache, err := substore.LoadCache(ctx, r, sub.ID)
 	if err != nil {
@@ -366,10 +366,6 @@ func DialerRecord(ctx context.Context, sub model.Subscription) (*subs.DialersDat
 		}
 	}
 	return subs.SourceDialers(ctx, sub, view, func(ctx context.Context, address string) (string, bool) {
-		r, err := repo.GetRepository(ctx)
-		if err != nil {
-			return "", false
-		}
 		raw, err := r.ReadSharedBytes(ctx, refresh.DownloadCachePath(address))
 		if err != nil {
 			return "", false
@@ -385,11 +381,11 @@ func DialerRecord(ctx context.Context, sub model.Subscription) (*subs.DialersDat
 }
 
 // AdaptNodes applies airport dialers against this delivery's immutable graph.
-func (s *DeliverySnapshot) AdaptNodes(ctx context.Context, sub model.Subscription, proxies []*yamlx.Node, chains bool) ([]*yamlx.Node, error) {
+func (s *DeliverySnapshot) AdaptNodes(ctx context.Context, r *repo.Repository, sub model.Subscription, proxies []*yamlx.Node, chains bool) ([]*yamlx.Node, error) {
 	if s == nil || sub.ID == "" {
 		return proxies, nil
 	}
-	record, err := DialerRecord(ctx, sub)
+	record, err := DialerRecord(ctx, r, sub)
 	if err != nil {
 		return nil, err
 	}
@@ -404,23 +400,26 @@ type SubscriptionOptions struct {
 	SourcePrepared         bool
 }
 
-// PrepareSubscription stages one provider without publishing its cache.
-func PrepareSubscription(ctx context.Context, sub model.Subscription, snapshot *DeliverySnapshot, opts SubscriptionOptions) (*Artifact, error) {
+func prepareSubscriptionWith(ctx context.Context, svc *Service, sub model.Subscription, snapshot *DeliverySnapshot, opts SubscriptionOptions) (*Artifact, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	result, err := prepareSubscription(ctx, sub, snapshot, opts)
+	if svc == nil {
+		return nil, errors.New("provider: service is nil")
+	}
+	result, err := prepareSubscription(ctx, svc, sub, snapshot, opts)
 	if err != nil && isStrategyReference(err) {
-		return nil, providerContext(err, sub.Name, opts.SourcePath, msgSubscription)
+		return nil, providerContext(svc.Locations(), err, sub.Name, opts.SourcePath, msgSubscription)
 	}
 	return result, err
 }
-func prepareSubscription(ctx context.Context, sub model.Subscription, snapshot *DeliverySnapshot, opts SubscriptionOptions) (*Artifact, error) {
+func prepareSubscription(ctx context.Context, svc *Service, sub model.Subscription, snapshot *DeliverySnapshot, opts SubscriptionOptions) (*Artifact, error) {
 	if sub.ID == "" {
 		return nil, &InputError{Field: "subscription.id"}
 	}
-	env := currentDeliveryEnv()
+	env := svc.DeliveryEnv()
+	loc := svc.Locations()
 	fetch := opts.Fetch
 	if fetch == nil {
 		fetch = env.Fetch
@@ -447,11 +446,11 @@ func prepareSubscription(ctx context.Context, sub model.Subscription, snapshot *
 			if result == nil {
 				return &InputError{Field: "subscription response"}
 			}
-			raw, err := ParseNodes(result.Text, sub.Name, opts.SourcePath)
+			raw, err := parseNodesWith(loc, result.Text, sub.Name, opts.SourcePath)
 			if err != nil {
 				return err
 			}
-			adapted, err := snapshot.AdaptNodes(ctx, sub, subs.FilterProxies(sub, raw), true)
+			adapted, err := snapshot.AdaptNodes(ctx, svc.repo, sub, subs.FilterProxies(sub, raw), true)
 			if err != nil {
 				return err
 			}
@@ -498,11 +497,10 @@ func prepareSubscription(ctx context.Context, sub model.Subscription, snapshot *
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		r, err := repo.GetRepository(ctx)
-		if err != nil {
-			return nil, err
+		if svc.repo == nil {
+			return nil, errors.New("provider: repository is nil")
 		}
-		cache, err := substore.LoadCache(ctx, r, sub.ID)
+		cache, err := substore.LoadCache(ctx, svc.repo, sub.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -543,7 +541,7 @@ func prepareSubscription(ctx context.Context, sub model.Subscription, snapshot *
 				proxies = append(proxies, proxy)
 			}
 		}
-		proxies, err = snapshot.AdaptNodes(ctx, sub, proxies, true)
+		proxies, err = snapshot.AdaptNodes(ctx, svc.repo, sub, proxies, true)
 		if err != nil {
 			return nil, err
 		}
@@ -578,6 +576,10 @@ func prepareSubscription(ctx context.Context, sub model.Subscription, snapshot *
 
 // ValidateArtifacts checks exact prepared content and all provider URL aliases.
 func ValidateArtifacts(snapshot *DeliverySnapshot, providers []*Artifact) (bool, error) {
+	return validateArtifactsWith(PassthroughLocations{}, snapshot, providers)
+}
+
+func validateArtifactsWith(loc Locations, snapshot *DeliverySnapshot, providers []*Artifact) (bool, error) {
 	collections := make([][]*yamlx.Node, len(providers))
 	present := make([]bool, len(providers))
 	chains, err := snapshot.HasChains()
@@ -589,7 +591,7 @@ func ValidateArtifacts(snapshot *DeliverySnapshot, providers []*Artifact) (bool,
 			continue
 		}
 		// Validate and ValidateTopology are read-only, so parsed nodes may be shared.
-		nodes, err := readProviderNodesFor(p.Content, p.Name, p.LocalPath, msgNodeSource, msgPreparedSource, false)
+		nodes, err := readProviderNodesFor(loc, p.Content, p.Name, p.LocalPath, msgNodeSource, msgPreparedSource, false)
 		if err != nil {
 			return false, err
 		}
@@ -603,7 +605,7 @@ func ValidateArtifacts(snapshot *DeliverySnapshot, providers []*Artifact) (bool,
 	if chains {
 		for i, p := range providers {
 			if !present[i] {
-				return false, providerContext(dialerErr(msgUnverifiedFallback), p.Name, p.LocalPath, msgNodeSource)
+				return false, providerContext(loc, dialerErr(msgUnverifiedFallback), p.Name, p.LocalPath, msgNodeSource)
 			}
 		}
 	}
@@ -620,7 +622,7 @@ func ValidateArtifacts(snapshot *DeliverySnapshot, providers []*Artifact) (bool,
 			name = &p.Name
 		}
 		if err := snapshot.Validate(collections[i], chains, name); err != nil {
-			return false, providerContext(err, p.Name, p.LocalPath, msgNodeSource)
+			return false, providerContext(loc, err, p.Name, p.LocalPath, msgNodeSource)
 		}
 		if p.HasName && p.Name != "" {
 			payloads[p.Name] = collections[i]
@@ -679,12 +681,6 @@ type sourceFlight struct {
 	err    error
 }
 
-// PrepareBundle freezes configuration once, fetches each source once and validates
-// every emitted copy before returning staged cache and artifact writes.
-func PrepareBundle(ctx context.Context, config *model.Config, main *yamlx.Node, opts DeliveryOptions) ([]*Artifact, error) {
-	return prepareBundleWith(ctx, Default(), config, main, opts)
-}
-
 func prepareBundleWith(ctx context.Context, svc *Service, config *model.Config, main *yamlx.Node, opts DeliveryOptions) ([]*Artifact, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
@@ -694,9 +690,10 @@ func prepareBundleWith(ctx context.Context, svc *Service, config *model.Config, 
 		return nil, &InputError{Field: "config"}
 	}
 	if svc == nil {
-		svc = Default()
+		return nil, errors.New("provider: service is nil")
 	}
 	env := svc.DeliveryEnv()
+	loc := svc.Locations()
 	requestedID, requestedName := "", ""
 	if opts.Requested != nil {
 		requestedID, requestedName = opts.Requested.identity()
@@ -718,8 +715,11 @@ func prepareBundleWith(ctx context.Context, svc *Service, config *model.Config, 
 	}
 	profileID := config.ProfileID
 	if profileID == "" {
+		if svc.repo == nil {
+			return nil, errors.New("provider: repository is nil")
+		}
 		var err error
-		profileID, err = repo.GetDefaultProfileID(ctx)
+		profileID, err = svc.repo.DefaultProfileID(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -869,7 +869,7 @@ func prepareBundleWith(ctx context.Context, svc *Service, config *model.Config, 
 				if !ok {
 					return nil, &InputError{Field: "subscription.id"}
 				}
-				return PrepareSubscription(ctx, sub, snapshot, SubscriptionOptions{Fetch: fetchSource(env.SubscriptionFetch), AllowTransportFallback: opts.AllowTransportFallback, SourcePrepared: true, SourcePath: source.path})
+				return prepareSubscriptionWith(ctx, svc, sub, snapshot, SubscriptionOptions{Fetch: fetchSource(env.SubscriptionFetch), AllowTransportFallback: opts.AllowTransportFallback, SourcePrepared: true, SourcePath: source.path})
 			case strings.Contains(path, "/aggregations/"):
 				id := strings.Split(path[strings.LastIndex(path, "/aggregations/")+len("/aggregations/"):], "/")[0]
 				for _, agg := range config.Aggregations {
@@ -896,7 +896,7 @@ func prepareBundleWith(ctx context.Context, svc *Service, config *model.Config, 
 		}
 		if err != nil {
 			if isStrategyReference(err) {
-				return providerContext(err, source.name, source.path, kind)
+				return providerContext(loc, err, source.name, source.path, kind)
 			}
 			return err
 		}
@@ -945,7 +945,7 @@ func prepareBundleWith(ctx context.Context, svc *Service, config *model.Config, 
 			}
 			path := memberText(yamlx.Get(definitions, result.Name), "path")
 			// Only read here, so the parsed nodes may be shared.
-			nodes, err := readProviderNodesFor(result.Content, result.Name, path, msgNodeSource, msgPreparedSource, false)
+			nodes, err := readProviderNodesFor(loc, result.Content, result.Name, path, msgNodeSource, msgPreparedSource, false)
 			if err != nil {
 				return nil, err
 			}
@@ -986,7 +986,7 @@ func prepareBundleWith(ctx context.Context, svc *Service, config *model.Config, 
 	if opts.Progress != nil {
 		opts.Progress(fmt.Sprintf(msgValidating, len(bundle)), true)
 	}
-	if _, err := ValidateArtifacts(snapshot, bundle); err != nil {
+	if _, err := validateArtifactsWith(loc, snapshot, bundle); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -995,42 +995,26 @@ func prepareBundleWith(ctx context.Context, svc *Service, config *model.Config, 
 	return bundle, nil
 }
 
-// CommitWrites publishes only while the originating Runtime remains live.
-func CommitWrites(ctx context.Context, updates []CacheWrite) error {
-	return commitWritesWith(ctx, nil, nil, updates)
-}
-
 func commitWritesWith(ctx context.Context, r *repo.Repository, sub *substore.Service, updates []CacheWrite) error {
 	ctx = lifecycle.Detach(ctx)
 	for _, update := range updates {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		target := r
-		if target == nil {
-			var err error
-			target, err = repo.GetRepository(ctx)
-			if err != nil {
-				return err
-			}
+		if r == nil {
+			return errors.New("provider: repository is nil")
 		}
 		if sub != nil {
-			if _, err := sub.SaveCache(ctx, target, update.SubID, update.Nodes, update.Metadata); err != nil {
+			if _, err := sub.SaveCache(ctx, r, update.SubID, update.Nodes, update.Metadata); err != nil {
 				return err
 			}
 		} else {
-			if _, err := substore.SaveCache(ctx, target, update.SubID, update.Nodes, update.Metadata); err != nil {
+			if _, err := substore.SaveCache(ctx, r, update.SubID, update.Nodes, update.Metadata); err != nil {
 				return err
 			}
 		}
 	}
 	return ctx.Err()
-}
-
-// CommitArtifacts deduplicates staged writes and retains shutdown cancellation
-// through each repository leaf lock and atomic file commit.
-func CommitArtifacts(ctx context.Context, profileID string, bundle []*Artifact) error {
-	return commitArtifactsWith(ctx, nil, nil, profileID, bundle)
 }
 
 // CommitArtifacts on Service publishes staged writes through s's Repo and SubStore.
@@ -1067,12 +1051,8 @@ func commitArtifactsWith(ctx context.Context, r *repo.Repository, sub *substore.
 	if err := commitWritesWith(ctx, r, sub, list); err != nil {
 		return err
 	}
-	if r == nil {
-		var err error
-		r, err = repo.GetRepository(ctx)
-		if err != nil {
-			return err
-		}
+	if len(artifactOrder) > 0 && r == nil {
+		return errors.New("provider: repository is nil")
 	}
 	for _, id := range artifactOrder {
 		if err := ctx.Err(); err != nil {

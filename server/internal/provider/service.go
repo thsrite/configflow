@@ -12,6 +12,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/store"
+	"configflow/internal/subs"
 	"configflow/internal/substore"
 	"configflow/internal/yamlx"
 )
@@ -72,29 +73,6 @@ func New(opts Options) *Service {
 		env:             opts.DeliveryEnv,
 		responseSeconds: respSec,
 	}
-}
-
-var (
-	defaultSvcMu   sync.RWMutex
-	defaultService = New(Options{})
-)
-
-// Default returns the process default provider Service (transitional helper
-// until W10/W11 remove package-level service locators).
-func Default() *Service {
-	defaultSvcMu.RLock()
-	defer defaultSvcMu.RUnlock()
-	return defaultService
-}
-
-// UseService installs svc as the process default provider Service.
-func UseService(svc *Service) {
-	if svc == nil {
-		return
-	}
-	defaultSvcMu.Lock()
-	defaultService = svc
-	defaultSvcMu.Unlock()
 }
 
 // SetAggregations installs the aggregation renderer in the two-phase
@@ -199,14 +177,46 @@ func (s *Service) ResponseSeconds() float64 {
 	return s.responseSeconds
 }
 
+// ParseNodes validates source metadata using s's Locations renderer.
+func (s *Service) ParseNodes(text, name, path string) ([]*yamlx.Node, error) {
+	return parseNodesWith(s.Locations(), text, name, path)
+}
+
+// ValidateArtifacts checks exact prepared content and all provider URL aliases
+// using s's Locations renderer.
+func (s *Service) ValidateArtifacts(snapshot *DeliverySnapshot, providers []*Artifact) (bool, error) {
+	return validateArtifactsWith(s.Locations(), snapshot, providers)
+}
+
+// DialerRecord freezes a source's cached or downloaded airport topology using s's repository.
+func (s *Service) DialerRecord(ctx context.Context, sub model.Subscription) (*subs.DialersData, error) {
+	return DialerRecord(ctx, s.repo, sub)
+}
+
+// PrepareSubscription stages one provider without publishing its cache.
+func (s *Service) PrepareSubscription(ctx context.Context, sub model.Subscription, snapshot *DeliverySnapshot, opts SubscriptionOptions) (*Artifact, error) {
+	return prepareSubscriptionWith(ctx, s, sub, snapshot, opts)
+}
+
 // PrepareBundle prepares a validated provider bundle using s's collaborators.
 func (s *Service) PrepareBundle(ctx context.Context, config *model.Config, main *yamlx.Node, options DeliveryOptions) ([]*Artifact, error) {
 	return prepareBundleWith(ctx, s, config, main, options)
 }
 
-// Serve serves a provider response using s's response settings.
+// CommitWrites publishes staged cache writes through s's Repo and SubStore.
+func (s *Service) CommitWrites(ctx context.Context, updates []CacheWrite) error {
+	return commitWritesWith(ctx, s.repo, s.substore, updates)
+}
+
+// Serve serves a provider response using s's response settings and repository.
 func (s *Service) Serve(c *httpx.Ctx, kind, itemID, profileID string, head *store.Head, render Render) (*httpx.Response, error) {
-	return Serve(c, kind, itemID, profileID, head, render)
+	return s.serve(c, kind, itemID, profileID, head, render)
+}
+
+// SetResponseSeconds replaces the Mihomo provider response deadline on s and
+// returns a restore function. A negative value waits for completed rendering.
+func (s *Service) SetResponseSeconds(seconds float64) func() {
+	return s.setResponseSeconds(seconds)
 }
 
 func (s *Service) setLocations(l Locations) func() {

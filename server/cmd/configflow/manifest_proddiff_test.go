@@ -16,24 +16,26 @@ import (
 )
 
 func TestProddiffWaitsForFreshProvider(t *testing.T) {
-	t.Cleanup(provider.SetResponseSeconds(0))
 	t.Setenv("PRODDIFF_ROUTES", filepath.Join(t.TempDir(), "routes.tsv"))
-	if err := writeTestManifest(httpx.New()); err != nil {
-		t.Fatal(err)
-	}
 	started, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	unblock := func() { once.Do(func() { close(release) }) }
 	defer unblock()
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
-		r.GET("/provider", "synthetic.provider", func(c *httpx.Ctx) (*httpx.Response, error) {
-			return provider.Serve(c, "aggregation", "synthetic", "default", &store.Head{StoreID: "manifest"}, func(context.Context) (*httpx.Response, error) {
+	var pv *provider.Service
+	srv := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
+		zero := 0.0
+		pv = provider.New(provider.Options{Repo: app.Repo, ResponseSeconds: &zero})
+		if err := writeTestManifest(app, pv); err != nil {
+			t.Fatal(err)
+		}
+		app.Router.GET("/provider", "synthetic.provider", func(c *httpx.Ctx) (*httpx.Response, error) {
+			return pv.Serve(c, "aggregation", "synthetic", "default", &store.Head{StoreID: "manifest"}, func(context.Context) (*httpx.Response, error) {
 				close(started)
 				<-release
 				return httpx.Bytes(200, "text/yaml; charset=utf-8", []byte("proxies: [{name: Fresh}]\n")), nil
 			})
 		})
-	})})
+	}})
 	if _, err := srv.Repo.WriteProfileText(srv.Context(), "default", "providers/synthetic.yaml", []byte("proxies: [{name: Old}]\n")); err != nil {
 		t.Fatal(err)
 	}

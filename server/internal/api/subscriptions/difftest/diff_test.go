@@ -25,6 +25,7 @@ import (
 	"configflow/internal/auth"
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/deploy"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
@@ -161,12 +162,52 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
-	t.Cleanup(provider.SetLocations(deploy.Locations{}))
-	mihomoenv.OverrideForTest(t, nil, nil, nil)
 	previousClock := notifications.Clock
 	notifications.Clock = fixedClock{}.Now
 	t.Cleanup(func() { notifications.Clock = previousClock })
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(nodes.Register, subscriptions.Register)})
+	c := &control{Sources: sources}
+	var pv *provider.Service
+	var subSvc *substore.Service
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Setup: func(app *httpx.App) {
+		env := substore.NewEnvFor(app.Repo)
+		mutated := false
+		env.HTTP = fakeHTTP{control: c, before: func() {
+			if !c.Mutate || mutated {
+				return
+			}
+			mutated = true
+			_, err := app.Repo.UpdateProfile(context.Background(), "default", func(_ context.Context, p *model.Profile) error {
+				p.ProxyGroups[0].Name = "Changed"
+				manual := []string{"exit"}
+				p.ProxyGroups[0].ManualNodes = &manual
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		}}
+		env.Clock = fixedClock{}
+		env.LookupEnv = func(key string) (string, bool) {
+			if key == "SUB_STORE_URL" {
+				return "http://127.0.0.1:9", true
+			}
+			if key == "SUB_STORE_BUILTIN_DIR" {
+				return "/nonexistent", true
+			}
+			return "", false
+		}
+		env.RandomHex = func() string { return "00000001" }
+		subSvc = substore.NewService(env)
+		pv = provider.New(provider.Options{
+			Repo:        app.Repo,
+			SubStore:    subSvc,
+			Locations:   deploy.Locations{},
+			DeliveryEnv: &provider.DeliveryEnv{NodeID: func() string { return "node_00000001" }},
+		})
+		nodes.NewHandler(app.Repo, subSvc).Register(app.Router)
+		subscriptions.NewHandler(app.Repo, subSvc, pv, nil).Register(app.Router)
+	}})
+	mihomoenv.OverrideForTest(t, srv.Repo, subSvc, pv)
 	ctx := srv.Context()
 	// The isolated app projects only the task families seeded by this fixture.
 	// Other modules have no resources in this synthetic repository.
@@ -203,43 +244,11 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	if out, err := exec.Command("cp", "-a", srv.DataDir+"/.", pyDir).CombinedOutput(); err != nil {
 		t.Fatalf("copy: %v %s", err, out)
 	}
-	c := &control{Sources: sources}
-	env := substore.NewEnv()
-	mutated := false
-	env.HTTP = fakeHTTP{control: c, before: func() {
-		if !c.Mutate || mutated {
-			return
-		}
-		mutated = true
-		_, err := srv.Repo.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
-			p.ProxyGroups[0].Name = "Changed"
-			manual := []string{"exit"}
-			p.ProxyGroups[0].ManualNodes = &manual
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}}
-	env.Clock = fixedClock{}
-	env.LookupEnv = func(key string) (string, bool) {
-		if key == "SUB_STORE_URL" {
-			return "http://127.0.0.1:9", true
-		}
-		if key == "SUB_STORE_BUILTIN_DIR" {
-			return "/nonexistent", true
-		}
-		return "", false
-	}
-	env.RandomHex = func() string { return "00000001" }
-	service := substore.NewService(env)
-	_ = service
-	re := refresh.DefaultRefreshEnv()
+	re := refresh.DefaultRefreshEnvFor(srv.Repo, subSvc)
 	re.Clock = fixedClock{}
-	re.HTTP = env.HTTP
-	re.RandomHex = env.RandomHex
+	re.HTTP = subSvc.Env.HTTP
+	re.RandomHex = subSvc.Env.RandomHex
 	t.Cleanup(refresh.SetRefreshEnv(re))
-	t.Cleanup(provider.SetDeliveryEnv(&provider.DeliveryEnv{NodeID: func() string { return "node_00000001" }}))
 	token, err := auth.EncodeHS256(map[string]any{"username": "diff-admin", "exp": time.Now().Add(time.Hour).Unix()}, secret)
 	if err != nil {
 		t.Fatal(err)

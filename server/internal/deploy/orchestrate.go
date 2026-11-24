@@ -362,7 +362,11 @@ func pushConfig(ctx context.Context, m *agents.Manager, id string, r PushRequest
 		if ctx.Err() != nil {
 			return Response{Err: ctx.Err()}
 		}
-		if err = provider.CommitArtifacts(ctx, t.ProfileID, prepared.Providers); err != nil {
+		pv := Default().provider
+		if pv == nil {
+			pv = provider.New(provider.Options{Repo: m.Repository(), SubStore: Default().substore, Locations: Locations{}})
+		}
+		if err = pv.CommitArtifacts(ctx, t.ProfileID, prepared.Providers); err != nil {
 			return fail(err)
 		}
 	}

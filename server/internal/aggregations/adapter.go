@@ -18,9 +18,9 @@ import (
 // Fetch provides one subscription body without publishing a provider artifact.
 type Fetch = refresh.FetchSourceFn
 
-// Generate decodes the native JSON entry point retained for export consumers.
+// generateJSON decodes the native JSON entry point retained for export consumers.
 // Resource and profile records keep unknown stored members through model codecs.
-func Generate(ctx context.Context, rawAggregation, rawConfig json.RawMessage, options Options) (*Result, error) {
+func (s *Service) generateJSON(ctx context.Context, rawAggregation, rawConfig json.RawMessage, options Options) (*Result, error) {
 	var agg model.Aggregation
 	if err := json.Unmarshal(rawAggregation, &agg); err != nil {
 		return nil, err
@@ -64,12 +64,12 @@ func Generate(ctx context.Context, rawAggregation, rawConfig json.RawMessage, op
 			}
 		}
 	}
-	return GenerateConfig(ctx, agg, config, options)
+	return s.generateConfig(ctx, agg, config, options)
 }
 
-// GenerateConfig validates a frozen main before fetching sources. Persist uses
+// generateConfig validates a frozen main before fetching sources. Persist uses
 // the shared all-or-nothing provider bundle; dry renders never commit.
-func GenerateConfig(ctx context.Context, agg model.Aggregation, config *model.Config, options Options) (*Result, error) {
+func (s *Service) generateConfig(ctx context.Context, agg model.Aggregation, config *model.Config, options Options) (*Result, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -88,9 +88,15 @@ func GenerateConfig(ctx context.Context, agg model.Aggregation, config *model.Co
 	profileID := config.ProfileID
 	var err error
 	if options.Persist {
-		profileID, err = repo.ResolveProfileID(ctx, profileID)
+		if s.repo == nil {
+			return nil, errors.New("aggregations: repository is nil")
+		}
+		profileID, err = s.repo.ResolveProfileID(ctx, profileID)
 	} else if profileID == "" {
-		profileID, err = repo.GetDefaultProfileID(ctx)
+		if s.repo == nil {
+			return nil, errors.New("aggregations: repository is nil")
+		}
+		profileID, err = s.repo.DefaultProfileID(ctx)
 	}
 	if err != nil {
 		return nil, err
@@ -106,7 +112,7 @@ func GenerateConfig(ctx context.Context, agg model.Aggregation, config *model.Co
 		return nil, err
 	}
 	if options.Persist {
-		return publish(ctx, agg, config, main, profileID, options)
+		return s.publish(ctx, agg, config, main, profileID, options)
 	}
 	// The aggregation is a plain record (O18 T1c): a stored name of another
 	// type reads as text, selectors of the wrong type as no selection.
@@ -121,11 +127,21 @@ func GenerateConfig(ctx context.Context, agg model.Aggregation, config *model.Co
 	if err != nil {
 		return nil, err
 	}
-	return render(ctx, a, newTypedDelivery(config, main, snapshot), options)
+	d := newTypedDelivery(config, main, snapshot)
+	d.provider = s.provider
+	d.repo = s.repo
+	d.substore = s.substore
+	return render(ctx, a, d, options)
 }
 
-func publish(ctx context.Context, agg model.Aggregation, config *model.Config, main *yamlx.Node, profileID string, options Options) (*Result, error) {
-	bundle, err := provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "aggregation", Aggregation: &agg}, SubscriptionFetch: options.Fetch})
+func (s *Service) publish(ctx context.Context, agg model.Aggregation, config *model.Config, main *yamlx.Node, profileID string, options Options) (*Result, error) {
+	if s.provider == nil {
+		return nil, errors.New("aggregations: provider service is nil")
+	}
+	if s.repo == nil {
+		return nil, errors.New("aggregations: repository is nil")
+	}
+	bundle, err := s.provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "aggregation", Aggregation: &agg}, SubscriptionFetch: options.Fetch})
 	if err != nil {
 		return nil, err
 	}
@@ -142,14 +158,10 @@ func publish(ctx context.Context, agg model.Aggregation, config *model.Config, m
 	if found == nil {
 		return nil, errors.New("aggregation absent from validated provider bundle")
 	}
-	if err := provider.CommitArtifacts(ctx, profileID, bundle); err != nil {
+	if err := s.provider.CommitArtifacts(ctx, profileID, bundle); err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
-	}
-	path, err := r.ProfilePath(profileID, "providers/"+agg.ID+".yaml")
+	path, err := s.repo.ProfilePath(profileID, "providers/"+agg.ID+".yaml")
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +172,7 @@ func publish(ctx context.Context, agg model.Aggregation, config *model.Config, m
 		}
 		result.FilePath, result.Content = &path, found.Content
 	}
-	values, err := provider.ParseNodes(found.Content, found.Name, path)
+	values, err := s.provider.ParseNodes(found.Content, found.Name, path)
 	if err != nil {
 		return nil, err
 	}
@@ -176,32 +188,35 @@ func publish(ctx context.Context, agg model.Aggregation, config *model.Config, m
 	return result, nil
 }
 
-// Wire registers aggregation rendering for conversions and provider bundles.
-func Wire() { provider.SetAggregationRenderer(RenderProvider) }
-
-// LoadCatalog reads an owned shared snapshot for SaveCatalog.
-func LoadCatalog(ctx context.Context) (*model.Shared, error) {
+func loadCatalogWith(ctx context.Context, r *repo.Repository) (*model.Shared, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return repo.SharedConfig(ctx)
+	if r == nil {
+		return nil, errors.New("aggregations: repository is nil")
+	}
+	return r.ScopedSharedConfig(ctx)
 }
 
-// SaveCatalog commits an edited catalog against its request-scoped repository baseline.
-func SaveCatalog(ctx context.Context, document *model.Shared) error {
+func saveCatalogWith(ctx context.Context, r *repo.Repository, document *model.Shared) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return repo.SaveSharedRecord(ctx, document, nil)
+	if r == nil {
+		return errors.New("aggregations: repository is nil")
+	}
+	return r.SaveScopedSharedRecord(ctx, document, nil)
 }
 
-// AppendCatalog adds an aggregation in one shared repository transaction.
-func AppendCatalog(ctx context.Context, raw json.RawMessage) error {
+func appendCatalogWith(ctx context.Context, r *repo.Repository, raw json.RawMessage) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if r == nil {
+		return errors.New("aggregations: repository is nil")
 	}
 	var shared model.Shared
 	list := append(append([]byte("["), raw...), ']')
@@ -212,10 +227,6 @@ func AppendCatalog(ctx context.Context, raw json.RawMessage) error {
 		return repo.InputError(&model.MemberTypeError{Record: "shared", Member: "subscription_aggregations", Value: list, Err: model.ErrType})
 	}
 	item := shared.Aggregations[0]
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return err
-	}
 	return r.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
 		shared.Aggregations = append(shared.Aggregations, item)
 		return ctx.Err()

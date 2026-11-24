@@ -42,22 +42,25 @@ func TestSlowProviderParity(t *testing.T) {
 			}
 			t.Run(mode+"/"+label, func(t *testing.T) {
 				expected := python(t, mode, path)
-				if mode == "fresh" {
-					t.Cleanup(provider.SetResponseSeconds(-1))
-				}
 				started, release := make(chan struct{}), make(chan struct{})
 				var once sync.Once
 				unblock := func() { once.Do(func() { close(release) }) }
 				defer unblock()
-				srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
-					r.GET(path, "synthetic.provider", func(c *httpx.Ctx) (*httpx.Response, error) {
-						return provider.Serve(c, "aggregation", "a", "alpha", &store.Head{StoreID: t.Name()}, func(context.Context) (*httpx.Response, error) {
+				srv := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
+					opts := provider.Options{Repo: app.Repo}
+					if mode == "fresh" {
+						neg := -1.0
+						opts.ResponseSeconds = &neg
+					}
+					pv := provider.New(opts)
+					app.Router.GET(path, "synthetic.provider", func(c *httpx.Ctx) (*httpx.Response, error) {
+						return pv.Serve(c, "aggregation", "a", "alpha", &store.Head{StoreID: t.Name()}, func(context.Context) (*httpx.Response, error) {
 							close(started)
 							<-release
 							return httpx.Bytes(200, "text/yaml; charset=utf-8", []byte(freshContent)), nil
 						})
 					})
-				})})
+				}})
 				if _, err := srv.Repo.CreateProfileRecord(srv.Context(), repo.ProfileCreation{ID: "alpha", Name: "Alpha"}, ""); err != nil {
 					t.Fatal(err)
 				}

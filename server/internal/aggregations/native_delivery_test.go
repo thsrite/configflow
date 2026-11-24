@@ -28,9 +28,10 @@ func aggregationDeliveryFixture(count, unrelated int) (model.Aggregation, *model
 func TestN88dAggregationDoesNotDecodeConfigPerNode(t *testing.T) {
 	measure := func(size int) int64 {
 		agg, config, main := aggregationDeliveryFixture(32, size)
+		svc := New(ServiceOptions{})
 		result := testing.Benchmark(func(b *testing.B) {
 			for b.Loop() {
-				artifact, err := RenderProvider(convert.EnsureConversions(context.Background()), agg, config, main, nil, nil)
+				artifact, err := svc.RenderProvider(convert.EnsureConversions(context.Background()), agg, config, main, nil, nil)
 				if err != nil || artifact == nil {
 					b.Fatalf("%v", err)
 				}
@@ -48,10 +49,11 @@ func BenchmarkN88dAggregationDelivery(b *testing.B) {
 	for _, count := range []int{8, 32, 128} {
 		b.Run(fmt.Sprint(count), func(b *testing.B) {
 			agg, config, main := aggregationDeliveryFixture(count, 1<<20)
+			svc := New(ServiceOptions{})
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				if _, err := RenderProvider(convert.EnsureConversions(context.Background()), agg, config, main, nil, nil); err != nil {
+				if _, err := svc.RenderProvider(convert.EnsureConversions(context.Background()), agg, config, main, nil, nil); err != nil {
 					b.Fatal(err)
 				}
 			}

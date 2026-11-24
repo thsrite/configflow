@@ -85,20 +85,6 @@ func missingAggregationProvider(context.Context, model.Aggregation, *model.Confi
 	return nil, ErrAggregationProviderMissing
 }
 
-// SetLocations registers A11's deployment_locations on the default service;
-// nil restores the default. It returns a function restoring the previous value.
-func SetLocations(l Locations) (restore func()) { return Default().setLocations(l) }
-
-// SetAggregationRenderer registers the aggregation owner on the default service;
-// nil restores the fail-closed default. It returns a restore function.
-func SetAggregationRenderer(fn AggregationRenderer) (restore func()) {
-	return Default().setAggregationRenderer(fn)
-}
-
-func currentLocations() Locations { return Default().Locations() }
-
-func currentAggregationRenderer() AggregationRenderer { return Default().AggregationRenderer() }
-
 // DeliveryEnv supplies typed source and node conversion collaborators.
 type DeliveryEnv struct {
 	// Fetch is sub_store_client.get_subscription_proxies_yaml, the default
@@ -129,17 +115,6 @@ func randomNodeID() string {
 }
 
 var nodeFallback atomic.Uint64
-
-// DefaultDeliveryEnv is the production environment.
-func DefaultDeliveryEnv() *DeliveryEnv {
-	return &DeliveryEnv{Fetch: defaultFetch, SubscriptionFetch: defaultFetch, AggregationFetch: defaultFetch, NodeID: randomNodeID}
-}
-
-// SetDeliveryEnv replaces the environment on the default service
-// (nil = DefaultDeliveryEnv) and returns a restore function.
-func SetDeliveryEnv(e *DeliveryEnv) (restore func()) { return Default().setDeliveryEnv(e) }
-
-func currentDeliveryEnv() *DeliveryEnv { return Default().DeliveryEnv() }
 
 func (e *DeliveryEnv) converter() convert.NodeConverter {
 	return convert.OptionalNodeConverter(e.Converter)

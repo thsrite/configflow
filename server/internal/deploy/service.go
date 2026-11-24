@@ -6,6 +6,7 @@ import (
 
 	"configflow/internal/agents"
 	"configflow/internal/model"
+	"configflow/internal/provider"
 	"configflow/internal/substore"
 )
 
@@ -21,6 +22,7 @@ type Options struct {
 	Pair     PairPublisher
 	IPv6     IPv6Enroller
 	SubStore *substore.Service
+	Provider *provider.Service
 }
 
 // Service owns deployment publication hooks and per-Manager preview stores for
@@ -30,6 +32,7 @@ type Service struct {
 	pair     PairPublisher
 	ipv6     IPv6Enroller
 	substore *substore.Service
+	provider *provider.Service
 
 	previewsMu sync.Mutex
 	previews   map[*agents.Manager]*Previews
@@ -42,6 +45,7 @@ func New(opts Options) *Service {
 		pair:     opts.Pair,
 		ipv6:     opts.IPv6,
 		substore: opts.SubStore,
+		provider: opts.Provider,
 		previews: map[*agents.Manager]*Previews{},
 	}
 }

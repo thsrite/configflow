@@ -101,7 +101,7 @@ func encode(value any, err error) (string, error) {
 	return string(content), err
 }
 
-func providerContent(ctx context.Context, config *model.Config, j job) (string, error) {
+func providerContent(ctx context.Context, srv *server.App, config *model.Config, j job) (string, error) {
 	sub, err := findSubscription(config.Subscriptions, j.SubID)
 	if err != nil {
 		return "", err
@@ -114,7 +114,7 @@ func providerContent(ctx context.Context, config *model.Config, j job) (string, 
 	if err != nil {
 		return "", err
 	}
-	rendered, err := provider.PrepareSubscription(ctx, sub, snapshot, provider.SubscriptionOptions{Fetch: offlineFetch, SourcePrepared: true})
+	rendered, err := srv.Provider.PrepareSubscription(ctx, sub, snapshot, provider.SubscriptionOptions{Fetch: offlineFetch, SourcePrepared: true})
 	if err != nil {
 		return "", err
 	}
@@ -142,7 +142,7 @@ func providerContent(ctx context.Context, config *model.Config, j job) (string, 
 	return convert.ClientProxyText(proxies, substore.ProxyNodes, format)
 }
 
-func generate(ctx context.Context, repository *repo.Repository, j job) (string, error) {
+func generate(ctx context.Context, srv *server.App, repository *repo.Repository, j job) (string, error) {
 	config, err := repository.Config(ctx, j.ProfileID, nil)
 	if err != nil {
 		return "", fmt.Errorf("load generator profile: %w", err)
@@ -179,7 +179,7 @@ func generate(ctx context.Context, repository *repo.Repository, j job) (string, 
 	}
 	switch j.Kind {
 	case "agent-deployment-bundle":
-		return deploymentBundle(ctx, repository, config, j, opts)
+		return deploymentBundle(ctx, srv, repository, config, j, opts)
 	case "aggregation-provider":
 		agg, err := findAggregation(config.Aggregations, j.AggID)
 		if err != nil {
@@ -193,7 +193,7 @@ func generate(ctx context.Context, repository *repo.Repository, j job) (string, 
 		if err != nil {
 			return "", err
 		}
-		generated, err := aggregations.GenerateConfig(ctx, agg, config, aggregations.Options{Main: mainJSON, Fetch: offlineFetch, SourcePrepared: true})
+		generated, err := srv.Aggregations.GenerateConfig(ctx, agg, config, aggregations.Options{Main: mainJSON, Fetch: offlineFetch, SourcePrepared: true})
 		if err != nil {
 			return "", err
 		}
@@ -264,7 +264,7 @@ func generate(ctx context.Context, repository *repo.Repository, j job) (string, 
 		}
 		return encode(output, nil)
 	case "subscription-mihomo", "subscription-surge", "subscription-loon":
-		return providerContent(ctx, config, j)
+		return providerContent(ctx, srv, config, j)
 	default:
 		return "", errors.New("unknown generator kind")
 	}
@@ -288,7 +288,11 @@ func run() error {
 	}
 	repo.SetRepository(repository)
 	// Use the same public wiring as the command; deliberately never call lifecycle.Start.
-	_ = server.NewApp()
+	srv, err := server.New(context.Background(), server.Options{Repo: repository})
+	if err != nil {
+		return fmt.Errorf("wire generator server: %w", err)
+	}
+	defer srv.Agents.Close()
 	output, err := os.OpenFile(os.Args[2], os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return fmt.Errorf("open private generator output: %w", err)
@@ -297,7 +301,7 @@ func run() error {
 	encoder := json.NewEncoder(output)
 	for _, j := range jobs {
 		ctx, cancel := context.WithTimeout(repo.WithScope(context.Background()), 90*time.Second)
-		content, err := generate(ctx, repository, j)
+		content, err := generate(ctx, srv, repository, j)
 		repo.ResetConfigContext(ctx)
 		cancel()
 		r := result{Index: j.Index, Status: "ok", Content: content}

@@ -38,15 +38,6 @@ var (
 	flights = lockx.NewFlight[flightKey, *responseCopy](lifecycle.DefaultSpawner{}, "provider-render")
 )
 
-// SetResponseSeconds replaces RESPONSE_SECONDS on the default service (tests);
-// it returns a restore function. A negative value waits for completed rendering
-// without a deadline; successful responses are still saved as last-good content.
-func SetResponseSeconds(seconds float64) (restore func()) {
-	return Default().setResponseSeconds(seconds)
-}
-
-func currentResponseSeconds() float64 { return Default().ResponseSeconds() }
-
 // flightKey identifies one shared render: the provider, its request filters
 // and the committed configuration it renders (head). A render of a working
 // copy (no head) gets a unique solo number and is never shared.
@@ -88,14 +79,13 @@ func lastGoodPath(kind, itemID string) string {
 // readLastGood is _read_last_good: the last content served for the
 // provider, else (aggregations) the artifact the last bundle commit wrote.
 // ok is false when neither can be read (OSError).
-func readLastGood(ctx context.Context, profileID, kind, itemID string) (string, bool, error) {
+func readLastGood(ctx context.Context, r *repo.Repository, profileID, kind, itemID string) (string, bool, error) {
 	paths := []string{lastGoodPath(kind, itemID)}
 	if kind == "aggregation" {
 		paths = append(paths, "providers/"+itemID+".yaml")
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return "", false, err
+	if r == nil {
+		return "", false, errors.New("provider: repository is nil")
 	}
 	for _, relative := range paths {
 		path, err := r.ProfilePath(profileID, relative)
@@ -138,17 +128,7 @@ func mimetype(header http.Header) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
 
-// Serve is serve_provider(kind, item_id, profile_id, config_data, render):
-// render's response, or the last good content once the client would time
-// out. head is the committed head the caller resolved the configuration from
-// (repo.ConfigAt); requests for the same provider, format and filters at the
-// same head share one render on a pool of PoolWorkers. A nil head (working
-// copy) renders alone. Only the Mihomo format (no ?format=) falls back; a
-// successful text/yaml render of it is stored as the new last good content.
-//
-// Call after authentication and existence checks: the fallback must never
-// answer a request that would otherwise be rejected.
-func Serve(c *httpx.Ctx, kind, itemID, profileID string, head *store.Head, render Render) (*httpx.Response, error) {
+func (s *Service) serve(c *httpx.Ctx, kind, itemID, profileID string, head *store.Head, render Render) (*httpx.Response, error) {
 	format, _ := c.Arg("format")
 	fallback := format == ""
 	regex, _ := c.Arg("regex")
@@ -159,15 +139,14 @@ func Serve(c *httpx.Ctx, kind, itemID, profileID string, head *store.Head, rende
 		return nil, err
 	}
 	result := flights.DoChan(renderCtx, key, func(work context.Context) (*responseCopy, error) {
-		return runFlight(work, fallback, profileID, kind, itemID, render)
+		return runFlight(work, s.repo, fallback, profileID, kind, itemID, render)
 	})
 	clock := lifecycle.ClockFrom(c.Context())
-	return awaitResponse(c.Context(), clock, result, fallback, profileID, kind, itemID)
+	return awaitResponse(c.Context(), s.repo, s.ResponseSeconds(), clock, result, fallback, profileID, kind, itemID)
 }
 
-func awaitResponse(ctx context.Context, source clock.Clock, result <-chan lockx.Result[*responseCopy], fallback bool, profileID, kind, itemID string) (*httpx.Response, error) {
+func awaitResponse(ctx context.Context, r *repo.Repository, seconds float64, source clock.Clock, result <-chan lockx.Result[*responseCopy], fallback bool, profileID, kind, itemID string) (*httpx.Response, error) {
 	var timeout <-chan time.Time
-	seconds := currentResponseSeconds()
 	if fallback && seconds >= 0 {
 		timer := source.NewTimer(time.Duration(seconds * float64(time.Second)))
 		defer timer.Stop()
@@ -187,7 +166,7 @@ func awaitResponse(ctx context.Context, source clock.Clock, result <-chan lockx.
 			return r.Value.response(), nil
 		case <-timeout:
 			timeout = nil
-			cached, ok, err := readLastGood(ctx, profileID, kind, itemID)
+			cached, ok, err := readLastGood(ctx, r, profileID, kind, itemID)
 			if err != nil {
 				return nil, err
 			}
@@ -201,7 +180,7 @@ func awaitResponse(ctx context.Context, source clock.Clock, result <-chan lockx.
 	}
 }
 
-func runFlight(ctx context.Context, fallback bool, profileID, kind, itemID string, render Render) (*responseCopy, error) {
+func runFlight(ctx context.Context, r *repo.Repository, fallback bool, profileID, kind, itemID string, render Render) (*responseCopy, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -231,9 +210,8 @@ func runFlight(ctx context.Context, fallback bool, profileID, kind, itemID strin
 	}
 	snapshot := snapshotResponse(rendered)
 	if fallback && snapshot.status == 200 && mimetype(snapshot.header) == "text/yaml" {
-		r, err := repo.GetRepository(ctx)
-		if err != nil {
-			return nil, err
+		if r == nil {
+			return nil, errors.New("provider: repository is nil")
 		}
 		if _, err := r.WriteProfileText(ctx, profileID, lastGoodPath(kind, itemID), snapshot.body); err != nil {
 			return nil, err

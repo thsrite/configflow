@@ -44,11 +44,27 @@ func (h *Handler) withRepo(ctx context.Context) context.Context {
 	return ctx
 }
 
-func (h *Handler) generateConfig(ctx context.Context, agg model.Aggregation, config *model.Config, options generation.Options) (*generation.Result, error) {
-	if h != nil && h.Aggregations != nil {
-		return h.Aggregations.GenerateConfig(ctx, agg, config, options)
+func (h *Handler) provider(ctx context.Context) *provider.Service {
+	if h != nil && h.Provider != nil {
+		return h.Provider
 	}
-	return generation.GenerateConfig(ctx, agg, config, options)
+	r, _ := h.repo(ctx)
+	return provider.New(provider.Options{Repo: r, SubStore: h.SubStore})
+}
+
+func (h *Handler) aggregationsService(ctx context.Context) *generation.Service {
+	if h != nil && h.Aggregations != nil {
+		return h.Aggregations
+	}
+	r, _ := h.repo(ctx)
+	pv := h.provider(ctx)
+	svc := generation.New(generation.ServiceOptions{Provider: pv, Repo: r, SubStore: h.SubStore})
+	_ = pv.SetAggregations(svc.RenderProvider)
+	return svc
+}
+
+func (h *Handler) generateConfig(ctx context.Context, agg model.Aggregation, config *model.Config, options generation.Options) (*generation.Result, error) {
+	return h.aggregationsService(ctx).GenerateConfig(ctx, agg, config, options)
 }
 
 func (h *Handler) appendAggregation(ctx context.Context, agg model.Aggregation) error {
@@ -56,13 +72,13 @@ func (h *Handler) appendAggregation(ctx context.Context, agg model.Aggregation) 
 	if err != nil {
 		return err
 	}
-	return generation.AppendCatalog(h.withRepo(ctx), raw)
+	return h.aggregationsService(ctx).AppendCatalog(ctx, raw)
 }
 
 // replaceAggregation stores the catalog with items[index] replaced by agg.
 func (h *Handler) replaceAggregation(ctx context.Context, shared *model.Shared, index int, agg model.Aggregation) error {
 	shared.Aggregations[index] = agg
-	return generation.SaveCatalog(h.withRepo(ctx), shared)
+	return h.aggregationsService(ctx).SaveCatalog(ctx, shared)
 }
 
 type aggregationErrorItem struct {
@@ -212,10 +228,7 @@ func (h *Handler) authorize(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 func (h *Handler) serve(c *httpx.Ctx, config *model.Config, head *store.Head, id string, render provider.Render) (*httpx.Response, error) {
-	if h != nil && h.Provider != nil {
-		return h.Provider.Serve(c, "aggregation", id, config.ProfileID, head, render)
-	}
-	return provider.Serve(c, "aggregation", id, config.ProfileID, head, render)
+	return h.provider(c.Context()).Serve(c, "aggregation", id, config.ProfileID, head, render)
 }
 func requestedFilters(c *httpx.Ctx) (*[2]string, error) { return provider.RequestedFilters(c) }
 func alternative(format string, proxies []proxy, filters *[2]string) (string, error) {

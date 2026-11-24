@@ -79,7 +79,7 @@ func contextsOf(err error) []contextKey {
 }
 
 // providerContext attaches an owning provider once, preserving its typed cause.
-func providerContext(err error, name, path, kind string) error {
+func providerContext(loc Locations, err error, name, path, kind string) error {
 	contexts := contextsOf(err)
 	key := contextKey{kind, name, path}
 	for _, context := range contexts {
@@ -90,7 +90,10 @@ func providerContext(err error, name, path, kind string) error {
 	if name == "" && path == "" {
 		return &Error{reference: referenceError(err, err.Error()), Message: err.Error(), contexts: contexts, cause: err}
 	}
-	message := currentLocations().PreparationContext(err.Error(), name, path, kind)
+	if loc == nil {
+		loc = PassthroughLocations{}
+	}
+	message := loc.PreparationContext(err.Error(), name, path, kind)
 	return &Error{reference: referenceError(err, message), Message: message, contexts: append(append([]contextKey{}, contexts...), key), cause: err}
 }
 
@@ -158,7 +161,7 @@ func nodeAtPath(text string, field FieldPath) (*yamlx.Node, bool) {
 // providerSourceError is _provider_source_error(exc, text, source_label):
 // resolve a known field only on failure; never guess a node's line number.
 // yamlErr is the yaml.YAMLError of the load (nil for reference errors).
-func providerSourceError(err, yamlErr error, text, sourceLabel string) error {
+func providerSourceError(loc Locations, err, yamlErr error, text, sourceLabel string) error {
 	var line, column *int
 	var syntax *yamlx.SyntaxError
 	if errors.As(yamlErr, &syntax) && syntax.Line > 0 {
@@ -184,7 +187,10 @@ func providerSourceError(err, yamlErr error, text, sourceLabel string) error {
 	if yamlErr != nil {
 		message, cause = msgProviderYAMLInvalid, yamlErr
 	}
-	detail := currentLocations().SourceError(message, text, line, column, cause, sourceLabel)
+	if loc == nil {
+		loc = PassthroughLocations{}
+	}
+	detail := loc.SourceError(message, text, line, column, cause, sourceLabel)
 	result := dialerErr(diag.FailureText(detail, nil, 0))
 	result.cause = err
 	return result
