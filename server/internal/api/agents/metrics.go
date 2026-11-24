@@ -5,24 +5,27 @@ package agents
 // (A04).
 
 import (
+	"encoding/json"
+	"errors"
 	"math/big"
 	"strings"
 
 	"configflow/internal/agents"
-	"configflow/internal/agents/metrics"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/taskstatus"
-	"encoding/json"
-	"errors"
 )
 
-func registerMetrics(r *httpx.Router) {
-	r.GET("/api/agents/<agent_id>/metrics", "agents.get_agent_metrics", auth.Require(getAgentMetrics))
-	r.GET("/api/agents/<agent_id>/metrics/history", "agents.get_agent_metrics_history", auth.Require(getAgentMetricsHistory))
-	r.GET("/api/agents/<agent_id>/metrics/summary", "agents.get_agent_metrics_summary", auth.Require(getAgentMetricsSummary))
+type metricsHandler struct {
+	deps Deps
+}
+
+func (h *metricsHandler) register(r *httpx.Router) {
+	r.GET("/api/agents/<agent_id>/metrics", "agents.get_agent_metrics", auth.Require(h.getAgentMetrics))
+	r.GET("/api/agents/<agent_id>/metrics/history", "agents.get_agent_metrics_history", auth.Require(h.getAgentMetricsHistory))
+	r.GET("/api/agents/<agent_id>/metrics/summary", "agents.get_agent_metrics_summary", auth.Require(h.getAgentMetricsSummary))
 }
 
 // argBigInt reads the shared native decimal counter grammar, preserving large
@@ -53,9 +56,9 @@ func pyArgInt(text string, def int64) *big.Int {
 
 // agentForMetrics is the common start of the three routes: the manager and
 // the Agent; a response when the Agent is unknown or the lookup failed.
-func agentForMetrics(c *httpx.Ctx, logPrefix string) (*agents.Manager, *model.Agent, *httpx.Response) {
+func (h *metricsHandler) agentForMetrics(c *httpx.Ctx, logPrefix string) (*agents.Manager, *model.Agent, *httpx.Response) {
 	ctx := c.Context()
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	var agent *model.Agent
 	if err == nil {
 		agent, err = manager.ReadAgent(ctx, c.Param("agent_id"), true)
@@ -76,9 +79,9 @@ func metricsFailure(logPrefix string, err error) *httpx.Response {
 
 // getAgentMetrics is get_agent_metrics: the latest metrics of the Agent's
 // last heartbeat.
-func getAgentMetrics(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *metricsHandler) getAgentMetrics(c *httpx.Ctx) (*httpx.Response, error) {
 	const prefix = "获取Agent监控数据失败"
-	_, agent, response := agentForMetrics(c, prefix)
+	_, agent, response := h.agentForMetrics(c, prefix)
 	if response != nil {
 		return response, nil
 	}
@@ -101,14 +104,14 @@ func getAgentMetrics(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // getAgentMetricsHistory is get_agent_metrics_history (hours, default 24).
-func getAgentMetricsHistory(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *metricsHandler) getAgentMetricsHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	const prefix = "获取Agent监控历史数据失败"
-	manager, _, response := agentForMetrics(c, prefix)
+	manager, _, response := h.agentForMetrics(c, prefix)
 	if response != nil {
 		return response, nil
 	}
 	hours := argBigInt(c, "hours", 24)
-	history, err := metrics.ForManager(manager).Samples(c.Param("agent_id"), hours)
+	history, err := h.deps.metricsHistory(manager).Samples(c.Param("agent_id"), hours)
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}
@@ -116,14 +119,14 @@ func getAgentMetricsHistory(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // getAgentMetricsSummary is get_agent_metrics_summary (hours, default 1).
-func getAgentMetricsSummary(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *metricsHandler) getAgentMetricsSummary(c *httpx.Ctx) (*httpx.Response, error) {
 	const prefix = "获取Agent监控统计摘要失败"
-	manager, _, response := agentForMetrics(c, prefix)
+	manager, _, response := h.agentForMetrics(c, prefix)
 	if response != nil {
 		return response, nil
 	}
 	hours := argBigInt(c, "hours", 1)
-	summary, err := metrics.ForManager(manager).Summarize(c.Param("agent_id"), hours)
+	summary, err := h.deps.metricsHistory(manager).Summarize(c.Param("agent_id"), hours)
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}

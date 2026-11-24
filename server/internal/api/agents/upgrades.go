@@ -23,21 +23,25 @@ import (
 	"net/http"
 )
 
-func registerUpgrades(r *httpx.Router) {
-	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/address", "agents.agent_address", auth.Require(upgradeStateErrors(agentAddress)))
-	r.POST("/api/agents/<agent_id>/restart", "agents.restart_agent", auth.Require(operation(restartAgent)))
-	r.GET("/api/agents/<agent_id>/status", "agents.get_agent_status", auth.Require(getAgentStatus))
-	r.GET("/api/agents/<agent_id>/logs", "agents.get_agent_logs", auth.Require(operation(getAgentLogs)))
-	r.GET("/api/agents/<agent_id>/logs/sources", "agents.get_agent_log_sources", auth.Require(operation(getAgentLogSources)))
-	r.POST("/api/agents/<agent_id>/logs/clear", "agents.clear_agent_log", auth.Require(operation(clearAgentLog)))
-	r.POST("/api/agents/<agent_id>/logs/validate", "agents.validate_log_path", auth.Require(operation(validateLogPath)))
-	r.GET("/api/agents/<agent_id>/config/logging", "agents.get_logging_config", auth.Require(operation(getLoggingConfig)))
-	r.POST("/api/agents/<agent_id>/config/logging", "agents.set_logging_config", auth.Require(operation(setLoggingConfig)))
-	r.POST("/api/agents/<agent_id>/uninstall", "agents.uninstall_agent", auth.Require(operation(uninstallAgent)))
-	r.POST("/api/agents/<agent_id>/update", "agents.update_agent_version", auth.Require(upgradeStateErrors(updateAgentVersion)))
-	r.GET("/api/agents/<agent_id>/upgrade", "agents.get_agent_upgrade", upgradeStateErrors(getAgentUpgrade))
-	r.POST("/api/agents/<agent_id>/upgrade/report", "agents.report_agent_upgrade", upgradeStateErrors(reportAgentUpgrade))
-	r.GET("/api/agents/latest-version", "agents.get_latest_agent_version", auth.Require(getLatestAgentVersion))
+type upgradesHandler struct {
+	deps Deps
+}
+
+func (h *upgradesHandler) register(r *httpx.Router) {
+	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/address", "agents.agent_address", auth.Require(upgradeStateErrors(h.agentAddress)))
+	r.POST("/api/agents/<agent_id>/restart", "agents.restart_agent", auth.Require(h.operation(restartAgent)))
+	r.GET("/api/agents/<agent_id>/status", "agents.get_agent_status", auth.Require(h.getAgentStatus))
+	r.GET("/api/agents/<agent_id>/logs", "agents.get_agent_logs", auth.Require(h.operation(h.getAgentLogs)))
+	r.GET("/api/agents/<agent_id>/logs/sources", "agents.get_agent_log_sources", auth.Require(h.operation(getAgentLogSources)))
+	r.POST("/api/agents/<agent_id>/logs/clear", "agents.clear_agent_log", auth.Require(h.operation(clearAgentLog)))
+	r.POST("/api/agents/<agent_id>/logs/validate", "agents.validate_log_path", auth.Require(h.operation(validateLogPath)))
+	r.GET("/api/agents/<agent_id>/config/logging", "agents.get_logging_config", auth.Require(h.operation(getLoggingConfig)))
+	r.POST("/api/agents/<agent_id>/config/logging", "agents.set_logging_config", auth.Require(h.operation(setLoggingConfig)))
+	r.POST("/api/agents/<agent_id>/uninstall", "agents.uninstall_agent", auth.Require(h.operation(uninstallAgent)))
+	r.POST("/api/agents/<agent_id>/update", "agents.update_agent_version", auth.Require(upgradeStateErrors(h.updateAgentVersion)))
+	r.GET("/api/agents/<agent_id>/upgrade", "agents.get_agent_upgrade", upgradeStateErrors(h.getAgentUpgrade))
+	r.POST("/api/agents/<agent_id>/upgrade/report", "agents.report_agent_upgrade", upgradeStateErrors(h.reportAgentUpgrade))
+	r.GET("/api/agents/latest-version", "agents.get_latest_agent_version", auth.Require(h.getLatestAgentVersion))
 }
 
 // upgradeStateErrors surfaces damaged stored evidence without changing its 500 class.
@@ -54,9 +58,9 @@ func upgradeStateErrors(handler httpx.HandlerFunc) httpx.HandlerFunc {
 
 // operation is the `try: ... except Exception as e: return jsonify({'success':
 // False, 'message': str(e)}), 500` wrapper of the operation routes.
-func operation(handler func(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error)) httpx.HandlerFunc {
+func (h *upgradesHandler) operation(handler func(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error)) httpx.HandlerFunc {
 	return func(c *httpx.Ctx) (*httpx.Response, error) {
-		manager, err := agents.Get(c.Context())
+		manager, err := h.deps.manager(c.Context())
 		var response *httpx.Response
 		if err == nil {
 			response, err = handler(c, manager)
@@ -139,9 +143,9 @@ func callOperation(c *httpx.Ctx, m *agents.Manager, method, path string, payload
 	return result, nil
 }
 
-func agentAddress(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *upgradesHandler) agentAddress(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -181,9 +185,9 @@ func restartAgent(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
 	return resultResponse(result)
 }
 
-func getAgentStatus(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *upgradesHandler) getAgentStatus(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -206,8 +210,8 @@ func getAgentStatus(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(map[string]any{"success": true, "status": json.RawMessage(status)}), nil
 }
 
-func getAgentLogs(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
-	ctx := c.Context()
+func (h *upgradesHandler) getAgentLogs(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
+	ctx := h.deps.withRepo(c.Context())
 	lines := argBigInt(c, "lines", 100)
 	logPath := c.ArgDefault("log_path", "")
 	source := c.ArgDefault("source", "")
@@ -334,9 +338,9 @@ func uninstallAgent(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
 	return resultResponse(result)
 }
 
-func updateAgentVersion(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *upgradesHandler) updateAgentVersion(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -370,9 +374,9 @@ func agentTokenMatches(c *httpx.Ctx, agent *model.Agent) bool {
 	return token != "" && ok && provided != "" && agents.ConstantTimeASCIIEqual(provided, token)
 }
 
-func getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *upgradesHandler) getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -414,9 +418,9 @@ func getAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 // ReportBodyLimit is the largest legacy upgrade report accepted (bytes).
 const ReportBodyLimit = 4096
 
-func reportAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *upgradesHandler) reportAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -445,6 +449,6 @@ func reportAgentUpgrade(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(state), nil
 }
 
-func getLatestAgentVersion(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *upgradesHandler) getLatestAgentVersion(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(map[string]any{"success": true, "version": agents.GetLatestVersion()}), nil
 }

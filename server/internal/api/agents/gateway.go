@@ -2,17 +2,16 @@ package agents
 
 import (
 	"bytes"
-	"configflow/internal/jsondecode"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 
-	registry "configflow/internal/agents"
 	"configflow/internal/agents/monitor"
 	"configflow/internal/auth"
 	"configflow/internal/gateway/host"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
 	"configflow/internal/logx"
 	"configflow/internal/repo"
 	"configflow/internal/setupflow"
@@ -20,16 +19,20 @@ import (
 
 var gatewayLogger = logx.Get("backend.routes.linux_gateway_agents")
 
-func registerGateway(r *httpx.Router) {
-	r.Handle([]string{"GET", "POST"}, "/api/agents/<agent_id>/linux-gateway/<operation>", "agents.linux_gateway_operation", auth.Require(gatewayOperation))
-	r.Handle([]string{"GET", "POST"}, "/api/agents/gateway-forwarding", "agents.agent_gateway_forwarding", auth.Require(gatewayForwarding))
+type gatewayHandler struct {
+	deps Deps
 }
-func gatewayBridge(c *httpx.Ctx) (*host.Bridge, error) {
-	r, err := repo.GetRepository(c.Context())
+
+func (h *gatewayHandler) register(r *httpx.Router) {
+	r.Handle([]string{"GET", "POST"}, "/api/agents/<agent_id>/linux-gateway/<operation>", "agents.linux_gateway_operation", auth.Require(h.gatewayOperation))
+	r.Handle([]string{"GET", "POST"}, "/api/agents/gateway-forwarding", "agents.agent_gateway_forwarding", auth.Require(h.gatewayForwarding))
+}
+func (h *gatewayHandler) gatewayBridge(c *httpx.Ctx) (*host.Bridge, error) {
+	r, err := h.deps.repository(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	m, err := registry.Get(c.Context())
+	m, err := h.deps.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +54,7 @@ func gatewayResult(value any, err error) (*httpx.Response, error) {
 	}
 	return httpx.JSON(value).NoStore(), nil
 }
-func gatewayOperation(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *gatewayHandler) gatewayOperation(c *httpx.Ctx) (*httpx.Response, error) {
 	profile := c.HeaderDefault("X-ConfigFlow-Profile", "")
 	if profile == "" {
 		profile = c.ArgDefault("profile_id", "")
@@ -59,7 +62,7 @@ func gatewayOperation(c *httpx.Ctx) (*httpx.Response, error) {
 	if profile == "" {
 		return gatewayFailure("PROFILE_REQUIRED", 400, msgGatewayProfile)
 	}
-	profile, err := repo.ResolveProfileID(c.Context(), profile)
+	profile, err := repo.ResolveProfileID(h.deps.withRepo(c.Context()), profile)
 	if err != nil {
 		return nil, err
 	}
@@ -86,15 +89,15 @@ func gatewayOperation(c *httpx.Ctx) (*httpx.Response, error) {
 			}
 		}
 	}
-	bridge, err := gatewayBridge(c)
+	bridge, err := h.gatewayBridge(c)
 	if err != nil {
 		return nil, err
 	}
 	value, err := bridge.Call(c.Context(), c.Param("agent_id"), c.Param("operation"), c.Request.Method, profile, body)
 	return gatewayResult(value, err)
 }
-func gatewayForwarding(c *httpx.Ctx) (*httpx.Response, error) {
-	bridge, err := gatewayBridge(c)
+func (h *gatewayHandler) gatewayForwarding(c *httpx.Ctx) (*httpx.Response, error) {
+	bridge, err := h.gatewayBridge(c)
 	if err != nil {
 		return nil, err
 	}

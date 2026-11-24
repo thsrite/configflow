@@ -40,16 +40,19 @@ func SetContentPrepare(fn contentsync.PrepareFunc) func() {
 		contentChecks.dispatcher.Invalidate()
 	}
 }
-func prepareContent(ctx context.Context, t deploy.Target, s *deploy.Source, url, id string) (*deploy.Bundle, error) {
+func prepareContent(ctx context.Context, m *core.Manager, t deploy.Target, s *deploy.Source, url, id string) (*deploy.Bundle, error) {
 	contentPrepare.RLock()
 	fn := contentPrepare.fn
 	contentPrepare.RUnlock()
 	if fn != nil {
 		return fn(ctx, t, s, url, id)
 	}
-	m, err := core.Get(ctx)
-	if err != nil {
-		return nil, err
+	if m == nil {
+		var err error
+		m, err = core.Get(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return deploy.PrepareContentBundle(ctx, m, t, s, url, id)
 }
@@ -62,7 +65,7 @@ func (p *contentPool) checker(m *core.Manager) *contentsync.Checker {
 	}
 	receipts := deploy.NewReceipts(m.Repository().DataDir())
 	c := contentsync.New(contentsync.Options{Prepare: func(ctx context.Context, t deploy.Target, s *deploy.Source, url, id string) (*deploy.Bundle, error) {
-		return prepareContent(repo.WithRepository(ctx, m.Repository()), t, s, url, id)
+		return prepareContent(repo.WithRepository(ctx, m.Repository()), m, t, s, url, id)
 	}, LoadReceipt: func(ctx context.Context, t deploy.Target) (*deploy.Receipt, error) {
 		return receipts.LoadAgent(ctx, t.Record, true)
 	}, DefaultProfileID: m.Repository().DefaultProfileID})

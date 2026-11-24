@@ -18,24 +18,29 @@ import (
 	"configflow/internal/jsondecode"
 )
 
-func registerPanel(r *httpx.Router) {
+type panelHandler struct {
+	deps   Deps
+	oxidns *oxidnsHandler
+}
+
+func (h *panelHandler) register(r *httpx.Router) {
 	r.Handle([]string{"GET", "PUT", "PATCH", "DELETE", "POST"}, "/api/agents/<agent_id>/mihomo/<path:resource>",
-		"agents.mihomo_panel", auth.Require(mihomoPanel))
+		"agents.mihomo_panel", auth.Require(h.mihomoPanel))
 	r.Handle([]string{"GET", "POST"}, "/api/agents/<agent_id>/oxidns/rules/update", "agents.update_oxidns_rules",
-		auth.Require(updateOxidnsRules))
-	r.GET("/api/agents/<agent_id>/oxidns/cache", "agents.oxidns_cache", auth.Require(oxidnsCache))
-	r.POST("/api/agents/<agent_id>/oxidns/cache/flush", "agents.oxidns_cache", auth.Require(oxidnsCache))
+		auth.Require(h.updateOxidnsRules))
+	r.GET("/api/agents/<agent_id>/oxidns/cache", "agents.oxidns_cache", auth.Require(h.oxidnsCache))
+	r.POST("/api/agents/<agent_id>/oxidns/cache/flush", "agents.oxidns_cache", auth.Require(h.oxidnsCache))
 }
 
 // mihomoPanel is mihomo_panel: the resource/method whitelist lives in
 // monitor.CallPanel.
-func mihomoPanel(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *panelHandler) mihomoPanel(c *httpx.Ctx) (*httpx.Response, error) {
 	method := c.Request.Method
 	var body json.RawMessage
 	if method == "PUT" || method == "PATCH" {
 		c.BindSilent(&body)
 	}
-	return oxidnsMonitorResponse(c, func(m monitor.Registry) (any, error) {
+	return h.oxidns.monitorResponse(c, func(m monitor.Registry) (any, error) {
 		// The core update check fetches version.txt with request_rule, which
 		// reads flask.request.host_url.
 		return monitor.CallPanel(monitor.WithHostURL(c.Context(), c.HostURL()), m, c.Param("agent_id"), c.Param("resource"),
@@ -81,7 +86,7 @@ func monitorAnswer(err error) (any, int, bool) {
 
 // updateOxidnsRules is update_oxidns_rules: only the operation itself is
 // exposed (an empty JSON object body at most).
-func updateOxidnsRules(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *panelHandler) updateOxidnsRules(c *httpx.Ctx) (*httpx.Response, error) {
 	data, status, err := func() (any, int, error) {
 		invalid := func() (any, int, error) { return nil, 0, monitor.RuleUpdateFail("INVALID_REQUEST", 400) }
 		if length, _ := c.ContentLength(); c.HasArgs() || length > 1024 {
@@ -101,7 +106,7 @@ func updateOxidnsRules(c *httpx.Ctx) (*httpx.Response, error) {
 				return invalid()
 			}
 		}
-		manager, err := agents.Get(c.Context())
+		manager, err := h.deps.manager(c.Context())
 		if err != nil {
 			return nil, 0, err
 		}
@@ -120,7 +125,7 @@ func updateOxidnsRules(c *httpx.Ctx) (*httpx.Response, error) {
 // oxidnsCache is oxidns_cache: the browser names only cache tags of this
 // one Agent; the Agent rechecks them against its own deployed
 // configuration.
-func oxidnsCache(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *panelHandler) oxidnsCache(c *httpx.Ctx) (*httpx.Response, error) {
 	const limit = 16 * 1024
 	data, err := func() (any, error) {
 		invalid := func() (any, error) { return nil, monitor.CacheFail("INVALID_REQUEST", 400) }
@@ -150,7 +155,7 @@ func oxidnsCache(c *httpx.Ctx) (*httpx.Response, error) {
 				return invalid()
 			}
 		}
-		manager, err := agents.Get(c.Context())
+		manager, err := h.deps.manager(c.Context())
 		if err != nil {
 			return nil, err
 		}

@@ -18,14 +18,18 @@ const (
 	installationMaxBody = 16384
 )
 
-func registerGatewayInstallations(r *httpx.Router) {
+type gatewayInstallationHandler struct {
+	deps Deps
+}
+
+func (h *gatewayInstallationHandler) register(r *httpx.Router) {
 	base := "/api/agents/gateway-installations"
-	r.Handle([]string{"GET", "POST"}, base, "agents.gateway_installations", auth.Require(installationHandler("index")))
-	r.GET(base+"/<session_id>", "agents.gateway_installation_status", auth.Require(installationHandler("get")))
-	r.POST(base+"/<session_id>/network", "agents.gateway_installation_network", auth.Require(installationHandler("network")))
-	r.POST(base+"/<session_id>/publish", "agents.gateway_installation_publish", auth.Require(installationHandler("publish")))
-	r.POST(base+"/<session_id>/enroll", "agents.gateway_installation_enroll", installationHandler("enroll"))
-	r.GET(base+"/<session_id>/script", "agents.gateway_installation_script", installationHandler("script"))
+	r.Handle([]string{"GET", "POST"}, base, "agents.gateway_installations", auth.Require(h.installationHandler("index")))
+	r.GET(base+"/<session_id>", "agents.gateway_installation_status", auth.Require(h.installationHandler("get")))
+	r.POST(base+"/<session_id>/network", "agents.gateway_installation_network", auth.Require(h.installationHandler("network")))
+	r.POST(base+"/<session_id>/publish", "agents.gateway_installation_publish", auth.Require(h.installationHandler("publish")))
+	r.POST(base+"/<session_id>/enroll", "agents.gateway_installation_enroll", h.installationHandler("enroll"))
+	r.GET(base+"/<session_id>/script", "agents.gateway_installation_script", h.installationHandler("script"))
 }
 func installationBody(c *httpx.Ctx) (json.RawMessage, error) {
 	if c.Request.ContentLength > installationMaxBody {
@@ -51,15 +55,15 @@ func installationBody(c *httpx.Ctx) (json.RawMessage, error) {
 	}
 	return json.Marshal(body)
 }
-func installationHandler(operation string) httpx.HandlerFunc {
+func (h *gatewayInstallationHandler) installationHandler(operation string) httpx.HandlerFunc {
 	return func(c *httpx.Ctx) (*httpx.Response, error) {
-		r, err := repo.GetRepository(c.Context())
+		r, err := h.deps.repository(c.Context())
 		if err != nil {
 			return nil, err
 		}
 		var m *agents.Manager
 		if operation != "script" {
-			m, err = agents.Get(c.Context())
+			m, err = h.deps.manager(c.Context())
 			if err != nil {
 				return nil, err
 			}

@@ -2,20 +2,16 @@ package agents
 
 // Client tools use typed registry/config models and shared rule validators.
 import (
-	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
 	"errors"
 	"time"
 
-	registry "configflow/internal/agents"
-	"configflow/internal/agents/trafficstore"
 	"configflow/internal/ctxx"
 	"configflow/internal/discovery"
 	"configflow/internal/faultprobe"
-	"configflow/internal/health"
 	"configflow/internal/httpx"
-
+	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
 	"configflow/internal/redact"
@@ -32,8 +28,8 @@ type clientDevice struct {
 	record      *model.Agent
 }
 
-func clientAgent(ctx context.Context, id string, history bool) (*clientDevice, error) {
-	manager, err := registry.Get(ctx)
+func (t clientTools) clientAgent(ctx context.Context, id string, history bool) (*clientDevice, error) {
+	manager, err := t.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -57,8 +53,8 @@ func clientBody(c *httpx.Ctx) map[string]json.RawMessage {
 	}
 	return fields
 }
-func clientLabel(ctx context.Context, id string) (string, error) {
-	r, err := repo.GetRepository(ctx)
+func (t clientTools) clientLabel(ctx context.Context, id string) (string, error) {
+	r, err := t.deps.repository(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -72,8 +68,8 @@ func clientLabel(ctx context.Context, id string) (string, error) {
 	}
 	return name, nil
 }
-func clientConfig(ctx context.Context, id string, fresh bool) (*model.Config, error) {
-	r, err := repo.GetRepository(ctx)
+func (t clientTools) clientConfig(ctx context.Context, id string, fresh bool) (*model.Config, error) {
+	r, err := t.deps.repository(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -83,8 +79,8 @@ func clientConfig(ctx context.Context, id string, fresh bool) (*model.Config, er
 	}
 	return r.Config(ctx, id, roots)
 }
-func clientPolicyConfig(ctx context.Context, id string, fresh bool) (*model.Config, error) {
-	r, err := repo.GetRepository(ctx)
+func (t clientTools) clientPolicyConfig(ctx context.Context, id string, fresh bool) (*model.Config, error) {
+	r, err := t.deps.repository(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -94,8 +90,8 @@ func clientPolicyConfig(ctx context.Context, id string, fresh bool) (*model.Conf
 	}
 	return r.ConfigWithOxiDNSAgents(ctx, id, roots)
 }
-func freshClientDiscovery(ctx context.Context, id string) (discovery.Settings, error) {
-	config, err := clientConfig(ctx, id, true)
+func (t clientTools) freshClientDiscovery(ctx context.Context, id string) (discovery.Settings, error) {
+	config, err := t.clientConfig(ctx, id, true)
 	if err != nil {
 		return discovery.Settings{}, err
 	}
@@ -110,8 +106,8 @@ func clientDiscoverySettings(config *model.Config) (discovery.Settings, error) {
 	err = jsondecode.Unmarshal(raw, &settings)
 	return settings, err
 }
-func clientNotesPayload(ctx context.Context, id string) (any, error) {
-	config, err := clientConfig(ctx, id, false)
+func (t clientTools) clientNotesPayload(ctx context.Context, id string) (any, error) {
+	config, err := t.clientConfig(ctx, id, false)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +119,7 @@ func clientNotesPayload(ctx context.Context, id string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	name, err := clientLabel(ctx, id)
+	name, err := t.clientLabel(ctx, id)
 	return struct {
 		Success     bool              `json:"success"`
 		ProfileID   string            `json:"profile_id"`
@@ -131,13 +127,13 @@ func clientNotesPayload(ctx context.Context, id string) (any, error) {
 		Notes       map[string]string `json:"notes"`
 	}{true, id, name, notes}, err
 }
-func updateClientNote(ctx context.Context, id string, edit noteEdit) error {
-	r, err := repo.GetRepository(ctx)
+func (t clientTools) updateClientNote(ctx context.Context, id string, edit noteEdit) error {
+	r, err := t.deps.repository(ctx)
 	if err != nil {
 		return err
 	}
 	_, err = r.UpdateProfile(ctx, edit.ProfileID, func(tx context.Context, profile *model.Profile) error {
-		if err := checkClientBinding(tx, id, edit.ProfileID, false); err != nil {
+		if err := t.checkClientBinding(tx, id, edit.ProfileID, false); err != nil {
 			return err
 		}
 		p, err := oxidns.NewTypedProfile(&model.Config{Profile: profile, ProfileID: edit.ProfileID})
@@ -184,8 +180,8 @@ func clientRuleDeps(config *model.Config) (rules.IPDeps, error) {
 		ReadPayload: rulefetch.ReadRulePayload, AppendPayload: rulefetch.AppendRulePayload,
 	}, nil
 }
-func clientTargetsPayload(ctx context.Context, id string) (any, error) {
-	config, err := clientConfig(ctx, id, false)
+func (t clientTools) clientTargetsPayload(ctx context.Context, id string) (any, error) {
+	config, err := t.clientConfig(ctx, id, false)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +217,7 @@ func clientTargetsPayload(ctx context.Context, id string) (any, error) {
 			return nil, err
 		}
 	}
-	name, err := clientLabel(ctx, id)
+	name, err := t.clientLabel(ctx, id)
 	return struct {
 		Success     bool                   `json:"success"`
 		ProfileID   string                 `json:"profile_id"`
@@ -231,7 +227,7 @@ func clientTargetsPayload(ctx context.Context, id string) (any, error) {
 		Proxy       *discovery.RulesetInfo `json:"proxy"`
 	}{true, id, name, targets, direct, proxy}, err
 }
-func applyClientIP(ctx context.Context, id string, edit connectionEdit, dest *rules.Destination) (any, error) {
+func (t clientTools) applyClientIP(ctx context.Context, id string, edit connectionEdit, dest *rules.Destination) (any, error) {
 	ctx, release, err := rulefetch.LockCacheEdits(ctx, edit.RulesetID)
 	if err != nil {
 		return nil, err
@@ -240,16 +236,16 @@ func applyClientIP(ctx context.Context, id string, edit connectionEdit, dest *ru
 	var stage *rulefetch.CachePublication
 	defer func() { stage.Discard(ctx) }()
 	var result *rules.IPResult
-	r, err := repo.GetRepository(ctx)
+	r, err := t.deps.repository(ctx)
 	if err != nil {
 		return nil, err
 	}
 	err = r.UpdateShared(ctx, func(tx context.Context, shared *model.Shared) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
-		if err := checkClientBinding(tx, id, edit.ProfileID, true); err != nil {
+		if err := t.checkClientBinding(tx, id, edit.ProfileID, true); err != nil {
 			return err
 		}
-		config, err := clientConfig(tx, edit.ProfileID, true)
+		config, err := t.clientConfig(tx, edit.ProfileID, true)
 		if err != nil {
 			return err
 		}
@@ -289,13 +285,13 @@ func applyClientIP(ctx context.Context, id string, edit connectionEdit, dest *ru
 		Warnings []string          `json:"warnings"`
 	}{true, result.Added, result.Skipped, result.Warnings}, nil
 }
-func updateClientPolicies(ctx context.Context, id string, edit policyEdit) error {
-	r, err := repo.GetRepository(ctx)
+func (t clientTools) updateClientPolicies(ctx context.Context, id string, edit policyEdit) error {
+	r, err := t.deps.repository(ctx)
 	if err != nil {
 		return err
 	}
 	_, err = r.UpdateProfile(ctx, edit.ProfileID, func(tx context.Context, stored *model.Profile) error {
-		latest, err := clientAgent(tx, id, true)
+		latest, err := t.clientAgent(tx, id, true)
 		if err != nil {
 			return err
 		}
@@ -306,7 +302,7 @@ func updateClientPolicies(ctx context.Context, id string, edit policyEdit) error
 		if latest == nil || latest.ServiceType != "oxidns" || profile != edit.ProfileID {
 			return repo.NewInUse(msgPolicyConflict, nil)
 		}
-		config, err := clientPolicyConfig(tx, edit.ProfileID, true)
+		config, err := t.clientPolicyConfig(tx, edit.ProfileID, true)
 		if err != nil {
 			return err
 		}
@@ -343,8 +339,8 @@ func updateClientPolicies(ctx context.Context, id string, edit policyEdit) error
 	})
 	return err
 }
-func clientPolicyPayload(ctx context.Context, id string, agent *clientDevice) (any, error) {
-	config, err := clientPolicyConfig(ctx, id, false)
+func (t clientTools) clientPolicyPayload(ctx context.Context, id string, agent *clientDevice) (any, error) {
+	config, err := t.clientPolicyConfig(ctx, id, false)
 	if err != nil {
 		return nil, err
 	}
@@ -368,11 +364,11 @@ func clientPolicyPayload(ctx context.Context, id string, agent *clientDevice) (a
 	if err != nil {
 		return nil, err
 	}
-	name, err := clientLabel(ctx, id)
+	name, err := t.clientLabel(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	manager, err := registry.Get(ctx)
+	manager, err := t.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -437,26 +433,26 @@ func clientPolicyPayload(ctx context.Context, id string, agent *clientDevice) (a
 		SideEntries   []oxidns.SideEntry `json:"side_entries"`
 	}{true, true, id, name, oxidns.Revision(settings), notesRevision, peers, notes, deployment, oxidns.ToJSON(view.Policies), view.Editable, view.Reason, view.SideEntries}, nil
 }
-func clearClientDiscovery(ctx context.Context, id string) (bool, error) {
-	agent, err := clientAgent(ctx, id, false)
+func (t clientTools) clearClientDiscovery(ctx context.Context, id string) (bool, error) {
+	agent, err := t.clientAgent(ctx, id, false)
 	if err != nil || agent == nil {
 		return false, err
 	}
-	traffic, err := trafficstore.GetNative(ctx)
+	traffic, err := t.deps.trafficStore(ctx)
 	if err != nil {
 		return false, err
 	}
 	if err = traffic.DeleteContext(ctx, id); err != nil {
 		return false, err
 	}
-	probes, err := health.GetProbeStore(ctx)
+	probes, err := t.deps.probeStore(ctx)
 	if err != nil {
 		return false, err
 	}
 	if err = probes.DeleteContext(ctx, id); err != nil {
 		return false, err
 	}
-	regions, err := health.GetRegionStore(ctx)
+	regions, err := t.deps.regionStore(ctx)
 	if err != nil {
 		return false, err
 	}

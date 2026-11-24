@@ -3,8 +3,6 @@ package agents
 // This file captures typed Agent records at the HTTP boundary; comparison,
 // paging and scheduling use the typed deploy/contentsync interfaces.
 import (
-	"configflow/internal/jsondecode"
-	"configflow/internal/model"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +14,8 @@ import (
 	"configflow/internal/deploy/contentsync"
 	"configflow/internal/deploy/pushdiff"
 	"configflow/internal/httpx"
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 )
@@ -117,9 +117,14 @@ func publicWithContent(ctx context.Context, m *core.Manager, record *model.Agent
 	public["content_sync"], err = json.Marshal(contentChecks.checker(m).Status(ctx, target, source, contentOrigin(record)))
 	return public, err
 }
-func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
+
+type contentHandler struct {
+	deps Deps
+}
+
+func (h *contentHandler) listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
-	m, err := core.Get(ctx)
+	m, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +184,7 @@ func listContentAgents(c *httpx.Ctx) (*httpx.Response, error) {
 
 	return httpx.JSON(result), nil
 }
-func getContentAgent(c *httpx.Ctx, m *core.Manager) (*httpx.Response, error) {
+func (h *contentHandler) getContentAgent(c *httpx.Ctx, m *core.Manager) (*httpx.Response, error) {
 	record, index, gen, err := m.ReadAgentAt(c.Context(), c.Param("agent_id"), true)
 	if err != nil {
 		return nil, err
@@ -194,13 +199,13 @@ func getContentAgent(c *httpx.Ctx, m *core.Manager) (*httpx.Response, error) {
 	return httpx.JSON(public), nil
 }
 
-func registerContentRoutes(r *httpx.Router) {
-	r.GET("/api/agents/<agent_id>/push-diff", "agents.agent_push_diff", auth.Require(agentPushDiff))
-	r.GET("/api/agents/<agent_id>/push-diff/entries", "agents.agent_push_diff_entries", auth.Require(agentPushDiffEntries))
+func (h *contentHandler) register(r *httpx.Router) {
+	r.GET("/api/agents/<agent_id>/push-diff", "agents.agent_push_diff", auth.Require(h.agentPushDiff))
+	r.GET("/api/agents/<agent_id>/push-diff/entries", "agents.agent_push_diff_entries", auth.Require(h.agentPushDiffEntries))
 }
-func agentPushDiff(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
-	m, err := core.Get(ctx)
+func (h *contentHandler) agentPushDiff(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.deps.withRepo(c.Context())
+	m, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -259,13 +264,13 @@ func agentPushDiff(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return httpx.JSON(pushdiff.WithoutStored(body, find)).NoStore(), nil
 }
-func agentPushDiffEntries(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *contentHandler) agentPushDiffEntries(c *httpx.Ctx) (*httpx.Response, error) {
 	q, err := contentPageQuery(c.ArgDefault("version", ""), c.ArgDefault("file", ""), c.ArgDefault("change", ""), c.ArgDefault("offset", ""), c.ArgDefault("limit", ""), c.ArgDefault("q", ""))
 	if err != nil {
 		return httpx.Message(400, false, messageInvalidContentPage), nil
 	}
-	ctx := c.Context()
-	m, err := core.Get(ctx)
+	ctx := h.deps.withRepo(c.Context())
+	m, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}

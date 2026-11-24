@@ -4,23 +4,25 @@ import (
 	"encoding/json"
 	"net/http"
 
-	core "configflow/internal/agents"
 	"configflow/internal/agents/dnsfollow"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 )
 
-func registerDNSFollowRoutes(r *httpx.Router) {
-	r.Handle([]string{http.MethodGet, http.MethodPut, http.MethodDelete}, "/api/agents/<agent_id>/dns-follow", "agents.agent_dns_follow", auth.Require(dnsFollowBinding))
-	r.POST("/api/agents/<agent_id>/dns-follow/retry", "agents.retry_agent_dns_follow", auth.Require(dnsFollowRetry))
+type dnsFollowHandler struct {
+	deps Deps
 }
 
-func dnsFollowBinding(c *httpx.Ctx) (*httpx.Response, error) {
-	m, err := core.Get(c.Context())
+func (h *dnsFollowHandler) register(r *httpx.Router) {
+	r.Handle([]string{http.MethodGet, http.MethodPut, http.MethodDelete}, "/api/agents/<agent_id>/dns-follow", "agents.agent_dns_follow", auth.Require(h.binding))
+	r.POST("/api/agents/<agent_id>/dns-follow/retry", "agents.retry_agent_dns_follow", auth.Require(h.retry))
+}
+
+func (h *dnsFollowHandler) binding(c *httpx.Ctx) (*httpx.Response, error) {
+	owner, err := h.deps.dnsFollowService(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	owner := dnsfollow.ForManager(m)
 	var result any
 	switch c.Method() {
 	case http.MethodPut:
@@ -41,12 +43,11 @@ func dnsFollowBinding(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(result), nil
 }
 
-func dnsFollowRetry(c *httpx.Ctx) (*httpx.Response, error) {
-	m, err := core.Get(c.Context())
+func (h *dnsFollowHandler) retry(c *httpx.Ctx) (*httpx.Response, error) {
+	owner, err := h.deps.dnsFollowService(c.Context())
 	if err != nil {
 		return nil, err
 	}
-	owner := dnsfollow.ForManager(m)
 	result, err := owner.Retry(c.Context(), c.Param("agent_id"))
 	if dnsfollow.IsUserError(err) {
 		return failure(409, owner.FailureMessage(c.Context(), err)), nil

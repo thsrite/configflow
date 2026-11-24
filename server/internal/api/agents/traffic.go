@@ -22,25 +22,30 @@ import (
 	"configflow/internal/repo"
 )
 
-func registerTraffic(r *httpx.Router) {
+type trafficHandler struct {
+	deps    Deps
+	metrics *metricsHandler
+}
+
+func (h *trafficHandler) register(r *httpx.Router) {
 	// Agent-authenticated (Bearer token of the Agent); listed as public in
 	// internal/auth like routes/auth.py.
-	r.POST("/api/agents/<agent_id>/traffic-report", "agents.agent_traffic_report", agentTrafficReport)
-	r.POST("/api/agents/<agent_id>/traffic-history", "agents.agent_traffic_history_report", agentTrafficHistoryReport)
-	r.GET("/api/agents/<agent_id>/traffic-history", "agents.get_agent_traffic_history", auth.Require(getAgentTrafficHistory))
-	r.PUT("/api/agents/<agent_id>/traffic-history", "agents.set_agent_traffic_history", auth.Require(setAgentTrafficHistory))
-	r.DELETE("/api/agents/<agent_id>/traffic-history", "agents.clear_agent_traffic_history", auth.Require(clearAgentTrafficHistory))
-	r.PUT("/api/agents/traffic-history/retention", "agents.set_traffic_history_retention", auth.Require(setTrafficHistoryRetention))
-	r.GET("/api/agents/<agent_id>/traffic/stats", "agents.get_agent_traffic_stats", auth.Require(getAgentTrafficStats))
-	r.GET("/api/agents/<agent_id>/traffic/trend", "agents.get_agent_traffic_trend", auth.Require(getAgentTrafficTrend))
+	r.POST("/api/agents/<agent_id>/traffic-report", "agents.agent_traffic_report", h.agentTrafficReport)
+	r.POST("/api/agents/<agent_id>/traffic-history", "agents.agent_traffic_history_report", h.agentTrafficHistoryReport)
+	r.GET("/api/agents/<agent_id>/traffic-history", "agents.get_agent_traffic_history", auth.Require(h.getAgentTrafficHistory))
+	r.PUT("/api/agents/<agent_id>/traffic-history", "agents.set_agent_traffic_history", auth.Require(h.setAgentTrafficHistory))
+	r.DELETE("/api/agents/<agent_id>/traffic-history", "agents.clear_agent_traffic_history", auth.Require(h.clearAgentTrafficHistory))
+	r.PUT("/api/agents/traffic-history/retention", "agents.set_traffic_history_retention", auth.Require(h.setTrafficHistoryRetention))
+	r.GET("/api/agents/<agent_id>/traffic/stats", "agents.get_agent_traffic_stats", auth.Require(h.getAgentTrafficStats))
+	r.GET("/api/agents/<agent_id>/traffic/trend", "agents.get_agent_traffic_trend", auth.Require(h.getAgentTrafficTrend))
 }
 
 // agentTrafficReport is agent_traffic_report: an Agent reports its Mihomo
 // traffic summary (domain discovery). Errors are not caught (500 page).
-func agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
+func (h *trafficHandler) agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.deps.withRepo(c.Context())
 	agentID := c.Param("agent_id")
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +74,7 @@ func agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, err := trafficstore.GetNative(ctx)
+	store, err := h.deps.trafficStore(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -86,10 +91,10 @@ func agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
 
 // agentTrafficHistoryReport is agent_traffic_history_report: an Agent
 // reports hourly traffic increments (流量记录).
-func agentTrafficHistoryReport(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *trafficHandler) agentTrafficHistoryReport(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
 	agentID := c.Param("agent_id")
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +116,7 @@ func agentTrafficHistoryReport(c *httpx.Ctx) (*httpx.Response, error) {
 	if cleaned == nil {
 		return failure(400, "Invalid traffic history report"), nil
 	}
-	if err := metrics.TrafficForManager(manager).AddTraffic(ctx, agentID, cleaned); err != nil {
+	if err := h.deps.trafficHistory(manager).AddTraffic(ctx, agentID, cleaned); err != nil {
 		return nil, err
 	}
 	return httpx.JSON(map[string]any{"success": true}), nil
@@ -184,8 +189,8 @@ func inList(value string, choices []string) bool {
 // getAgentTrafficHistory is get_agent_traffic_history: the selected range
 // grouped by device, target, chain, exit node or policy group, with the
 // trend.
-func getAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
-	manager, err := agents.Get(c.Context())
+func (h *trafficHandler) getAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
+	manager, err := h.deps.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +206,7 @@ func getAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	result, err := metrics.TrafficForManager(manager).QueryTraffic(c.Context(), c.Param("agent_id"), rangeKey, by, nil)
+	result, err := h.deps.trafficHistory(manager).QueryTraffic(c.Context(), c.Param("agent_id"), rangeKey, by, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +216,7 @@ func getAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 
 // setAgentTrafficHistory is set_agent_traffic_history: switch the traffic
 // history; switching off with clear: true also deletes what was recorded.
-func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *trafficHandler) setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 	raw, _ := io.ReadAll(c.Stream())
 	payload, decodeErr := jsondecode.Select(raw, "enabled", "clear")
 	if !c.IsJSON() || decodeErr != nil {
@@ -222,7 +227,7 @@ func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(400, "enabled 必须是布尔值"), nil
 	}
 	enabled, clear := bytes.Equal(enabledRaw, []byte("true")), bytes.Equal(clearRaw, []byte("true"))
-	manager, err := agents.Get(c.Context())
+	manager, err := h.deps.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +245,7 @@ func setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(404, "Agent not found"), nil
 	}
 	if !enabled && clear {
-		if err := metrics.TrafficForManager(manager).DeleteContext(c.Context(), c.Param("agent_id")); err != nil {
+		if err := h.deps.trafficHistory(manager).DeleteContext(c.Context(), c.Param("agent_id")); err != nil {
 			return nil, err
 		}
 	}
@@ -271,15 +276,15 @@ func setTrafficHistoryError(err error) *httpx.Response {
 
 // clearAgentTrafficHistory is clear_agent_traffic_history: delete the
 // recorded traffic without changing the switch.
-func clearAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
-	manager, err := agents.Get(c.Context())
+func (h *trafficHandler) clearAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
+	manager, err := h.deps.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}
 	if _, response, err := mihomoAgentOrError(c, manager); response != nil || err != nil {
 		return response, err
 	}
-	if err := metrics.TrafficForManager(manager).DeleteContext(c.Context(), c.Param("agent_id")); err != nil {
+	if err := h.deps.trafficHistory(manager).DeleteContext(c.Context(), c.Param("agent_id")); err != nil {
 		return nil, err
 	}
 	return httpx.JSON(map[string]any{"success": true}), nil
@@ -287,14 +292,14 @@ func clearAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, error) {
 
 // setTrafficHistoryRetention is set_traffic_history_retention: the
 // retention shared by every Agent.
-func setTrafficHistoryRetention(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *trafficHandler) setTrafficHistoryRetention(c *httpx.Ctx) (*httpx.Response, error) {
 	var days int64
 	raw, _ := io.ReadAll(c.Stream())
 	payload, decodeErr := jsondecode.Select(raw, "days")
 	if !c.IsJSON() || decodeErr != nil || jsondecode.Unmarshal(payload["days"], &days) != nil {
 		days = 0
 	}
-	manager, err := agents.Get(c.Context())
+	manager, err := h.deps.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -311,14 +316,14 @@ func setTrafficHistoryRetention(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // getAgentTrafficStats is get_agent_traffic_stats (period, default total).
-func getAgentTrafficStats(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *trafficHandler) getAgentTrafficStats(c *httpx.Ctx) (*httpx.Response, error) {
 	const prefix = "获取Agent流量统计失败"
-	manager, _, response := agentForMetrics(c, prefix)
+	manager, _, response := h.metrics.agentForMetrics(c, prefix)
 	if response != nil {
 		return response, nil
 	}
 	period := c.ArgDefault("period", "total")
-	stats, err := metrics.ForManager(manager).TrafficStatistics(c.Param("agent_id"), period)
+	stats, err := h.deps.metricsHistory(manager).TrafficStatistics(c.Param("agent_id"), period)
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}
@@ -327,15 +332,15 @@ func getAgentTrafficStats(c *httpx.Ctx) (*httpx.Response, error) {
 
 // getAgentTrafficTrend is get_agent_traffic_trend (hours default 24,
 // interval default 5 minutes).
-func getAgentTrafficTrend(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *trafficHandler) getAgentTrafficTrend(c *httpx.Ctx) (*httpx.Response, error) {
 	const prefix = "获取Agent流量趋势失败"
-	manager, _, response := agentForMetrics(c, prefix)
+	manager, _, response := h.metrics.agentForMetrics(c, prefix)
 	if response != nil {
 		return response, nil
 	}
 	hours := argBigInt(c, "hours", 24)
 	interval := argBigInt(c, "interval", 5)
-	trend, err := metrics.ForManager(manager).TrafficTrend(c.Param("agent_id"), hours, interval)
+	trend, err := h.deps.metricsHistory(manager).TrafficTrend(c.Param("agent_id"), hours, interval)
 	if err != nil {
 		return metricsFailure(prefix, err), nil
 	}

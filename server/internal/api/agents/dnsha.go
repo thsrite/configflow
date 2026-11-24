@@ -6,22 +6,24 @@ import (
 	"net/http"
 	"strings"
 
-	core "configflow/internal/agents"
 	"configflow/internal/agents/dnsha"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 )
 
-func registerDNSHARoutes(r *httpx.Router) {
-	r.Handle([]string{http.MethodGet, http.MethodPut, http.MethodDelete}, "/api/agents/<agent_id>/oxidns-ha", "agents.agent_oxidns_ha", auth.Require(dnsHABinding))
-	r.GET("/api/agents/<agent_id>/oxidns-ha-environment", "agents.agent_oxidns_ha_environment", auth.Require(dnsHAEnvironment))
+type dnsHAHandler struct {
+	deps Deps
 }
-func dnsHABinding(c *httpx.Ctx) (*httpx.Response, error) {
-	m, e := core.Get(c.Context())
+
+func (h *dnsHAHandler) register(r *httpx.Router) {
+	r.Handle([]string{http.MethodGet, http.MethodPut, http.MethodDelete}, "/api/agents/<agent_id>/oxidns-ha", "agents.agent_oxidns_ha", auth.Require(h.binding))
+	r.GET("/api/agents/<agent_id>/oxidns-ha-environment", "agents.agent_oxidns_ha_environment", auth.Require(h.environment))
+}
+func (h *dnsHAHandler) binding(c *httpx.Ctx) (*httpx.Response, error) {
+	s, e := h.deps.dnsHAService(c.Context())
 	if e != nil {
 		return nil, e
 	}
-	s := dnsha.ForManager(m)
 	var result any
 	code := 200
 	switch c.Method() {
@@ -69,12 +71,12 @@ func dnsHABinding(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return httpx.JSONStatus(code, result), nil
 }
-func dnsHAEnvironment(c *httpx.Ctx) (*httpx.Response, error) {
-	m, e := core.Get(c.Context())
+func (h *dnsHAHandler) environment(c *httpx.Ctx) (*httpx.Response, error) {
+	s, e := h.deps.dnsHAService(c.Context())
 	if e != nil {
 		return nil, e
 	}
-	v, status, e := dnsha.ForManager(m).Environment(c.Context(), c.Param("agent_id"))
+	v, status, e := s.Environment(c.Context(), c.Param("agent_id"))
 	if e != nil {
 		return nil, e
 	}

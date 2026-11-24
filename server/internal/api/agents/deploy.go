@@ -1,35 +1,39 @@
 package agents
 
 import (
-	core "configflow/internal/agents"
+	"encoding/json"
+	"errors"
+	"strings"
+
 	"configflow/internal/auth"
 	"configflow/internal/deploy"
 	"configflow/internal/httpx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
-	"encoding/json"
-	"errors"
-	"strings"
 )
 
-func registerDeployRoutes(r *httpx.Router) {
-	r.GET("/api/agents/<agent_id>/config", "agents.get_agent_config", getAgentConfig)
-	r.POST("/api/agents/<agent_id>/push-config", "agents.push_config_to_agent", auth.Require(pushAgentConfig))
-	r.POST("/api/agents/<agent_id>/generate-config", "agents.generate_final_agent_config", auth.Require(generateAgentFinal))
-	r.GET("/api/agents/<agent_id>/generated-config/<preview_id>/download", "agents.download_final_agent_config", auth.Require(generatedFile(true)))
-	r.GET("/api/agents/<agent_id>/generated-config/<preview_id>/file", "agents.read_final_agent_file", auth.Require(generatedFile(false)))
-	r.GET("/api/agents/<agent_id>/deployments/<deployment_id>", "agents.get_agent_deployment", auth.Require(deploymentAction("poll")))
-	r.POST("/api/agents/<agent_id>/deployments/<deployment_id>/activate", "agents.activate_agent_deployment", auth.Require(deploymentAction("activate")))
-	r.POST("/api/agents/<agent_id>/deployments/<deployment_id>/rollback", "agents.rollback_agent_deployment", auth.Require(deploymentAction("rollback")))
-	r.POST("/api/agents/<agent_id>/deployments/<deployment_id>/recover", "agents.recover_agent_deployment", auth.Require(deploymentAction("recover")))
+type deployHandler struct {
+	deps Deps
 }
-func getAgentConfig(c *httpx.Ctx) (*httpx.Response, error) {
+
+func (h *deployHandler) register(r *httpx.Router) {
+	r.GET("/api/agents/<agent_id>/config", "agents.get_agent_config", h.getAgentConfig)
+	r.POST("/api/agents/<agent_id>/push-config", "agents.push_config_to_agent", auth.Require(h.pushAgentConfig))
+	r.POST("/api/agents/<agent_id>/generate-config", "agents.generate_final_agent_config", auth.Require(h.generateAgentFinal))
+	r.GET("/api/agents/<agent_id>/generated-config/<preview_id>/download", "agents.download_final_agent_config", auth.Require(h.generatedFile(true)))
+	r.GET("/api/agents/<agent_id>/generated-config/<preview_id>/file", "agents.read_final_agent_file", auth.Require(h.generatedFile(false)))
+	r.GET("/api/agents/<agent_id>/deployments/<deployment_id>", "agents.get_agent_deployment", auth.Require(h.deploymentAction("poll")))
+	r.POST("/api/agents/<agent_id>/deployments/<deployment_id>/activate", "agents.activate_agent_deployment", auth.Require(h.deploymentAction("activate")))
+	r.POST("/api/agents/<agent_id>/deployments/<deployment_id>/rollback", "agents.rollback_agent_deployment", auth.Require(h.deploymentAction("rollback")))
+	r.POST("/api/agents/<agent_id>/deployments/<deployment_id>/recover", "agents.recover_agent_deployment", auth.Require(h.deploymentAction("recover")))
+}
+func (h *deployHandler) getAgentConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	token, _ := c.Arg("token")
 	if !auth.IsTokenWithinLength(token) {
 		return failure(401, "Token required"), nil
 	}
-	m, err := core.Get(c.Context())
+	m, err := h.deps.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -75,8 +79,8 @@ func deployResponse(r deploy.Response) (*httpx.Response, error) {
 	}
 	return out, nil
 }
-func pushAgentConfig(c *httpx.Ctx) (*httpx.Response, error) {
-	m, e := core.Get(c.Context())
+func (h *deployHandler) pushAgentConfig(c *httpx.Ctx) (*httpx.Response, error) {
+	m, e := h.deps.manager(c.Context())
 	if e != nil {
 		return nil, e
 	}
@@ -88,8 +92,8 @@ func pushAgentConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	host, _ := c.Header("X-Forwarded-Host")
 	return deployResponse(deploy.PushConfig(c.Context(), m, c.Param("agent_id"), deploy.PushRequest{Body: body, Scheme: c.Scheme(), Host: c.Host(), ForwardedProto: proto, ForwardedHost: host}))
 }
-func generateAgentFinal(c *httpx.Ctx) (*httpx.Response, error) {
-	m, e := core.Get(c.Context())
+func (h *deployHandler) generateAgentFinal(c *httpx.Ctx) (*httpx.Response, error) {
+	m, e := h.deps.manager(c.Context())
 	if e != nil {
 		return nil, e
 	}
@@ -99,9 +103,9 @@ func generateAgentFinal(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return deployResponse(deploy.GenerateFinal(c.Context(), m, c.Param("agent_id"), deploy.GenerateRequest{Body: body, HostURL: c.HostURL()}))
 }
-func deploymentAction(action string) httpx.HandlerFunc {
+func (h *deployHandler) deploymentAction(action string) httpx.HandlerFunc {
 	return func(c *httpx.Ctx) (*httpx.Response, error) {
-		m, e := core.Get(c.Context())
+		m, e := h.deps.manager(c.Context())
 		if e != nil {
 			return nil, e
 		}
@@ -132,13 +136,13 @@ func deploymentAction(action string) httpx.HandlerFunc {
 		return deployResponse(response)
 	}
 }
-func generatedFile(download bool) httpx.HandlerFunc {
+func (h *deployHandler) generatedFile(download bool) httpx.HandlerFunc {
 	return func(c *httpx.Ctx) (*httpx.Response, error) {
-		m, e := core.Get(c.Context())
+		m, e := h.deps.manager(c.Context())
 		if e != nil {
 			return nil, e
 		}
-		pv, e := deploy.LoadPreview(m, c.Param("preview_id"), c.Param("agent_id"))
+		pv, e := h.deps.loadPreview(m, c.Param("preview_id"), c.Param("agent_id"))
 		if e != nil {
 			return previewError(e)
 		}

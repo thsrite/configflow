@@ -560,7 +560,7 @@ func TestClientNoteAndPolicyCancelledOwners(t *testing.T) {
 	if err := (clientTools{}).SaveNote(ctx, "m", noteEdit{"office", "192.0.2.5", "renamed", "旧电脑"}); err != nil {
 		t.Fatal(err)
 	}
-	p, err := clientConfig(s.Context(), "office", true)
+	p, err := (clientTools{}).clientConfig(s.Context(), "office", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -614,7 +614,7 @@ func TestClientToolsRejectStaleBindingsAndNames(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			s := a24Fixture(t)
 			ctx := s.Context()
-			config, err := clientConfig(ctx, "office", false)
+			config, err := (clientTools{}).clientConfig(ctx, "office", false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -695,7 +695,7 @@ func TestClientToolsConcurrentEditors(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			s := a24Fixture(t)
 			ctx := s.Context()
-			p, err := clientConfig(ctx, "office", true)
+			p, err := (clientTools{}).clientConfig(ctx, "office", true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -737,7 +737,7 @@ func TestClientToolsConcurrentEditors(t *testing.T) {
 			if successes != 1 || conflicts != 1 {
 				t.Fatalf("success=%d conflict=%d", successes, conflicts)
 			}
-			saved, err := clientConfig(ctx, "office", true)
+			saved, err := (clientTools{}).clientConfig(ctx, "office", true)
 			if err != nil {
 				t.Fatal(err)
 			}

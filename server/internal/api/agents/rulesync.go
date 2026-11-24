@@ -9,11 +9,15 @@ import (
 	"errors"
 )
 
-func registerRuleSync(r *httpx.Router) {
-	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/rule-sync", "agents.agent_rule_sync", auth.Require(agentRuleSync))
+type ruleSyncHandler struct {
+	deps Deps
 }
-func agentRuleSync(c *httpx.Ctx) (*httpx.Response, error) {
-	s, e := rulesync.Get(c.Context())
+
+func (h *ruleSyncHandler) register(r *httpx.Router) {
+	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/rule-sync", "agents.agent_rule_sync", auth.Require(h.agentRuleSync))
+}
+func (h *ruleSyncHandler) agentRuleSync(c *httpx.Ctx) (*httpx.Response, error) {
+	s, e := h.deps.ruleSyncService(c.Context())
 	if e != nil {
 		return nil, e
 	}

@@ -17,9 +17,13 @@ import (
 // Routes of backend/routes/docker_ha_installation.py (A09): Docker HA guide
 // generation and narrowly scoped installer enrollment.
 
-func registerDockerHA(r *httpx.Router) {
-	r.POST("/api/agents/docker-oxidns-ha-guide", "agents.docker_oxidns_ha_guide", auth.Require(dockerOxidnsHAGuide))
-	r.POST("/api/agents/docker-oxidns-ha-enroll/<session_id>", "agents.docker_oxidns_ha_enroll", dockerOxidnsHAEnroll)
+type dockerHAHandler struct {
+	deps Deps
+}
+
+func (h *dockerHAHandler) register(r *httpx.Router) {
+	r.POST("/api/agents/docker-oxidns-ha-guide", "agents.docker_oxidns_ha_guide", auth.Require(h.dockerOxidnsHAGuide))
+	r.POST("/api/agents/docker-oxidns-ha-enroll/<session_id>", "agents.docker_oxidns_ha_enroll", h.dockerOxidnsHAEnroll)
 }
 
 const (
@@ -88,7 +92,7 @@ func dockerHARespond(callback func() (any, error)) (*httpx.Response, error) {
 	return httpx.JSON(result).WithStatus(status).WithHeader("Cache-Control", "no-store"), nil
 }
 
-func dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *dockerHAHandler) dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, error) {
 	return dockerHARespond(func() (any, error) {
 		body, err := dockerHABody(c, true)
 		if err != nil {
@@ -115,7 +119,7 @@ func dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, err
 		}
 		if options.Action == "generate" && options.Mode == "new" {
-			ctx := c.Context()
+			ctx := h.deps.withRepo(c.Context())
 			var profileID string
 			if header, present := c.Header("X-ConfigFlow-Profile"); present {
 				profileID, err = repo.ResolveProfile(ctx, &header, nil)
@@ -125,11 +129,11 @@ func dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, error) {
 			if err != nil {
 				return nil, err
 			}
-			repository, err := repo.GetRepository(ctx)
+			repository, err := h.deps.repository(ctx)
 			if err != nil {
 				return nil, err
 			}
-			capability, err := installer.IssueCapability(c.Context(), repository.DataDir(), raw, profileID)
+			capability, err := installer.IssueCapability(ctx, repository.DataDir(), raw, profileID)
 			if err != nil {
 				return nil, err
 			}
@@ -143,7 +147,7 @@ func dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, error) {
 	})
 }
 
-func dockerOxidnsHAEnroll(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *dockerHAHandler) dockerOxidnsHAEnroll(c *httpx.Ctx) (*httpx.Response, error) {
 	return dockerHARespond(func() (any, error) {
 		body, err := dockerHABody(c, false)
 		if err != nil {
@@ -157,11 +161,11 @@ func dockerOxidnsHAEnroll(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, &installer.ValidationError{Message: dockerHAEnrollmentNoBody}
 		}
 		ctx := c.Context()
-		repository, err := repo.GetRepository(ctx)
+		repository, err := h.deps.repository(ctx)
 		if err != nil {
 			return nil, err
 		}
-		manager, err := agents.Get(ctx)
+		manager, err := h.deps.manager(ctx)
 		if err != nil {
 			return nil, err
 		}

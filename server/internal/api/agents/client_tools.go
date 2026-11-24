@@ -19,18 +19,24 @@ import (
 	"configflow/internal/rules"
 )
 
-func registerClientTools(r *httpx.Router) {
-	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/client-notes", "agents.client_notes", auth.Require(clientBindingHandler(clientNotes)))
-	r.GET("/api/agents/<agent_id>/mihomo/rule-targets", "agents.rule_targets", auth.Require(clientBindingHandler(clientRuleTargets)))
-	r.POST("/api/agents/<agent_id>/mihomo/rule-targets/apply", "agents.connection_rule", auth.Require(clientBindingHandler(clientConnectionRule)))
-	r.PUT("/api/agents/<agent_id>/domain-discovery", "agents.set_agent_domain_discovery", auth.Require(clientBindingHandler(clientDiscoveryToggle)))
-	r.POST("/api/agents/<agent_id>/domain-discovery/clear", "agents.clear_agent_domain_discovery", auth.Require(clientBindingHandler(clientDiscoveryClear)))
-	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/oxidns/device-policies", "agents.oxidns_device_policies", auth.Require(clientBindingHandler(clientPolicies)))
+type clientToolsHandler struct {
+	tools clientTools
+}
+
+func (h *clientToolsHandler) register(r *httpx.Router) {
+	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/client-notes", "agents.client_notes", auth.Require(clientBindingHandler(h.clientNotes)))
+	r.GET("/api/agents/<agent_id>/mihomo/rule-targets", "agents.rule_targets", auth.Require(clientBindingHandler(h.clientRuleTargets)))
+	r.POST("/api/agents/<agent_id>/mihomo/rule-targets/apply", "agents.connection_rule", auth.Require(clientBindingHandler(h.clientConnectionRule)))
+	r.PUT("/api/agents/<agent_id>/domain-discovery", "agents.set_agent_domain_discovery", auth.Require(clientBindingHandler(h.clientDiscoveryToggle)))
+	r.POST("/api/agents/<agent_id>/domain-discovery/clear", "agents.clear_agent_domain_discovery", auth.Require(clientBindingHandler(h.clientDiscoveryClear)))
+	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/oxidns/device-policies", "agents.oxidns_device_policies", auth.Require(clientBindingHandler(h.clientPolicies)))
 }
 
 // clientTools owns bound-profile edits and discovery cleanup. Its write entry
 // points detach request cancellation while retaining server shutdown and values.
-type clientTools struct{}
+type clientTools struct {
+	deps Deps
+}
 
 type noteEdit struct {
 	ProfileID string
@@ -53,8 +59,8 @@ type policyEdit struct {
 	BaseURL       string
 }
 
-func boundClientProfile(ctx context.Context, id string, mihomoOnly bool) (string, error) {
-	agent, err := clientAgent(ctx, id, true)
+func (t clientTools) boundClientProfile(ctx context.Context, id string, mihomoOnly bool) (string, error) {
+	agent, err := t.clientAgent(ctx, id, true)
 	if err != nil {
 		return "", err
 	}
@@ -63,8 +69,8 @@ func boundClientProfile(ctx context.Context, id string, mihomoOnly bool) (string
 	}
 	return agent.ProfileID, nil
 }
-func checkClientBinding(ctx context.Context, id, profile string, mihomoOnly bool) error {
-	current, err := boundClientProfile(ctx, id, mihomoOnly)
+func (t clientTools) checkClientBinding(ctx context.Context, id, profile string, mihomoOnly bool) error {
+	current, err := t.boundClientProfile(ctx, id, mihomoOnly)
 	if err != nil {
 		return err
 	}
@@ -101,9 +107,9 @@ func bodyFields(c *httpx.Ctx, allowed []string, exact bool) map[string]json.RawM
 	}
 	return fields
 }
-func clientNotes(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *clientToolsHandler) clientNotes(c *httpx.Ctx) (*httpx.Response, error) {
 	id := c.Param("agent_id")
-	profile, err := boundClientProfile(c.Context(), id, false)
+	profile, err := h.tools.boundClientProfile(c.Context(), id, false)
 	if err != nil {
 		return nil, err
 	}
@@ -139,11 +145,11 @@ func clientNotes(c *httpx.Ctx) (*httpx.Response, error) {
 		if err != nil {
 			return nil, clientValidation(err.Error())
 		}
-		if err = (clientTools{}).SaveNote(c.Context(), id, noteEdit{profile, ip, name, previous}); err != nil {
+		if err = h.tools.SaveNote(c.Context(), id, noteEdit{profile, ip, name, previous}); err != nil {
 			return nil, err
 		}
 	}
-	payload, err := clientNotesPayload(c.Context(), profile)
+	payload, err := h.tools.clientNotesPayload(c.Context(), profile)
 	if _, ok := oxidns.IsSettingsError(err); ok {
 		return nil, clientValidation(err.Error())
 	}
@@ -154,27 +160,27 @@ func clientNotes(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // SaveNote commits a display-only edit after rechecking the binding and previous name.
-func (clientTools) SaveNote(ctx context.Context, id string, edit noteEdit) error {
+func (t clientTools) SaveNote(ctx context.Context, id string, edit noteEdit) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return updateClientNote(ctx, id, edit)
+	return t.updateClientNote(ctx, id, edit)
 }
-func clientRuleTargets(c *httpx.Ctx) (*httpx.Response, error) {
-	profile, err := boundClientProfile(c.Context(), c.Param("agent_id"), true)
+func (h *clientToolsHandler) clientRuleTargets(c *httpx.Ctx) (*httpx.Response, error) {
+	profile, err := h.tools.boundClientProfile(c.Context(), c.Param("agent_id"), true)
 	if err != nil {
 		return nil, err
 	}
-	payload, err := clientTargetsPayload(c.Context(), profile)
+	payload, err := h.tools.clientTargetsPayload(c.Context(), profile)
 	if err != nil {
 		return nil, err
 	}
 	return httpx.JSON(payload).NoStore(), nil
 }
-func clientConnectionRule(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *clientToolsHandler) clientConnectionRule(c *httpx.Ctx) (*httpx.Response, error) {
 	id := c.Param("agent_id")
-	profile, err := boundClientProfile(c.Context(), id, true)
+	profile, err := h.tools.boundClientProfile(c.Context(), id, true)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +196,7 @@ func clientConnectionRule(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, clientValidation(msgConnectionTarget)
 	}
 	edit := connectionEdit{profile, ruleset, target, f["value"], rawText(f["rule_type"])}
-	result, err := (clientTools{}).ApplyConnection(c.Context(), id, edit)
+	result, err := h.tools.ApplyConnection(c.Context(), id, edit)
 	if err != nil {
 		var validation *rules.ProfileValidationError
 		if errors.As(err, &validation) {
@@ -202,8 +208,8 @@ func clientConnectionRule(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // ApplyConnection owns guarded shared-rule adoption and its cache/history writes.
-func (clientTools) ApplyConnection(ctx context.Context, id string, edit connectionEdit) (any, error) {
-	ctx = lifecycle.Detach(ctx)
+func (t clientTools) ApplyConnection(ctx context.Context, id string, edit connectionEdit) (any, error) {
+	ctx = t.deps.withRepo(lifecycle.Detach(ctx))
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -212,7 +218,7 @@ func (clientTools) ApplyConnection(ctx context.Context, id string, edit connecti
 		if err != nil {
 			return nil, err
 		}
-		return applyClientIP(ctx, id, edit, dest)
+		return t.applyClientIP(ctx, id, edit, dest)
 	}
 	// Preserve the explicit type, including null/non-string, at the shared parser.
 	entry := map[string]any{"target": edit.Target, "value": edit.Value, "rule_type": edit.RuleType}
@@ -222,10 +228,10 @@ func (clientTools) ApplyConnection(ctx context.Context, id string, edit connecti
 		return nil, err
 	}
 	guard := func(tx context.Context, infos map[string]*discovery.RulesetInfo) error {
-		if err := checkClientBinding(tx, id, edit.ProfileID, true); err != nil {
+		if err := t.checkClientBinding(tx, id, edit.ProfileID, true); err != nil {
 			return err
 		}
-		settings, err := freshClientDiscovery(tx, edit.ProfileID)
+		settings, err := t.freshClientDiscovery(tx, edit.ProfileID)
 		if err != nil {
 			return err
 		}
@@ -250,13 +256,13 @@ func (clientTools) ApplyConnection(ctx context.Context, id string, edit connecti
 		discovery.ApplyResult
 	}{true, result}, nil
 }
-func clientDiscoveryToggle(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *clientToolsHandler) clientDiscoveryToggle(c *httpx.Ctx) (*httpx.Response, error) {
 	f := clientBody(c)
 	enabled, ok := f["enabled"]
 	if !ok || (string(enabled) != "true" && string(enabled) != "false") {
 		return httpx.Message(400, false, msgDiscoveryBoolean), nil
 	}
-	record, err := (clientTools{}).SetDiscovery(c.Context(), c.Param("agent_id"), string(enabled) == "true")
+	record, err := h.tools.SetDiscovery(c.Context(), c.Param("agent_id"), string(enabled) == "true")
 	if err != nil {
 		var value *registry.ValidationError
 		var conflict *registry.DeploymentConflict
@@ -282,19 +288,19 @@ func clientDiscoveryToggle(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // SetDiscovery updates the switch and returns the live runtime overlay.
-func (clientTools) SetDiscovery(ctx context.Context, id string, enabled bool) (*model.Agent, error) {
+func (t clientTools) SetDiscovery(ctx context.Context, id string, enabled bool) (*model.Agent, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	manager, err := registry.Get(ctx)
+	manager, err := t.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return manager.SetDomainDiscoveryModel(ctx, id, enabled)
 }
-func clientDiscoveryClear(c *httpx.Ctx) (*httpx.Response, error) {
-	found, err := (clientTools{}).ClearDiscovery(c.Context(), c.Param("agent_id"))
+func (h *clientToolsHandler) clientDiscoveryClear(c *httpx.Ctx) (*httpx.Response, error) {
+	found, err := h.tools.ClearDiscovery(c.Context(), c.Param("agent_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -307,21 +313,21 @@ func clientDiscoveryClear(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // ClearDiscovery deletes only collected traffic, probes and regions.
-func (clientTools) ClearDiscovery(ctx context.Context, id string) (bool, error) {
+func (t clientTools) ClearDiscovery(ctx context.Context, id string) (bool, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	return clearClientDiscovery(ctx, id)
+	return t.clearClientDiscovery(ctx, id)
 }
 func policyError(status int, message string) *httpx.Response {
 	return httpx.JSONStatus(status, struct {
 		Message string `json:"message"`
 	}{message}).NoStore()
 }
-func clientPolicies(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *clientToolsHandler) clientPolicies(c *httpx.Ctx) (*httpx.Response, error) {
 	id := c.Param("agent_id")
-	agent, err := clientAgent(c.Context(), id, true)
+	agent, err := h.tools.clientAgent(c.Context(), id, true)
 	if err != nil {
 		return nil, err
 	}
@@ -345,11 +351,11 @@ func clientPolicies(c *httpx.Ctx) (*httpx.Response, error) {
 		if rawText(f["profile_id"]) != profile {
 			return policyError(409, msgPolicyBinding), nil
 		}
-		err = (clientTools{}).SavePolicies(c.Context(), id, policyEdit{profile, rawText(f["revision"]), rawText(f["notes_revision"]), f["policies"], base})
+		err = h.tools.SavePolicies(c.Context(), id, policyEdit{profile, rawText(f["revision"]), rawText(f["notes_revision"]), f["policies"], base})
 	}
 	if err == nil {
 		var payload any
-		payload, err = clientPolicyPayload(c.Context(), profile, agent)
+		payload, err = h.tools.clientPolicyPayload(c.Context(), profile, agent)
 		if err == nil {
 			return httpx.JSON(payload).NoStore(), nil
 		}
@@ -364,10 +370,10 @@ func clientPolicies(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // SavePolicies commits a draft with binding, settings and notes revision guards.
-func (clientTools) SavePolicies(ctx context.Context, id string, edit policyEdit) error {
+func (t clientTools) SavePolicies(ctx context.Context, id string, edit policyEdit) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return updateClientPolicies(ctx, id, edit)
+	return t.updateClientPolicies(ctx, id, edit)
 }

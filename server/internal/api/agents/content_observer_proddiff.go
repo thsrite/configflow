@@ -20,6 +20,12 @@ var errContentObservation = errors.New("proddiff content sync did not settle")
 // InstallProddiffContentObserver compares settled content results in this build
 // only. Production routes, async admission and cache TTLs remain unchanged.
 func InstallProddiffContentObserver(app *httpx.App) {
+	NewHandler(Deps{}).InstallProddiffContentObserver(app)
+}
+
+// InstallProddiffContentObserver installs the proddiff content-sync observer
+// backed by h's handlers.
+func (h *Handler) InstallProddiffContentObserver(app *httpx.App) {
 	app.AfterRequest(func(c *httpx.Ctx, response *httpx.Response) {
 		if c.Request.Method != "GET" {
 			return
@@ -27,11 +33,11 @@ func InstallProddiffContentObserver(app *httpx.App) {
 		var read func(*httpx.Ctx) (*httpx.Response, error)
 		switch c.Endpoint {
 		case "agents.handle_agents":
-			read = createAgent
+			read = h.registry.createAgent
 		case "agents.handle_agent_item":
-			read = handleAgentItem
+			read = h.registry.handleAgentItem
 		case "agents.agent_push_diff":
-			read = agentPushDiff
+			read = h.content.agentPushDiff
 		default:
 			return
 		}

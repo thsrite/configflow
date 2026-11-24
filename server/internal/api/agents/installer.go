@@ -10,13 +10,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"configflow/internal/agents"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/installer"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
 
@@ -24,15 +22,19 @@ import (
 // install-command links, the core installer, the gateway network probe and
 // the Docker Agent snippets. GET /api/agents/download/<filename> stays with A10.
 
-func registerInstaller(r *httpx.Router) {
-	r.GET("/api/agents/core-install-script", "agents.get_core_install_script", getCoreInstallScript)
-	r.GET("/api/agents/gateway-network-probe.sh", "agents.get_gateway_network_probe", getGatewayNetworkProbe)
-	r.POST("/api/agents/install-command", "agents.create_install_command", auth.Require(createInstallCommand))
-	r.POST("/api/agents/core-install-command", "agents.create_core_install_command", auth.Require(createCoreInstallCommand))
-	r.GET("/api/agents/i/<token>", "agents.download_install_command", downloadInstallCommand).PreservePlainErrors = true
-	r.GET("/api/agents/install-script", "agents.get_install_script", getInstallScript)
-	r.GET("/api/agents/docker-agent-compose", "agents.get_docker_agent_compose", auth.Require(getDockerAgentCompose))
-	r.GET("/api/agents/docker-agent-run", "agents.get_docker_agent_run", auth.Require(getDockerAgentRun))
+type installerHandler struct {
+	deps Deps
+}
+
+func (h *installerHandler) register(r *httpx.Router) {
+	r.GET("/api/agents/core-install-script", "agents.get_core_install_script", h.getCoreInstallScript)
+	r.GET("/api/agents/gateway-network-probe.sh", "agents.get_gateway_network_probe", h.getGatewayNetworkProbe)
+	r.POST("/api/agents/install-command", "agents.create_install_command", auth.Require(h.createInstallCommand))
+	r.POST("/api/agents/core-install-command", "agents.create_core_install_command", auth.Require(h.createCoreInstallCommand))
+	r.GET("/api/agents/i/<token>", "agents.download_install_command", h.downloadInstallCommand).PreservePlainErrors = true
+	r.GET("/api/agents/install-script", "agents.get_install_script", h.getInstallScript)
+	r.GET("/api/agents/docker-agent-compose", "agents.get_docker_agent_compose", auth.Require(h.getDockerAgentCompose))
+	r.GET("/api/agents/docker-agent-run", "agents.get_docker_agent_run", auth.Require(h.getDockerAgentRun))
 }
 
 // scriptDownload is a script body with the download headers of the routes.
@@ -54,7 +56,7 @@ func coreInstallScript() (string, *httpx.Response) {
 	return script, nil
 }
 
-func getCoreInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *installerHandler) getCoreInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
 	script, failed := coreInstallScript()
 	if failed != nil {
 		return failed, nil
@@ -62,7 +64,7 @@ func getCoreInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
 	return scriptDownload(200, script, "install-mihomo-oxidns.sh"), nil
 }
 
-func getGatewayNetworkProbe(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *installerHandler) getGatewayNetworkProbe(c *httpx.Ctx) (*httpx.Response, error) {
 	return scriptDownload(200, installer.GatewayNetworkProbe, "detect-gateway-network.sh"), nil
 }
 
@@ -365,7 +367,7 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 	return script, nil
 }
 
-func getInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *installerHandler) getInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
 	params := queryParams{c}
 	script, failed := installScriptResponse(c, params)
 	if failed != nil {
@@ -374,7 +376,7 @@ func getInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
 	// Anonymous script downloads remain templates. Only an authenticated panel
 	// request may mint a capability; a public URL can never become a proof oracle.
 	if auth.IsAuthEnabled() && validPanelJWT(c) {
-		tokens, failed := issueRegistration(c, shellRegistrationIdentities(params))
+		tokens, failed := h.issueRegistration(c, shellRegistrationIdentities(params))
 		if failed != nil {
 			return failed, nil
 		}
@@ -388,8 +390,8 @@ func getInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // saveInstallCommand is _save_install_command(script).
-func saveInstallCommand(c *httpx.Ctx, script string) *httpx.Response {
-	store := &installer.Store{DataDir: repo.DataDir()}
+func (h *installerHandler) saveInstallCommand(c *httpx.Ctx, script string) *httpx.Response {
+	store := &installer.Store{DataDir: h.deps.dataDir()}
 	token, expiresAt, err := store.SaveInstallScript(c.Context(), script, nil)
 	if errors.Is(err, installer.ErrStoreFull) {
 		return failure(503, "可用安装链接已达上限，请使用已生成的命令或等待旧链接过期。")
@@ -401,7 +403,7 @@ func saveInstallCommand(c *httpx.Ctx, script string) *httpx.Response {
 	return httpx.JSON(map[string]any{"success": true, "script": script, "download_path": "/api/agents/i/" + token, "expires_at": expiresAt}).NoStore()
 }
 
-func createInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *installerHandler) createInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
 	payload, failed := readBoundJSON(c, 32*1024, "安装参数无效")
 	if failed != nil {
 		return failed, nil
@@ -416,7 +418,7 @@ func createInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	if auth.IsAuthEnabled() {
 		identities := shellRegistrationIdentities(params)
-		tokens, failed := issueRegistration(c, identities)
+		tokens, failed := h.issueRegistration(c, identities)
 		if failed != nil {
 			return failed, nil
 		}
@@ -428,10 +430,10 @@ func createInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
 			return failed, nil
 		}
 	}
-	return saveInstallCommand(c, script), nil
+	return h.saveInstallCommand(c, script), nil
 }
 
-func createCoreInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *installerHandler) createCoreInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
 	payload, failed := readBoundJSON(c, 1024, "核心安装参数无效")
 	if failed != nil {
 		return failed, nil
@@ -455,11 +457,11 @@ func createCoreInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	// Preserve the shebang and interface marker while fixing the chosen target.
 	script := strings.Join(head, "") + "set -- --core " + target + "\n" + strings.Join(lines[len(head):], "")
-	return saveInstallCommand(c, script), nil
+	return h.saveInstallCommand(c, script), nil
 }
 
-func downloadInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
-	store := &installer.Store{DataDir: repo.DataDir()}
+func (h *installerHandler) downloadInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
+	store := &installer.Store{DataDir: h.deps.dataDir()}
 	script, ok, err := store.LoadInstallScript(c.Context(), c.Param("token"))
 	if err != nil {
 		logger.Exception("读取安装命令失败", err)
@@ -512,9 +514,9 @@ type dockerInstallCommands struct {
 	Run     string `json:"run"`
 }
 
-func getDockerAgentCompose(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *installerHandler) getDockerAgentCompose(c *httpx.Ctx) (*httpx.Response, error) {
 	if format, _ := c.Arg("format"); format == "both" {
-		options, failed := prepareDockerAgentOptions(c, installer.RenderDockerCompose, installer.RenderDockerRun)
+		options, failed := h.prepareDockerAgentOptions(c, installer.RenderDockerCompose, installer.RenderDockerRun)
 		if failed != nil {
 			return failed, nil
 		}
@@ -528,13 +530,13 @@ func getDockerAgentCompose(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return httpx.JSON(dockerInstallCommands{Compose: compose, Run: run}).NoStore(), nil
 	}
-	return dockerAgentResponse(c, installer.RenderDockerCompose, "text/yaml; charset=utf-8")
+	return h.dockerAgentResponse(c, installer.RenderDockerCompose, "text/yaml; charset=utf-8")
 }
-func getDockerAgentRun(c *httpx.Ctx) (*httpx.Response, error) {
-	return dockerAgentResponse(c, installer.RenderDockerRun, "text/plain; charset=utf-8")
+func (h *installerHandler) getDockerAgentRun(c *httpx.Ctx) (*httpx.Response, error) {
+	return h.dockerAgentResponse(c, installer.RenderDockerRun, "text/plain; charset=utf-8")
 }
-func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerInstallOptions) (string, error), contentType string) (*httpx.Response, error) {
-	options, failed := prepareDockerAgentOptions(c, render)
+func (h *installerHandler) dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerInstallOptions) (string, error), contentType string) (*httpx.Response, error) {
+	options, failed := h.prepareDockerAgentOptions(c, render)
 	if failed != nil {
 		return failed, nil
 	}
@@ -546,7 +548,7 @@ func dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerInstallOption
 	return response, nil
 }
 
-func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerInstallOptions) (string, error)) (installer.DockerInstallOptions, *httpx.Response) {
+func (h *installerHandler) prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerInstallOptions) (string, error)) (installer.DockerInstallOptions, *httpx.Response) {
 	options := dockerOptions(c)
 	for _, field := range []struct {
 		name    string
@@ -579,7 +581,7 @@ func prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerI
 			port, _ := strconv.Atoi(fmt.Sprint(service.port))
 			identities = append(identities, model.AgentRegistrationSession{Name: options.AgentName + "-" + service.name, Host: strings.TrimSpace(options.AgentIP), Port: model.Int(port), ServiceType: service.name, DeploymentMethod: "docker"})
 		}
-		tokens, failed := issueRegistration(c, identities)
+		tokens, failed := h.issueRegistration(c, identities)
 		if failed != nil {
 			return options, failed
 		}
@@ -605,8 +607,8 @@ func registrationPort(params installParams, name string, fallback int) model.Int
 	return model.Int(paramInt(params, name, int64(fallback)).Int64())
 }
 
-func issueRegistration(c *httpx.Ctx, identities []model.AgentRegistrationSession) (map[string]string, *httpx.Response) {
-	manager, err := agents.Get(c.Context())
+func (h *installerHandler) issueRegistration(c *httpx.Ctx, identities []model.AgentRegistrationSession) (map[string]string, *httpx.Response) {
+	manager, err := h.deps.manager(c.Context())
 	if err != nil {
 		return nil, failure(500, msgRegistrationStore)
 	}

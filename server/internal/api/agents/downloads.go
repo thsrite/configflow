@@ -23,8 +23,10 @@ var downloadableAgentBinaries = []string{
 	"configflow-agent-linux-armv7",
 }
 
-func registerDownloads(r *httpx.Router) {
-	r.GET("/api/agents/download/<filename>", "agents.download_agent_binary", downloadAgentBinary)
+type downloadsHandler struct{}
+
+func (h *downloadsHandler) register(r *httpx.Router) {
+	r.GET("/api/agents/download/<filename>", "agents.download_agent_binary", h.downloadAgentBinary)
 }
 
 // agentBinaryDirectory is the directory download_agent_binary serves:
@@ -52,7 +54,7 @@ func pyJoin(a, b string) string {
 // pyOSErrorText is str(OSError) for a failed file operation on path.
 func pyOSErrorText(err error, path string) string { return err.Error() }
 
-func downloadAgentBinary(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *downloadsHandler) downloadAgentBinary(c *httpx.Ctx) (*httpx.Response, error) {
 	filename := c.Param("filename")
 	directory := agentBinaryDirectory()
 	allowed := false

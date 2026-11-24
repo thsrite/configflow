@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"configflow/internal/agents"
-	"configflow/internal/agents/upgrades"
 	"configflow/internal/auth"
 	"configflow/internal/gateway/installation"
 	"configflow/internal/httpx"
@@ -29,7 +28,6 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/redact"
-	"configflow/internal/repo"
 )
 
 var logger = logx.Get("backend.routes.agents")
@@ -48,28 +46,21 @@ var metricFields = map[string]map[string]bool{
 
 var registrationLogFields = []string{"name", "host", "port", "service_type", "version"}
 
-// Register adds the registry routes.
+// Register adds the registry routes using transitional process/context locators.
 func Register(r *httpx.Router) {
-	r.POST("/api/agents/register", "agents.register_agent", registerAgent)
-	r.POST("/api/agents/<agent_id>/heartbeat", "agents.agent_heartbeat", agentHeartbeat)
-	r.Handle([]string{"GET", "POST"}, "/api/agents", "agents.handle_agents", auth.Require(createAgent))
-	r.Handle([]string{"GET", "PUT", "DELETE"}, "/api/agents/<agent_id>", "agents.handle_agent_item", auth.Require(handleAgentItem))
-	registerDNSFollowRoutes(r)
-	registerDNSHARoutes(r)
-	registerContentRoutes(r)
-	registerDeployRoutes(r)
-	registerRuleSync(r)
-	registerMetrics(r)
-	registerTraffic(r)
-	registerOxidns(r)
-	registerClientTools(r)
-	registerPanel(r)
-	registerGateway(r)
-	registerInstaller(r)
-	registerUpgrades(r)
-	registerDockerHA(r)
-	registerDownloads(r)
-	registerGatewayInstallations(r)
+	NewHandler(Deps{}).Register(r)
+}
+
+type registryHandler struct {
+	deps    Deps
+	content *contentHandler
+}
+
+func (h *registryHandler) register(r *httpx.Router) {
+	r.POST("/api/agents/register", "agents.register_agent", h.registerAgent)
+	r.POST("/api/agents/<agent_id>/heartbeat", "agents.agent_heartbeat", h.agentHeartbeat)
+	r.Handle([]string{"GET", "POST"}, "/api/agents", "agents.handle_agents", auth.Require(h.createAgent))
+	r.Handle([]string{"GET", "PUT", "DELETE"}, "/api/agents/<agent_id>", "agents.handle_agent_item", auth.Require(h.handleAgentItem))
 }
 
 func failure(status int, message string) *httpx.Response {
@@ -112,10 +103,10 @@ func RegistrationLogFields(data json.RawMessage) map[string]string {
 	}
 	return fields
 }
-func registrationRejected(ctx context.Context, data map[string]string, reason string) {
+func (h *registryHandler) registrationRejected(ctx context.Context, data map[string]string, reason string) {
 	logger.Warningf("Agent 注册被拒绝：%s（%s，%s）：%s", data["name"], data["service_type"], data["host"], reason)
 	notifications.Safely(func() error {
-		repository, err := repo.GetRepository(ctx)
+		repository, err := h.deps.repository(ctx)
 		if err != nil {
 			return err
 		}
@@ -132,10 +123,10 @@ func isJSONNull(data []byte) bool {
 const unauthorizedReason = "面板里已有同名同地址的 Agent，但这次注册没有带它原来的凭据。" +
 	"如果设备是重装的，请先在 Agent 页删除旧记录，设备会自动重新注册。"
 
-func registerAgent(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *registryHandler) registerAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	var data map[string]string
 	secrets := redact.NewSecrets([]string{os.Getenv("AGENT_REGISTRATION_KEY")})
-	response, err := doRegister(c, &data, &secrets)
+	response, err := h.doRegister(c, &data, &secrets)
 	if err == nil {
 		return response, nil
 	}
@@ -145,13 +136,13 @@ func registerAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	case errors.Is(err, agents.ErrRegistrationProfileType), errors.Is(err, agents.ErrRegistrationVersion):
 		return failure(400, err.Error()), nil
 	case errors.Is(err, agents.ErrRegistrationAuthorization):
-		registrationRejected(c.Context(), data, RegistrationLocked)
+		h.registrationRejected(c.Context(), data, RegistrationLocked)
 		return failure(403, RegistrationLocked), nil
 	case errors.As(err, &conflict):
-		registrationRejected(c.Context(), data, conflict.Message)
+		h.registrationRejected(c.Context(), data, conflict.Message)
 		return failure(409, conflict.Message), nil
 	case errors.Is(err, agents.ErrUnauthorized):
-		registrationRejected(c.Context(), data, unauthorizedReason)
+		h.registrationRejected(c.Context(), data, unauthorizedReason)
 		return failure(401, "Unauthorized"), nil
 	case errors.As(err, &installation):
 		return failure(installation.Status, installation.Message), nil
@@ -162,9 +153,9 @@ func registerAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	return failure(500, message), nil
 }
 
-func doRegister(c *httpx.Ctx, out *map[string]string, secrets *redact.Secrets) (*httpx.Response, error) {
+func (h *registryHandler) doRegister(c *httpx.Ctx, out *map[string]string, secrets *redact.Secrets) (*httpx.Response, error) {
 	ctx := c.Context()
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -426,18 +417,18 @@ func heartbeatFeature(agent *model.Agent, field string) bool {
 	return err == nil && enabled
 }
 
-func agentHeartbeat(c *httpx.Ctx) (*httpx.Response, error) {
-	response, err := heartbeat(c)
+func (h *registryHandler) agentHeartbeat(c *httpx.Ctx) (*httpx.Response, error) {
+	response, err := h.heartbeat(c)
 	if err != nil {
 		return failure(500, err.Error()), nil
 	}
 	return response, nil
 }
 
-func heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *registryHandler) heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
 	agentID := c.Param("agent_id")
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -474,10 +465,10 @@ func heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	reply := map[string]any{"success": true, "domain_discovery_enabled": heartbeatFeature(agent, "domain_discovery_enabled"), "traffic_history_enabled": heartbeatFeature(agent, "traffic_history_enabled"), "reads_host": true}
 	if host := reported; host != "" {
-		if err := upgrades.FollowModel(ctx, manager, agent, host); err != nil {
+		if err := h.deps.followHost(ctx, manager, agent, host); err != nil {
 			return nil, err
 		}
-		if confirmed := upgrades.ConfirmedModel(agent, host); confirmed != "" {
+		if confirmed := h.deps.confirmedHost(agent, host); confirmed != "" {
 			reply["confirmed_host"] = confirmed
 		}
 	}
@@ -485,12 +476,12 @@ func heartbeat(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(reply), nil
 }
 
-func createAgent(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *registryHandler) createAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Method() == "GET" {
-		return listContentAgents(c)
+		return h.content.listContentAgents(c)
 	}
 	ctx := c.Context()
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -516,15 +507,15 @@ func createAgent(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(map[string]any{"success": true, "data": result}), nil
 }
 
-func handleAgentItem(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *registryHandler) handleAgentItem(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
 	agentID := c.Param("agent_id")
-	manager, err := agents.Get(ctx)
+	manager, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if c.Method() == "GET" {
-		return getContentAgent(c, manager)
+		return h.content.getContentAgent(c, manager)
 	}
 	var ok bool
 	if c.Method() == "PUT" {
