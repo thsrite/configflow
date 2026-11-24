@@ -178,9 +178,25 @@ verified) and UI placeholder RFC-5737/2606 sanitization + 4 refreshed guide scre
 removal (4d6bab0c4..81a07ae8a). Both reviewed by independent Gemini 4 Neon high (4a08f588 & 7158d73b: 0 high/0 med/0 low
 after EasyTier et.net default fix; 0 over-defensive design). Combined gate on 81a07ae8a: .64 FULL core PASS (race
 cache-hits=0, agent+cross-build, 75 affected fuzz targets) + .32 compare PASS (proddiff 2831 cases new=0 stale=0,
-difftest 24 pkgs, LIVE 46/46, pyref check, frontend 3469/3469). O17 ALL DONE. Running: PVE CT 240 final perf (Go-1 on
-81a07ae8a → Python-1 → Go-2) ∥ go-switch-rehearsal rebase/alignment to final go. Next: L6 24h soak & rehearsal on final
-candidate images + 2× consecutive no-Python full gate → switch commit + v3.0.0-rc.1.
+difftest 24 pkgs, LIVE 46/46, pyref check, frontend 3469/3469). O17 ALL DONE.
+2026-11-25: PVE CT 240 O10 acceptance on 81a07ae8a/7feb6e125 (Go×2 vs Python×1, same CT/snapshot): Go-1 ready 0.31s /
+idle CPU 0.414% / idle RSS 54.2 MB / settled RSS 72.0 MB (+5.85 MB live heap) / 19/19 routes faster than Python (mihomo
+64.2 ms vs 989.4 ms, agg provider 76.4 ms vs 1089.0 ms, oxidns 31.8 ms vs 60.4 ms, profiles 2.99 ms vs 3.26 ms);
+Python-1 ready 1.44s / idle CPU 1.507% / idle RSS 90.1 MB / settled RSS 118.3 MB; Go-2 ready 0.30s / idle CPU 0.419% /
+idle RSS 55.6 MB / settled RSS 69.8 MB / 19/19 routes faster (mihomo 67.7 ms, agg provider 77.5 ms, oxidns 31.6 ms,
+profiles 2.10 ms).
+2026-11-25: O10 Plan B perf polish MERGED (go-o10-perf-polish@8aa0000d2, 6 commits cec573c1e..8aa0000d2; user-approved
+after 3-way profiling by GPT/Gemini/Opus 5.5 high): A1 model.scalarJSON precomputed v1 options + safe ASCII fast path
+(189.9→20.49 ns, 240→16 B/op), A2 health/check.pruneHosts single rebuild (6k entries 979→3.91 ms, 234.6→2.05 MB), A6
+repo.SanitizationTokens single Head() generation, server/third_party/yamlv3 (v3.0.1 + 1-line drained emitter queue reset
+in emitterc.go; 320 proxies YAML 5.37→3.55 ms, 8.98→0.92 MB, SHA-256 identical) + Dockerfile/autoupdate ServerTreeHash
+sync + root-level third_party/ scope for 4 first-party source audits + 17 pyref source hashes refreshed. Independent
+Gemini 4 Neon high review (97faa79b): PASS (0/0/0) after 8aa0000d2; coordinator line-by-line verified (0 over-defensive
+design). Gates: .64 FULL core on 8aa0000d2 PASS (race cache-hits=0, agent+cross-build, 41 fuzz) + .32 compare on
+492806688 PASS (proddiff 2831 cases new=0 stale=0, difftest 214/214, LIVE 46/46, pyref check, frontend 3469/3469).
+Running: PVE CT 240 Plan B verification on 8aa0000d2 ∥ go-switch-rehearsal rebase/sync to post-Plan-B go (previously
+c462c64d6 passed 2× consecutive full no-Python gates on .64). Next: L6 final candidate images + switch rehearsal + 24h
+soak → final 2× consecutive no-Python gate → switch commit + v3.0.0-rc.1.
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
