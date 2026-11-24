@@ -85,7 +85,7 @@ func TestO36bLegacyWriteRuntimeBoundary(t *testing.T) {
 						_, err = driver.(routeedit.RouteEditor).MutateRoute(request, "add", nil, tc.Values)
 					case "plan", "empty-plan":
 						plan := &routeedit.RoutePlan{Action: "add", Values: tc.Values, Empty: operation == "empty-plan"}
-						_, err = routeedit.ExecuteRoutePlan(request, driver, nil, plan)
+						_, err = routeedit.ExecuteRoutePlan(request, driver.(routeedit.RouteEditor), nil, plan)
 					case "write":
 						_, err = driver.(*Ikuai).Write(request, "static_rt", "del", ros.Row{"id": "1"}, 0)
 					case "batch":

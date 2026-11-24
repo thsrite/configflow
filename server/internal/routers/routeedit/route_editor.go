@@ -141,10 +141,10 @@ type RouteEditor interface {
 	MutateRoute(context.Context, string, *EditableRoute, *RouteValues) (*RouteMutation, error)
 }
 
-// ReadRoutes reads a complete list and refuses ambiguous identities.
-func ReadRoutes(ctx context.Context, driver any) ([]*EditableRoute, error) {
-	editor, ok := driver.(RouteEditor)
-	if !ok {
+// ReadRoutes reads a complete list and refuses ambiguous identities. A nil
+// editor (a driver without manual route editing) is refused.
+func ReadRoutes(ctx context.Context, editor RouteEditor) ([]*EditableRoute, error) {
+	if editor == nil {
 		return nil, device.Error(messageEditUnsupported)
 	}
 	rows, err := editor.ReadRoutes(ctx)
@@ -322,7 +322,7 @@ func BuildRoutePlan(router spec.Router, rows []*EditableRoute, data json.RawMess
 
 // ExecuteRoutePlan completes an edit and all its readbacks/compensation even if the request disconnects.
 // Callers own the connection lock and rebuild the plan from fresh rows before calling.
-func ExecuteRoutePlan(ctx context.Context, driver any, rows []*EditableRoute, plan *RoutePlan) (*RouteResult, error) {
+func ExecuteRoutePlan(ctx context.Context, editor RouteEditor, rows []*EditableRoute, plan *RoutePlan) (*RouteResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -333,8 +333,7 @@ func ExecuteRoutePlan(ctx context.Context, driver any, rows []*EditableRoute, pl
 	if plan.Empty {
 		return &RouteResult{Entry: plan.Before}, nil
 	}
-	editor, ok := driver.(RouteEditor)
-	if !ok {
+	if editor == nil {
 		return nil, device.Error(messageEditUnsupported)
 	}
 	var expected *EditableRoute

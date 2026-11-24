@@ -360,7 +360,7 @@ func r06Run(tc r06Case, endpoint string) r06Outcome {
 			case "read":
 				result = rows
 			case "checked_read":
-				result, err = routeedit.ReadRoutes(context.Background(), driver)
+				result, err = routeedit.ReadRoutes(context.Background(), editor)
 			case "plan":
 				var payload map[string]any
 				_ = json.Unmarshal(tc.Payload, &payload)

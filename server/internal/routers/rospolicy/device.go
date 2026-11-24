@@ -26,6 +26,22 @@ type rosDevice struct {
 	readState StateReader
 }
 
+// readFacts re-reads the router through the caller's StateReader. A missing
+// reader or an empty result blocks like an unreadable router (fail closed).
+func (d rosDevice) readFacts(ctx context.Context) (*device.State, *ros.NatContext, error) {
+	if d.readState == nil {
+		return nil, nil, device.Error(messagePolicyUnreadable)
+	}
+	facts, nat, err := d.readState(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if facts == nil {
+		return nil, nil, device.Error(messagePolicyUnreadable)
+	}
+	return facts, nat, nil
+}
+
 func (d rosDevice) applyOp(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
 	var head struct {
 		Kind string `json:"kind"`

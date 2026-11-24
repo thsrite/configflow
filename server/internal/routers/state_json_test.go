@@ -101,3 +101,30 @@ func TestBuildReportSectionOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildReportJoinsPartSummaryAndSync replaces the pre-R6
+// TestReportPartsJoinSummaryAndSync (which stubbed the removed ReportParts
+// hook): a feature part's statuses join the summary, its in_sync gates the
+// report, its section is serialized under its key, and extra routes only leave
+// routes.extra through a part's RetireExtra.
+func TestBuildReportJoinsPartSummaryAndSync(t *testing.T) {
+	desired := &spec.Desired{ProxyGateway: "192.0.2.3", ProxyCIDRs: []spec.ProxyCIDR{}, IPv6CIDRs: []spec.ProxyCIDR{},
+		Warnings: []string{}, BlockingWarnings: []string{}}
+	state := &RouterState{
+		State: device.State{Routes: []*device.RouteEntry{device.NewRoute("*9", "203.0.113.0/24", "192.0.2.3", true, "cf-old")}},
+		IPv6FakeIPPlan: &ipv6.IPv6FakeIPPlan{IPv6FakeIPReport: ipv6.IPv6FakeIPReport{Status: "pending",
+			Items: []ipv6.IPv6RouteItem{}, Blockers: []string{}, Warnings: []string{}}},
+	}
+	report, err := BuildReport(desired, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.InSync || report.Summary["pending"] != 1 || report.Summary["extra"] != 1 || len(report.Routes.Extra) != 1 ||
+		!strings.Contains(string(data), `"ipv6_fakeip":{"enabled":false,"status":"pending","items":[],"blockers":[],"warnings":[],"fix_command":""}`) {
+		t.Fatalf("report %s", data)
+	}
+}

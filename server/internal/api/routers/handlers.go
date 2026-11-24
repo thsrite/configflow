@@ -412,7 +412,8 @@ func (h *handler) routes(c *httpx.Ctx) (*httpx.Response, error) {
 		return httpx.Message(502, false, messageMissing), nil
 	}
 	defer d.Close()
-	rows, err := routeedit.ReadRoutes(c.Context(), d)
+	editor, _ := d.(routeedit.RouteEditor)
+	rows, err := routeedit.ReadRoutes(c.Context(), editor)
 	if err != nil {
 		return failure(c, cfg, err, 0, false)
 	}

@@ -353,7 +353,8 @@ func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *sp
 		return nil, nil, err
 	}
 	defer d.Close()
-	rows, err := routeedit.ReadRoutes(work, d)
+	editor, _ := d.(routeedit.RouteEditor)
+	rows, err := routeedit.ReadRoutes(work, editor)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -368,7 +369,7 @@ func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *sp
 	if confirmation.Fingerprint == "" || confirmation.Fingerprint != plan.Fingerprint {
 		return plan, nil, device.KindError(device.KindConflict, messageRoutePreviewStale)
 	}
-	result, err := routeedit.ExecuteRoutePlan(work, d, rows, plan)
+	result, err := routeedit.ExecuteRoutePlan(work, editor, rows, plan)
 	if err != nil {
 		managementLogger.Warningf(messageManagementRouteFailed, s.safeLog(work, profile, current, device.OrText(current.Name, current.ID)), s.safeLog(work, profile, current, err.Error()))
 		return plan, result, err

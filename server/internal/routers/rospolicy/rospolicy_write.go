@@ -103,7 +103,7 @@ func (d rosDevice) applyPolicy(ctx context.Context, op PolicyWrite) (*ROSPolicyU
 			return err
 		}
 		if len(op.StaticChecks) > 0 {
-			facts, _, err := d.readState(ctx)
+			facts, _, err := d.readFacts(ctx)
 			if err != nil {
 				return err
 			}
@@ -116,7 +116,7 @@ func (d rosDevice) applyPolicy(ctx context.Context, op PolicyWrite) (*ROSPolicyU
 			}
 		}
 		if op.StaticNATChecks != nil {
-			facts, nat, err := d.readState(ctx)
+			facts, nat, err := d.readFacts(ctx)
 			if err != nil {
 				return err
 			}
@@ -465,7 +465,7 @@ func (d rosDevice) verifyReplacementPolicyNAT(ctx context.Context, op PolicyWrit
 	if previous == nil || previous.Spec == nil || len(previous.Spec.Sources) == 0 || len(op.StaticChecks) == 0 {
 		return nil
 	}
-	facts, nat, err := d.readState(ctx)
+	facts, nat, err := d.readFacts(ctx)
 	if err != nil {
 		return err
 	}
@@ -645,7 +645,7 @@ func VerifyROSPolicy(ctx context.Context, c *ros.Client, readState StateReader, 
 			return device.Error(messagePolicyNewFastTrack)
 		}
 	}
-	_, nat, err := d.readState(ctx)
+	_, nat, err := d.readFacts(ctx)
 	if err != nil {
 		return err
 	}
