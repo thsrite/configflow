@@ -234,9 +234,7 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 		}
 	}
 	if !isYAMLFormat {
-		for _, line := range convert.RuleLines(content) {
-			ruleLines = append(ruleLines, line)
-		}
+		ruleLines = append(ruleLines, convert.RuleLines(content)...)
 	}
 
 	converted := []string{}

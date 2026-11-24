@@ -120,15 +120,6 @@ func (e *Error) Is(target error) bool {
 	return false
 }
 
-// UsagesOf returns the usages of a ProfileInUse error, or nil.
-func UsagesOf(err error) []any {
-	var e *Error
-	if errors.As(err, &e) {
-		return e.Usages
-	}
-	return nil
-}
-
 func newError(kind error, message string) *Error {
 	e := &Error{Kind: kind, Message: message}
 	if kind == ErrInUse || kind == ErrNodeDeletionChanged {

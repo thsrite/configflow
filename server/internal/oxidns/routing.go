@@ -152,9 +152,6 @@ func prefixEnd(args []*Node) int {
 	return index
 }
 
-// PrefixEnd is the index after the built-in head of sequence_main entries.
-func PrefixEnd(args *Node) int { return prefixEnd(items(args)) }
-
 // ---- rule catalog ----
 
 type ruleRecord struct {
@@ -188,14 +185,6 @@ func shapeKey(parts map[string]bool) string {
 	}
 	sort.Strings(list)
 	return strings.Join(list, ",")
-}
-
-func selectorSettings() *Node {
-	s := M()
-	for _, key := range Selectors {
-		set(s, key, L())
-	}
-	return s
 }
 
 // catalog is each rule's exact inline expression or generated resource path.
@@ -432,9 +421,7 @@ func (p *Profile) recognize(document *nativeDoc, settings *Node, claim bool, cat
 	caps["default_forward"] = routingCap(true, "")
 	records := catalog()
 	var pluginList []*Node
-	for _, item := range items(get(document, "plugins")) {
-		pluginList = append(pluginList, item)
-	}
+	pluginList = append(pluginList, items(get(document, "plugins"))...)
 	if len(plugins) == 0 {
 		pluginList = nil
 	}
@@ -1491,8 +1478,6 @@ type ownedChain struct {
 	tag    string
 	action RuleAction
 }
-
-func (c ownedChain) toNode() *Node { return c.action.toNode() }
 
 func ownedChainList(document *nativeDoc) []ownedChain {
 	plugins := pluginMap(document)

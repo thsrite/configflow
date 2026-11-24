@@ -109,17 +109,6 @@ func findDirect(field string) (directField, bool) {
 	return directField{}, false
 }
 
-// CommonFields are the fields read/apply_common_settings handle (plus the
-// routing fields).
-func CommonFields() []string {
-	var out []string
-	for f := range commonFields {
-		out = append(out, f)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // lookup is _get: the value at path, ok false when missing (or a parent is
 // not a mapping).
 func lookup(obj *Node, path []string) (*Node, bool) {

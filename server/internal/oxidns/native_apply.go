@@ -168,16 +168,6 @@ func prepareNativeEdit(settings *Node, text string, p *Profile, baseURL string) 
 	return edit, nil
 }
 
-// ApplyNativeSettings reconciles a complete-form edit using the shared common
-// lifecycle. It never guesses a custom plugin's identity from its type or index.
-func ApplyNativeSettings(settings *Node, text string, p *Profile, baseURL string, options NativeApplyOptions) (NativeApplied, error) {
-	edit, err := prepareNativeEdit(settings, text, p, baseURL)
-	if err != nil {
-		return NativeApplied{}, err
-	}
-	return edit.apply(edit.input, options)
-}
-
 func nativeWithoutTag(plugin *Node) *Node { out := clone(plugin); del(out, "tag"); return out }
 func renameNativeReferences(document *nativeDoc, old, next string) {
 	var walk func(*Node, string)

@@ -135,14 +135,6 @@ func ProfileAgents(p *Profile) []model.Agent {
 	return out
 }
 
-// PolicyDNSRoutes returns configured group defaults; an empty route means no DNS route.
-func PolicyDNSRoutes(p *Profile) map[string]string {
-	if p == nil {
-		p = emptyProfile()
-	}
-	return policyDNSRoutes(p)
-}
-
 // FollowRoute returns the route implied by an item's policy; empty means no route.
 func FollowRoute(item model.RuleConfig, p *Profile) string {
 	routes := map[string]string{}

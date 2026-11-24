@@ -81,16 +81,6 @@ func intOf(n *Node) (*big.Int, bool) {
 	return v, ok
 }
 
-// int64Of reads an int that fits int64.
-func int64Of(n *Node) (int64, bool) {
-	if !isInt(n) {
-		return 0, false
-	}
-	var v int64
-	err := yamlx.Decode(n, &v)
-	return v, err == nil
-}
-
 // ratOf reads a validated YAML number for exact schema range checks.
 func ratOf(n *Node) (*big.Rat, bool) {
 	if !isNum(n) {
@@ -385,10 +375,6 @@ func dump(node *Node) (string, error) {
 	}
 	return string(data), nil
 }
-
-func containsRune(s string, r rune) bool { return strings.ContainsRune(s, r) }
-
-func trimSpace(s string) string { return strings.TrimSpace(s) }
 
 // setNativeConfig serializes a draft before changing its stored text.
 func setNativeConfig(settings, document *nativeDoc) error {

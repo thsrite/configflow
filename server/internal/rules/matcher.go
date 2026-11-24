@@ -159,12 +159,6 @@ func MatchDomain(domain, ruleType, ruleValue string) bool {
 	return false
 }
 
-// MatchIP matches an IP address against an IP, IP-CIDR or IP-CIDR6 rule.
-func MatchIP(ipText, ruleType, ruleValue string) bool {
-	ip, ok := parseAddr(ipText)
-	return ok && matchAddr(ip, ruleType, ruleValue)
-}
-
 func matchAddr(ip netip.Addr, ruleType, ruleValue string) bool {
 	switch ruleType {
 	case "IP-CIDR", "IP-CIDR6":
@@ -180,8 +174,8 @@ func matchAddr(ip netip.Addr, ruleType, ruleValue string) bool {
 // MatchQuery classifies the query as IP or domain, then matches one rule.
 func MatchQuery(query, ruleType, ruleValue string) bool {
 	query = NormalizeMatchQuery(query)
-	if IsValidIP(query) {
-		return MatchIP(query, ruleType, ruleValue)
+	if addr, ok := parseAddr(query); ok {
+		return matchAddr(addr, ruleType, ruleValue)
 	}
 	return IsValidDomain(query, true) && MatchDomain(query, ruleType, ruleValue)
 }

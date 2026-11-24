@@ -323,18 +323,6 @@ func SystemMemberJSON(system *model.System, member string) (json.RawMessage, boo
 	return recordMemberJSON(view, member)
 }
 
-// SanitizationTokens returns persisted rule proxy and Agent secrets without mutating system.
-func SanitizationTokens(system model.System) (ruleProxy, agents TokenSet) {
-	return sanitizationTokensModel(&system)
-}
-
-// AgentHistoryJSON returns an owned history member of a full typed Agent record.
-func AgentHistoryJSON(agent model.Agent, field string) (json.RawMessage, error) {
-
-	raw, _, err := recordMemberJSON(agent, field)
-	return raw, err
-}
-
 // systemSettingsIssue is the load issue path of a stored system_config that
 // is not an object at all.
 const systemSettingsIssue = "system.system_config"

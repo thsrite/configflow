@@ -17,11 +17,4 @@ func TestN88dNativeDNSExportsKeepScopedRuleLiterals(t *testing.T) {
 			}
 		})
 	}
-	address, ok := ParseIPAddress("2001:db8::1%test")
-	if !ok || address.String() != "2001:db8::1" {
-		t.Fatalf("address=%v ok=%t", address, ok)
-	}
-	if _, ok := ParseIPAddress("2001:db8::1%a%b"); ok {
-		t.Fatal("multiple scope markers accepted")
-	}
 }

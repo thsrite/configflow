@@ -39,8 +39,3 @@ var groupResourceFields = [][2]string{{"subscriptions", "subscriptions"}, {"manu
 	{"aggregations", "subscription_aggregations"}}
 
 var sourceKinds = map[string]string{"node": "nodes", "subscription": "subscriptions", "aggregation": "subscription_aggregations"}
-
-func sourceKind(value any) string {
-	text, _ := value.(string)
-	return sourceKinds[text]
-}

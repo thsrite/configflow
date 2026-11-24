@@ -56,9 +56,6 @@ func bootstrapSocket(value *Node) bool {
 			port, perr := strconv.Atoi(m[2])
 			return err == nil && addr.Is6() == form.v6 && (perr == nil && port <= 65535)
 		}
-		if form.v6 && strings.HasPrefix(text, "[") {
-			continue
-		}
 	}
 	return false
 }

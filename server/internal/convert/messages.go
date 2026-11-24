@@ -174,13 +174,6 @@ const msgMihomoDownloadObject = "Mihomo 下载节 %s 必须为对象"
 const msgMihomoStoredText = "%s %s 的 %s 必须是字符串，当前值：%s"
 
 // Resource kinds named by msgMihomoStoredText.
-const (
-	kindSubscription = "订阅"
-	kindAggregation  = "订阅聚合"
-	kindGroup        = "策略组"
-	kindRuleSet      = "规则集"
-	kindRule         = "规则"
-)
 
 const (
 	msgClientText    = "节点文本字段必须为字符串或数值"

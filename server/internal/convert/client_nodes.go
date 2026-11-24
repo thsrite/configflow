@@ -31,17 +31,6 @@ type ClientCollaborators struct {
 	FilterNodes func([]model.Node, *string, *string) ([]model.Node, error)
 }
 
-// Check validates the complete production registration.
-func (c ClientCollaborators) Check() error {
-	if c.ParseNodes == nil {
-		return &HookMissingError{Hook: "parse_uri_list", Provider: "subs"}
-	}
-	if c.FilterNodes == nil {
-		return &HookMissingError{Hook: "filter_candidates", Provider: "rules"}
-	}
-	return nil
-}
-
 type clientNode struct {
 	name, kind, server, port string
 	options                  clientOptions

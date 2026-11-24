@@ -138,19 +138,6 @@ var ErrReferenceIDType = errors.New(msgReferenceIDType)
 // ErrReferenceNameType identifies invalid stored rule-library names.
 var ErrReferenceNameType = errors.New(msgReferenceNameType)
 
-// URLValueError preserves opaque invalid-field evidence for a legacy boundary.
-type URLValueError struct{ Raw json.RawMessage }
-
-func (e *URLValueError) Error() string { return msgURLType }
-func (e *URLValueError) Unwrap() error { return ErrURLType }
-func invalidURL(data []byte) error {
-	var members map[string]json.RawMessage
-	if err := json.Unmarshal(data, &members); err != nil {
-		return err
-	}
-	return &URLValueError{Raw: members["url"]}
-}
-
 func inferPath(path string) string {
 	path = strings.ToLower(path)
 	switch {

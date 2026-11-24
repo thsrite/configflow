@@ -287,13 +287,6 @@ func (r *Repository) GeneratedDir(profileID string) (string, error) {
 	return r.derivedDir(profileID, "generated")
 }
 
-func (r *Repository) profileOperationLockPath(profileID string) (string, error) {
-	if err := ValidateProfileID(profileID); err != nil {
-		return "", err
-	}
-	return filepath.Join(r.profilesDir, "."+profileID+".operation.lock"), nil
-}
-
 // writeProfileFile is the common body of write_generated, write_profile_json
 // and write_profile_text: under the profile's operation lock, check that the
 // profile exists, then write under its bounded in-process file leaf lock.

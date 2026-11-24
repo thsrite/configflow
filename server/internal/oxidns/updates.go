@@ -489,16 +489,6 @@ func finishRuleUpdates(c *commonContext, changes *Node, p *Profile, baseURL stri
 	return nil
 }
 
-// FinishRuleUpdates runs the pipeline reconciliation on a draft (used after
-// native edits).
-func FinishRuleUpdates(document, settings, changes *Node, p *Profile, baseURL string) error {
-	c, err := newContext(document, settings)
-	if err != nil {
-		return err
-	}
-	return finishRuleUpdates(c, changes, p, baseURL)
-}
-
 func managedDownloads(document *nativeDoc) *Node {
 	for _, item := range items(get(document, "plugins")) {
 		if equal(get(item, "tag"), S("rules_download")) {

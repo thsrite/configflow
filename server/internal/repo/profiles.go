@@ -16,8 +16,6 @@ import (
 	"configflow/internal/store"
 )
 
-var metadataKeys = []string{"id", "name", "description", "created_at", "updated_at"}
-
 // DefaultProfileID is default_profile_id(): system_config.default_profile_id,
 // "default" when it was never switched.
 func (r *Repository) DefaultProfileID(ctx context.Context) (result string, err error) {

@@ -43,9 +43,6 @@ func (g *Graph) Children(key Ref) ([]Ref, bool) {
 	return slices.Clone(children), ok
 }
 
-// Has reports whether a vertex belongs to the graph.
-func (g *Graph) Has(key Ref) bool { return g.has(key) }
-
 var dialerBuiltinNames = map[string]bool{"DIRECT": true, "REJECT": true, "REJECT-DROP": true, "PASS": true, "PASS-RULE": true, "COMPATIBLE": true}
 
 func stringList(value *[]string) []string {
@@ -629,8 +626,6 @@ func (s *dialerScope) graph() (*Graph, error) {
 	return graph, nil
 }
 
-// CycleCheck rejects cyclic resource dependencies using an iterative traversal.
-func CycleCheck(graph *Graph) error { return checkCycles(graph) }
 func checkCycles(graph *Graph) error {
 	if graph == nil {
 		return nil

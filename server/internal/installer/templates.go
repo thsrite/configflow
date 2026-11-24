@@ -4,7 +4,6 @@ import (
 	"configflow/internal/textx"
 	"embed"
 	"strings"
-	"unicode/utf8"
 
 	"unicode"
 )
@@ -43,12 +42,6 @@ var (
 	// GatewayNetworkProbe is detect-gateway-network.sh, served as is.
 	GatewayNetworkProbe = script("detect-gateway-network.sh")
 )
-
-// Script returns an embedded template by file name (for tests and routes).
-func Script(name string) (string, bool) {
-	data, err := scriptFiles.ReadFile("scripts/" + name)
-	return string(data), err == nil
-}
 
 // shlexQuote is shlex.quote: the ASCII-only safe set [\w@%+=:,./-].
 func shlexQuote(s string) string {
@@ -99,9 +92,6 @@ func substitute(text string, values map[string]string) string {
 
 // trimScriptTail removes native Unicode whitespace from a generated script.
 func trimScriptTail(text string) string { return strings.TrimRightFunc(text, unicode.IsSpace) }
-
-// codePoints is len(str) of a Python str.
-func codePoints(s string) int { return utf8.RuneCountInString(s) }
 
 // replaceOnce is str.replace(old, new, 1).
 func replaceOnce(s, old, replacement string) string { return strings.Replace(s, old, replacement, 1) }

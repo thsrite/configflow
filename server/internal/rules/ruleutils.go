@@ -220,13 +220,6 @@ func cacheReadPath(rule model.RuleConfig, library, stored []model.RuleLibraryIte
 	return path
 }
 
-func sameOptional(a, b *string) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return *a == *b
-}
-
 // LibraryRule projects the declaration fields used by cache and fetch into a
 // rule reference, retaining opaque extension fields without dynamic values.
 func LibraryRule(item model.RuleLibraryItem) model.RuleConfig {

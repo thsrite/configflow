@@ -468,11 +468,6 @@ type ProfileBindings struct {
 	Agents  []AgentBinding `json:"agents"`
 }
 
-// AgentBindingRecord returns an Agent's public identity.
-func AgentBindingRecord(agent model.Agent) (AgentBinding, error) {
-	return agentBinding(&agent)
-}
-
 // agentBinding projects one Agent's public identity: the name falls back to
 // the ID, the service type to mihomo, a missing port is null.
 func agentBinding(a *model.Agent) (AgentBinding, error) {

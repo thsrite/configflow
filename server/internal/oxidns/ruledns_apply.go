@@ -15,10 +15,6 @@ import (
 // ErrRoutingLocked means a native DNS routing graph cannot be safely rewritten.
 var ErrRoutingLocked = errors.New("OxiDNS routing is locked")
 
-// RuleDNSMetadataFields returns the action, parked-action and follow storage keys.
-// RoutingFields also includes selectors, but its RuleDNSFields omits parked data.
-func RuleDNSMetadataFields() []string { return append([]string{}, ruleDNSFields...) }
-
 // Convertible reports whether a rule can participate in domain DNS routing.
 func Convertible(item model.RuleConfig) bool { return convertible(item) }
 

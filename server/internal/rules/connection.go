@@ -89,9 +89,6 @@ type Destination struct{ network netip.Prefix }
 // String is the canonical CIDR text.
 func (d *Destination) String() string { return d.network.String() }
 
-// IsIPv4 reports the address family.
-func (d *Destination) IsIPv4() bool { return d.network.Addr().Is4() }
-
 // ParseDestination reads the value as a client address or range whose family
 // must agree with the rule type (IP-CIDR for IPv4, IP-CIDR6 for IPv6).
 func ParseDestination(value string, ruleType string) (*Destination, error) {

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -28,12 +27,6 @@ func (e *CandidateValidationError) Error() string { return e.Message }
 
 func candidateError(format string, args ...any) error {
 	return &CandidateValidationError{Message: fmt.Sprintf(format, args...)}
-}
-
-// IsCandidateValidationError reports whether err is a CandidateValidationError.
-func IsCandidateValidationError(err error) bool {
-	var target *CandidateValidationError
-	return errors.As(err, &target)
 }
 
 // SourceFields decide a group's members; HealthFields may be deleted by an
@@ -280,16 +273,6 @@ func RenderGroup(group model.ProxyGroup, catalog GroupCatalog) RenderedMembers {
 	return result
 }
 
-// CheckFilters validates edited filter types, grandfathering only unchanged
-// stored values.
-func CheckFilters(group model.ProxyGroup, original *model.ProxyGroup) error {
-	var before *GroupMembers
-	if original != nil {
-		before = new(GroupMembersOf(*original))
-	}
-	return CheckFilterMembers(GroupMembersOf(group), before)
-}
-
 // CheckFilterMembers is CheckFilters on a group's members as sent. before are
 // the stored group's members (nil for a new group): an unchanged stored value
 // is grandfathered.
@@ -534,16 +517,6 @@ func nodeText(node *yamlx.Node) string {
 	return node.Value
 }
 
-// CheckCandidates validates the final merged group under the write owner's
-// transaction. Malformed source arrays cannot gain validity through R5 fallback.
-func CheckCandidates(group model.ProxyGroup, catalog GroupCatalog, original *model.ProxyGroup) error {
-	var before *GroupMembers
-	if original != nil {
-		before = new(GroupMembersOf(*original))
-	}
-	return CheckCandidateMembers(group, GroupMembersOf(group), catalog, original, before)
-}
-
 // CheckCandidateMembers is CheckCandidates with the group's members as sent
 // (see CheckFilterMembers).
 func CheckCandidateMembers(group model.ProxyGroup, sent GroupMembers, catalog GroupCatalog, original *model.ProxyGroup, before *GroupMembers) error {
@@ -678,61 +651,6 @@ func CheckCandidateMembers(group model.ProxyGroup, sent GroupMembers, catalog Gr
 	}
 	return nil
 }
-
-// MergeGroup applies a request patch (members as sent) to a stored group:
-// the patch's filters and delete_fields are checked, then its members replace
-// the stored ones and the deleted health fields are removed.
-func MergeGroup(original model.ProxyGroup, patch model.Fields) (model.ProxyGroup, error) {
-	var zero model.ProxyGroup
-	data, err := patch.MarshalJSON()
-	if err != nil {
-		return zero, err
-	}
-	sent, err := DecodeGroupMembers(data)
-	if err != nil {
-		return zero, err
-	}
-	if err := CheckFilterMembers(sent, nil); err != nil {
-		return zero, err
-	}
-	var request struct {
-		DeleteFields jsondecode.Member[[]string] `json:"delete_fields"`
-	}
-	if err := jsondecode.Unmarshal(data, &request); err != nil {
-		return zero, err
-	}
-	deletes, err := DeleteFields(request.DeleteFields, patch.Has)
-	if err != nil {
-		return zero, err
-	}
-	data, err = model.Marshal(original)
-	if err != nil {
-		return zero, err
-	}
-	var members model.Fields
-	if err := members.UnmarshalJSON(data); err != nil {
-		return zero, err
-	}
-	for field, value := range patch.All() {
-		if field != "delete_fields" {
-			if err := members.Set(field, value); err != nil {
-				return zero, err
-			}
-		}
-	}
-	for _, field := range deletes {
-		members.Delete(field)
-	}
-	data, err = members.MarshalJSON()
-	if err != nil {
-		return zero, err
-	}
-	var merged model.ProxyGroup
-	err = json.Unmarshal(data, &merged)
-	return merged, err
-}
-
-func trimFilter(value string) string { return strings.TrimSpace(value) }
 
 // GroupResources borrows only the consumed catalogs of a resolved snapshot.
 // The returned slices remain read-only and must not outlive that snapshot.

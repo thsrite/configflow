@@ -43,8 +43,6 @@ type EasyTierSettingsError struct{ Message string }
 
 func (e *EasyTierSettingsError) Error() string { return e.Message }
 
-func easytierError(message string) error { return &EasyTierSettingsError{Message: message} }
-
 // ProxyYAMLError is a structured proxy validation failure. The underlying
 // yamlx identity remains available, and API callers can use the existing
 // strategy-validation channel instead of treating malformed YAML as a 500.

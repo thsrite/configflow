@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"configflow/internal/clientrange"
 	"configflow/internal/devicenotes"
 	"configflow/internal/netipx"
 
@@ -31,21 +30,6 @@ var (
 	directPlugin = M("tag", DirectTag, "type", "sequence", "args", L(
 		M("exec", "$forward_local"), M("matches", L("!has_resp"), "exec", "reject 3"), M("exec", "accept")))
 )
-
-const clientRangeError = "请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 192.168.50.0/24。"
-
-// NormalizeClientRange canonicalizes a client host or CIDR (IPv4-mapped
-// peers become IPv4; a host prefix becomes the address).
-func NormalizeClientRange(raw *Node) (string, error) {
-	if !isStr(raw) {
-		return "", fail(clientRangeError)
-	}
-	value, ok := clientrange.Normalize(raw.Value)
-	if !ok {
-		return "", fail(clientRangeError)
-	}
-	return value, nil
-}
 
 // NormalizePolicies validates device policy rows ({ip, name, mode}).
 func NormalizePolicies(value *Node) (*Node, error) {

@@ -12,18 +12,6 @@ import (
 // MaxNotes is the shared limit on stored display names.
 const MaxNotes = devicenotes.MaxNotes
 
-// NormalizeName validates a name through the shared notes package.
-func NormalizeName(value *Node) (string, error) {
-	if !isStr(value) {
-		return "", fail(devicenotes.NameMessage)
-	}
-	name, err := devicenotes.NormalizeName(value.Value)
-	if err != nil {
-		return "", fail(err.Error())
-	}
-	return name, nil
-}
-
 func notesNode(notes devicenotes.Names) *Node {
 	result := M()
 	for _, ip := range slices.Sorted(maps.Keys(notes)) {
@@ -58,15 +46,6 @@ func notesState(p *Profile) (devicenotes.State, error) {
 		return devicenotes.State{}, fail(err.Error())
 	}
 	return state, nil
-}
-
-// NormalizeNotes validates notes without keeping a second normalization policy.
-func NormalizeNotes(value *Node) (*Node, error) {
-	names, err := devicenotes.Parse(ToJSON(value))
-	if err != nil {
-		return nil, fail(err.Error())
-	}
-	return notesNode(names), nil
 }
 
 // StoredNames includes empty names that hide legacy policy-row names.

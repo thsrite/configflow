@@ -617,24 +617,4 @@ func decodeBase64(text string) ([]byte, error) {
 	return base64.RawStdEncoding.DecodeString(core)
 }
 
-// duplicateAnchor: an anchor name defined twice (PyYAML refuses that; yaml.v3
-// lets the later one win).
-func duplicateAnchor(n *Node, seen map[string]bool) bool {
-	if n == nil || n.Kind == yaml.AliasNode {
-		return false
-	}
-	if n.Anchor != "" {
-		if seen[n.Anchor] {
-			return true
-		}
-		seen[n.Anchor] = true
-	}
-	for _, child := range n.Content {
-		if duplicateAnchor(child, seen) {
-			return true
-		}
-	}
-	return false
-}
-
 func resourcePresent(value *Node) bool { return !isNone(value) && (!isStr(value) || str(value) != "") }

@@ -909,3 +909,49 @@ func BuildProviderHealthForTest(record model.Subscription) (*yamlx.Node, error) 
 	}
 	return providerHealthNode(record.HealthCheck, record.HealthCheckURL, env)
 }
+
+// ClientGroupNodes returns filtered subscription names followed by explicit members.
+func ClientGroupNodes(group model.ProxyGroup, config *model.Config) ([]string, error) {
+	if config == nil {
+		return nil, fmt.Errorf("%s", msgClientConfig)
+	}
+	var names []string
+	subscriptions := map[string]bool{}
+	for _, id := range stringList(group.Subscriptions) {
+		subscriptions[id] = true
+	}
+	if len(subscriptions) > 0 {
+		var nodes []model.Node
+		for _, node := range config.Nodes {
+			if subscriptions[node.SubscriptionID] && enabled(node.Enabled) {
+				nodes = append(nodes, node)
+			}
+		}
+		filter := CurrentMihomoEnvironment().Clients.FilterNodes
+		if filter == nil {
+			return nil, &HookMissingError{Hook: "filter_candidates", Provider: "rules"}
+		}
+		nodes, err := filter(nodes, group.Regex, group.ExcludeRegex)
+		if err != nil {
+			return nil, err
+		}
+		for _, node := range nodes {
+			names = append(names, node.Name)
+		}
+	}
+	names = append(names, stringList(group.Proxies)...)
+	result := []string{}
+	seen := map[string]bool{}
+	for _, name := range names {
+		if !seen[name] {
+			result = append(result, name)
+			seen[name] = true
+		}
+	}
+	return result, nil
+}
+
+// Has reports whether a vertex belongs to the graph.
+func (g *Graph) Has(key Ref) bool { return g.has(key) }
+
+func easytierError(message string) error { return &EasyTierSettingsError{Message: message} }

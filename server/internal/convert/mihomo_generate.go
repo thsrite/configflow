@@ -271,15 +271,6 @@ func syncMihomoHosts(document *yamlx.Node, config *model.Config) error {
 	}
 	return nil
 }
-func fieldString(fields model.Fields, key string) string {
-	raw, ok := fields.Get(key)
-	if !ok {
-		return ""
-	}
-	var value string
-	_ = json.Unmarshal(raw, &value)
-	return value
-}
 func profilePath(config *model.Config, suffix string) string {
 	if config.ProfileID != "" {
 		return "/api/profiles/" + config.ProfileID + suffix
@@ -503,8 +494,6 @@ func mihomoRuleLines(config *model.Config) (*yamlx.Node, error) {
 		policy := stringValue(rule.Policy)
 		switch rule.ItemType {
 		case "rule":
-			if rule.RuleType != "MATCH" {
-			}
 			switch {
 			case rule.RuleType == "MATCH":
 				lines = append(lines, "MATCH,"+policy)

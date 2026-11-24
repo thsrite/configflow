@@ -594,7 +594,6 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 	}()
 	t := &tokenizer{zone: p, in: []rune(source)}
 	var origin, owner *dnsName
-	class, ttl := "IN", big.NewInt(3600)
 	records := new(big.Int)
 	include := false
 	for {
@@ -626,7 +625,7 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 				}
 				owner = nil
 			case directive == "$TTL" && len(values) == 2:
-				ttl = p.ttlFromText(values[1])
+				p.ttlFromText(values[1])
 			case directive == "$INCLUDE":
 				if len(values) != 2 && len(values) != 3 {
 					return "$INCLUDE 需要文件路径和可选 origin"
@@ -681,7 +680,7 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 		if !owner.absolute() {
 			return "相对域名需要 $ORIGIN；否则名称必须以 . 结尾"
 		}
-		rtype, klass, recordTTL, typeIndex := "", class, ttl, 0
+		rtype, typeIndex := "", 0
 		for ; offset < len(values); offset++ {
 			candidate := strings.ToUpper(values[offset])
 			digits := strings.Trim(candidate, "0123456789") == "" && candidate != ""
@@ -690,10 +689,8 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 				offset++
 				break
 			}
-			if DNSCodeValid("qclass", S(candidate)) && !digits {
-				klass = candidate
-			} else {
-				recordTTL = p.ttlFromText(values[offset])
+			if !DNSCodeValid("qclass", S(candidate)) || digits {
+				p.ttlFromText(values[offset])
 			}
 		}
 		if rtype == "" {
@@ -759,7 +756,6 @@ func zoneRecordsError(raw *Node, single bool) (message string) {
 			}
 			p.rdataFromText(parsed, strings.Join(encoded, " "), origin)
 		}
-		class, ttl = klass, recordTTL
 		records.Add(records, big.NewInt(1))
 	}
 	if single && (records.Cmp(big.NewInt(1)) > 0 || records.Cmp(big.NewInt(1)) != 0 && !include) {

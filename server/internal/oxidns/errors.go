@@ -159,18 +159,6 @@ func (p Path) dotted() string {
 	return b.String()
 }
 
-func (p Path) equal(q Path) bool {
-	if len(p) != len(q) {
-		return false
-	}
-	for i := range p {
-		if p[i] != q[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func hasError(issues []Issue) bool {
 	for _, item := range issues {
 		if item.Severity == "error" {

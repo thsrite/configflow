@@ -27,16 +27,6 @@ type CoreRelease struct {
 	Assets  map[string]ReleaseAsset
 }
 
-// TextValue returns a SELECTIVE_TEXT / FULL_TUN_TEXT value by key.
-func TextValue(table []textItem, key string) string {
-	for _, item := range table {
-		if item.key == key {
-			return item.value
-		}
-	}
-	return ""
-}
-
 // AgentsStaticDir is the directory download_agent_binary serves:
 // $AGENTS_STATIC_DIR (default /opt/configflow/static/agents), or
 // backend/static/agents when that does not exist.

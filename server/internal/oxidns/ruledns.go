@@ -214,13 +214,6 @@ func upstreamChain(action RuleAction, features chainFeatures) []*Node {
 	return append(plugins, M("tag", UpstreamPrefix+key, "type", "sequence", "args", steps))
 }
 
-// HelperPlugins are the owned plugins the given group routes need, in
-// first-use order; actions (rule_actions) supply pinned upstreams, features
-// the china_dns hooks copied into local chains.
-func HelperPlugins(routes []string, actions *Node, features chainFeatures) ([]*Node, error) {
-	return helperPlugins(routes, actionMapFromNode(actions), features)
-}
-
 func helperPlugins(routes []string, actions *actionMap, features chainFeatures) ([]*Node, error) {
 	pinned := map[string]RuleAction{}
 	if actions != nil {
@@ -604,5 +597,3 @@ func probeNeeded(routes []string, defaultForward string) bool {
 	}
 	return false
 }
-
-func itoa(i int) string { return strconv.Itoa(i) }

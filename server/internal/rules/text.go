@@ -73,18 +73,6 @@ func IsValidIP(query string) bool {
 	return ok
 }
 
-// IPAddressVersion is 4 or 6 for an address, 0 otherwise.
-func IPAddressVersion(text string) int {
-	addr, ok := parseAddr(text)
-	switch {
-	case !ok:
-		return 0
-	case addr.Is4():
-		return 4
-	}
-	return 6
-}
-
 // lines yields CR, LF and CRLF-delimited rule-file lines, without adding an
 // empty line after a final delimiter. Other Unicode characters remain content.
 func lines(content string) iter.Seq[string] {

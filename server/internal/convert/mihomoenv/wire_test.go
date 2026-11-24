@@ -15,8 +15,8 @@ func TestProductionWireRegistersEveryCallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := convert.CurrentMihomoEnvironment()
-	if err := env.Clients.Check(); err != nil {
-		t.Fatal(err)
+	if env.Clients.ParseNodes == nil || env.Clients.FilterNodes == nil {
+		t.Fatal("missing production client callback")
 	}
 	if err := env.CheckGeneration(); err != nil {
 		t.Fatal(err)

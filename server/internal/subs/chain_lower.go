@@ -74,15 +74,6 @@ type ChainResourceError struct{ ID string }
 
 func (e *ChainResourceError) Error() string { return fmt.Sprintf(msgChainMissing, e.ID) }
 
-// ValidateChains delegates every shape and dependency decision to the shared owner.
-func ValidateChains(config *model.Config) error {
-	ops := sharedDialers()
-	if ops.ValidateChains == nil {
-		return &CollaborationError{Operation: "chain validation"}
-	}
-	return ops.ValidateChains(config)
-}
-
 // LowerChains returns a copy-on-write runtime view of stable chains. Unknown
 // records stay immutable; only cloned groups/nodes and owned private metadata
 // change. It never serializes or decodes the configuration inside resource loops.
