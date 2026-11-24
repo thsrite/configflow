@@ -139,6 +139,8 @@ CONFIGFLOW_DIFF=1 … go test -run TestN811GlobalFlaskBoundaries ./internal/repo
 
 ## 6. W11 第 5 步复核 OxiDNS classical 缓存
 
+本节由执行者 Codex（GPT-6.2 Sol）记录自查与验证。前五节为 Claude Opus 5.5 的独立复核。
+
 检查从 `go@f381bc2fd` 切到 W11 后，`Profile.Repo` 缺失是否改变 OxiDNS 写入、生成或签名。协调者在 `final-w@80711a9a6` 独立修复了规则库列表 `has_ip_part`，它是这次调用链中唯一直接消费探测值的生产输出。
 
 - 旧版 `classicalWithoutIP` 用后台 context 调用只读 peek，生产进程通过 `repo.SetRepository` 取到同一仓库。W11 的 nil 仓库会把 URL 内容当作未知，`hasIPPart` 因此返回可能含 IP。内联内容仍直接解析。
@@ -162,3 +164,5 @@ RT_HOST=sunbroke@192.168.0.64 rt -- timeout 10m bash -lc 'cd server && test -z "
 ```sh
 RT_HOST=sunbroke@192.168.0.32 rt -- timeout 10m bash -lc 'cd server && CONFIGFLOW_DIFF=1 CONFIGFLOW_PY="$HOME/cf-test/.venv/bin/python" go test -count=1 -timeout 5m -run "^(TestTemplateAndNativeDNSWrites|TestCustomNativeRoutingPreservesCommittedMetadata|TestProxyGroupFollowDNSHTTPParity|TestLibraryNativeParkingHTTPParity)$" -v ./internal/api/rules/difftest ./internal/api/rulelibrary/difftest'
 ```
+
+复核收尾在 .32 验证。traffic 回归用例把内核上报写入应用注入的临时 store，确认生成的 DNS 策略随版本变化。用 Go overlay 临时恢复旧的独立 store 读取后，旧版本子用例因错误生成策略而失败。OxiDNS 合成用例在采集状态快照后清空 memo，覆盖冷缓存读取。两个受影响包的格式检查、vet 和 race 测试均通过。

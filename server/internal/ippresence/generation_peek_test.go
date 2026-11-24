@@ -248,6 +248,7 @@ func TestClassicalCacheDoesNotChangeNativeRouting(t *testing.T) {
 				return text, string(oxidns.ToJSON(result.Settings)), nil
 			}
 			uncachedYAML, uncachedEdit, uncachedErr := render(nil)
+			ippresence.ClearMemo()
 			cachedYAML, cachedEdit, cachedErr := render(r)
 			if cachedYAML != uncachedYAML || cachedEdit != uncachedEdit {
 				t.Fatal("cache presence changed generated YAML or replacement DNS settings bytes")

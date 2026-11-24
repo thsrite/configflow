@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -19,6 +20,9 @@ import (
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/server"
+	"configflow/internal/subs"
+	"configflow/internal/substore"
+	"configflow/internal/yamlx"
 )
 
 func TestBundleMetadataChecksRemainStrictForStructuredProviders(t *testing.T) {
@@ -46,7 +50,7 @@ func TestBundleMetadataChecksRemainStrictForStructuredProviders(t *testing.T) {
 	}
 }
 
-func TestDeploymentBundlePassesRepoAndRefreshAndUsesAppTrafficStore(t *testing.T) {
+func TestDeploymentBundlePassesRepoAndRefresh(t *testing.T) {
 	ctx := context.Background()
 	repository, err := repo.OpenDefaultWithOptions(t.TempDir(), server.RepoOptions())
 	if err != nil {
@@ -125,23 +129,12 @@ func TestDeploymentBundlePassesRepoAndRefreshAndUsesAppTrafficStore(t *testing.T
 	}
 	t.Cleanup(repository.Close)
 
+	t.Cleanup(convert.ResetMihomoEnvironmentForTest(t))
 	srv, err := server.New(ctx, server.Options{Repo: repository})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(srv.Agents.Close)
-
-	// Record a synthetic core version on the app-owned traffic store.
-	report, err := trafficstore.DecodeReport([]byte(`{"schema":1,"status":"running","mihomo_version":"v1.19.10","window_start":"2026-10-10T10:00:00Z","window_end":"2026-10-10T10:05:00Z","ip_only_conns":0,"dropped":0,"items":[]}`))
-	if err != nil || report == nil {
-		t.Fatalf("DecodeReport = %v, %v", report, err)
-	}
-	if _, err := srv.Traffic.Store().Add(ctx, "agent-no-profile", report, nil); err != nil {
-		t.Fatal(err)
-	}
-	if got := string(srv.Traffic.Store().StatusJSON("agent-no-profile")); !strings.Contains(got, `"v1.19.10"`) {
-		t.Fatalf("unexpected traffic status: %s", got)
-	}
 
 	cfg, err := repository.Config(ctx, defaultID, nil)
 	if err != nil {
@@ -218,17 +211,84 @@ func TestDeploymentBundlePassesRepoAndRefreshAndUsesAppTrafficStore(t *testing.T
 	if err == nil || !strings.Contains(err.Error(), "refresh: repository is nil") {
 		t.Fatalf("expected nil Refresh to fail closed, got: %v", err)
 	}
+}
 
-	// Verify generate() reads core_version through srv.Traffic.Store() without creating a separate store.
-	generated, err := generate(ctx, srv, repository, job{
-		Kind:      "agent-mihomo",
-		ProfileID: defaultID,
-		AgentID:   "agent-no-profile",
-	})
+func TestGeneratorUsesAppTrafficStore(t *testing.T) {
+	ctx := t.Context()
+	repository, err := repo.OpenDefaultWithOptions(t.TempDir(), server.RepoOptions())
 	if err != nil {
-		t.Fatalf("generate(agent-mihomo) failed: %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(generated, "mode:") {
-		t.Fatalf("unexpected agent-mihomo output: %q", generated)
+	t.Cleanup(repository.Close)
+
+	agentJob := job{Kind: "agent-mihomo", ProfileID: "default", AgentID: "synthetic-agent"}
+	if err := repository.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
+		s.Agents = append(s.Agents, model.Agent{
+			ID: agentJob.AgentID, Name: "Synthetic Agent", ServiceType: "mihomo",
+			ProfileID: agentJob.ProfileID, DomainDiscoveryEnabled: new(true),
+		})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A cached subscription host mapping produces a DNS policy only when the
+	// reported core supports it (or its version is unknown).
+	const subID, subURL, nodeHost = "synthetic-source", "https://feed.example.com/config.yaml", "node.example.com"
+	if err := repository.UpdateShared(ctx, func(_ context.Context, sh *model.Shared) error {
+		sh.Subscriptions = append(sh.Subscriptions, model.Subscription{ID: subID, Name: "Synthetic Source", URL: subURL})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.UpdateProfile(ctx, agentJob.ProfileID, func(_ context.Context, p *model.Profile) error {
+		p.ProxyGroups = append(p.ProxyGroups, model.ProxyGroup{ID: "synthetic-group", Name: "Synthetic Group", Type: "select", Subscriptions: new([]string{subID})})
+		p.Mihomo.CustomConfig = "mode: rule\ndns:\n  enable: true\n  listen: '127.0.0.1:5353'\n  proxy-server-nameserver: ['https://dns.example.com/dns-query']\n"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(convert.ResetMihomoEnvironmentForTest(t))
+	srv, err := server.New(ctx, server.Options{Repo: repository})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Agents.Close)
+
+	nodes := []model.Node{{Name: "Synthetic Node", Type: "http", Server: nodeHost, Port: model.IntPtr(8080)}}
+	hosts := subs.ExtractHosts("hosts: {node.example.com: upstream.example.com}\n")
+	if _, err := srv.SubStore.SaveCache(ctx, repository, subID, nodes, &substore.CacheMetadata{URL: new(subURL), Hosts: hosts}); err != nil {
+		t.Fatal(err)
+	}
+	// Keep the reported versions outside the repository's default traffic path.
+	srv.Traffic = trafficstore.NewService(t.TempDir())
+	for _, tc := range []struct {
+		version string
+		policy  *yamlx.Node
+	}{
+		{version: "v1.19.10"},
+		{version: "v1.19.20", policy: yamlx.Str("udp://127.0.0.1:5353")},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			report, err := trafficstore.DecodeReport([]byte(fmt.Sprintf(`{"schema":1,"status":"running","mihomo_version":%q,"window_start":"2026-10-10T10:00:00Z","window_end":"2026-10-10T10:05:00Z","ip_only_conns":0,"dropped":0,"items":[]}`, tc.version)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := srv.Traffic.Store().Add(ctx, agentJob.AgentID, report, nil); err != nil {
+				t.Fatal(err)
+			}
+			generated, err := generate(ctx, srv, repository, agentJob)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc, err := yamlx.Parse([]byte(generated))
+			if err != nil {
+				t.Fatal(err)
+			}
+			policy := yamlx.Get(yamlx.Get(doc, "dns"), subs.PolicyKey)
+			if got := yamlx.Get(policy, nodeHost); !yamlx.Equal(got, tc.policy) {
+				t.Fatalf("generated DNS policy for reported core %s: got %v, want %v", tc.version, got, tc.policy)
+			}
+		})
 	}
 }
