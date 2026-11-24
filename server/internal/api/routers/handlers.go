@@ -119,7 +119,7 @@ func (h *Handler) service(c *httpx.Ctx) (*core.ManagementService, error) {
 	db, err := h.repository(c.Context())
 	return h.routerService().Management(db), err
 }
-func body(c *httpx.Ctx) json.RawMessage             { var raw json.RawMessage; _ = c.BindSilent(&raw); return raw }
+func body(c *httpx.Ctx) json.RawMessage { var raw json.RawMessage; _ = c.BindSilent(&raw); return raw }
 func fields(raw json.RawMessage) (map[string]json.RawMessage, bool) {
 	var out map[string]json.RawMessage
 	if json.Unmarshal(raw, &out) != nil || out == nil {
@@ -533,7 +533,7 @@ func (h *Handler) policy(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return failure(c, cfg, err, 0, false)
 	}
-	peers, _, err := workspacePeers(c, s.Repo)
+	peers, _, err := h.workspacePeers(c, s.Repo)
 	if err != nil {
 		return nil, err
 	}

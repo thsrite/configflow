@@ -21,3 +21,7 @@ func editSystem(ctx context.Context, fn func(*model.System) error) error {
 func forget(ctx context.Context, id string) error {
 	return (&Service{}).forget(ctx, id)
 }
+
+func source(ctx context.Context, id string) (model.RuleLibraryItem, error) {
+	return (&Service{}).source(ctx, id)
+}

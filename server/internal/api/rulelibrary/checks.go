@@ -212,7 +212,7 @@ func (s *Service) Cache(ctx context.Context, body *cacheRequest) (cacheResults, 
 		defer release()
 		// A waiting manual refresh resolves the latest declaration after acquiring
 		// the edit lease, so a slow previous request cannot republish old inline text.
-		current, err := source(ctx, item.ID)
+		current, err := s.source(ctx, item.ID)
 		if err != nil {
 			result.Error = weburl.SafeErrorDetails(err)
 			retained := false
