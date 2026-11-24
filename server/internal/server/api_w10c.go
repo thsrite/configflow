@@ -48,7 +48,7 @@ type w10cHandlers struct {
 	notifications     *apinotifications.Handler
 }
 
-func newW10cHandlers(opts Options, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service) *w10cHandlers {
+func newW10cHandlers(opts Options, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service, wd *webdav.Service) *w10cHandlers {
 	var ruleReader gateway.RuleSourceReader
 	if rs != nil {
 		ruleReader = rs.ReadGateway
@@ -73,7 +73,7 @@ func newW10cHandlers(opts Options, tk *tasks.Registry, nt *notifications.Service
 		ipv6:              apiipv6.NewHandler(opts.Repo, ag.manager, ag.ipv6),
 		linuxgateway:      apilinuxgateway.NewHandler(opts.Repo, ag.manager, ruleReader),
 		gatewayonboarding: onboardingHandler,
-		settings:          apisettings.NewHandler(opts.Repo, gen.substore, webdav.Default()),
+		settings:          apisettings.NewHandler(opts.Repo, gen.substore, wd),
 		setup:             setupHandler,
 		logs:              apilogs.NewHandler(),
 		stats:             apistats.NewHandler(opts.Repo),

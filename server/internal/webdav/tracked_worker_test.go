@@ -58,7 +58,7 @@ func receiveUpload(t *testing.T, ch <-chan string) string {
 func TestWorkerStartupRestartsClockAndExplicitCloseStaysTerminal(t *testing.T) {
 	clock := &workerClock{Clock: lifecycletest.NewClock(time.Now()), created: make(chan time.Duration, 32)}
 	uploads := make(chan string, 4)
-	w := newAutomaticWorker(func(_ context.Context, s Snapshot) error { uploads <- string(s.Document); return nil })
+	w := NewWorker(time.Second, func(_ context.Context, s Snapshot) error { uploads <- string(s.Document); return nil })
 	runner := workerRuntime(t, w, clock)
 	defer runner.Shutdown(context.Background())
 	source := &memorySource{}

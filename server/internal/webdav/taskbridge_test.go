@@ -17,19 +17,19 @@ import (
 func TestBackupTaskUsesStoredConfigurationAndRuntimeAdmission(t *testing.T) {
 	for _, shutdown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect completes", true: "shutdown rejects"}[shutdown], func(t *testing.T) {
-			if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond}); err != nil {
-				t.Fatal(err)
-			}
-			lifecycle.Start(context.Background())
-			t.Cleanup(func() { lifecycle.Stop(time.Second) })
+			rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond})
+			rt.Start(context.Background())
+			t.Cleanup(func() { rt.Shutdown(context.Background()) })
 			f, server := newDAV(t)
-			t.Cleanup(SetDefault(NewService(server.Client())))
-			t.Cleanup(wireTasks())
 			r, err := repo.Open(t.TempDir(), repo.Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx := repo.WithScope(repo.WithRepository(context.Background(), r))
+			svc := NewService(server.Client())
+			svc.Repo = r
+			tk := tasks.NewRegistry(r, rt)
+			t.Cleanup(svc.registerTasks(tk))
+			ctx := repo.WithScope(context.Background())
 			settings, err := json.Marshal(fixtureSettings(server))
 			if err != nil {
 				t.Fatal(err)
@@ -40,14 +40,14 @@ func TestBackupTaskUsesStoredConfigurationAndRuntimeAdmission(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			request, cancel := context.WithCancel(lifecycle.BindRequest(ctx))
+			request, cancel := context.WithCancel(rt.BindRequest(ctx))
 			defer cancel()
 			if shutdown {
-				lifecycle.Stop(time.Second)
+				rt.Shutdown(context.Background())
 			} else {
 				cancel()
 			}
-			err = tasks.RunNow(request, tasks.BackupTaskKey)
+			err = tk.RunNow(request, tasks.BackupTaskKey)
 			if shutdown {
 				if !errors.Is(err, context.Canceled) {
 					t.Fatal(err)

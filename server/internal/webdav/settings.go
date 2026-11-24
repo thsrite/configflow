@@ -11,7 +11,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
+
+	"configflow/internal/notifications"
+	"configflow/internal/repo"
+	"configflow/internal/tasks"
 )
 
 // Retention defaults and limits are shared with the settings API.
@@ -72,9 +77,16 @@ type HTTPDoer interface {
 }
 
 // Service holds a transport and clock; requests use their own 30-second timeout.
+// Service runs WebDAV backup tests, uploads, and automatic post-commit backups.
 type Service struct {
-	HTTP HTTPDoer
-	Now  func() time.Time
+	HTTP          HTTPDoer
+	Now           func() time.Time
+	Repo          *repo.Repository
+	Tasks         *tasks.Registry
+	Notifications *notifications.Service
+
+	workerOnce sync.Once
+	worker     *Worker
 }
 
 // NewService uses net/http without adding a WebDAV dependency.

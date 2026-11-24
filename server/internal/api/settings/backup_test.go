@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"configflow/internal/api/settings"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -60,14 +61,15 @@ func TestBackupEndpointsUseMaskedCredentialAndHideRemoteErrors(t *testing.T) {
 	t.Cleanup(remote.Close)
 	service := webdav.NewService(remote.Client())
 	service.Now = func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 123000, time.UTC) }
-	t.Cleanup(webdav.SetDefault(service))
 	logFile := filepath.Join(t.TempDir(), "webdav.log")
 	root, err := logx.Setup(logx.Config{File: logFile, Level: logx.Debug})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { root.Close() })
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(settings.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Setup: func(app *httpx.App) {
+		settings.NewHandler(app.Repo, nil, service).Register(app.Router)
+	}})
 	admin := srv.Login()
 	ctx := srv.Context()
 	err = srv.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {

@@ -114,6 +114,7 @@ func New(t testing.TB, options Options) *Server {
 	t.Cleanup(func() { auth.Configure(previous) })
 
 	app := httpx.New()
+	app.Repo = repository
 	apiauth.Register(app.Router)
 	for _, register := range options.Register {
 		register(app.Router)

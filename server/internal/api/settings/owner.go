@@ -36,7 +36,7 @@ func (h *Handler) webdav() *webdav.Service {
 	if h != nil && h.WebDAV != nil {
 		return h.WebDAV
 	}
-	return webdav.Default()
+	return webdav.NewService(nil)
 }
 
 // saveSystemConfig / saveBackup own the C06 settings commits. The HTTP layer
@@ -137,11 +137,16 @@ func (h *Handler) testBackupConnection(ctx context.Context, settings webdav.Sett
 // Shared WebDAV/taskstatus final commit windows belong to O3-6c; do not replace
 // its receipt helper or suppress a stopped Runtime with Uninterruptible here.
 func (h *Handler) runManualBackup(ctx context.Context, settings webdav.Settings) (webdav.Result, error) {
-	ctx = lifecycle.Detach(h.withRepo(ctx))
+	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return webdav.Result{}, err
 	}
-	snapshot, err := webdav.Capture(ctx)
+	r, err := h.repo(ctx)
+	if err != nil {
+		return webdav.Result{}, err
+	}
+	wd := h.webdav()
+	snapshot, err := wd.Capture(ctx, r)
 	if err != nil {
 		return webdav.Result{}, err
 	}
@@ -149,5 +154,5 @@ func (h *Handler) runManualBackup(ctx context.Context, settings webdav.Settings)
 	if err := ctx.Err(); err != nil {
 		return webdav.Result{}, err
 	}
-	return webdav.Run(ctx, snapshot, false)
+	return wd.Run(ctx, snapshot, false)
 }

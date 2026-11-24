@@ -54,9 +54,9 @@ func TestCredentialVariantsNeverReachDiagnostics(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(SetDefault(NewService(remote.Client())))
+			svc := NewService(remote.Client())
 			for _, automatic := range []bool{false, true} {
-				_, err := Run(context.Background(), Snapshot{Document: json.RawMessage(`{}`), Settings: settings, DataDir: r.DataDir(), repository: r}, automatic)
+				_, err := svc.Run(context.Background(), Snapshot{Document: json.RawMessage(`{}`), Settings: settings, DataDir: r.DataDir(), repository: r}, automatic)
 				if err == nil {
 					t.Fatal("expected denied directory")
 				}
@@ -107,10 +107,8 @@ func TestDisabledCommitNeverStartsOrReschedulesWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := repo.SetHooks(repo.Hooks{})
-	t.Cleanup(func() { repo.SetHooks(previous) })
 	worker := testWorker(t, time.Hour, func(context.Context, Snapshot) error { return nil })
-	registerHook(worker)
+	r.OnConfigurationCommitted(commitObserver(worker))
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	update := func(enabled bool) {
 		t.Helper()
@@ -225,15 +223,13 @@ else:
 
 func TestNonRuntimeAgentCommitsUploadAndRuntimeDoesNot(t *testing.T) {
 	fake, remote := newDAV(t)
-	t.Cleanup(SetDefault(NewService(remote.Client())))
+	svc := NewService(remote.Client())
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := repo.SetHooks(repo.Hooks{})
-	t.Cleanup(func() { repo.SetHooks(previous) })
-	worker := testWorker(t, 10*time.Millisecond, func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
-	registerHook(worker)
+	worker := testWorker(t, 10*time.Millisecond, func(ctx context.Context, snapshot Snapshot) error { _, err := svc.Run(ctx, snapshot, true); return err })
+	r.OnConfigurationCommitted(commitObserver(worker))
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	err = r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {
 		settings := fixtureSettings(remote)
@@ -304,15 +300,13 @@ func TestNonRuntimeAgentCommitsUploadAndRuntimeDoesNot(t *testing.T) {
 
 func TestStoredDotPathAutomaticFailureHasClearTaskMessage(t *testing.T) {
 	fake, remote := newDAV(t)
-	t.Cleanup(SetDefault(NewService(remote.Client())))
+	svc := NewService(remote.Client())
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := repo.SetHooks(repo.Hooks{})
-	t.Cleanup(func() { repo.SetHooks(previous) })
-	worker := testWorker(t, 0, func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
-	registerHook(worker)
+	worker := testWorker(t, 0, func(ctx context.Context, snapshot Snapshot) error { _, err := svc.Run(ctx, snapshot, true); return err })
+	r.OnConfigurationCommitted(commitObserver(worker))
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	// Seed a legacy/imported setting directly, bypassing the newly secured form.
 	err = r.UpdateSystem(context.Background(), func(_ context.Context, system *model.System) error {

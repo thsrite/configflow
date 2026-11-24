@@ -25,7 +25,9 @@ import (
 
 	"configflow/internal/api/settings"
 	"configflow/internal/auth"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/repo"
@@ -212,6 +214,7 @@ type world struct {
 	srv              *httpxtest.Server
 	py               *oracle
 	pythonDAV, goDAV *dav
+	service          *webdav.Service
 	token            string
 	pyDir            string
 }
@@ -223,7 +226,11 @@ func newWorldSaved(t *testing.T, retention map[string]any) *world {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
 	pd, gd := newDAV(t), newDAV(t)
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: jwtSecret, Register: httpxtest.Routes(settings.Register)})
+	service := webdav.NewService(loopbackOnly{gd.server.Client(), strings.TrimPrefix(gd.server.URL, "http://")})
+	service.Now = func() time.Time { return fixed }
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: jwtSecret, Setup: func(app *httpx.App) {
+		settings.NewHandler(app.Repo, nil, service).Register(app.Router)
+	}})
 	ctx := srv.Context()
 	backup := map[string]any{"webdav_url": "<DAV>", "webdav_username": "fixture-user", "webdav_password": "fixture-password", "webdav_path": "/backups/", "auto_backup": false}
 	err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
@@ -276,10 +283,10 @@ func newWorldSaved(t *testing.T, retention map[string]any) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := webdav.NewService(loopbackOnly{gd.server.Client(), strings.TrimPrefix(gd.server.URL, "http://")})
-	service.Now = func() time.Time { return fixed }
-	t.Cleanup(webdav.SetDefault(service))
-	webdav.Wire()
+	service.Repo = srv.Repo
+	service.Subscribe(srv.Repo)
+	rt := lifecycle.NewRuntime(lifecycle.Options{})
+	service.Register(rt, tasks.Default())
 	for _, slot := range tasks.Missing() {
 		t.Cleanup(tasks.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return []*tasks.Task{}, nil }))
 	}
@@ -295,11 +302,11 @@ func newWorldSaved(t *testing.T, retention map[string]any) *world {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := webdav.WaitIdle(ctx); err != nil {
+		if err := service.WaitIdle(ctx); err != nil {
 			t.Error(err)
 		}
 	})
-	return &world{t, srv, oracle, pd, gd, "Bearer " + token, pyDir}
+	return &world{t, srv, oracle, pd, gd, service, "Bearer " + token, pyDir}
 }
 func storeState(t *testing.T, srv *httpxtest.Server) any {
 	t.Helper()
@@ -448,7 +455,7 @@ func (w *world) callApproved(method, path, body string, admin, wait bool, approv
 	}
 	if wait {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := webdav.WaitIdle(ctx); err != nil {
+		if err := w.service.WaitIdle(ctx); err != nil {
 			cancel()
 			t.Fatal(err)
 		}

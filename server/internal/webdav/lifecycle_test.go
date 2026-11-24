@@ -99,11 +99,9 @@ func TestReadsDisabledAndFailedCommitsDoNotSchedule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := repo.SetHooks(repo.Hooks{})
-	t.Cleanup(func() { repo.SetHooks(previous) })
 	uploads := 0
 	worker := testWorker(t, 0, func(context.Context, Snapshot) error { uploads++; return nil })
-	registerHook(worker)
+	r.OnConfigurationCommitted(commitObserver(worker))
 	t.Cleanup(func() { _ = worker.Close(context.Background()) })
 	ctx := repo.WithRepository(context.Background(), r)
 	_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {

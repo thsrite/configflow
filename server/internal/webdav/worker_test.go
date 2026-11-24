@@ -144,18 +144,15 @@ func TestCommitHookRunsOutsideLockAndUploadFailureCannotRollback(t *testing.T) {
 	f.failMethod = "PUT"
 	f.failStatus = 403
 	service := NewService(server.Client())
-	t.Cleanup(SetDefault(service))
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := repo.SetHooks(repo.Hooks{})
-	t.Cleanup(func() { repo.SetHooks(previous) })
 	worker := testWorker(t, 35*time.Millisecond, func(ctx context.Context, snapshot Snapshot) error {
-		_, err := Run(repo.WithRepository(ctx, r), snapshot, true)
+		_, err := service.Run(ctx, snapshot, true)
 		return err
 	})
-	registerHook(worker)
+	r.OnConfigurationCommitted(commitObserver(worker))
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()

@@ -5,32 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync/atomic"
 	"time"
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/lockx"
 	"configflow/internal/model"
-	"configflow/internal/notifications"
 	"configflow/internal/repo"
+	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 )
-
-var service atomic.Pointer[Service]
-
-func init() { service.Store(NewService(nil)) }
-
-// Default returns the process's backup service.
-func Default() *Service { return service.Load() }
-
-// SetDefault installs a service and returns a restore function for isolated tests.
-func SetDefault(next *Service) func() {
-	if next == nil {
-		next = NewService(nil)
-	}
-	previous := service.Swap(next)
-	return func() { service.Store(previous) }
-}
 
 // Snapshot is a fresh complete document and its settings. The private repository
 // association lets background receipts/notifications use their originating store;
@@ -77,25 +60,33 @@ func captureDocument(ctx context.Context, r *repo.Repository) (Snapshot, *model.
 	return Snapshot{Document: data, DataDir: r.DataDir(), repository: r}, &native, nil
 }
 
+func (s *Service) automaticWorker() *Worker {
+	s.workerOnce.Do(func() {
+		s.worker = NewWorker(time.Second, func(ctx context.Context, snapshot Snapshot) error {
+			_, err := s.Run(ctx, snapshot, true)
+			return err
+		})
+	})
+	return s.worker
+}
+
 // Capture exports the complete configuration for a manual backup. The caller
 // supplies request settings; unrelated malformed saved settings cannot block it.
-func Capture(ctx context.Context) (Snapshot, error) {
+func (s *Service) Capture(ctx context.Context, r *repo.Repository) (Snapshot, error) {
 	ctx = lifecycle.Detach(ctx)
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return Snapshot{}, err
+	if r == nil && s != nil {
+		r = s.Repo
+	}
+	if r == nil {
+		return Snapshot{}, errors.New("webdav: repository is nil")
 	}
 	snapshot, _, err := captureDocument(ctx, r)
 	return snapshot, err
 }
 
 // Run records one manual or automatic upload in the shared task receipt store.
-func Run(ctx context.Context, snapshot Snapshot, automatic bool) (Result, error) {
+func (s *Service) Run(ctx context.Context, snapshot Snapshot, automatic bool) (Result, error) {
 	ctx = lifecycle.Detach(ctx)
-	if snapshot.repository != nil {
-		ctx = repo.WithRepository(ctx, snapshot.repository)
-	}
-	s := Default()
 	started := s.Now()
 	clock := time.Now()
 	trigger := "manual"
@@ -111,7 +102,12 @@ func Run(ctx context.Context, snapshot Snapshot, automatic bool) (Result, error)
 			detail = err.Error()
 		}
 	}
-	store := notifications.TaskStatus(ctx, snapshot.DataDir)
+	var store *taskstatus.Store
+	if s.Notifications != nil {
+		store = s.Notifications.TaskStatus(ctx, snapshot.DataDir)
+	} else {
+		store = taskstatus.New(snapshot.DataDir)
+	}
 	store.Now = s.Now
 	_, recordErr := store.SaveResult(ctx, "webdav_backup", taskstatus.Result{OK: err == nil, StartedAt: started.UTC().Format("2006-01-02T15:04:05Z"), Trigger: trigger, DurationMs: float64(time.Since(clock).Milliseconds()), Error: detail})
 	if err != nil {
@@ -120,34 +116,22 @@ func Run(ctx context.Context, snapshot Snapshot, automatic bool) (Result, error)
 	return result, recordErr
 }
 
-func newAutomaticWorker(upload UploadFunc) *Worker { return NewWorker(time.Second, upload) }
-
-var automaticWorker = newAutomaticWorker(func(ctx context.Context, snapshot Snapshot) error { _, err := Run(ctx, snapshot, true); return err })
-
 // Subscribe attaches the automatic WebDAV backup observer directly to r.
-func Subscribe(r *repo.Repository) func() {
+func (s *Service) Subscribe(r *repo.Repository) func() {
 	if r == nil {
 		return func() {}
 	}
-	return r.OnConfigurationCommitted(commitObserver(automaticWorker))
+	return r.OnConfigurationCommitted(commitObserver(s.automaticWorker()))
 }
 
-// WireTasksAndStartup registers the WebDAV task runner and startup step on the default runtime.
-func WireTasksAndStartup() { WireTasksAndStartupOn(lifecycle.Current()) }
-
-// WireTasksAndStartupOn registers the WebDAV task runner and startup step on rt.
-func WireTasksAndStartupOn(rt *lifecycle.Runtime) {
-	if rt == nil {
-		rt = lifecycle.Current()
+// Register installs the WebDAV task runner on tk and startup step on rt.
+func (s *Service) Register(rt *lifecycle.Runtime, tk *tasks.Registry) {
+	if tk != nil {
+		s.registerTasks(tk)
 	}
-	wireTasks()
-	rt.RegisterStartup(workerStartup(automaticWorker, rt, rt.RegisterShutdown))
-}
-
-// Wire installs the post-commit hook and bounded shutdown handling.
-func Wire() {
-	WireTasksAndStartup()
-	registerHook(automaticWorker)
+	if rt != nil {
+		rt.RegisterStartup(workerStartup(s.automaticWorker(), rt, rt.RegisterShutdown))
+	}
 }
 
 func workerStartup(worker *Worker, spawner lockx.Spawner, register func(lifecycle.ShutdownHook)) lifecycle.Startup {
@@ -195,10 +179,6 @@ func commitObserver(worker *Worker) func(*repo.Repository, *model.Document, *mod
 	}
 }
 
-func registerHook(worker *Worker) {
-	repo.RegisterHooks(repo.Hooks{RecordHooks: repo.RecordHooks{ConfigurationCommittedRecords: commitObserver(worker)}})
-}
-
 // autoBackupOff reports a committed generation whose automatic backup switch is
 // stored as false. Like Python, such a commit schedules nothing, so the two
 // complete documents are not encoded and compared. A missing, null or
@@ -209,4 +189,4 @@ func autoBackupOff(current *model.Document) bool {
 
 // WaitIdle waits for automatic backups and their receipt/notification callbacks.
 // Cancelling ctx stops only this wait, never a committed backup's I/O.
-func WaitIdle(ctx context.Context) error { return automaticWorker.WaitIdle(ctx) }
+func (s *Service) WaitIdle(ctx context.Context) error { return s.automaticWorker().WaitIdle(ctx) }

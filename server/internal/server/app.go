@@ -66,6 +66,7 @@ type App struct {
 	RuleSource    *rulesource.Service
 	Routers       *routers.Service
 	RouterSync    *routerrulesync.RuleSyncService
+	WebDAV        *webdav.Service
 	Settings      *apisettings.Handler
 
 	api apiHandlers // the mounted route handlers (production-wiring tests)
@@ -102,9 +103,13 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	rs := rulesource.New(rulesource.Options{Repo: opts.Repo})
 	rulesource.UseService(rs)
 	registerStartup(rt, gen.substore, ag.manager, ag.metrics, process)
+	wd := webdav.NewService(nil)
+	wd.Repo = opts.Repo
+	wd.Tasks = tk
+	wd.Notifications = nt
 	if opts.Repo != nil {
-		webdav.WireTasksAndStartupOn(rt)
-		webdav.Subscribe(opts.Repo)
+		wd.Register(rt, tk)
+		wd.Subscribe(opts.Repo)
 	} else {
 		configexport.Wire()
 		wireCore()
@@ -112,8 +117,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 			RedactRoutersJSON: func(raw json.RawMessage) (json.RawMessage, error) { return spec.RedactRouters(raw) },
 			JobLockRecord:     routers.JobLockRecord,
 		}})
-		webdav.WireTasksAndStartupOn(rt)
-		webdav.Wire()
+		wd.Register(rt, tk)
 	}
 	rtrSvc, err := wireOtherSubsystems(opts, rt, tk, nt, ag, gen, rs)
 	if err != nil {
@@ -136,7 +140,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		mcp:    mcp.NewHandler(opts.Repo),
 		agents: newAgentAPIHandler(opts, ag, gen),
 		w10b:   newW10bHandlers(opts, ag, gen, rs, rtrSvc),
-		w10c:   newW10cHandlers(opts, tk, nt, ag, gen, rs),
+		w10c:   newW10cHandlers(opts, tk, nt, ag, gen, rs, wd),
 	}
 	registerRoutes(httpApp.Router, api)
 	auth.Install(httpApp)
@@ -163,6 +167,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		RuleSource:    rs,
 		Routers:       rtrSvc.routers,
 		RouterSync:    rtrSvc.rulesync,
+		WebDAV:        wd,
 		Settings:      api.w10c.settings,
 		api:           api,
 	}, nil

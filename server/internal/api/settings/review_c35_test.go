@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"configflow/internal/api/settings"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/webdav"
 )
@@ -46,8 +47,10 @@ func TestDotPathsRejectedBySaveAndExecutionBeforeAnyNetwork(t *testing.T) {
 	var requests atomic.Int32
 	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(200) }))
 	defer remote.Close()
-	t.Cleanup(webdav.SetDefault(webdav.NewService(remote.Client())))
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(settings.Register)})
+	svc := webdav.NewService(remote.Client())
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Setup: func(app *httpx.App) {
+		settings.NewHandler(app.Repo, nil, svc).Register(app.Router)
+	}})
 	admin := srv.Login()
 	srv.Post("/api/backup/config", httpxtest.JSON(map[string]any{
 		"webdav_url":      remote.URL,

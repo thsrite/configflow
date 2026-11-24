@@ -16,6 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/api/settings"
+	"configflow/internal/httpx"
+	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/taskstatus"
@@ -31,7 +34,6 @@ func TestSettingsRuntimeWriteLifetime(t *testing.T) {
 		}
 		for _, operation := range []string{"proxy", "domain", "token", "delete-token", "aggregation", "backup-config", "backup-test", "backup-now"} {
 			t.Run(mode+"/"+operation, func(t *testing.T) {
-				s := newServer(t, false)
 				var mu sync.Mutex
 				dirs := map[string]bool{"/": true}
 				calls := 0
@@ -59,7 +61,10 @@ func TestSettingsRuntimeWriteLifetime(t *testing.T) {
 					}
 				}))
 				t.Cleanup(remote.Close)
-				t.Cleanup(webdav.SetDefault(webdav.NewService(remote.Client())))
+				svc := webdav.NewService(remote.Client())
+				s := httpxtest.New(t, httpxtest.Options{Auth: false, Setup: func(app *httpx.App) {
+					settings.NewHandler(app.Repo, nil, svc).Register(app.Router)
+				}})
 				err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, document *model.System) error {
 					document.SystemConfig.ServerDomain = "https://before.example.com"
 					document.SystemConfig.ConfigToken = "before-token"
