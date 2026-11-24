@@ -67,20 +67,32 @@ func TestProfileSessionsDirectAndOverride(t *testing.T) {
 	if source, err := PublishSource(ctx, r, "", &gateway, "a"); err != nil || source != "" {
 		t.Fatalf("no profile: %v %v", source, err)
 	}
-	sessionRaw := json.RawMessage(`[{"id":"s1","goal":"router","completed":1}]`)
+	const sessionID = "00000000000000000000000000000001"
 	dir := filepath.Join(r.DataDir(), "setup-sessions")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "s1.json"), []byte(`{"id":"s1","profile_id":"home","goal":"router","completed":1}`), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, sessionID+".json"), []byte(`{"id":"`+sessionID+`","profile_id":"home","goal":"router","completed":true}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	legacy, err := ReadContext(ctx, r, "home")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if legacy.SessionID == nil || *legacy.SessionID != sessionID || legacy.SessionGoal == nil || *legacy.SessionGoal != "router" || !legacy.SessionCompleted {
+		t.Fatalf("ReadContext did not load setup-session: %+v", legacy)
+	}
+	sessionRaw := json.RawMessage(`[{"id":"s1","goal":"router","completed":1}]`)
+	var rows []Session
+	if err := json.Unmarshal(sessionRaw, &rows); err != nil {
+		t.Fatal(err)
+	}
+	r5Legacy, err := SessionContext(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := `{"session_goal":"router","session_id":"s1","session_completed":true,"has_gateway_session":false,"mihomo_agent_ids":[]}`
-	n89SessionPolicy(t, sessionRaw, want, legacy)
+	n89SessionPolicy(t, sessionRaw, want, r5Legacy)
 
 	state, err := ProfileState(&gateway, legacy)
 	if err != nil || state.Mode == nil || *state.Mode != "legacy" || state.Source == nil || *state.Source != "setup" {

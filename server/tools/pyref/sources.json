@@ -883,7 +883,6 @@
       "server/internal/model/textlines.go",
       "server/internal/oxidns/archive_test.go",
       "server/internal/oxidns/boundary_test.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/testdata/c29_archive.py",
       "server/internal/testgolden/fingerprint.go",
       "server/internal/testgolden/golden.go",
@@ -919,18 +918,13 @@
       "actionMap.len"
     ],
     "product_imports": [
-      "configflow/internal/mosdns",
-      "configflow/internal/repo"
+      "configflow/internal/mosdns"
     ],
     "product_members": [
       "configflow/internal/mosdns.ArchiveError",
       "configflow/internal/mosdns.ConfigFromJSON",
       "configflow/internal/mosdns.Download",
-      "configflow/internal/mosdns.Message",
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository",
-      "configflow/internal/repo.WithRepository"
+      "configflow/internal/mosdns.Message"
     ]
   },
   {
@@ -1002,7 +996,6 @@
       "FullTunShape",
       "FullTunYAML",
       "GatewayEnabled",
-      "HookMissingError.Error",
       "LegacyAgentIDs",
       "LegacyProfileSource",
       "ProfileRuleIDs",
@@ -1110,7 +1103,6 @@
       "FullTunShape",
       "FullTunYAML",
       "GatewayEnabled",
-      "HookMissingError.Error",
       "LegacyAgentIDs",
       "LegacyProfileSource",
       "ProfileRuleIDs",
@@ -1218,7 +1210,6 @@
       "FullTunShape",
       "FullTunYAML",
       "GatewayEnabled",
-      "HookMissingError.Error",
       "LegacyAgentIDs",
       "LegacyProfileSource",
       "ProfileRuleIDs",
@@ -1388,7 +1379,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -1606,14 +1596,8 @@
       "ownedChain.toNode",
       "parsePolicies"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -1690,7 +1674,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -1844,14 +1827,8 @@
       "tokenizer.str",
       "yamlReadError"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -1928,7 +1905,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -2078,14 +2054,8 @@
       "tokenizer.get",
       "yamlReadError"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -2162,7 +2132,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -2291,9 +2260,7 @@
       "configflow/internal/repo"
     ],
     "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
+      "configflow/internal/repo.Repository"
     ]
   },
   {
@@ -2371,7 +2338,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -2589,14 +2555,8 @@
       "ownedChain.toNode",
       "parsePolicies"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -2673,7 +2633,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -2891,14 +2850,8 @@
       "ownedChain.toNode",
       "parsePolicies"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -2975,7 +2928,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -3193,14 +3145,8 @@
       "ownedChain.toNode",
       "parsePolicies"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -3277,7 +3223,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -3495,14 +3440,8 @@
       "ownedChain.toNode",
       "parsePolicies"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -3579,7 +3518,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -3797,14 +3735,8 @@
       "ownedChain.toNode",
       "parsePolicies"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -3881,7 +3813,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -4099,14 +4030,8 @@
       "ownedChain.toNode",
       "parsePolicies"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -4183,7 +4108,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -4401,14 +4325,8 @@
       "ownedChain.toNode",
       "parsePolicies"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -4485,7 +4403,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -4703,14 +4620,8 @@
       "ownedChain.toNode",
       "parsePolicies"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/oxidns",
@@ -4787,7 +4698,6 @@
       "server/internal/oxidns/doc.go",
       "server/internal/oxidns/editor.go",
       "server/internal/oxidns/errors.go",
-      "server/internal/oxidns/hooks_external_test.go",
       "server/internal/oxidns/matchtargets.go",
       "server/internal/oxidns/messages.go",
       "server/internal/oxidns/n73_readers_test.go",
@@ -5005,14 +4915,8 @@
       "ownedChain.toNode",
       "parsePolicies"
     ],
-    "product_imports": [
-      "configflow/internal/repo"
-    ],
-    "product_members": [
-      "configflow/internal/repo.Open",
-      "configflow/internal/repo.Options",
-      "configflow/internal/repo.SetRepository"
-    ]
+    "product_imports": [],
+    "product_members": []
   },
   {
     "package": "server/internal/mosdns",
