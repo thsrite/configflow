@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	apisettings "configflow/internal/api/settings"
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
 	"configflow/internal/instance"
@@ -190,12 +189,23 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 			return fmt.Errorf("[web-listener] %w", err)
 		}
 		defer manager.Close()
-		apisettings.SetWebListener(manager)
+		if srv.Settings != nil {
+			if err := srv.Settings.SetWebListener(manager); err != nil {
+				return fmt.Errorf("[web-listener] %w", err)
+			}
+		}
 		port := 0
 		if status.Port != nil {
 			port = *status.Port
 		}
 		logx.Get("backend.app").Info("Web UI listening on port " + strconv.Itoa(port))
+	} else if srv.Settings != nil {
+		if err := srv.Settings.SetWebListener(nil); err != nil {
+			return fmt.Errorf("[web-listener] %w", err)
+		}
+	}
+	if srv.Settings != nil {
+		srv.Settings.MarkStarted()
 	}
 	printStartupBanner(address)
 	rt.Start(work)

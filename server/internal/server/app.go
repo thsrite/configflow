@@ -14,8 +14,7 @@ import (
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/aggregations"
-	apinotifications "configflow/internal/api/notifications"
-	apitasks "configflow/internal/api/tasks"
+	apisettings "configflow/internal/api/settings"
 	"configflow/internal/auth"
 	"configflow/internal/configexport"
 	"configflow/internal/deploy"
@@ -66,6 +65,7 @@ type App struct {
 	RuleSource    *rulesource.Service
 	Routers       *routers.Service
 	RouterSync    *routerrulesync.RuleSyncService
+	Settings      *apisettings.Handler
 }
 
 // New wires the application, registers ordered startup steps and background
@@ -127,9 +127,10 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	}
 	nt.MarkStarted()
 	httpApp := httpx.New()
-	registerRoutes(httpApp.Router, newAgentAPIHandler(opts, ag, gen), newW10bHandlers(opts, ag, gen, rs, rtrSvc))
-	apitasks.NewHandler(tk).Register(httpApp.Router)
-	apinotifications.NewHandler(tk, nt, opts.Repo).Register(httpApp.Router)
+	w10c := newW10cHandlers(opts, tk, nt, ag, gen, rs)
+	registerRoutes(httpApp.Router, newAgentAPIHandler(opts, ag, gen), newW10bHandlers(opts, ag, gen, rs, rtrSvc), w10c)
+	w10c.tasks.Register(httpApp.Router)
+	w10c.notifications.Register(httpApp.Router)
 	auth.Install(httpApp)
 	return &App{
 		HTTP:          httpApp,
@@ -154,6 +155,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		RuleSource:    rs,
 		Routers:       rtrSvc.routers,
 		RouterSync:    rtrSvc.rulesync,
+		Settings:      w10c.settings,
 	}, nil
 }
 

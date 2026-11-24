@@ -19,20 +19,6 @@ import (
 	"strings"
 
 	apiagents "configflow/internal/api/agents"
-	apiaggregations "configflow/internal/api/aggregations"
-	apiauth "configflow/internal/api/auth"
-	apiclientdevices "configflow/internal/api/clientdevices"
-	apidiscovery "configflow/internal/api/domaindiscovery"
-	apigatewayonboarding "configflow/internal/api/gatewayonboarding"
-	apiipv6 "configflow/internal/api/ipv6"
-	apilinuxgateway "configflow/internal/api/linuxgateway"
-	apilogs "configflow/internal/api/logs"
-	apinodes "configflow/internal/api/nodes"
-	apiproxygroups "configflow/internal/api/proxygroups"
-	apisettings "configflow/internal/api/settings"
-	apisetup "configflow/internal/api/setup"
-	apistats "configflow/internal/api/stats"
-	apisubscriptions "configflow/internal/api/subscriptions"
 	"configflow/internal/httpx"
 	"configflow/internal/mcp"
 	"configflow/internal/repo"
@@ -40,32 +26,32 @@ import (
 
 // registerRoutes mounts every ported blueprint in Flask-blueprint order,
 // injecting explicit service instances for handlers already migrated.
-func registerRoutes(r *httpx.Router, agents *apiagents.Handler, w10b w10bHandlers) {
+func registerRoutes(r *httpx.Router, agents *apiagents.Handler, w10b w10bHandlers, w10c *w10cHandlers) {
 	routePackages := []func(*httpx.Router){
 		mcp.Register,
-		apiauth.Register,
-		apiclientdevices.Register,
-		apinodes.Register,
-		apisubscriptions.Register,
-		apiaggregations.Register,
+		w10c.auth.Register,
+		w10c.clientdevices.Register,
+		w10c.nodes.Register,
+		w10c.subscriptions.Register,
+		w10c.aggregations.Register,
 		w10b.rules.Register,
 		w10b.rulelibrary.Register,
-		apiproxygroups.Register,
+		w10c.proxygroups.Register,
 		agents.Register,
 		w10b.routers.Register,
-		apiipv6.Register,
-		apilinuxgateway.Register,
+		w10c.ipv6.Register,
+		w10c.linuxgateway.Register,
 		w10b.config.Register,
 		w10b.generate.Register,
 		w10b.profiles.Register,
-		apigatewayonboarding.Register,
-		apisettings.Register,
-		apisetup.Register,
-		apilogs.Register,
-		apistats.Register,
+		w10c.gatewayonboarding.Register,
+		w10c.settings.Register,
+		w10c.setup.Register,
+		w10c.logs.Register,
+		w10c.stats.Register,
 		w10b.mosdns.Register,
 		w10b.oxidns.Register,
-		apidiscovery.Register,
+		w10c.domaindiscovery.Register,
 	}
 	for _, register := range routePackages {
 		register(r)
