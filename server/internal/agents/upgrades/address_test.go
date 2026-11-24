@@ -46,8 +46,7 @@ func fakeAgent(t *testing.T, status *int, reply string) (string, string, *[]reco
 func plainManager(t *testing.T) *agents.Manager {
 	t.Helper()
 	agents.ResetRuntime()
-	agents.ResetHooks()
-	t.Cleanup(func() { agents.ResetRuntime(); agents.ResetHooks() })
+	t.Cleanup(agents.ResetRuntime)
 	r, err := repo.Open(filepath.Join(t.TempDir(), "config"), repo.Options{})
 	if err != nil {
 		t.Fatal(err)

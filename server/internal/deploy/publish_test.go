@@ -63,7 +63,7 @@ func newPublish(t *testing.T, o agentfake.Options, wrap func(http.Handler) http.
 	if e != nil {
 		t.Fatal(e)
 	}
-	m, e := agents.New(ctx, r)
+	m, e := agents.New(ctx, r, agents.Options{ReceiptMatches: ReceiptMatches})
 	if e != nil {
 		t.Fatal(e)
 	}

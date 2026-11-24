@@ -22,13 +22,23 @@ import (
 	"configflow/internal/repo"
 )
 
-func o9Server(t *testing.T) *httpxtest.Server {
+func o9ServerWithManager(t *testing.T) (*httpxtest.Server, *core.Manager) {
 	t.Helper()
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
-	core.ResetRuntime()
-	t.Cleanup(core.ResetRuntime)
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true, Register: httpxtest.Routes(Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true})
+	m, err := core.New(s.Context(), s.Repo, core.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	NewHandler(Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
 	t.Setenv("DATA_DIR", s.DataDir)
+	return s, m
+}
+
+func o9Server(t *testing.T) *httpxtest.Server {
+	t.Helper()
+	s, _ := o9ServerWithManager(t)
 	return s
 }
 func o9Body() map[string]any {
@@ -230,11 +240,7 @@ func TestO9CredentialConcurrentSingleUseAndRestart(t *testing.T) {
 	}
 }
 func TestO9RegistrationCapacityExpiryAndShutdown(t *testing.T) {
-	s := o9Server(t)
-	m, err := core.Get(s.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, m := o9ServerWithManager(t)
 	identity := model.AgentRegistrationSession{Name: "new-device", Host: "192.0.2.30", Port: 8080, ServiceType: "mihomo", DeploymentMethod: "shell"}
 	identities := make([]model.AgentRegistrationSession, core.MaxRegistrationSessions)
 	for i := range identities {
@@ -597,11 +603,7 @@ func TestO9RegistrationCapacityEvictsOldestCommand(t *testing.T) {
 }
 
 func TestO9RegistrationProofRejectsBooleanPort(t *testing.T) {
-	s := o9Server(t)
-	manager, err := core.Get(s.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, manager := o9ServerWithManager(t)
 	issued, err := manager.CreateRegistrationCredentials(s.Context(), []model.AgentRegistrationSession{{Name: "new-device", Host: "192.0.2.30", Port: 1, ServiceType: "mihomo", DeploymentMethod: "shell"}})
 	if err != nil {
 		t.Fatal(err)

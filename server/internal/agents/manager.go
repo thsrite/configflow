@@ -16,8 +16,30 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
 )
+
+// AgentRowFunc builds the /api/tasks row of one Agent for one category, nil
+// when the Agent has none (statuses is the loaded task-status document).
+type AgentRowFunc func(ctx context.Context, agent *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error)
+
+// SnapshotAgents returns the listing records (live heartbeat overlay and
+// offline status included) without deployment/IPv6 histories, which neither
+// task rows nor notifications read. Within one notification snapshot
+// (tasks.WithSnapshotCache) the registry is read once and shared; callers
+// must treat the shared records as read-only.
+func SnapshotAgents(ctx context.Context, manager *Manager) ([]model.Agent, error) {
+	if cached, ok := tasks.CachedAgents(ctx); ok {
+		return cached, nil
+	}
+	records, err := manager.ListAgents(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	tasks.CacheAgents(ctx, records)
+	return records, nil
+}
 
 var logger = logx.Get("backend.agents.manager")
 

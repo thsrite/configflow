@@ -26,14 +26,24 @@ import (
 	"configflow/internal/testjson"
 )
 
-func newServer(t *testing.T) *httpxtest.Server {
+func newServerWithOptions(t *testing.T, opts agents.Options) (*httpxtest.Server, *agents.Manager) {
 	t.Helper()
-	agents.ResetRuntime()
-	agents.ResetHooks()
-	t.Cleanup(func() { agents.ResetRuntime(); agents.ResetHooks() })
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
 	os.Unsetenv("AGENT_REGISTRATION_KEY")
-	return httpxtest.New(t, httpxtest.Options{DefaultFactories: true, Register: httpxtest.Routes(apiagents.Register)})
+	s := httpxtest.New(t, httpxtest.Options{DefaultFactories: true})
+	m, err := agents.New(s.Context(), s.Repo, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
+	return s, m
+}
+
+func newServer(t *testing.T) *httpxtest.Server {
+	t.Helper()
+	s, _ := newServerWithOptions(t, agents.Options{})
+	return s
 }
 
 func payload(pairs ...any) map[string]any {
@@ -186,26 +196,28 @@ func TestManualAgentCreateDoesNotReturnToken(t *testing.T) {
 
 type heartbeatEnv struct {
 	s     *httpxtest.Server
+	m     *agents.Manager
 	id    string
 	token string
 }
 
 func newHeartbeat(t *testing.T) heartbeatEnv {
-	s := newServer(t)
-	manager, err := agents.Get(s.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	t.Helper()
+	return newHeartbeatWith(t, agents.Options{})
+}
+
+func newHeartbeatWith(t *testing.T, opts agents.Options) heartbeatEnv {
+	t.Helper()
+	s, manager := newServerWithOptions(t, opts)
 	id, token := registerAgentForTest(t, s.Context(), manager, map[string]any{"name": "secured", "host": "127.0.0.1"})
-	return heartbeatEnv{s: s, id: id, token: token}
+	return heartbeatEnv{s: s, m: manager, id: id, token: token}
 }
 
 func (h heartbeatEnv) path() string { return "/api/agents/" + h.id + "/heartbeat" }
 
 func (h heartbeatEnv) agent(t *testing.T) map[string]any {
 	t.Helper()
-	manager, _ := agents.Get(h.s.Context())
-	agent, err := manager.ReadAgent(h.s.Context(), h.id, true)
+	agent, err := h.m.ReadAgent(h.s.Context(), h.id, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,8 +321,35 @@ func TestHeartbeatWithoutContentLengthReadsOnlyMaxPlusOneBytes(t *testing.T) {
 	}
 }
 
+type stubMetricsSink struct {
+	add func(ctx context.Context, m *agents.Manager, agentID string, sample json.RawMessage) error
+}
+
+func (s stubMetricsSink) AddMetricsJSON(ctx context.Context, m *agents.Manager, agentID string, sample json.RawMessage) error {
+	if s.add != nil {
+		return s.add(ctx, m, agentID, sample)
+	}
+	return nil
+}
+func (stubMetricsSink) DeleteMetricsHistory(context.Context, *agents.Manager, string) error {
+	return nil
+}
+func (stubMetricsSink) DeleteTrafficHistory(context.Context, *agents.Manager, string) error {
+	return nil
+}
+
 func TestHeartbeatAcceptsWhitelistedSystemMetrics(t *testing.T) {
-	h := newHeartbeat(t)
+	var seen any
+	h := newHeartbeatWith(t, agents.Options{
+		Metrics: stubMetricsSink{add: func(_ context.Context, _ *agents.Manager, _ string, raw json.RawMessage) error {
+			var v any
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return err
+			}
+			seen = v
+			return nil
+		}},
+	})
 	metrics := map[string]any{
 		"cpu":          map[string]any{"usage_percent": 12.5, "core_count": 4},
 		"memory":       map[string]any{"total": 1024, "used": 512, "available": 512, "used_percent": 50.0},
@@ -318,15 +357,6 @@ func TestHeartbeatAcceptsWhitelistedSystemMetrics(t *testing.T) {
 		"network":      map[string]any{"bytes_sent": 10, "bytes_recv": 20, "speed_sent": 1, "speed_recv": 2},
 		"collected_at": "2026-08-31T00:00:00Z",
 	}
-	var seen any
-	agents.RegisterHooks(agents.Hooks{AddMetricsJSON: func(_ context.Context, _ *agents.Manager, _ string, raw json.RawMessage) error {
-		var v any
-		if err := json.Unmarshal(raw, &v); err != nil {
-			return err
-		}
-		seen = v
-		return nil
-	}})
 	h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"system_metrics": metrics})).WantStatus(200)
 	if !testjson.Equal(h.agent(t)["system_metrics"], metrics) || !testjson.Equal(seen, metrics) {
 		t.Fatal("metrics")
@@ -348,13 +378,9 @@ func TestHeartbeatEndpointRecordsStateAndRejectsUnknownAgents(t *testing.T) {
 }
 
 func TestHeartbeatReportedHostUsesAddressFollow(t *testing.T) {
-	s := newServer(t)
-	manager, err := agents.Get(s.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, manager := newServerWithOptions(t, agents.Options{})
 	id, token := registerAgentForTest(t, s.Context(), manager, map[string]any{"name": "confirmed", "host": "192.0.2.10"})
-	h := heartbeatEnv{s: s, id: id, token: token}
+	h := heartbeatEnv{s: s, m: manager, id: id, token: token}
 	// The reported host is the stored one: nothing to follow, and
 	// upgrades.ConfirmedModel confirms it.
 	wantBodyJSON(t, h.s.Post(h.path(), httpxtest.Bearer(h.token), httpxtest.JSON(map[string]any{"host": "192.0.2.10"})).WantStatus(200),
@@ -368,8 +394,14 @@ func TestHeartbeatReportedHostUsesAddressFollow(t *testing.T) {
 }
 
 func TestAgentItemUpdateAndDelete(t *testing.T) {
-	h := newHeartbeat(t)
-	manager, _ := agents.Get(h.s.Context())
+	var cleared []string
+	h := newHeartbeatWith(t, agents.Options{
+		DeletedStores: []agents.NamedDeleter{{Name: "test", Delete: func(_ context.Context, id string) error {
+			cleared = append(cleared, id)
+			return nil
+		}}},
+	})
+	manager := h.m
 	if _, err := h.s.Repo.CreateProfileRecord(h.s.Context(), repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -388,8 +420,6 @@ func TestAgentItemUpdateAndDelete(t *testing.T) {
 	wantBodyJSON(t, h.s.Put("/api/agents/missing", httpxtest.JSON(map[string]any{})).WantStatus(404), map[string]any{"success": false, "message": "Agent not found"})
 	wantBodyJSON(t, h.s.Put("/api/agents/"+h.id, httpxtest.JSON(map[string]any{"profile_id": "bad id"})).WantStatus(500), map[string]any{"success": false, "message": "Invalid profile id"})
 	wantBodyJSON(t, h.s.Put("/api/agents/"+h.id, httpxtest.JSON(nil)).WantStatus(500), nativeRegistryShape(t, nil, "argument of type 'NoneType' is not iterable"))
-	var cleared []string
-	agents.OnAgentDeleted("test", func(_ context.Context, id string) error { cleared = append(cleared, id); return nil })
 	wantBodyJSON(t, h.s.Delete("/api/agents/"+h.id).WantStatus(200), map[string]any{"success": true})
 	h.s.Delete("/api/agents/" + h.id).WantStatus(404)
 	if len(storedAgents(t, h.s)) != 0 || len(cleared) != 1 {
@@ -403,9 +433,13 @@ func TestDuplicateRegistrationAttackIsRejectedAfterRepositoryRestart(t *testing.
 	created := parseBodyMap(t, first.Post("/api/agents/register", httpxtest.JSON(payload())).WantStatus(200))
 	// A new process: a fresh repository on the same data directory, no
 	// heartbeat state in memory, a new manager.
-	agents.ResetRuntime()
-	restarted := httpxtest.New(t, httpxtest.Options{DataDir: first.DataDir, DefaultFactories: true,
-		Register: httpxtest.Routes(apiagents.Register)})
+	restarted := httpxtest.New(t, httpxtest.Options{DataDir: first.DataDir, DefaultFactories: true})
+	restartedManager, err := agents.New(restarted.Context(), restarted.Repo, agents.Options{RuntimeState: agents.NewRuntimeState()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(restartedManager.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: restarted.Repo, Agents: restartedManager}).Register(restarted.App.Router)
 	before := storedAgents(t, restarted)
 	restarted.Post("/api/agents/register", httpxtest.JSON(payload("port", 9999, "version", "attacker"))).WantStatus(401)
 	legitimate := parseBodyMap(t, restarted.Post("/api/agents/register", httpxtest.JSON(payload("port", 9090)),
@@ -474,19 +508,27 @@ func TestAgentItemUpdateWithNonObjectBodies(t *testing.T) {
 // deleted the Agent, in Python's order whatever the order of registration;
 // a failing store answers 500 with its text after the Agent is gone.
 func TestAgentDeleteRunsStoreHooksInPythonOrder(t *testing.T) {
-	h := newHeartbeat(t)
 	var order []string
-	for _, name := range []string{"region_check", "extra", "domain_probe", "traffic_store"} {
+	var stores []agents.NamedDeleter
+	for _, name := range []string{"traffic_store", "domain_probe", "region_check", "extra"} {
 		name := name
-		agents.OnAgentDeleted(name, func(_ context.Context, id string) error {
-			order = append(order, name)
-			if name == "region_check" {
-				return errors.New("region store failed")
-			}
-			return nil
+		stores = append(stores, agents.NamedDeleter{
+			Name: name,
+			Delete: func(_ context.Context, id string) error {
+				order = append(order, name)
+				if name == "region_check" {
+					return errors.New("region store failed")
+				}
+				return nil
+			},
 		})
 	}
-	if got := strings.Join(agents.AgentDeletedHookNames(), ","); got != "traffic_store,domain_probe,region_check,extra" {
+	h := newHeartbeatWith(t, agents.Options{DeletedStores: stores})
+	var names []string
+	for _, store := range h.m.DeletedStores() {
+		names = append(names, store.Name)
+	}
+	if got := strings.Join(names, ","); got != "traffic_store,domain_probe,region_check,extra" {
 		t.Fatalf("names %s", got)
 	}
 	wantBodyJSON(t, h.s.Delete("/api/agents/"+h.id).WantStatus(500), map[string]any{"success": false, "message": "region store failed"})
@@ -543,7 +585,7 @@ func TestRegistrationLogFieldsMatchPythonGolden(t *testing.T) {
 // so the stored publication history survives it.
 func TestHeartbeatKeepsThePublicationHistory(t *testing.T) {
 	h := newHeartbeat(t)
-	manager, _ := agents.Get(h.s.Context())
+	manager := h.m
 	if err := manager.EditAgents(h.s.Context(), "", func(_ context.Context, list *[]model.Agent) error {
 		deployments := map[string]any{}
 		for _, key := range []string{"release-0", "release-1", "release-2", "release-3", "release-4"} {

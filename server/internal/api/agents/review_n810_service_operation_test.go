@@ -14,6 +14,7 @@ import (
 	"time"
 
 	core "configflow/internal/agents"
+	"configflow/internal/agents/agentfake"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 )
@@ -37,7 +38,7 @@ func TestReviewN810ServiceOperationShutdownAndDisconnect(t *testing.T) {
 				name = op.name + "/shutdown"
 			}
 			t.Run(name, func(t *testing.T) {
-				s, _, _ := newDeployHTTP(t)
+				s, manager, _, _ := newDeployHTTPWithManager(t, agentfake.Options{})
 				paths := make(chan string, 4)
 				device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					paths <- r.Method + " " + r.URL.RequestURI()
@@ -62,10 +63,6 @@ func TestReviewN810ServiceOperationShutdownAndDisconnect(t *testing.T) {
 					system.Agents[0].Port = model.Int(number)
 					return nil
 				}); err != nil {
-					t.Fatal(err)
-				}
-				manager, err := core.Get(s.Context())
-				if err != nil {
 					t.Fatal(err)
 				}
 				runtime := lifecycle.NewRuntime(lifecycle.Options{Grace: 2 * time.Second})

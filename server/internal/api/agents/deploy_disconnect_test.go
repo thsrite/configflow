@@ -1,7 +1,7 @@
 package agents
 
 import (
-	core "configflow/internal/agents"
+	"configflow/internal/agents/agentfake"
 	"configflow/internal/deploy"
 	"context"
 	"encoding/json"
@@ -9,11 +9,7 @@ import (
 )
 
 func TestDeployOwnersFinishDisconnectedRequests(t *testing.T) {
-	s, _, _ := newDeployHTTP(t)
-	m, e := core.Get(s.Context())
-	if e != nil {
-		t.Fatal(e)
-	}
+	s, m, _, _ := newDeployHTTPWithManager(t, agentfake.Options{})
 	ctx, cancel := context.WithCancel(s.Context())
 	cancel()
 	dp := deploy.New(deploy.Options{})

@@ -169,9 +169,8 @@ func artifacts(t *testing.T, d *device) []any {
 }
 func goRun(t *testing.T, scenario, body string, source, target *device) any {
 	t.Helper()
-	agents.ResetHooks()
 	agents.ResetRuntime()
-	t.Cleanup(func() { agents.ResetHooks(); agents.ResetRuntime() })
+	t.Cleanup(agents.ResetRuntime)
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true})
 	ctx := srv.Context()
 	err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {

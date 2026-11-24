@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	core "configflow/internal/agents"
+	"configflow/internal/agents/agentfake"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 )
@@ -20,7 +21,7 @@ import (
 func TestN810MalformedLoggingReplyIsStructured502WithoutWrite(t *testing.T) {
 	for _, body := range []string{`[1]`, `null`, `not JSON`, `{"success":1}`, `{"success":true,"success":false}`, `{"success":true,"extra":{"x":1,"x":2}}`} {
 		t.Run(body, func(t *testing.T) {
-			s, admin, _ := newDeployHTTP(t)
+			s, manager, admin, _ := newDeployHTTPWithManager(t, agentfake.Options{})
 			type observed struct {
 				method, path, authorization, contentType string
 				body                                     []byte
@@ -47,10 +48,6 @@ func TestN810MalformedLoggingReplyIsStructured502WithoutWrite(t *testing.T) {
 				system.Agents[0].Port = model.Int(number)
 				return nil
 			}); err != nil {
-				t.Fatal(err)
-			}
-			manager, err := core.Get(s.Context())
-			if err != nil {
 				t.Fatal(err)
 			}
 			attempts := make(chan n810HTTPAttempt, 1)
@@ -82,7 +79,7 @@ func TestN810MalformedLoggingReplyIsStructured502WithoutWrite(t *testing.T) {
 func TestN810MalformedRestartReplyIsStructured502WithoutWrite(t *testing.T) {
 	for _, body := range []string{`[1]`, `upstream unavailable password=do-not-display`} {
 		t.Run(body, func(t *testing.T) {
-			s, admin, _ := newDeployHTTP(t)
+			s, manager, admin, _ := newDeployHTTPWithManager(t, agentfake.Options{})
 			seen := make(chan []byte, 1)
 			device := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				raw, err := io.ReadAll(r.Body)
@@ -104,10 +101,6 @@ func TestN810MalformedRestartReplyIsStructured502WithoutWrite(t *testing.T) {
 				system.Agents[0].Port = model.Int(number)
 				return nil
 			}); err != nil {
-				t.Fatal(err)
-			}
-			manager, err := core.Get(s.Context())
-			if err != nil {
 				t.Fatal(err)
 			}
 			attempts := make(chan n810HTTPAttempt, 1)

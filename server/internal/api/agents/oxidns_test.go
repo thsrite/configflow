@@ -76,12 +76,12 @@ func (a *oxidnsAgent) count() int {
 
 func oxidnsServer(t *testing.T, version string) (*httpxtest.Server, *oxidnsAgent, httpxtest.Option) {
 	t.Helper()
-	reset := func() { agents.ResetRuntime(); agents.ResetHooks(); monitor.ResetRankingsCache() }
+	reset := func() { agents.ResetRuntime(); monitor.ResetRankingsCache() }
 	reset()
 	t.Cleanup(reset)
 	fake := &oxidnsAgent{}
 	t.Cleanup(agents.SetDefaultClient(fake))
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apiagents.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
 	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		return system.SetJSON("agents", mustRawJSON(t, []any{map[string]any{
 			"id": "oxi", "name": "DNS", "service_type": "oxidns", "profile_id": "default",
@@ -91,6 +91,12 @@ func oxidnsServer(t *testing.T, version string) (*httpxtest.Server, *oxidnsAgent
 	if err != nil {
 		t.Fatal(err)
 	}
+	m, err := agents.New(s.Context(), s.Repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
 	return s, fake, s.Login()
 }
 

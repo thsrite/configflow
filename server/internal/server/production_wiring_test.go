@@ -48,7 +48,6 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 	t.Cleanup(convert.ResetMihomoIntegrationsForTest(t))
 	previousRepoHooks := repo.SetHooks(repo.Hooks{})
 	t.Cleanup(func() { repo.SetHooks(previousRepoHooks) })
-	agents.ResetHooks()
 	t.Cleanup(func() {
 		if err := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
 			t.Error(err)

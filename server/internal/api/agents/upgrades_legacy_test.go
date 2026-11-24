@@ -178,10 +178,7 @@ func registerAgentForTest(t testing.TB, ctx context.Context, m *agents.Manager, 
 
 func TestN810TypedAddressSnapshotPreservesHeartbeatPreferences(t *testing.T) {
 	h := newHeartbeat(t)
-	manager, err := agents.Get(h.s.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager := h.m
 	if err := manager.EditAgents(h.s.Context(), "", func(_ context.Context, rows *[]model.Agent) error {
 		if err := model.SetStoredMember(&(*rows)[0], "domain_discovery_enabled", []byte(`"enabled"`)); err != nil {
 			return err

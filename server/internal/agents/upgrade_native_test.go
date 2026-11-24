@@ -35,16 +35,14 @@ func TestReceiptHookUsesCapturedModelsOnce(t *testing.T) {
 	calls := 0
 	a := &model.Agent{ID: "target"}
 	d := &model.Deployment{DeploymentID: "candidate"}
-	ResetHooks()
-	t.Cleanup(ResetHooks)
-	RegisterHooks(Hooks{ReceiptMatches: func(agent *model.Agent, task *model.Deployment) bool {
+	m := &Manager{receiptMatches: func(agent *model.Agent, task *model.Deployment) bool {
 		calls++
 		if agent != a || task != d {
 			t.Fatal("hook did not receive captured model")
 		}
 		return true
-	}})
-	ok, err := (&Manager{}).candidateReceiptMatches(a, d)
+	}}
+	ok, err := m.candidateReceiptMatches(a, d)
 	if err != nil || !ok || calls != 1 {
 		t.Fatal(ok, err, calls)
 	}

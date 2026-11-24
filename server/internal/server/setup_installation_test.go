@@ -32,7 +32,6 @@ func TestSetupInstallationServerRegistrationUsesRealOwner(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(func(r *httpx.Router) {
 		setupHandler = apisetup.NewHandler(nil, nil)
 		setupHandler.Register(r)
-		apiagents.Register(r)
 		onboardingHandler = &apionboarding.Handler{DNSLoop: onboarding.CheckDNSLoop}
 		onboardingHandler.Register(r)
 	})})
@@ -52,6 +51,7 @@ func TestSetupInstallationServerRegistrationUsesRealOwner(t *testing.T) {
 	t.Cleanup(app.Agents.Close)
 	setupHandler.Repo = srv.Repo
 	setupHandler.Owners = &app.SetupOwners
+	apiagents.NewHandler(apiagents.Deps{Repo: srv.Repo, Agents: app.Agents}).Register(srv.App.Router)
 	onboardingHandler.Repo = srv.Repo
 	onboardingHandler.AdoptOwnedWrite = setup.AdoptOwnedWrite
 	err = srv.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {

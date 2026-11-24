@@ -55,8 +55,6 @@ func (s *stubMetricsSink) DeleteTrafficHistory(_ context.Context, _ *Manager, _ 
 }
 
 func TestManagerPairPublisherFailClosedAndTwoPhase(t *testing.T) {
-	ResetHooks()
-	t.Cleanup(ResetHooks)
 
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
@@ -127,8 +125,6 @@ func TestManagerPairPublisherFailClosedAndTwoPhase(t *testing.T) {
 }
 
 func TestManagerReceiptMatchesFailClosedWhenNil(t *testing.T) {
-	ResetHooks()
-	t.Cleanup(ResetHooks)
 
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
@@ -148,8 +144,6 @@ func TestManagerReceiptMatchesFailClosedWhenNil(t *testing.T) {
 }
 
 func TestManagerOptionsMetricsAndDeletedStores(t *testing.T) {
-	ResetHooks()
-	t.Cleanup(ResetHooks)
 
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
@@ -189,87 +183,10 @@ func TestManagerOptionsMetricsAndDeletedStores(t *testing.T) {
 	}
 }
 
-// TestSealedManagerIgnoresGlobalHAHooks is the O17 D1 negative control for
-// the transition period: a server-assembled Manager (MarkStarted) without a
-// PairPublisher fails closed even when a legacy global HA owner is installed
-// (e.g. by dnsha.RegisterOn in a NewApp test path); before MarkStarted the
-// legacy fallback still applies.
-func TestSealedManagerIgnoresGlobalHAHooks(t *testing.T) {
-	ResetHooks()
-	t.Cleanup(ResetHooks)
-	globalCalls := 0
-	RegisterHooks(Hooks{
-		HADeployment: func(context.Context, *Manager, string, string) (*model.Deployment, error) {
-			globalCalls++
-			return &model.Deployment{DeploymentID: "pub-1", Status: "succeeded"}, nil
-		},
-		HAActivate: func(context.Context, *Manager, string, string) (*model.Deployment, error) {
-			globalCalls++
-			return &model.Deployment{DeploymentID: "pub-1", Status: "succeeded"}, nil
-		},
-		HAServiceOperationTyped: func(context.Context, *Manager, string, func() (json.RawMessage, error), bool) (json.RawMessage, error) {
-			globalCalls++
-			return json.RawMessage(`{"success":true}`), nil
-		},
-		ReceiptMatches: func(*model.Agent, *model.Deployment) bool { globalCalls++; return true },
-	})
-
-	r, err := repo.Open(t.TempDir(), repo.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(r.Close)
-	ctx := repo.WithRepository(context.Background(), r)
-	if err := r.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
-		return s.SetJSON("agents", json.RawMessage(`[{
-			"id":"dns-a","name":"DNS A","service_type":"oxidns","profile_id":"default",
-			"host":"192.0.2.10","port":8080,"token":"synthetic-token",
-			"oxidns_ha_publication":{"id":"pub-1","status":"running","children":{"dns-a":"pub-1"}}
-		}]`))
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	legacy, err := New(ctx, r, Options{RuntimeState: NewRuntimeState()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(legacy.Close)
-	if _, err := legacy.GetDeploymentModel(ctx, "dns-a", "pub-1"); err != nil || globalCalls != 1 {
-		t.Fatalf("unsealed Manager should use the legacy global owner: err=%v calls=%d", err, globalCalls)
-	}
-
-	sealed, err := New(ctx, r, Options{RuntimeState: NewRuntimeState()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(sealed.Close)
-	sealed.MarkStarted()
-	globalCalls = 0
-	if _, err := sealed.GetDeploymentModel(ctx, "dns-a", "pub-1"); !errors.Is(err, ErrHAOwnerMissing) {
-		t.Fatalf("sealed GetDeploymentModel = %v, want ErrHAOwnerMissing", err)
-	}
-	if _, err := sealed.ActivateDeploymentModel(ctx, "dns-a", "pub-1"); !errors.Is(err, ErrHAOwnerMissing) {
-		t.Fatalf("sealed ActivateDeploymentModel = %v, want ErrHAOwnerMissing", err)
-	}
-	raw, err := sealed.RunServiceOperation(ctx, "dns-a", RestartService, nil, nil)
-	if err != nil || !strings.Contains(string(raw), `"http_status":409`) {
-		t.Fatalf("sealed RunServiceOperation = %s, %v; want 409 refusal", raw, err)
-	}
-	if ok, err := sealed.candidateReceiptMatches(&model.Agent{ID: "dns-a"}, &model.Deployment{DeploymentID: "pub-1"}); ok || err != nil {
-		t.Fatalf("sealed candidateReceiptMatches = (%v, %v), want (false, nil)", ok, err)
-	}
-	if globalCalls != 0 {
-		t.Fatalf("sealed Manager consulted global hooks %d times", globalCalls)
-	}
-}
-
 // TestSetPairPublisherConcurrentOnce races SetPairPublisher callers with
 // MarkStarted and pair readers (run under -race): at most one setter wins,
 // later ones get ErrPairPublisherAlreadySet or ErrManagerStarted.
 func TestSetPairPublisherConcurrentOnce(t *testing.T) {
-	ResetHooks()
-	t.Cleanup(ResetHooks)
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -293,7 +210,6 @@ func TestSetPairPublisherConcurrentOnce(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_ = m.pairPublisher()
-			_ = m.legacyHooks()
 		}()
 	}
 	wg.Add(1)

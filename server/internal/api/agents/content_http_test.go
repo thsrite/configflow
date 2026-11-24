@@ -61,7 +61,7 @@ func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTT
 		t.Fatal(err)
 	}
 	lifecycle.Start(context.Background())
-	f := &contentHTTP{s: httpxtest.New(t, httpxtest.Options{DefaultFactories: true, Auth: authenticated, Register: httpxtest.Routes(Register)})}
+	f := &contentHTTP{s: httpxtest.New(t, httpxtest.Options{DefaultFactories: true, Auth: authenticated})}
 	f.sub = substore.NewService(substore.NewEnvFor(f.s.Repo))
 	WireContentSyncWith(lifecycle.Current(), f.sub)
 	old := contentBundle(t, "mode: rule\n", "DOMAIN,old.example.test\n")
@@ -101,10 +101,11 @@ func newContentHTTP(t *testing.T, baseline bool, authenticated bool) *contentHTT
 	}); err != nil {
 		t.Fatal(err)
 	}
-	f.manager, err = core.Get(f.s.Context())
+	f.manager, err = core.New(f.s.Context(), f.s.Repo, core.Options{ReceiptMatches: deploy.ReceiptMatches})
 	if err != nil {
 		t.Fatal(err)
 	}
+	NewHandler(Deps{Repo: f.s.Repo, Agents: f.manager}).Register(f.s.App.Router)
 	if baseline {
 		cfg, err := f.s.Repo.Config(f.s.Context(), "default", nil)
 		if err != nil {

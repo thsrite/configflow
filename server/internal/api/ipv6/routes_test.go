@@ -68,12 +68,14 @@ func TestRoutesAgainstFlask(t *testing.T) {
 	}
 	lifecycle.Start(context.Background())
 	t.Cleanup(func() { lifecycle.Stop(time.Second) })
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(Register), Auth: true})
-	m, e := agents.Get(srv.Context())
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
+	m, e := agents.New(srv.Context(), srv.Repo)
 	if e != nil {
 		t.Fatal(e)
 	}
+	t.Cleanup(m.Close)
 	m.SetClient(fakeClient{})
+	NewHandler(srv.Repo, m, nil).Register(srv.App.Router)
 	agentsRaw, _ := json.Marshal([]any{
 		map[string]any{"id": "source", "name": "Synthetic", "host": "192.0.2.2", "port": 8080, "token": "synthetic-source-token", "profile_id": "default", "service_type": "mihomo", "deployment_method": "shell", "enabled": true, "status": "online", "last_heartbeat": time.Now().Format(time.RFC3339), "version": "1.8.50-go"},
 		map[string]any{"id": "client", "name": "Client", "host": "192.0.2.3", "port": 8080, "token": "synthetic-client-token", "profile_id": "default", "service_type": "oxidns", "deployment_method": "shell", "enabled": true, "status": "online", "last_heartbeat": "2000-01-01T00:00:00+00:00"},

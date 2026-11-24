@@ -422,9 +422,6 @@ func (m *Manager) RunServiceOperation(ctx context.Context, id string, operation 
 	if pair := m.pairPublisher(); pair != nil {
 		return pair.ServiceOperationJSON(ctx, id, run, uninstall)
 	}
-	if hook := m.legacyHooks().HAServiceOperationTyped; hook != nil {
-		return hook(ctx, m, id, run, uninstall)
-	}
 	a, err := m.ReadAgent(ctx, id, true)
 	if err != nil {
 		return nil, err

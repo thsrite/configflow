@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	core "configflow/internal/agents"
@@ -48,11 +49,7 @@ func prepareContent(ctx context.Context, m *core.Manager, t deploy.Target, s *de
 		return fn(ctx, t, s, url, id)
 	}
 	if m == nil {
-		var err error
-		m, err = core.Get(ctx)
-		if err != nil {
-			return nil, err
-		}
+		return nil, errors.New("api/agents: manager is nil")
 	}
 	return deploy.New(deploy.Options{}).PrepareContentBundle(ctx, m, t, s, url, id)
 }

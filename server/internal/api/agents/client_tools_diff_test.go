@@ -37,11 +37,15 @@ type clientWorld struct {
 	revisions map[string]string
 }
 
-func a24Fixture(t *testing.T) *httpxtest.Server {
+func a24FixtureWithManager(t *testing.T) (*httpxtest.Server, *registry.Manager) {
 	t.Helper()
-	registry.ResetRuntime()
-	t.Cleanup(registry.ResetRuntime)
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "a24-admin", Password: "a24-password", SecretKey: "a24-synthetic-secret", DefaultFactories: false, Register: httpxtest.Routes(Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "a24-admin", Password: "a24-password", SecretKey: "a24-synthetic-secret", DefaultFactories: false})
+	m, err := registry.New(s.Context(), s.Repo, registry.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	NewHandler(Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
 	ctx := s.Context()
 	if _, err := s.Repo.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "office", Name: "Office"}, ""); err != nil {
 		t.Fatal(err)
@@ -116,6 +120,12 @@ func a24Fixture(t *testing.T) *httpxtest.Server {
 			t.Fatal(err)
 		}
 	}
+	return s, m
+}
+
+func a24Fixture(t *testing.T) *httpxtest.Server {
+	t.Helper()
+	s, _ := a24FixtureWithManager(t)
 	return s
 }
 func newClientWorld(t *testing.T) *clientWorld {
@@ -554,13 +564,14 @@ func TestA24FlaskBoundaries(t *testing.T) {
 }
 
 func TestClientNoteAndPolicyCancelledOwners(t *testing.T) {
-	s := a24Fixture(t)
+	s, manager := a24FixtureWithManager(t)
+	tools := clientTools{deps: Deps{Repo: s.Repo, Agents: manager}}
 	ctx, cancel := context.WithCancel(s.Context())
 	cancel()
-	if err := (clientTools{}).SaveNote(ctx, "m", noteEdit{"office", "192.0.2.5", "renamed", "旧电脑"}); err != nil {
+	if err := tools.SaveNote(ctx, "m", noteEdit{"office", "192.0.2.5", "renamed", "旧电脑"}); err != nil {
 		t.Fatal(err)
 	}
-	p, err := (clientTools{}).clientConfig(s.Context(), "office", true)
+	p, err := tools.clientConfig(s.Context(), "office", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -570,19 +581,19 @@ func TestClientNoteAndPolicyCancelledOwners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := (clientTools{}).SavePolicies(ctx, "d", policyEdit{ProfileID: "office", Revision: revision, NotesRevision: notes, Policies: json.RawMessage(`[{"ip":"192.0.2.5","mode":"direct","name":"second"}]`)}); err != nil {
+	if err := tools.SavePolicies(ctx, "d", policyEdit{ProfileID: "office", Revision: revision, NotesRevision: notes, Policies: json.RawMessage(`[{"ip":"192.0.2.5","mode":"direct","name":"second"}]`)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (clientTools{}).ApplyConnection(ctx, "m", connectionEdit{"office", "domains", "direct", json.RawMessage(`"cancelled.example"`), "DOMAIN"}); err != nil {
+	if _, err := tools.ApplyConnection(ctx, "m", connectionEdit{"office", "domains", "direct", json.RawMessage(`"cancelled.example"`), "DOMAIN"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (clientTools{}).ApplyConnection(ctx, "m", connectionEdit{"office", "ip", "direct", json.RawMessage(`"198.51.100.7"`), "IP-CIDR"}); err != nil {
+	if _, err := tools.ApplyConnection(ctx, "m", connectionEdit{"office", "ip", "direct", json.RawMessage(`"198.51.100.7"`), "IP-CIDR"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (clientTools{}).SetDiscovery(ctx, "m", true); err != nil {
+	if _, err := tools.SetDiscovery(ctx, "m", true); err != nil {
 		t.Fatal(err)
 	}
-	if found, err := (clientTools{}).ClearDiscovery(ctx, "m"); err != nil || !found {
+	if found, err := tools.ClearDiscovery(ctx, "m"); err != nil || !found {
 		t.Fatalf("clear: %v %v", found, err)
 	}
 }
@@ -612,18 +623,15 @@ func FuzzClientConnectionEntries(f *testing.F) {
 func TestClientToolsRejectStaleBindingsAndNames(t *testing.T) {
 	for _, kind := range []string{"note", "policy", "domain-default"} {
 		t.Run(kind, func(t *testing.T) {
-			s := a24Fixture(t)
+			s, manager := a24FixtureWithManager(t)
 			ctx := s.Context()
-			config, err := (clientTools{}).clientConfig(ctx, "office", false)
+			tools := clientTools{deps: Deps{Repo: s.Repo, Agents: manager}}
+			config, err := tools.clientConfig(ctx, "office", false)
 			if err != nil {
 				t.Fatal(err)
 			}
 			profile := nativeClientDNSProfile(t, config)
 			notes, err := oxidns.PolicyNamesRevision(profile)
-			if err != nil {
-				t.Fatal(err)
-			}
-			manager, err := registry.Get(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -646,11 +654,11 @@ func TestClientToolsRejectStaleBindingsAndNames(t *testing.T) {
 			before := a24Normalized(a24State(t, s))
 			switch kind {
 			case "note":
-				err = (clientTools{}).SaveNote(ctx, "m", noteEdit{"office", "192.0.2.5", "new", "旧电脑"})
+				err = tools.SaveNote(ctx, "m", noteEdit{"office", "192.0.2.5", "new", "旧电脑"})
 			case "policy":
-				err = (clientTools{}).SavePolicies(ctx, "d", policyEdit{ProfileID: "office", Revision: oxidns.Revision(profile.Settings()), NotesRevision: notes, Policies: json.RawMessage(`[]`)})
+				err = tools.SavePolicies(ctx, "d", policyEdit{ProfileID: "office", Revision: oxidns.Revision(profile.Settings()), NotesRevision: notes, Policies: json.RawMessage(`[]`)})
 			case "domain-default":
-				_, err = (clientTools{}).ApplyConnection(ctx, "m", connectionEdit{"office", "domains", "direct", json.RawMessage(`"new.example"`), "DOMAIN"})
+				_, err = tools.ApplyConnection(ctx, "m", connectionEdit{"office", "domains", "direct", json.RawMessage(`"new.example"`), "DOMAIN"})
 			}
 			if !errors.Is(err, repo.ErrInUse) {
 				t.Fatalf("stale guard: %v", err)
@@ -663,16 +671,13 @@ func TestClientToolsRejectStaleBindingsAndNames(t *testing.T) {
 }
 
 func TestClientDiscoveryReturnsRuntimeOverlay(t *testing.T) {
-	s := a24Fixture(t)
+	s, manager := a24FixtureWithManager(t)
 	ctx := s.Context()
-	manager, err := registry.Get(ctx)
-	if err != nil {
+	tools := clientTools{deps: Deps{Repo: s.Repo, Agents: manager}}
+	if _, err := manager.ObserveHeartbeat(ctx, "m", agentModelForTest(t, map[string]any{"version": "2.0.0-live", "service_status": "running", "system_metrics": map[string]any{"cpu": map[string]any{"usage_percent": 12}}})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = manager.ObserveHeartbeat(ctx, "m", agentModelForTest(t, map[string]any{"version": "2.0.0-live", "service_status": "running", "system_metrics": map[string]any{"cpu": map[string]any{"usage_percent": 12}}})); err != nil {
-		t.Fatal(err)
-	}
-	record, err := (clientTools{}).SetDiscovery(ctx, "m", true)
+	record, err := tools.SetDiscovery(ctx, "m", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -693,9 +698,10 @@ func TestClientDiscoveryReturnsRuntimeOverlay(t *testing.T) {
 func TestClientToolsConcurrentEditors(t *testing.T) {
 	for _, kind := range []string{"notes", "policies"} {
 		t.Run(kind, func(t *testing.T) {
-			s := a24Fixture(t)
+			s, manager := a24FixtureWithManager(t)
 			ctx := s.Context()
-			p, err := (clientTools{}).clientConfig(ctx, "office", true)
+			tools := clientTools{deps: Deps{Repo: s.Repo, Agents: manager}}
+			p, err := tools.clientConfig(ctx, "office", true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -713,10 +719,10 @@ func TestClientToolsConcurrentEditors(t *testing.T) {
 					<-start
 					var err error
 					if kind == "notes" {
-						err = (clientTools{}).SaveNote(ctx, "m", noteEdit{"office", "192.0.2.5", name, "旧电脑"})
+						err = tools.SaveNote(ctx, "m", noteEdit{"office", "192.0.2.5", name, "旧电脑"})
 					} else {
 						rows, _ := json.Marshal([]map[string]string{{"ip": "192.0.2.5", "name": name, "mode": "direct"}})
-						err = (clientTools{}).SavePolicies(ctx, "d", policyEdit{ProfileID: "office", Revision: revision, NotesRevision: notes, Policies: rows})
+						err = tools.SavePolicies(ctx, "d", policyEdit{ProfileID: "office", Revision: revision, NotesRevision: notes, Policies: rows})
 					}
 					results <- err
 				})
@@ -737,7 +743,7 @@ func TestClientToolsConcurrentEditors(t *testing.T) {
 			if successes != 1 || conflicts != 1 {
 				t.Fatalf("success=%d conflict=%d", successes, conflicts)
 			}
-			saved, err := (clientTools{}).clientConfig(ctx, "office", true)
+			saved, err := tools.clientConfig(ctx, "office", true)
 			if err != nil {
 				t.Fatal(err)
 			}

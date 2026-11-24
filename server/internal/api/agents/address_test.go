@@ -27,6 +27,7 @@ const oldHost, newHost = "192.0.2.2", "192.0.2.11"
 type addressEnv struct {
 	t          *testing.T
 	s          *httpxtest.Server
+	m          *agents.Manager
 	agentID    string
 	agentToken string
 	reachable  bool
@@ -35,11 +36,11 @@ type addressEnv struct {
 
 func newAddressEnv(t *testing.T) *addressEnv {
 	t.Helper()
-	s := newServer(t)
+	s, m := newServerWithOptions(t, agents.Options{})
 	upgrades.ResetAddressState()
 	t.Cleanup(upgrades.ResetAddressState)
 	t.Cleanup(upgrades.RunInlineForTest())
-	e := &addressEnv{t: t, s: s, reachable: true}
+	e := &addressEnv{t: t, s: s, m: m, reachable: true}
 	t.Cleanup(upgrades.SetReachesForTest(func(record *model.Agent, host string) bool {
 		e.reached = append(e.reached, [2]string{record.Token, host})
 		return e.reachable
@@ -49,11 +50,7 @@ func newAddressEnv(t *testing.T) *addressEnv {
 }
 
 func (e *addressEnv) manager() *agents.Manager {
-	m, err := agents.Get(e.s.Context())
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	return m
+	return e.m
 }
 
 func (e *addressEnv) register(host string) (string, string) {

@@ -79,12 +79,11 @@ const (
 
 func panelServer(t *testing.T, mihomoVersion string) (*httpxtest.Server, *panelFake, httpxtest.Option) {
 	t.Helper()
-	reset := func() { agents.ResetRuntime(); agents.ResetHooks() }
-	reset()
-	t.Cleanup(reset)
+	agents.ResetRuntime()
+	t.Cleanup(agents.ResetRuntime)
 	fake := &panelFake{answers: map[string]*agents.Response{}}
 	t.Cleanup(agents.SetDefaultClient(fake))
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apiagents.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
 	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		return system.SetJSON("agents", mustRawJSON(t, []any{
 			map[string]any{
@@ -100,6 +99,12 @@ func panelServer(t *testing.T, mihomoVersion string) (*httpxtest.Server, *panelF
 	if err != nil {
 		t.Fatal(err)
 	}
+	m, err := agents.New(s.Context(), s.Repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
 	return s, fake, s.Login()
 }
 

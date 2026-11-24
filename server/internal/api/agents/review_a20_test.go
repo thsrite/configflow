@@ -55,14 +55,16 @@ func (a *gatewayAgent) writes() []string {
 
 func gatewayForwardingServer(t *testing.T) (*httpxtest.Server, *gatewayAgent, httpxtest.Option) {
 	t.Helper()
-	reset := func() { agents.ResetRuntime(); agents.ResetHooks() }
-	reset()
-	t.Cleanup(reset)
 	fake := &gatewayAgent{}
-	t.Cleanup(agents.SetDefaultClient(fake))
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apiagents.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	m, err := agents.New(s.Context(), s.Repo, agents.Options{Client: fake})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
 	ctx := s.Context()
-	err := s.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+	err = s.Repo.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
 		return system.SetJSON("agents", mustRawJSON(t, []any{map[string]any{
 			"id": "gw", "name": "GW", "service_type": "mihomo", "profile_id": "default",
 			"token": "synthetic-agent-token", "host": "127.0.0.1", "port": 8081, "version": "1.8.43-go",

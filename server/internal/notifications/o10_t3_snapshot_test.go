@@ -148,7 +148,7 @@ func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.
 		t.Fatal(err)
 	}
 
-	m, err := agents.Init(ctx)
+	m, err := agents.New(ctx, srv.Repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,6 @@ func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.
 
 func wireAllO10T3Slots(t *testing.T, r *repo.Repository, m *agents.Manager, agentReads *atomic.Int32) {
 	t.Helper()
-	agents.Wire()
 	metrics.New(metrics.Options{Repo: r}).RegisterTasks(tasks.Default())
 	refresh.New(refresh.Options{Repo: r}).Register(lifecycle.Current(), tasks.Default())
 	rr := routerrulesync.New(r, routerrulesync.Options{})
@@ -177,7 +176,7 @@ func wireAllO10T3Slots(t *testing.T, r *repo.Repository, m *agents.Manager, agen
 			if agentReads != nil {
 				agentReads.Add(1)
 			}
-			return agents.NotificationAgents(ctx)
+			return m.NotificationAgents(ctx)
 		},
 	}))
 }

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	core "configflow/internal/agents"
+	"configflow/internal/agents/agentfake"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -36,7 +36,7 @@ func (b *lockedBuffer) String() string {
 // records the failed preparation without contacting the device, and logs the
 // error class (Python's route log) without the error text.
 func TestReviewA14UnexpectedPushFailureIsLoggedAndRecorded(t *testing.T) {
-	s, admin, fake := newDeployHTTP(t)
+	s, m, admin, fake := newDeployHTTPWithManager(t, agentfake.Options{})
 	var logs lockedBuffer
 	if _, err := logx.Setup(logx.Config{Level: logx.Info, Console: &logs}); err != nil {
 		t.Fatal(err)
@@ -54,10 +54,6 @@ func TestReviewA14UnexpectedPushFailureIsLoggedAndRecorded(t *testing.T) {
 	if mapStr(body, "failed_stage") != "preparing" || mapStr(body, "deployment_id") != "unexpected" ||
 		!strings.Contains(mapStr(body, "error_details"), "DNS HA pair publication is not available") {
 		t.Fatal("response", body)
-	}
-	m, err := core.Get(s.Context())
-	if err != nil {
-		t.Fatal(err)
 	}
 	agent, err := m.ReadAgent(s.Context(), "publish-agent", true)
 	if err != nil {

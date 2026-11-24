@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 
 	core "configflow/internal/agents"
 	"configflow/internal/agents/dnsfollow"
@@ -43,11 +44,11 @@ func (d Deps) repository(ctx context.Context) (*repo.Repository, error) {
 	return repo.GetRepository(ctx)
 }
 
-func (d Deps) manager(ctx context.Context) (*core.Manager, error) {
+func (d Deps) manager(_ context.Context) (*core.Manager, error) {
 	if d.Agents != nil {
 		return d.Agents, nil
 	}
-	return core.Get(ctx)
+	return nil, errors.New("api/agents: manager is nil")
 }
 
 func (d Deps) withRepo(ctx context.Context) context.Context {

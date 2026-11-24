@@ -292,9 +292,7 @@ func TestTypedHeartbeatFailureLogUsesCredentialOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { root.Close() })
-	RegisterHooks(Hooks{AddMetricsJSON: func(context.Context, *Manager, string, json.RawMessage) error {
-		return errors.New("operator " + secret)
-	}})
+	e.m.metrics = &errMetricsSink{err: errors.New("operator " + secret)}
 	if ok, err := e.m.ObserveHeartbeat(e.ctx, id, &model.Agent{SystemMetrics: &model.AgentMetrics{}}); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
@@ -307,6 +305,14 @@ func TestTypedHeartbeatFailureLogUsesCredentialOwner(t *testing.T) {
 		t.Fatalf("unsafe or over-redacted warning: %s", output)
 	}
 }
+
+type errMetricsSink struct{ err error }
+
+func (s *errMetricsSink) AddMetricsJSON(context.Context, *Manager, string, json.RawMessage) error {
+	return s.err
+}
+func (*errMetricsSink) DeleteMetricsHistory(context.Context, *Manager, string) error { return nil }
+func (*errMetricsSink) DeleteTrafficHistory(context.Context, *Manager, string) error { return nil }
 
 func TestTypedRuntimeLegacyImportHonorsSourceGeneration(t *testing.T) {
 	e, id := setupRuntime(t)

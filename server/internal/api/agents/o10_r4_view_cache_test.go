@@ -243,10 +243,7 @@ func TestAgentViewMasksItsOwnGenerationCredentials(t *testing.T) {
 		}
 	}
 	set(old, "registered with "+old)
-	m, err := core.Get(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := f.manager
 	records, gen, err := m.ReadAgentsAt(ctx, true, nil)
 	if err != nil || len(records) != 1 {
 		t.Fatal(records, err)

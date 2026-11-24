@@ -119,12 +119,11 @@ func (o *oracle) call(t *testing.T, method, path, body, token string) pyAnswer {
 	}
 	return answer
 }
-func setup(t *testing.T) (*httpxtest.Server, string, installation.Record, map[string]json.RawMessage) {
+func setup(t *testing.T) (*httpxtest.Server, *agents.Manager, string, installation.Record, map[string]json.RawMessage) {
 	t.Helper()
 	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
-	deploy.Wire()
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apiagents.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
 	static := t.TempDir()
 	t.Setenv("AGENTS_STATIC_DIR", static)
 	must(t, os.WriteFile(filepath.Join(static, "configflow-agent-linux-amd64"), []byte("synthetic-agent-binary"), 0600))
@@ -147,8 +146,10 @@ func setup(t *testing.T) (*httpxtest.Server, string, installation.Record, map[st
 	on := onboarding.Service{Repository: s.Repo}
 	_, e = on.Execute(ctx, onboarding.Operation{ProfileID: "default", BaseURL: origin, Write: true, Body: raw(map[string]any{"rule_set_ids": []string{}, "direct_rule_set_ids": []string{}, "proxy_rule_set_ids": []string{}, "local_dns": "https://192.0.2.53/dns-query"})})
 	must(t, e)
-	m, e := agents.Get(ctx)
+	m, e := agents.New(ctx, s.Repo, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
 	must(t, e)
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
 	service := installation.Service{Repository: s.Repo, Manager: m}
 	revision, e := s.Repo.ConfigRevision(ctx, "default")
 	must(t, e)
@@ -182,7 +183,7 @@ func setup(t *testing.T) (*httpxtest.Server, string, installation.Record, map[st
 	must(t, e)
 	login := s.Post("/api/auth/login", httpxtest.JSON(map[string]string{"username": httpxtest.Username, "password": httpxtest.Password})).WantStatus(200)
 	token := str(obj(login.Body)["token"])
-	return s, token, r, body
+	return s, m, token, r, body
 }
 func normalize(v any) any {
 	switch x := v.(type) {
@@ -221,7 +222,7 @@ func TestGatewayFlaskHTTPAndDurableState(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("CONFIGFLOW_DIFF=1")
 	}
-	s, admin, r, body := setup(t)
+	s, manager, admin, r, body := setup(t)
 	store := installer.Store{DataDir: s.DataDir}
 	for range installer.MaxSnapshots - 1 {
 		_, _, e := store.SaveInstallScript(s.Context(), "#!/bin/sh\n# synthetic frozen installer\n", nil)
@@ -244,8 +245,6 @@ func TestGatewayFlaskHTTPAndDurableState(t *testing.T) {
 			dest[fmt.Sprintf("%s:%d", r.Network.Address, r.Ports[kind])] = receiver.URL
 		}
 	}
-	manager, e := agents.Get(s.Context())
-	must(t, e)
 	manager.SetClient(diffClient{goDest})
 	py := newOracle(t, s, pyDest)
 	pyLogin := py.call(t, "POST", "/api/auth/login", string(raw(map[string]string{"username": httpxtest.Username, "password": httpxtest.Password})), "")

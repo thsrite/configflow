@@ -103,8 +103,7 @@ func newManager(t *testing.T, r *repo.Repository) *Manager {
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	ResetRuntime()
-	ResetHooks()
-	t.Cleanup(func() { ResetRuntime(); ResetHooks() })
+	t.Cleanup(ResetRuntime)
 	dir := seededAgentDirectory(t)
 	r := openRepo(t, dir)
 	m := newManager(t, r)

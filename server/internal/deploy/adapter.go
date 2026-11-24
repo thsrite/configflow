@@ -159,11 +159,6 @@ func downloadRef(d convert.ResourceDownload) (RuleRef, string, error) {
 	return RuleRef{Name: d.Name, URL: d.URL, Behavior: d.Behavior, Format: d.Format}, d.LocalPath, nil
 }
 
-// Wire installs deployment preparation diagnostics. A14 adds publication hooks.
-func Wire() {
-	agents.RegisterHooks(agents.Hooks{ReceiptMatches: ReceiptMatches})
-}
-
 func (s *Source) normalize(value []byte, rule RuleRef) ([]byte, error) {
 	r := model.RuleConfig{ID: rule.ID, Name: rule.Name, URL: new(rule.URL), SourceType: new(rule.SourceType), Behavior: new(defaultBehavior(rule.Behavior)), Format: new(rule.Format)}
 	format, err := convert.RuleFormat(r, s.config(), "")

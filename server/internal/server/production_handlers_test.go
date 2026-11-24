@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/agents"
 	"configflow/internal/auth"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -145,7 +144,6 @@ func TestProductionGlobalRoutesDoNotUseRepositoryLocator(t *testing.T) {
 	}
 	want := serve()
 	repo.SetRepository(other)
-	agents.UseManager(nil)
 	got := serve()
 	if len(routes) < 20 {
 		t.Fatalf("only %d global GET routes served", len(routes))

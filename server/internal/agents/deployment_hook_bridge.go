@@ -12,11 +12,7 @@ func (m *Manager) candidateReceiptMatches(a *model.Agent, state *model.Deploymen
 	if m.receiptMatches != nil {
 		return m.receiptMatches(a, state), nil
 	}
-	hook := m.legacyHooks().ReceiptMatches
-	if hook == nil {
-		return false, nil
-	}
-	return hook(a, state), nil
+	return false, nil
 }
 
 func (m *Manager) checkpointCandidate(ctx context.Context, agentID, id string, prepared *model.PreparedContent) error {
@@ -32,12 +28,5 @@ func (m *Manager) checkpointCandidate(ctx context.Context, agentID, id string, p
 		}
 		return m.publication.PublicationCheckpoint(ctx, m, agentID, id, sha)
 	}
-	hook := m.legacyHooks().PublicationCheckpoint
-	if hook == nil {
-		return nil
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return hook(ctx, m, agentID, id, sha)
+	return nil
 }

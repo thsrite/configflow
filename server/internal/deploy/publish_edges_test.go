@@ -63,7 +63,6 @@ func TestCapabilityAbsenceAndMalformedFields(t *testing.T) {
 	}
 }
 func TestOxiDNSPublicationAttestsBeforeActivation(t *testing.T) {
-	Wire()
 	f := newPublish(t, agentfake.Options{ServiceType: "oxidns"}, nil)
 	b := f.bundle(t, "checked")
 	r, e := New(Options{}).PublishDirect(f.ctx, f.m, "publish-agent", b, PublishOptions{SourceSnapshot: f.source})

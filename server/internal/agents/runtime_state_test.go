@@ -45,8 +45,7 @@ func decodeHeartbeatAgent(t *testing.T, payload map[string]any) *model.Agent {
 func setupRuntime(t *testing.T) (*env, string) {
 	t.Helper()
 	ResetRuntime()
-	ResetHooks()
-	t.Cleanup(func() { ResetRuntime(); ResetHooks() })
+	t.Cleanup(ResetRuntime)
 	dir := t.TempDir()
 	r := openRepo(t, dir)
 	e := &env{t: t, ctx: context.Background(), repo: r, m: newManager(t, r), dir: dir}

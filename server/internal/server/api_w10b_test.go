@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/agents"
 	"configflow/internal/auth"
 	"configflow/internal/convert"
 	"configflow/internal/lifecycle"
@@ -78,7 +77,6 @@ func TestW10bHandlersUseInjectedDependencies(t *testing.T) {
 	t.Cleanup(other.Close)
 	repo.SetRepository(other)
 	t.Cleanup(func() { repo.SetRepository(nil) })
-	agents.UseManager(nil)
 
 	auth.Configure(auth.Config{})
 

@@ -4,13 +4,20 @@ import (
 	"net/url"
 	"testing"
 
+	"configflow/internal/agents"
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/httpx/httpxtest"
 )
 
 // test_oxidns_docker_install.py::test_authenticated_docker_install_api_preserves_ha_choices.
 func TestAuthenticatedDockerInstallAPIPreservesHAChoices(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true, Register: httpxtest.Routes(apiagents.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true})
+	m, err := agents.New(srv.Context(), srv.Repo, agents.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: srv.Repo, Agents: m}).Register(srv.App.Router)
 	admin := srv.Login()
 	for _, endpoint := range []string{"compose", "run"} {
 		params := url.Values{"server_url": {"https://config.example"}, "agent_name": {"dns-a"}, "agent_ip": {"192.168.50.20"},

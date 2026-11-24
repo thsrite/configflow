@@ -25,11 +25,18 @@ import (
 
 func newDeployHTTP(t *testing.T) (*httpxtest.Server, httpxtest.Option, *agentfake.Agent) {
 	t.Helper()
-	return newDeployHTTPWith(t, agentfake.Options{})
+	s, _, admin, fake := newDeployHTTPWithManager(t, agentfake.Options{})
+	return s, admin, fake
 }
 
 // newDeployHTTPWith is newDeployHTTP with fake Agent outcomes (identity fields are fixed).
 func newDeployHTTPWith(t *testing.T, options agentfake.Options) (*httpxtest.Server, httpxtest.Option, *agentfake.Agent) {
+	t.Helper()
+	s, _, admin, fake := newDeployHTTPWithManager(t, options)
+	return s, admin, fake
+}
+
+func newDeployHTTPWithManager(t *testing.T, options agentfake.Options) (*httpxtest.Server, *core.Manager, httpxtest.Option, *agentfake.Agent) {
 	t.Helper()
 	lifecycle.Stop(8 * time.Second)
 	if e := lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); e != nil {
@@ -38,7 +45,6 @@ func newDeployHTTPWith(t *testing.T, options agentfake.Options) (*httpxtest.Serv
 	lifecycle.Start(context.Background())
 	t.Cleanup(func() { lifecycle.Stop(8 * time.Second) })
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
-	deploy.Wire()
 	options.AgentID, options.Token, options.ConfigPath = "publish-agent", "synthetic-publish-token", "installed.yaml"
 	fake := agentfake.New(options)
 	srv := httptest.NewServer(fake)
@@ -46,7 +52,7 @@ func newDeployHTTPWith(t *testing.T, options agentfake.Options) (*httpxtest.Serv
 	u, _ := url.Parse(srv.URL)
 	host, port, _ := net.SplitHostPort(u.Host)
 	n, _ := strconv.Atoi(port)
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
 	if err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		return system.SetJSON("agents", mustRawJSON(t, []map[string]any{{
 			"id": "publish-agent", "name": "Synthetic", "host": host, "port": n,
@@ -75,12 +81,13 @@ func newDeployHTTPWith(t *testing.T, options agentfake.Options) (*httpxtest.Serv
 	}); err != nil {
 		t.Fatal(err)
 	}
-	m, err := core.Get(s.Context())
+	m, err := core.New(s.Context(), s.Repo, core.Options{ReceiptMatches: deploy.ReceiptMatches})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(m.Close)
-	return s, s.Login(), fake
+	NewHandler(Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
+	return s, m, s.Login(), fake
 }
 func TestDeployHTTPPublishPreviewAndGuards(t *testing.T) {
 	s, admin, fake := newDeployHTTP(t)

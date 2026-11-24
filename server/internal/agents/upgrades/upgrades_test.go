@@ -30,8 +30,7 @@ type upgradeEnv struct {
 func newUpgradeEnv(t *testing.T) *upgradeEnv {
 	t.Helper()
 	agents.ResetRuntime()
-	agents.ResetHooks()
-	t.Cleanup(func() { agents.ResetRuntime(); agents.ResetHooks() })
+	t.Cleanup(agents.ResetRuntime)
 	r, err := repo.Open(filepath.Join(t.TempDir(), "config"), repo.Options{})
 	if err != nil {
 		t.Fatal(err)

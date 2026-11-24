@@ -37,7 +37,7 @@ func TestServicePublishFailsClosedWithoutPairPublisher(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m, err := agents.Get(ctx)
+	m, err := agents.New(ctx, r)
 	if err != nil {
 		t.Fatal(err)
 	}

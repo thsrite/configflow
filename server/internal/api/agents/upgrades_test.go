@@ -38,8 +38,7 @@ type upgradeApp struct {
 func newUpgradeApp(t *testing.T) *upgradeApp {
 	t.Helper()
 	agents.ResetRuntime()
-	agents.ResetHooks()
-	t.Cleanup(func() { agents.ResetRuntime(); agents.ResetHooks() })
+	t.Cleanup(agents.ResetRuntime)
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
 	os.Unsetenv("AGENT_REGISTRATION_KEY")
 	static := t.TempDir()
@@ -49,13 +48,15 @@ func newUpgradeApp(t *testing.T) *upgradeApp {
 	t.Setenv("AGENTS_STATIC_DIR", static)
 	upgrades.ResetArtifactCache()
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "upgrade-admin", Password: "upgrade-test-password",
-		DefaultFactories: true, Register: httpxtest.Routes(apiagents.Register)})
+		DefaultFactories: true})
 	app := &upgradeApp{t: t, s: s, static: static}
 	app.admin = s.Login()
-	m, err := agents.Get(s.Context())
+	m, err := agents.New(s.Context(), s.Repo)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
 	app.m = m
 	for _, name := range []string{"upgrading", "other-agent"} {
 		id, token := registerAgentForTest(t, s.Context(), m, map[string]any{

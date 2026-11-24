@@ -53,11 +53,11 @@ func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
 	return repo.GetRepository(ctx)
 }
 
-func (h *Handler) manager(ctx context.Context) (*agents.Manager, error) {
+func (h *Handler) manager(_ context.Context) (*agents.Manager, error) {
 	if h != nil && h.agents != nil {
 		return h.agents, nil
 	}
-	return agents.Get(ctx)
+	return nil, errors.New("api/generate: agents manager is nil")
 }
 
 func (h *Handler) deployService() *deploy.Service {

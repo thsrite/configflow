@@ -36,16 +36,15 @@ func dockerHABody() map[string]any {
 // registry, the panel login header.
 func authenticatedApp(t *testing.T) (*httpxtest.Server, *agents.Manager, httpxtest.Option) {
 	t.Helper()
-	agents.ResetRuntime()
-	agents.ResetHooks()
-	t.Cleanup(func() { agents.ResetRuntime(); agents.ResetHooks() })
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
 	os.Unsetenv("AGENT_REGISTRATION_KEY")
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true, Register: httpxtest.Routes(apiagents.Register)})
-	manager, err := agents.Get(srv.Context())
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true})
+	manager, err := agents.New(srv.Context(), srv.Repo, agents.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(manager.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: srv.Repo, Agents: manager}).Register(srv.App.Router)
 	return srv, manager, srv.Login()
 }
 

@@ -19,8 +19,6 @@ import (
 
 func fixture(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	agents.ResetHooks()
-	t.Cleanup(agents.ResetHooks)
 	s := httpxtest.New(t, httpxtest.Options{Auth: true, SecretKey: "c32-synthetic-secret", Register: httpxtest.Routes(Register)})
 	ctx := s.Context()
 	if _, err := s.Repo.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {

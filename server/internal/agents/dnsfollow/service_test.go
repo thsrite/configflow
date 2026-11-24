@@ -182,12 +182,11 @@ func newFixture(t *testing.T, o Options, targetOptions agentfake.Options) *fixtu
 	if e != nil {
 		t.Fatal(e)
 	}
-	m, e := agents.New(ctx, r)
+	m, e := agents.New(ctx, r, agents.Options{ReceiptMatches: deploy.ReceiptMatches})
 	if e != nil {
 		t.Fatal(e)
 	}
 	t.Cleanup(m.Close)
-	deploy.Wire()
 	f := &fixture{ctx: ctx, r: r, m: m, s: New(m, o), source: source, target: target}
 	a, e := f.s.get(ctx, "target")
 	if e != nil {

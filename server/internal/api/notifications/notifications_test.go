@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	"configflow/internal/agents"
 	apinotifications "configflow/internal/api/notifications"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
@@ -26,15 +26,14 @@ func registered() bool {
 // wiring supplies the real registry even before the task owners are ready.
 func TestListRouteRegistersBeforeTaskSlotsAndAgentsSourceIsUnconditional(t *testing.T) {
 	notifications.ResetInputs()
-	agents.ResetHooks()
-	t.Cleanup(func() { notifications.ResetInputs(); agents.ResetHooks() })
+	t.Cleanup(notifications.ResetInputs)
 	notifications.SetInputs(notifications.Inputs{Rows: tasks.List})
 	if tasks.Complete() {
 		t.Fatal("precondition: some task slots are still unported")
 	}
-	agents.Wire()
+	notifications.SetInputs(notifications.Inputs{Agents: func(context.Context) ([]model.Agent, error) { return nil, nil }})
 	if !notifications.Complete() {
-		t.Fatal("agents.Wire must install the Agent source while task slots are missing")
+		t.Fatal("installing the Agent source must complete notifications while task slots are missing")
 	}
 	if !registered() || apinotifications.ListComplete() {
 		t.Fatal("registration/readiness confused")

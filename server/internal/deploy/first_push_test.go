@@ -29,7 +29,6 @@ func TestFirstPushCachesAndStableContents(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mihomoenv.OverrideForTest(t, nil, nil, nil)
-			Wire()
 			f := newPublish(t, agentfake.Options{}, nil)
 			feed := "hosts:\n  node.example.com: entry.example.org\nproxies:\n  - {name: Remote, type: socks5, server: node.example.com, port: 1080, username: user, password: synthetic-secret, udp: true}\n"
 			var mu sync.Mutex

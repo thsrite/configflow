@@ -385,13 +385,11 @@ func TestRulesProofAndOldCandidateRefusal(t *testing.T) {
 	}
 	ctx := testContext(t)
 	repository, _ := repo.GetRepository(ctx)
-	m, err := agents.New(ctx, repository)
+	m, err := agents.New(ctx, repository, agents.Options{ReceiptMatches: ReceiptMatches})
 	if err != nil {
 		t.Fatal(err)
 	}
-	previousHooks := agents.CurrentHooks()
-	agents.RegisterHooks(agents.Hooks{ReceiptMatches: ReceiptMatches})
-	t.Cleanup(func() { agents.ResetHooks(); agents.RegisterHooks(previousHooks) })
+	t.Cleanup(m.Close)
 	var callsMu sync.Mutex
 	postCalls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

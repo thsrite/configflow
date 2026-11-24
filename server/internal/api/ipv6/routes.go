@@ -123,10 +123,7 @@ func (h *Handler) operation(c *httpx.Ctx) (*httpx.Response, error) {
 		m = service.Manager
 	}
 	if m == nil {
-		m, e = agents.Get(c.Context())
-		if e != nil {
-			return nil, e
-		}
+		return nil, errors.New("api/ipv6: agents manager is nil")
 	}
 	if service == nil {
 		service = &core.Service{Manager: m, Checker: apiagents.ContentChecker}

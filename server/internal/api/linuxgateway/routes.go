@@ -92,10 +92,7 @@ func (h *Handler) editor(c *httpx.Ctx) (*httpx.Response, error) {
 		m = h.Agents
 	}
 	if m == nil {
-		m, err = agents.Get(c.Context())
-		if err != nil {
-			return nil, err
-		}
+		return nil, errors.New("api/linuxgateway: agents manager is nil")
 	}
 	op := draft.Operation{ProfileID: profile, BaseURL: strings.TrimRight(c.HostURL(), "/"), Write: c.Request.Method == "POST", Preview: strings.HasSuffix(c.Request.URL.Path, "/preview"), Restore: strings.Contains(c.Request.URL.Path, "/linux-gateway/restore")}
 	if op.Write {

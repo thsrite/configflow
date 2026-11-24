@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	core "configflow/internal/agents"
+	"configflow/internal/agents/agentfake"
 	"configflow/internal/model"
 )
 
@@ -42,7 +43,7 @@ func TestN810MalformedDeploymentReplyIsStructured502WithoutWrite(t *testing.T) {
 		{"null", `null`, core.ErrInvalidAgentReply},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			s, admin, _ := newDeployHTTP(t)
+			s, m, admin, _ := newDeployHTTPWithManager(t, agentfake.Options{})
 			seen := make(chan struct {
 				method, path, authorization string
 				body                        []byte
@@ -71,10 +72,6 @@ func TestN810MalformedDeploymentReplyIsStructured502WithoutWrite(t *testing.T) {
 				system.Agents[0].Port = model.Int(n)
 				return nil
 			}); err != nil {
-				t.Fatal(err)
-			}
-			m, err := core.Get(s.Context())
-			if err != nil {
 				t.Fatal(err)
 			}
 			attempts := make(chan n810HTTPAttempt, 2)
