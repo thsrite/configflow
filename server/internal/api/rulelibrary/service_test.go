@@ -1,6 +1,8 @@
 package rulelibrary
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"configflow/internal/api/proxygroups"
 	apirules "configflow/internal/api/rules"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/model"
 )
 
 func fixture(t *testing.T) *httpxtest.Server {
@@ -69,6 +72,55 @@ func TestCreateAndCheckRejectWithoutWrites(t *testing.T) {
 		t.Fatal("content checking or rejected creation changed data")
 	}
 }
+
+func TestListClassicalRulesUsesRepositoryCache(t *testing.T) {
+	server := fixture(t)
+	tests := []struct {
+		id      string
+		content string
+		wantIP  bool
+	}{
+		{"domains", "DOMAIN,example.test\n", false},
+		{"networks", "IP-CIDR,192.0.2.0/24\n", true},
+		{"uncached", "", true},
+	}
+	for _, test := range tests {
+		item := model.RuleLibraryItem{
+			ID: test.id, Name: test.id, SourceType: new("url"),
+			URL: new("https://example.test/" + test.id + ".list"), Behavior: new("classical"), Format: new("text"),
+		}
+		if test.content == "" {
+			if err := server.Repo.UpdateShared(t.Context(), func(_ context.Context, shared *model.Shared) error {
+				shared.RuleLibrary = append(shared.RuleLibrary, item)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		if _, err := server.Repo.CreateRuleLibraryRecord(t.Context(), item, []byte(test.content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	response := server.Get("/api/rule-library", server.Login()).WantStatus(200)
+	var items []struct {
+		ID        string `json:"id"`
+		HasIPPart *bool  `json:"has_ip_part"`
+	}
+	if err := json.Unmarshal(response.Body, &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != len(tests) {
+		t.Fatalf("got %d rule library items, want %d", len(items), len(tests))
+	}
+	for index, test := range tests {
+		item := items[index]
+		if item.ID != test.id || item.HasIPPart == nil || *item.HasIPPart != test.wantIP {
+			t.Errorf("rule %q: want has_ip_part=%t; response: %s", test.id, test.wantIP, response.Body)
+		}
+	}
+}
+
 func TestProxyDomainsAndReorder(t *testing.T) {
 	s := fixture(t)
 	auth := s.Login()

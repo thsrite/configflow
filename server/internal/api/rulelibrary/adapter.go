@@ -177,7 +177,7 @@ func (s *Service) create(ctx context.Context, item model.RuleLibraryItem, conten
 
 // hasIP reports whether a library item has (or may have) IP entries, as the
 // rules page shows it for a rule-set reference.
-func hasIP(item model.RuleLibraryItem, shared *model.Shared) (bool, error) {
+func (s *Service) hasIP(item model.RuleLibraryItem, shared *model.Shared) (bool, error) {
 	rule := ruleRecord(item)
 	rule.ItemType, rule.LibraryRuleID = "ruleset", item.ID
 	profile, err := oxidns.NewTypedProfile(&model.Config{Profile: &model.Profile{}, RuleLibrary: shared.RuleLibrary,
@@ -185,6 +185,7 @@ func hasIP(item model.RuleLibraryItem, shared *model.Shared) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	profile.Repo = s.repo
 	return oxidns.HasIPPart(rule, profile), nil
 }
 func inspect(content string, lines []string, body *checkContentRequest) (*rulefetch.Inspection, error) {

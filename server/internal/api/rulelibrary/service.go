@@ -49,7 +49,7 @@ func (s *Service) List(ctx context.Context) ([]libraryListItem, error) {
 	}
 	items := make([]libraryListItem, len(catalog.RuleLibrary))
 	for i, item := range catalog.RuleLibrary {
-		has, err := hasIP(item, catalog)
+		has, err := s.hasIP(item, catalog)
 		if err != nil {
 			return nil, err
 		}
