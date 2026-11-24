@@ -28,10 +28,10 @@ func TestNativeProbeAndRegionFilesInteroperateWithPython(t *testing.T) {
 	var results model.OrderedMap[TimedRecord]
 	results.Set("example.com", entry)
 
-	if err := probe.SaveEntries("go", results, stamp); err != nil {
+	if err := probe.SaveEntries(t.Context(), "go", results, stamp); err != nil {
 		t.Fatal(err)
 	}
-	if err := region.UpdateData("go", func(data *RegionData) error {
+	if err := region.UpdateData(t.Context(), "go", func(data *RegionData) error {
 		data.Domains = results
 		return nil
 	}, stamp); err != nil {

@@ -208,7 +208,7 @@ func editStoredProfile(ctx context.Context, r *repo.Repository, edit func(contex
 		for name, value := range fields.All() {
 			document.Profiles[index].Fields = append(document.Profiles[index].Fields, store.Field{Name: name, Value: value})
 		}
-		_, _, err = target.CommitContext(ctx, base, &document, nil)
+		_, _, err = target.Commit(ctx, base, &document, nil)
 		return err
 	}
 	return errors.New("fixture profile missing")

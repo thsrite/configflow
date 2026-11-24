@@ -207,7 +207,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		assertModelRows(t, rows, before)
 		// The first Go write stores the rows in Go's encoding with the same
 		// values (O18 T1a); after that a decode/encode round trip is a no-op.
-		if next, changed, err := target.Commit(entry, rows, nil); err != nil {
+		if next, changed, err := target.Commit(t.Context(), entry, rows, nil); err != nil {
 			t.Fatal("normalizing commit failed")
 		} else if changed {
 			entry = next
@@ -225,7 +225,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal("initial fingerprint failed")
 		}
-		if _, changed, err := target.Commit(entry, rows, nil); err != nil || changed {
+		if _, changed, err := target.Commit(t.Context(), entry, rows, nil); err != nil || changed {
 			t.Fatal("no-op model commit wrote rows")
 		}
 		current, err := target.Fingerprint()
@@ -281,7 +281,7 @@ func TestStoredRoundTrip(t *testing.T) {
 					t.Fatalf("%s changed an unrelated row %v", label, key)
 				}
 			}
-			next, written, err := target.Commit(entry, rows, nil)
+			next, written, err := target.Commit(t.Context(), entry, rows, nil)
 			if err != nil || !written {
 				t.Fatalf("%s store commit failed", label)
 			}
@@ -432,7 +432,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		setStoreField(&injected.System.Fields, "_revision", json.RawMessage(`true`))
 		setStoreField(&injected.Shared.Fields, "_revision", json.RawMessage(`true`))
 		var written bool
-		entry, written, err = target.Commit(entry, injected, nil)
+		entry, written, err = target.Commit(t.Context(), entry, injected, nil)
 		if err != nil || !written {
 			t.Fatal("R5 injection failed")
 		}

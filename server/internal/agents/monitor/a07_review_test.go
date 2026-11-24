@@ -282,7 +282,7 @@ func TestReviewRankingLoopRunsUnderInstanceLock(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fetched, err := store.Fetched("removed-agent", "records", []int64{stamp})
+	fetched, err := store.Fetched(t.Context(), "removed-agent", "records", []int64{stamp})
 	if err != nil || fetched[stamp] {
 		t.Fatal("ranking round did not remove retired Agent history under the instance lock", fetched, err)
 	}

@@ -43,10 +43,10 @@ func TestNativeServicesShutdownAndDisconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	at := float64(1700000000)
-	if _, err := history.FlushContext(request, 90, &at); err != nil {
+	if _, err := history.Flush(request, 90, &at); err != nil {
 		t.Fatal(err)
 	}
-	metrics := NewHistory(t.TempDir(), 4000)
+	metrics := newTestHistory(t, t.TempDir(), 4000)
 	if _, err := metrics.AddSample(request, "a", []byte(`{"cpu":{"usage_percent":1}}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -55,10 +55,10 @@ func TestNativeServicesShutdownAndDisconnect(t *testing.T) {
 	if err := history.AddTraffic(bound, "a", report); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	if _, err := history.FlushContext(bound, 90, &at); !errors.Is(err, context.Canceled) {
+	if _, err := history.Flush(bound, 90, &at); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	if _, err := metrics.FlushContext(bound); !errors.Is(err, context.Canceled) {
+	if _, err := metrics.Flush(bound); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 	if metrics.PendingCount() != 1 {
@@ -69,7 +69,7 @@ func TestNativeServicesShutdownAndDisconnect(t *testing.T) {
 	}
 }
 func TestNativeSummaryIsolatesCorruptionAndThrottlesWarnings(t *testing.T) {
-	h := NewHistory(t.TempDir(), 4000)
+	h := newTestHistory(t, t.TempDir(), 4000)
 	sample := json.RawMessage(`{"cpu":{"usage_percent":12},"disk":[],"network":{"bytes_sent":"bad"}}`)
 	for i := 0; i < 3; i++ {
 		if _, err := h.AddSample(t.Context(), "a", sample); err != nil {
@@ -97,13 +97,13 @@ func TestNativeSummaryIsolatesCorruptionAndThrottlesWarnings(t *testing.T) {
 func TestNativeQuerySkipsDamagedSQLiteCounter(t *testing.T) {
 	h := NewTrafficHistory(t.TempDir())
 	at := float64(1700000000)
-	c, err := h.connect()
+	c, err := h.connect(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.close()
 	for _, args := range [][]any{{"a", int64(1699999200), int64(Hour), "good", "DIRECT", int64(4), int64(2), int64(1)}, {"a", int64(1699999200), int64(Hour), "broken", "DIRECT", "broken", int64(2), int64(1)}} {
-		if _, err = c.exec("INSERT INTO traffic_usage VALUES(?,?,?,?,?,?,?,?)", args...); err != nil {
+		if _, err = c.exec(t.Context(), "INSERT INTO traffic_usage VALUES(?,?,?,?,?,?,?,?)", args...); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -185,7 +185,7 @@ func TestNativeSQLWritesRejectCorruptCountersWithoutCoercion(t *testing.T) {
 			if scenario == "compact_targets" {
 				table = "traffic_targets"
 			}
-			c, err := h.connect()
+			c, err := h.connect(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -196,7 +196,7 @@ func TestNativeSQLWritesRejectCorruptCountersWithoutCoercion(t *testing.T) {
 				statement = "INSERT INTO " + table + " VALUES(?,?,?,?,?,?,?,?,?)"
 				args = []any{"a", bucket, span, "source", "example.com", "DIRECT", "bad", int64(2), int64(1)}
 			}
-			if _, err = c.exec(statement, args...); err != nil {
+			if _, err = c.exec(t.Context(), statement, args...); err != nil {
 				t.Fatal(err)
 			}
 			pendingBucket := bucket
@@ -206,7 +206,7 @@ func TestNativeSQLWritesRejectCorruptCountersWithoutCoercion(t *testing.T) {
 			if err = h.AddTraffic(t.Context(), "a", &CleanedTraffic{Usage: []UsageRow{{Bucket: pendingBucket, Source: "source", Chain: "DIRECT", Up: 1}}}); err != nil {
 				t.Fatal(err)
 			}
-			if _, err = h.FlushContext(t.Context(), 90, &at); err == nil {
+			if _, err = h.Flush(t.Context(), 90, &at); err == nil {
 				t.Fatal("corrupt counter was silently coerced")
 			}
 			if h.PendingCount() != 1 {
@@ -224,20 +224,20 @@ func TestNativeSQLCompactionOverflowRollsBackAndClearRecovers(t *testing.T) {
 	h := NewTrafficHistory(t.TempDir())
 	at := float64(1700000000)
 	oldDay := int64(at)/Day*Day - 10*Day
-	c, err := h.connect()
+	c, err := h.connect(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.close()
 	for _, bucket := range []int64{oldDay, oldDay + Hour} {
-		if _, err = c.exec("INSERT INTO traffic_usage VALUES(?,?,?,?,?,?,?,?)", "broken", bucket, int64(Hour), "source", "DIRECT", 1e308, int64(0), int64(1)); err != nil {
+		if _, err = c.exec(t.Context(), "INSERT INTO traffic_usage VALUES(?,?,?,?,?,?,?,?)", "broken", bucket, int64(Hour), "source", "DIRECT", 1e308, int64(0), int64(1)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if err = h.AddTraffic(t.Context(), "healthy", &CleanedTraffic{Usage: []UsageRow{{Bucket: 1699999200, Source: "source", Chain: "DIRECT", Up: 4}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = h.FlushContext(t.Context(), 90, &at); err == nil {
+	if _, err = h.Flush(t.Context(), 90, &at); err == nil {
 		t.Fatal("REAL SUM overflow silently committed")
 	}
 	var count int
@@ -245,10 +245,10 @@ func TestNativeSQLCompactionOverflowRollsBackAndClearRecovers(t *testing.T) {
 		t.Fatal("rollback changed counters", count, h.PendingCount(), err)
 	}
 	// The existing per-Agent traffic-history reset uses this deletion owner.
-	if err = h.DeleteContext(t.Context(), "broken"); err != nil {
+	if err = h.Delete(t.Context(), "broken"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = h.FlushContext(t.Context(), 90, &at); err != nil {
+	if _, err = h.Flush(t.Context(), 90, &at); err != nil {
 		t.Fatal("clear did not recover", err)
 	}
 	query, err := h.QueryTraffic(t.Context(), "healthy", "24h", "source", &at)
@@ -259,7 +259,7 @@ func TestNativeSQLCompactionOverflowRollsBackAndClearRecovers(t *testing.T) {
 
 func TestNativeTrafficQueryFiniteREALOverflowDoesNotPanic(t *testing.T) {
 	h := NewTrafficHistory(t.TempDir())
-	c, err := h.connect()
+	c, err := h.connect(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestNativeTrafficQueryFiniteREALOverflowDoesNotPanic(t *testing.T) {
 	}{
 		{"manual", "one", 1e308, -1e308}, {"manual", "two", 1e308, -1e308}, {"healthy", "three", 1, 2},
 	} {
-		if _, err := c.exec("INSERT INTO traffic_usage VALUES(?,?,?,?,?,?,?,?)", "a", bucket, Hour, row.source, row.chain, row.up, row.down, 1); err != nil {
+		if _, err := c.exec(t.Context(), "INSERT INTO traffic_usage VALUES(?,?,?,?,?,?,?,?)", "a", bucket, Hour, row.source, row.chain, row.up, row.down, 1); err != nil {
 			t.Fatal(err)
 		}
 	}

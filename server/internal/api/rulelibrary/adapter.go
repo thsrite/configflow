@@ -279,7 +279,7 @@ func (s *Service) forget(ctx context.Context, id string) error {
 		return err
 	}
 	// The status owner rechecks cancellation after leaf-lock admission.
-	return taskstatus.New(r.DataDir()).ForgetContext(ctx, refresh.RuleTaskKey(id))
+	return taskstatus.New(r.DataDir()).Forget(ctx, refresh.RuleTaskKey(id))
 }
 func (s *Service) removeCache(ctx context.Context, item model.RuleLibraryItem) error {
 	if err := ctx.Err(); err != nil {

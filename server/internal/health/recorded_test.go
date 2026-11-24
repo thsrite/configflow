@@ -450,7 +450,7 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 				}
 				switch fn {
 				case "RegionStore.update":
-					err = region.UpdateData(agent, func(data *check.RegionData) error {
+					err = region.UpdateData(t.Context(), agent, func(data *check.RegionData) error {
 						var rawCheck model.Fields
 						if uerr := jsondecode.Unmarshal(rec.mutated, &rawCheck); uerr != nil {
 							return uerr
@@ -476,7 +476,7 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 				case "RegionStore.load":
 					value = region.LoadData(agent)
 				case "ProbeStore.save":
-					err = saveProbeRaw(probe, agent, rawArg("results"), storeNow)
+					err = saveProbeRaw(t, probe, agent, rawArg("results"), storeNow)
 				case "ProbeStore.load":
 					value = probe.LoadEntries(agent, storeNow)
 				}

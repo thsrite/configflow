@@ -24,7 +24,7 @@ func sample() *testjson.Object {
 
 func TestWriteBytesEqualPythonsAndReadBack(t *testing.T) {
 	store := New(filepath.Join(t.TempDir(), "nested"))
-	sig, err := store.Write("a", sample(), false)
+	sig, err := store.Write(t.Context(), "a", sample(), false)
 	if err != nil || sig != nil {
 		t.Fatalf("write: %v %v", sig, err)
 	}
@@ -47,7 +47,7 @@ func TestWriteBytesEqualPythonsAndReadBack(t *testing.T) {
 
 func TestOtherStoresKeepCloseBeforeReplaceWithoutSignature(t *testing.T) {
 	store := New(t.TempDir())
-	sig, err := store.Write("a", map[string]any{"hosts": map[string]any{"example.test": map[string]any{"value": "unchanged"}}}, false)
+	sig, err := store.Write(t.Context(), "a", map[string]any{"hosts": map[string]any{"example.test": map[string]any{"value": "unchanged"}}}, false)
 	if sig != nil || err != nil {
 		t.Fatalf("%v %v", sig, err)
 	}
@@ -86,13 +86,13 @@ func TestMissingAndDamagedFilesReadAsNil(t *testing.T) {
 
 func TestRemoveIgnoresMissingFiles(t *testing.T) {
 	store := New(t.TempDir())
-	if err := store.Remove("never"); err != nil {
+	if err := store.Remove(t.Context(), "never"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Write("a", sample(), false); err != nil {
+	if _, err := store.Write(t.Context(), "a", sample(), false); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Remove("a"); err != nil {
+	if err := store.Remove(t.Context(), "a"); err != nil {
 		t.Fatal(err)
 	}
 	if readObject(store, "a") != nil {
@@ -102,7 +102,7 @@ func TestRemoveIgnoresMissingFiles(t *testing.T) {
 
 func TestVerifiedWriteReturnsTheSignatureOfTheWrittenFile(t *testing.T) {
 	store := New(t.TempDir())
-	sig, err := store.Write("a", sample(), true)
+	sig, err := store.Write(t.Context(), "a", sample(), true)
 	if err != nil || sig == nil {
 		t.Fatalf("%v %v", sig, err)
 	}
@@ -119,7 +119,7 @@ func TestExternalReplacementDuringVerifiedWriteDoesNotChangeWrittenIdentity(t *t
 		_ = os.WriteFile(external, []byte(`{"status":{"value":"unreachable"},"days":{}}`), 0o644)
 		_ = os.Rename(external, path)
 	}
-	sig, err := store.Write("a", sample(), true)
+	sig, err := store.Write(t.Context(), "a", sample(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestExternalInPlaceEditDuringVerifiedWriteIsNotSigned(t *testing.T) {
 			}
 			_ = os.Chtimes(path, stamp, stamp)
 		}
-		sig, err := store.Write("a", sample(), true)
+		sig, err := store.Write(t.Context(), "a", sample(), true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -167,10 +167,10 @@ func TestExternalInPlaceEditDuringVerifiedWriteIsNotSigned(t *testing.T) {
 
 func TestWriteFailureLeavesTheOldFile(t *testing.T) {
 	store := New(t.TempDir())
-	if _, err := store.Write("a", sample(), false); err != nil {
+	if _, err := store.Write(t.Context(), "a", sample(), false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Write("a", map[string]any{"x": math.NaN()}, false); err == nil {
+	if _, err := store.Write(t.Context(), "a", map[string]any{"x": math.NaN()}, false); err == nil {
 		t.Fatal("a non-JSON value was written")
 	}
 	if !testjson.Equal(readObject(store, "a"), sample()) {

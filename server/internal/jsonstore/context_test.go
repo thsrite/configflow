@@ -57,7 +57,7 @@ func TestContextWritePublicationLifetime(t *testing.T) {
 					} else {
 						jsonstore.SetPublicationHooksForTest(s, nil, barrier, nil)
 					}
-					sig, err := s.WriteContext(ctx, "synthetic", struct {
+					sig, err := s.Write(ctx, "synthetic", struct {
 						Value string `json:"value"`
 					}{"new"}, signed)
 					if !paused {
@@ -108,7 +108,7 @@ func TestContextRemovePublicationLifetime(t *testing.T) {
 			}
 			paused := false
 			jsonstore.SetPublicationHooksForTest(s, nil, func() { paused = true; cancelOwner() }, nil)
-			err = s.RemoveContext(ctx, "synthetic")
+			err = s.Remove(ctx, "synthetic")
 			if !paused {
 				t.Fatal("unlink barrier was not reached")
 			}
@@ -139,7 +139,7 @@ func TestContextSignedWriteCompletesVerificationAfterRename(t *testing.T) {
 	s := jsonstore.New(t.TempDir())
 	committed := false
 	jsonstore.SetPublicationHooksForTest(s, nil, nil, func(string) { committed = true; shutdown() })
-	sig, err := s.WriteContext(ctx, "synthetic", struct {
+	sig, err := s.Write(ctx, "synthetic", struct {
 		Value int `json:"value"`
 	}{1}, true)
 	if !committed || err != nil || sig == nil {
@@ -155,10 +155,10 @@ func TestContextAlreadyStoppedDoesNotTouchDirectory(t *testing.T) {
 	shutdown()
 	dir := filepath.Join(t.TempDir(), "absent")
 	s := jsonstore.New(dir)
-	if sig, err := s.WriteContext(ctx, "synthetic", struct{}{}, false); !errors.Is(err, context.Canceled) || sig != nil {
+	if sig, err := s.Write(ctx, "synthetic", struct{}{}, false); !errors.Is(err, context.Canceled) || sig != nil {
 		t.Errorf("write: %v %v", sig, err)
 	}
-	if err := s.RemoveContext(ctx, "synthetic"); !errors.Is(err, context.Canceled) {
+	if err := s.Remove(ctx, "synthetic"); !errors.Is(err, context.Canceled) {
 		t.Errorf("remove: %v", err)
 	}
 	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
@@ -173,7 +173,7 @@ func TestContextWriteFailureCleansTempFile(t *testing.T) {
 			if err := os.Mkdir(s.Path("synthetic"), 0700); err != nil {
 				t.Fatal(err)
 			}
-			if sig, err := s.WriteContext(context.Background(), "synthetic", struct{}{}, signed); err == nil || sig != nil {
+			if sig, err := s.Write(context.Background(), "synthetic", struct{}{}, signed); err == nil || sig != nil {
 				t.Fatalf("write: %v %v", sig, err)
 			}
 			if _, err := os.Stat(s.Path("synthetic") + ".tmp"); !errors.Is(err, os.ErrNotExist) {
@@ -233,9 +233,9 @@ func TestReviewCancellationAfterFinalCheckAdmitsOneCommit(t *testing.T) {
 			}}
 			var sig *jsonstore.Signature
 			if operation == "remove" {
-				err = s.RemoveContext(ctx, "synthetic")
+				err = s.Remove(ctx, "synthetic")
 			} else {
-				sig, err = s.WriteContext(ctx, "synthetic", struct {
+				sig, err = s.Write(ctx, "synthetic", struct {
 					Value string `json:"value"`
 				}{"new"}, operation == "signed")
 			}
@@ -260,7 +260,7 @@ func TestReviewCancellationAfterFinalCheckAdmitsOneCommit(t *testing.T) {
 				t.Errorf("temp remains: %v", err)
 			}
 			// The admitted operation does not grant permission to any later one.
-			if err := s.RemoveContext(owner, "synthetic"); !errors.Is(err, context.Canceled) {
+			if err := s.Remove(owner, "synthetic"); !errors.Is(err, context.Canceled) {
 				t.Errorf("next operation admitted: %v", err)
 			}
 		})

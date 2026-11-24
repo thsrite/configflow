@@ -248,7 +248,7 @@ func (h *trafficHandler) setAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response, 
 		return failure(404, "Agent not found"), nil
 	}
 	if !enabled && clear {
-		if err := h.deps.trafficHistory(manager).DeleteContext(c.Context(), c.Param("agent_id")); err != nil {
+		if err := h.deps.trafficHistory(manager).Delete(c.Context(), c.Param("agent_id")); err != nil {
 			return nil, err
 		}
 	}
@@ -287,7 +287,7 @@ func (h *trafficHandler) clearAgentTrafficHistory(c *httpx.Ctx) (*httpx.Response
 	if _, response, err := mihomoAgentOrError(c, manager); response != nil || err != nil {
 		return response, err
 	}
-	if err := h.deps.trafficHistory(manager).DeleteContext(c.Context(), c.Param("agent_id")); err != nil {
+	if err := h.deps.trafficHistory(manager).Delete(c.Context(), c.Param("agent_id")); err != nil {
 		return nil, err
 	}
 	return httpx.JSON(map[string]any{"success": true}), nil

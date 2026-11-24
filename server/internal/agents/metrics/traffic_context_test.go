@@ -18,13 +18,13 @@ func TestTrafficWorkCancellationKeepsPendingAndRollsBack(t *testing.T) {
 	parent, cancel := context.WithCancel(context.Background())
 	ctx := ctxx.WithParent(context.Background(), parent)
 	cancel()
-	if _, err := h.FlushContext(ctx, DefaultRetention, &now); !errors.Is(err, context.Canceled) {
+	if _, err := h.Flush(ctx, DefaultRetention, &now); !errors.Is(err, context.Canceled) {
 		t.Fatalf("flush: %v", err)
 	}
-	if err := h.DeleteContext(ctx, "machine"); !errors.Is(err, context.Canceled) {
+	if err := h.Delete(ctx, "machine"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, err := h.RetainAgentsContext(ctx, nil); !errors.Is(err, context.Canceled) {
+	if _, err := h.RetainAgents(ctx, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("retain: %v", err)
 	}
 	if h.PendingCount() != 1 {
@@ -33,15 +33,15 @@ func TestTrafficWorkCancellationKeepsPendingAndRollsBack(t *testing.T) {
 	if _, err := os.Stat(h.Path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("cancelled work created database: %v", err)
 	}
-	locker, err := h.connect()
+	locker, err := h.connect(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer locker.close()
-	if err = locker.beginContext(context.Background()); err != nil {
+	if err = locker.begin(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	defer locker.rollbackContext(context.Background())
+	defer locker.rollback(context.Background())
 	entered := make(chan struct{})
 	h.connectHook = func() (*trafficConn, error) {
 		db, err := sql.Open("sqlite", h.Path)
@@ -54,7 +54,7 @@ func TestTrafficWorkCancellationKeepsPendingAndRollsBack(t *testing.T) {
 			return nil, err
 		}
 		c := &trafficConn{db: db, conn: conn}
-		if _, err = c.execContext(context.Background(), "PRAGMA busy_timeout=1000"); err != nil {
+		if _, err = c.exec(context.Background(), "PRAGMA busy_timeout=1000"); err != nil {
 			c.close()
 			return nil, err
 		}
@@ -65,7 +65,7 @@ func TestTrafficWorkCancellationKeepsPendingAndRollsBack(t *testing.T) {
 	defer cancel()
 	ctx = ctxx.WithParent(context.Background(), parent)
 	done := make(chan error, 1)
-	go func() { _, err := h.FlushContext(ctx, DefaultRetention, &now); done <- err }()
+	go func() { _, err := h.Flush(ctx, DefaultRetention, &now); done <- err }()
 	select {
 	case <-entered:
 	case <-time.After(5 * time.Second):
@@ -93,10 +93,10 @@ func TestTrafficWorkCancellationKeepsPendingAndRollsBack(t *testing.T) {
 	if err := locker.conn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM traffic_usage").Scan(&count); err != nil || count != 0 {
 		t.Fatalf("partial write: %d %v", count, err)
 	}
-	if err := locker.rollbackContext(context.Background()); err != nil {
+	if err := locker.rollback(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.FlushContext(context.Background(), DefaultRetention, &now); err != nil {
+	if _, err := h.Flush(context.Background(), DefaultRetention, &now); err != nil {
 		t.Fatal(err)
 	}
 	if h.PendingCount() != 0 {
@@ -109,14 +109,14 @@ func TestTrafficWorkCancellationKeepsPendingAndRollsBack(t *testing.T) {
 }
 
 func TestHistoryWorkCancellationPreservesFile(t *testing.T) {
-	h := NewHistory(t.TempDir(), 10)
+	h := newTestHistory(t, t.TempDir(), 10)
 	path := h.agentFile("machine")
 	if err := os.WriteFile(path, []byte("history"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	parent, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := h.DeleteAgentHistoryContext(ctxx.WithParent(context.Background(), parent), "machine"); !errors.Is(err, context.Canceled) {
+	if _, err := h.DeleteAgentHistory(ctxx.WithParent(context.Background(), parent), "machine"); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 	if raw, err := os.ReadFile(path); err != nil || string(raw) != "history" {

@@ -457,7 +457,7 @@ func TestReferenceLegacyRows(t *testing.T) {
 			}
 			db.Close()
 		}
-		rows, err := readLegacyRows(path)
+		rows, err := readLegacyRows(t.Context(), path)
 		got := []any{}
 		for _, row := range rows {
 			got = append(got, []any{row.agentID, pyFloatRepr(row.heartbeatAt), row.lastHeartbeat, row.fields})

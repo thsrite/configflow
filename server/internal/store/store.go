@@ -300,13 +300,10 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
 //
 // A document that cannot be stored fails with ErrDocument before anything
 // is written; SQLite failures are ErrStorage.
-func (s *Store) Commit(base Entry, document *Document, meta map[string]json.RawMessage) (entry Entry, committed bool, err error) {
-	return s.CommitContext(context.Background(), base, document, meta)
-}
-
-// CommitContext commits while ctx permits writing. Cancellation after
+//
+// Commit commits while ctx permits writing. Cancellation after
 // BeforeCommit and before COMMIT rolls back the complete SQLite transaction.
-func (s *Store) CommitContext(ctx context.Context, base Entry, document *Document, meta map[string]json.RawMessage) (entry Entry, committed bool, err error) {
+func (s *Store) Commit(ctx context.Context, base Entry, document *Document, meta map[string]json.RawMessage) (entry Entry, committed bool, err error) {
 	if err := ctx.Err(); err != nil {
 		return Entry{}, false, err
 	}

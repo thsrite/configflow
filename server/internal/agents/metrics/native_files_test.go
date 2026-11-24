@@ -18,13 +18,13 @@ import (
 func TestNativeFilesRetainPointsAndSkipMissingSamples(t *testing.T) {
 	c := useClock(t)
 	dir := t.TempDir()
-	h := NewHistory(dir, MaxPointsPerAgent)
+	h := newTestHistory(t, dir, MaxPointsPerAgent)
 	stamp := timefmt.Naive(naiveNow())
 	raw := `{"timestamp":"` + stamp + `","cpu":{"usage_percent":NaN},"network":{"bytes_sent":Infinity,"bytes_recv":7}}`
 	if err := os.WriteFile(h.agentFile("a"), []byte(raw+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.Load([]string{"a"}); err != nil {
+	if _, err := h.Load(t.Context(), []string{"a"}); err != nil {
 		t.Fatal(err)
 	}
 	got := get(t, h, "a", 24)
@@ -53,7 +53,7 @@ func TestNativeFilesRetainPointsAndSkipMissingSamples(t *testing.T) {
 	}
 	// A forced rewrite repairs stored literals without dropping the point.
 	h.rewrite["a"] = true
-	if _, err := h.Flush(); err != nil {
+	if _, err := h.Flush(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(h.agentFile("a"))
@@ -113,8 +113,8 @@ print('Python loaded and saved 1 null-bearing point; summary/traffic TypeError')
 			t.Fatalf("%s: %v %s", suffix, err, out)
 		}
 		// Python's real flush writes JSONL; native loading reads it back too.
-		round := NewHistory(sub, MaxPointsPerAgent)
-		if _, err := round.Load([]string{"a"}); err != nil {
+		round := newTestHistory(t, sub, MaxPointsPerAgent)
+		if _, err := round.Load(t.Context(), []string{"a"}); err != nil {
 			t.Fatal(err)
 		}
 		points, err := round.Samples("a", nil)
@@ -143,7 +143,7 @@ func FuzzSavedMetricLines(f *testing.F) {
 
 func TestMemoryCacheDoesNotApplyStoredJSONRepair(t *testing.T) {
 	useClock(t)
-	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
+	h := newTestHistory(t, t.TempDir(), MaxPointsPerAgent)
 	at := naiveNow()
 	h.points["a"] = []point{{at, `{"timestamp":"` + timefmt.Naive(at) + `","cpu":{"usage_percent":NaN}}`}}
 	samples, err := h.Samples("a", nil)

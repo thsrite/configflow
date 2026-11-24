@@ -560,19 +560,19 @@ func TestReferenceRankingScenario(t *testing.T) {
 			}
 			got = []any{int64(stored), caught}
 		case "add":
-			added, err := store.AddSlot(asStr(op["agent"]), asStr(op["recorder"]), asInt64(op["start"]), slotFromCorpus(asMap(op["slot"])))
+			added, err := store.StoreSlot(t.Context(), asStr(op["agent"]), asStr(op["recorder"]), asInt64(op["start"]), slotFromCorpus(asMap(op["slot"])))
 			if err != nil {
 				t.Fatal(err)
 			}
 			got = added
 		case "query":
-			answer, err := store.Query(asStr(op["agent"]), asStr(op["recorder"]), asInt64(op["since"]), asInt64(op["until"]))
+			answer, err := store.Query(t.Context(), asStr(op["agent"]), asStr(op["recorder"]), asInt64(op["since"]), asInt64(op["until"]))
 			if err != nil {
 				t.Fatal(err)
 			}
 			got = answerJSON(answer)
 		case "has_any":
-			found, err := store.HasAny(asStr(op["agent"]), asStr(op["recorder"]))
+			found, err := store.HasAny(t.Context(), asStr(op["agent"]), asStr(op["recorder"]))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -582,7 +582,7 @@ func TestReferenceRankingScenario(t *testing.T) {
 			for _, s := range asList(op["starts"]) {
 				starts = append(starts, asInt64(s))
 			}
-			done, err := store.Fetched(asStr(op["agent"]), asStr(op["recorder"]), starts)
+			done, err := store.Fetched(t.Context(), asStr(op["agent"]), asStr(op["recorder"]), starts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -601,7 +601,7 @@ func TestReferenceRankingScenario(t *testing.T) {
 			for _, id := range asList(op["agents"]) {
 				ids = append(ids, id.(string))
 			}
-			if err := store.Maintain(ids, i64(asInt64(op["now"]))); err != nil {
+			if err := store.Maintain(t.Context(), ids, i64(asInt64(op["now"]))); err != nil {
 				t.Fatal(err)
 			}
 			got = store.version

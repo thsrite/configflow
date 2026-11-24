@@ -58,7 +58,7 @@ func TestNativeRankingSQLRollsBackAtShutdown(t *testing.T) {
 	if added, err := store.StoreSlot(lifecycle.Detach(request), "dns", "r", 0, slot); err != nil || !added {
 		t.Fatalf("disconnect canceled slot: %v", err)
 	}
-	err := store.withContext(bound, func(c *rankConn) error {
+	err := store.with(bound, func(c *rankConn) error {
 		if _, err := c.write("INSERT INTO ranking_slots (agent_id,recorder,start) VALUES (?, ?, ?)", "dns", "r", HistorySlot); err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ func TestNativeRankingSQLRollsBackAtShutdown(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("shutdown commit returned %v", err)
 	}
-	fetched, err := store.Fetched("dns", "r", []int64{0, HistorySlot})
+	fetched, err := store.Fetched(t.Context(), "dns", "r", []int64{0, HistorySlot})
 	if err != nil || !fetched[0] || fetched[HistorySlot] {
 		t.Fatalf("shutdown SQL committed: %v %v", fetched, err)
 	}

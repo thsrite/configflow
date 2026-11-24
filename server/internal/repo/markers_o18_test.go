@@ -36,7 +36,7 @@ func storeSharedRows(t *testing.T, r *Repository, rows map[string]string) {
 			base.Document.Shared.Fields = append(base.Document.Shared.Fields, store.Field{Name: name, Value: json.RawMessage(value)})
 		}
 	}
-	_, _, err := r.store.Commit(base, base.Document, nil)
+	_, _, err := r.store.Commit(t.Context(), base, base.Document, nil)
 	noError(t, err)
 	r.dropCache()
 }

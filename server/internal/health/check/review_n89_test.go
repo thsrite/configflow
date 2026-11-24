@@ -60,13 +60,13 @@ func TestReviewN89StoreCommitLifetime(t *testing.T) {
 				go func() {
 					switch operation {
 					case "probe-save":
-						done <- probe.SaveEntriesContext(ctx, "synthetic", results, now)
+						done <- probe.SaveEntries(ctx, "synthetic", results, now)
 					case "region-update":
-						done <- region.UpdateDataContext(ctx, "synthetic", func(data *check.RegionData) error { data.Services = json.RawMessage(`{"new":true}`); return nil }, now)
+						done <- region.UpdateData(ctx, "synthetic", func(data *check.RegionData) error { data.Services = json.RawMessage(`{"new":true}`); return nil }, now)
 					case "probe-delete":
-						done <- probe.DeleteContext(ctx, "synthetic")
+						done <- probe.Delete(ctx, "synthetic")
 					case "region-delete":
-						done <- region.DeleteContext(ctx, "synthetic")
+						done <- region.Delete(ctx, "synthetic")
 					}
 				}()
 				select {
@@ -148,7 +148,7 @@ func TestReviewN89RegionUpdateChecksLifetimeAfterMutator(t *testing.T) {
 			if err := os.WriteFile(store.Path("synthetic"), []byte(before), 0600); err != nil {
 				t.Fatal(err)
 			}
-			err := store.UpdateDataContext(lifecycle.Detach(request), "synthetic", func(data *check.RegionData) error {
+			err := store.UpdateData(lifecycle.Detach(request), "synthetic", func(data *check.RegionData) error {
 				data.Services = json.RawMessage(`{"new":true}`)
 				if shutdown {
 					runtime.Shutdown(context.Background())
@@ -236,13 +236,13 @@ func TestReviewN89LeafCommitLifetime(t *testing.T) {
 				case "probe-save":
 					var entries model.OrderedMap[check.TimedRecord]
 					entries.Set("example.com", timedAt("2030-01-02T00:00:00"))
-					err = probe.SaveEntriesContext(ctx, "synthetic", entries, now)
+					err = probe.SaveEntries(ctx, "synthetic", entries, now)
 				case "region-update":
-					err = region.UpdateDataContext(ctx, "synthetic", func(data *check.RegionData) error { data.Services = json.RawMessage(`{"new":true}`); return nil }, now)
+					err = region.UpdateData(ctx, "synthetic", func(data *check.RegionData) error { data.Services = json.RawMessage(`{"new":true}`); return nil }, now)
 				case "probe-delete":
-					err = probe.DeleteContext(ctx, "synthetic")
+					err = probe.Delete(ctx, "synthetic")
 				case "region-delete":
-					err = region.DeleteContext(ctx, "synthetic")
+					err = region.Delete(ctx, "synthetic")
 				}
 				if !paused {
 					t.Fatal("final health check was not reached")

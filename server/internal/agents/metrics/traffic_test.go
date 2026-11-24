@@ -263,7 +263,7 @@ func TestReportsStayInMemoryUntilFlushAndQueriesIncludePending(t *testing.T) {
 	destination := query(t, h, "a1", "24h", "destination")
 	eq(t, "destination parts", keyDown(destination.Rows[0].Parts),
 		pairs(joined(chainAI), 100, joined(chainDirect), 40))
-	result, err := h.Flush(DefaultRetention, at(trafficNOW))
+	result, err := h.Flush(t.Context(), DefaultRetention, at(trafficNOW))
 	if err != nil || result != (TrafficFlushResult{Rows: 6}) {
 		t.Fatalf("flush %+v %v", result, err)
 	}
@@ -272,7 +272,7 @@ func TestReportsStayInMemoryUntilFlushAndQueriesIncludePending(t *testing.T) {
 	}
 	// 保存后再收到同一小时的数据，累加而不是覆盖
 	_ = h.AddTraffic(context.Background(), "a1", cleanAt(t, trafficReport([]any{usage(func(u *usageItem) { u.down = 1 })}, nil, 2)))
-	if _, err := h.Flush(DefaultRetention, at(trafficNOW)); err != nil {
+	if _, err := h.Flush(t.Context(), DefaultRetention, at(trafficNOW)); err != nil {
 		t.Fatal(err)
 	}
 	db := openDB(t, filepath.Join(dir, TrafficFilename))
@@ -337,12 +337,12 @@ func TestFailedFlushKeepsTheDataForTheNextRun(t *testing.T) {
 	h := NewTrafficHistory(filepath.Join(t.TempDir(), "metrics"))
 	_ = h.AddTraffic(context.Background(), "a1", cleanAt(t, trafficReport([]any{usage(func(u *usageItem) { u.down = 7 })}, nil, 2)))
 	restore := h.SetBrokenConnect(errors.New("disk I/O error"))
-	if _, err := h.Flush(DefaultRetention, at(trafficNOW)); err == nil || err.Error() != "disk I/O error" {
+	if _, err := h.Flush(t.Context(), DefaultRetention, at(trafficNOW)); err == nil || err.Error() != "disk I/O error" {
 		t.Fatalf("err %v", err)
 	}
 	_ = h.AddTraffic(context.Background(), "a1", cleanAt(t, trafficReport([]any{usage(func(u *usageItem) { u.down = 3 })}, nil, 2)))
 	restore()
-	if _, err := h.Flush(DefaultRetention, at(trafficNOW)); err != nil {
+	if _, err := h.Flush(t.Context(), DefaultRetention, at(trafficNOW)); err != nil {
 		t.Fatal(err)
 	}
 	if down := query(t, h, "a1", "24h", "source").Total.Down; !testjson.Equal(10, down) {
@@ -363,7 +363,7 @@ func TestOldHoursAreMergedIntoDaysAndExpiredDaysAreDeleted(t *testing.T) {
 	}
 	cleaned.Targets = append(cleaned.Targets, TargetRow{old + Hour, "10.0.0.2", "site101.example", direct, 0, 1, 1})
 	_ = h.AddTraffic(context.Background(), "a1", cleaned)
-	result, err := h.Flush(90, at(trafficNOW))
+	result, err := h.Flush(t.Context(), 90, at(trafficNOW))
 	if err != nil || result.Pruned != 1 {
 		t.Fatalf("%+v %v", result, err)
 	}
@@ -394,17 +394,17 @@ func TestDeleteAndRetainRemoveAgents(t *testing.T) {
 	for _, agent := range []string{"a1", "a2", "a3"} {
 		_ = h.AddTraffic(context.Background(), agent, cleanAt(t, trafficReport([]any{usage()}, nil, 2)))
 	}
-	if _, err := h.Flush(DefaultRetention, at(trafficNOW)); err != nil {
+	if _, err := h.Flush(t.Context(), DefaultRetention, at(trafficNOW)); err != nil {
 		t.Fatal(err)
 	}
 	_ = h.AddTraffic(context.Background(), "a1", cleanAt(t, trafficReport([]any{usage()}, nil, 2)))
-	if err := h.Delete("a1"); err != nil {
+	if err := h.Delete(t.Context(), "a1"); err != nil {
 		t.Fatal(err)
 	}
 	if len(query(t, h, "a1", "24h", "source").Rows) != 0 {
 		t.Fatal("a1 kept")
 	}
-	if n, err := h.RetainAgents([]string{"a2"}); err != nil || n != 1 {
+	if n, err := h.RetainAgents(t.Context(), []string{"a2"}); err != nil || n != 1 {
 		t.Fatal(n, err)
 	}
 	if len(query(t, h, "a3", "24h", "source").Rows) != 0 {

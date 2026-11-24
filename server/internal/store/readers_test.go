@@ -139,7 +139,7 @@ func TestBuildTemporaryKeepsNoReader(t *testing.T) {
 // locked" equally with pooling disabled (HR O18 T1a). Lock timeouts are not
 // what this test checks.
 func TestPooledReadsRaceWithCommits(t *testing.T) {
-	target := legacyNew(filepath.Join(t.TempDir(), Filename), seconds(60))
+	target := legacyNew(t, filepath.Join(t.TempDir(), Filename), seconds(60))
 	entry := must(target.Create(sampleDocument(t), nil))(t)
 	const commits = 20
 	done := make(chan struct{})

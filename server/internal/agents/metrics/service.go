@@ -70,10 +70,11 @@ func New(opts Options) *Service {
 	if ts == nil {
 		ts = trafficstore.NewService(dataDir)
 	}
+	history, _ := NewHistory(context.Background(), metricsDir, MaxPointsPerAgent)
 	s := &Service{
 		repo:          opts.Repo,
 		dataDir:       dataDir,
-		history:       NewHistory(metricsDir, MaxPointsPerAgent),
+		history:       history,
 		traffic:       NewTrafficHistory(metricsDir),
 		trafficStore:  ts,
 		notifications: opts.Notifications,
@@ -102,13 +103,13 @@ func (s *Service) AddMetricsJSON(ctx context.Context, _ *agents.Manager, agentID
 // DeleteMetricsHistory deletes an Agent's metrics history.
 func (s *Service) DeleteMetricsHistory(ctx context.Context, _ *agents.Manager, agentID string) error {
 	ctx = lifecycle.Detach(ctx)
-	_, err := s.history.DeleteAgentHistoryContext(ctx, agentID)
+	_, err := s.history.DeleteAgentHistory(ctx, agentID)
 	return err
 }
 
 // DeleteTrafficHistory deletes an Agent's traffic history.
 func (s *Service) DeleteTrafficHistory(ctx context.Context, _ *agents.Manager, agentID string) error {
-	return s.traffic.DeleteContext(ctx, agentID)
+	return s.traffic.Delete(ctx, agentID)
 }
 
 // TrafficStoreDeleter returns the NamedDeleter clearing an Agent's traffic store.
@@ -121,14 +122,14 @@ func (s *Service) flushTraffic(ctx context.Context, agentIDs []string, system *m
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	if _, err := s.traffic.RetainAgentsContext(ctx, agentIDs); err != nil {
+	if _, err := s.traffic.RetainAgents(ctx, agentIDs); err != nil {
 		return 0, err
 	}
 	retention, err := TrafficRetention(system)
 	if err != nil {
 		return 0, err
 	}
-	result, err := s.traffic.FlushContext(ctx, retention, nil)
+	result, err := s.traffic.Flush(ctx, retention, nil)
 	if err != nil {
 		return 0, err
 	}

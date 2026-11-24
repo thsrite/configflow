@@ -165,25 +165,25 @@ func TestOpenAndPermissionFailures(t *testing.T) {
 	}
 	directory := t.TempDir()
 	path := filepath.Join(directory, Filename)
-	must(legacyNew(path, seconds(1)).Create(testObj("a", 1), nil))(t)
+	must(legacyNew(t, path, seconds(1)).Create(testObj("a", 1), nil))(t)
 	if err := os.Chmod(path, 0); err != nil {
 		t.Fatal(err)
 	}
-	unreadable := legacyNew(path, seconds(1))
+	unreadable := legacyNew(t, path, seconds(1))
 	_, err := unreadable.Load()
 	assertKind(t, "unreadable load", err, ErrStorage, "配置数据库访问失败：unable to open database file")
 	assertKind(t, "unreadable check", unreadable.Check(), ErrSQLite, "unable to open database file")
 	if unreadable.SalvageMeta() != nil {
 		t.Error("unreadable salvage: want nil")
 	}
-	folder := legacyNew(directory, seconds(1))
+	folder := legacyNew(t, directory, seconds(1))
 	_, err = folder.Load()
 	assertKind(t, "directory load", err, ErrStorage, "配置数据库访问失败：unable to open database file")
 	assertKind(t, "directory check", folder.Check(), ErrSQLite, "unable to open database file")
 	if err := os.Chmod(path, 0o400); err != nil {
 		t.Fatal(err)
 	}
-	readonly := legacyNew(path, seconds(1))
+	readonly := legacyNew(t, path, seconds(1))
 	entry := must(readonly.Load())(t)
 	_, _, err = readonly.Commit(entry, testObj("a", 2), nil)
 	assertKind(t, "read-only commit", err, ErrStorage, "配置数据库访问失败：attempt to write a readonly database")
@@ -199,7 +199,7 @@ func TestPathsWithURISpecialCharacters(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(directory, Filename)
-	target := legacyNew(path, seconds(1))
+	target := legacyNew(t, path, seconds(1))
 	must(target.Create(sampleDocument(t), nil))(t)
 	entry := must(target.Load())(t)
 	document := entry.Document.Clone()
@@ -215,7 +215,7 @@ func TestPathsWithURISpecialCharacters(t *testing.T) {
 	if err := target.BackupTo(backup); err != nil {
 		t.Fatal(err)
 	}
-	if got := must(legacyNew(backup, seconds(1)).Load())(t); !got.Document.Has("written") {
+	if got := must(legacyNew(t, backup, seconds(1)).Load())(t); !got.Document.Has("written") {
 		t.Error("backup lacks the commit")
 	}
 	entries := must(os.ReadDir(directory))(t)

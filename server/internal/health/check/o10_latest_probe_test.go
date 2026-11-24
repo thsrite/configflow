@@ -37,7 +37,7 @@ func seedProbeHosts(t *testing.T, store *ProbeStore, agentID string, hosts []str
 	for _, host := range hosts {
 		entries.Set(host, mustTimedRecord(t, `{"checked_at":"`+NaiveISOSeconds(checked)+`","verdict":"both_ok"}`))
 	}
-	if err := store.SaveEntries(agentID, entries, checked); err != nil {
+	if err := store.SaveEntries(t.Context(), agentID, entries, checked); err != nil {
 		t.Fatal(err)
 	}
 }

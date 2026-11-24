@@ -235,7 +235,7 @@ func TestStoresTreatCorruptFilesAsEmpty(t *testing.T) {
 	if hosts := probes.LoadEntries("a1", time.Time{}); hosts.Len() != 0 {
 		t.Fatal(hosts)
 	}
-	_ = probes.Delete("a1")
+	_ = probes.Delete(t.Context(), "a1")
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("probe file kept")
 	}
@@ -244,11 +244,11 @@ func TestStoresTreatCorruptFilesAsEmpty(t *testing.T) {
 	if regions.LoadData("a1").Domains.Len() != 0 {
 		t.Fatal("domains")
 	}
-	_ = regions.Delete("a1")
+	_ = regions.Delete(t.Context(), "a1")
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("region file kept")
 	}
-	if err := regions.Delete("a1"); err != nil {
+	if err := regions.Delete(t.Context(), "a1"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -344,13 +344,13 @@ func TestProbeStoreKeepsLatestAndExpires(t *testing.T) {
 	old := time.Date(2026, 8, 1, 0, 0, 0, 0, time.Local)
 	var oldEntries model.OrderedMap[TimedRecord]
 	oldEntries.Set("old.com", mustTimedRecord(t, `{"checked_at":"`+NaiveISOSeconds(old)+`","verdict":"unreachable"}`))
-	if err := store.SaveEntries("a1", oldEntries, old); err != nil {
+	if err := store.SaveEntries(t.Context(), "a1", oldEntries, old); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 10, 10, 0, 0, 0, 0, time.Local)
 	var newEntries model.OrderedMap[TimedRecord]
 	newEntries.Set("new.com", mustTimedRecord(t, `{"checked_at":"`+NaiveISOSeconds(now)+`","verdict":"needs_proxy"}`))
-	if err := store.SaveEntries("a1", newEntries, now); err != nil {
+	if err := store.SaveEntries(t.Context(), "a1", newEntries, now); err != nil {
 		t.Fatal(err)
 	}
 	hosts := store.LoadEntries("a1", now)
@@ -393,7 +393,7 @@ func TestProbeStoreKeepsTheNewest5000Hosts(t *testing.T) {
 		}
 		results.Set("h"+strconv.Itoa(i), timedAt(checked))
 	}
-	if err := store.SaveEntries("a", results, now); err != nil {
+	if err := store.SaveEntries(t.Context(), "a", results, now); err != nil {
 		t.Fatal(err)
 	}
 	hosts := store.LoadEntries("a", now)
@@ -408,7 +408,7 @@ func TestCacheExpiryAndBound(t *testing.T) {
 	store := NewRegionStore(t.TempDir())
 	now := time.Now()
 	iso := func(tm time.Time) string { return tm.Format("2006-01-02T15:04:05.000000") }
-	err := store.UpdateData("a", func(data *RegionData) error {
+	err := store.UpdateData(t.Context(), "a", func(data *RegionData) error {
 		data.Websites.Set("old.test", timedAt(iso(now.AddDate(0, 0, -31))))
 		for i := 0; i < 1001; i++ {
 			data.Websites.Set(strconv.Itoa(i)+".test", timedAt(iso(now)))

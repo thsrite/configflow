@@ -70,7 +70,7 @@ func waitForStateTaskStatusLock(t *testing.T) {
 		}
 		for _, goroutine := range strings.Split(string(stack[:n]), "\n\n") {
 			if strings.Contains(goroutine, "rulesync.(*Service).saveState") &&
-				strings.Contains(goroutine, "taskstatus.(*Store).lockedContext") &&
+				strings.Contains(goroutine, "taskstatus.(*Store).locked") &&
 				strings.Contains(goroutine, "sync.(*Mutex).Lock") {
 				return
 			}

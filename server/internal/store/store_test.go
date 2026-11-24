@@ -49,7 +49,7 @@ func seconds(value float64) func() time.Duration {
 
 func newStore(t testing.TB) *legacyStore {
 	t.Helper()
-	return legacyNew(filepath.Join(t.TempDir(), Filename), seconds(2.5))
+	return legacyNew(t, filepath.Join(t.TempDir(), Filename), seconds(2.5))
 }
 
 func compact(t testing.TB, value any) string {
@@ -128,7 +128,7 @@ func TestRowsRoundTripPreservesOrderUnicodeAndExtraKeys(t *testing.T) {
 
 	target := newStore(t)
 	must(target.Create(document, nil))(t)
-	loaded := must(legacyNew(target.Path(), seconds(1)).Load())(t).Document
+	loaded := must(legacyNew(t, target.Path(), seconds(1)).Load())(t).Document
 	if compact(t, loaded) != compact(t, document) {
 		t.Fatal(compact(t, loaded))
 	}
@@ -158,7 +158,7 @@ func TestDocumentIsByteIdenticalAfterReopening(t *testing.T) {
 	entry = mustCommit(t, target, entry, document, nil)
 
 	exported := must(marshalIndent2(entry.Document))(t)
-	reopened := must(legacyNew(target.Path(), seconds(1)).Load())(t)
+	reopened := must(legacyNew(t, target.Path(), seconds(1)).Load())(t)
 	if again := must(marshalIndent2(reopened.Document))(t); string(again) != string(exported) || string(again) != string(must(marshalIndent2(document))(t)) {
 		t.Fatalf("%s", again)
 	}
@@ -171,7 +171,7 @@ func TestDocumentIsByteIdenticalAfterReopening(t *testing.T) {
 }
 
 func TestPragmasAndFileMode(t *testing.T) {
-	target := legacyNew(filepath.Join(t.TempDir(), Filename), seconds(7))
+	target := legacyNew(t, filepath.Join(t.TempDir(), Filename), seconds(7))
 	must(target.Create(sampleDocument(t), nil))(t)
 	connection := must(target.connect(false))(t)
 	defer connection.close()
@@ -358,7 +358,7 @@ func TestFingerprintIsStableAcrossReadsAndChangesOnWrite(t *testing.T) {
 	first := must(target.Fingerprint())(t)
 	must(target.Load())(t)
 	must(target.Meta("root_order"))(t)
-	must(legacyNew(target.Path(), seconds(1)).Load())(t)
+	must(legacyNew(t, target.Path(), seconds(1)).Load())(t)
 	if err := target.Check(); err != nil {
 		t.Fatal(err)
 	}
@@ -458,8 +458,8 @@ func TestCheckRejectsDamagedAndNewerFiles(t *testing.T) {
 // database is a failure to report, not a damaged file.
 func TestLockedDatabaseIsNotCorrupt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), Filename)
-	base := must(legacyNew(path, seconds(1)).Create(sampleDocument(t), nil))(t)
-	target := legacyNew(path, seconds(0.2))
+	base := must(legacyNew(t, path, seconds(1)).Create(sampleDocument(t), nil))(t)
+	target := legacyNew(t, path, seconds(0.2))
 	holder := must(connect(path, false, 0))(t)
 	if err := holder.begin("BEGIN EXCLUSIVE"); err != nil {
 		t.Fatal(err)
@@ -511,7 +511,7 @@ func TestBeforeCommitHook(t *testing.T) {
 	target.BeforeCommit = func() error {
 		calls++
 		started := time.Now()
-		seen := must(legacyNew(target.Path(), seconds(2)).Load())(t)
+		seen := must(legacyNew(t, target.Path(), seconds(2)).Load())(t)
 		if seen.Head != base.Head || time.Since(started) > time.Second {
 			t.Errorf("reader saw %v after %v", seen.Head, time.Since(started))
 		}
@@ -543,7 +543,7 @@ func TestBackupTo(t *testing.T) {
 	document.Set("schema_version", 6)
 	mustCommit(t, target, base, document, nil)
 
-	copied := legacyNew(backup, seconds(1))
+	copied := legacyNew(t, backup, seconds(1))
 	if err := copied.Check(); err != nil {
 		t.Fatal(err)
 	}
@@ -556,7 +556,7 @@ func TestBackupTo(t *testing.T) {
 	if pragma(t, connection, "application_id") != "1128680535" || pragma(t, connection, "journal_mode") != "delete" {
 		t.Fatal("the backup lost the database header")
 	}
-	missing := legacyNew(filepath.Join(t.TempDir(), Filename), seconds(1))
+	missing := legacyNew(t, filepath.Join(t.TempDir(), Filename), seconds(1))
 	if err := missing.BackupTo(filepath.Join(t.TempDir(), "x.sqlite3")); !errors.Is(err, ErrStorage) {
 		t.Fatal(err)
 	}
@@ -645,7 +645,7 @@ func TestDiscardStaleTemporaries(t *testing.T) {
 
 func TestSQLiteMessage(t *testing.T) {
 	path := filepath.Join(t.TempDir(), Filename)
-	must(legacyNew(path, seconds(1)).Create(sampleDocument(t), nil))(t)
+	must(legacyNew(t, path, seconds(1)).Create(sampleDocument(t), nil))(t)
 	connection := must(connect(path, false, time.Second))(t)
 	defer connection.close()
 	for statement, want := range map[string]string{

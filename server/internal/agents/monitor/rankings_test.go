@@ -251,7 +251,7 @@ func collectAll(t *testing.T, store *RankingStore, agent *model.Agent, fake *fak
 
 func query1(t *testing.T, store *RankingStore, agentID, recorder string, since, until int64) *HistoryAnswer {
 	t.Helper()
-	answer, err := store.Query(agentID, recorder, since, until)
+	answer, err := store.Query(t.Context(), agentID, recorder, since, until)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +445,7 @@ func testSlot(records int64, blocked *int64, rows map[string]*Counts) *Slot {
 
 func addSlot(t *testing.T, store *RankingStore, agentID, recorder string, start int64, slot *Slot) bool {
 	t.Helper()
-	added, err := store.AddSlot(agentID, recorder, start, slot)
+	added, err := store.StoreSlot(t.Context(), agentID, recorder, start, slot)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +491,7 @@ func TestRecordersAndDevicesAreKeptApart(t *testing.T) {
 
 func withConn(t *testing.T, store *RankingStore, body func(c *rankConn) error) {
 	t.Helper()
-	if err := store.with(body); err != nil {
+	if err := store.with(t.Context(), body); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -502,7 +502,7 @@ func TestOldHoursBecomeDaysWithTheSameTotalsAndExpiredDaysGo(t *testing.T) {
 	collectAll(t, store, historyAgent, newFakeAgent(records), t0+2*rDay+120)
 	before := *query1(t, store, "dns", "records", t0, t0+2*rDay)
 	// Ten days later the two days are older than the hourly window.
-	if err := store.Maintain([]string{"dns"}, i64(t0+12*rDay)); err != nil {
+	if err := store.Maintain(t.Context(), []string{"dns"}, i64(t0+12*rDay)); err != nil {
 		t.Fatal(err)
 	}
 	var kinds []int64
@@ -528,7 +528,7 @@ func TestOldHoursBecomeDaysWithTheSameTotalsAndExpiredDaysGo(t *testing.T) {
 	}
 	// Merging again changes nothing (a new hour: maintenance runs again).
 	store.maintainedHour = nil
-	if err := store.Maintain([]string{"dns"}, i64(t0+12*rDay)); err != nil {
+	if err := store.Maintain(t.Context(), []string{"dns"}, i64(t0+12*rDay)); err != nil {
 		t.Fatal(err)
 	}
 	again := query1(t, store, "dns", "records", t0, t0+2*rDay)
@@ -536,7 +536,7 @@ func TestOldHoursBecomeDaysWithTheSameTotalsAndExpiredDaysGo(t *testing.T) {
 		t.Fatal(again, after)
 	}
 	// Past the retention period everything of that time is gone.
-	if err := store.Maintain([]string{"dns"}, i64(t0+(HistoryRetentionDay+3)*rDay)); err != nil {
+	if err := store.Maintain(t.Context(), []string{"dns"}, i64(t0+(HistoryRetentionDay+3)*rDay)); err != nil {
 		t.Fatal(err)
 	}
 	if query1(t, store, "dns", "records", 0, t0+4*rDay).Slots != 0 {
@@ -548,7 +548,7 @@ func TestARemovedDeviceLosesItsHistory(t *testing.T) {
 	store := NewRankingStore(t.TempDir())
 	addSlot(t, store, "gone", "records", t0, testSlot(1, nil, map[string]*Counts{"clients": NewCounts("192.0.2.1", 1)}))
 	addSlot(t, store, "kept", "records", t0, testSlot(1, nil, map[string]*Counts{"clients": NewCounts("192.0.2.1", 1)}))
-	if err := store.Maintain([]string{"kept"}, i64(t0+rHour)); err != nil {
+	if err := store.Maintain(t.Context(), []string{"kept"}, i64(t0+rHour)); err != nil {
 		t.Fatal(err)
 	}
 	if query1(t, store, "gone", "records", t0, t0+rHour).Slots != 0 || query1(t, store, "kept", "records", t0, t0+rHour).Slots != 1 {
@@ -835,7 +835,7 @@ func TestAnswersAreReusedUntilASlotIsStored(t *testing.T) {
 	sums := 0
 	store.queryHook = func(agentID, recorder string, since, until int64) (*HistoryAnswer, error) {
 		sums++
-		return store.query(agentID, recorder, since, until)
+		return store.query(t.Context(), agentID, recorder, since, until)
 	}
 	first := query1(t, store, "dns", "records", t0, t0+rHour)
 	for range 5 { // the panel polls
@@ -856,7 +856,7 @@ func TestAnswersAreReusedUntilASlotIsStored(t *testing.T) {
 		t.Fatal(sums)
 	}
 	// Maintenance that removes data also makes answers stale.
-	if err := store.Maintain([]string{"someone-else"}, i64(t0+rHour)); err != nil {
+	if err := store.Maintain(t.Context(), []string{"someone-else"}, i64(t0+rHour)); err != nil {
 		t.Fatal(err)
 	}
 	if query1(t, store, "dns", "records", t0, t0+rHour).Slots != 0 || sums != 3 {
@@ -867,14 +867,14 @@ func TestAnswersAreReusedUntilASlotIsStored(t *testing.T) {
 func TestMaintenanceRunsOnceAnHour(t *testing.T) {
 	store := NewRankingStore(t.TempDir())
 	addSlot(t, store, "dns", "records", t0, testSlot(1, nil, map[string]*Counts{"clients": NewCounts("192.0.2.1", 1)}))
-	if err := store.Maintain([]string{"dns"}, i64(t0+10)); err != nil {
+	if err := store.Maintain(t.Context(), []string{"dns"}, i64(t0+10)); err != nil {
 		t.Fatal(err)
 	}
-	store.Maintain(nil, i64(t0+20)) // the same hour: skipped, the device's data stays
+	store.Maintain(t.Context(), nil, i64(t0+20)) // the same hour: skipped, the device's data stays
 	if query1(t, store, "dns", "records", t0, t0+rHour).Slots != 1 {
 		t.Fatal("removed in the same hour")
 	}
-	store.Maintain(nil, i64(t0+rHour))
+	store.Maintain(t.Context(), nil, i64(t0+rHour))
 	if query1(t, store, "dns", "records", t0, t0+rHour).Slots != 0 {
 		t.Fatal("not removed")
 	}

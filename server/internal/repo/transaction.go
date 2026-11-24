@@ -78,7 +78,7 @@ func (r *Repository) Update(ctx context.Context, fn func(ctx context.Context, d 
 // under .config.lock; see the package notes above.
 //
 // Shutdown (O3-6c): the work context stays cancellable through the callback
-// and validation up to the final commit, which Store.CommitContext checks
+// and validation up to the final commit, which Store.Commit checks
 // immediately before COMMIT; a cancelled transaction writes nothing.
 // Callbacks otherwise edit only the candidate. A guard-only callback may commit
 // a checked file action and abort its unchanged candidate (C33's replayable

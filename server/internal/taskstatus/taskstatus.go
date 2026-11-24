@@ -72,11 +72,7 @@ func ParseTimestamp(text string) (time.Time, bool) {
 func (s *Store) path() string { return filepath.Join(s.DataDir, Filename) }
 
 // locked runs local file work under the process-wide leaf mutex.
-func (s *Store) locked(fn func(path string) error) error {
-	return s.lockedContext(context.Background(), fn)
-}
-
-func (s *Store) lockedContext(ctx context.Context, fn func(path string) error) error {
+func (s *Store) locked(ctx context.Context, fn func(path string) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -175,7 +171,7 @@ func writeSnapshot(ctx context.Context, path string, value Snapshot) error {
 // Read returns a private snapshot under the leaf lock.
 func (s *Store) Read() (Snapshot, error) {
 	var out Snapshot
-	err := s.locked(func(path string) error { out = readSnapshot(path); return nil })
+	err := s.locked(context.Background(), func(path string) error { out = readSnapshot(path); return nil })
 	return out, err
 }
 
@@ -208,7 +204,7 @@ func increment(raw *json.RawMessage) error {
 func (s *Store) SaveResult(ctx context.Context, key string, r Result) (*Receipt, error) {
 	ctx = ctxx.Detach(ctx)
 	var result *Receipt
-	err := s.lockedContext(ctx, func(path string) error {
+	err := s.locked(ctx, func(path string) error {
 		data := readSnapshot(path)
 		entry := data.Entry(key)
 		finished := s.nowISO()
@@ -288,16 +284,11 @@ func (s *Store) SaveResult(ctx context.Context, key string, r Result) (*Receipt,
 	return result, nil
 }
 
-// Forget is forget(*keys): drop the entries of the given tasks.
-func (s *Store) Forget(keys ...string) error {
-	return s.ForgetContext(context.Background(), keys...)
-}
-
-// ForgetContext removes results independently of client disconnects, while
+// Forget removes results independently of client disconnects, while
 // respecting its work lifetime under the leaf lock and before replacement.
-func (s *Store) ForgetContext(ctx context.Context, keys ...string) error {
+func (s *Store) Forget(ctx context.Context, keys ...string) error {
 	ctx = ctxx.Detach(ctx)
-	return s.lockedContext(ctx, func(path string) error {
+	return s.locked(ctx, func(path string) error {
 		data := readSnapshot(path)
 		removed := false
 		for _, key := range keys {

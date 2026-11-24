@@ -17,7 +17,7 @@ func TestFilesRoundTripBothDirectionsWithPython(t *testing.T) {
 		Number   json.Number `json:"number"`
 		Optional *int        `json:"optional"`
 	}{"中文 <>&\u2028\u0085", json.Number("100000000000000000001"), nil}
-	if _, err := store.Write("go", input, true); err != nil {
+	if _, err := store.Write(t.Context(), "go", input, true); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.Command(python, "-c", `import json,sys; p=json.load(open(sys.argv[1])); assert p=={'text':'中文 <>&\u2028\u0085','number':100000000000000000001,'optional':None}; json.dump(p,open(sys.argv[2],'w'),ensure_ascii=False)`, store.Path("go"), store.Path("python"))
@@ -43,7 +43,7 @@ func TestLegacyNonFiniteFileRetainsFiniteSiblings(t *testing.T) {
 	if !s.Read("a", &data) {
 		t.Fatal("lost entire legacy file")
 	}
-	if _, err := s.Write("a", data, true); err != nil {
+	if _, err := s.Write(t.Context(), "a", data, true); err != nil {
 		t.Fatal(err)
 	}
 	output, _ := os.ReadFile(s.Path("a"))

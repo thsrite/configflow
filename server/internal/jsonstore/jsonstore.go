@@ -91,17 +91,14 @@ func readErrorCategory(err error) string {
 // metadata alone cannot show an in-place edit that restored size and mtime).
 // nil means "written, but no trustworthy signature". Without it the file is
 // closed before the rename and the result is always nil.
-func (s *Store) Write(id string, data any, verifySignature bool) (*Signature, error) {
-	return s.WriteContext(context.Background(), id, data, verifySignature)
-}
-
-// WriteContext writes atomically, checking ctx at entry and immediately before
+//
+// Write writes atomically, checking ctx at entry and immediately before
 // rename. Cancellation observed by that final check leaves the existing file
 // unchanged. Cancellation after the check cannot revoke an admitted rename;
 // verification after a successful rename completes even if ctx is then cancelled.
 // Callers supply an owner context detached from request cancellation when the
 // write must outlive a disconnect.
-func (s *Store) WriteContext(ctx context.Context, id string, data any, verifySignature bool) (*Signature, error) {
+func (s *Store) Write(ctx context.Context, id string, data any, verifySignature bool) (*Signature, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -204,17 +201,10 @@ func (s *Store) WriteContext(ctx context.Context, id string, data any, verifySig
 	return &verified, nil
 }
 
-// Remove is _remove: delete the file of id (os.remove = unlink(2), so a
-// directory in its place fails with EISDIR, empty or not, where Go's
-// os.Remove would rmdir it); a missing file is fine.
-func (s *Store) Remove(id string) error {
-	return s.RemoveContext(context.Background(), id)
-}
-
-// RemoveContext checks ctx at entry and immediately before each unlink attempt.
-// Cancellation after a check cannot revoke that attempt. It preserves Remove's
-// missing-file and directory semantics and checks cancellation on each retry.
-func (s *Store) RemoveContext(ctx context.Context, id string) error {
+// Remove checks ctx at entry and immediately before each unlink attempt.
+// Cancellation after a check cannot revoke that attempt. A missing file is
+// fine, and a directory in place of the file is an error.
+func (s *Store) Remove(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

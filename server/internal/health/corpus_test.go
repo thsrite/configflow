@@ -401,7 +401,7 @@ func TestReferenceCorpus(t *testing.T) {
 		case "path_healthy":
 			out, callErr = evalPathHealthy(arg(0))
 		case "probe_store_save":
-			if err := saveProbeRaw(probeStore, "a/1", rawFields.Results, storeNow); err != nil {
+			if err := saveProbeRaw(t, probeStore, "a/1", rawFields.Results, storeNow); err != nil {
 				callErr = err
 				break
 			}
@@ -410,7 +410,7 @@ func TestReferenceCorpus(t *testing.T) {
 			out = map[string]any{"file": string(file), "load": loaded}
 		case "region_store":
 			if mapStr(row, "step") == "a" {
-				err := regionStore.UpdateData("r1", func(data *check.RegionData) error {
+				err := regionStore.UpdateData(t.Context(), "r1", func(data *check.RegionData) error {
 					data.Services = json.RawMessage(`{"x":1}`)
 					setTimed := func(m *model.OrderedMap[check.TimedRecord], key, raw string) {
 						var entry check.TimedRecord
@@ -576,7 +576,7 @@ func o18T1cDirtyHealthCheck(source json.RawMessage) bool {
 	return err == nil && len(issues) > 0
 }
 
-func saveProbeRaw(store *check.ProbeStore, agentID string, raw json.RawMessage, now time.Time) error {
+func saveProbeRaw(t *testing.T, store *check.ProbeStore, agentID string, raw json.RawMessage, now time.Time) error {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || trimmed[0] != '{' {
 		return &check.ValidationError{Message: "探测记录必须为对象且 checked_at 为字符串"}
@@ -591,7 +591,7 @@ func saveProbeRaw(store *check.ProbeStore, agentID string, raw json.RawMessage, 
 	if len(issues) > 0 {
 		return &check.ValidationError{Message: "探测记录必须为对象且 checked_at 为字符串"}
 	}
-	return store.SaveEntries(agentID, entries, now)
+	return store.SaveEntries(t.Context(), agentID, entries, now)
 }
 
 func evalRegionOfName(raw any) (any, error) {

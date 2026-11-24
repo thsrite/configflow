@@ -18,7 +18,7 @@ func damageSettings(t *testing.T, r *Repository, settings string) {
 			base.Document.System.Fields[i].Value = json.RawMessage(settings)
 		}
 	}
-	_, _, err := r.store.Commit(base, base.Document, nil)
+	_, _, err := r.store.Commit(t.Context(), base, base.Document, nil)
 	noError(t, err)
 	r.dropCache()
 }

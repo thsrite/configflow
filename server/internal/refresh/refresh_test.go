@@ -294,7 +294,7 @@ func TestRecordCountsRunsFailuresAndSkips(t *testing.T) {
 		entry["last_error"] != "" || hasRetained || mapInt(entry, "last_duration_ms") != 12 {
 		t.Fatal(compactJSON(entry))
 	}
-	_ = taskstatus.New(f.repo.DataDir()).Forget("x", "missing")
+	_ = taskstatus.New(f.repo.DataDir()).Forget(t.Context(), "x", "missing")
 	if len(f.status("x")) != 0 {
 		t.Fatal("forget")
 	}

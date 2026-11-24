@@ -207,7 +207,7 @@ func TestReviewN85StartupWritesOnlyRepairableStoredValues(t *testing.T) {
 					}
 				}
 			}
-			_, _, err := r.store.Commit(base, base.Document, nil)
+			_, _, err := r.store.Commit(t.Context(), base, base.Document, nil)
 			noError(t, err)
 			noError(t, os.WriteFile(filepath.Join(r.DataDir(), "future.json"), []byte(` {"future":null,"wrong":"type"} `), 0o600))
 			rows, files := xcFingerprint(t, r.store), n85Files(t, r.DataDir())
@@ -252,7 +252,7 @@ func TestReviewN85TokenMaintenancePreservesUntouchedMembers(t *testing.T) {
 					base.Document.System.Fields[i].Value = json.RawMessage(settings)
 				}
 			}
-			_, _, err := r.store.Commit(base, base.Document, nil)
+			_, _, err := r.store.Commit(t.Context(), base, base.Document, nil)
 			noError(t, err)
 			if entry == "update" {
 				noError(t, r.Update(bg, func(_ context.Context, d *model.Document) error {

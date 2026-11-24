@@ -443,7 +443,7 @@ func TestRestartAtomicallyRotatesRuleProxyTokenEqualToConfigToken(t *testing.T) 
 	sc.Set("config_token", "shared-token")
 	sc.Set("rule_proxy_token", "shared-token")
 	setStoreField(&rows.System.Fields, "system_config", mustMarshalJSON(t, sc))
-	if _, _, err := repository.Store().Commit(base, rows, nil); err != nil {
+	if _, _, err := repository.Store().Commit(t.Context(), base, rows, nil); err != nil {
 		t.Fatal(err)
 	}
 	mpFixedToken(t, "rotated-internal-token")

@@ -135,7 +135,7 @@ func decodeBase64(t *testing.T, encoded string) []byte {
 func TestReferenceReadSavedLines(t *testing.T) {
 	ref := loadA04Reference(t)
 	limit := naiveOf(t, ref.Cutoff)
-	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
+	h := newTestHistory(t, t.TempDir(), MaxPointsPerAgent)
 	for _, item := range ref.ReadFile {
 		if err := os.WriteFile(h.agentFile("a"), decodeBase64(t, item.Data), 0o600); err != nil {
 			t.Fatal(err)
@@ -175,7 +175,7 @@ func TestReferenceReadSavedLines(t *testing.T) {
 func TestReferenceReadOldJSONFiles(t *testing.T) {
 	ref := loadA04Reference(t)
 	limit := naiveOf(t, ref.Cutoff)
-	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
+	h := newTestHistory(t, t.TempDir(), MaxPointsPerAgent)
 	for _, item := range ref.Legacy {
 		if err := os.WriteFile(h.legacyFile("a"), decodeBase64(t, item.Data), 0o600); err != nil {
 			t.Fatal(err)
@@ -212,7 +212,7 @@ func referenceHistory(t *testing.T, item a04MetricCase) *History {
 			current.Second(), current.Nanosecond(), time.Local)
 	}
 	t.Cleanup(func() { now = previous })
-	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
+	h := newTestHistory(t, t.TempDir(), MaxPointsPerAgent)
 	var points []point
 	for _, line := range item.Points {
 		// Build the fixture's cache through the approved persisted-data decoder.

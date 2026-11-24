@@ -65,7 +65,7 @@ func TestN83ReviewCopiedProfileWritesOnlyNewRows(t *testing.T) {
 	}
 	target := store.New(t.TempDir()+"/"+store.Filename, LockTimeout)
 	base := must(target.Create(original, nil))(t)
-	if _, changed, err := target.Commit(base, encoded, nil); err != nil || !changed {
+	if _, changed, err := target.Commit(t.Context(), base, encoded, nil); err != nil || !changed {
 		t.Fatalf("store refused the copy: %v %v", changed, err)
 	}
 }

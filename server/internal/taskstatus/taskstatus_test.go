@@ -76,7 +76,7 @@ func TestRecordKeepsRetainedCacheAndCounts(t *testing.T) {
 		string(entry.RunCount) != "3" || strPtrVal(entry.LastSuccessAt) != "2026-11-14T12:00:00Z" || strPtrVal(entry.LastError) != "" {
 		t.Errorf("after success: %s", receiptJSON(t, entry))
 	}
-	if err := store.Forget("x", "missing"); err != nil {
+	if err := store.Forget(t.Context(), "x", "missing"); err != nil {
 		t.Fatal(err)
 	}
 	snap, err = store.Read()

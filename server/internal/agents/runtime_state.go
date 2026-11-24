@@ -243,10 +243,8 @@ func (s *RuntimeState) seedModel(ctx context.Context, agentID string, heartbeatA
 	return nil
 }
 
-// Delete forgets an Agent and blocks heartbeats looked up before it.
-func (s *RuntimeState) Delete(agentID string) { _ = s.deleteContext(context.Background(), agentID) }
-
-func (s *RuntimeState) deleteContext(ctx context.Context, agentID string) error {
+// Delete drops an Agent heartbeat and blocks stale in-flight heartbeats.
+func (s *RuntimeState) Delete(ctx context.Context, agentID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -307,7 +305,7 @@ type legacyRow struct {
 // legacyRows is _legacy_rows(path): the decodable rows of the #369 table,
 // nothing (and a warning) when the database cannot be read.
 func legacyRows(ctx context.Context, path string) map[string]legacyRow {
-	rows, err := readLegacyRowsContext(ctx, path)
+	rows, err := readLegacyRows(ctx, path)
 	if err != nil {
 		runtimeLogger.Warningf("旧版 Agent 心跳状态库无法读取，已忽略：%s", err)
 		return map[string]legacyRow{}
@@ -322,7 +320,7 @@ func legacyRows(ctx context.Context, path string) map[string]legacyRow {
 // readLegacyRows reads the rows in Python's dict order (a repeated agent_id
 // keeps its first position and its last value). The error's text is
 // str(sqlite3.Error).
-func readLegacyRowsContext(ctx context.Context, path string) ([]legacyRow, error) {
+func readLegacyRows(ctx context.Context, path string) ([]legacyRow, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err

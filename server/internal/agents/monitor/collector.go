@@ -103,7 +103,7 @@ func CollectAgentHistory(ctx context.Context, m Registry, store *RankingStore, a
 	}
 	store.setCaughtUp(agentID, 0, false)
 	for _, recorder := range recorders {
-		done, err := store.FetchedContext(ctx, agentID, recorder, starts)
+		done, err := store.Fetched(ctx, agentID, recorder, starts)
 		if err != nil {
 			return stored, err
 		}
@@ -233,5 +233,5 @@ func CollectHistoryRound(ctx context.Context, m RoundRegistry, store *RankingSto
 	for i := range list {
 		ids[i] = list[i].ID
 	}
-	return store.MaintainContext(ctx, ids, now)
+	return store.Maintain(ctx, ids, now)
 }

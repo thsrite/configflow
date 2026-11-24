@@ -146,7 +146,7 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 			}
 		}
 	}
-	_, written, err := r.store.Commit(entry, raw, nil)
+	_, written, err := r.store.Commit(t.Context(), entry, raw, nil)
 	if err != nil || !written {
 		t.Fatalf("raw injection: %v %v", written, err)
 	}

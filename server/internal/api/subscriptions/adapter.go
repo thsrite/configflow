@@ -261,9 +261,9 @@ func (h *Handler) forgetTask(ctx context.Context, id string) error {
 		return err
 	}
 	if h != nil && h.Notifications != nil {
-		return h.Notifications.TaskStatus(ctx, r.DataDir()).ForgetContext(ctx, refresh.SourceTaskKey(id))
+		return h.Notifications.TaskStatus(ctx, r.DataDir()).Forget(ctx, refresh.SourceTaskKey(id))
 	}
-	return taskstatus.New(r.DataDir()).ForgetContext(ctx, refresh.SourceTaskKey(id))
+	return taskstatus.New(r.DataDir()).Forget(ctx, refresh.SourceTaskKey(id))
 }
 func (h *Handler) forgetSubscription(ctx context.Context, id string) error {
 	ctx = lifecycle.Detach(h.withRepo(ctx))

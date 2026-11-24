@@ -65,7 +65,7 @@ func writeData(t *testing.T, store *NativeStore, agent string, status any) map[s
 			},
 		},
 	}
-	if _, err := store.files.Write(agent, data, true); err != nil {
+	if _, err := store.files.Write(t.Context(), agent, data, true); err != nil {
 		t.Fatal(err)
 	}
 	return data
@@ -285,7 +285,7 @@ func TestReportPopulatesStatusWithoutRedecodingHistoryAndDeleteInvalidates(t *te
 	if strings.Join(*calls, ",") != "a,a" {
 		t.Fatalf("only the two report merges need a history decode: %v", *calls)
 	}
-	if err := store.DeleteContext(context.Background(), "a"); err != nil {
+	if err := store.Delete(context.Background(), "a"); err != nil {
 		t.Fatal(err)
 	}
 	if len(CachedPaths()) != 0 || !statusNil(store.StatusJSON("a")) {
@@ -445,7 +445,7 @@ func TestReportMergesExternalHistoryAndKeepsVersionAndRetention(t *testing.T) {
 	if err := data.days.Set("2026-10-10", json.RawMessage(`{"ip_only_conns":12,"dropped":3,"hosts":{}}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.files.Write("a", data, true); err != nil {
+	if _, err := store.files.Write(t.Context(), "a", data, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.Add(context.Background(), "a", mustDecodeReport(t, map[string]any{
@@ -747,17 +747,17 @@ func TestSplitRouteKey(t *testing.T) {
 	}
 }
 
-// DeleteContext never removes a directory (os.Remove is unlink) and reports EISDIR.
+// Delete never removes a directory (os.Remove is unlink) and reports EISDIR.
 func TestDeleteRefusesDirectoryWithPythonText(t *testing.T) {
 	isolated(t)
 	dir := t.TempDir()
 	store := NewNative(dir)
 	os.MkdirAll(store.Path("a"), 0o755)
-	err := store.DeleteContext(context.Background(), "a")
+	err := store.Delete(context.Background(), "a")
 	if !errors.Is(err, syscall.EISDIR) {
 		t.Fatalf("err %v", err)
 	}
-	if store.DeleteContext(context.Background(), "missing") != nil {
+	if store.Delete(context.Background(), "missing") != nil {
 		t.Fatal("missing file is fine")
 	}
 }

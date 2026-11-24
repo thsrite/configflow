@@ -258,7 +258,7 @@ func (s *Service) FlushNow(ctx context.Context, trigger string, recordIdle bool)
 			return nil, err
 		}
 		faultprobe.Point(ctx, faultprobe.MetricsFlush)
-		counts, err := s.history.FlushContext(ctx)
+		counts, err := s.history.Flush(ctx)
 		if err != nil {
 			failures = append(failures, err)
 		} else {
@@ -377,7 +377,7 @@ func (s *Service) LoadSavedHistory(ctx context.Context) *LoadResult {
 		flushLogger.Warningf("监控历史加载失败：%s", err)
 		return nil
 	}
-	result, err := s.history.LoadContext(ctx, agentIDs)
+	result, err := s.history.Load(ctx, agentIDs)
 	if err != nil {
 		flushLogger.Warningf("监控历史加载失败：%s", err)
 		return nil

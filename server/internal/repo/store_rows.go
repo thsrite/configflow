@@ -49,7 +49,7 @@ func (r *Repository) commitStore(ctx context.Context, base storedEntry, doc *mod
 	}
 	splitRows(raw)
 	extra := meta
-	entry, changed, err := r.store.CommitContext(ctx, base.Entry, raw, extra)
+	entry, changed, err := r.store.Commit(ctx, base.Entry, raw, extra)
 	if err != nil || !changed {
 		return storedEntry{}, changed, err
 	}

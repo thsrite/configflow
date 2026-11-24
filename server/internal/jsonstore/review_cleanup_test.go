@@ -22,7 +22,7 @@ func TestReviewLegacyWriteFailureCleansTemp(t *testing.T) {
 			if err := os.WriteFile(sentinel, []byte("old"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			sig, err := s.Write("synthetic", struct{}{}, signed)
+			sig, err := s.Write(t.Context(), "synthetic", struct{}{}, signed)
 			var linkErr *os.LinkError
 			if sig != nil || !errors.As(err, &linkErr) || linkErr.Op != "rename" {
 				t.Fatalf("signature=%v error=%v", sig, err)

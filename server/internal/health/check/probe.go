@@ -456,15 +456,9 @@ func pruneHosts(hosts *model.OrderedMap[TimedRecord], now time.Time) {
 	}
 }
 
-// SaveEntries merges results into agentID's probe file, prunes expired/excess
-// entries relative to now (zero uses time.Now), and writes atomically.
-func (s *ProbeStore) SaveEntries(agentID string, results model.OrderedMap[TimedRecord], now time.Time) error {
-	return s.SaveEntriesContext(context.Background(), agentID, results, now)
-}
-
-// SaveEntriesContext merges probe entries, retaining the caller's owner lifetime
+// SaveEntries merges probe entries, retaining the caller's owner lifetime
 // through lock acquisition and checking cancellation before file publication.
-func (s *ProbeStore) SaveEntriesContext(ctx context.Context, agentID string, results model.OrderedMap[TimedRecord], now time.Time) error {
+func (s *ProbeStore) SaveEntries(ctx context.Context, agentID string, results model.OrderedMap[TimedRecord], now time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -486,7 +480,7 @@ func (s *ProbeStore) SaveEntriesContext(ctx context.Context, agentID string, res
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := s.files.WriteContext(ctx, agentID, &file, false)
+	_, err := s.files.Write(ctx, agentID, &file, false)
 	return err
 }
 
@@ -503,13 +497,8 @@ func (s *ProbeStore) LoadEntries(agentID string, now time.Time) model.OrderedMap
 	return file.Hosts
 }
 
-// Delete removes the probe store file for agentID.
-func (s *ProbeStore) Delete(agentID string) error {
-	return s.DeleteContext(context.Background(), agentID)
-}
-
-// DeleteContext removes the probe file only while its owner is active.
-func (s *ProbeStore) DeleteContext(ctx context.Context, agentID string) error {
+// Delete removes the probe file only while its owner is active.
+func (s *ProbeStore) Delete(ctx context.Context, agentID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -518,7 +507,7 @@ func (s *ProbeStore) DeleteContext(ctx context.Context, agentID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return s.files.RemoveContext(ctx, agentID)
+	return s.files.Remove(ctx, agentID)
 }
 
 // LatestProbeEntries returns the newest probe entry per host across agentIDs,

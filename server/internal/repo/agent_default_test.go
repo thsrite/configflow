@@ -41,7 +41,7 @@ func TestAgentDefaultProfileUsesScopedRowView(t *testing.T) {
 					changed.System.Fields[i].Value = json.RawMessage(tc.raw)
 				}
 			}
-			if _, committed, err := r.store.Commit(base, &changed, nil); err != nil || !committed {
+			if _, committed, err := r.store.Commit(t.Context(), base, &changed, nil); err != nil || !committed {
 				t.Fatalf("raw import fixture: committed=%v %v", committed, err)
 			}
 			r.dropCache()

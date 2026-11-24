@@ -26,10 +26,10 @@ func DeletedStores(dataDir string) []agents.NamedDeleter {
 	regions := RegionStore(dataDir)
 	return []agents.NamedDeleter{
 		{Name: "domain_probe", Delete: func(ctx context.Context, agentID string) error {
-			return probes.DeleteContext(lifecycle.Detach(ctx), agentID)
+			return probes.Delete(lifecycle.Detach(ctx), agentID)
 		}},
 		{Name: "region_check", Delete: func(ctx context.Context, agentID string) error {
-			return regions.DeleteContext(lifecycle.Detach(ctx), agentID)
+			return regions.Delete(lifecycle.Detach(ctx), agentID)
 		}},
 	}
 }

@@ -77,7 +77,7 @@ func (r *Repository) CreateRuleLibraryRecord(ctx context.Context, item model.Rul
 		ownsCache = true
 		shared.RuleLibrary = append(shared.RuleLibrary, item)
 		shared.Revision++
-		return writeAtomic(path, content)
+		return writeAtomic(ctxx.Uninterruptible(ctx), path, content)
 	})
 	if err != nil {
 		if !ownsCache {

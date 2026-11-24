@@ -64,7 +64,7 @@ func TestO36cStatusLockWaitRuntimeBoundary(t *testing.T) {
 						_, err := s.SaveResult(ctx, "existing", Result{OK: true})
 						done <- err
 					} else {
-						done <- s.ForgetContext(ctx, "existing")
+						done <- s.Forget(ctx, "existing")
 					}
 				}()
 				select {

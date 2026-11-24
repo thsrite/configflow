@@ -19,13 +19,13 @@ func TestN82ReviewUnchangedMetadataIsNoop(t *testing.T) {
 	// Legal Python-readable formatting must survive a no-op too.
 	execSQL(t, s.Path(), `UPDATE meta SET value=' 1 ' WHERE key='generation'`)
 	stamp := must(s.Fingerprint())(t)
-	_, changed, err := s.Commit(base, base.Document, meta)
+	_, changed, err := s.Commit(t.Context(), base, base.Document, meta)
 	if err != nil || changed || must(s.Fingerprint())(t) != stamp {
 		t.Fatalf("unchanged metadata wrote rows: changed=%v err=%v", changed, err)
 	}
 
 	before := fieldRows(t, s.Path())
-	next, changed, err := s.Commit(base, base.Document, map[string]json.RawMessage{"opaque": json.RawMessage(`{"changed":true}`)})
+	next, changed, err := s.Commit(t.Context(), base, base.Document, map[string]json.RawMessage{"opaque": json.RawMessage(`{"changed":true}`)})
 	if err != nil || !changed || next.Head != base.Head {
 		t.Fatal("metadata-only update changed head")
 	}
@@ -91,7 +91,7 @@ func TestN82ReviewLargeOpaqueRowsAndConcurrentRawCommits(t *testing.T) {
 	value := json.RawMessage(` { "wrong_type":"kept", "large":"` + strings.Repeat("例", 3<<20) + `", "negative_zero":-0.0 } `)
 	doc.Shared.Fields = append(doc.Shared.Fields, Field{Name: "large", Value: value})
 	base := must(s.Create(doc, nil))(t)
-	if _, changed, err := s.Commit(base, base.Document, nil); err != nil || changed {
+	if _, changed, err := s.Commit(t.Context(), base, base.Document, nil); err != nil || changed {
 		t.Fatal("large no-op failed")
 	}
 	const writers = 8
@@ -101,7 +101,7 @@ func TestN82ReviewLargeOpaqueRowsAndConcurrentRawCommits(t *testing.T) {
 		wg.Go(func() {
 			proposal := rawFixture(t)
 			proposal.Shared.Fields = append(proposal.Shared.Fields, Field{Name: "large", Value: value}, Field{Name: "writer", Value: json.RawMessage{byte('0' + i)}})
-			_, changed, err := s.Commit(base, proposal, nil)
+			_, changed, err := s.Commit(t.Context(), base, proposal, nil)
 			if err == nil && !changed {
 				err = errors.New("empty commit")
 			}
@@ -131,7 +131,7 @@ func TestN82ReviewLargeOpaqueRowsAndConcurrentRawCommits(t *testing.T) {
 
 // The compatibility Commit entry has no context and delegates to Background.
 // Cancelling an unrelated request must not change it; shutdown-aware owners use
-// CommitContext instead (O3-6c).
+// Commit instead (O3-6c).
 func TestN82ReviewCommitFinishesAfterCancellation(t *testing.T) {
 	s := New(filepath.Join(t.TempDir(), Filename), seconds(5))
 	base := must(s.Create(rawFixture(t), nil))(t)
@@ -143,7 +143,7 @@ func TestN82ReviewCommitFinishesAfterCancellation(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
 	s.BeforeCommit = func() error { close(started); <-release; return nil }
 	result := make(chan error, 1)
-	go func() { _, _, err := s.Commit(base, proposal, nil); result <- err }()
+	go func() { _, _, err := s.Commit(t.Context(), base, proposal, nil); result <- err }()
 	<-started
 	cancel()
 	if request.Err() != context.Canceled {

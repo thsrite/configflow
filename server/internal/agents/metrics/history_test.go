@@ -169,7 +169,7 @@ func wantEqual(t *testing.T, label string, got, want any) {
 
 func wantFlush(t *testing.T, h *History, agents, appended, compacted int) {
 	t.Helper()
-	got, err := h.Flush()
+	got, err := h.Flush(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func wantFlush(t *testing.T, h *History, agents, appended, compacted int) {
 func TestMemoryKeeps24HoursAndCapsPointsPerAgent(t *testing.T) {
 	c := useClock(t)
 	dir := t.TempDir()
-	h := NewHistory(dir, 5)
+	h := newTestHistory(t, dir, 5)
 	add(t, h, c, 8, "a1", time.Second)
 	kept := get(t, h, "a1", nil)
 	if got := strings.Join(cpus(kept), ","); got != "3,4,5,6,7" {
@@ -197,7 +197,7 @@ func TestMemoryKeeps24HoursAndCapsPointsPerAgent(t *testing.T) {
 		t.Fatal(got)
 	}
 
-	h = NewHistory(filepath.Join(dir, "window"), MaxPointsPerAgent)
+	h = newTestHistory(t, filepath.Join(dir, "window"), MaxPointsPerAgent)
 	add(t, h, c, 3, "a1", 10*time.Hour)
 	if len(get(t, h, "a1", 24)) != 3 || len(get(t, h, "a1", 1)) != 1 {
 		t.Fatal("window")
@@ -214,7 +214,7 @@ func TestMemoryKeeps24HoursAndCapsPointsPerAgent(t *testing.T) {
 func TestFlushAppendsOnlyNewPoints(t *testing.T) {
 	c := useClock(t)
 	dir := t.TempDir()
-	h := NewHistory(dir, MaxPointsPerAgent)
+	h := newTestHistory(t, dir, MaxPointsPerAgent)
 	add(t, h, c, 3, "a1", 30*time.Second)
 	wantFlush(t, h, 1, 3, 0)
 	path := filepath.Join(dir, "a1_metrics.jsonl")
@@ -226,7 +226,7 @@ func TestFlushAppendsOnlyNewPoints(t *testing.T) {
 		t.Fatal("rewritten without new points")
 	}
 	add(t, h, c, 2, "a1", 30*time.Second)
-	if _, err := h.Flush(); err != nil {
+	if _, err := h.Flush(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if data, _ := os.ReadFile(path); !strings.HasPrefix(string(data), string(first)) {
@@ -241,9 +241,9 @@ func TestFlushAppendsOnlyNewPoints(t *testing.T) {
 func TestCompactionIsSizeTriggeredAndAtomic(t *testing.T) {
 	c := useClock(t)
 	dir := t.TempDir()
-	h := NewHistory(dir, MaxPointsPerAgent)
+	h := newTestHistory(t, dir, MaxPointsPerAgent)
 	add(t, h, c, 4, "a1", 6*time.Hour)
-	if _, err := h.Flush(); err != nil {
+	if _, err := h.Flush(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "a1_metrics.jsonl")
@@ -260,7 +260,7 @@ func TestCompactionIsSizeTriggeredAndAtomic(t *testing.T) {
 	replaceFile = func(string, string) error {
 		return &os.LinkError{Op: "rename", Err: syscall.ENOSPC}
 	}
-	_, err := h.Flush()
+	_, err := h.Flush(t.Context())
 	var flushError *FlushError
 	if !errors.As(err, &flushError) || !strings.Contains(err.Error(), "磁盘空间不足") {
 		t.Fatalf("%v", err)
@@ -287,7 +287,7 @@ func TestCompactionIsSizeTriggeredAndAtomic(t *testing.T) {
 	}
 	// Below the threshold again: the next save appends.
 	add(t, h, c, 1, "a1", 30*time.Second)
-	if result, _ := h.Flush(); result.Compacted != 0 {
+	if result, _ := h.Flush(t.Context()); result.Compacted != 0 {
 		t.Fatal(result)
 	}
 	if len(readLines(t, path)) != 4 {
@@ -298,9 +298,9 @@ func TestCompactionIsSizeTriggeredAndAtomic(t *testing.T) {
 func TestFailedAppendKeepsPointsAndRewritesNextTime(t *testing.T) {
 	c := useClock(t)
 	dir := t.TempDir()
-	h := NewHistory(dir, MaxPointsPerAgent)
+	h := newTestHistory(t, dir, MaxPointsPerAgent)
 	add(t, h, c, 2, "a1", 30*time.Second)
-	if _, err := h.Flush(); err != nil {
+	if _, err := h.Flush(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	add(t, h, c, 2, "a1", 30*time.Second)
@@ -315,14 +315,14 @@ func TestFailedAppendKeepsPointsAndRewritesNextTime(t *testing.T) {
 		handle.Close()
 		return &os.PathError{Op: "open", Path: path, Err: syscall.EACCES}
 	}
-	if _, err := h.Flush(); err == nil || !strings.Contains(err.Error(), "没有写入权限") {
+	if _, err := h.Flush(t.Context()); err == nil || !strings.Contains(err.Error(), "没有写入权限") {
 		t.Fatal(err)
 	}
 	if h.PendingCount() != 2 {
 		t.Fatal(h.PendingCount())
 	}
 	appendLines = previous
-	if result, _ := h.Flush(); result.Compacted != 1 {
+	if result, _ := h.Flush(t.Context()); result.Compacted != 1 {
 		t.Fatal(result)
 	}
 	wantEqual(t, "file", parsedLines(t, filepath.Join(dir, "a1_metrics.jsonl")), get(t, h, "a1", nil))
@@ -364,13 +364,13 @@ func TestLoadingSkipsATruncatedLastLineAndOldPoints(t *testing.T) {
 		lines = append(lines, dumps(t, p))
 	}
 	os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n{\"timestamp\": \"2026-10-2"), 0o644)
-	h := NewHistory(dir, MaxPointsPerAgent)
-	if result, err := h.Load([]string{"a1"}); err != nil || result.Loaded != 1 {
+	h := newTestHistory(t, dir, MaxPointsPerAgent)
+	if result, err := h.Load(t.Context(), []string{"a1"}); err != nil || result.Loaded != 1 {
 		t.Fatal(result, err)
 	}
 	wantEqual(t, "loaded", get(t, h, "a1", nil), good)
 	add(t, h, c, 1, "a1", 30*time.Second)
-	if _, err := h.Flush(); err != nil {
+	if _, err := h.Flush(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	// The new line starts on its own line instead of joining the broken one.
@@ -378,8 +378,8 @@ func TestLoadingSkipsATruncatedLastLineAndOldPoints(t *testing.T) {
 	if got[len(got)-2] != `{"timestamp": "2026-10-2` {
 		t.Fatal(got)
 	}
-	reloaded := NewHistory(dir, MaxPointsPerAgent)
-	reloaded.Load([]string{"a1"})
+	reloaded := newTestHistory(t, dir, MaxPointsPerAgent)
+	reloaded.Load(t.Context(), []string{"a1"})
 	wantEqual(t, "reloaded", get(t, reloaded, "a1", nil), get(t, h, "a1", nil))
 	if len(get(t, reloaded, "a1", nil)) != 7 {
 		t.Fatal("reloaded count")
@@ -417,8 +417,8 @@ func TestOldJSONFilesMigrateOnceAndDeletedAgentsAreRemoved(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "gone_metrics.jsonl"), []byte(dumps(t, recent[0])+"\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, ".a1_interrupted.tmp"), []byte("partial"), 0o644)
 
-	h := NewHistory(dir, MaxPointsPerAgent)
-	if result, err := h.Load([]string{"a1", "never-reported"}); err != nil || result != (LoadResult{1, 1, 2}) {
+	h := newTestHistory(t, dir, MaxPointsPerAgent)
+	if result, err := h.Load(t.Context(), []string{"a1", "never-reported"}); err != nil || result != (LoadResult{1, 1, 2}) {
 		t.Fatal(result, err)
 	}
 	if got := names(t, dir); strings.Join(got, ",") != "a1_metrics.jsonl" {
@@ -434,8 +434,8 @@ func TestOldJSONFilesMigrateOnceAndDeletedAgentsAreRemoved(t *testing.T) {
 	// A migration interrupted after the new file was written keeps the new file.
 	text, _ := json.Marshal(map[string]any{"metrics": []any{expired}})
 	os.WriteFile(filepath.Join(dir, "a1_metrics.json"), text, 0o644)
-	again := NewHistory(dir, MaxPointsPerAgent)
-	if result, err := again.Load([]string{"a1"}); err != nil || result != (LoadResult{1, 0, 0}) {
+	again := newTestHistory(t, dir, MaxPointsPerAgent)
+	if result, err := again.Load(t.Context(), []string{"a1"}); err != nil || result != (LoadResult{1, 0, 0}) {
 		t.Fatal(result, err)
 	}
 	wantEqual(t, "again", get(t, again, "a1", nil), recent)
@@ -446,7 +446,7 @@ func TestOldJSONFilesMigrateOnceAndDeletedAgentsAreRemoved(t *testing.T) {
 
 func TestAPIShapesMatchThePointsKeptInMemory(t *testing.T) {
 	c := useClock(t)
-	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
+	h := newTestHistory(t, t.TempDir(), MaxPointsPerAgent)
 	add(t, h, c, 12, "a1", 30*time.Second)
 	points := get(t, h, "a1", 24)
 	c.advance(time.Second)
@@ -490,7 +490,7 @@ func TestPointsAreKeptAsCompactLinesAndReadBackAsFreshDicts(t *testing.T) {
 	// The tracemalloc half (memory per point) measures CPython objects and
 	// has no Go equivalent; points are kept as their JSON lines here too.
 	c := useClock(t)
-	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
+	h := newTestHistory(t, t.TempDir(), MaxPointsPerAgent)
 	for i := 0; i < 2000; i++ {
 		c.advance(30 * time.Second)
 		item := map[string]any{
@@ -516,7 +516,7 @@ func TestPointsAreKeptAsCompactLinesAndReadBackAsFreshDicts(t *testing.T) {
 
 // AddSample rejects non-object payloads and defaults missing sections to {}.
 func TestAddMetricsOfANonObjectFailsLikePython(t *testing.T) {
-	h := NewHistory(t.TempDir(), MaxPointsPerAgent)
+	h := newTestHistory(t, t.TempDir(), MaxPointsPerAgent)
 	for name, raw := range map[string]string{
 		"list": `[]`, "str": `"x"`, "int": `1`, "float": `1.5`, "bool": `true`, "NoneType": `null`,
 	} {
@@ -559,15 +559,15 @@ func TestDescribeOSError(t *testing.T) {
 func TestDeleteAgentHistoryReportsAFileThatCannotBeRemoved(t *testing.T) {
 	c := useClock(t)
 	dir := t.TempDir()
-	h := NewHistory(dir, MaxPointsPerAgent)
+	h := newTestHistory(t, dir, MaxPointsPerAgent)
 	add(t, h, c, 1, "a1", time.Second)
-	h.Flush()
-	if !h.DeleteAgentHistory("a1") || len(names(t, dir)) != 0 {
+	h.Flush(t.Context())
+	if ok, err := h.DeleteAgentHistory(t.Context(), "a1"); err != nil || !ok || len(names(t, dir)) != 0 {
 		t.Fatal("delete")
 	}
 	// A directory in place of the file: unlink fails, nothing is removed.
 	os.Mkdir(filepath.Join(dir, "a2_metrics.jsonl"), 0o755)
-	if h.DeleteAgentHistory("a2") {
+	if ok, err := h.DeleteAgentHistory(t.Context(), "a2"); err != nil || ok {
 		t.Fatal("a directory cannot be removed")
 	}
 	if got := names(t, dir); strings.Join(got, ",") != "a2_metrics.jsonl" {
@@ -579,13 +579,13 @@ func TestOldFileWhoseMetricsAreNotIterableEndsTheLoad(t *testing.T) {
 	useClock(t)
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "a1_metrics.json"), []byte(`{"metrics": 5}`), 0o644)
-	_, err := NewHistory(dir, MaxPointsPerAgent).Load([]string{"a1"})
+	_, err := newTestHistory(t, dir, MaxPointsPerAgent).Load(t.Context(), []string{"a1"})
 	if err == nil || err.Error() != msgSavedMetricsArray {
 		t.Fatal(err)
 	}
 	// Broken JSON is only ignored (and the file removed).
 	os.WriteFile(filepath.Join(dir, "a1_metrics.json"), []byte(`{"metrics": [`), 0o644)
-	result, err := NewHistory(dir, MaxPointsPerAgent).Load([]string{"a1"})
+	result, err := newTestHistory(t, dir, MaxPointsPerAgent).Load(t.Context(), []string{"a1"})
 	if err != nil || result != (LoadResult{}) || len(names(t, dir)) != 0 {
 		t.Fatal(result, err, names(t, dir))
 	}
@@ -593,3 +593,12 @@ func TestOldFileWhoseMetricsAreNotIterableEndsTheLoad(t *testing.T) {
 
 var _ = context.Background
 var _ = agents.ErrNotPorted
+
+func newTestHistory(t *testing.T, dir string, maxPoints int) *History {
+	t.Helper()
+	history, err := NewHistory(t.Context(), dir, maxPoints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return history
+}

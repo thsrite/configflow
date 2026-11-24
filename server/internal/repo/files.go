@@ -47,11 +47,7 @@ func writeTemp(path string, content []byte) (string, error) {
 // writeAtomic is _write_atomic: replace path through a temporary file, then
 // refresh "<path>.bak" with the previous content, also through a temporary
 // file; a failed backup refresh keeps the old backup and is not an error.
-func writeAtomic(path string, content []byte) error {
-	return writeAtomicContext(context.Background(), path, content)
-}
-
-func writeAtomicContext(ctx context.Context, path string, content []byte) error {
+func writeAtomic(ctx context.Context, path string, content []byte) error {
 	return writeAtomicUsing(ctx, path, content, writeTemp, os.Rename)
 }
 
@@ -114,11 +110,7 @@ func fileJSON(data any) ([]byte, error) {
 	return text.Bytes(), nil
 }
 
-func writeJSON(path string, data any) error {
-	return writeJSONContext(context.Background(), path, data)
-}
-
-func writeJSONContext(ctx context.Context, path string, data any) error {
+func writeJSON(ctx context.Context, path string, data any) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -126,7 +118,7 @@ func writeJSONContext(ctx context.Context, path string, data any) error {
 	if err != nil {
 		return err
 	}
-	return writeAtomicContext(ctx, path, text)
+	return writeAtomic(ctx, path, text)
 }
 
 // SharedPath is shared_path: a path below DATA_DIR/shared; a relative path
@@ -184,7 +176,7 @@ func (r *Repository) WriteSharedJSON(ctx context.Context, relativePath string, d
 	if err != nil {
 		return "", err
 	}
-	return path, withFile(ctx, path, func() error { return writeJSONContext(ctx, path, data) })
+	return path, withFile(ctx, path, func() error { return writeJSON(ctx, path, data) })
 }
 
 // WriteSharedText is write_shared_text; it returns the file's path.
@@ -214,7 +206,7 @@ func (r *Repository) writeSharedText(ctx context.Context, relativePath string, c
 				return err
 			}
 		}
-		return writeAtomicContext(ctx, path, content)
+		return writeAtomic(ctx, path, content)
 	})
 }
 
@@ -330,7 +322,7 @@ func (r *Repository) WriteGenerated(ctx context.Context, profileID, filename str
 		return "", err
 	}
 	path := filepath.Join(directory, filename)
-	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomicContext(ctx, path, content) })
+	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomic(ctx, path, content) })
 }
 
 // WriteProfileJSON is write_profile_json.
@@ -343,7 +335,7 @@ func (r *Repository) WriteProfileJSON(ctx context.Context, profileID, relativePa
 	if err != nil {
 		return "", err
 	}
-	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeJSONContext(ctx, path, data) })
+	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeJSON(ctx, path, data) })
 }
 
 // WriteProfileText is write_profile_text.
@@ -356,5 +348,5 @@ func (r *Repository) WriteProfileText(ctx context.Context, profileID, relativePa
 	if err != nil {
 		return "", err
 	}
-	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomicContext(ctx, path, content) })
+	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomic(ctx, path, content) })
 }

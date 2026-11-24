@@ -16,7 +16,10 @@ import (
 
 func TestNativeHugeMetricHTTPResponsesRemainValid(t *testing.T) {
 	dir := t.TempDir()
-	history := metrics.NewHistory(dir, metrics.MaxPointsPerAgent)
+	history, err := metrics.NewHistory(t.Context(), dir, metrics.MaxPointsPerAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Each value is valid JSON even when float64 arithmetic overflows/underflows.
 	for i, number := range []string{"1e400", "1e-400", strings.Repeat("9", 4301)} {
 		id := []string{"overflow", "underflow", "integer"}[i]
@@ -25,7 +28,7 @@ func TestNativeHugeMetricHTTPResponsesRemainValid(t *testing.T) {
 		if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := history.Load([]string{"overflow", "underflow", "integer"}); err != nil {
+		if _, err := history.Load(t.Context(), []string{"overflow", "underflow", "integer"}); err != nil {
 			t.Fatal(err)
 		}
 		srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {

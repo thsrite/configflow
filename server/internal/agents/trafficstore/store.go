@@ -530,7 +530,7 @@ func NewNative(dataDir string) *NativeStore {
 		return raw, nil
 	}
 	s.writeJSON = func(ctx context.Context, id string, raw json.RawMessage) (*jsonstore.Signature, error) {
-		return s.files.WriteContext(ctx, id, raw, true)
+		return s.files.Write(ctx, id, raw, true)
 	}
 	return s
 }
@@ -1097,8 +1097,8 @@ func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 	return d
 }
 
-// DeleteContext invalidates metadata and removes the per-Agent file while the work lifetime is live.
-func (s *NativeStore) DeleteContext(ctx context.Context, id string) error {
+// Delete invalidates metadata and removes the per-Agent file while the work lifetime is live.
+func (s *NativeStore) Delete(ctx context.Context, id string) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -1111,7 +1111,7 @@ func (s *NativeStore) DeleteContext(ctx context.Context, id string) error {
 	path := s.absPath(id)
 	cachePop(path)
 	damagedPop(path)
-	return s.files.RemoveContext(ctx, id)
+	return s.files.Remove(ctx, id)
 }
 
 // CtimeNs returns the cache change-time signature for tests.

@@ -84,7 +84,7 @@ func TestHeartbeatsStayInMemoryAndDeletingAnAgentDropsItsHistory(t *testing.T) {
 	if exists(path) || len(get(t, h, "agent_1", nil)) != 1 {
 		t.Fatal("heartbeat")
 	}
-	h.Flush()
+	h.Flush(t.Context())
 	if !exists(path) {
 		t.Fatal("not saved")
 	}
@@ -103,7 +103,7 @@ func TestAgentManagerKeepsHistoryInItsRepositoryDataDirectory(t *testing.T) {
 		t.Fatal(svc.History().DataDir)
 	}
 	heartbeat(t, ctx, m, sample(1))
-	svc.History().Flush()
+	svc.History().Flush(t.Context())
 	if !exists(filepath.Join(r.DataDir(), "metrics", "agent_1_metrics.jsonl")) {
 		t.Fatal("not in the data directory")
 	}
@@ -405,7 +405,7 @@ func TestShutdownSaveDuringARunningSaveDoesNotDeadlock(t *testing.T) {
 	ctx := srv.Context()
 	h := svc.History()
 	heartbeat(t, ctx, m, sample(1))
-	h.Flush()
+	h.Flush(t.Context())
 	heartbeat(t, ctx, m, sample(2))
 	entered, release := make(chan struct{}), make(chan struct{})
 	previous := appendLines

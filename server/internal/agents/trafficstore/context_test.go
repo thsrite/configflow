@@ -21,7 +21,7 @@ func TestDeleteContextPreservesFileAfterShutdown(t *testing.T) {
 	}
 	parent, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := s.DeleteContext(ctxx.WithParent(context.Background(), parent), "machine"); !errors.Is(err, context.Canceled) {
+	if err := s.Delete(ctxx.WithParent(context.Background(), parent), "machine"); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 	if raw, err := os.ReadFile(path); err != nil || string(raw) != "traffic" {

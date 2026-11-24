@@ -44,7 +44,7 @@ func corruptClientBinding(t *testing.T, s *httpxtest.Server, id string) {
 	if !found {
 		t.Fatal("synthetic Agent missing", id)
 	}
-	if _, committed, err := s.Repo.Store().Commit(entry, &document, nil); err != nil || !committed {
+	if _, committed, err := s.Repo.Store().Commit(t.Context(), entry, &document, nil); err != nil || !committed {
 		t.Fatal("inject imported binding", err)
 	}
 }

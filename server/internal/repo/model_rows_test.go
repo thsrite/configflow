@@ -108,14 +108,14 @@ func TestModelRowsRoundTripAndTypedEdits(t *testing.T) {
 	target := store.New(filepath.Join(t.TempDir(), store.Filename), LockTimeout)
 	base := must(target.Create(original, nil))(t)
 	// The first Go write rewrites rows in Go's encoding, with the same values.
-	base, _, err = target.Commit(base, encoded, nil)
+	base, _, err = target.Commit(t.Context(), base, encoded, nil)
 	noError(t, err)
 	assertModelRows(t, base.Document, original)
 	document, _, err = decodeModelRows(base.Document)
 	noError(t, err)
 	encoded = must(encodeModelRows(document, base.Document))(t)
 	before := must(target.Fingerprint())(t)
-	if _, changed, err := target.Commit(base, encoded, nil); err != nil || changed {
+	if _, changed, err := target.Commit(t.Context(), base, encoded, nil); err != nil || changed {
 		t.Fatalf("no-op commit: %v %v", changed, err)
 	}
 	if must(target.Fingerprint())(t) != before {
@@ -127,7 +127,7 @@ func TestModelRowsRoundTripAndTypedEdits(t *testing.T) {
 	if len(changed) != 1 || !changed[modelRowKey{"profile", base.Document.Profiles[0].ID, "name"}] {
 		t.Fatalf("typed rename changed %v", changed)
 	}
-	next, written, err := target.Commit(base, encoded, nil)
+	next, written, err := target.Commit(t.Context(), base, encoded, nil)
 	if err != nil || !written || next.Head.Generation != base.Head.Generation+1 {
 		t.Fatalf("typed rename: %v %v", written, err)
 	}
@@ -243,7 +243,7 @@ func TestModelStoredValuesLoadLenientlyAndWriteTyped(t *testing.T) {
 					setStoreField(&rows.Profiles[i].Fields, tt.field, json.RawMessage(tt.text))
 				}
 			}
-			entry, changed, err := r.store.Commit(base, rows, nil)
+			entry, changed, err := r.store.Commit(t.Context(), base, rows, nil)
 			if err != nil || !changed {
 				t.Fatalf("fixture commit: %v %v", changed, err)
 			}
@@ -295,7 +295,7 @@ func TestModelIssuesLoggedOncePerRevision(t *testing.T) {
 			setStoreField(&rows.Profiles[i].Fields, "description", json.RawMessage(`{"password":"`+secret+`"}`))
 			setStoreField(&rows.Profiles[i].Fields, "future_member", json.RawMessage(`"`+secret+`"`))
 		}
-		_, _, err := r.store.Commit(base, rows, nil)
+		_, _, err := r.store.Commit(t.Context(), base, rows, nil)
 		noError(t, err)
 		r.dropCache()
 		for range 5 {
@@ -312,7 +312,7 @@ func TestModelIssuesLoggedOncePerRevision(t *testing.T) {
 		for i := range rows.Profiles {
 			setStoreField(&rows.Profiles[i].Fields, "description", json.RawMessage(`{"password":"`+secret+`"}`))
 		}
-		_, _, err = r.store.Commit(base, rows, nil)
+		_, _, err = r.store.Commit(t.Context(), base, rows, nil)
 		noError(t, err)
 		r.dropCache()
 		for range 5 {

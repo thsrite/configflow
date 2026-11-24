@@ -23,11 +23,11 @@ func TestTrafficFilesInteroperateWithPython(t *testing.T) {
 		testjson.Field{Key: "days", Value: testjson.Obj()},
 		testjson.Field{Key: "future", Value: nil},
 	)
-	if _, err := native.files.Write("go", value, true); err != nil {
+	if _, err := native.files.Write(t.Context(), "go", value, true); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
-	if _, err := native.files.Write("native", json.RawMessage(`{"status":null,"days":{},"future":{"n":2.00}}`), true); err != nil {
+	if _, err := native.files.Write(t.Context(), "native", json.RawMessage(`{"status":null,"days":{},"future":{"n":2.00}}`), true); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := native.Add(t.Context(), "native", nativeReport(t), &at); err != nil {

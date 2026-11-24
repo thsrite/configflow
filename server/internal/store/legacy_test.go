@@ -4,6 +4,7 @@ package store
 // the raw API directly in raw_test.go. No decoding or schema logic lives in store.
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 	"unicode/utf8"
 )
@@ -419,10 +421,13 @@ type legacyEntry struct {
 	Entry
 	Document *testDoc
 }
-type legacyStore struct{ *Store }
+type legacyStore struct {
+	*Store
+	ctx context.Context
+}
 
-func legacyNew(path string, timeout func() time.Duration) *legacyStore {
-	return &legacyStore{New(path, timeout)}
+func legacyNew(t testing.TB, path string, timeout func() time.Duration) *legacyStore {
+	return &legacyStore{Store: New(path, timeout), ctx: t.Context()}
 }
 func legacyEntryOf(raw Entry, err error) (legacyEntry, error) {
 	if err != nil {
@@ -452,7 +457,7 @@ func (s *legacyStore) Commit(base legacyEntry, doc, meta *testDoc) (legacyEntry,
 	if err != nil {
 		return legacyEntry{}, false, err
 	}
-	entry, changed, err := s.Store.Commit(base.Entry, raw, extra)
+	entry, changed, err := s.Store.Commit(s.ctx, base.Entry, raw, extra)
 	if err != nil || !changed {
 		return legacyEntry{}, changed, err
 	}

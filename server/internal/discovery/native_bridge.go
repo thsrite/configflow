@@ -78,7 +78,7 @@ func (s *Service) legacySaveProbes(ctx context.Context, id string, ps map[string
 	if err := project(ps, &entries); err != nil {
 		return err
 	}
-	return store.SaveEntriesContext(ctx, id, entries, now())
+	return store.SaveEntries(ctx, id, entries, now())
 }
 func legacyJudge(d, p *PathStats, failing, dh, ph bool) (Probe, error) {
 	var direct, proxy *check.PathStats
@@ -111,7 +111,7 @@ func (s *Service) legacyEditRegion(ctx context.Context, id string, edit func(*re
 	if err != nil {
 		return err
 	}
-	return store.UpdateDataContext(ctx, id, func(data *check.RegionData) error {
+	return store.UpdateData(ctx, id, func(data *check.RegionData) error {
 		var out regionRecord
 		if err := project(data, &out); err != nil {
 			return err

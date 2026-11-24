@@ -256,9 +256,9 @@ func TestA05ReferenceInt64OverflowInSQLite(t *testing.T) {
 		{this, "s2", "example.com", "H", 2, 2, 1}}
 	_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: usage, Targets: targets})
 	_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: usage[:1], Targets: targets[:1]})
-	check("flush1", a05FlushResult(h.Flush(DefaultRetention, at(0))))
+	check("flush1", a05FlushResult(h.Flush(t.Context(), DefaultRetention, at(0))))
 	_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: usage[:1], Targets: targets[:1]})
-	check("flush2", a05FlushResult(h.Flush(DefaultRetention, at(0))))
+	check("flush2", a05FlushResult(h.Flush(t.Context(), DefaultRetention, at(0))))
 	check("tables2", tablesOf(t, path))
 	_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{
 		Usage:   []UsageRow{{this, "s", "G\x1fN", 10, 0, 0}, {this, "s", "X", big, big, 0}},
@@ -267,10 +267,10 @@ func TestA05ReferenceInt64OverflowInSQLite(t *testing.T) {
 	for _, by := range Aggregates {
 		check("query/"+by, a05QueryResult(h.QueryTraffic(context.Background(), "a", "24h", by, at(0))))
 	}
-	check("flush3", a05FlushResult(h.Flush(DefaultRetention, at(3*Day))))
+	check("flush3", a05FlushResult(h.Flush(t.Context(), DefaultRetention, at(3*Day))))
 	check("tables3", tablesOf(t, path))
 	check("query/30d/destination", a05QueryResult(h.QueryTraffic(context.Background(), "a", "30d", "destination", at(3*Day))))
-	check("flush4", a05FlushResult(h.Flush(DefaultRetention, at(9*Day))))
+	check("flush4", a05FlushResult(h.Flush(t.Context(), DefaultRetention, at(9*Day))))
 	check("tables4", tablesOf(t, path))
 	check("query/30d/source", a05QueryResult(h.QueryTraffic(context.Background(), "a", "30d", "source", at(9*Day))))
 
@@ -280,7 +280,7 @@ func TestA05ReferenceInt64OverflowInSQLite(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: rows})
 	}
-	check("pending-overflow", a05FlushResult(h.Flush(DefaultRetention, at(0))))
+	check("pending-overflow", a05FlushResult(h.Flush(t.Context(), DefaultRetention, at(0))))
 	check("pending-after", h.PendingCount())
 	h.mu.Lock()
 	h.usage = map[usageKey]*triple{}
@@ -288,8 +288,8 @@ func TestA05ReferenceInt64OverflowInSQLite(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: rows})
 	}
-	check("flush-max", a05FlushResult(h.Flush(DefaultRetention, at(0))))
-	check("sum-overflow", a05FlushResult(h.Flush(DefaultRetention, at(9*Day))))
+	check("flush-max", a05FlushResult(h.Flush(t.Context(), DefaultRetention, at(0))))
+	check("sum-overflow", a05FlushResult(h.Flush(t.Context(), DefaultRetention, at(9*Day))))
 	check("sum-overflow-tables", dumpTable(t, filepath.Join(dir, TrafficFilename), "traffic_usage"))
 }
 
@@ -315,7 +315,7 @@ func TestA05ReferenceBoundaries(t *testing.T) {
 	path := filepath.Join(dir, TrafficFilename)
 	h := NewTrafficHistory(dir)
 	_ = h.AddTraffic(context.Background(), "a", &CleanedTraffic{Usage: usage, Targets: targets})
-	check("flush", a05FlushResult(h.Flush(30, &now)))
+	check("flush", a05FlushResult(h.Flush(t.Context(), 30, &now)))
 	check("tables", tablesOf(t, path))
 	for rangeKey := range Ranges {
 		for _, when := range []float64{now, float64(day0), float64(day0) - 0.5} {
@@ -324,7 +324,7 @@ func TestA05ReferenceBoundaries(t *testing.T) {
 		}
 	}
 	later := now + Day
-	check("flush-later", a05FlushResult(h.Flush(30, &later)))
+	check("flush-later", a05FlushResult(h.Flush(t.Context(), 30, &later)))
 	check("tables-later", tablesOf(t, path))
 
 	this := int64(full.Now) / Hour * Hour

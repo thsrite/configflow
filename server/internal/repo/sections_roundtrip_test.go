@@ -141,7 +141,7 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 		entry.Document.Profiles[i].Fields = append(entry.Document.Profiles[i].Fields,
 			store.Field{Name: "n85_profile", Value: json.RawMessage(`{"nested":[null,true]}`)})
 	}
-	_, written, err := r.store.Commit(entry, entry.Document, nil)
+	_, written, err := r.store.Commit(t.Context(), entry, entry.Document, nil)
 	if err != nil || !written {
 		t.Fatalf("fixture: %v %v", written, err)
 	}

@@ -306,7 +306,7 @@ func (m *Manager) DeleteAgent(ctx context.Context, id string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return true, nil
 	}
-	if err := m.runtime.deleteContext(ctx, id); err != nil {
+	if err := m.runtime.Delete(ctx, id); err != nil {
 		return true, nil
 	}
 	var cleanupErr error

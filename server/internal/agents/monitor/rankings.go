@@ -3,7 +3,7 @@ package monitor
 // Port of backend/agents/oxidns_ranking_history.py (A07): complete OxiDNS
 // request rankings, fetched slot by slot from the Agents, stored per hour in
 // DATA_DIR/metrics/oxidns_rankings.sqlite3 and added up per range by the
-// panel (history.go's RankingHistory interface, installed by Wire).
+// panel.
 //
 // The core ranks at most the newest 10,000 query records of a window
 // (OxiDNS 1.6.1, fixed). Every 15 minutes the collector asks for the slot
@@ -198,8 +198,8 @@ type rankConn struct {
 	q    rankQuerier
 }
 
-// connectContext opens the file and makes sure the tables exist.
-func (s *RankingStore) connectContext(ctx context.Context) (*rankConn, error) {
+// connect opens the file and makes sure the tables exist.
+func (s *RankingStore) connect(ctx context.Context) (*rankConn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func (c *rankConn) queryRow(statement string, args ...any) *sql.Row {
 
 // readContext runs body on a fresh connection without a transaction.
 func (s *RankingStore) readContext(ctx context.Context, body func(c *rankConn) error) error {
-	c, err := s.connectContext(ctx)
+	c, err := s.connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -293,10 +293,10 @@ func (s *RankingStore) readContext(ctx context.Context, body func(c *rankConn) e
 	return body(c)
 }
 
-// withContext runs body in one transaction on a fresh connection: committed
+// with runs body in one transaction on a fresh connection: committed
 // when body succeeds and ctx is still live, rolled back otherwise.
-func (s *RankingStore) withContext(ctx context.Context, body func(c *rankConn) error) error {
-	c, err := s.connectContext(ctx)
+func (s *RankingStore) with(ctx context.Context, body func(c *rankConn) error) error {
+	c, err := s.connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -326,9 +326,9 @@ func (s *RankingStore) withContext(ctx context.Context, body func(c *rankConn) e
 	return nil
 }
 
-// FetchedContext is fetched(agent_id, recorder, starts): the slot starts among
+// Fetched is fetched(agent_id, recorder, starts): the slot starts among
 // starts already stored.
-func (s *RankingStore) FetchedContext(ctx context.Context, agentID, recorder string, starts []int64) (map[int64]bool, error) {
+func (s *RankingStore) Fetched(ctx context.Context, agentID, recorder string, starts []int64) (map[int64]bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -372,7 +372,7 @@ func (s *RankingStore) StoreSlot(ctx context.Context, agentID, recorder string, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	added := false
-	err := s.withContext(ctx, func(c *rankConn) error {
+	err := s.with(ctx, func(c *rankConn) error {
 		inserted, err := c.write("INSERT OR IGNORE INTO ranking_slots (agent_id, recorder, start) VALUES (?, ?, ?)",
 			agentID, recorder, start)
 		if err != nil || inserted == 0 {
@@ -428,9 +428,9 @@ func nowOr(now *int64) int64 {
 	return nowSeconds()
 }
 
-// MaintainContext is maintain(agent_ids, now): merge old hours into days, drop
+// Maintain is maintain(agent_ids, now): merge old hours into days, drop
 // expired data and removed Agents; at most once per hour.
-func (s *RankingStore) MaintainContext(ctx context.Context, agentIDs []string, now *int64) error {
+func (s *RankingStore) Maintain(ctx context.Context, agentIDs []string, now *int64) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -447,7 +447,7 @@ func (s *RankingStore) MaintainContext(ctx context.Context, agentIDs []string, n
 	}
 	hourlyBefore := t - floorMod(t, HistoryDay) - RankingHourlyDays*HistoryDay
 	cutoff := t - HistoryRetentionDay*HistoryDay
-	err := s.withContext(ctx, func(c *rankConn) error {
+	err := s.with(ctx, func(c *rankConn) error {
 		known := map[string]bool{}
 		for _, id := range agentIDs {
 			known[id] = true
@@ -616,9 +616,9 @@ func mergeDay(c *rankConn, agentID, recorder string, day int64) error {
 	return nil
 }
 
-// HasAnyContext is has_any(agent_id, recorder): whether any slot of this recorder
+// HasAny is has_any(agent_id, recorder): whether any slot of this recorder
 // is stored, without adding anything up.
-func (s *RankingStore) HasAnyContext(ctx context.Context, agentID, recorder string) (bool, error) {
+func (s *RankingStore) HasAny(ctx context.Context, agentID, recorder string) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
@@ -636,11 +636,11 @@ func (s *RankingStore) HasAnyContext(ctx context.Context, agentID, recorder stri
 	return found, err
 }
 
-// QueryContext is query(agent_id, recorder, since, until): totals and the top
+// Query is query(agent_id, recorder, since, until): totals and the top
 // entries of the stored periods starting in [since, until). Answers are
 // kept until the stored data changes; the returned answer is shared and
 // must not be modified.
-func (s *RankingStore) QueryContext(ctx context.Context, agentID, recorder string, since, until int64) (*HistoryAnswer, error) {
+func (s *RankingStore) Query(ctx context.Context, agentID, recorder string, since, until int64) (*HistoryAnswer, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -655,7 +655,7 @@ func (s *RankingStore) QueryContext(ctx context.Context, agentID, recorder strin
 	version := s.version
 	s.mu.Unlock()
 	run := func(id, recorder string, since, until int64) (*HistoryAnswer, error) {
-		return s.queryContext(ctx, id, recorder, since, until)
+		return s.query(ctx, id, recorder, since, until)
 	}
 	if s.queryHook != nil {
 		run = s.queryHook
@@ -693,7 +693,7 @@ func emptyAnswer() *HistoryAnswer {
 }
 
 // query is _query.
-func (s *RankingStore) queryContext(ctx context.Context, agentID, recorder string, since, until int64) (*HistoryAnswer, error) {
+func (s *RankingStore) query(ctx context.Context, agentID, recorder string, since, until int64) (*HistoryAnswer, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -874,42 +874,4 @@ func rankingRound(ctx context.Context, m *agents.Manager) {
 	if err := CollectHistoryRound(scope, agentsManager{m}, nil, nil); err != nil {
 		rankingLogger.Exception("OxiDNS ranking collection round failed", err)
 	}
-}
-
-// rankingStoreFactory is the history.go hook: get_history(data_dir).
-func rankingStoreFactory(dataDir string) RankingHistory { return GetRankingStore(dataDir) }
-
-func (s *RankingStore) connect() (*rankConn, error) { return s.connectContext(context.Background()) }
-func (s *RankingStore) with(body func(*rankConn) error) error {
-	return s.withContext(context.Background(), body)
-}
-
-// Fetched is the legacy ranking-store entry point; native callers use FetchedContext.
-func (s *RankingStore) Fetched(agentID, recorder string, starts []int64) (map[int64]bool, error) {
-	return s.FetchedContext(context.Background(), agentID, recorder, starts)
-}
-
-// AddSlot is the legacy ranking-store entry point; native callers use StoreSlot.
-func (s *RankingStore) AddSlot(agentID, recorder string, start int64, slot *Slot) (bool, error) {
-	return s.StoreSlot(context.Background(), agentID, recorder, start, slot)
-}
-
-// Maintain is the legacy ranking-store entry point; native callers use MaintainContext.
-func (s *RankingStore) Maintain(agentIDs []string, now *int64) error {
-	return s.MaintainContext(context.Background(), agentIDs, now)
-}
-
-// HasAny is the legacy ranking-store entry point; native callers use HasAnyContext.
-func (s *RankingStore) HasAny(agentID, recorder string) (bool, error) {
-	return s.HasAnyContext(context.Background(), agentID, recorder)
-}
-
-// Query is the legacy ranking-store entry point; native callers use QueryContext.
-func (s *RankingStore) Query(agentID, recorder string, since, until int64) (*HistoryAnswer, error) {
-	return s.QueryContext(context.Background(), agentID, recorder, since, until)
-}
-
-// query is the legacy ranking-store entry point; native callers use queryContext.
-func (s *RankingStore) query(agentID, recorder string, since, until int64) (*HistoryAnswer, error) {
-	return s.queryContext(context.Background(), agentID, recorder, since, until)
 }

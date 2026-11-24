@@ -127,7 +127,7 @@ func TestNativeLegacyReadErrorsDoNotPersist(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			_, readErr := readLegacyRowsContext(e.ctx, path)
+			_, readErr := readLegacyRows(e.ctx, path)
 			verifyNativeRuntimeErrorRow(t, index, rowRaw, readErr)
 			before, err := e.repo.Head(e.ctx)
 			if err != nil {

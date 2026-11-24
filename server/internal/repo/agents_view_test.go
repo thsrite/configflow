@@ -128,7 +128,7 @@ func TestAgentViewUsesWorkingAndPinnedSnapshotsWithoutPublishingThem(t *testing.
 				changed.System.Fields[i].Value = json.RawMessage(`[{"id":"device","name":"foreign","profile_id":"default"}]`)
 			}
 		}
-		if _, committed, err := r.store.Commit(base, &changed, nil); err != nil || !committed {
+		if _, committed, err := r.store.Commit(t.Context(), base, &changed, nil); err != nil || !committed {
 			t.Fatalf("external fixture commit=%v err=%v", committed, err)
 		}
 		if got := agentViewName(t, r, held); got != "committed" {
@@ -198,7 +198,7 @@ func TestAgentViewOriginalTypesCancellationAndReadGuard(t *testing.T) {
 			changed.System.Fields[i].Value = json.RawMessage(original)
 		}
 	}
-	if _, committed, err := r.store.Commit(base, &changed, nil); err != nil || !committed {
+	if _, committed, err := r.store.Commit(t.Context(), base, &changed, nil); err != nil || !committed {
 		t.Fatal(committed, err)
 	}
 	before, err := r.store.Fingerprint()

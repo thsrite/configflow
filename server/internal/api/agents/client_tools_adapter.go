@@ -442,21 +442,21 @@ func (t clientTools) clearClientDiscovery(ctx context.Context, id string) (bool,
 	if err != nil {
 		return false, err
 	}
-	if err = traffic.DeleteContext(ctx, id); err != nil {
+	if err = traffic.Delete(ctx, id); err != nil {
 		return false, err
 	}
 	probes, err := t.deps.probeStore(ctx)
 	if err != nil {
 		return false, err
 	}
-	if err = probes.DeleteContext(ctx, id); err != nil {
+	if err = probes.Delete(ctx, id); err != nil {
 		return false, err
 	}
 	regions, err := t.deps.regionStore(ctx)
 	if err != nil {
 		return false, err
 	}
-	if err = regions.DeleteContext(ctx, id); err != nil {
+	if err = regions.Delete(ctx, id); err != nil {
 		return false, err
 	}
 	return true, nil

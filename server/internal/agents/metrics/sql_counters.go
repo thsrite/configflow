@@ -24,8 +24,8 @@ func counterUpdateSQL(table string) string {
 	}
 	return " WHERE " + strings.Join(clauses, " AND ")
 }
-func (c *trafficConn) upsertContext(ctx context.Context, statement string, args ...any) error {
-	n, err := c.execContext(ctx, statement, args...)
+func (c *trafficConn) upsert(ctx context.Context, statement string, args ...any) error {
+	n, err := c.exec(ctx, statement, args...)
 	if err != nil {
 		return err
 	}

@@ -652,8 +652,6 @@ type trafficConn struct {
 	tx   *sql.Tx
 }
 
-var bg = context.Background()
-
 // querier is the open transaction, or the connection outside one.
 func (c *trafficConn) querier() interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -665,10 +663,7 @@ func (c *trafficConn) querier() interface {
 	return c.conn
 }
 
-func (c *trafficConn) exec(statement string, args ...any) (int64, error) {
-	return c.execContext(bg, statement, args...)
-}
-func (c *trafficConn) execContext(ctx context.Context, statement string, args ...any) (int64, error) {
+func (c *trafficConn) exec(ctx context.Context, statement string, args ...any) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -683,10 +678,10 @@ func (c *trafficConn) execContext(ctx context.Context, statement string, args ..
 	return n, nil
 }
 
-// beginContext starts a transaction (BEGIN IMMEDIATE: the connection is
+// begin starts a transaction (BEGIN IMMEDIATE: the connection is
 // opened with _txlock=immediate, so writers queue on busy_timeout instead of
 // failing on a lock upgrade).
-func (c *trafficConn) beginContext(ctx context.Context) error {
+func (c *trafficConn) begin(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -701,7 +696,7 @@ func (c *trafficConn) beginContext(ctx context.Context) error {
 	return nil
 }
 
-func (c *trafficConn) commitContext(ctx context.Context) error {
+func (c *trafficConn) commit(ctx context.Context) error {
 	tx := c.tx
 	c.tx = nil
 	if err := ctx.Err(); err != nil {
@@ -717,10 +712,10 @@ func (c *trafficConn) commitContext(ctx context.Context) error {
 	return nil
 }
 
-// rollbackContext ends an open transaction without saving it. The caller
+// rollback ends an open transaction without saving it. The caller
 // returns the error that caused it; a failed ROLLBACK is only logged
 // (closing the connection discards whatever is still open).
-func (c *trafficConn) rollbackContext(context.Context) error {
+func (c *trafficConn) rollback(context.Context) error {
 	if c.tx != nil {
 		logRollback(c.tx)
 		c.tx = nil
@@ -739,14 +734,14 @@ func logRollback(tx *sql.Tx) {
 // inTransaction runs body in one transaction: committed when body succeeds,
 // rolled back otherwise.
 func (c *trafficConn) inTransaction(ctx context.Context, body func() error) error {
-	if err := c.beginContext(ctx); err != nil {
+	if err := c.begin(ctx); err != nil {
 		return err
 	}
 	if err := body(); err != nil {
-		c.rollbackContext(ctx)
+		c.rollback(ctx)
 		return err
 	}
-	return c.commitContext(ctx)
+	return c.commit(ctx)
 }
 
 func (c *trafficConn) close() {
@@ -757,10 +752,7 @@ func (c *trafficConn) close() {
 	c.conn.Close()
 	c.db.Close()
 }
-func (c *trafficConn) query(statement string, args []any, scan func(*sql.Rows) error) error {
-	return c.queryContext(bg, statement, args, scan)
-}
-func (c *trafficConn) queryContext(ctx context.Context, statement string, args []any, scan func(*sql.Rows) error) error {
+func (c *trafficConn) query(ctx context.Context, statement string, args []any, scan func(*sql.Rows) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -783,11 +775,7 @@ func (c *trafficConn) queryContext(ctx context.Context, statement string, args [
 	return rows.Err()
 }
 
-// connect is _connect(): create the directory, open the file (journal mode
-// DELETE like the configuration database: no -wal file in backups or the
-// data volume), create the tables and migrate 1.8.51-go tables.
-func (h *TrafficHistory) connect() (*trafficConn, error) { return h.connectContext(bg) }
-func (h *TrafficHistory) connectContext(ctx context.Context) (*trafficConn, error) {
+func (h *TrafficHistory) connect(ctx context.Context) (*trafficConn, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -823,7 +811,7 @@ func (h *TrafficHistory) connectContext(ctx context.Context) (*trafficConn, erro
 	}()
 	statements := append([]string{"PRAGMA busy_timeout=" + strconv.Itoa(trafficTimeoutMs), "PRAGMA journal_mode=DELETE"}, trafficSchema...)
 	for _, statement := range statements {
-		if _, err := c.execContext(ctx, statement); err != nil {
+		if _, err := c.exec(ctx, statement); err != nil {
 			return nil, err
 		}
 	}
@@ -838,7 +826,7 @@ func (h *TrafficHistory) connectContext(ctx context.Context) (*trafficConn, erro
 // chain tables and drop them; happens only on the first open.
 func migrateLegacy(ctx context.Context, c *trafficConn) error {
 	legacy := map[string]bool{}
-	err := c.queryContext(ctx, "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('usage', 'targets')", nil, func(rows *sql.Rows) error {
+	err := c.query(ctx, "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('usage', 'targets')", nil, func(rows *sql.Rows) error {
 		var name string
 		if err := rows.Scan(&name); err != nil {
 			return err
@@ -854,10 +842,10 @@ func migrateLegacy(ctx context.Context, c *trafficConn) error {
 			if !legacy[migration.table] {
 				continue
 			}
-			if _, err := c.execContext(ctx, migration.statement); err != nil {
+			if _, err := c.exec(ctx, migration.statement); err != nil {
 				return err
 			}
-			if _, err := c.execContext(ctx, "DROP TABLE "+migration.table); err != nil {
+			if _, err := c.exec(ctx, "DROP TABLE "+migration.table); err != nil {
 				return err
 			}
 		}
@@ -891,12 +879,9 @@ type TrafficFlushResult struct {
 // days and delete expired rows. On failure the increments stay in memory
 // (merged with reports that arrived meanwhile) and the error is returned.
 // at nil = time.time().
-func (h *TrafficHistory) Flush(retention int64, at *float64) (TrafficFlushResult, error) {
-	return h.FlushContext(bg, retention, at)
-}
-
-// FlushContext keeps the caller's work lifetime through SQLite commit.
-func (h *TrafficHistory) FlushContext(ctx context.Context, retention int64, at *float64) (TrafficFlushResult, error) {
+//
+// Flush keeps the caller's work lifetime through SQLite commit.
+func (h *TrafficHistory) Flush(ctx context.Context, retention int64, at *float64) (TrafficFlushResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return TrafficFlushResult{}, err
@@ -931,7 +916,7 @@ func (h *TrafficHistory) FlushContext(ctx context.Context, retention int64, at *
 }
 
 func (h *TrafficHistory) save(ctx context.Context, usage map[usageKey]*triple, targets map[targetKey2]*triple, retention int64, now float64) (TrafficFlushResult, error) {
-	c, err := h.connectContext(ctx)
+	c, err := h.connect(ctx)
 	if err != nil {
 		return TrafficFlushResult{}, err
 	}
@@ -944,7 +929,7 @@ func (h *TrafficHistory) save(ctx context.Context, usage map[usageKey]*triple, t
 			if err != nil {
 				return err
 			}
-			if err := c.upsertContext(ctx, statement, key.agent, key.bucket, key.source, key.chain, up, down, conns); err != nil {
+			if err := c.upsert(ctx, statement, key.agent, key.bucket, key.source, key.chain, up, down, conns); err != nil {
 				return err
 			}
 		}
@@ -954,7 +939,7 @@ func (h *TrafficHistory) save(ctx context.Context, usage map[usageKey]*triple, t
 			if err != nil {
 				return err
 			}
-			if err := c.upsertContext(ctx, statement, key.agent, key.bucket, key.source, key.target, key.chain, up, down, conns); err != nil {
+			if err := c.upsert(ctx, statement, key.agent, key.bucket, key.source, key.target, key.chain, up, down, conns); err != nil {
 				return err
 			}
 		}
@@ -994,7 +979,7 @@ func compact(ctx context.Context, c *trafficConn, now float64) (int64, error) {
 	var compacted int64
 	usageBefore := int64(floorDiv(now, Day)*Day - UsageHourlyDays*Day)
 	var usageRows [][]any
-	err := c.queryContext(ctx, "SELECT agent_id, bucket / 86400 * 86400, source, chain, SUM(up), SUM(down), SUM(conns), MIN("+numericCountersSQL("")+") "+
+	err := c.query(ctx, "SELECT agent_id, bucket / 86400 * 86400, source, chain, SUM(up), SUM(down), SUM(conns), MIN("+numericCountersSQL("")+") "+
 		"FROM traffic_usage WHERE span = 3600 AND bucket < ? GROUP BY 1, 2, 3, 4", []any{usageBefore}, func(rows *sql.Rows) error {
 		row := make([]any, 7)
 		if err := validateGroupedCounters(rows, row); err != nil {
@@ -1007,21 +992,21 @@ func compact(ctx context.Context, c *trafficConn, now float64) (int64, error) {
 		return 0, err
 	}
 	if len(usageRows) > 0 {
-		n, err := c.execContext(ctx, "DELETE FROM traffic_usage WHERE span = 3600 AND bucket < ?", usageBefore)
+		n, err := c.exec(ctx, "DELETE FROM traffic_usage WHERE span = 3600 AND bucket < ?", usageBefore)
 		if err != nil {
 			return 0, err
 		}
 		compacted += n
 		statement := usageUpsert(Day)
 		for _, row := range usageRows {
-			if err := c.upsertContext(ctx, statement, row...); err != nil {
+			if err := c.upsert(ctx, statement, row...); err != nil {
 				return 0, err
 			}
 		}
 	}
 	targetsBefore := int64(floorDiv(now, Day)*Day - TargetHourlyDays*Day)
 	var targetRows [][]any
-	err = c.queryContext(ctx, "SELECT agent_id, bucket / 86400 * 86400, source, target, chain, SUM(up), SUM(down), SUM(conns), MIN("+numericCountersSQL("")+") "+
+	err = c.query(ctx, "SELECT agent_id, bucket / 86400 * 86400, source, target, chain, SUM(up), SUM(down), SUM(conns), MIN("+numericCountersSQL("")+") "+
 		"FROM traffic_targets WHERE span = 3600 AND bucket < ? GROUP BY 1, 2, 3, 4, 5", []any{targetsBefore}, func(rows *sql.Rows) error {
 		row := make([]any, 8)
 		if err := validateGroupedCounters(rows, row); err != nil {
@@ -1034,14 +1019,14 @@ func compact(ctx context.Context, c *trafficConn, now float64) (int64, error) {
 		return 0, err
 	}
 	if len(targetRows) > 0 {
-		n, err := c.execContext(ctx, "DELETE FROM traffic_targets WHERE span = 3600 AND bucket < ?", targetsBefore)
+		n, err := c.exec(ctx, "DELETE FROM traffic_targets WHERE span = 3600 AND bucket < ?", targetsBefore)
 		if err != nil {
 			return 0, err
 		}
 		compacted += n
 		statement := targetUpsert(Day)
 		for _, row := range targetRows {
-			if err := c.upsertContext(ctx, statement, row...); err != nil {
+			if err := c.upsert(ctx, statement, row...); err != nil {
 				return 0, err
 			}
 		}
@@ -1084,7 +1069,7 @@ type targetDayRow struct {
 // chains); the others are merged per chain into "other".
 func trimDay(ctx context.Context, c *trafficConn, agentID, day any) (int64, error) {
 	var rows []targetDayRow
-	err := c.queryContext(ctx, "SELECT source, target, chain, up, down, conns FROM traffic_targets WHERE agent_id = ? AND bucket = ? AND span = 86400",
+	err := c.query(ctx, "SELECT source, target, chain, up, down, conns FROM traffic_targets WHERE agent_id = ? AND bucket = ? AND span = 86400",
 		[]any{agentID, day}, func(scan *sql.Rows) error {
 			var row targetDayRow
 			var up, down, conns any
@@ -1151,7 +1136,7 @@ func trimDay(ctx context.Context, c *trafficConn, agentID, day any) (int64, erro
 		merged[key].add(row.v)
 	}
 	for _, row := range extra {
-		if _, err := c.execContext(ctx, "DELETE FROM traffic_targets WHERE agent_id = ? AND bucket = ? AND span = 86400 AND source = ? AND target = ? AND chain = ?",
+		if _, err := c.exec(ctx, "DELETE FROM traffic_targets WHERE agent_id = ? AND bucket = ? AND span = 86400 AND source = ? AND target = ? AND chain = ?",
 			agentID, day, row.source, row.target, row.chain); err != nil {
 			return 0, err
 		}
@@ -1162,7 +1147,7 @@ func trimDay(ctx context.Context, c *trafficConn, agentID, day any) (int64, erro
 		if err != nil {
 			return 0, err
 		}
-		if err := c.upsertContext(ctx, statement, agentID, day, key.source, OtherTarget, key.chain, up, down, conns); err != nil {
+		if err := c.upsert(ctx, statement, agentID, day, key.source, OtherTarget, key.chain, up, down, conns); err != nil {
 			return 0, err
 		}
 	}
@@ -1174,7 +1159,7 @@ func trimDay(ctx context.Context, c *trafficConn, agentID, day any) (int64, erro
 func pruneRows(ctx context.Context, c *trafficConn, cutoff float64) (int64, error) {
 	var pruned int64
 	for _, table := range []string{"traffic_usage", "traffic_targets"} {
-		n, err := c.execContext(ctx, "DELETE FROM "+table+" WHERE bucket + span <= ?", int64(cutoff))
+		n, err := c.exec(ctx, "DELETE FROM "+table+" WHERE bucket + span <= ?", int64(cutoff))
 		if err != nil {
 			return 0, err
 		}
@@ -1188,7 +1173,7 @@ func deleteAgents(ctx context.Context, c *trafficConn, agentIDs []string) error 
 	return c.inTransaction(ctx, func() error {
 		for _, agentID := range agentIDs {
 			for _, statement := range []string{"DELETE FROM traffic_usage WHERE agent_id = ?", "DELETE FROM traffic_targets WHERE agent_id = ?"} {
-				if _, err := c.execContext(ctx, statement, agentID); err != nil {
+				if _, err := c.exec(ctx, statement, agentID); err != nil {
 					return err
 				}
 			}
@@ -1197,11 +1182,8 @@ func deleteAgents(ctx context.Context, c *trafficConn, agentIDs []string) error 
 	})
 }
 
-// Delete is delete(agent_id): forget the Agent's increments and rows.
-func (h *TrafficHistory) Delete(agentID string) error { return h.DeleteContext(bg, agentID) }
-
-// DeleteContext keeps the caller's work lifetime through SQLite commit.
-func (h *TrafficHistory) DeleteContext(ctx context.Context, agentID string) error {
+// Delete keeps the caller's work lifetime through SQLite commit.
+func (h *TrafficHistory) Delete(ctx context.Context, agentID string) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
@@ -1224,7 +1206,7 @@ func (h *TrafficHistory) DeleteContext(ctx context.Context, agentID string) erro
 	if !pathx.Accessible(h.Path) {
 		return nil
 	}
-	c, err := h.connectContext(ctx)
+	c, err := h.connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -1232,15 +1214,8 @@ func (h *TrafficHistory) DeleteContext(ctx context.Context, agentID string) erro
 	return deleteAgents(ctx, c, []string{agentID})
 }
 
-// RetainAgents is retain_agents(agent_ids): delete the data of Agents that
-// no longer exist (after an import, restore or reset); the number of
-// Agents removed from the file.
-func (h *TrafficHistory) RetainAgents(agentIDs []string) (int64, error) {
-	return h.RetainAgentsContext(bg, agentIDs)
-}
-
-// RetainAgentsContext keeps the caller's work lifetime through SQLite commit.
-func (h *TrafficHistory) RetainAgentsContext(ctx context.Context, agentIDs []string) (int64, error) {
+// RetainAgents keeps the caller's work lifetime through SQLite commit.
+func (h *TrafficHistory) RetainAgents(ctx context.Context, agentIDs []string) (int64, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return 0, err
@@ -1267,13 +1242,13 @@ func (h *TrafficHistory) RetainAgentsContext(ctx context.Context, agentIDs []str
 	if !pathx.Accessible(h.Path) {
 		return 0, nil
 	}
-	c, err := h.connectContext(ctx)
+	c, err := h.connect(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer c.close()
 	var removed []string
-	err = c.queryContext(ctx, "SELECT DISTINCT agent_id FROM traffic_usage UNION SELECT DISTINCT agent_id FROM traffic_targets", nil, func(rows *sql.Rows) error {
+	err = c.query(ctx, "SELECT DISTINCT agent_id FROM traffic_usage UNION SELECT DISTINCT agent_id FROM traffic_targets", nil, func(rows *sql.Rows) error {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			return err
@@ -1330,12 +1305,12 @@ func (h *TrafficHistory) rowsInRange(ctx context.Context, agentID string, start 
 	if !pathx.Accessible(h.Path) {
 		return usage, targets, nil
 	}
-	c, err := h.connectContext(ctx)
+	c, err := h.connect(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer c.close()
-	err = c.queryContext(ctx, "SELECT bucket, span, source, chain, up, down, conns FROM traffic_usage "+
+	err = c.query(ctx, "SELECT bucket, span, source, chain, up, down, conns FROM traffic_usage "+
 		"WHERE agent_id = ? AND bucket + span > ?", []any{agentID, int64(start)}, func(rows *sql.Rows) error {
 		var r usageRecord
 		var up, down, conns any
@@ -1356,7 +1331,7 @@ func (h *TrafficHistory) rowsInRange(ctx context.Context, agentID string, start 
 		return nil, nil, err
 	}
 	if withTargets {
-		err = c.queryContext(ctx, "SELECT bucket, span, source, target, chain, up, down, conns FROM traffic_targets "+
+		err = c.query(ctx, "SELECT bucket, span, source, target, chain, up, down, conns FROM traffic_targets "+
 			"WHERE agent_id = ? AND bucket + span > ?", []any{agentID, int64(start)}, func(rows *sql.Rows) error {
 			var r targetRecord
 			var up, down, conns any

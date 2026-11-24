@@ -58,7 +58,7 @@ func TestO36cSQLiteLockRuntimeBoundary(t *testing.T) {
 			defer func() { r.Store().BeforeCommit = nil }()
 			holder := make(chan error, 1)
 			go func() {
-				_, _, err := r.Store().Commit(entry, entry.Document, map[string]json.RawMessage{"o36c_holder": json.RawMessage(`true`)})
+				_, _, err := r.Store().Commit(t.Context(), entry, entry.Document, map[string]json.RawMessage{"o36c_holder": json.RawMessage(`true`)})
 				holder <- err
 			}()
 			select {
@@ -72,7 +72,7 @@ func TestO36cSQLiteLockRuntimeBoundary(t *testing.T) {
 			done := make(chan error, 1)
 			go func() {
 				other := store.New(r.Store().Path(), repo.LockTimeout)
-				_, _, err := other.CommitContext(work, entry, entry.Document, map[string]json.RawMessage{"o36c_target": json.RawMessage(`true`)})
+				_, _, err := other.Commit(work, entry, entry.Document, map[string]json.RawMessage{"o36c_target": json.RawMessage(`true`)})
 				done <- err
 			}()
 			select {

@@ -44,7 +44,7 @@ func TestMalformedProbeTimestampDoesNotDiscardValidSiblings(t *testing.T) {
 	}
 	var next model.OrderedMap[TimedRecord]
 	next.Set("new", timedAt("2030-01-02T00:00:00"))
-	if err := store.SaveEntries("synthetic", next, now); err != nil {
+	if err := store.SaveEntries(t.Context(), "synthetic", next, now); err != nil {
 		t.Fatal(err)
 	}
 	bytes, err := os.ReadFile(store.Path("synthetic"))

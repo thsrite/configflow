@@ -135,7 +135,7 @@ func TestCrossCheckPython(t *testing.T) {
 	pythonDump := created.GetObject("dump")
 
 	// 1. Go reads the database Python built.
-	target := legacyNew(copyTo(t, pythonDB, filepath.Join(directory, Filename)), seconds(2))
+	target := legacyNew(t, copyTo(t, pythonDB, filepath.Join(directory, Filename)), seconds(2))
 	if err := target.Check(); err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestCrossCheckPython(t *testing.T) {
 	sameTables(t, "Go's view of the Python database", goDump(t, target.Path()), pythonDump, false)
 
 	// 2. The same sequence of commits through the Go store gives the same rows.
-	replay := legacyNew(filepath.Join(t.TempDir(), Filename), seconds(2))
+	replay := legacyNew(t, filepath.Join(t.TempDir(), Filename), seconds(2))
 	var current legacyEntry
 	for i, item := range created.GetList("steps") {
 		step := item.(*testDoc)
@@ -257,7 +257,7 @@ func TestCrossCheckPythonErrors(t *testing.T) {
 			// refusal of a newer version, one version up.
 			copyTo(t, filepath.Join(pythonDirectory, "base.sqlite3"), path)
 			execSQL(t, path, "UPDATE meta SET value = '3' WHERE key = 'storage_version'")
-			if err := legacyNew(path, seconds(2)).Check(); !errors.Is(err, ErrUnsupported) || err.Error() != "数据库存储版本 3 高于当前支持的 2" {
+			if err := legacyNew(t, path, seconds(2)).Check(); !errors.Is(err, ErrUnsupported) || err.Error() != "数据库存储版本 3 高于当前支持的 2" {
 				t.Errorf("version-newer: %v", err)
 			}
 			if want := scenario.GetObject("check"); want.GetString("type") != "StoreUnsupported" {
@@ -281,7 +281,7 @@ func TestCrossCheckPythonErrors(t *testing.T) {
 				execSQL(t, path, toStrings(setup.([]any))...)
 			}
 		}
-		target := legacyNew(path, seconds(scenario.GetFloat("timeout")))
+		target := legacyNew(t, path, seconds(scenario.GetFloat("timeout")))
 		compare := func(operation string, value any, err error) {
 			t.Helper()
 			want := scenario.GetObject(operation)
@@ -473,7 +473,7 @@ func TestCrossCheckPythonOddDocuments(t *testing.T) {
 		t.Fatalf("only %d sequences", len(sequences))
 	}
 	for index, item := range sequences {
-		target := legacyNew(filepath.Join(t.TempDir(), Filename), seconds(2))
+		target := legacyNew(t, filepath.Join(t.TempDir(), Filename), seconds(2))
 		var entry legacyEntry
 		for number, raw := range item.([]any) {
 			step := raw.(*testDoc)

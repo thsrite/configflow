@@ -391,7 +391,7 @@ func storedRankings(ctx context.Context, m Registry, a *model.Agent, recorder, r
 	}
 	since -= floorMod(since, HistoryHour)
 	until := now - floorMod(now, HistoryHour) + HistoryHour
-	stored, err := queryHistory(ctx, getHistory(m.DataDir()), a.ID, recorder, since, until)
+	stored, err := GetRankingStore(m.DataDir()).Query(ctx, a.ID, recorder, since, until)
 	if err != nil {
 		return nil, err
 	}
@@ -451,7 +451,7 @@ func overviewRanking(ctx context.Context, m Registry, a *model.Agent, params que
 			} else {
 				stored := false
 				if slices.Contains(recorders, selected) {
-					stored, err = hasHistory(ctx, getHistory(m.DataDir()), a.ID, selected)
+					stored, err = GetRankingStore(m.DataDir()).HasAny(ctx, a.ID, selected)
 					if err != nil {
 						return nil, err
 					}

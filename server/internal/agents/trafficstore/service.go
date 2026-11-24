@@ -26,5 +26,5 @@ func (s *Service) Store() *NativeStore { return s.store }
 
 // DeleteAgent removes an Agent's persisted traffic store.
 func (s *Service) DeleteAgent(ctx context.Context, agentID string) error {
-	return s.store.DeleteContext(lifecycle.Detach(ctx), agentID)
+	return s.store.Delete(lifecycle.Detach(ctx), agentID)
 }

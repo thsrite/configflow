@@ -35,7 +35,7 @@ func TestRawRowsPreserveBytesAndRevisions(t *testing.T) {
 	if !reflect.DeepEqual(entry, loaded) {
 		t.Fatal("create and load disagree")
 	}
-	if _, changed, err := s.Commit(loaded, loaded.Document, nil); err != nil || changed {
+	if _, changed, err := s.Commit(t.Context(), loaded, loaded.Document, nil); err != nil || changed {
 		t.Fatalf("unchanged commit: %v %v", changed, err)
 	}
 	if must(s.Fingerprint())(t) != stamp {
@@ -45,7 +45,7 @@ func TestRawRowsPreserveBytesAndRevisions(t *testing.T) {
 	proposed := must(buildDocument(rows.rootOrder, rows.sections, rows.fields))(t)
 	original := must(json.Marshal(loaded.Document))(t)
 	proposed.Profiles[0].Fields[1].Value = json.RawMessage(`"renamed"`)
-	updated, changed, err := s.Commit(loaded, proposed, nil)
+	updated, changed, err := s.Commit(t.Context(), loaded, proposed, nil)
 	if err != nil || !changed {
 		t.Fatalf("edit: %v %v", changed, err)
 	}
@@ -97,7 +97,7 @@ func TestRawRowsRefuseInvalidEnvelopesBeforeWriting(t *testing.T) {
 			stamp := must(s.Fingerprint())(t)
 			doc := rawFixture(t)
 			tt.edit(doc)
-			if _, _, err := s.Commit(base, doc, nil); !errors.Is(err, ErrDocument) {
+			if _, _, err := s.Commit(t.Context(), base, doc, nil); !errors.Is(err, ErrDocument) {
 				t.Fatalf("expected ErrDocument, got %v", err)
 			}
 			if must(s.Fingerprint())(t) != stamp {
@@ -108,7 +108,7 @@ func TestRawRowsRefuseInvalidEnvelopesBeforeWriting(t *testing.T) {
 	s := New(filepath.Join(t.TempDir(), Filename), seconds(2))
 	base := must(s.Create(rawFixture(t), nil))(t)
 	for _, meta := range []map[string]json.RawMessage{{"bad": json.RawMessage(`NaN`)}, {"bad": json.RawMessage{'"', 255, '"'}}, {string([]byte{255}): json.RawMessage(`null`)}} {
-		if _, _, err := s.Commit(base, base.Document, meta); !errors.Is(err, ErrDocument) {
+		if _, _, err := s.Commit(t.Context(), base, base.Document, meta); !errors.Is(err, ErrDocument) {
 			t.Fatal(err)
 		}
 	}
@@ -128,7 +128,7 @@ func TestOpaqueMetadata(t *testing.T) {
 		t.Fatal("salvage decoded metadata")
 	}
 	changed := json.RawMessage(`{"next":true}`)
-	next, committed, err := s.Commit(base, base.Document, map[string]json.RawMessage{"future": changed})
+	next, committed, err := s.Commit(t.Context(), base, base.Document, map[string]json.RawMessage{"future": changed})
 	if err != nil || !committed || next.Head != base.Head {
 		t.Fatal("metadata-only commit changed document head")
 	}
@@ -177,7 +177,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal("fingerprint failed")
 		}
-		if _, changed, err := s.Commit(base, base.Document, nil); err != nil || changed {
+		if _, changed, err := s.Commit(t.Context(), base, base.Document, nil); err != nil || changed {
 			t.Fatal("no-op commit changed database")
 		}
 		now, err := s.Fingerprint()
@@ -201,7 +201,7 @@ func TestStoredRoundTrip(t *testing.T) {
 		}
 		doc.Order = append(doc.Order, "n8_2_go_probe")
 		doc.Root = append(doc.Root, Field{Name: "n8_2_go_probe", Value: json.RawMessage(`{"unknown":{"z":1.0,"a":"例 <>&"},"bad_type":"kept"}`)})
-		updated, changed, err := s.Commit(base, doc, nil)
+		updated, changed, err := s.Commit(t.Context(), base, doc, nil)
 		if err != nil || !changed {
 			t.Fatal("Go commit failed")
 		}

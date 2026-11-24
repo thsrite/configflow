@@ -151,12 +151,7 @@ type History struct {
 // NewHistory is MetricsHistory(data_dir, max_points): it creates dataDir;
 // without permission it falls back to a directory under the temporary
 // directory, as Python does.
-func NewHistory(dataDir string, maxPoints int) *History {
-	h, _ := newHistoryContext(context.Background(), dataDir, maxPoints)
-	return h
-}
-
-func newHistoryContext(ctx context.Context, dataDir string, maxPoints int) (*History, error) {
+func NewHistory(ctx context.Context, dataDir string, maxPoints int) (*History, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -395,22 +390,8 @@ type LoadResult struct {
 	Removed  int `json:"removed"`
 }
 
-// Load is load(agent_ids): read back the history of existing Agents at
-// service start and delete the files of deleted Agents. The old whole-JSON
-// format is read, rewritten as JSON Lines and deleted.
-//
-// Points a heartbeat added before Load ran (the Go server listens before
-// its loops start; Python loaded before serving) are kept after the loaded
-// ones instead of being replaced.
-//
-// The error is ErrSavedMetricsShape for an old file whose "metrics" is not
-// an array (the caller logs it and gives up).
-func (h *History) Load(ids []string) (LoadResult, error) {
-	return h.LoadContext(context.Background(), ids)
-}
-
-// LoadContext loads and migrates saved files only while its owner is live.
-func (h *History) LoadContext(ctx context.Context, agentIDs []string) (LoadResult, error) {
+// Load loads and migrates saved files only while its owner is live.
+func (h *History) Load(ctx context.Context, agentIDs []string) (LoadResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return LoadResult{}, err
@@ -538,7 +519,7 @@ func (h *History) LoadContext(ctx context.Context, agentIDs []string) (LoadResul
 	}
 	var errs []agentError
 	if len(migrate) > 0 {
-		errs = h.flushAgentsContext(ctx, migrate).errors
+		errs = h.flushAgents(ctx, migrate).errors
 	}
 	h.flushMu.Unlock()
 	result.Migrated = len(migrate) - len(errs)
@@ -595,15 +576,8 @@ func (h *History) PendingCount() int {
 	return total
 }
 
-// DeleteAgentHistory is delete_agent_history(agent_id): drop the Agent's
-// history from memory and disk; false when a file could not be removed.
-func (h *History) DeleteAgentHistory(agentID string) bool {
-	ok, _ := h.DeleteAgentHistoryContext(context.Background(), agentID)
-	return ok
-}
-
-// DeleteAgentHistoryContext checks the work lifetime under the history flush lock.
-func (h *History) DeleteAgentHistoryContext(ctx context.Context, agentID string) (bool, error) {
+// DeleteAgentHistory checks the work lifetime under the history flush lock.
+func (h *History) DeleteAgentHistory(ctx context.Context, agentID string) (bool, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -635,14 +609,6 @@ func (h *History) DeleteAgentHistoryContext(ctx context.Context, agentID string)
 	return first != failed && second != failed, nil
 }
 
-// RetainAgents is retain_agents(agent_ids): delete the history of every
-// Agent not in agentIDs (import, WebDAV restore and reset replace the Agent
-// list without deleting Agents); returns the number of Agents dropped.
-func (h *History) RetainAgents(ids []string) int {
-	count, _ := h.RetainMetricsAgents(context.Background(), ids)
-	return count
-}
-
 // RetainMetricsAgents removes stale files with shutdown cancellation.
 func (h *History) RetainMetricsAgents(ctx context.Context, agentIDs []string) (int, error) {
 	ctx = lifecycle.Detach(ctx)
@@ -664,7 +630,7 @@ func (h *History) RetainMetricsAgents(ctx context.Context, agentIDs []string) (i
 	}
 	h.mu.Unlock()
 	for _, id := range sortedKeys(stale) {
-		if _, err := h.DeleteAgentHistoryContext(ctx, id); err != nil {
+		if _, err := h.DeleteAgentHistory(ctx, id); err != nil {
 			return 0, err
 		}
 	}
@@ -778,12 +744,7 @@ var appendLines = func(ctx context.Context, path string, lines []string) error {
 // replaceFile is os.replace (tests replace it).
 var replaceFile = os.Rename
 
-// replace is _replace: write the lines to a temporary file in the data
-// directory and atomically replace the file; no lines removes the file.
-func (h *History) replace(agentID, path string, lines []string) error {
-	return h.replaceContext(context.Background(), agentID, path, lines)
-}
-func (h *History) replaceContext(ctx context.Context, agentID, path string, lines []string) error {
+func (h *History) replace(ctx context.Context, agentID, path string, lines []string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -812,12 +773,7 @@ type flushJob struct {
 	lines   []string
 }
 
-// flushAgents is _flush_agents: write the given Agents; the caller holds
-// flushMu.
-func (h *History) flushAgents(agentIDs []string) flushResult {
-	return h.flushAgentsContext(context.Background(), agentIDs)
-}
-func (h *History) flushAgentsContext(ctx context.Context, agentIDs []string) flushResult {
+func (h *History) flushAgents(ctx context.Context, agentIDs []string) flushResult {
 	var jobs []flushJob
 	h.mu.Lock()
 	if ctx.Err() != nil {
@@ -856,7 +812,7 @@ func (h *History) flushAgentsContext(ctx context.Context, agentIDs []string) flu
 		var err error
 		if err = ctx.Err(); err == nil {
 			if job.compact {
-				err = h.replaceContext(ctx, job.agentID, path, job.lines)
+				err = h.replace(ctx, job.agentID, path, job.lines)
 			} else {
 				err = appendLines(ctx, path, job.lines)
 			}
@@ -909,13 +865,8 @@ type FlushResult struct {
 	Compacted int `json:"compacted"`
 }
 
-// Flush is flush(): append the new points to the files; a file clearly
-// larger than the points in memory is atomically compacted. A *FlushError
-// means some Agents failed; their points stay in memory for the next save.
-func (h *History) Flush() (FlushResult, error) { return h.FlushContext(context.Background()) }
-
-// FlushContext preserves pending samples when shutdown has cancelled the owner.
-func (h *History) FlushContext(ctx context.Context) (FlushResult, error) {
+// Flush preserves pending samples when shutdown has cancelled the owner.
+func (h *History) Flush(ctx context.Context) (FlushResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return FlushResult{}, err
@@ -933,7 +884,7 @@ func (h *History) FlushContext(ctx context.Context) (FlushResult, error) {
 		}
 	}
 	h.mu.Unlock()
-	result := h.flushAgentsContext(ctx, sortedKeys(ids))
+	result := h.flushAgents(ctx, sortedKeys(ids))
 	h.flushMu.Unlock()
 	counts := FlushResult{result.agents, result.appended, result.compacted}
 	if err := ctx.Err(); err != nil {

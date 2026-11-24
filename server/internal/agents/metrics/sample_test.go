@@ -11,7 +11,7 @@ import (
 )
 
 func TestNativeSampleShutdownAndDisconnect(t *testing.T) {
-	history := NewHistory(filepath.Join(t.TempDir(), "metrics"), MaxPointsPerAgent)
+	history := newTestHistory(t, filepath.Join(t.TempDir(), "metrics"), MaxPointsPerAgent)
 	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 	rt.Start(context.Background())
 	defer rt.Shutdown(context.Background())

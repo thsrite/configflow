@@ -15,7 +15,7 @@ func TestReviewBatch40StoreSlotFailureRollsBackEverything(t *testing.T) {
 	if _, err := store.StoreSlot(ctx, "a1", "r", 0, &Slot{Records: 1, Rows: map[string]*Counts{}}); err != nil {
 		t.Fatal(err)
 	}
-	c, err := store.connectContext(ctx)
+	c, err := store.connect(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +31,7 @@ func TestReviewBatch40StoreSlotFailureRollsBackEverything(t *testing.T) {
 	}
 	count := func(query string) int64 {
 		t.Helper()
-		c, err := store.connectContext(ctx)
+		c, err := store.connect(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -198,7 +198,7 @@ func TestTrafficReferenceQueryScenario(t *testing.T) {
 		}
 	}
 	flush := func(name string) {
-		result, err := h.Flush(30, &now)
+		result, err := h.Flush(t.Context(), 30, &now)
 		if err != nil {
 			t.Fatal(err)
 		}

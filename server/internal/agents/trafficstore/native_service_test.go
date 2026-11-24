@@ -87,7 +87,7 @@ func TestNativeStoreIsolatesBucketsAndRecoversThroughExistingClear(t *testing.T)
 		t.Fatal("unknown data lost")
 	}
 	// The existing domain-discovery clear route calls this exact removal owner.
-	if err := s.DeleteContext(t.Context(), "a"); err != nil {
+	if err := s.Delete(t.Context(), "a"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Add(t.Context(), "a", nativeReport(t), &at); err != nil {
@@ -265,7 +265,7 @@ func TestNativeStoreInvalidFileMatchesCorruptDaysAndResetRecovers(t *testing.T) 
 			if _, err := s.Add(t.Context(), "healthy", nativeReport(t), &at); err != nil {
 				t.Fatal("missing file blocked", err)
 			}
-			if err := s.DeleteContext(t.Context(), "a"); err != nil {
+			if err := s.Delete(t.Context(), "a"); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := s.Add(t.Context(), "a", nativeReport(t), &at); err != nil {
@@ -349,7 +349,7 @@ func TestInspectStatusDetectsDamageCachesSignatureAndRecovers(t *testing.T) {
 			}
 
 			// Delete recovers store state to ok and allows new writes.
-			if err := s.DeleteContext(t.Context(), "a"); err != nil {
+			if err := s.Delete(t.Context(), "a"); err != nil {
 				t.Fatal(err)
 			}
 			if snap = s.InspectStatus("a"); snap.State != StoreStateOK || snap.Status != nil {
