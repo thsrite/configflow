@@ -24,9 +24,17 @@ import (
 	"configflow/internal/repo"
 )
 
-// registerRoutes mounts every ported blueprint in Flask-blueprint order,
-// injecting explicit service instances for handlers already migrated.
-func registerRoutes(r *httpx.Router, agents *apiagents.Handler, w10b w10bHandlers, w10c *w10cHandlers) {
+// apiHandlers holds the explicitly constructed handler of every api package.
+type apiHandlers struct {
+	agents *apiagents.Handler
+	w10b   w10bHandlers
+	w10c   *w10cHandlers
+}
+
+// registerRoutes mounts every api package once, in Flask-blueprint order
+// (tasks and the notification list last).
+func registerRoutes(r *httpx.Router, h apiHandlers) {
+	w10b, w10c := h.w10b, h.w10c
 	routePackages := []func(*httpx.Router){
 		mcp.Register,
 		w10c.auth.Register,
@@ -37,7 +45,7 @@ func registerRoutes(r *httpx.Router, agents *apiagents.Handler, w10b w10bHandler
 		w10b.rules.Register,
 		w10b.rulelibrary.Register,
 		w10c.proxygroups.Register,
-		agents.Register,
+		h.agents.Register,
 		w10b.routers.Register,
 		w10c.ipv6.Register,
 		w10c.linuxgateway.Register,
@@ -52,6 +60,8 @@ func registerRoutes(r *httpx.Router, agents *apiagents.Handler, w10b w10bHandler
 		w10b.mosdns.Register,
 		w10b.oxidns.Register,
 		w10c.domaindiscovery.Register,
+		w10c.tasks.Register,
+		w10c.notifications.Register,
 	}
 	for _, register := range routePackages {
 		register(r)

@@ -23,6 +23,7 @@ import (
 	"configflow/internal/rulesource"
 	"configflow/internal/setup"
 	"configflow/internal/tasks"
+	"configflow/internal/webdav"
 )
 
 // w10cHandlers holds the HTTP handler instances constructed for the W10c
@@ -72,7 +73,7 @@ func newW10cHandlers(opts Options, tk *tasks.Registry, nt *notifications.Service
 		ipv6:              apiipv6.NewHandler(opts.Repo, ag.manager, ag.ipv6),
 		linuxgateway:      apilinuxgateway.NewHandler(opts.Repo, ag.manager, ruleReader),
 		gatewayonboarding: onboardingHandler,
-		settings:          apisettings.NewHandler(opts.Repo, gen.substore, nil),
+		settings:          apisettings.NewHandler(opts.Repo, gen.substore, webdav.Default()),
 		setup:             setupHandler,
 		logs:              apilogs.NewHandler(),
 		stats:             apistats.NewHandler(opts.Repo),

@@ -66,6 +66,8 @@ type App struct {
 	Routers       *routers.Service
 	RouterSync    *routerrulesync.RuleSyncService
 	Settings      *apisettings.Handler
+
+	api apiHandlers // the mounted route handlers (production-wiring tests)
 }
 
 // New wires the application, registers ordered startup steps and background
@@ -127,10 +129,12 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	}
 	nt.MarkStarted()
 	httpApp := httpx.New()
-	w10c := newW10cHandlers(opts, tk, nt, ag, gen, rs)
-	registerRoutes(httpApp.Router, newAgentAPIHandler(opts, ag, gen), newW10bHandlers(opts, ag, gen, rs, rtrSvc), w10c)
-	w10c.tasks.Register(httpApp.Router)
-	w10c.notifications.Register(httpApp.Router)
+	api := apiHandlers{
+		agents: newAgentAPIHandler(opts, ag, gen),
+		w10b:   newW10bHandlers(opts, ag, gen, rs, rtrSvc),
+		w10c:   newW10cHandlers(opts, tk, nt, ag, gen, rs),
+	}
+	registerRoutes(httpApp.Router, api)
 	auth.Install(httpApp)
 	return &App{
 		HTTP:          httpApp,
@@ -155,7 +159,8 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		RuleSource:    rs,
 		Routers:       rtrSvc.routers,
 		RouterSync:    rtrSvc.rulesync,
-		Settings:      w10c.settings,
+		Settings:      api.w10c.settings,
+		api:           api,
 	}, nil
 }
 
