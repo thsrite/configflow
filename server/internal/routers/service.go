@@ -87,6 +87,12 @@ func (s *Service) HasRules() bool { return s != nil && s.opts.Rules != nil }
 // HasManualBaseline reports whether the manual baseline capturer is wired.
 func (s *Service) HasManualBaseline() bool { return s != nil && s.opts.ManualBaseline != nil }
 
+// HasNotifications reports whether the notifications service is wired.
+func (s *Service) HasNotifications() bool { return s != nil && s.opts.Notifications != nil }
+
+// HasRepository reports whether the Service is bound to a repository.
+func (s *Service) HasRepository() bool { return s != nil && s.repo != nil }
+
 // IPv6Host queries the wired IPv6 host fetcher, failing closed when unset.
 func (s *Service) IPv6Host(ctx context.Context, agent *GatewayAgent) (ipv6.IPv6Host, error) {
 	if s == nil || s.opts.IPv6Hosts == nil {
