@@ -8,10 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
-	"configflow/internal/agents/trafficstore"
 	"configflow/internal/aggregations"
 	"configflow/internal/convert"
 	"configflow/internal/logx"
@@ -160,7 +158,7 @@ func generate(ctx context.Context, srv *server.App, repository *repo.Repository,
 		}
 		opts.ForAgent = true
 		opts.RegionProbe = agent.DomainDiscoveryEnabled != nil && *agent.DomainDiscoveryEnabled
-		traffic := trafficstore.NewNative(filepath.Join(repository.DataDir(), "traffic"))
+		traffic := srv.Traffic.Store()
 		if rawAgent, err := model.Marshal(agent); err == nil {
 			var core subs.CoreAgent
 			if json.Unmarshal(rawAgent, &core) == nil {

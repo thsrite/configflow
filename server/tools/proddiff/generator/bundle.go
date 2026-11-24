@@ -50,7 +50,7 @@ func deploymentBundle(ctx context.Context, srv *server.App, repository *repo.Rep
 	if err != nil {
 		return "", err
 	}
-	in := deploy.BuildInput{Target: target, Source: source, BaseURL: baseURL, DeploymentID: "proddiff-bundle", LocalDNSWatchdog: true}
+	in := deploy.BuildInput{Repo: repository, Target: target, Source: source, BaseURL: baseURL, DeploymentID: "proddiff-bundle", LocalDNSWatchdog: true, Refresh: srv.Refresh}
 	switch agent.ServiceType {
 	case "mihomo":
 		main, err := convert.MihomoDocument(ctx, config, opts)
