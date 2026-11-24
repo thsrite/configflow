@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"reflect"
@@ -82,14 +83,30 @@ func tooDeep(data []byte) bool {
 	return false
 }
 
+// Keep v1's scalar, byte-array and error semantics with HTML escaping disabled.
+var scalarJSONOptions = jsonv2.JoinOptions(json.DefaultOptionsV1(), jsontext.EscapeForHTML(false))
+
 func scalarJSON(v any) ([]byte, error) {
-	var out bytes.Buffer
-	encoder := json.NewEncoder(&out)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(v); err != nil {
+	if s, ok := v.(string); ok {
+		i := 0
+		for ; i < len(s); i++ {
+			c := s[i]
+			if c < 0x20 || c >= utf8.RuneSelf || c == '"' || c == '\\' || c == '<' || c == '>' || c == '&' {
+				break
+			}
+		}
+		if i == len(s) {
+			out := make([]byte, len(s)+2)
+			out[0], out[len(out)-1] = '"', '"'
+			copy(out[1:], s)
+			return out, nil
+		}
+	}
+	data, err := jsonv2.Marshal(v, scalarJSONOptions)
+	if err != nil {
 		return nil, fmt.Errorf("encode model value: %w", err)
 	}
-	return bytes.TrimSuffix(out.Bytes(), []byte{'\n'}), nil
+	return data, nil
 }
 
 var marshalerType = reflect.TypeFor[json.Marshaler]()
