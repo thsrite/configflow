@@ -50,7 +50,11 @@ import (
 
 // registerRoutes mounts every ported blueprint in Flask-blueprint order,
 // injecting explicit service instances for handlers already migrated.
-func registerRoutes(r *httpx.Router, rtr *routers.Service, rr *routerrulesync.RuleSyncService) {
+func registerRoutes(r *httpx.Router, agHandler *apiagents.Handler, rtr *routers.Service, rr *routerrulesync.RuleSyncService) {
+	registerAgents := apiagents.Register
+	if agHandler != nil {
+		registerAgents = agHandler.Register
+	}
 	routePackages := []func(*httpx.Router){
 		mcp.Register,
 		apiauth.Register,
@@ -61,7 +65,7 @@ func registerRoutes(r *httpx.Router, rtr *routers.Service, rr *routerrulesync.Ru
 		apirules.Register,
 		apirulelibrary.Register,
 		apiproxygroups.Register,
-		apiagents.Register,
+		registerAgents,
 		apirouters.NewHandler(rtr, rr).Register,
 		apiipv6.Register,
 		apilinuxgateway.Register,
