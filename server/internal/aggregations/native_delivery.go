@@ -34,6 +34,7 @@ type typedDelivery struct {
 	provider      *provider.Service
 	repo          *repo.Repository
 	substore      *substore.Service
+	refresh       *refresh.Service
 	sourceFetch   refresh.FetchSourceFn
 	main          *yamlx.Node
 	snapshot      *provider.DeliverySnapshot
@@ -80,6 +81,13 @@ func graphProxy(graph *yamlx.Node) (Proxy, error) {
 	err = json.Unmarshal(raw, &proxy)
 	return proxy, err
 }
+func (d *typedDelivery) refreshSvc() *refresh.Service {
+	if d.refresh != nil {
+		return d.refresh
+	}
+	return refresh.New(refresh.Options{Repo: d.repo, SubStore: d.substore})
+}
+
 func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, options Options) sourceResult {
 	sub := d.sources[source.ID]
 	fetch := d.sourceFetch
@@ -91,7 +99,7 @@ func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, op
 	if options.SourcePrepared {
 		fetched, err = fetch(ctx, source.ID, sub.URL)
 	} else {
-		fetched, err = refresh.FetchSource(ctx, sub, fetch)
+		fetched, err = d.refreshSvc().FetchSource(ctx, sub, fetch)
 	}
 	if canceled := ctx.Err(); canceled != nil {
 		return sourceResult{err: canceled}
@@ -150,7 +158,7 @@ func (d *typedDelivery) fetchSource(ctx context.Context, source subscription, op
 			nodes = nil
 		}
 	} else if fetched.Source != "cache" && fetched.Source != "prepared_yaml" {
-		metadata, err := refresh.CacheMetadata(ctx, sub, fetched)
+		metadata, err := d.refreshSvc().CacheMetadata(ctx, sub, fetched)
 		if err != nil {
 			return sourceResult{err: err}
 		}
@@ -289,7 +297,7 @@ func (d *typedDelivery) validate(proxies []Proxy, name, format string) error {
 	return nil
 }
 
-func renderProviderWith(ctx context.Context, pv *provider.Service, r *repo.Repository, sub *substore.Service, agg model.Aggregation, config *model.Config, main *yamlx.Node, snapshot *provider.DeliverySnapshot, fetch refresh.FetchSourceFn) (*provider.Artifact, error) {
+func renderProviderWith(ctx context.Context, pv *provider.Service, r *repo.Repository, sub *substore.Service, rf *refresh.Service, agg model.Aggregation, config *model.Config, main *yamlx.Node, snapshot *provider.DeliverySnapshot, fetch refresh.FetchSourceFn) (*provider.Artifact, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -308,6 +316,7 @@ func renderProviderWith(ctx context.Context, pv *provider.Service, r *repo.Repos
 	d.provider = pv
 	d.repo = r
 	d.substore = sub
+	d.refresh = rf
 	res := typedResource(agg.ID, agg.Name, agg.Enabled)
 	a := aggregation{resource: res, Subscriptions: agg.Subscriptions, Nodes: agg.Nodes}
 	if agg.RegexFilter != nil {

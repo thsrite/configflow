@@ -306,7 +306,7 @@ func ruleProxy(ctx context.Context, r *repo.Repository, request RuleProxyRequest
 			}
 			var raw []byte
 			var staleErr error
-			raw, staleErr, fetchErr = refresh.ReadRemote(ctx, item, refresh.RuleReadOptions{
+			raw, staleErr, fetchErr = refresh.New(refresh.Options{Repo: r}).ReadRemote(ctx, item, refresh.RuleReadOptions{
 				Config: sourceConfig,
 				Fetch: func(callCtx context.Context, _ string) (rulefetch.Content, error) {
 					data, err := fetch(callCtx, fetchURL, config, request.HostURL)

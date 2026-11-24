@@ -522,8 +522,13 @@ func TestRecordedPythonTests(t *testing.T) {
 			got = recordedOutcome(chains, err)
 		case "prepare_sub", "bundle", "commit_bundle", "commit_updates":
 			w = newWorld(t, row, repository(t))
+			var clock fixedClock
+			if now := mapList(row, "now"); len(now) > 0 {
+				clock.now, _ = time.Parse(time.RFC3339Nano, now[0].(string))
+			}
 			pv := New(Options{
 				Repo:         w.repo,
+				Refresh:      newRefreshFixture(w.repo, clock, w),
 				Locations:    loc,
 				Aggregations: w.aggregation,
 				DeliveryEnv: &DeliveryEnv{
@@ -534,13 +539,7 @@ func TestRecordedPythonTests(t *testing.T) {
 					Converter:         w,
 				},
 			})
-			var clock fixedClock
-			if now := mapList(row, "now"); len(now) > 0 {
-				clock.now, _ = time.Parse(time.RFC3339Nano, now[0].(string))
-			}
-			restoreRefresh := setRefreshFixture(clock, w)
 			got = w.run(pv, fn, args, rawArgs, m)
-			restoreRefresh()
 			if wantCalls := mapList(row, "fetch"); true {
 				var calls []any
 				for _, c := range wantCalls {

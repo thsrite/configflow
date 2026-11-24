@@ -17,9 +17,9 @@ import (
 	"fmt"
 )
 
-func makeResult(text, source string, traffic *Traffic, at string) *SourceResult {
+func (s *Service) makeResult(text, source string, traffic *Traffic, at string) *SourceResult {
 	if at == "" {
-		at = isoMicro(refreshEnv().Clock.Now())
+		at = isoMicro(s.currentEnv().Clock.Now())
 	}
 	return &SourceResult{Text: text, Source: source, Traffic: traffic, FetchedAt: at}
 }
@@ -37,7 +37,7 @@ func rawMember[T any](value T, name string) json.RawMessage {
 }
 
 // CacheMetadata records only downloaded bodies' hosts and dialer metadata.
-func CacheMetadata(ctx context.Context, sub model.Subscription, result *SourceResult) (*SourceMetadata, error) {
+func (s *Service) CacheMetadata(ctx context.Context, sub model.Subscription, result *SourceResult) (*SourceMetadata, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func CacheMetadata(ctx context.Context, sub model.Subscription, result *SourceRe
 	}
 	if result.Source != "cache" && result.Source != "prepared_yaml" {
 		var err error
-		metadata.Hosts, metadata.Dialers, err = refreshEnv().Sources.Metadata(ctx, result.Text)
+		metadata.Hosts, metadata.Dialers, err = s.currentEnv().Sources.Metadata(ctx, result.Text)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +73,7 @@ func DownloadCachePath(address string) string {
 }
 
 // RememberDownload writes a source transport receipt without promoting nodes.
-func RememberDownload(ctx context.Context, sub model.Subscription, result *SourceResult) (*SourceResult, error) {
+func (s *Service) RememberDownload(ctx context.Context, sub model.Subscription, result *SourceResult) (*SourceResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -84,8 +84,12 @@ func RememberDownload(ctx context.Context, sub model.Subscription, result *Sourc
 	if err := validateSourceYAMLPolicy(result.Text); err != nil {
 		return nil, err
 	}
+	r, err := s.repository()
+	if err != nil {
+		return nil, err
+	}
 
-	result = makeResult(result.Text, result.Source, result.Traffic, result.FetchedAt)
+	result = s.makeResult(result.Text, result.Source, result.Traffic, result.FetchedAt)
 	data, err := json.Marshal(struct {
 		Text      string   `json:"text"`
 		FetchedAt string   `json:"fetched_at"`
@@ -97,14 +101,14 @@ func RememberDownload(ctx context.Context, sub model.Subscription, result *Sourc
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := writeSharedData(ctx, DownloadCachePath(sub.URL), data); err != nil {
+	if err := writeSharedData(ctx, r, DownloadCachePath(sub.URL), data); err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
 // DownloadNodes validates a complete subscription before replacing node bytes.
-func DownloadNodes(ctx context.Context, sub model.Subscription) ([]model.Node, *SourceResult, *NodeCache, error) {
+func (s *Service) DownloadNodes(ctx context.Context, sub model.Subscription) ([]model.Node, *SourceResult, *NodeCache, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, nil, err
@@ -112,7 +116,7 @@ func DownloadNodes(ctx context.Context, sub model.Subscription) ([]model.Node, *
 	if sub.ID == "" {
 		return nil, nil, nil, repo.NewValidationError(msgSourceIdentity)
 	}
-	env := refreshEnv()
+	env := s.currentEnv()
 	fetched, err := env.Sources.Fetch(ctx, sub.ID, sub.URL, substore.FetchOptions{Refresh: true})
 	if err != nil {
 		return nil, nil, nil, err
@@ -120,7 +124,7 @@ func DownloadNodes(ctx context.Context, sub model.Subscription) ([]model.Node, *
 	if err := ctx.Err(); err != nil {
 		return nil, nil, nil, err
 	}
-	result, err := RememberDownload(ctx, sub, fetched)
+	result, err := s.RememberDownload(ctx, sub, fetched)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -139,7 +143,7 @@ func DownloadNodes(ctx context.Context, sub model.Subscription) ([]model.Node, *
 			nodes[i].ID = generated
 		}
 	}
-	metadata, err := CacheMetadata(ctx, sub, result)
+	metadata, err := s.CacheMetadata(ctx, sub, result)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -183,7 +187,7 @@ func cacheURL(cache *NodeCache) (*string, bool) {
 
 // FetchSource serves current validated nodes, then a fresh transport receipt,
 // and only then calls the fetch owner. Reads do not refresh cache timestamps.
-func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceFn) (*SourceResult, error) {
+func (s *Service) FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceFn) (*SourceResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -195,7 +199,7 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 	if sub.ID == "" {
 		return nil, repo.NewValidationError(msgSourceIdentity)
 	}
-	env := refreshEnv()
+	env := s.currentEnv()
 	cache, err := env.Sources.LoadNodes(ctx, sub.ID)
 	if err != nil {
 		return nil, err
@@ -215,7 +219,7 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 			return nil, &rules.StrategyReferenceError{Message: fmt.Sprintf(msgNoManualCache, name)}
 		}
 		if text, ok := cacheTexts.lookup(env, sub.ID, cache); ok {
-			return makeResult(text, "cache", nil, ""), nil
+			return s.makeResult(text, "cache", nil, ""), nil
 		}
 		if err := convert.ConfigShapes(&model.Config{Profile: &model.Profile{}, Nodes: cache.Nodes}, false); err != nil {
 			return nil, &SourceValidationError{Message: err.Error(), Cause: err, CacheShape: true}
@@ -243,16 +247,20 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 		}
 		text := string(data)
 		cacheTexts.store(env, sub.ID, cache, text)
-		return makeResult(text, "cache", nil, ""), nil
+		return s.makeResult(text, "cache", nil, ""), nil
 	}
 
-	if data, err := readSharedData(ctx, DownloadCachePath(sub.URL)); err == nil {
+	r, err := s.repository()
+	if err != nil {
+		return nil, err
+	}
+	if data, err := readSharedData(ctx, r, DownloadCachePath(sub.URL)); err == nil {
 		var receipt TransportReceipt
-		if receiptFresh(data, &receipt, interval) {
+		if receiptFresh(env.Clock, data, &receipt, interval) {
 			if err := validateSourceYAMLPolicy(receipt.Text); err != nil {
 				return nil, err
 			}
-			return makeResult(receipt.Text, "source_cache", receipt.Traffic, receipt.FetchedAt), nil
+			return s.makeResult(receipt.Text, "source_cache", receipt.Traffic, receipt.FetchedAt), nil
 		}
 	} else if !isRepositoryOrFileError(err) {
 		return nil, err
@@ -270,7 +278,7 @@ func FetchSource(ctx context.Context, sub model.Subscription, fetch FetchSourceF
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return RememberDownload(ctx, sub, result)
+	return s.RememberDownload(ctx, sub, result)
 }
 
 // validateSourceYAMLPolicy runs before any source can replace a cache.
@@ -285,7 +293,7 @@ func validateSourceYAMLPolicy(text string) error {
 // receiptFresh decodes a transport receipt and reports whether it can be
 // served: an object whose text and fetched_at are present text, fetched
 // within interval.
-func receiptFresh(data []byte, receipt *TransportReceipt, interval int64) bool {
+func receiptFresh(clock substore.Clock, data []byte, receipt *TransportReceipt, interval int64) bool {
 	var members struct {
 		Text      json.RawMessage `json:"text"`
 		FetchedAt json.RawMessage `json:"fetched_at"`
@@ -299,7 +307,7 @@ func receiptFresh(data []byte, receipt *TransportReceipt, interval int64) bool {
 	if _, err := model.DecodeStored(data, receipt, ""); err != nil {
 		return false
 	}
-	return fresh(receipt.FetchedAt, interval)
+	return fresh(clock, receipt.FetchedAt, interval)
 }
 
 // isText reports a JSON string value.

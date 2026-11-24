@@ -9,6 +9,7 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/gateway"
 	"configflow/internal/lifecycle"
+	"configflow/internal/notifications"
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
@@ -26,7 +27,7 @@ type generateServices struct {
 	deploy       *deploy.Service
 }
 
-func newGenerateServices(r *repo.Repository, rt *lifecycle.Runtime, tk *tasks.Registry) (*generateServices, error) {
+func newGenerateServices(r *repo.Repository, rt *lifecycle.Runtime, tk *tasks.Registry, nt *notifications.Service) (*generateServices, error) {
 	var subEnv *substore.Env
 	if r != nil {
 		subEnv = substore.NewEnvFor(r)
@@ -36,22 +37,24 @@ func newGenerateServices(r *repo.Repository, rt *lifecycle.Runtime, tk *tasks.Re
 	sub := substore.NewService(subEnv)
 
 	rf := refresh.New(refresh.Options{
-		Repo:     r,
-		SubStore: sub,
-		Runtime:  rt,
-		Tasks:    tk,
+		Repo:          r,
+		SubStore:      sub,
+		Runtime:       rt,
+		Tasks:         tk,
+		Notifications: nt,
 	})
-	refresh.UseService(rf)
 
 	pv := provider.New(provider.Options{
 		Repo:      r,
 		SubStore:  sub,
+		Refresh:   rf,
 		Locations: deploy.Locations{},
 	})
 	agg := aggregations.New(aggregations.ServiceOptions{
 		Provider: pv,
 		Repo:     r,
 		SubStore: sub,
+		Refresh:  rf,
 	})
 	if err := pv.SetAggregations(agg.RenderProvider); err != nil {
 		return nil, err

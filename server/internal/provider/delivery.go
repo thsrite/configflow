@@ -435,7 +435,7 @@ func prepareSubscription(ctx context.Context, svc *Service, sub model.Subscripti
 			if opts.SourcePrepared {
 				result, err = fetch(ctx, sub.ID, sub.URL)
 			} else {
-				result, err = refresh.FetchSource(ctx, sub, fetch)
+				result, err = svc.refreshSvc().FetchSource(ctx, sub, fetch)
 			}
 			if canceled := ctx.Err(); canceled != nil {
 				return canceled
@@ -467,7 +467,7 @@ func prepareSubscription(ctx context.Context, svc *Service, sub model.Subscripti
 						return err
 					}
 				}
-				meta, err := refresh.CacheMetadata(ctx, sub, result)
+				meta, err := svc.refreshSvc().CacheMetadata(ctx, sub, result)
 				if err != nil {
 					return err
 				}
@@ -787,7 +787,7 @@ func prepareBundleWith(ctx context.Context, svc *Service, config *model.Config, 
 					if use == nil {
 						use = fetch
 					}
-					flight.result, flight.err = refresh.FetchSource(ctx, sub, use)
+					flight.result, flight.err = svc.refreshSvc().FetchSource(ctx, sub, use)
 				}
 				if err := ctx.Err(); err != nil {
 					flight.result, flight.err = nil, err

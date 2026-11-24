@@ -85,7 +85,7 @@ func (s *Service) local(ctx context.Context, id, name, target, host string) (del
 			return delivery{}, missing(fmt.Sprintf(msgLocalMissing, name))
 		}
 	} else if sourceField(source.SourceType, "url") == "url" {
-		content, stale, err = refresh.ReadRemote(ctx, *source, refresh.RuleReadOptions{Config: fetchConfig(config), Fetch: func(ctx context.Context, address string) (rulefetch.Content, error) {
+		content, stale, err = s.refreshSvc(r).ReadRemote(ctx, *source, refresh.RuleReadOptions{Config: fetchConfig(config), Fetch: func(ctx context.Context, address string) (rulefetch.Content, error) {
 			return s.fetch(ctx, fetchConfig(config), host, 2*time.Second)(address)
 		}, Timeout: 2 * time.Second})
 		if err != nil {

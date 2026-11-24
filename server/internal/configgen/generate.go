@@ -182,7 +182,7 @@ func materialize(ctx context.Context, r *repo.Repository, config *model.Config, 
 		if err = ctx.Err(); err != nil {
 			return Download{}, err
 		}
-		result.Data, err = mosdns.BuildZIP(ctx, config, out.Content, downloads, files, mosdns.ArchiveOptions{BaseURL: baseURL})
+		result.Data, err = mosdns.BuildZIP(ctx, config, out.Content, downloads, files, mosdns.ArchiveOptions{BaseURL: baseURL, Repo: r})
 		if err != nil {
 			return Download{}, err
 		}
@@ -208,7 +208,7 @@ func materialize(ctx context.Context, r *repo.Repository, config *model.Config, 
 		if err := ctx.Err(); err != nil {
 			return Download{}, err
 		}
-		result.Data, err = oxidns.BuildTypedZIP(ctx, config, out.Content, downloads, files, baseURL)
+		result.Data, err = oxidns.BuildTypedZIPWithRepo(ctx, r, config, out.Content, downloads, files, baseURL)
 		if err != nil {
 			return Download{}, err
 		}

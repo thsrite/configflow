@@ -111,7 +111,7 @@ type ruleRead struct {
 	declared bool   // false: no URL declaration, fetch the URL directly
 }
 
-func (s *Source) readRule(ctx context.Context, rawURL, sourceID string, declared *RuleRef, fetch func(context.Context, string) ([]byte, error)) (ruleRead, error) {
+func (s *Source) readRule(ctx context.Context, rf *refresh.Service, rawURL, sourceID string, declared *RuleRef, fetch func(context.Context, string) ([]byte, error)) (ruleRead, error) {
 	cfg := s.ruleConfig()
 	rule, err := rulefetch.ResolveSource(rawURL, cfg, sourceID)
 	if err != nil {
@@ -131,7 +131,10 @@ func (s *Source) readRule(ctx context.Context, rawURL, sourceID string, declared
 	if err = json.Unmarshal(raw, &library); err != nil {
 		return ruleRead{}, err
 	}
-	value, stale, err := refresh.ReadRemote(ctx, library, refresh.RuleReadOptions{Config: cfg, Fetch: func(ctx context.Context, u string) (rulefetch.Content, error) {
+	if rf == nil {
+		rf = refresh.New(refresh.Options{})
+	}
+	value, stale, err := rf.ReadRemote(ctx, library, refresh.RuleReadOptions{Config: cfg, Fetch: func(ctx context.Context, u string) (rulefetch.Content, error) {
 		data, err := fetch(ctx, u)
 		return rulefetch.Content{Data: data}, err
 	}})
@@ -800,7 +803,7 @@ func (ds *Service) prepareContent(ctx context.Context, m *agents.Manager, t Targ
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	p.Bundle, err = Build(ctx, BuildInput{Target: t, Source: s, ConfigContent: p.ConfigContent, ProviderDownloads: p.ProviderDownloads, RulesetDownloads: p.RulesetDownloads, CustomFiles: p.CustomFiles, BaseURL: o.BaseURL, DeploymentID: o.DeploymentID, LocalDNSWatchdog: true, Progress: o.Progress})
+	p.Bundle, err = Build(ctx, BuildInput{Target: t, Source: s, ConfigContent: p.ConfigContent, ProviderDownloads: p.ProviderDownloads, RulesetDownloads: p.RulesetDownloads, CustomFiles: p.CustomFiles, BaseURL: o.BaseURL, DeploymentID: o.DeploymentID, LocalDNSWatchdog: true, Progress: o.Progress, Refresh: ds.refreshFor(m)})
 	return p, err
 }
 func preparationFailure(err error) bool {

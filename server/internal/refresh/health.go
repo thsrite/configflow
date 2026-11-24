@@ -40,12 +40,12 @@ func isoMicro(t time.Time) string {
 }
 
 // healthNow is subscription_health._now().
-func healthNow() string {
-	return strings.Replace(isoMicro(refreshEnv().Clock.Now()), "+00:00", "Z", 1)
+func (s *Service) healthNow() string {
+	return strings.Replace(isoMicro(s.currentEnv().Clock.Now()), "+00:00", "Z", 1)
 }
 
 // FetchTraffic reads provider quota headers; non-HTTP sources are ignored.
-func FetchTraffic(ctx context.Context, address string) (*Traffic, error) {
+func (s *Service) FetchTraffic(ctx context.Context, address string) (*Traffic, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func FetchTraffic(ctx context.Context, address string) (*Traffic, error) {
 	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 		return nil, nil
 	}
-	response, err := refreshEnv().HTTP.Do(ctx, &substore.Request{Method: "GET", URL: address, Header: http.Header{"User-Agent": {UserinfoUserAgent}}, Timeout: substore.Seconds(UserinfoTimeout)})
+	response, err := s.currentEnv().HTTP.Do(ctx, &substore.Request{Method: "GET", URL: address, Header: http.Header{"User-Agent": {UserinfoUserAgent}}, Timeout: substore.Seconds(UserinfoTimeout)})
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
@@ -101,11 +101,15 @@ func (s HealthSnapshot) Entry(id string) *HealthEntry {
 }
 
 // ReadHealth reads health history without writing or creating a directory.
-func ReadHealth(ctx context.Context) (HealthSnapshot, error) {
+func (s *Service) ReadHealth(ctx context.Context) (HealthSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	data, err := readSharedData(ctx, HealthFile)
+	r, err := s.repository()
+	if err != nil {
+		return HealthSnapshot{}, nil
+	}
+	data, err := readSharedData(ctx, r, HealthFile)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
@@ -121,9 +125,14 @@ func ReadHealth(ctx context.Context) (HealthSnapshot, error) {
 	}
 	return result, nil
 }
-func saveHealthData(ctx context.Context, data HealthSnapshot) error {
+func (s *Service) saveHealthData(ctx context.Context, data HealthSnapshot) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	r, err := s.repository()
+	if err != nil {
+		healthLog.Errorf(msgHealthWriteFailed, weburl.SafeErrorDetails(err))
+		return nil
 	}
 	raw, err := json.Marshal(data)
 	if err != nil {
@@ -132,7 +141,7 @@ func saveHealthData(ctx context.Context, data HealthSnapshot) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := writeSharedData(ctx, HealthFile, raw); err != nil {
+	if err := writeSharedData(ctx, r, HealthFile, raw); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
 		}
@@ -154,7 +163,7 @@ type FetchEventInput struct {
 }
 
 // RecordHealth appends one event and commits under the originating generation.
-func RecordHealth(ctx context.Context, id string, input FetchEventInput) (*HealthEntry, error) {
+func (s *Service) RecordHealth(ctx context.Context, id string, input FetchEventInput) (*HealthEntry, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -162,7 +171,7 @@ func RecordHealth(ctx context.Context, id string, input FetchEventInput) (*Healt
 	if id == "" {
 		return &HealthEntry{}, nil
 	}
-	data, err := ReadHealth(ctx)
+	data, err := s.ReadHealth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -181,10 +190,10 @@ func RecordHealth(ctx context.Context, id string, input FetchEventInput) (*Healt
 		status = "ok"
 	}
 	count := input.Count
-	entry.History = append(history, FetchEvent{At: healthNow(), Status: status, Count: &count})
+	entry.History = append(history, FetchEvent{At: s.healthNow(), Status: status, Count: &count})
 	if !input.Traffic.empty() {
 		entry.Traffic = input.Traffic
-		at := healthNow()
+		at := s.healthNow()
 		entry.TrafficAt = &at
 	}
 	raw, err := model.Marshal(entry)
@@ -195,19 +204,19 @@ func RecordHealth(ctx context.Context, id string, input FetchEventInput) (*Healt
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := saveHealthData(ctx, data); err != nil {
+	if err := s.saveHealthData(ctx, data); err != nil {
 		return nil, err
 	}
 	return entry, nil
 }
 
 // ForgetHealth deletes one entry; null/absent entries cause no write.
-func ForgetHealth(ctx context.Context, id string) error {
+func (s *Service) ForgetHealth(ctx context.Context, id string) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	data, err := ReadHealth(ctx)
+	data, err := s.ReadHealth(ctx)
 	if err != nil {
 		return err
 	}
@@ -219,5 +228,5 @@ func ForgetHealth(ctx context.Context, id string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return saveHealthData(ctx, data)
+	return s.saveHealthData(ctx, data)
 }

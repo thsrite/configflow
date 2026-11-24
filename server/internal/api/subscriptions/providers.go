@@ -230,7 +230,7 @@ func (d *delivery) renderSingle(ctx context.Context, h *Handler, sub model.Subsc
 					err = d.h.commitStaged(ctx, []staged{update})
 				}
 				if err == nil {
-					err = recordFetch(ctx, sub.ID, true, false, len(proxies))
+					err = h.recordFetch(ctx, sub.ID, true, false, len(proxies))
 				}
 				fetchErr = err
 				cacheUpdated = err == nil
@@ -254,7 +254,7 @@ func (d *delivery) renderSingle(ctx context.Context, h *Handler, sub model.Subsc
 			if cached != nil {
 				_ = json.Unmarshal(cached.Count, &count)
 			}
-			if err := recordFetch(ctx, sub.ID, false, cached != nil, count); err != nil {
+			if err := h.recordFetch(ctx, sub.ID, false, cached != nil, count); err != nil {
 				return providerFailure(ctx, err)
 			}
 		}

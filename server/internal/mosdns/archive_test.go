@@ -283,7 +283,7 @@ func TestArchiveMatchesRecordedPythonBuilds(t *testing.T) {
 			t.Fatalf("%s: snapshot %v", name, err)
 		}
 		data, err := BuildZIP(ctx, nativeCfg, args[1].(string), downloads, custom,
-			ArchiveOptions{BaseURL: args[4].(string), SkipReferenceValidation: args[5] == false})
+			ArchiveOptions{BaseURL: args[4].(string), SkipReferenceValidation: args[5] == false, Repo: r})
 		fetchNativeFn = saved
 		MaxFiles, MaxTotalBytes = savedFiles, savedTotal
 		built++

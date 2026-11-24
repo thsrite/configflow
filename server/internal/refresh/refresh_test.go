@@ -25,6 +25,7 @@ import (
 	"configflow/internal/lockx"
 	"configflow/internal/logx"
 	"configflow/internal/model"
+	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
@@ -134,6 +135,7 @@ type fixture struct {
 	t         *testing.T
 	ctx       context.Context
 	repo      *repo.Repository
+	svc       *Service
 	clock     *fakeClock
 	env       *RefreshEnv
 	transport *fakeTransport
@@ -170,7 +172,7 @@ func setup(t *testing.T, subInterval any) *fixture {
 		return 0, "", errors.New("no request")
 	}}
 	hex := 0
-	f.env = DefaultRefreshEnv()
+	f.env = DefaultRefreshEnvFor(r, nil)
 	f.env.Clock = f.clock
 	f.env.RuleClient = &rulefetch.Client{Transport: f.transport, Sleep: func(time.Duration) {}}
 	f.env.RandomHex = func() string { hex++; return strings.Repeat("0", 7) + string(rune('0'+hex%10)) }
@@ -178,7 +180,7 @@ func setup(t *testing.T, subInterval any) *fixture {
 		t.Errorf("unexpected subscription download %s", url)
 		return nil, errors.New("no request")
 	}
-	t.Cleanup(SetRefreshEnv(f.env))
+	f.svc = New(Options{Repo: r, Env: f.env, Notifications: notifications.Default()})
 	return f
 }
 
@@ -276,7 +278,7 @@ func TestRecordCountsRunsFailuresAndSkips(t *testing.T) {
 		{Error: "boom again", CacheRetained: &retained},
 		{Skipped: true, Error: "nothing to do"},
 	} {
-		if err := recordStatus(f.ctx, "x", r); err != nil {
+		if err := f.svc.recordStatus(f.ctx, "x", r); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -285,7 +287,7 @@ func TestRecordCountsRunsFailuresAndSkips(t *testing.T) {
 		entry["last_status"] != "skipped" || entry["last_error"] != "nothing to do" {
 		t.Fatal(compactJSON(entry))
 	}
-	_ = recordStatus(f.ctx, "x", taskstatus.Result{OK: true, DurationMs: 12.6})
+	_ = f.svc.recordStatus(f.ctx, "x", taskstatus.Result{OK: true, DurationMs: 12.6})
 	entry = f.status("x")
 	_, hasRetained := entry["cache_retained"]
 	if mapInt(entry, "run_count") != 3 || mapInt(entry, "failure_count") != 2 || mapInt(entry, "consecutive_failures") != 0 ||
@@ -377,7 +379,7 @@ func (f *fixture) listRows() map[string]map[string]any {
 		f.t.Fatal(err)
 	}
 	out := map[string]map[string]any{}
-	for _, build := range []func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error){SubscriptionTasks, RuleTasks} {
+	for _, build := range []func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error){f.svc.SubscriptionTasks, f.svc.RuleTasks} {
 		rows, err := build(f.ctx, statuses)
 		if err != nil {
 			f.t.Fatal(err)
@@ -404,7 +406,7 @@ func TestFailedRuleRefreshSurvivesAReloadWithReasonAndRetainedCache(t *testing.T
 	if _, err := rulefetch.WriteCache(f.ctx, f.repo, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.old.test\n")}, nil); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
+	_, _, err := f.svc.RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
 		Fetch: func(context.Context, string) (rulefetch.Content, error) { return rulefetch.Content{}, timeoutError() },
 	})
 	if err == nil {
@@ -446,7 +448,7 @@ func TestFailedRuleRefreshSurvivesAReloadWithReasonAndRetainedCache(t *testing.T
 // test_scheduled_tasks.py::test_rule_without_valid_cache_reports_that_nothing_is_retained
 func TestRuleWithoutValidCacheReportsThatNothingIsRetained(t *testing.T) {
 	f := setup(t, 86400)
-	_, _, err := RefreshRemote(f.ctx, ruleDecl(t), "schedule", RuleReadOptions{
+	_, _, err := f.svc.RefreshRemote(f.ctx, ruleDecl(t), "schedule", RuleReadOptions{
 		Fetch: func(context.Context, string) (rulefetch.Content, error) {
 			return rulefetch.Content{Data: []byte("DOMAIN,bad.test\n")}, nil
 		},
@@ -471,14 +473,14 @@ func TestDeviceReadsUseTheCacheAndOnlyAMissingCacheDownloadsNow(t *testing.T) {
 		}
 	}
 	rule := ruleDecl(t)
-	content, stale, err := ReadRemote(f.ctx, rule, RuleReadOptions{Fetch: fetch("+.new.test\n")})
+	content, stale, err := f.svc.ReadRemote(f.ctx, rule, RuleReadOptions{Fetch: fetch("+.new.test\n")})
 	if err != nil || string(content) != "+.new.test\n" || stale != nil {
 		t.Fatal(content, stale, err)
 	}
 	if f.status("rule_source:rule")["last_trigger"] != "pull" {
 		t.Fatal(compactJSON(f.status("rule_source:rule")))
 	}
-	content, stale, err = ReadRemote(f.ctx, rule, RuleReadOptions{Fetch: func(context.Context, string) (rulefetch.Content, error) {
+	content, stale, err = f.svc.ReadRemote(f.ctx, rule, RuleReadOptions{Fetch: func(context.Context, string) (rulefetch.Content, error) {
 		t.Error("cached")
 		return rulefetch.Content{}, errors.New("cached")
 	}})
@@ -491,8 +493,8 @@ func TestDeviceReadsUseTheCacheAndOnlyAMissingCacheDownloadsNow(t *testing.T) {
 		"behavior": "domain", "format": "text", "enabled": true,
 	})
 	calls = 0
-	_, _, _ = ReadRemote(f.ctx, outside, RuleReadOptions{Fetch: fetch("+.other.test\n")})
-	_, _, _ = ReadRemote(f.ctx, outside, RuleReadOptions{Fetch: fetch("+.other.test\n")})
+	_, _, _ = f.svc.ReadRemote(f.ctx, outside, RuleReadOptions{Fetch: fetch("+.other.test\n")})
+	_, _, _ = f.svc.ReadRemote(f.ctx, outside, RuleReadOptions{Fetch: fetch("+.other.test\n")})
 	if calls != 2 || len(f.status("rule_source:profile-only")) != 0 {
 		t.Fatal(calls, compactJSON(f.status("rule_source:profile-only")))
 	}
@@ -504,10 +506,10 @@ func TestDeviceReadOfAFailedSourceIsStale(t *testing.T) {
 	f := setup(t, 86400)
 	rule := ruleDecl(t)
 	_, _ = rulefetch.WriteCache(f.ctx, f.repo, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.old.test\n")}, nil)
-	_, _, _ = RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
+	_, _, _ = f.svc.RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
 		Fetch: func(context.Context, string) (rulefetch.Content, error) { return rulefetch.Content{}, timeoutError() },
 	})
-	content, stale, err := ReadRemote(f.ctx, rule, RuleReadOptions{})
+	content, stale, err := f.svc.ReadRemote(f.ctx, rule, RuleReadOptions{})
 	var staleErr *StaleRuleCache
 	if err != nil || string(content) != "+.old.test\n" || !errors.As(stale, &staleErr) || stale.Error() != "连接上游超时" {
 		t.Fatal(content, stale, err)
@@ -523,7 +525,7 @@ func TestSchedulerSkipsDisabledSourcesAndSourcesWithoutAutomaticUpdates(t *testi
 		disabled := false
 		shared.RuleLibrary[0].Enabled = &disabled
 	})
-	if n, err := RunRound(f.ctx, nil); n != 0 || err != nil {
+	if n, err := f.svc.RunRound(f.ctx, nil); n != 0 || err != nil {
 		t.Fatal(n, err)
 	}
 }
@@ -532,14 +534,14 @@ func TestSchedulerSkipsDisabledSourcesAndSourcesWithoutAutomaticUpdates(t *testi
 func TestRuleSourceDueOnFirstRoundWithoutCache(t *testing.T) {
 	f := setup(t, 0)
 	f.transport.reply = func(string) (int, string, error) { return 200, "+.new.test\n", nil }
-	if n, err := RunRound(f.ctx, nil); n != 1 || err != nil {
+	if n, err := f.svc.RunRound(f.ctx, nil); n != 1 || err != nil {
 		t.Fatal(n, err)
 	}
 	cached, _ := rulefetch.ReadCache(f.ctx, f.repo, refreshCacheRule(t, ruleDecl(t)), nil)
 	if string(cached) != "+.new.test\n" {
 		t.Fatalf("cache %q", cached)
 	}
-	if n, err := RunRound(f.ctx, nil); n != 0 || err != nil {
+	if n, err := f.svc.RunRound(f.ctx, nil); n != 0 || err != nil {
 		t.Fatal(n, err)
 	}
 	if len(f.transport.urls) != 1 || f.transport.urls[0] != ruleURL {
@@ -554,7 +556,7 @@ func TestAutoDeliveryReadsCacheWithoutUpstreamOrExtendingAge(t *testing.T) {
 		f := setup(t, interval)
 		before := f.cacheSource(120*time.Second, subURL)
 		for range 2 {
-			result, err := FetchSource(f.ctx, f.sub(), func(context.Context, string, string) (*SourceResult, error) {
+			result, err := f.svc.FetchSource(f.ctx, f.sub(), func(context.Context, string, string) (*SourceResult, error) {
 				t.Error("unexpected upstream request")
 				return nil, errors.New("no")
 			})
@@ -584,7 +586,7 @@ func TestAutoDeliveryReadsCacheWithoutUpstreamOrExtendingAge(t *testing.T) {
 // (fetch_subscription_source half).
 func TestManualOnlyWithoutCacheExplainsActionWithoutFetching(t *testing.T) {
 	f := setup(t, 0)
-	_, err := FetchSource(f.ctx, f.sub(), nil)
+	_, err := f.svc.FetchSource(f.ctx, f.sub(), nil)
 	var ref *rules.StrategyReferenceError
 	if !errors.As(err, &ref) || !strings.Contains(err.Error(), "手动更新") {
 		t.Fatal(err)
@@ -599,19 +601,19 @@ func TestExpiredCacheIsServedAndTheScheduledTaskRefreshesIt(t *testing.T) {
 	f := setup(t, 259200)
 	f.noRules()
 	before := f.cacheSource(259201*time.Second, subURL)
-	result, err := FetchSource(f.ctx, f.sub(), nil)
+	result, err := f.svc.FetchSource(f.ctx, f.sub(), nil)
 	if err != nil || result.Source != "cache" || !testjson.Equal(f.cache(), before) {
 		t.Fatal(result, err)
 	}
 	f.download(proxiesYAML(t), "direct_yaml", nil)
 	f.clock.advance(time.Second)
-	if n, err := RunRound(f.ctx, nil); n != 1 || err != nil {
+	if n, err := f.svc.RunRound(f.ctx, nil); n != 1 || err != nil {
 		t.Fatal(n, err)
 	}
 	if len(f.fetches) != 1 || f.fetches[0] != "s "+subURL+" refresh=True" {
 		t.Fatal(f.fetches)
 	}
-	if n, err := RunRound(f.ctx, nil); n != 0 || err != nil { // due again only after the interval
+	if n, err := f.svc.RunRound(f.ctx, nil); n != 0 || err != nil { // due again only after the interval
 		t.Fatal(n, err)
 	}
 	entry := f.status("subscription:s")
@@ -629,7 +631,7 @@ func TestFailedScheduledRefreshKeepsNodesAndRetriesSooner(t *testing.T) {
 	f.noRules()
 	before := f.cacheSource(86401*time.Second, subURL)
 	f.download("proxies: []", "direct_yaml", nil)
-	if n, err := RunRound(f.ctx, nil); n != 1 || err != nil {
+	if n, err := f.svc.RunRound(f.ctx, nil); n != 1 || err != nil {
 		t.Fatal(n, err)
 	}
 	if !testjson.Equal(f.cache(), before) {
@@ -655,13 +657,13 @@ func TestDryPreviewsShareDownloadAcrossRestartWithoutChangingValidatedNodes(t *t
 		calls++
 		return &SourceResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 	}
-	first, err := FetchSource(f.ctx, f.sub(), fetch)
+	first, err := f.svc.FetchSource(f.ctx, f.sub(), fetch)
 	if err != nil {
 		t.Fatal(err)
 	}
 	reopened, _ := repo.Open(f.repo.DataDir(), repo.Options{})
 	f.repo, f.ctx = reopened, repo.WithRepository(context.Background(), reopened)
-	second, err := FetchSource(f.ctx, f.sub(), fetch)
+	second, err := f.svc.FetchSource(f.ctx, f.sub(), fetch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -682,10 +684,10 @@ func TestExpiredDownloadIsRefetchedAndManualModeNeverUsesItWithoutNodes(t *testi
 		return &SourceResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 	}
 	sub := f.sub()
-	if _, err := FetchSource(f.ctx, sub, fetch); err != nil {
+	if _, err := f.svc.FetchSource(f.ctx, sub, fetch); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := readSharedData(f.ctx, DownloadCachePath(subURL))
+	raw, err := readSharedData(f.ctx, f.repo, DownloadCachePath(subURL))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -701,12 +703,12 @@ func TestExpiredDownloadIsRefetchedAndManualModeNeverUsesItWithoutNodes(t *testi
 	if _, err := f.repo.WriteSharedText(f.ctx, DownloadCachePath(subURL), updated); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := FetchSource(f.ctx, sub, fetch); err != nil || calls != 2 {
+	if _, err := f.svc.FetchSource(f.ctx, sub, fetch); err != nil || calls != 2 {
 		t.Fatal(err, calls)
 	}
 	zero := model.Int(0)
 	sub.Interval = &zero
-	_, err = FetchSource(f.ctx, sub, fetch)
+	_, err = f.svc.FetchSource(f.ctx, sub, fetch)
 	if err == nil || !strings.Contains(err.Error(), "手动更新") || calls != 2 {
 		t.Fatal(err, calls)
 	}
@@ -718,7 +720,7 @@ func TestChangedURLInManualModeNeedsManualRefresh(t *testing.T) {
 	f.cacheSource(0, subURL)
 	sub := f.sub()
 	sub.URL = subURL + "&new=1"
-	_, err := FetchSource(f.ctx, sub, func(context.Context, string, string) (*SourceResult, error) {
+	_, err := f.svc.FetchSource(f.ctx, sub, func(context.Context, string, string) (*SourceResult, error) {
 		t.Error("no request")
 		return nil, errors.New("no")
 	})
@@ -752,7 +754,7 @@ func TestInvalidSourceIntervalsAreRejected(t *testing.T) {
 func TestRefreshSubscriptionRecordsHealthAndStatus(t *testing.T) {
 	f := setup(t, 86400)
 	f.download("", "", &substore.SubscriptionFetchError{DirectError: &substore.RequestError{Class: "HTTPError", Status: 403}})
-	_, _, _, err := RefreshSource(f.ctx, f.sub(), "manual")
+	_, _, _, err := f.svc.RefreshSource(f.ctx, f.sub(), "manual")
 	if err == nil {
 		t.Fatal("no error")
 	}
@@ -762,7 +764,7 @@ func TestRefreshSubscriptionRecordsHealthAndStatus(t *testing.T) {
 		hasCacheUpdated || mapInt(entry, "last_duration_ms") != 12 {
 		t.Fatal(compactJSON(entry))
 	}
-	health, _ := ReadHealth(f.ctx)
+	health, _ := f.svc.ReadHealth(f.ctx)
 	sEntry := health.Entry("s")
 	if sEntry == nil || len(sEntry.History) != 1 || sEntry.History[0].Status != "fail" {
 		t.Fatal(compactJSON(health))
@@ -771,7 +773,7 @@ func TestRefreshSubscriptionRecordsHealthAndStatus(t *testing.T) {
 	f.env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*SourceResult, error) {
 		return &SourceResult{Text: proxiesYAML(t), Source: "direct_yaml", Traffic: &traffic}, nil
 	}
-	nodes, result, cache, err := RefreshSource(f.ctx, f.sub(), "schedule")
+	nodes, result, cache, err := f.svc.RefreshSource(f.ctx, f.sub(), "schedule")
 	if err != nil || len(nodes) != 1 || result.FetchedAt != "2026-10-24T00:00:00+00:00" || cache.UpdatedAt == nil || *cache.UpdatedAt != result.FetchedAt {
 		t.Fatal(nodes, result, cache, err)
 	}
@@ -790,7 +792,7 @@ func TestRefreshSubscriptionRecordsHealthAndStatus(t *testing.T) {
 	if entry["last_status"] != "success" || entry["cache_updated_at"] != result.FetchedAt || hasRetained {
 		t.Fatal(compactJSON(entry))
 	}
-	health, _ = ReadHealth(f.ctx)
+	health, _ = f.svc.ReadHealth(f.ctx)
 	got := health.Entry("s")
 	if got == nil || len(got.History) < 2 ||
 		!testjson.Equal(got.History[1], map[string]any{"at": "2026-10-24T00:00:00Z", "status": "ok", "count": 1}) ||
@@ -798,7 +800,7 @@ func TestRefreshSubscriptionRecordsHealthAndStatus(t *testing.T) {
 		got.TrafficAt == nil || *got.TrafficAt != "2026-10-24T00:00:00Z" {
 		t.Fatal(compactJSON(got))
 	}
-	downloadedRaw, err := readSharedData(f.ctx, DownloadCachePath(subURL))
+	downloadedRaw, err := readSharedData(f.ctx, f.repo, DownloadCachePath(subURL))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -822,16 +824,16 @@ func TestRunNowClaimsTheTask(t *testing.T) {
 	}
 	request, cancel := context.WithCancel(f.ctx)
 	defer cancel()
-	key, err := RunResourceNow(request, "subscription", "s")
+	key, err := f.svc.RunResourceNow(request, "subscription", "s")
 	cancel()
 	if err != nil || key != "subscription:s" || !IsRunning(key) {
 		t.Fatal(key, err)
 	}
 	var busy *TaskBusy
-	if _, err := RunResourceNow(f.ctx, "subscription", "s"); !errors.As(err, &busy) || err.Error() != msgTaskBusy {
+	if _, err := f.svc.RunResourceNow(f.ctx, "subscription", "s"); !errors.As(err, &busy) || err.Error() != msgTaskBusy {
 		t.Fatal(err)
 	}
-	if err := runTask(f.ctx, "subscription:s", "s"); err == nil || err.Error() != msgTaskBusy {
+	if err := f.svc.runTask(f.ctx, "subscription:s", "s"); err == nil || err.Error() != msgTaskBusy {
 		t.Fatal(err)
 	}
 	close(gate)
@@ -840,11 +842,11 @@ func TestRunNowClaimsTheTask(t *testing.T) {
 		t.Fatal(compactJSON(f.status(key)))
 	}
 	var lookup *NotFoundError
-	if _, err := RunResourceNow(f.ctx, "subscription", "gone"); !errors.As(err, &lookup) {
+	if _, err := f.svc.RunResourceNow(f.ctx, "subscription", "gone"); !errors.As(err, &lookup) {
 		t.Fatal(err)
 	}
 	f.updateShared(func(shared *model.Shared) { shared.Subscriptions[0].URL = "" })
-	if _, err := RunResourceNow(f.ctx, "subscription", "s"); err == nil || err.Error() != "这个来源没有订阅地址，不需要更新" {
+	if _, err := f.svc.RunResourceNow(f.ctx, "subscription", "s"); err == nil || err.Error() != "这个来源没有订阅地址，不需要更新" {
 		t.Fatal(err)
 	}
 }
@@ -874,7 +876,7 @@ func TestLoopRunsUnderTheInstanceLock(t *testing.T) {
 	defer owner.Release()
 	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
 	reg := lifecycle.NewRegistry()
-	spec := periodic()
+	spec := f.svc.Periodic()
 	original := spec.Round
 	rounds := make(chan time.Time, 3)
 	spec.Round = func(ctx context.Context) error {
@@ -931,7 +933,7 @@ func TestInvalidRefreshKeepsTheValidCache(t *testing.T) {
 	f := setup(t, 86400)
 	rule := ruleDecl(t)
 	_, _ = rulefetch.WriteCache(f.ctx, f.repo, refreshCacheRule(t, rule), rulefetch.Content{Data: []byte("+.valid.example\n")}, nil)
-	_, _, err := RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
+	_, _, err := f.svc.RefreshRemote(f.ctx, rule, "schedule", RuleReadOptions{
 		Fetch: func(context.Context, string) (rulefetch.Content, error) {
 			return rulefetch.Content{Data: []byte("DOMAIN,bad.example")}, nil
 		},
@@ -947,7 +949,7 @@ func TestInvalidRefreshKeepsTheValidCache(t *testing.T) {
 		t.Fatal(string(cached), compactJSON(entry))
 	}
 	// A device read now gets the valid bytes marked stale.
-	content, stale, err := ReadRemote(f.ctx, rule, RuleReadOptions{})
+	content, stale, err := f.svc.ReadRemote(f.ctx, rule, RuleReadOptions{})
 	if err != nil || string(content) != "+.valid.example\n" || stale == nil || !strings.Contains(stale.Error(), "DOMAIN,bad.example") {
 		t.Fatal(content, stale, err)
 	}

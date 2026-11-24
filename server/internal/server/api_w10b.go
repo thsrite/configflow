@@ -31,9 +31,11 @@ func newW10bHandlers(opts Options, ag *agentServices, gen *generateServices, rs 
 		rules: apirules.New(apirules.Deps{
 			Repo:       opts.Repo,
 			RuleSource: rs,
+			Refresh:    gen.refresh,
 		}),
 		rulelibrary: apirulelibrary.New(apirulelibrary.Deps{
-			Repo: opts.Repo,
+			Repo:    opts.Repo,
+			Refresh: gen.refresh,
 		}),
 		routers: apirouters.New(apirouters.Deps{
 			Repo:     opts.Repo,

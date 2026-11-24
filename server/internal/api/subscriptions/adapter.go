@@ -89,12 +89,20 @@ func (h *Handler) substore() *substore.Service {
 	return substore.NewService(substore.NewEnv())
 }
 
+func (h *Handler) refreshSvc(ctx context.Context) *refresh.Service {
+	if h != nil && h.Refresh != nil {
+		return h.Refresh
+	}
+	r, _ := h.repo(ctx)
+	return refresh.New(refresh.Options{Repo: r, SubStore: h.substore()})
+}
+
 func (h *Handler) provider(ctx context.Context) *provider.Service {
 	if h != nil && h.Provider != nil {
 		return h.Provider
 	}
 	r, _ := h.repo(ctx)
-	return provider.New(provider.Options{Repo: r, SubStore: h.substore()})
+	return provider.New(provider.Options{Repo: r, SubStore: h.substore(), Refresh: h.refreshSvc(ctx)})
 }
 
 func (h *Handler) listShared(ctx context.Context) ([]model.Subscription, []model.Node, error) {
@@ -231,8 +239,8 @@ func (h *Handler) readCache(ctx context.Context, id string, summary bool) (*cach
 	err = json.Unmarshal(data, &out)
 	return &out, err
 }
-func loadHealth(ctx context.Context) (map[string]healthEntry, error) {
-	v, err := refresh.ReadHealth(lifecycle.Detach(ctx))
+func (h *Handler) loadHealth(ctx context.Context) (map[string]healthEntry, error) {
+	v, err := h.refreshSvc(ctx).ReadHealth(lifecycle.Detach(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +271,7 @@ func (h *Handler) forgetSubscription(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if err := refresh.ForgetHealth(ctx, id); err != nil {
+	if err := h.refreshSvc(ctx).ForgetHealth(ctx, id); err != nil {
 		return err
 	}
 	if err := h.forgetTask(ctx, id); err != nil {
@@ -272,9 +280,9 @@ func (h *Handler) forgetSubscription(ctx context.Context, id string) error {
 	_, err = substore.DeleteSubscriptionCache(ctx, r, id)
 	return err
 }
-func refreshSubscription(ctx context.Context, sub model.Subscription) ([]proxy, *cache, error) {
+func (h *Handler) refreshSubscription(ctx context.Context, sub model.Subscription) ([]proxy, *cache, error) {
 	source := sub
-	nodes, _, payload, err := refresh.RefreshSource(ctx, source, "manual")
+	nodes, _, payload, err := h.refreshSvc(ctx).RefreshSource(ctx, source, "manual")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -380,7 +388,7 @@ func (d *delivery) adapt(ctx context.Context, sub model.Subscription, proxies []
 func (h *Handler) fetchRaw(ctx context.Context, sub model.Subscription) ([]proxy, *refresh.SourceResult, error) {
 	source := sub
 	pv := h.provider(ctx)
-	result, err := refresh.FetchSource(ctx, source, pv.DeliveryEnv().Fetch)
+	result, err := h.refreshSvc(ctx).FetchSource(ctx, source, pv.DeliveryEnv().Fetch)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -413,7 +421,7 @@ func (h *Handler) stageNodes(sub model.Subscription, proxies []proxy, result *re
 			}
 		}
 	}
-	metadata, err := refresh.CacheMetadata(context.Background(), source, result)
+	metadata, err := h.refreshSvc(context.Background()).CacheMetadata(context.Background(), source, result)
 	if err != nil {
 		return staged{}, err
 	}
@@ -562,9 +570,9 @@ func (d *delivery) chainedContent(ctx context.Context, sub model.Subscription, f
 func (d *delivery) serve(c *httpx.Ctx, id string, render provider.Render) (*httpx.Response, error) {
 	return d.h.provider(c.Context()).Serve(c, "subscription", id, d.profileID, d.head, render)
 }
-func recordFetch(ctx context.Context, id string, ok, fromCache bool, count int) error {
+func (h *Handler) recordFetch(ctx context.Context, id string, ok, fromCache bool, count int) error {
 	ctx = lifecycle.Detach(ctx)
-	_, err := refresh.RecordHealth(ctx, id, refresh.FetchEventInput{OK: ok, FromCache: fromCache, Count: model.Int(count)})
+	_, err := h.refreshSvc(ctx).RecordHealth(ctx, id, refresh.FetchEventInput{OK: ok, FromCache: fromCache, Count: model.Int(count)})
 	return err
 }
 

@@ -11,6 +11,7 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rulesource"
@@ -20,6 +21,7 @@ import (
 type Deps struct {
 	Repo       *repo.Repository
 	RuleSource *rulesource.Service
+	Refresh    *refresh.Service
 	Client     *rulefetch.Client
 	Now        func() time.Time
 }
@@ -44,6 +46,7 @@ func New(deps Deps) *Handler {
 		service: &Service{
 			repo:       deps.Repo,
 			ruleSource: deps.RuleSource,
+			refresh:    deps.Refresh,
 			client:     client,
 			now:        now,
 		},

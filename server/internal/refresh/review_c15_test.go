@@ -21,13 +21,13 @@ func TestReviewCancelledRequestContextFinishesTheRefresh(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		ctx, cancel := context.WithCancel(f.ctx)
 		cancel()
-		if _, _, _, err := RefreshSource(ctx, f.sub(), "manual"); err != nil {
+		if _, _, _, err := f.svc.RefreshSource(ctx, f.sub(), "manual"); err != nil {
 			t.Fatalf("round %d: %v", i, err)
 		}
 		if got := mapInt(f.status("subscription:s"), "run_count"); got != int64(i+1) {
 			t.Fatalf("round %d: run_count %d", i, got)
 		}
-		health, err := ReadHealth(f.ctx)
+		health, err := f.svc.ReadHealth(f.ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -47,7 +47,7 @@ func TestReviewCancelledRequestContextFinishesTheRefresh(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		ctx, cancel := context.WithCancel(f.ctx)
 		cancel()
-		result, err := FetchSource(ctx, f.sub(), func(context.Context, string, string) (*SourceResult, error) {
+		result, err := f.svc.FetchSource(ctx, f.sub(), func(context.Context, string, string) (*SourceResult, error) {
 			return &SourceResult{Text: proxiesYAML(t), Source: "direct_yaml"}, nil
 		})
 		if err != nil {
@@ -64,21 +64,21 @@ func TestReviewCancelledRequestContextFinishesTheRefresh(t *testing.T) {
 // repository-backed tests; malformed collections follow the shared R5 codec.
 func TestReviewTypedLookupUsesCurrentDeclaration(t *testing.T) {
 	f := setup(t, 86400)
-	found, err := LookupResource(f.ctx, "subscription", "s")
+	found, err := f.svc.LookupResource(f.ctx, "subscription", "s")
 	if err != nil || found.Subscription == nil || found.Subscription.ID != "s" {
 		t.Fatal(found, err)
 	}
-	if _, err := LookupResource(f.ctx, "subscription", "missing"); err == nil {
+	if _, err := f.svc.LookupResource(f.ctx, "subscription", "missing"); err == nil {
 		t.Fatal("missing source was found")
 	}
 	current := ruleDecl(t)
-	stored, err := StoredRule(f.ctx, current)
+	stored, err := f.svc.StoredRule(f.ctx, current)
 	if err != nil || !stored {
 		t.Fatal(stored, err)
 	}
 	changed := "https://example.com/changed.list"
 	current.URL = &changed
-	if stored, err := StoredRule(f.ctx, current); err != nil || stored {
+	if stored, err := f.svc.StoredRule(f.ctx, current); err != nil || stored {
 		t.Fatal("changed declaration claimed stored cache", err)
 	}
 }

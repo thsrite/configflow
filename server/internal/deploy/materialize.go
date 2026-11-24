@@ -5,6 +5,7 @@ import (
 	"configflow/internal/agents/diag"
 	"configflow/internal/gateway"
 	"configflow/internal/logx"
+	"configflow/internal/refresh"
 	"configflow/internal/rulefetch"
 	"context"
 	"errors"
@@ -36,6 +37,7 @@ type MaterializeOptions struct {
 	SourceID      string
 	DeclaredRule  *RuleRef
 	RemoteSources map[string]bool
+	Refresh       *refresh.Service
 }
 
 // LocalRule resolves recognized local callbacks only against the snapshot.
@@ -173,7 +175,7 @@ func MaterializeRule(ctx context.Context, rawURL string, src *Source, baseURL st
 	if fetch == nil {
 		fetch = func(ctx context.Context, u string) ([]byte, error) { return fetchBytes(ctx, u, src) }
 	}
-	read, err := src.readRule(ctx, rawURL, o.SourceID, o.DeclaredRule, fetch)
+	read, err := src.readRule(ctx, o.Refresh, rawURL, o.SourceID, o.DeclaredRule, fetch)
 	if read.declared {
 		if err != nil {
 			var validation *rulefetch.RemoteRuleValidationError

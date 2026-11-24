@@ -18,9 +18,11 @@ import (
 	apinotifications "configflow/internal/api/notifications"
 	"configflow/internal/discovery"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/refresh"
+	"configflow/internal/repo"
 	"configflow/internal/routers"
 	routerrulesync "configflow/internal/routers/rulesync"
 	"configflow/internal/substore"
@@ -154,13 +156,13 @@ func seedO10T3Server(t *testing.T, deployments int) (*httpxtest.Server, *agents.
 	return srv, m
 }
 
-func wireAllO10T3Slots(t *testing.T, agentReads *atomic.Int32) {
+func wireAllO10T3Slots(t *testing.T, r *repo.Repository, agentReads *atomic.Int32) {
 	t.Helper()
 	agents.Wire()
 	rulesync.Wire()
 	dnsfollow.Register()
 	metrics.Wire()
-	refresh.Wire()
+	refresh.New(refresh.Options{Repo: r}).Register(lifecycle.Current(), tasks.Default())
 	rr := routerrulesync.New(nil, routerrulesync.Options{})
 	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRouters, rr.TaskRows))
 	t.Cleanup(tasks.SetRunner(tasks.SlotRouters, rr.TaskRunner()))
@@ -190,10 +192,9 @@ func wireAllO10T3Slots(t *testing.T, agentReads *atomic.Int32) {
 //     Head advances.
 func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t *testing.T) {
 	var reads atomic.Int32
-	wireAllO10T3Slots(t, &reads)
-
 	smallSrv, smallMgr := seedO10T3Server(t, 1)
 	largeSrv, largeMgr := seedO10T3Server(t, 300)
+	wireAllO10T3Slots(t, largeSrv.Repo, &reads)
 	discovery.New(discovery.Options{Repo: largeSrv.Repo}).Register(nil, tasks.Default())
 
 	// Record a failed subscription receipt on both so SnapshotItems exercises

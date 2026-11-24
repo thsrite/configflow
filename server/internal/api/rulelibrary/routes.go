@@ -8,14 +8,16 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
 
 // Deps supplies the collaborators for the rule-library HTTP Handler.
 type Deps struct {
-	Repo   *repo.Repository
-	Client *rulefetch.Client
+	Repo    *repo.Repository
+	Client  *rulefetch.Client
+	Refresh *refresh.Service
 }
 
 // Handler serves shared rule-library editing and public delivery routes.
@@ -30,7 +32,7 @@ func New(deps Deps) *Handler {
 	if client == nil {
 		client = rulefetch.DefaultClient
 	}
-	return &Handler{service: &Service{repo: deps.Repo, client: client}}
+	return &Handler{service: &Service{repo: deps.Repo, client: client, refresh: deps.Refresh}}
 }
 
 // Register installs shared rule editing and public handwritten-source delivery.
@@ -40,12 +42,13 @@ func Register(r *httpx.Router) { New(Deps{}).Register(r) }
 type Options struct {
 	Repo         *repo.Repository
 	Client       *rulefetch.Client
+	Refresh      *refresh.Service
 	replaceCache func(context.Context, string, string) error
 }
 
 // RegisterWithOptions installs the library routes with an injected transport.
 func RegisterWithOptions(r *httpx.Router, options Options) {
-	h := New(Deps{Repo: options.Repo, Client: options.Client})
+	h := New(Deps{Repo: options.Repo, Client: options.Client, Refresh: options.Refresh})
 	h.service.replaceCache = options.replaceCache
 	h.Register(r)
 }

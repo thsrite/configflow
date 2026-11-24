@@ -7,6 +7,7 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/model"
 	"configflow/internal/provider"
+	"configflow/internal/refresh"
 	"configflow/internal/substore"
 )
 
@@ -23,6 +24,7 @@ type Options struct {
 	IPv6     IPv6Enroller
 	SubStore *substore.Service
 	Provider *provider.Service
+	Refresh  *refresh.Service
 }
 
 // Service owns deployment publication hooks and per-Manager preview stores for
@@ -33,6 +35,7 @@ type Service struct {
 	ipv6     IPv6Enroller
 	substore *substore.Service
 	provider *provider.Service
+	refresh  *refresh.Service
 
 	previewsMu sync.Mutex
 	previews   map[*agents.Manager]*Previews
@@ -46,6 +49,7 @@ func New(opts Options) *Service {
 		ipv6:     opts.IPv6,
 		substore: opts.SubStore,
 		provider: opts.Provider,
+		refresh:  opts.Refresh,
 		previews: map[*agents.Manager]*Previews{},
 	}
 }
@@ -86,7 +90,18 @@ func (s *Service) providerFor(m *agents.Manager) *provider.Service {
 	if s != nil {
 		sub = s.substore
 	}
-	return provider.New(provider.Options{Repo: m.Repository(), SubStore: sub, Locations: Locations{}})
+	return provider.New(provider.Options{Repo: m.Repository(), SubStore: sub, Refresh: s.refreshFor(m), Locations: Locations{}})
+}
+
+func (s *Service) refreshFor(m *agents.Manager) *refresh.Service {
+	if s != nil && s.refresh != nil {
+		return s.refresh
+	}
+	var sub *substore.Service
+	if s != nil {
+		sub = s.substore
+	}
+	return refresh.New(refresh.Options{Repo: m.Repository(), SubStore: sub})
 }
 
 // PreviewsFor returns the Manager-owned immutable preview store on s.

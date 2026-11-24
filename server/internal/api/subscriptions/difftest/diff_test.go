@@ -211,6 +211,11 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	ctx := srv.Context()
 	// The isolated app projects only the task families seeded by this fixture.
 	// Other modules have no resources in this synthetic repository.
+	re := refresh.DefaultRefreshEnvFor(srv.Repo, subSvc)
+	re.Clock = fixedClock{}
+	re.HTTP = subSvc.Env.HTTP
+	re.RandomHex = subSvc.Env.RandomHex
+	rf := refresh.New(refresh.Options{Repo: srv.Repo, SubStore: subSvc, Env: re})
 	notifications.SetInputs(notifications.Inputs{
 		Agents: func(context.Context) ([]model.Agent, error) { return []model.Agent{}, nil },
 		Rows: func(ctx context.Context) ([]*tasks.Task, error) {
@@ -218,11 +223,11 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 			if err != nil {
 				return nil, err
 			}
-			subs, err := refresh.SubscriptionTasks(ctx, status)
+			subs, err := rf.SubscriptionTasks(ctx, status)
 			if err != nil {
 				return nil, err
 			}
-			rules, err := refresh.RuleTasks(ctx, status)
+			rules, err := rf.RuleTasks(ctx, status)
 			return append(subs, rules...), err
 		},
 	})
@@ -244,11 +249,6 @@ func newWorld(t *testing.T, setup func(context.Context, *repo.Repository), sourc
 	if out, err := exec.Command("cp", "-a", srv.DataDir+"/.", pyDir).CombinedOutput(); err != nil {
 		t.Fatalf("copy: %v %s", err, out)
 	}
-	re := refresh.DefaultRefreshEnvFor(srv.Repo, subSvc)
-	re.Clock = fixedClock{}
-	re.HTTP = subSvc.Env.HTTP
-	re.RandomHex = subSvc.Env.RandomHex
-	t.Cleanup(refresh.SetRefreshEnv(re))
 	token, err := auth.EncodeHS256(map[string]any{"username": "diff-admin", "exp": time.Now().Add(time.Hour).Unix()}, secret)
 	if err != nil {
 		t.Fatal(err)

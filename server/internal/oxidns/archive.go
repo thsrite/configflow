@@ -8,6 +8,7 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/mosdns"
+	"configflow/internal/repo"
 	"configflow/internal/yamlx"
 
 	"gopkg.in/yaml.v3"
@@ -17,6 +18,12 @@ import (
 // MosDNS rule materializer. Runtime state and external includes are never packed.
 // config is the captured repository snapshot; neither it nor the input files change.
 func BuildTypedZIP(ctx context.Context, config *model.Config, content string, downloads []mosdns.Download, custom []File, baseURL string) ([]byte, error) {
+	return BuildTypedZIPWithRepo(ctx, nil, config, content, downloads, custom, baseURL)
+}
+
+// BuildTypedZIPWithRepo materializes a complete OxiDNS package using r for
+// remote rule cache reads when needed.
+func BuildTypedZIPWithRepo(ctx context.Context, r *repo.Repository, config *model.Config, content string, downloads []mosdns.Download, custom []File, baseURL string) ([]byte, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -67,7 +74,7 @@ func BuildTypedZIP(ctx context.Context, config *model.Config, content string, do
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	output, err := mosdns.BuildZIP(ctx, config, content, downloads, files, mosdns.ArchiveOptions{BaseURL: baseURL, SkipReferenceValidation: true})
+	output, err := mosdns.BuildZIP(ctx, config, content, downloads, files, mosdns.ArchiveOptions{BaseURL: baseURL, SkipReferenceValidation: true, Repo: r})
 	if stop := ctx.Err(); stop != nil {
 		return nil, stop
 	}

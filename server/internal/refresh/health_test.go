@@ -66,11 +66,11 @@ func TestFetchUserinfoSkipsNonHTTP(t *testing.T) {
 		t.Error("unexpected request")
 		return nil, errors.New("no")
 	}}
-	env := DefaultRefreshEnv()
+	env := DefaultRefreshEnvFor(nil, nil)
 	env.HTTP = client
-	t.Cleanup(SetRefreshEnv(env))
+	svc := New(Options{Env: env})
 	for _, url := range []string{"file:///etc/passwd", "", "ftp://example.test/sub"} {
-		if got, err := FetchTraffic(context.Background(), url); got != nil || err != nil {
+		if got, err := svc.FetchTraffic(context.Background(), url); got != nil || err != nil {
 			t.Errorf("%q: %v %v", url, got, err)
 		}
 	}
@@ -88,10 +88,10 @@ func TestFetchUserinfoReadsTheHeader(t *testing.T) {
 		}
 		return &substore.Response{StatusCode: status, Header: http.Header{"Subscription-Userinfo": {"upload=1; download=2; total=3; expire=4"}}}, nil
 	}}
-	env := DefaultRefreshEnv()
+	env := DefaultRefreshEnvFor(nil, nil)
 	env.HTTP = client
-	t.Cleanup(SetRefreshEnv(env))
-	got, err := FetchTraffic(context.Background(), "HTTPS://airport.test/sub")
+	svc := New(Options{Env: env})
+	got, err := svc.FetchTraffic(context.Background(), "HTTPS://airport.test/sub")
 	if err != nil || !testjson.Equal(got, map[string]any{"upload": 1, "download": 2, "total": 3, "expire": 4}) {
 		t.Fatal(got, err)
 	}
@@ -100,11 +100,11 @@ func TestFetchUserinfoReadsTheHeader(t *testing.T) {
 		t.Fatal(req)
 	}
 	status = 404
-	if got, err := FetchTraffic(context.Background(), "https://airport.test/sub"); got != nil || err != nil {
+	if got, err := svc.FetchTraffic(context.Background(), "https://airport.test/sub"); got != nil || err != nil {
 		t.Fatal(got, err)
 	}
 	failure = &substore.RequestError{Class: "ConnectTimeout", Message: "timeout"}
-	if got, err := FetchTraffic(context.Background(), "https://airport.test/sub"); got != nil || err != nil {
+	if got, err := svc.FetchTraffic(context.Background(), "https://airport.test/sub"); got != nil || err != nil {
 		t.Fatal(got, err)
 	}
 }
@@ -114,14 +114,14 @@ func TestFetchUserinfoReadsTheHeader(t *testing.T) {
 func TestSubscriptionHealthHistory(t *testing.T) {
 	f := setup(t, 86400)
 	for i := range HistorySize + 3 {
-		if _, err := RecordHealth(f.ctx, "s1", FetchEventInput{OK: true, Count: model.Int(i)}); err != nil {
+		if _, err := f.svc.RecordHealth(f.ctx, "s1", FetchEventInput{OK: true, Count: model.Int(i)}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	_, _ = RecordHealth(f.ctx, "s1", FetchEventInput{OK: false, FromCache: true, Count: 9})
+	_, _ = f.svc.RecordHealth(f.ctx, "s1", FetchEventInput{OK: false, FromCache: true, Count: 9})
 	traffic := testjson.Decode[Traffic](t, map[string]any{"upload": 1, "download": 2, "total": 100, "expire": 2000000000})
-	entry, _ := RecordHealth(f.ctx, "s1", FetchEventInput{OK: true, Count: 10, Traffic: &traffic})
-	health, _ := ReadHealth(f.ctx)
+	entry, _ := f.svc.RecordHealth(f.ctx, "s1", FetchEventInput{OK: true, Count: 10, Traffic: &traffic})
+	health, _ := f.svc.ReadHealth(f.ctx)
 	item := health.Entry("s1")
 	if item == nil || len(item.History) != HistorySize ||
 		item.History[len(item.History)-2].Status != "cache" ||
@@ -132,13 +132,13 @@ func TestSubscriptionHealthHistory(t *testing.T) {
 	if item.History[0].Count == nil || int64(*item.History[0].Count) != 5 || !testjson.Equal(entry, item) {
 		t.Fatalf("unexpected history[0]: %s", compactJSON(item.History[0]))
 	}
-	if empty, _ := RecordHealth(f.ctx, "", FetchEventInput{OK: true}); empty != nil && len(empty.History) != 0 {
+	if empty, _ := f.svc.RecordHealth(f.ctx, "", FetchEventInput{OK: true}); empty != nil && len(empty.History) != 0 {
 		t.Fatal(empty)
 	}
-	if err := ForgetHealth(f.ctx, "s1"); err != nil {
+	if err := f.svc.ForgetHealth(f.ctx, "s1"); err != nil {
 		t.Fatal(err)
 	}
-	health, _ = ReadHealth(f.ctx)
+	health, _ = f.svc.ReadHealth(f.ctx)
 	if _, exists := health["s1"]; exists {
 		t.Fatalf("entry still present: %s", compactJSON(health))
 	}
@@ -152,7 +152,7 @@ func TestHealthFileEdges(t *testing.T) {
 	for _, text := range []string{"[1, 2]", "{broken", "\xff"} {
 		_ = os.MkdirAll(filepath.Dir(path), 0o755)
 		_ = os.WriteFile(path, []byte(text), 0o644)
-		if health, err := ReadHealth(f.ctx); err != nil || len(health) != 0 {
+		if health, err := f.svc.ReadHealth(f.ctx); err != nil || len(health) != 0 {
 			t.Fatal(text, health, err)
 		}
 	}
@@ -161,9 +161,7 @@ func TestHealthFileEdges(t *testing.T) {
 	refs := loadNativeReferences(t)
 	edge := mapObj(refs, "edge")
 	_ = os.WriteFile(path, []byte(mapStr(mapObj(edge, "files"), "health")), 0o644)
-	env := DefaultRefreshEnv()
-	env.Clock = &fakeClock{now: corpusNow}
-	t.Cleanup(SetRefreshEnv(env))
+	f.env.Clock = &fakeClock{now: corpusNow}
 	edgeNative := mapList(refs, "edge_native")
 	for i, item := range mapList(edge, "output") {
 		call := item.(map[string]any)
@@ -175,7 +173,7 @@ func TestHealthFileEdges(t *testing.T) {
 		options := args[1].(map[string]any)
 		var count model.Int
 		_ = decodeInto(options["count"], &count)
-		_, err = RecordHealth(f.ctx, args[0].(string), FetchEventInput{
+		_, err = f.svc.RecordHealth(f.ctx, args[0].(string), FetchEventInput{
 			OK:        options["ok"] == true,
 			FromCache: options["from_cache"] == true,
 			Count:     count,
@@ -190,7 +188,7 @@ func TestHealthFileEdges(t *testing.T) {
 		}
 	}
 	_ = os.WriteFile(path, []byte(`{"s": null}`), 0o644)
-	_ = ForgetHealth(f.ctx, "s")
+	_ = f.svc.ForgetHealth(f.ctx, "s")
 	data, _ := os.ReadFile(path)
 	if string(data) == "{}\n" || string(data) == "{}" {
 		t.Fatal("a null entry is popped without saving")
@@ -224,9 +222,9 @@ func airSub(t *testing.T) model.Subscription {
 
 // test_subscription_hosts.py::test_only_downloaded_bodies_carry_hosts_into_the_cache_metadata
 func TestOnlyDownloadedBodiesCarryHostsIntoTheCacheMetadata(t *testing.T) {
-	// Sequential: missing fetched_at values use the process-wide Env clock.
+	svc := New(Options{})
 	feed := airSub(t)
-	metadata, err := CacheMetadata(context.Background(), feed, &SourceResult{Text: airport, Source: "direct_yaml", FetchedAt: "x"})
+	metadata, err := svc.CacheMetadata(context.Background(), feed, &SourceResult{Text: airport, Source: "direct_yaml", FetchedAt: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,13 +235,13 @@ func TestOnlyDownloadedBodiesCarryHostsIntoTheCacheMetadata(t *testing.T) {
 	if total, _ := testjson.Path(metaParsed, "hosts", "total"); !testjson.Equal(total, 3) {
 		t.Fatalf("unexpected metadata: %s", compactJSON(metadata))
 	}
-	if metadata, _ := CacheMetadata(context.Background(), feed, &SourceResult{Text: airport, Source: "cache"}); len(metadata.Hosts) != 0 {
+	if metadata, _ := svc.CacheMetadata(context.Background(), feed, &SourceResult{Text: airport, Source: "cache"}); len(metadata.Hosts) != 0 {
 		t.Fatalf("unexpected hosts on cache source: %s", compactJSON(metadata))
 	}
 	doc, _ := yamlx.Parse([]byte(airport))
 	conversionBytes, _ := yamlx.Marshal(yamlx.Map(yamlx.Str("proxies"), yamlx.Get(doc, "proxies")))
 	conversion := string(conversionBytes)
-	if metadata, _ := CacheMetadata(context.Background(), feed, &SourceResult{Text: conversion, Source: "sub_store"}); len(metadata.Hosts) != 0 {
+	if metadata, _ := svc.CacheMetadata(context.Background(), feed, &SourceResult{Text: conversion, Source: "sub_store"}); len(metadata.Hosts) != 0 {
 		t.Fatalf("unexpected hosts on sub_store source: %s", compactJSON(metadata))
 	}
 	rawMeta := string(mustMarshalBytes(t, metadata))
@@ -259,7 +257,7 @@ func TestOnlyDownloadedBodiesCarryHostsIntoTheCacheMetadata(t *testing.T) {
 func TestScheduledDownloadStoresHostsNextToNodes(t *testing.T) {
 	f := setup(t, 86400)
 	f.download(airport, "direct_yaml", nil)
-	if _, _, _, err := DownloadNodes(f.ctx, airSub(t)); err != nil {
+	if _, _, _, err := f.svc.DownloadNodes(f.ctx, airSub(t)); err != nil {
 		t.Fatal(err)
 	}
 	cache, err := substore.LoadCache(f.ctx, f.repo, "air")

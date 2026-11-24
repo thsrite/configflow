@@ -16,23 +16,21 @@ import (
 	"configflow/internal/substore"
 )
 
-func readSharedData(ctx context.Context, path string) ([]byte, error) {
+func readSharedData(ctx context.Context, r *repo.Repository, path string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+	if r == nil {
+		return nil, errors.New("refresh: repository is nil")
 	}
 	return r.ReadSharedBytes(ctx, path)
 }
-func writeSharedData(ctx context.Context, path string, data []byte) error {
+func writeSharedData(ctx context.Context, r *repo.Repository, path string, data []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return err
+	if r == nil {
+		return errors.New("refresh: repository is nil")
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -41,7 +39,7 @@ func writeSharedData(ctx context.Context, path string, data []byte) error {
 	if err := json.Indent(&formatted, data, "", "  "); err != nil {
 		return err
 	}
-	_, err = r.WriteSharedText(ctx, path, append(formatted.Bytes(), '\n'))
+	_, err := r.WriteSharedText(ctx, path, append(formatted.Bytes(), '\n'))
 	return err
 }
 func parseTraffic(header string) (*Traffic, error) {
@@ -59,9 +57,6 @@ func parseTraffic(header string) (*Traffic, error) {
 	}
 	return &result, nil
 }
-
-// DefaultRefreshEnv wires production source owners without legacy JSON documents.
-func DefaultRefreshEnv() *RefreshEnv { return DefaultRefreshEnvFor(nil, nil) }
 
 // DefaultRefreshEnvFor wires production source owners bound to explicit
 // Repository and Sub-Store service instances.
@@ -140,45 +135,30 @@ func DefaultRefreshEnvFor(r *repo.Repository, sub *substore.Service) *RefreshEnv
 					return nil, err
 				}
 			}
-			target := r
-			if target == nil {
-				var err error
-				target, err = repo.GetRepository(ctx)
-				if err != nil {
-					return nil, err
-				}
+			if r == nil {
+				return nil, errors.New("refresh: repository is nil")
 			}
 			var cache *substore.Cache
 			var err error
 			if sub != nil {
-				cache, err = sub.SaveCache(ctx, target, id, nodes, receipt)
+				cache, err = sub.SaveCache(ctx, r, id, nodes, receipt)
 			} else {
-				cache, err = substore.SaveCache(ctx, target, id, nodes, receipt)
+				cache, err = substore.SaveCache(ctx, r, id, nodes, receipt)
 			}
 			return sourceCache(cache, err)
 		},
 		LoadNodes: func(ctx context.Context, id string) (*NodeCache, error) {
-			target := r
-			if target == nil {
-				var err error
-				target, err = repo.GetRepository(ctx)
-				if err != nil {
-					return nil, err
-				}
+			if r == nil {
+				return nil, errors.New("refresh: repository is nil")
 			}
-			return loadNodeCache(ctx, target, id)
+			return loadNodeCache(ctx, r, id)
 		},
 		SharedLoader: true,
 		LoadCacheSummary: func(ctx context.Context, id string) (*substore.CacheSummary, error) {
-			target := r
-			if target == nil {
-				var err error
-				target, err = repo.GetRepository(ctx)
-				if err != nil {
-					return nil, err
-				}
+			if r == nil {
+				return nil, errors.New("refresh: repository is nil")
 			}
-			return substore.LoadCacheSummary(ctx, target, id)
+			return substore.LoadCacheSummary(ctx, r, id)
 		},
 		FilterNodes: subs.FilterNodes,
 		Converter:   conv,

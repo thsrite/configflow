@@ -2,6 +2,7 @@ package refresh
 
 import (
 	"configflow/internal/model"
+	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
 	"context"
 	"errors"
@@ -37,7 +38,7 @@ func NextDue(entry *taskstatus.Receipt, interval model.Int, baseline *string, no
 		if now != nil {
 			return now, nil
 		}
-		current := refreshEnv().Clock.Now().UTC().Truncate(time.Microsecond)
+		current := substore.SystemClock.Now().UTC().Truncate(time.Microsecond)
 		return &current, nil
 	}
 	delay := int64(interval)
@@ -64,12 +65,19 @@ func NextDue(entry *taskstatus.Receipt, interval model.Int, baseline *string, no
 	}
 	return &due, nil
 }
-func fresh(timestamp string, interval int64) bool {
+func (s *Service) nextDue(entry *taskstatus.Receipt, interval model.Int, baseline *string, now *time.Time) (*time.Time, error) {
+	if now == nil {
+		current := s.nowUTC()
+		now = &current
+	}
+	return NextDue(entry, interval, baseline, now)
+}
+func fresh(clock substore.Clock, timestamp string, interval int64) bool {
 	updated, ok := taskstatus.ParseTimestamp(timestamp)
 	if !ok {
 		return false
 	}
-	now := refreshEnv().Clock.Now()
+	now := clock.Now()
 	micros := (now.Unix()-updated.Unix())*1000000 + int64(now.Nanosecond()/1000) - int64(updated.Nanosecond()/1000)
 	return micros >= 0 && micros < interval*1000000
 }

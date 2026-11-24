@@ -48,12 +48,12 @@ func TestO10T3CacheSummaryMatchesFullCacheDecode(t *testing.T) {
 				t.Fatal(err)
 			}
 			sub := model.Subscription{ID: "s", URL: subURL}
-			summaryAt, err := SourceCacheAt(f.ctx, sub)
+			summaryAt, err := f.svc.SourceCacheAt(f.ctx, sub)
 			if err != nil {
 				t.Fatal(err)
 			}
 			f.env.Sources.LoadCacheSummary = nil
-			fullAt, err := SourceCacheAt(f.ctx, sub)
+			fullAt, err := f.svc.SourceCacheAt(f.ctx, sub)
 			if err != nil {
 				t.Fatal(err)
 			}

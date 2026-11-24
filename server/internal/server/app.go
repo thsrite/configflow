@@ -93,7 +93,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	nt := notifications.New(notifications.Options{Repo: opts.Repo, Tasks: tk, Summarize: routers.NotificationSummary})
 	tasks.UseRegistry(tk)
 	notifications.UseService(nt)
-	gen, err := newGenerateServices(opts.Repo, rt, tk)
+	gen, err := newGenerateServices(opts.Repo, rt, tk, nt)
 	if err != nil {
 		return nil, err
 	}

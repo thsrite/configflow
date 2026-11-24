@@ -10,6 +10,7 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
@@ -18,7 +19,19 @@ import (
 type Service struct {
 	repo         *repo.Repository
 	client       *rulefetch.Client
+	refresh      *refresh.Service
 	replaceCache func(context.Context, string, string) error
+}
+
+func (s *Service) refreshSvc(ctx context.Context) (*refresh.Service, error) {
+	if s != nil && s.refresh != nil {
+		return s.refresh, nil
+	}
+	r, err := s.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return refresh.New(refresh.Options{Repo: r}), nil
 }
 
 func (s *Service) repository(ctx context.Context) (*repo.Repository, error) {

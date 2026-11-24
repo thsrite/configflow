@@ -33,34 +33,34 @@ func TestUnsafeSourceYAMLNeverWritesCaches(t *testing.T) {
 			sub := f.sub()
 			f.cacheSource(0, subURL)
 			good := &SourceResult{Text: proxiesYAML(t), Source: "download"}
-			if _, err := RememberDownload(f.ctx, sub, good); err != nil {
+			if _, err := f.svc.RememberDownload(f.ctx, sub, good); err != nil {
 				t.Fatal(err)
 			}
-			before, err := readSharedData(f.ctx, DownloadCachePath(subURL))
+			before, err := readSharedData(f.ctx, f.repo, DownloadCachePath(subURL))
 			if err != nil {
 				t.Fatal(err)
 			}
 			nodesBefore := f.cache()
 			bad := &SourceResult{Text: tc.source, Source: "download"}
-			if _, err := CacheMetadata(f.ctx, sub, bad); !errors.Is(err, tc.kind) {
+			if _, err := f.svc.CacheMetadata(f.ctx, sub, bad); !errors.Is(err, tc.kind) {
 				t.Fatalf("metadata: %v", err)
 			}
-			if _, err := RememberDownload(f.ctx, sub, bad); !errors.Is(err, tc.kind) {
+			if _, err := f.svc.RememberDownload(f.ctx, sub, bad); !errors.Is(err, tc.kind) {
 				t.Fatalf("remember: %v", err)
 			}
 			f.env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*SourceResult, error) {
 				return bad, nil
 			}
-			if _, _, _, err := DownloadNodes(f.ctx, sub); !errors.Is(err, tc.kind) {
+			if _, _, _, err := f.svc.DownloadNodes(f.ctx, sub); !errors.Is(err, tc.kind) {
 				t.Fatalf("download: %v", err)
 			}
 			// Force a source fetch without a current validated-node match.
 			drySub := sub
 			drySub.URL = "https://example.com/other"
-			if _, err := FetchSource(f.ctx, drySub, func(context.Context, string, string) (*SourceResult, error) { return bad, nil }); !errors.Is(err, tc.kind) {
+			if _, err := f.svc.FetchSource(f.ctx, drySub, func(context.Context, string, string) (*SourceResult, error) { return bad, nil }); !errors.Is(err, tc.kind) {
 				t.Fatalf("dry source: %v", err)
 			}
-			after, err := readSharedData(f.ctx, DownloadCachePath(subURL))
+			after, err := readSharedData(f.ctx, f.repo, DownloadCachePath(subURL))
 			if err != nil || !testjson.Equal(before, after) || !testjson.Equal(nodesBefore, f.cache()) {
 				t.Fatal("unsafe YAML modified caches")
 			}
@@ -92,14 +92,14 @@ func TestUnsafeDownloadedCacheRejectedBeforeReuse(t *testing.T) {
 		if _, err := f.repo.WriteSharedText(f.ctx, DownloadCachePath(subURL), cacheBytes); err != nil {
 			t.Fatal(err)
 		}
-		result, err := FetchSource(f.ctx, sub, func(context.Context, string, string) (*SourceResult, error) {
+		result, err := f.svc.FetchSource(f.ctx, sub, func(context.Context, string, string) (*SourceResult, error) {
 			t.Fatal("unsafe fresh cache triggered a fetch")
 			return nil, nil
 		})
 		if result != nil || err == nil {
 			t.Fatalf("unsafe cached source reused: %v", err)
 		}
-		after, err := readSharedData(f.ctx, DownloadCachePath(subURL))
+		after, err := readSharedData(f.ctx, f.repo, DownloadCachePath(subURL))
 		if err != nil || !testjson.Equal(json.RawMessage(after), cache) {
 			t.Fatal("refusal modified the original cache")
 		}

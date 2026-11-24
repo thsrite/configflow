@@ -31,13 +31,13 @@ func repoContext(t *testing.T) (context.Context, *repo.Repository) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(setRefreshFixture(fixedClock{corpusNow}, nilNodeConverter{}))
 	return repo.WithRepository(context.Background(), r), r
 }
 
 func testService(r *repo.Repository) *Service {
 	return New(Options{
 		Repo:        r,
+		Refresh:     newRefreshFixture(r, fixedClock{corpusNow}, nilNodeConverter{}),
 		Locations:   fakeLocations{},
 		DeliveryEnv: &DeliveryEnv{NodeID: SequentialNodeIDs(), Converter: nilNodeConverter{}},
 	})
@@ -451,11 +451,11 @@ func TestDefaultHooksFailClosedAndPassThrough(t *testing.T) {
 	}
 }
 
-func setRefreshFixture(clock substore.Clock, converter convert.NodeConverter) func() {
-	env := refresh.DefaultRefreshEnv()
+func newRefreshFixture(r *repo.Repository, clock substore.Clock, converter convert.NodeConverter) *refresh.Service {
+	env := refresh.DefaultRefreshEnvFor(r, nil)
 	env.Clock = clock
 	env.Sources.Converter = converter
-	return refresh.SetRefreshEnv(env)
+	return refresh.New(refresh.Options{Repo: r, Env: env})
 }
 
 var _ = json.Marshal

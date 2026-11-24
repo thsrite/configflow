@@ -6,7 +6,6 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/refresh"
 	"configflow/internal/repo"
 )
 
@@ -41,8 +40,8 @@ func TestNewConnectsAgentLoopWakeSources(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	t.Cleanup(app.Agents.Close)
-	if refresh.Default() != app.Refresh {
-		t.Fatal("refresh.Default() is not the App's refresh Service")
+	if app.Refresh == nil {
+		t.Fatal("app.Refresh is nil")
 	}
 
 	ctx := repo.WithRepository(context.Background(), r)
@@ -112,6 +111,6 @@ func TestNewConnectsAgentLoopWakeSources(t *testing.T) {
 	}
 
 	clear()
-	refresh.Default().NotifyRulesRefreshed()
+	app.Refresh.NotifyRulesRefreshed()
 	expect("rule-source refresh", func(_, rules bool) bool { return rules })
 }

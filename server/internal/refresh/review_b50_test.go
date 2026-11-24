@@ -20,19 +20,19 @@ func TestReviewB50RefreshPacesByNextDueAndWakesOnCommits(t *testing.T) {
 		shared.RuleLibrary[0].Enabled = &disabled
 	})
 	f.download(proxiesYAML(t), "direct_yaml", nil)
-	round(f.ctx)
+	f.svc.round(f.ctx)
 	if entry := f.status(SourceTaskKey("s")); mapInt(entry, "run_count") != 1 {
 		t.Fatalf("the due subscription did not run: %v", entry)
 	}
-	if pause := refreshPause(f.ctx); pause < time.Second || pause > 300*time.Second {
+	if pause := f.svc.pause(f.ctx); pause < time.Second || pause > 300*time.Second {
 		t.Fatalf("pause %v, want the time until the next due run (≤ 300 s)", pause)
 	}
 	f.updateShared(func(shared *model.Shared) {
 		interval := model.Int(7200)
 		shared.Subscriptions[0].Interval = &interval
 	})
-	round(f.ctx)
-	if pause := refreshPause(f.ctx); pause != MaxPause {
+	f.svc.round(f.ctx)
+	if pause := f.svc.pause(f.ctx); pause != MaxPause {
 		t.Fatalf("pause %v after the interval became 2 h, want MaxPause", pause)
 	}
 
@@ -40,7 +40,7 @@ func TestReviewB50RefreshPacesByNextDueAndWakesOnCommits(t *testing.T) {
 	// commit runs the next round at once, without the clock moving.
 	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
 	reg := lifecycle.NewRegistry()
-	spec := periodic()
+	spec := f.svc.Periodic()
 	original := spec.Round
 	rounds := make(chan struct{}, 4)
 	spec.Round = func(ctx context.Context) error {
@@ -82,8 +82,8 @@ func TestO17FollowupImmediateDueResourceRetriesWithin30Seconds(t *testing.T) {
 	}
 	defer release()
 
-	round(f.ctx)
-	if pause := refreshPause(f.ctx); pause > TickSeconds*time.Second || pause < time.Second {
+	f.svc.round(f.ctx)
+	if pause := f.svc.pause(f.ctx); pause > TickSeconds*time.Second || pause < time.Second {
 		t.Fatalf("pause %v with an immediately due resource, want <= %v", pause, TickSeconds*time.Second)
 	}
 }

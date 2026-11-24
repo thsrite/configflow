@@ -131,6 +131,7 @@ func (s *Service) generateConfig(ctx context.Context, agg model.Aggregation, con
 	d.provider = s.provider
 	d.repo = s.repo
 	d.substore = s.substore
+	d.refresh = s.refreshSvc()
 	return render(ctx, a, d, options)
 }
 

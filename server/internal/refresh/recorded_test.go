@@ -182,6 +182,8 @@ type replayCall struct {
 	row map[string]any
 	ctx context.Context
 	r   *repo.Repository
+	svc *Service
+	env *RefreshEnv
 }
 
 func (c *replayCall) arg(name string) any { return mapObj(c.row, "args")[name] }
@@ -219,21 +221,21 @@ func (c *replayCall) replay() (any, error) {
 		}
 		return c.arg("value"), nil
 	case "source_cache_metadata":
-		meta, err := CacheMetadata(context.Background(), sourceFromMap(c.obj("sub")), resultFromRecord(c.arg("result")))
+		meta, err := c.svc.CacheMetadata(context.Background(), sourceFromMap(c.obj("sub")), resultFromRecord(c.arg("result")))
 		if err != nil {
 			return nil, err
 		}
 		return encodeToAny(meta)
 	case "_is_fresh":
 		ts, _ := c.arg("timestamp").(string)
-		return fresh(ts, mapInt(mapObj(c.row, "args"), "interval")), nil
+		return fresh(c.env.Clock, ts, mapInt(mapObj(c.row, "args"), "interval")), nil
 	case "_download_cache_path":
 		return DownloadCachePath(c.str("url")), nil
 	case "remember_source_download":
-		r, err := RememberDownload(ctx, sourceFromMap(c.obj("sub")), resultFromRecord(c.arg("result")))
+		r, err := c.svc.RememberDownload(ctx, sourceFromMap(c.obj("sub")), resultFromRecord(c.arg("result")))
 		return recordedResult(r), err
 	case "download_subscription_nodes":
-		nodes, result, cache, err := DownloadNodes(ctx, sourceFromMap(c.obj("sub")))
+		nodes, result, cache, err := c.svc.DownloadNodes(ctx, sourceFromMap(c.obj("sub")))
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +244,7 @@ func (c *replayCall) replay() (any, error) {
 		return []any{nodesAny, recordedResult(result), cacheAny}, nil
 	case "refresh_subscription":
 		trigger, _ := c.arg("trigger").(string)
-		nodes, result, cache, err := RefreshSource(ctx, sourceFromMap(c.obj("sub")), trigger)
+		nodes, result, cache, err := c.svc.RefreshSource(ctx, sourceFromMap(c.obj("sub")), trigger)
 		if err != nil {
 			return nil, err
 		}
@@ -252,7 +254,7 @@ func (c *replayCall) replay() (any, error) {
 	case "fetch_subscription_source":
 		answers := mapList(c.row, "fetches")
 		calls := 0
-		r, err := FetchSource(ctx, sourceFromMap(c.obj("sub")), func(_ context.Context, subID, url string) (*SourceResult, error) {
+		r, err := c.svc.FetchSource(ctx, sourceFromMap(c.obj("sub")), func(_ context.Context, subID, url string) (*SourceResult, error) {
 			if calls >= len(answers) {
 				return nil, errors.New("unrecorded fetch")
 			}
@@ -271,7 +273,7 @@ func (c *replayCall) replay() (any, error) {
 		}
 		return encodeToAny(info)
 	case "load_health":
-		data, err := ReadHealth(detached(ctx))
+		data, err := c.svc.ReadHealth(detached(ctx))
 		if err != nil {
 			return nil, err
 		}
@@ -284,7 +286,7 @@ func (c *replayCall) replay() (any, error) {
 			traffic = &Traffic{}
 			_ = decodeInto(tObj, traffic)
 		}
-		res, err := RecordHealth(ctx, c.str("sub_id"), FetchEventInput{
+		res, err := c.svc.RecordHealth(ctx, c.str("sub_id"), FetchEventInput{
 			OK:        pyTruthy(c.arg("ok")),
 			Count:     count,
 			FromCache: pyTruthy(c.arg("from_cache")),
@@ -295,7 +297,7 @@ func (c *replayCall) replay() (any, error) {
 		}
 		return encodeToAny(res)
 	case "forget":
-		return nil, ForgetHealth(ctx, c.str("sub_id"))
+		return nil, c.svc.ForgetHealth(ctx, c.str("sub_id"))
 	case "describe_failure":
 		return FailureReason(errorFromLegacy(buildError(c.arg("error")))), nil
 	case "rule_interval":
@@ -311,18 +313,22 @@ func (c *replayCall) replay() (any, error) {
 			}
 			now = &parsed
 		}
+		if now == nil {
+			current := c.svc.nowUTC()
+			now = &current
+		}
 		at, err := nextRunAt(c.arg("entry"), c.arg("interval"), c.arg("baseline"), now)
 		return recordedDatetime(at), err
 	case "subscription_cache_time":
-		at, err := SourceCacheAt(ctx, sourceFromMap(c.obj("sub")))
+		at, err := c.svc.SourceCacheAt(ctx, sourceFromMap(c.obj("sub")))
 		if at == nil {
 			return nil, err
 		}
 		return *at, err
 	case "is_library_source":
-		return StoredRule(ctx, ruleFromMap(c.obj("rule")))
+		return c.svc.StoredRule(ctx, ruleFromMap(c.obj("rule")))
 	case "find_resource":
-		resource, err := LookupResource(ctx, c.str("kind"), c.str("resource_id"))
+		resource, err := c.svc.LookupResource(ctx, c.str("kind"), c.str("resource_id"))
 		if err != nil {
 			return nil, err
 		}
@@ -414,7 +420,7 @@ func replayRecordedRows(t *testing.T, rows []map[string]any, template string) {
 			conversions[proxy] = answer
 		}
 		nextUUID, nextDownload := 0, 0
-		env := DefaultRefreshEnv()
+		env := DefaultRefreshEnvFor(r, nil)
 		env.Clock = frozenClock{now: now}
 		env.RandomHex = func() string {
 			if nextUUID >= len(uuids) {
@@ -435,12 +441,9 @@ func replayRecordedRows(t *testing.T, rows []map[string]any, template string) {
 			return resultFromRecord(answer["ok"]), nil
 		}
 		env.Sources.Converter = replayNodeConverter{answers: conversions}
-		call := &replayCall{row: row, ctx: ctx, r: r}
+		call := &replayCall{row: row, ctx: ctx, r: r, env: env, svc: New(Options{Repo: r, Env: env})}
 		var value any
-		func() {
-			defer SetRefreshEnv(env)()
-			value, err = call.replay()
-		}()
+		value, err = call.replay()
 		var got, want map[string]any
 		if err != nil {
 			got = map[string]any{"err": map[string]any{"class": recordedClassOf(err), "text": err.Error()}}

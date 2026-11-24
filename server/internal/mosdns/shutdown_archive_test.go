@@ -140,7 +140,7 @@ func TestO36cArchiveRuntimeIOBoundary(t *testing.T) {
 			}
 			done := make(chan outcome, 1)
 			go func() {
-				data, err := BuildZIP(ctx, snapshot, "plugins: []", []Download{{URL: server.URL, Name: "O3", LocalPath: "rules/o3.txt"}}, nil, ArchiveOptions{})
+				data, err := BuildZIP(ctx, snapshot, "plugins: []", []Download{{URL: server.URL, Name: "O3", LocalPath: "rules/o3.txt"}}, nil, ArchiveOptions{Repo: r})
 				done <- outcome{data, err}
 			}()
 			select {

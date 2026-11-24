@@ -54,6 +54,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 			},
 			SubStore: gen.substore,
 			Provider: gen.provider,
+			Refresh:  gen.refresh,
 		})
 		agents.RegisterHooks(agents.Hooks{ReceiptMatches: deploy.ReceiptMatches})
 		rulesync.WireOn(rt)
@@ -130,6 +131,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 		IPv6:     ip.EnrollSource,
 		SubStore: gen.substore,
 		Provider: gen.provider,
+		Refresh:  gen.refresh,
 	})
 	ha.Deploy = gen.deploy
 	follow.Deploy = gen.deploy

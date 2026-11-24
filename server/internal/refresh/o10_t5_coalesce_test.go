@@ -69,8 +69,8 @@ func TestO10T5NotificationSemanticsLockedBeforeCoalescing(t *testing.T) {
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
 		t.Cleanup(tasks.SetRowBuilder(slot, none))
 	}
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, SubscriptionTasks))
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRuleSources, RuleTasks))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, f.svc.SubscriptionTasks))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRuleSources, f.svc.RuleTasks))
 
 	var snapshotRowsCalls atomic.Int32
 	t.Cleanup(notifications.SetInputs(notifications.Inputs{
@@ -128,7 +128,7 @@ func TestO10T5NotificationSemanticsLockedBeforeCoalescing(t *testing.T) {
 	// with exactly ONE coalesced notification snapshot for the whole round.
 	failAll()
 	beforeRound1 := snapshotRowsCalls.Load()
-	n, err := RunRound(f.ctx, nil)
+	n, err := f.svc.RunRound(f.ctx, nil)
 	if err != nil || n != 4 {
 		t.Fatalf("round 1: count=%d err=%v", n, err)
 	}
@@ -137,7 +137,7 @@ func TestO10T5NotificationSemanticsLockedBeforeCoalescing(t *testing.T) {
 	}
 	// Empty round (0 due sources) must trigger 0 notification snapshots.
 	beforeEmpty := snapshotRowsCalls.Load()
-	if emptyCount, err := RunRound(f.ctx, nil); err != nil || emptyCount != 0 {
+	if emptyCount, err := f.svc.RunRound(f.ctx, nil); err != nil || emptyCount != 0 {
 		t.Fatalf("empty round: count=%d err=%v", emptyCount, err)
 	}
 	if got := snapshotRowsCalls.Load() - beforeEmpty; got != 0 {
@@ -199,7 +199,7 @@ func TestO10T5NotificationSemanticsLockedBeforeCoalescing(t *testing.T) {
 	f.clock.advance(RetrySeconds*time.Second + time.Second)
 	round2Time := f.clock.Now().UTC().Format("2006-01-02T15:04:05Z")
 	beforeRound2 := snapshotRowsCalls.Load()
-	n, err = RunRound(f.ctx, nil)
+	n, err = f.svc.RunRound(f.ctx, nil)
 	if err != nil || n != 4 {
 		t.Fatalf("round 2: count=%d err=%v", n, err)
 	}
@@ -253,7 +253,7 @@ func TestO10T5NotificationSemanticsLockedBeforeCoalescing(t *testing.T) {
 	f.clock.advance(2*RetrySeconds*time.Second + time.Second)
 	succeedAll()
 	beforeRound3 := snapshotRowsCalls.Load()
-	n, err = RunRound(f.ctx, nil)
+	n, err = f.svc.RunRound(f.ctx, nil)
 	if err != nil || n != 4 {
 		t.Fatalf("round 3: count=%d err=%v", n, err)
 	}
@@ -269,7 +269,7 @@ func TestO10T5NotificationSemanticsLockedBeforeCoalescing(t *testing.T) {
 	f.clock.advance(time.Second)
 	sub1 := f.sub()
 	beforeDirect := snapshotRowsCalls.Load()
-	_, _, _, _ = RefreshSource(f.ctx, sub1, "manual")
+	_, _, _, _ = f.svc.RefreshSource(f.ctx, sub1, "manual")
 	if snapshotRowsCalls.Load() <= beforeDirect {
 		t.Fatal("direct RefreshSource did not trigger notification refresh")
 	}
@@ -279,7 +279,7 @@ func TestO10T5NotificationSemanticsLockedBeforeCoalescing(t *testing.T) {
 	// Recover s1 directly.
 	succeedAll()
 	f.clock.advance(time.Second)
-	_, _, _, err = RefreshSource(f.ctx, sub1, "manual")
+	_, _, _, err = f.svc.RefreshSource(f.ctx, sub1, "manual")
 	if err != nil {
 		t.Fatalf("direct recovery: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestO10T5NotificationSemanticsLockedBeforeCoalescing(t *testing.T) {
 	rt.Start(f.ctx)
 	bound := rt.BindRequest(f.ctx)
 	rt.Shutdown(context.Background())
-	if _, err := RunRound(bound, nil); !errors.Is(err, context.Canceled) {
+	if _, err := f.svc.RunRound(bound, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("post-shutdown RunRound err=%v, want context.Canceled", err)
 	}
 }
@@ -323,7 +323,7 @@ func TestO10T5MidRoundObservationAndDismissalStayConsistent(t *testing.T) {
 	for _, slot := range []string{tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
 		t.Cleanup(tasks.SetRowBuilder(slot, none))
 	}
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, SubscriptionTasks))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, f.svc.SubscriptionTasks))
 	t.Cleanup(notifications.SetInputs(notifications.Inputs{
 		Rows:         tasks.Available,
 		MissingTasks: tasks.Missing,
@@ -345,7 +345,7 @@ func TestO10T5MidRoundObservationAndDismissalStayConsistent(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := RunRound(f.ctx, nil)
+		_, err := f.svc.RunRound(f.ctx, nil)
 		done <- err
 	}()
 	<-slowStarted

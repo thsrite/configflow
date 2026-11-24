@@ -118,7 +118,7 @@ func TestManualPairRulesForcesUnchangedLibraryMaterialization(t *testing.T) {
 		t.Fatal(err)
 	}
 	library := cfg.RuleLibrary[0]
-	_, stale, err := refresh.RefreshRemote(f.ctx, library, "manual", refresh.RuleReadOptions{
+	_, stale, err := refresh.New(refresh.Options{Repo: f.m.Repository()}).RefreshRemote(f.ctx, library, "manual", refresh.RuleReadOptions{
 		Config: &rulefetch.SourceConfig{
 			Settings: cfg.SystemConfig,
 			Library:  cfg.RuleLibrary,

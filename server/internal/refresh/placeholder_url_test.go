@@ -18,7 +18,7 @@ func TestPlaceholderSubscriptionURLIsNotConfigured(t *testing.T) {
 	f := setup(t, 86400)
 	f.updateShared(func(shared *model.Shared) { shared.Subscriptions[0].URL = "订阅链接" })
 	now := f.clock.now.Add(365 * 24 * time.Hour)
-	jobs, err := due(repo.WithScope(f.ctx), &now)
+	jobs, err := f.svc.due(repo.WithScope(f.ctx), &now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,10 +27,10 @@ func TestPlaceholderSubscriptionURLIsNotConfigured(t *testing.T) {
 			t.Fatalf("placeholder subscription scheduled: %+v", job.Subscription)
 		}
 	}
-	if _, err := LookupResource(f.ctx, "subscription", "s"); err == nil || err.Error() != msgInvalidSourceURL {
+	if _, err := f.svc.LookupResource(f.ctx, "subscription", "s"); err == nil || err.Error() != msgInvalidSourceURL {
 		t.Fatalf("manual run: %v", err)
 	}
-	rows, err := SubscriptionTasks(f.ctx, taskstatus.Snapshot{})
+	rows, err := f.svc.SubscriptionTasks(f.ctx, taskstatus.Snapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,10 +39,10 @@ func TestPlaceholderSubscriptionURLIsNotConfigured(t *testing.T) {
 	}
 	// An empty address keeps its own hint.
 	f.updateShared(func(shared *model.Shared) { shared.Subscriptions[0].URL = "" })
-	if rows, err = SubscriptionTasks(f.ctx, taskstatus.Snapshot{}); err != nil || rows[0].RunHint != msgNoURL {
+	if rows, err = f.svc.SubscriptionTasks(f.ctx, taskstatus.Snapshot{}); err != nil || rows[0].RunHint != msgNoURL {
 		t.Fatalf("empty address row %+v %v", rows, err)
 	}
-	if _, err := LookupResource(f.ctx, "subscription", "s"); err == nil || err.Error() != msgNoSourceAddress {
+	if _, err := f.svc.LookupResource(f.ctx, "subscription", "s"); err == nil || err.Error() != msgNoSourceAddress {
 		t.Fatalf("empty address manual run: %v", err)
 	}
 }

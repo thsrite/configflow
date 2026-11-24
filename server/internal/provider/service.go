@@ -27,6 +27,7 @@ var ErrServiceStarted = errors.New("provider: service already started")
 type Options struct {
 	Repo            *repo.Repository
 	SubStore        *substore.Service
+	Refresh         *refresh.Service
 	Locations       Locations
 	Aggregations    AggregationRenderer
 	DeliveryEnv     *DeliveryEnv
@@ -39,6 +40,7 @@ type Service struct {
 	mu              sync.RWMutex
 	repo            *repo.Repository
 	substore        *substore.Service
+	refresh         *refresh.Service
 	locations       Locations
 	aggregations    AggregationRenderer
 	aggregationsSet bool
@@ -67,12 +69,26 @@ func New(opts Options) *Service {
 	return &Service{
 		repo:            opts.Repo,
 		substore:        opts.SubStore,
+		refresh:         opts.Refresh,
 		locations:       loc,
 		aggregations:    agg,
 		aggregationsSet: aggSet,
 		env:             opts.DeliveryEnv,
 		responseSeconds: respSec,
 	}
+}
+
+func (s *Service) refreshSvc() *refresh.Service {
+	if s != nil && s.refresh != nil {
+		return s.refresh
+	}
+	var r *repo.Repository
+	var sub *substore.Service
+	if s != nil {
+		r = s.repo
+		sub = s.substore
+	}
+	return refresh.New(refresh.Options{Repo: r, SubStore: sub})
 }
 
 // SetAggregations installs the aggregation renderer in the two-phase

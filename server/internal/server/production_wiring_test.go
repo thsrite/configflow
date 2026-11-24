@@ -16,7 +16,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/notifications"
-	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	routerrulesync "configflow/internal/routers/rulesync"
@@ -92,7 +91,7 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		{"tasks registry is the default", app.Tasks != nil && tasks.Default() == app.Tasks},
 		{"notifications service is the default", app.Notifications != nil && notifications.Default() == app.Notifications},
 		{"Sub-Store service", app.SubStore != nil && app.SubStore.Repo == app.Repo},
-		{"refresh service is the default", app.Refresh != nil && refresh.Default() == app.Refresh},
+		{"refresh service is instantiated", app.Refresh != nil},
 		{"provider service is instantiated", app.Provider != nil},
 		{"aggregations service", app.Aggregations != nil},
 		{"deploy service is instantiated", app.Deploy != nil},

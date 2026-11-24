@@ -28,8 +28,8 @@ func sourceHost(address string) string {
 }
 
 // SubscriptionTasks projects native task rows from the shared source snapshot.
-func SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
+	r, err := s.repository()
 	if err != nil {
 		return nil, err
 	}
@@ -65,11 +65,11 @@ func SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*ta
 		enabled := sub.enabled && hasURL
 		var due *time.Time
 		if enabled {
-			baseline, err := sourceCacheAtID(ctx, sub.id, sub.url)
+			baseline, err := s.sourceCacheAtID(ctx, sub.id, sub.url)
 			if err != nil {
 				return nil, err
 			}
-			due, err = NextDue(entry, interval, baseline, nil)
+			due, err = s.nextDue(entry, interval, baseline, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -99,8 +99,8 @@ func SubscriptionTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*ta
 }
 
 // RuleTasks projects native task rows for URL-backed library sources.
-func RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
+	r, err := s.repository()
 	if err != nil {
 		return nil, err
 	}
@@ -143,12 +143,12 @@ func RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task
 		var baseline *string
 		var baselineChecked bool
 		if enabled {
-			baseline, err = ruleCacheAtLibrary(ctx, rule.library)
+			baseline, err = s.ruleCacheAtLibrary(ctx, rule.library)
 			if err != nil {
 				return nil, err
 			}
 			baselineChecked = true
-			due, err = NextDue(entry, interval, baseline, nil)
+			due, err = s.nextDue(entry, interval, baseline, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -161,7 +161,7 @@ func RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task
 			if baselineChecked {
 				history.CacheUpdatedAt = baseline
 			} else {
-				history.CacheUpdatedAt, err = ruleCacheAtLibrary(ctx, rule.library)
+				history.CacheUpdatedAt, err = s.ruleCacheAtLibrary(ctx, rule.library)
 				if err != nil {
 					return nil, err
 				}
@@ -181,9 +181,9 @@ func RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task
 	}
 	return rows, nil
 }
-func runTask(ctx context.Context, key, id string) error {
+func (s *Service) runTask(ctx context.Context, key, id string) error {
 	category, _, _ := strings.Cut(key, ":")
-	_, err := RunResourceNow(ctx, category, id)
+	_, err := s.RunResourceNow(ctx, category, id)
 	var busy *TaskBusy
 	var lookup *NotFoundError
 	switch {
@@ -198,7 +198,6 @@ func runTask(ctx context.Context, key, id string) error {
 	}
 	return err
 }
-func round(ctx context.Context) { Default().round(ctx) }
 
 // MaxPause bounds the pause of the scheduled-refresh loop between due times.
 const MaxPause = 10 * time.Minute
@@ -215,14 +214,14 @@ type refreshPacer struct {
 
 // pace follows the repository's configuration commits and sets the pause to
 // the next due time.
-func (p *refreshPacer) pace(ctx context.Context) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) pace(ctx context.Context) {
+	r, err := s.repository()
 	if err != nil {
 		return
 	}
-	p.commits.Follow(r, repo.ChangeConfig, p.wake.Notify)
-	now := nowUTC()
-	jobs, next, err := dueAndNext(ctx, &now)
+	s.loop.commits.Follow(r, repo.ChangeConfig, s.loop.wake.Notify)
+	now := s.nowUTC()
+	jobs, next, err := s.dueAndNext(ctx, &now)
 	if err != nil {
 		return
 	}
@@ -233,22 +232,5 @@ func (p *refreshPacer) pace(ctx context.Context) {
 	if next != nil {
 		pause = min(pause, max(next.Sub(now), time.Second))
 	}
-	p.pause.Store(int64(pause))
+	s.loop.pause.Store(int64(pause))
 }
-
-func refreshPause(ctx context.Context) time.Duration { return Default().pause(ctx) }
-
-func periodic() lifecycle.Periodic { return Default().Periodic() }
-
-// Wire registers native task builders/runners and the tracked refresh loop on the default runtime.
-func Wire() { WireOn(lifecycle.Current()) }
-
-// WireOn registers native task builders/runners and the tracked refresh loop on rt.
-func WireOn(rt *lifecycle.Runtime) { Default().Register(rt, tasks.Default()) }
-
-// OnRulesRefreshed registers fn to run after a rule source refresh finished
-// (the shared rule files may have changed). fn must not block; the Agent
-// rule-sync loop uses it to wake up (design/o17-runtime-state.md 2.6).
-func OnRulesRefreshed(fn func()) { Default().OnRulesRefreshed(fn) }
-
-func notifyRulesRefreshed() { Default().NotifyRulesRefreshed() }

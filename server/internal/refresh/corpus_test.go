@@ -353,11 +353,7 @@ func cpythonOnlyISO(args map[string]any) bool {
 }
 
 func TestReferenceCorpus(t *testing.T) {
-	// Sequential: all rows share a frozen clock through the process-wide Env.
 	clock := &fakeClock{now: corpusNow}
-	env := DefaultRefreshEnv()
-	env.Clock = clock
-	t.Cleanup(SetRefreshEnv(env))
 	given := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
 	counts := map[string]int{}
 	refs := loadNativeReferences(t)
@@ -391,7 +387,7 @@ func TestReferenceCorpus(t *testing.T) {
 		case "is_fresh":
 			args := input.(map[string]any)
 			ts, _ := args["timestamp"].(string)
-			got = outcome(fresh(ts, mapInt(args, "interval")), nil)
+			got = outcome(fresh(clock, ts, mapInt(args, "interval")), nil)
 		case "download_cache_path":
 			got = outcome(DownloadCachePath(input.(string)), nil)
 		case "describe_failure":
@@ -507,6 +503,9 @@ func checkScenario(t *testing.T, clock *fakeClock, row map[string]any, native ma
 			_ = os.Chtimes(path, stamp, stamp)
 		}
 	}
+	env := DefaultRefreshEnvFor(r, nil)
+	env.Clock = clock
+	svc := New(Options{Repo: r, Env: env})
 	nativeOutputs := mapList(native, "output")
 	for callIndex, item := range mapList(row, "output") {
 		call := item.(map[string]any)
@@ -517,7 +516,7 @@ func checkScenario(t *testing.T, clock *fakeClock, row map[string]any, native ma
 			statuses := loadStatusSnapshot(t, r.DataDir())
 			list := []any{}
 			var failure error
-			for _, build := range []func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error){SubscriptionTasks, RuleTasks} {
+			for _, build := range []func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error){svc.SubscriptionTasks, svc.RuleTasks} {
 				part, err := build(repo.WithScope(ctx), statuses)
 				if err != nil {
 					failure = err
@@ -538,14 +537,14 @@ func checkScenario(t *testing.T, clock *fakeClock, row map[string]any, native ma
 			got = outcome(list, failure)
 		case label == "due":
 			given := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
-			jobs, err := due(repo.WithScope(ctx), &given)
+			jobs, err := svc.due(repo.WithScope(ctx), &given)
 			keys := []any{}
 			for _, j := range jobs {
 				keys = append(keys, j.key())
 			}
 			got = outcome(keys, err)
 		case strings.HasPrefix(label, "forget "):
-			err := ForgetHealth(ctx, strings.TrimPrefix(label, "forget "))
+			err := svc.ForgetHealth(ctx, strings.TrimPrefix(label, "forget "))
 			got = outcome(readHealth(t, r), err)
 		default:
 			parsed, _ := decodeAny([]byte(label))
@@ -558,7 +557,7 @@ func checkScenario(t *testing.T, clock *fakeClock, row map[string]any, native ma
 				traffic = &Traffic{}
 				_ = decodeInto(tMap, traffic)
 			}
-			_, err := RecordHealth(ctx, args[0].(string), FetchEventInput{
+			_, err := svc.RecordHealth(ctx, args[0].(string), FetchEventInput{
 				OK:        pyTruthy(kwargs["ok"]),
 				Count:     count,
 				FromCache: pyTruthy(kwargs["from_cache"]),

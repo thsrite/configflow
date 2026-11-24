@@ -30,7 +30,7 @@ func TestNativeSourceOwnerKeepsGenerationAtEveryBoundary(t *testing.T) {
 						cancel()
 					}
 				}
-				env := refreshEnv()
+				env := f.env
 				saves := 0
 				env.Sources.Fetch = func(ctx context.Context, id, url string, _ substore.FetchOptions) (*SourceResult, error) {
 					if err := ctx.Err(); err != nil {
@@ -59,7 +59,6 @@ func TestNativeSourceOwnerKeepsGenerationAtEveryBoundary(t *testing.T) {
 					return &NodeCache{Nodes: nodes, Count: model.Int(len(nodes)), Metadata: meta}, nil
 				}
 				env.Sources.FilterNodes = func(_ model.Subscription, nodes []model.Node) []model.Node { return nodes }
-				t.Cleanup(SetRefreshEnv(env))
 				if boundary == "entry" {
 					transition()
 				}
@@ -68,7 +67,7 @@ func TestNativeSourceOwnerKeepsGenerationAtEveryBoundary(t *testing.T) {
 					t.Fatal(err)
 				}
 				beforeJSON, _ := model.Marshal(before)
-				_, _, _, err = RefreshSource(request, model.Subscription{ID: "s", Name: "Feed", URL: subURL}, "manual")
+				_, _, _, err = f.svc.RefreshSource(request, model.Subscription{ID: "s", Name: "Feed", URL: subURL}, "manual")
 				after, readErr := f.repo.Shared(f.ctx)
 				if readErr != nil {
 					t.Fatal(readErr)
@@ -104,7 +103,7 @@ func TestNativeSourceOwnerKeepsGenerationAtEveryBoundary(t *testing.T) {
 							t.Fatal("post-shutdown transport receipt", err)
 						}
 					}
-					_, _, _, err = RefreshSource(request, model.Subscription{ID: "s", URL: subURL}, "manual")
+					_, _, _, err = f.svc.RefreshSource(request, model.Subscription{ID: "s", URL: subURL}, "manual")
 					if !errors.Is(err, context.Canceled) {
 						t.Fatal("old generation silently restarted", err)
 					}
@@ -112,7 +111,7 @@ func TestNativeSourceOwnerKeepsGenerationAtEveryBoundary(t *testing.T) {
 					if err != nil || saves != 1 {
 						t.Fatalf("disconnect abandoned admitted write: %v saves=%d", err, saves)
 					}
-					health, err := ReadHealth(f.ctx)
+					health, err := f.svc.ReadHealth(f.ctx)
 					if err != nil || len(health.Entry("s").History) != 1 {
 						t.Fatal("health receipt missing", err)
 					}
@@ -127,11 +126,9 @@ func TestNativeSourceOwnerKeepsGenerationAtEveryBoundary(t *testing.T) {
 }
 
 func TestTypedCacheEvidenceNeverClaimsNumericURLOrTimestamp(t *testing.T) {
-	env := refreshEnv()
-	env.Clock = &fakeClock{now: corpusNow}
-	t.Cleanup(SetRefreshEnv(env))
+	clock := &fakeClock{now: corpusNow}
 	var valid TransportReceipt
-	if !receiptFresh([]byte(`{"text":"proxies: []","fetched_at":"2026-11-01T00:00:00Z"}`), &valid, 86400) {
+	if !receiptFresh(clock, []byte(`{"text":"proxies: []","fetched_at":"2026-11-01T00:00:00Z"}`), &valid, 86400) {
 		t.Fatal("valid receipt not fresh")
 	}
 	// The stored cache is read as the subscription owner reads it; its
@@ -164,12 +161,12 @@ func TestTypedCacheEvidenceNeverClaimsNumericURLOrTimestamp(t *testing.T) {
 			t.Fatal("legacy cache without URL is not unknown", raw)
 		}
 	}
-	if !fresh("2026-11-01", 86400) {
+	if !fresh(clock, "2026-11-01", 86400) {
 		t.Fatal("numeric timestamp negative control is not otherwise parseable")
 	}
 	for _, raw := range []string{`{"text":5,"fetched_at":"2026-11-01T00:00:00Z"}`, `{"text":"proxies: []","fetched_at":20261101}`} {
 		var receipt TransportReceipt
-		if receiptFresh([]byte(raw), &receipt, 86400) {
+		if receiptFresh(clock, []byte(raw), &receipt, 86400) {
 			t.Fatal("numeric receipt promoted", raw)
 		}
 	}

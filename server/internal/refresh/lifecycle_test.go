@@ -40,7 +40,7 @@ func TestRoundJoinsThreeWorkersAndStopsAdmission(t *testing.T) {
 	}
 	clock := lifecycletest.NewClock(f.clock.Now())
 	reg := lifecycle.NewRegistry()
-	reg.RegisterPeriodic(periodic())
+	reg.RegisterPeriodic(f.svc.Periodic())
 	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: reg, Clock: clock, Mode: lifecycle.ModeManual})
 	runner.Start(f.ctx)
 	done := make(chan error, 1)
@@ -60,7 +60,7 @@ func TestRoundJoinsThreeWorkersAndStopsAdmission(t *testing.T) {
 		t.Fatal("round returned before joining", err)
 	default:
 	}
-	rows, err := SubscriptionTasks(f.ctx, taskstatus.Snapshot{})
+	rows, err := f.svc.SubscriptionTasks(f.ctx, taskstatus.Snapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestRunNowSurvivesRequestAndReceivesShutdownCancel(t *testing.T) {
 	}
 	request, cancel := context.WithCancel(f.ctx)
 	cancel() // A disconnected request must still acquire the key and start work.
-	key, err := RunResourceNow(request, "subscription", "s")
+	key, err := f.svc.RunResourceNow(request, "subscription", "s")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestRunNowSurvivesRequestAndReceivesShutdownCancel(t *testing.T) {
 		t.Fatal("key not released after cancellation")
 	}
 	// Rejected admission must release the key too.
-	if _, err := RunResourceNow(f.ctx, "subscription", "s"); !errors.Is(err, lifecycle.ErrStopping) {
+	if _, err := f.svc.RunResourceNow(f.ctx, "subscription", "s"); !errors.Is(err, lifecycle.ErrStopping) {
 		t.Fatal(err)
 	}
 	if IsRunning(key) {

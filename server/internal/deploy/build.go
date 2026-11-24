@@ -529,7 +529,7 @@ func downloadRule(ctx context.Context, in BuildInput, service string, ruleTypes 
 		return nil, err
 	}
 	remote := map[string]bool{}
-	o := MaterializeOptions{FetchRaw: fetch, RawMosDNS: ruleTypes[p] != "", RemoteSources: remote}
+	o := MaterializeOptions{FetchRaw: fetch, RawMosDNS: ruleTypes[p] != "", RemoteSources: remote, Refresh: in.Refresh}
 	if item.rule.Behavior != "" {
 		o.DeclaredRule = &item.rule
 	}

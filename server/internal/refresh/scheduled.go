@@ -63,10 +63,16 @@ func SourceTaskKey(id string) string { return "subscription:" + id }
 func RuleTaskKey(id string) string { return "rule_source:" + id }
 
 // IsRunning reports keyed refresh ownership without doing I/O.
-func IsRunning(key string) bool       { return running.Held(key) }
-func nowUTC() time.Time               { return refreshEnv().Clock.Now().UTC().Truncate(time.Microsecond) }
-func nowISO() string                  { return refreshEnv().Clock.Now().UTC().Format("2006-01-02T15:04:05Z") }
-func elapsedMs(start float64) float64 { return (refreshEnv().Clock.Monotonic() - start) * 1000 }
+func IsRunning(key string) bool { return running.Held(key) }
+func (s *Service) nowUTC() time.Time {
+	return s.currentEnv().Clock.Now().UTC().Truncate(time.Microsecond)
+}
+func (s *Service) nowISO() string {
+	return s.currentEnv().Clock.Now().UTC().Format("2006-01-02T15:04:05Z")
+}
+func (s *Service) elapsedMs(start float64) float64 {
+	return (s.currentEnv().Clock.Monotonic() - start) * 1000
+}
 func mtimeSeconds(seconds, nanos int64) int64 {
 	whole, fraction := math.Modf(float64(seconds) + float64(nanos)*1e-9)
 	fraction = math.RoundToEven(fraction * 1e6)
@@ -79,12 +85,12 @@ func mtimeSeconds(seconds, nanos int64) int64 {
 }
 
 // SourceCacheAt returns the node cache's time only for its current URL.
-func SourceCacheAt(ctx context.Context, sub model.Subscription) (*string, error) {
-	return sourceCacheAtID(ctx, sub.ID, sub.URL)
+func (s *Service) SourceCacheAt(ctx context.Context, sub model.Subscription) (*string, error) {
+	return s.sourceCacheAtID(ctx, sub.ID, sub.URL)
 }
 
-func sourceCacheAtID(ctx context.Context, id, subURL string) (*string, error) {
-	env := refreshEnv()
+func (s *Service) sourceCacheAtID(ctx context.Context, id, subURL string) (*string, error) {
+	env := s.currentEnv()
 	if env.Sources.LoadCacheSummary != nil {
 		summary, err := env.Sources.LoadCacheSummary(ctx, id)
 		if err != nil || summary == nil || !summary.HasNodes {
@@ -110,15 +116,15 @@ func sourceCacheAtID(ctx context.Context, id, subURL string) (*string, error) {
 }
 
 // RuleCacheAt is the local file's refresh time without touching its mtime.
-func RuleCacheAt(ctx context.Context, rule model.RuleLibraryItem) (*string, error) {
-	return ruleCacheAtLibrary(ctx, rules.LibraryRule(rule))
+func (s *Service) RuleCacheAt(ctx context.Context, rule model.RuleLibraryItem) (*string, error) {
+	return s.ruleCacheAtLibrary(ctx, rules.LibraryRule(rule))
 }
 
-func ruleCacheAtLibrary(ctx context.Context, rule model.RuleConfig) (*string, error) {
+func (s *Service) ruleCacheAtLibrary(ctx context.Context, rule model.RuleConfig) (*string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository()
 	if err != nil {
 		return nil, err
 	}
@@ -140,11 +146,11 @@ func ruleCacheAtLibrary(ctx context.Context, rule model.RuleConfig) (*string, er
 func urlRule(rule model.RuleLibraryItem) bool { return textOr(rule.SourceType, "url") == "url" }
 
 // StoredRule reports whether a snapshot still declares this exact source.
-func StoredRule(ctx context.Context, rule model.RuleLibraryItem) (bool, error) {
+func (s *Service) StoredRule(ctx context.Context, rule model.RuleLibraryItem) (bool, error) {
 	if !urlRule(rule) || textOr(rule.URL, "") == "" || rule.ID == "" {
 		return false, nil
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository()
 	if err != nil {
 		return false, err
 	}
@@ -175,20 +181,22 @@ type roundNoticeBatch struct {
 	recorded atomic.Bool
 }
 
-func recordStatus(ctx context.Context, key string, result taskstatus.Result) error {
+func (s *Service) recordStatus(ctx context.Context, key string, result taskstatus.Result) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository()
 	if err != nil {
 		return err
 	}
 	batch, _ := ctx.Value(roundNoticeBatchKey{}).(*roundNoticeBatch)
-	store := notifications.TaskStatus(ctx, r.DataDir())
-	if batch != nil {
+	var store *taskstatus.Store
+	if batch == nil && s.notifications != nil {
+		store = s.notifications.TaskStatus(ctx, r.DataDir())
+	} else {
 		store = taskstatus.New(r.DataDir())
 	}
-	store.Now = refreshEnv().Clock.Now
+	store.Now = s.currentEnv().Clock.Now
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -200,18 +208,18 @@ func recordStatus(ctx context.Context, key string, result taskstatus.Result) err
 	}
 	return nil
 }
-func taskStatusOf(ctx context.Context) (*taskstatus.Store, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) taskStatusOf(ctx context.Context) (*taskstatus.Store, error) {
+	r, err := s.repository()
 	if err != nil {
 		return nil, err
 	}
 	store := taskstatus.New(r.DataDir())
-	store.Now = refreshEnv().Clock.Now
+	store.Now = s.currentEnv().Clock.Now
 	return store, nil
 }
 
 // RefreshSource downloads nodes and records health/status under one generation.
-func RefreshSource(ctx context.Context, sub model.Subscription, trigger string) ([]model.Node, *SourceResult, *NodeCache, error) {
+func (s *Service) RefreshSource(ctx context.Context, sub model.Subscription, trigger string) ([]model.Node, *SourceResult, *NodeCache, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, nil, err
@@ -220,13 +228,14 @@ func RefreshSource(ctx context.Context, sub model.Subscription, trigger string) 
 		return nil, nil, nil, repo.NewValidationError(msgSourceIdentity)
 	}
 	key := SourceTaskKey(sub.ID)
-	started, clock := nowISO(), refreshEnv().Clock.Monotonic()
-	nodes, result, cache, failure := DownloadNodes(ctx, sub)
+	env := s.currentEnv()
+	started, clock := s.nowISO(), env.Clock.Monotonic()
+	nodes, result, cache, failure := s.DownloadNodes(ctx, sub)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, nil, err
 	}
 	if failure != nil {
-		previous, err := refreshEnv().Sources.LoadNodes(ctx, sub.ID)
+		previous, err := env.Sources.LoadNodes(ctx, sub.ID)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -235,15 +244,15 @@ func RefreshSource(ctx context.Context, sub model.Subscription, trigger string) 
 		if previous != nil {
 			count = previous.Count
 		}
-		if _, err := RecordHealth(ctx, sub.ID, FetchEventInput{FromCache: retained, Count: count}); err != nil {
+		if _, err := s.RecordHealth(ctx, sub.ID, FetchEventInput{FromCache: retained, Count: count}); err != nil {
 			return nil, nil, nil, err
 		}
 		reason := FailureReason(failure)
-		status := taskstatus.Result{OK: false, StartedAt: started, Trigger: trigger, Error: reason, DurationMs: elapsedMs(clock), CacheRetained: &retained}
+		status := taskstatus.Result{OK: false, StartedAt: started, Trigger: trigger, Error: reason, DurationMs: s.elapsedMs(clock), CacheRetained: &retained}
 		if retained {
 			status.CacheUpdatedAt = textOr(previous.UpdatedAt, "")
 		}
-		if err := recordStatus(ctx, key, status); err != nil {
+		if err := s.recordStatus(ctx, key, status); err != nil {
 			return nil, nil, nil, err
 		}
 		suffix := ""
@@ -253,15 +262,15 @@ func RefreshSource(ctx context.Context, sub model.Subscription, trigger string) 
 		logger.Warningf(msgSubscriptionFailed, safeName(sub.Name, sub.ID), suffix, reason)
 		return nil, nil, nil, failure
 	}
-	count := len(refreshEnv().Sources.FilterNodes(sub, nodes))
-	if _, err := RecordHealth(ctx, sub.ID, FetchEventInput{OK: true, Count: model.Int(count), Traffic: result.Traffic}); err != nil {
+	count := len(env.Sources.FilterNodes(sub, nodes))
+	if _, err := s.RecordHealth(ctx, sub.ID, FetchEventInput{OK: true, Count: model.Int(count), Traffic: result.Traffic}); err != nil {
 		return nil, nil, nil, err
 	}
 	updated := ""
 	if cache != nil {
 		updated = textOr(cache.UpdatedAt, "")
 	}
-	if err := recordStatus(ctx, key, taskstatus.Result{OK: true, StartedAt: started, Trigger: trigger, DurationMs: elapsedMs(clock), CacheUpdatedAt: updated}); err != nil {
+	if err := s.recordStatus(ctx, key, taskstatus.Result{OK: true, StartedAt: started, Trigger: trigger, DurationMs: s.elapsedMs(clock), CacheUpdatedAt: updated}); err != nil {
 		return nil, nil, nil, err
 	}
 	return nodes, result, cache, nil
@@ -275,11 +284,11 @@ type RuleReadOptions struct {
 	AllowStale bool
 }
 
-func (o RuleReadOptions) cacheOptions(timeout time.Duration) rulefetch.CacheOptions {
+func (s *Service) cacheOptions(o RuleReadOptions, timeout time.Duration) rulefetch.CacheOptions {
 	if o.Timeout != 0 {
 		timeout = o.Timeout
 	}
-	client := refreshEnv().RuleClient
+	client := s.currentEnv().RuleClient
 	if client == nil {
 		client = rulefetch.DefaultClient
 	}
@@ -287,7 +296,7 @@ func (o RuleReadOptions) cacheOptions(timeout time.Duration) rulefetch.CacheOpti
 }
 
 // RefreshRemote refreshes a declared source and records its task outcome.
-func RefreshRemote(ctx context.Context, rule model.RuleLibraryItem, trigger string, opt RuleReadOptions) ([]byte, error, error) {
+func (s *Service) RefreshRemote(ctx context.Context, rule model.RuleLibraryItem, trigger string, opt RuleReadOptions) ([]byte, error, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
@@ -295,13 +304,13 @@ func RefreshRemote(ctx context.Context, rule model.RuleLibraryItem, trigger stri
 	if rule.ID == "" {
 		return nil, nil, repo.NewValidationError(msgRuleIdentity)
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository()
 	if err != nil {
 		return nil, nil, err
 	}
 	key := RuleTaskKey(rule.ID)
-	started, clock := nowISO(), refreshEnv().Clock.Monotonic()
-	content, refreshErr, failure := rulefetch.RefreshRule(ctx, r, rules.LibraryRule(rule), opt.Config, opt.cacheOptions(RuleTimeout*time.Second))
+	started, clock := s.nowISO(), s.currentEnv().Clock.Monotonic()
+	content, refreshErr, failure := rulefetch.RefreshRule(ctx, r, rules.LibraryRule(rule), opt.Config, s.cacheOptions(opt, RuleTimeout*time.Second))
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -311,15 +320,15 @@ func RefreshRemote(ctx context.Context, rule model.RuleLibraryItem, trigger stri
 			return nil, nil, err
 		}
 		retained := cached != nil
-		status := taskstatus.Result{OK: false, StartedAt: started, Trigger: trigger, Error: FailureReason(failure), DurationMs: elapsedMs(clock), CacheRetained: &retained}
+		status := taskstatus.Result{OK: false, StartedAt: started, Trigger: trigger, Error: FailureReason(failure), DurationMs: s.elapsedMs(clock), CacheRetained: &retained}
 		if retained {
-			at, err := RuleCacheAt(ctx, rule)
+			at, err := s.RuleCacheAt(ctx, rule)
 			if err != nil {
 				return nil, nil, err
 			}
 			status.CacheUpdatedAt = textOr(at, "")
 		}
-		if err := recordStatus(ctx, key, status); err != nil {
+		if err := s.recordStatus(ctx, key, status); err != nil {
 			return nil, nil, err
 		}
 		if trigger == "schedule" {
@@ -331,10 +340,10 @@ func RefreshRemote(ctx context.Context, rule model.RuleLibraryItem, trigger stri
 		}
 		return nil, nil, failure
 	}
-	status := taskstatus.Result{OK: true, StartedAt: started, Trigger: trigger, DurationMs: elapsedMs(clock), CacheUpdatedAt: nowISO()}
+	status := taskstatus.Result{OK: true, StartedAt: started, Trigger: trigger, DurationMs: s.elapsedMs(clock), CacheUpdatedAt: s.nowISO()}
 	if refreshErr != nil {
 		retained := true
-		at, err := RuleCacheAt(ctx, rule)
+		at, err := s.RuleCacheAt(ctx, rule)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -343,36 +352,36 @@ func RefreshRemote(ctx context.Context, rule model.RuleLibraryItem, trigger stri
 		status.CacheRetained = &retained
 		status.CacheUpdatedAt = textOr(at, "")
 	}
-	if err := recordStatus(ctx, key, status); err != nil {
+	if err := s.recordStatus(ctx, key, status); err != nil {
 		return nil, nil, err
 	}
 	return content, refreshErr, nil
 }
 
 // ReadRemote serves validated bytes and never extends a cache's age on a poll.
-func ReadRemote(ctx context.Context, rule model.RuleLibraryItem, opt RuleReadOptions) ([]byte, error, error) {
+func (s *Service) ReadRemote(ctx context.Context, rule model.RuleLibraryItem, opt RuleReadOptions) ([]byte, error, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
 	opt.AllowStale = true
-	stored, err := StoredRule(ctx, rule)
+	stored, err := s.StoredRule(ctx, rule)
 	if err != nil {
 		return nil, nil, err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository()
 	if err != nil {
 		return nil, nil, err
 	}
 	if !stored {
-		return rulefetch.RefreshRule(ctx, r, rules.LibraryRule(rule), opt.Config, opt.cacheOptions(10*time.Second))
+		return rulefetch.RefreshRule(ctx, r, rules.LibraryRule(rule), opt.Config, s.cacheOptions(opt, 10*time.Second))
 	}
 	cached, err := rulefetch.ReadCache(ctx, r, rules.LibraryRule(rule), opt.Config)
 	if err != nil {
 		return nil, nil, err
 	}
 	if cached != nil {
-		store, err := taskStatusOf(ctx)
+		store, err := s.taskStatusOf(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -393,7 +402,7 @@ func ReadRemote(ctx context.Context, rule model.RuleLibraryItem, opt RuleReadOpt
 	if opt.Timeout == 0 {
 		opt.Timeout = 10 * time.Second
 	}
-	return RefreshRemote(ctx, rule, "pull", opt)
+	return s.RefreshRemote(ctx, rule, "pull", opt)
 }
 
 // Resource is a typed subscription or rule source snapshot, never a generic map.
@@ -418,19 +427,19 @@ func (r Resource) key() string {
 	}
 	return RuleTaskKey(r.id())
 }
-func due(ctx context.Context, now *time.Time) ([]Resource, error) {
-	jobs, _, err := dueAndNext(ctx, now)
+func (s *Service) due(ctx context.Context, now *time.Time) ([]Resource, error) {
+	jobs, _, err := s.dueAndNext(ctx, now)
 	return jobs, err
 }
 
 // dueAndNext is due that also returns the earliest due time after now of the
 // resources not due yet (nil when there is none).
-func dueAndNext(ctx context.Context, now *time.Time) ([]Resource, *time.Time, error) {
+func (s *Service) dueAndNext(ctx context.Context, now *time.Time) ([]Resource, *time.Time, error) {
 	if now == nil {
-		current := nowUTC()
+		current := s.nowUTC()
 		now = &current
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -438,7 +447,7 @@ func dueAndNext(ctx context.Context, now *time.Time) ([]Resource, *time.Time, er
 	if err != nil {
 		return nil, nil, err
 	}
-	store, err := taskStatusOf(ctx)
+	store, err := s.taskStatusOf(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -454,11 +463,11 @@ func dueAndNext(ctx context.Context, now *time.Time) ([]Resource, *time.Time, er
 		if !enabledResource(sub.Enabled) || !substore.SourceURLConfigured(sub.URL) {
 			continue
 		}
-		baseline, err := SourceCacheAt(ctx, sub)
+		baseline, err := s.SourceCacheAt(ctx, sub)
 		if err != nil {
 			return nil, nil, err
 		}
-		at, err := NextDue(statuses.Entry(SourceTaskKey(sub.ID)), SourceInterval(sub), baseline, now)
+		at, err := s.nextDue(statuses.Entry(SourceTaskKey(sub.ID)), SourceInterval(sub), baseline, now)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -473,11 +482,11 @@ func dueAndNext(ctx context.Context, now *time.Time) ([]Resource, *time.Time, er
 		if !urlRule(rule) || textOr(rule.URL, "") == "" || !enabledResource(rule.Enabled) {
 			continue
 		}
-		baseline, err := RuleCacheAt(ctx, rule)
+		baseline, err := s.RuleCacheAt(ctx, rule)
 		if err != nil {
 			return nil, nil, err
 		}
-		at, err := NextDue(statuses.Entry(RuleTaskKey(rule.ID)), RemoteInterval(rule), baseline, now)
+		at, err := s.nextDue(statuses.Entry(RuleTaskKey(rule.ID)), RemoteInterval(rule), baseline, now)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -490,7 +499,7 @@ func dueAndNext(ctx context.Context, now *time.Time) ([]Resource, *time.Time, er
 	}
 	return jobs, next, nil
 }
-func runResource(ctx context.Context, resource Resource, trigger string) {
+func (s *Service) runResource(ctx context.Context, resource Resource, trigger string) {
 	scope := repo.WithScope(ctx)
 	defer repo.ResetConfigContext(scope)
 	defer func() {
@@ -502,26 +511,26 @@ func runResource(ctx context.Context, resource Resource, trigger string) {
 		return
 	}
 	if resource.Subscription != nil {
-		_, _, _, _ = RefreshSource(scope, *resource.Subscription, trigger)
+		_, _, _, _ = s.RefreshSource(scope, *resource.Subscription, trigger)
 	} else if resource.Rule != nil {
-		_, _, _ = RefreshRemote(scope, *resource.Rule, trigger, RuleReadOptions{})
-		notifyRulesRefreshed()
+		_, _, _ = s.RefreshRemote(scope, *resource.Rule, trigger, RuleReadOptions{})
+		s.NotifyRulesRefreshed()
 	}
 	if trigger != "schedule" {
 		// A run outside the loop moved a due time: the loop recomputes its
 		// pause (its own rounds recompute it when they end).
-		Default().Wake()
+		s.Wake()
 	}
 }
 
 // RunRound refreshes due sources with bounded joined workers. A stopping
 // generation admits no more work and retains its original cancellation parent.
-func RunRound(ctx context.Context, now *time.Time) (int, error) {
+func (s *Service) RunRound(ctx context.Context, now *time.Time) (int, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	candidates, err := due(ctx, now)
+	candidates, err := s.due(ctx, now)
 	if err != nil {
 		return 0, err
 	}
@@ -529,8 +538,8 @@ func RunRound(ctx context.Context, now *time.Time) (int, error) {
 	roundCtx := context.WithValue(ctx, roundNoticeBatchKey{}, batch)
 	flushNotices := func() {
 		// Like the per-receipt hook, this runs detached even while stopping.
-		if batch.recorded.Load() {
-			notifications.Safely(func() error { return notifications.RefreshTasks(ctx, "") })
+		if batch.recorded.Load() && s.notifications != nil {
+			notifications.Safely(func() error { return s.notifications.RefreshTasks(ctx, "") })
 		}
 	}
 	type claimed struct {
@@ -580,7 +589,7 @@ func RunRound(ctx context.Context, now *time.Time) (int, error) {
 			defer wg.Done()
 			defer func() { <-slots }()
 			defer item.release()
-			runResource(item.ctx, item.resource, "schedule")
+			s.runResource(item.ctx, item.resource, "schedule")
 		}(item)
 	}
 	wg.Wait()
@@ -589,8 +598,8 @@ func RunRound(ctx context.Context, now *time.Time) (int, error) {
 }
 
 // LookupResource resolves a task against the current repository snapshot.
-func LookupResource(ctx context.Context, kind, id string) (Resource, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) LookupResource(ctx context.Context, kind, id string) (Resource, error) {
+	r, err := s.repository()
 	if err != nil {
 		return Resource{}, err
 	}
@@ -624,12 +633,12 @@ func LookupResource(ctx context.Context, kind, id string) (Resource, error) {
 }
 
 // RunResourceNow admits one manual refresh and retains the keyed job claim.
-func RunResourceNow(ctx context.Context, kind, id string) (string, error) {
+func (s *Service) RunResourceNow(ctx context.Context, kind, id string) (string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	resource, err := LookupResource(ctx, kind, id)
+	resource, err := s.LookupResource(ctx, kind, id)
 	if err != nil {
 		return "", err
 	}
@@ -641,7 +650,13 @@ func RunResourceNow(ctx context.Context, kind, id string) (string, error) {
 		}
 		return "", &TaskBusy{Message: msgTaskBusy}
 	}
-	if err := lifecycle.Spawn(held, "task-"+key, func(work context.Context) { defer release(); runResource(work, resource, "manual") }); err != nil {
+	spawn := lifecycle.Spawn
+	if s.runtime != nil {
+		spawn = s.runtime.Spawn
+	} else if spawner := lifecycle.SpawnerFrom(held); spawner != nil {
+		spawn = spawner.Spawn
+	}
+	if err := spawn(held, "task-"+key, func(work context.Context) { defer release(); s.runResource(work, resource, "manual") }); err != nil {
 		release()
 		return "", err
 	}

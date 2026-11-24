@@ -6,6 +6,7 @@ import (
 	"configflow/internal/convert"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/refresh"
 	"encoding/json"
 )
 
@@ -182,6 +183,7 @@ type BuildInput struct {
 	BaseURL, DeploymentID string
 	LocalDNSWatchdog      bool
 	Progress              Progress
+	Refresh               *refresh.Service
 }
 
 // Capabilities is the typed subset of an Agent capability response.

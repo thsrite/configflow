@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"configflow/internal/lifecycle"
+	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
@@ -15,20 +16,22 @@ import (
 
 // Options configures a scheduled-refresh Service instance.
 type Options struct {
-	Repo     *repo.Repository
-	SubStore *substore.Service
-	Runtime  *lifecycle.Runtime
-	Tasks    *tasks.Registry
-	Env      *RefreshEnv
+	Repo          *repo.Repository
+	SubStore      *substore.Service
+	Runtime       *lifecycle.Runtime
+	Tasks         *tasks.Registry
+	Notifications *notifications.Service
+	Env           *RefreshEnv
 }
 
 // Service owns the scheduled-refresh loop pacer, collaborator environment, and
 // instance-level rule-refresh event subscribers.
 type Service struct {
-	repo     *repo.Repository
-	substore *substore.Service
-	runtime  *lifecycle.Runtime
-	tasks    *tasks.Registry
+	repo          *repo.Repository
+	substore      *substore.Service
+	runtime       *lifecycle.Runtime
+	tasks         *tasks.Registry
+	notifications *notifications.Service
 
 	envMu sync.RWMutex
 	env   *RefreshEnv
@@ -42,36 +45,20 @@ type Service struct {
 // New constructs a refresh Service with explicit dependencies.
 func New(opts Options) *Service {
 	return &Service{
-		repo:     opts.Repo,
-		substore: opts.SubStore,
-		runtime:  opts.Runtime,
-		tasks:    opts.Tasks,
-		env:      opts.Env,
+		repo:          opts.Repo,
+		substore:      opts.SubStore,
+		runtime:       opts.Runtime,
+		tasks:         opts.Tasks,
+		notifications: opts.Notifications,
+		env:           opts.Env,
 	}
 }
 
-var (
-	defaultSvcMu   sync.RWMutex
-	defaultService = New(Options{})
-)
-
-// Default returns the process default refresh Service (transitional helper
-// until W11 removes package-level service locators).
-func Default() *Service {
-	defaultSvcMu.RLock()
-	defer defaultSvcMu.RUnlock()
-	return defaultService
-}
-
-// UseService installs svc as the process default refresh Service so packages
-// not yet migrated to explicit injection share svc's pacer and event hooks.
-func UseService(svc *Service) {
-	if svc == nil {
-		return
+func (s *Service) repository() (*repo.Repository, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("refresh: repository is nil")
 	}
-	defaultSvcMu.Lock()
-	defaultService = svc
-	defaultSvcMu.Unlock()
+	return s.repo, nil
 }
 
 // OnRulesRefreshed registers fn to run after a rule source refresh completes.
@@ -145,11 +132,11 @@ func (s *Service) round(ctx context.Context) {
 			logger.Errorf(msgRoundPanic)
 		}
 	}()
-	if _, err := RunRound(scope, nil); err != nil && !errors.Is(err, context.Canceled) {
+	if _, err := s.RunRound(scope, nil); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Errorf(msgRoundFailed, weburl.SafeErrorDetails(err))
 		return
 	}
-	s.loop.pace(scope)
+	s.pace(scope)
 }
 
 // Periodic returns the lifecycle.Periodic descriptor bound to s's pacer.
@@ -172,18 +159,16 @@ func (s *Service) Register(rt *lifecycle.Runtime, tk *tasks.Registry) {
 	if rt == nil {
 		rt = s.runtime
 	}
-	if rt == nil {
-		rt = lifecycle.Current()
-	}
 	if tk == nil {
 		tk = s.tasks
 	}
-	if tk == nil {
-		tk = tasks.Default()
+	if tk != nil {
+		tk.SetRowBuilder(tasks.SlotSubscriptions, s.SubscriptionTasks)
+		tk.SetRowBuilder(tasks.SlotRuleSources, s.RuleTasks)
+		tk.SetRunner("subscription", s.runTask)
+		tk.SetRunner("rule_source", s.runTask)
 	}
-	tk.SetRowBuilder(tasks.SlotSubscriptions, SubscriptionTasks)
-	tk.SetRowBuilder(tasks.SlotRuleSources, RuleTasks)
-	tk.SetRunner("subscription", runTask)
-	tk.SetRunner("rule_source", runTask)
-	rt.RegisterPeriodic(s.Periodic())
+	if rt != nil {
+		rt.RegisterPeriodic(s.Periodic())
+	}
 }

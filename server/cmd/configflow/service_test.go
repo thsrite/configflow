@@ -28,6 +28,7 @@ import (
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
+	"configflow/internal/server"
 	"configflow/internal/substore"
 	"configflow/internal/taskstatus"
 	"configflow/internal/testjson"
@@ -52,8 +53,6 @@ func TestServiceProcess(t *testing.T) {
 		_, _ = fmt.Fprintln(file, event)
 	}
 	var outbound atomic.Int64
-	restore := refresh.SetRefreshEnv(schedulerObserver(func() { outbound.Add(1); trace("outbound") }))
-	defer restore()
 	defer func() {
 		if n := outbound.Load(); n != 0 {
 			t.Errorf("unexpected scheduled network attempts: %d", n)
@@ -65,6 +64,9 @@ func TestServiceProcess(t *testing.T) {
 	firstSaved := make(chan struct{})
 	detachedCancelled := make(chan struct{})
 	opts := runOptions{
+		onApp: func(srv *server.App) {
+			srv.Refresh.SetEnv(schedulerObserver(srv.Repo, srv.SubStore, func() { outbound.Add(1); trace("outbound") }))
+		},
 		listen: func(network, _ string) (net.Listener, error) {
 			trace("listen")
 			return net.Listen(network, "127.0.0.1:0")
@@ -556,8 +558,8 @@ func TestMainRejectsDataDirectoryAliases(t *testing.T) {
 
 // The only remote scheduler eligible in the 30s ownership window is refresh.
 // Record and refuse all of its I/O boundaries, without changing its real clock.
-func schedulerObserver(record func()) *refresh.RefreshEnv {
-	env := refresh.DefaultRefreshEnv()
+func schedulerObserver(r *repo.Repository, sub *substore.Service, record func()) *refresh.RefreshEnv {
+	env := refresh.DefaultRefreshEnvFor(r, sub)
 	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
 		record()
 		return nil, errors.New("scheduled subscription request blocked by test observer")
@@ -583,7 +585,7 @@ func (b blockedUserinfoRequests) Do(context.Context, *substore.Request) (*substo
 
 func TestSchedulerObserverDetectsEveryDownloadBoundary(t *testing.T) {
 	count := 0
-	env := schedulerObserver(func() { count++ })
+	env := schedulerObserver(nil, nil, func() { count++ })
 	_, subErr := env.Sources.Fetch(context.Background(), "edge", "http://example.com/disabled", substore.FetchOptions{})
 	_, ruleErr := env.RuleClient.Transport.Do(context.Background(), rulefetch.TransportRequest{URL: "http://example.com/disabled"})
 	_, infoErr := env.HTTP.Do(context.Background(), &substore.Request{URL: "http://example.com/disabled"})

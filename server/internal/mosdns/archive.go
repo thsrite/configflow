@@ -73,6 +73,7 @@ type ArchiveOptions struct {
 	// SkipReferenceValidation skips the check that every `files` entry of
 	// the config is packed (the OxiDNS archive).
 	SkipReferenceValidation bool
+	Repo                    *repo.Repository
 }
 
 // ArchivePath validates a path inside the archive: relative, no empty,
@@ -493,7 +494,7 @@ func BuildZIP(ctx context.Context, config *model.Config, yamlContent string, dow
 			if err := lifecycle.SpawnerFrom(ctx).Spawn(ctx, "mosdns-archive-download", func(work context.Context) {
 				result := fetched{key: src, err: lifecycle.ErrPanic}
 				defer func() { results <- result }()
-				result.content, result.err = fetchSource(work, fetch, config, src, label(uses[src][0].name))
+				result.content, result.err = fetchSource(work, opts.Repo, fetch, config, src, label(uses[src][0].name))
 			}); err != nil {
 				return err
 			}
@@ -582,14 +583,14 @@ func libraryItemOf(rule model.RuleConfig) (model.RuleLibraryItem, error) {
 
 // fetchSource returns a source's text: inline content, the remote
 // declaration's validated cache or download, or an undeclared URL.
-func fetchSource(ctx context.Context, fetch nativeFetchFunc, config *model.Config, src source, name string) (string, error) {
+func fetchSource(ctx context.Context, r *repo.Repository, fetch nativeFetchFunc, config *model.Config, src source, name string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	if src.inline {
 		return src.content, nil
 	}
-	text, err := fetchDeclaredSource(ctx, fetch, config, src, name)
+	text, err := fetchDeclaredSource(ctx, r, fetch, config, src, name)
 
 	if cancelled := ctx.Err(); cancelled != nil {
 		return "", cancelled
@@ -600,7 +601,7 @@ func fetchSource(ctx context.Context, fetch nativeFetchFunc, config *model.Confi
 	return text, nil
 }
 
-func fetchDeclaredSource(ctx context.Context, fetch nativeFetchFunc, config *model.Config, src source, name string) (string, error) {
+func fetchDeclaredSource(ctx context.Context, r *repo.Repository, fetch nativeFetchFunc, config *model.Config, src source, name string) (string, error) {
 	sourceConfig := sourceConfigOf(config)
 	declared, err := rulefetch.ResolveSource(src.url, sourceConfig, src.identity)
 	if err != nil {
@@ -623,7 +624,7 @@ func fetchDeclaredSource(ctx context.Context, fetch nativeFetchFunc, config *mod
 	if err != nil {
 		return "", err
 	}
-	content, stale, err := refresh.ReadRemote(ctx, item, refresh.RuleReadOptions{
+	content, stale, err := refresh.New(refresh.Options{Repo: r}).ReadRemote(ctx, item, refresh.RuleReadOptions{
 		Config: sourceConfig,
 		Fetch: func(callCtx context.Context, target string) (rulefetch.Content, error) {
 			data, err := fetch(callCtx, target, config, "")

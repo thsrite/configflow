@@ -488,9 +488,13 @@ func (s *Service) cacheOne(ctx context.Context, item model.RuleLibraryItem) (str
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
+		rf, err := s.refreshSvc(ctx)
+		if err != nil {
+			return "", err
+		}
 		// A manual refresh resolves global fetch settings, just like the
 		// scheduler. Passing a shared catalog here would erase proxy settings.
-		_, _, err := refresh.RefreshRemote(ctx, item, "manual", refresh.RuleReadOptions{Fetch: func(ctx context.Context, url string) (rulefetch.Content, error) {
+		_, _, err = rf.RefreshRemote(ctx, item, "manual", refresh.RuleReadOptions{Fetch: func(ctx context.Context, url string) (rulefetch.Content, error) {
 			if err := ctx.Err(); err != nil {
 				return rulefetch.Content{}, err
 			}

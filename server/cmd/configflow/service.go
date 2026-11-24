@@ -30,6 +30,7 @@ import (
 type runOptions struct {
 	listen   func(string, string) (net.Listener, error)
 	register func(*httpx.App)
+	onApp    func(*server.App)
 	ready    func(net.Addr)
 }
 
@@ -130,6 +131,9 @@ func run(ctx context.Context, frontendDir string, signals <-chan os.Signal, opts
 	srv, err := server.New(work, server.Options{Repo: repository, Runtime: rt})
 	if err != nil {
 		return err
+	}
+	if opts.onApp != nil {
+		opts.onApp(srv)
 	}
 	app := srv.HTTP
 	app.RegisterLocal()

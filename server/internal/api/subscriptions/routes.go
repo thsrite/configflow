@@ -76,7 +76,7 @@ func (h *Handler) handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	if c.Request.Method == "GET" {
-		health, err := loadHealth(ctx)
+		health, err := h.loadHealth(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -275,7 +275,7 @@ func (h *Handler) subscriptionsHealth(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	health, err := loadHealth(ctx)
+	health, err := h.loadHealth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +386,7 @@ func (h *Handler) fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
 		return httpx.Message(404, false, "Subscription not found"), nil
 	}
 	sub := list[index]
-	nodes, cached, err := refreshSubscription(ctx, sub)
+	nodes, cached, err := h.refreshSubscription(ctx, sub)
 	fromCache := false
 	var fetchError *string
 	if err != nil {

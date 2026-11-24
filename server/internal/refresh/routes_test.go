@@ -18,6 +18,7 @@ import (
 
 	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/refresh"
 	"configflow/internal/substore"
@@ -48,13 +49,14 @@ func decodeObject(t *testing.T, raw []byte) map[string]any {
 }
 
 // server mutates process-wide task slots; its callers must stay sequential.
-func server(t *testing.T) *httpxtest.Server {
+func server(t *testing.T) (*httpxtest.Server, *refresh.Service) {
 	t.Helper()
-	refresh.Wire()
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apitasks.RegisterAlways)})
+	rf := refresh.New(refresh.Options{Repo: srv.Repo})
+	rf.Register(lifecycle.Current(), tasks.Default())
 	for _, slot := range []string{tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
 		t.Cleanup(tasks.SetRowBuilder(slot, none))
 	}
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apitasks.RegisterAlways)})
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
 		shared.Subscriptions = []model.Subscription{testjson.Decode[model.Subscription](t, map[string]any{
 			"id": "s", "name": "Feed", "url": "https://airport.test/sub?token=private",
@@ -69,13 +71,13 @@ func server(t *testing.T) *httpxtest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return srv
+	return srv, rf
 }
 
 func TestReviewTaskFixtureRestoresMissingSlots(t *testing.T) {
-	refresh.Wire()
+	refresh.New(refresh.Options{}).Register(lifecycle.Current(), tasks.Default())
 	before := tasks.Missing()
-	t.Run("fixture", func(t *testing.T) { server(t) })
+	t.Run("fixture", func(t *testing.T) { _, _ = server(t) })
 	if after := tasks.Missing(); !reflect.DeepEqual(before, after) {
 		t.Fatal("fake task providers leaked", before, after)
 	}
@@ -97,7 +99,7 @@ func rows(t *testing.T, srv *httpxtest.Server) map[string]map[string]any {
 
 // test_scheduled_tasks.py::test_run_now_refreshes_in_background_and_rejects_unknown_sources
 func TestRunNowRefreshesInBackgroundAndRejectsUnknownSources(t *testing.T) {
-	srv := server(t)
+	srv, rf := server(t)
 	data, err := yamlx.Marshal(yamlx.Map(yamlx.Str("proxies"), yamlx.Seq(yamlx.Map(
 		yamlx.Str("name"), yamlx.Str("Remote"), yamlx.Str("type"), yamlx.Str("ss"),
 		yamlx.Str("server"), yamlx.Str("example.test"), yamlx.Str("port"), yamlx.Int(443),
@@ -106,12 +108,12 @@ func TestRunNowRefreshesInBackgroundAndRejectsUnknownSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	env := refresh.DefaultRefreshEnv()
+	env := refresh.DefaultRefreshEnvFor(srv.Repo, nil)
 	env.RandomHex = func() string { return "abcdef01" }
 	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
 		return &refresh.SourceResult{Text: text, Source: "direct_yaml"}, nil
 	}
-	t.Cleanup(refresh.SetRefreshEnv(env))
+	t.Cleanup(rf.SetEnv(env))
 	wantJSON(t, srv.Post("/api/tasks/run", httpxtest.JSON(map[string]any{"key": "subscription:s"})).WantStatus(202),
 		map[string]any{"success": true, "message": "已开始运行，结果会显示在列表中"})
 	deadline := time.Now().Add(10 * time.Second)
@@ -134,12 +136,12 @@ func TestRunNowRefreshesInBackgroundAndRejectsUnknownSources(t *testing.T) {
 
 // test_scheduled_tasks.py::test_interval_edit_validates_and_rule_source_edits_keep_it (route part)
 func TestIntervalEditValidatesOnTheRealRows(t *testing.T) {
-	srv := server(t)
-	env := refresh.DefaultRefreshEnv()
+	srv, rf := server(t)
+	env := refresh.DefaultRefreshEnvFor(srv.Repo, nil)
 	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
 		return nil, errors.New("no request")
 	}
-	t.Cleanup(refresh.SetRefreshEnv(env))
+	t.Cleanup(rf.SetEnv(env))
 	put := func(body map[string]any) *httpxtest.Result {
 		return srv.Put("/api/tasks/interval", httpxtest.JSON(body))
 	}
@@ -164,12 +166,12 @@ func TestIntervalEditValidatesOnTheRealRows(t *testing.T) {
 // Every row key and default, in Python's order, for a subscription and a
 // rule source that never ran.
 func TestRowShape(t *testing.T) {
-	srv := server(t)
-	subs, err := subscriptionRows(t, srv.Context())
+	srv, rf := server(t)
+	subs, err := subscriptionRows(t, srv.Context(), rf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rules, err := ruleRows(t, srv.Context())
+	rules, err := ruleRows(t, srv.Context(), rf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,8 +213,8 @@ func mapKeys(m map[string]any) []string {
 	return keys
 }
 
-func subscriptionRows(t *testing.T, ctx context.Context) ([]map[string]any, error) {
-	rows, err := refresh.SubscriptionTasks(ctx, taskstatus.Snapshot{})
+func subscriptionRows(t *testing.T, ctx context.Context, rf *refresh.Service) ([]map[string]any, error) {
+	rows, err := rf.SubscriptionTasks(ctx, taskstatus.Snapshot{})
 	if err != nil {
 		return nil, err
 	}
@@ -227,8 +229,8 @@ func subscriptionRows(t *testing.T, ctx context.Context) ([]map[string]any, erro
 	return out, nil
 }
 
-func ruleRows(t *testing.T, ctx context.Context) ([]map[string]any, error) {
-	rows, err := refresh.RuleTasks(ctx, taskstatus.Snapshot{})
+func ruleRows(t *testing.T, ctx context.Context, rf *refresh.Service) ([]map[string]any, error) {
+	rows, err := rf.RuleTasks(ctx, taskstatus.Snapshot{})
 	if err != nil {
 		return nil, err
 	}

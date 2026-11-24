@@ -860,6 +860,7 @@ func scenarioRow(t *testing.T, kind string, in map[string]any, rawMain json.RawM
 	s := &scenario{spec: in}
 	pv := New(Options{
 		Repo:         r,
+		Refresh:      newRefreshFixture(r, fixedClock{corpusNow}, nilNodeConverter{}),
 		Locations:    fakeLocations{},
 		Aggregations: s.fakeAggregation,
 		DeliveryEnv: &DeliveryEnv{
@@ -870,7 +871,6 @@ func scenarioRow(t *testing.T, kind string, in map[string]any, rawMain json.RawM
 			Converter:         nilNodeConverter{},
 		},
 	})
-	defer setRefreshFixture(fixedClock{corpusNow}, nilNodeConverter{})()
 
 	var got map[string]any
 	switch kind {

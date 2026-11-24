@@ -55,11 +55,13 @@ func newWorld(t *testing.T) *world {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
+	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(apilogs.Register, apistats.Register, apitasks.Register, apinotifications.Register)})
+	rf := refresh.New(refresh.Options{Repo: s.Repo})
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources, tasks.SlotRouters, tasks.SlotAgents, tasks.SlotDomains, tasks.SlotMetrics} {
 		t.Cleanup(tasks.SetRowBuilder(slot, func(context.Context, taskstatus.Snapshot) ([]*tasks.Task, error) { return nil, nil }))
 	}
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, refresh.SubscriptionTasks))
-	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRuleSources, refresh.RuleTasks))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotSubscriptions, rf.SubscriptionTasks))
+	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRuleSources, rf.RuleTasks))
 	t.Cleanup(tasks.SetRowBuilder(tasks.SlotMetrics, metrics.BuildRows))
 	t.Cleanup(tasks.SetIntervalEditor(tasks.MetricsTaskKey, func(ctx context.Context, value *int64) error {
 		if value == nil {
@@ -75,7 +77,6 @@ func newWorld(t *testing.T) *world {
 	apistats.Now = func() time.Time { return fixed }
 	notifications.Clock = func() time.Time { return fixed }
 	t.Cleanup(func() { apistats.Now = previousNow; notifications.Clock = previousClock })
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(apilogs.Register, apistats.Register, apitasks.Register, apinotifications.Register)})
 	err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, shared *model.Shared) error {
 		if err := shared.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Synthetic feed","url":"https://feed.example.com/sub","interval":3600,"enabled":true}]`)); err != nil {
 			return err

@@ -14,6 +14,7 @@ import (
 
 	"configflow/internal/api/nodes"
 	"configflow/internal/api/subscriptions"
+	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/refresh"
@@ -23,13 +24,19 @@ import (
 
 func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 	calls := 0
-	env := refresh.DefaultRefreshEnv()
+	var h *subscriptions.Handler
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
+		nodes.Register(r)
+		h = subscriptions.NewHandler(nil, nil, nil, nil)
+		h.Register(r)
+	})})
+	env := refresh.DefaultRefreshEnvFor(srv.Repo, nil)
 	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
 		calls++
 		return nil, errors.New("synthetic source must not be called")
 	}
-	t.Cleanup(refresh.SetRefreshEnv(env))
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register, subscriptions.Register)})
+	h.Repo = srv.Repo
+	h.Refresh = refresh.New(refresh.Options{Repo: srv.Repo, Env: env})
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 		return s.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Synthetic","url":"https://feed.example/sub"}]`))
 	})
@@ -83,12 +90,17 @@ func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 }
 
 func TestConfigFindingsMalformedCacheFailureIsJSON(t *testing.T) {
-	env := refresh.DefaultRefreshEnv()
+	var h *subscriptions.Handler
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
+		h = subscriptions.NewHandler(nil, nil, nil, nil)
+		h.Register(r)
+	})})
+	env := refresh.DefaultRefreshEnvFor(srv.Repo, nil)
 	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
 		return nil, errors.New("synthetic source failure")
 	}
-	t.Cleanup(refresh.SetRefreshEnv(env))
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
+	h.Repo = srv.Repo
+	h.Refresh = refresh.New(refresh.Options{Repo: srv.Repo, Env: env})
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 		return s.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Synthetic","url":"https://feed.example/sub"}]`))
 	})
@@ -109,12 +121,17 @@ func TestConfigFindingsMalformedCacheFailureIsJSON(t *testing.T) {
 }
 
 func TestConfigFindingsFailedImportCommitIsJSON(t *testing.T) {
-	env := refresh.DefaultRefreshEnv()
+	var h *subscriptions.Handler
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
+		h = subscriptions.NewHandler(nil, nil, nil, nil)
+		h.Register(r)
+	})})
+	env := refresh.DefaultRefreshEnvFor(srv.Repo, nil)
 	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
 		return &refresh.SourceResult{Text: "proxies: [{name: Synthetic, type: socks5, server: 192.0.2.1, port: 1080}]", Source: "direct_yaml"}, nil
 	}
-	t.Cleanup(refresh.SetRefreshEnv(env))
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
+	h.Repo = srv.Repo
+	h.Refresh = refresh.New(refresh.Options{Repo: srv.Repo, Env: env})
 	if err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 		return s.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Synthetic","url":"https://feed.example/sub"}]`))
 	}); err != nil {

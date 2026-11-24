@@ -13,6 +13,7 @@ import (
 	"configflow/internal/logx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rulesource"
@@ -24,9 +25,17 @@ var logger = logx.Get("backend.routes.rules")
 type Service struct {
 	repo        *repo.Repository
 	ruleSource  *rulesource.Service
+	refresh     *refresh.Service
 	client      *rulefetch.Client
 	now         func() time.Time
 	pinnedCheck func(ctx context.Context, profileID string, ruleIDs []string) (bool, error)
+}
+
+func (s *Service) refreshSvc(r *repo.Repository) *refresh.Service {
+	if s != nil && s.refresh != nil {
+		return s.refresh
+	}
+	return refresh.New(refresh.Options{Repo: r})
 }
 
 func (s *Service) repository(ctx context.Context) (*repo.Repository, error) {
