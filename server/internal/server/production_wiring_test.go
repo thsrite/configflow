@@ -126,7 +126,7 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		}
 	}
 	owners := setup.RegisteredOwners()
-	if owners.DNS == nil || owners.Installation == nil || owners.ReadRouteContent == nil || owners.VerifyRouter == nil {
+	if owners.DNS == nil || owners.Installation == nil || owners.ReadRouteContent == nil || owners.ReadOfflineRouteContent == nil || owners.VerifyRouter == nil {
 		t.Errorf("setup owners: dns=%t installation=%t content=%t router=%t",
 			owners.DNS != nil, owners.Installation != nil, owners.ReadRouteContent != nil, owners.VerifyRouter != nil)
 	}

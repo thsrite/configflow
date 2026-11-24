@@ -144,6 +144,11 @@ func (s *Service) checkInstallation(ctx context.Context, record *Record) (json.R
 			return nil, err
 		}
 		ruleIDs = settings
+		if read := s.owners.ReadOfflineRouteContent; read != nil {
+			loader = func(item routers.RuleSet, library *routers.LibraryRule) (string, error) {
+				return read(ctx, raw, item, library)
+			}
+		}
 	}
 	desired, err := routers.ComputeDesired(ctx, raw, pair.Mihomo.Host, ruleIDs, loader)
 	if err != nil {

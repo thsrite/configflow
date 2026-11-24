@@ -121,6 +121,11 @@ type ExternalOwners struct {
 	DNS              *DNSOwner
 	Installation     *InstallationOwner
 	ReadRouteContent func(context.Context, json.RawMessage, routers.RuleSet, *routers.LibraryRule, RouteReadOptions) (string, error)
+	// ReadOfflineRouteContent reads a rule set's cached or inline content for
+	// the gateway (not full TUN) completion check, never the network. The
+	// profile is the published configuration snapshot. Nil fails that check
+	// closed with device.ErrNotPorted when a rule set is selected.
+	ReadOfflineRouteContent func(ctx context.Context, profile json.RawMessage, item routers.RuleSet, library *routers.LibraryRule) (string, error)
 	// VerifyRouter inspects the device read-only and plans a release for the
 	// setup profile. A device failure is a *Error with status 502.
 	VerifyRouter func(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *routers.Router) (RouterVerification, error)
@@ -187,6 +192,9 @@ func RegisterExternalOwners(owners ExternalOwners) func() {
 	}
 	if owners.VerifyRouter != nil {
 		next.VerifyRouter = owners.VerifyRouter
+	}
+	if owners.ReadOfflineRouteContent != nil {
+		next.ReadOfflineRouteContent = owners.ReadOfflineRouteContent
 	}
 	ownersState.value = copyOwners(next)
 	ownersState.Unlock()

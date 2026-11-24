@@ -25,7 +25,7 @@ func TestSetupOwnersAllRegisteredByApp(t *testing.T) {
 	t.Cleanup(setup.SetExternalOwners(setup.ExternalOwners{}))
 	NewApp()
 	owners := setup.RegisteredOwners()
-	if owners.DNS == nil || owners.Installation == nil || owners.ReadRouteContent == nil || owners.VerifyRouter == nil {
+	if owners.DNS == nil || owners.Installation == nil || owners.ReadRouteContent == nil || owners.ReadOfflineRouteContent == nil || owners.VerifyRouter == nil {
 		t.Fatalf("production wiring left a setup owner unregistered: dns=%t installation=%t content=%t router=%t",
 			owners.DNS != nil, owners.Installation != nil, owners.ReadRouteContent != nil, owners.VerifyRouter != nil)
 	}

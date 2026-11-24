@@ -30,11 +30,20 @@ func wireRuleSource(rs *rulesource.Service) {
 	gateway.SetRuleSourceReader(rs.ReadGateway)
 }
 
-// wireSetupContentWith joins the shared rulesource owner for setup route reads.
+// wireSetupContentWith joins the shared rulesource owner for setup route reads:
+// the full-TUN warm-up reads and the offline reads of the gateway completion
+// check (spec.RulesetContent before O17 W9).
 func wireSetupContentWith(rs *rulesource.Service) {
 	if rs == nil {
 		rs = rulesource.Default()
 	}
+	setup.RegisterExternalOwners(setup.ExternalOwners{ReadOfflineRouteContent: func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
+		var raw json.RawMessage
+		if library != nil {
+			raw = library.Raw
+		}
+		return rs.ReadOfflineJSON(ctx, profile, item.Raw, raw)
+	}})
 	setup.RegisterExternalOwners(setup.ExternalOwners{ReadRouteContent: func(ctx context.Context, config json.RawMessage, item spec.RuleSet, library *spec.LibraryRule, options setup.RouteReadOptions) (string, error) {
 		var raw json.RawMessage
 		if library != nil {
