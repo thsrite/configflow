@@ -109,7 +109,7 @@ cmd/configflow                       进程入口：环境、实例锁、监听�
 | `internal/lockx` | 可取消的进程内锁（`Mutex`、`RWMutex`、`Keyed`、`Flight`），运行时检查 L1→L2→L3 顺序，`Violations()` |
 | `internal/ctxx`、`internal/clock` | 保留生命周期的 Detach 实现；共享时钟接口（测试用 `lifecycle/lifecycletest`） |
 | `internal/logx` | 日志（格式同 Python：`时间 - logger 名 - 级别 - 消息`），唯一允许的日志出口 |
-| `internal/yamlx` | yaml.v3 之上的无 schema YAML：`Parse`、`Marshal`（两空格、LF、不折行）、Node 帮助函数、`Equal`、`FromJSON`/`ToJSON`、保留注释的 `Edit` |
+| `internal/yamlx` | yaml.v3（本地 `third_party/yamlv3` 含发射队列重置补丁）之上的无 schema YAML：`Parse`、`Marshal`（两空格、LF、不折行）、Node 帮助函数、`Equal`、`FromJSON`/`ToJSON`、保留注释的 `Edit` |
 | `internal/jsonresp` / `internal/jsondecode` | 响应 JSON 编码（不转义 HTML；`EncodeUTF8` 保留 U+2028/2029 原文）；严格成员名的 DTO 解码 |
 
 ### 2.2 HTTP 层
