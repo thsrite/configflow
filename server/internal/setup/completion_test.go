@@ -187,6 +187,37 @@ func TestRouteWarmupBudgetAndOriginShutdown(t *testing.T) {
 	<-stopped
 }
 
+type canceledRouteJobSpawner struct{}
+
+func (canceledRouteJobSpawner) Spawn(origin context.Context, _ string, run func(context.Context)) error {
+	job, cancel := context.WithCancel(origin)
+	cancel()
+	run(job)
+	return nil
+}
+
+func TestRouteLoaderPropagatesJobCancellationBeforeOrigin(t *testing.T) {
+	origin := t.Context()
+	s := Service{
+		spawner: canceledRouteJobSpawner{},
+		owners: ExternalOwners{
+			ReadRouteContent: func(ctx context.Context, _ json.RawMessage, _ routers.RuleSet, _ *routers.LibraryRule, _ RouteReadOptions) (string, error) {
+				<-ctx.Done()
+				return "", ctx.Err()
+			},
+		},
+	}
+	var missing []string
+	load := s.routeLoader(origin, nil, &missing)
+	content, err := load(routers.RuleSet{ID: "shutdown"}, nil)
+	if origin.Err() != nil {
+		t.Fatalf("origin canceled before stopDetached: %v", origin.Err())
+	}
+	if content != "" || !errors.Is(err, context.Canceled) {
+		t.Fatalf("routeLoader returned (%q, %v), want empty content and context.Canceled", content, err)
+	}
+}
+
 func TestRouterDraftAttachmentAndManualManagedFinish(t *testing.T) {
 	s, ctx := preparedFixture(t, "router")
 	body := json.RawMessage(`{"domain_rules":{"direct":[],"proxy":[]},"local_dns":"https://192.0.2.53/dns-query"}`)

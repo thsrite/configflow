@@ -198,7 +198,11 @@ func (s *Service) routeLoader(ctx context.Context, config json.RawMessage, missi
 			return s.owners.ReadRouteContent(ctx, config, item, library, RouteReadOptions{AllowNetwork: false})
 		}
 		options := RouteReadOptions{AllowNetwork: true, ConnectTimeout: min(5*time.Second, remaining), ReadTimeout: min(20*time.Second, remaining)}
-		result := make(chan string, 1)
+		type readResult struct {
+			text string
+			err  error
+		}
+		result := make(chan readResult, 1)
 		// The tracked worker may fill the cache after the UI budget. It retains the
 		// originating generation even if the default Runtime restarts meanwhile.
 		origin := lifecycle.Detach(ctx)
@@ -211,7 +215,7 @@ func (s *Service) routeLoader(ctx context.Context, config json.RawMessage, missi
 			bounded, timeoutCancel := context.WithTimeout(work, remaining)
 			defer timeoutCancel()
 			text, _ := s.owners.ReadRouteContent(bounded, config, item, library, options)
-			result <- text
+			result <- readResult{text: text, err: job.Err()}
 		})
 		if spawnErr != nil {
 			return "", spawnErr
@@ -219,11 +223,14 @@ func (s *Service) routeLoader(ctx context.Context, config json.RawMessage, missi
 		timer := clock.NewTimer(remaining)
 		defer timer.Stop()
 		select {
-		case content = <-result:
+		case got := <-result:
 			if err := ctx.Err(); err != nil {
 				return "", err
 			}
-			return content, nil
+			if got.err != nil {
+				return "", got.err
+			}
+			return got.text, nil
 		case <-timer.C():
 			return "", nil
 		case <-ctx.Done():
