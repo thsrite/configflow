@@ -106,6 +106,9 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		{"gateway rule source reader", gateway.RegisteredRuleSourceReader() != nil},
 		{"routers rule set content", spec.RulesetContent != nil},
 		{"routers IPv6 host", routers.IPv6HostRequest != nil},
+		// O17 R10a: routers/rulesync.Wire (not routers.Wire) installs this slot.
+		{"router rule sync task rows", app.Tasks.HasRows(tasks.SlotRouters)},
+		{"router rule sync task runner", app.Tasks.Runner(tasks.SlotRouters) != nil},
 	}
 	for _, c := range checks {
 		if !c.ok {
