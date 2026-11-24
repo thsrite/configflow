@@ -16,10 +16,7 @@ import (
 	"testing"
 	"time"
 
-	api "configflow/internal/api/generate"
-	apiprofiles "configflow/internal/api/profiles"
 	"configflow/internal/deploy"
-	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/server"
@@ -27,7 +24,14 @@ import (
 
 func artifactServer(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	return httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(api.Register, apiprofiles.Register), Setup: func(_ *httpx.App) { server.NewApp() }})
+	s := httpxtest.New(t, httpxtest.Options{})
+	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(full.Agents.Close)
+	*s.App = *full.HTTP
+	return s
 }
 
 func createArtifact(t *testing.T, s *httpxtest.Server, path string) deploy.Artifact {
@@ -215,7 +219,13 @@ func TestArtifactRejectsForeignExpiredAndCorruptPreviews(t *testing.T) {
 }
 
 func TestCompleteC34RegistrationHasOneOwner(t *testing.T) {
-	app := server.NewApp()
+	s := httpxtest.New(t, httpxtest.Options{})
+	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(full.Agents.Close)
+	app := full.HTTP
 	seen := map[string]string{}
 	count := 0
 	for _, r := range app.Router.Routes() {

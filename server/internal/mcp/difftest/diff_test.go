@@ -98,7 +98,12 @@ func TestRealFlaskHTTP(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	app := server.NewApp()
+	full, err := server.New(ctx, server.Options{Repo: r})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(full.Agents.Close)
+	app := full.HTTP
 	root, err := filepath.Abs("../../../..")
 	if err != nil {
 		t.Fatal(err)

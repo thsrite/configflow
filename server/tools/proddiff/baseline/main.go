@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"configflow/internal/agents"
 	"configflow/internal/deploy"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
@@ -84,18 +83,19 @@ func run() (resultErr error) {
 		return nil
 	}
 	repo.SetRepository(repository)
-	_ = server.NewApp() // normal generator/owner hooks; no periodic rounds are started.
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	srvApp, err := server.New(context.Background(), server.Options{Repo: repository, Runtime: rt})
+	if err != nil {
+		return err
+	}
+	defer srvApp.Agents.Close()
 	if err = lifecycle.Configure(lifecycle.Options{Registry: lifecycle.NewRegistry()}); err != nil {
 		return err
 	}
 	lifecycle.Start(context.Background())
 	defer lifecycle.Stop(8 * time.Second)
 	ctx := lifecycle.BindRequest(repo.WithRepository(context.Background(), repository))
-	manager, err := agents.New(ctx, repository)
-	if err != nil {
-		return err
-	}
-	defer manager.Close()
+	manager := srvApp.Agents
 	system, err := repository.System(ctx)
 	if err != nil {
 		return err

@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"configflow/internal/agents"
-	agentipv6 "configflow/internal/agents/ipv6"
 	"configflow/internal/lifecycle"
 	"configflow/internal/notifications"
 	"configflow/internal/routers"
@@ -60,23 +58,11 @@ func wireRouters(opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *no
 }
 
 func routerIPv6HostFetcher(ag *agentServices) routers.IPv6HostFetcher {
-	if ag != nil && ag.ipv6 != nil {
-		ip := ag.ipv6
-		return func(ctx context.Context, agent *routers.GatewayAgent) (rosipv6.IPv6Host, error) {
-			if agent == nil {
-				return ip.Host(ctx, nil)
-			}
-			return ip.Host(ctx, agent.Agent)
-		}
-	}
+	ip := ag.ipv6
 	return func(ctx context.Context, agent *routers.GatewayAgent) (rosipv6.IPv6Host, error) {
-		m, err := agents.Get(ctx)
-		if err != nil {
-			return rosipv6.IPv6Host{}, err
-		}
 		if agent == nil {
-			return (&agentipv6.Service{Manager: m}).Host(ctx, nil)
+			return ip.Host(ctx, nil)
 		}
-		return (&agentipv6.Service{Manager: m}).Host(ctx, agent.Agent)
+		return ip.Host(ctx, agent.Agent)
 	}
 }

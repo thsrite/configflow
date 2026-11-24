@@ -3,6 +3,7 @@
 package main
 
 import (
+	"configflow/internal/repo"
 	"configflow/internal/server"
 	"strings"
 	"testing"
@@ -10,7 +11,17 @@ import (
 
 func TestProductionHasNoFaultRoutes(t *testing.T) {
 	t.Setenv("CONFIGFLOW_FAULT_DIR", t.TempDir())
-	app := server.NewApp()
+	r, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Close)
+	srv, err := server.New(t.Context(), server.Options{Repo: r})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Agents.Close)
+	app := srv.HTTP
 	if err := writeTestManifest(app, nil); err != nil {
 		t.Fatal(err)
 	}

@@ -10,15 +10,15 @@ import (
 // C15: NewApp provides the subscription and rule-source task rows with
 // their "run now"; /api/tasks still waits for the slots listed here.
 func TestNewAppWiresTheScheduledRefresh(t *testing.T) {
-	NewApp()
-	missing := tasks.Missing()
+	srv := newTestApp(t)
+	missing := srv.Tasks.Missing()
 	for _, slot := range []string{tasks.SlotSubscriptions, tasks.SlotRuleSources} {
 		if slices.Contains(missing, slot) {
 			t.Errorf("%s task rows not provided", slot)
 		}
 	}
 	for _, category := range []string{"subscription", "rule_source"} {
-		if tasks.Runner(category) == nil {
+		if srv.Tasks.Runner(category) == nil {
 			t.Errorf("%s runner not provided", category)
 		}
 	}

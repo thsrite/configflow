@@ -14,11 +14,16 @@ import (
 )
 
 func TestIPv6ServerRegistrationAndHEAD(t *testing.T) {
-	app := NewApp()
+	fixture := httpxtest.New(t, httpxtest.Options{})
+	srv, err := New(context.Background(), Options{Repo: fixture.Repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Agents.Close)
+	app := srv.HTTP
 	if !app.Router.HasEndpoint("agents.ipv6_readiness_operation") {
 		t.Fatal("A23 missing")
 	}
-	fixture := httpxtest.New(t, httpxtest.Options{})
 	for _, path := range []string{"/api/agents/source/ipv6-readiness", "/api/agents/source/ipv6-readiness/verify", "/api/agents/source/ipv6-readiness/verification-settings"} {
 		before := fixture.Repo.CommitCount()
 		request := httptest.NewRequest("HEAD", path, nil).WithContext(fixture.Context())

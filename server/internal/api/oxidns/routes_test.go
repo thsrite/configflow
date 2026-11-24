@@ -14,7 +14,12 @@ import (
 
 func TestC29RouteRegistrationHasOneOwner(t *testing.T) {
 	srv := httpxtest.New(t, httpxtest.Options{})
-	app := server.NewApp()
+	full, err := server.New(srv.Context(), server.Options{Repo: srv.Repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(full.Agents.Close)
+	app := full.HTTP
 	seen := map[string]string{}
 	count := 0
 	for _, route := range app.Router.Routes() {

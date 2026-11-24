@@ -23,11 +23,7 @@ import (
 	"unicode"
 
 	"archive/zip"
-	api "configflow/internal/api/config"
-	apigenerate "configflow/internal/api/generate"
-	apiprofiles "configflow/internal/api/profiles"
 	"configflow/internal/auth"
-	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -131,7 +127,13 @@ func newWorld(t *testing.T, seeds ...func(*httpxtest.Server)) *world {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(api.Register, apigenerate.Register, apiprofiles.Register), Setup: func(_ *httpx.App) { server.NewApp() }})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret})
+	full, err := server.New(srv.Context(), server.Options{Repo: srv.Repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(full.Agents.Close)
+	*srv.App = *full.HTTP
 	ctx := srv.Context()
 	if err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 		s.SystemConfig.ConfigToken = "c34-config-secret"

@@ -123,7 +123,6 @@ func TestGatewayGuardsRefuseUnsafePublication(t *testing.T) {
 // The production wiring installs the guards: a full-TUN publication to a
 // host whose gateway record would turn forwarding off stops before any upload.
 func TestNewAppGatewayGuardBlocksFullTunPublication(t *testing.T) {
-	NewApp()
 	marker := map[string]any{"version": 1, "takeover": "full_tun", "route_rule_set_ids": []any{}, "origin": "setup"}
 	cfg, err := json.Marshal(map[string]any{
 		"mihomo":        map[string]any{"custom_config": "mode: rule\ntun:\n  enable: true\n  stack: mixed\n  auto-route: true\n  auto-redirect: true\n  auto-detect-interface: true\n  dns-hijack: ['any:53', 'tcp://any:53']\n", "router_split": marker},
@@ -136,7 +135,12 @@ func TestNewAppGatewayGuardBlocksFullTunPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, m, fake := newGatewayGuardFixture(t, cfg)
-	response := deploy.New(deploy.Options{}).PushConfig(ctx, m, "gw", deploy.PushRequest{Body: []byte(`{"deployment_id":"guarded"}`), Scheme: "https", Host: "panel.example.com"})
+	srv, err := New(ctx, Options{Repo: m.Repository()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Agents.Close)
+	response := srv.Deploy.PushConfig(ctx, m, "gw", deploy.PushRequest{Body: []byte(`{"deployment_id":"guarded"}`), Scheme: "https", Host: "panel.example.com"})
 	if response.Err != nil {
 		t.Fatal(response.Err)
 	}

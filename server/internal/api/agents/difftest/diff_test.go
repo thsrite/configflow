@@ -280,8 +280,13 @@ func startGoWith(t *testing.T, dataDir string, requestRuntime *lifecycle.Runtime
 	}
 	repo.SetRepository(r)
 	t.Cleanup(func() { repo.SetRepository(nil) })
-	app := server.NewApp()
-	if _, err := repo.PrepareConfig(repo.WithScope(context.Background())); err != nil {
+	full, err := server.New(context.Background(), server.Options{Repo: r, Runtime: requestRuntime})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(full.Agents.Close)
+	app := full.HTTP
+	if _, err := r.PrepareConfig(repo.WithScope(context.Background())); err != nil {
 		t.Fatal(err)
 	}
 	var handler http.Handler = app

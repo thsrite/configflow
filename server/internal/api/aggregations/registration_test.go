@@ -16,7 +16,13 @@ func TestFullApplicationRegistersAggregationRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := server.NewApp() // Registers every module, including potentially overlapping wildcards.
+	t.Cleanup(repository.Close)
+	srv, err := server.New(t.Context(), server.Options{Repo: repository})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Agents.Close)
+	app := srv.HTTP // Registers every module, including potentially overlapping wildcards.
 	count := 0
 	for _, route := range app.Router.Routes() {
 		if strings.HasPrefix(route.Endpoint, "subscription_aggregations.") || route.Endpoint == "profiles.profile_aggregation_provider" {

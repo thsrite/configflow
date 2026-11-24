@@ -33,7 +33,6 @@ import (
 	"testing"
 	"time"
 
-	apitasks "configflow/internal/api/tasks"
 	"configflow/internal/auth"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/logx"
@@ -158,15 +157,14 @@ func startGo(t *testing.T, dataDir string) string {
 	}
 	repo.SetRepository(r)
 	t.Cleanup(func() { repo.SetRepository(nil) })
-	app := server.NewApp()
-	// This shell does not start every task-row provider. Mount the actual R226
-	// handler for validation/not-found vectors without faking providers or changing
-	// production wiring. refresh/difftest covers successful writes with row slots.
-	if !app.Router.HasEndpoint("tasks.set_interval") {
-		apitasks.RegisterAlways(app.Router)
+	full, err := server.New(context.Background(), server.Options{Repo: r})
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Cleanup(full.Agents.Close)
+	app := full.HTTP
 	ctx := repo.WithScope(context.Background())
-	if _, err := repo.PrepareConfig(ctx); err != nil {
+	if _, err := r.PrepareConfig(ctx); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(app)

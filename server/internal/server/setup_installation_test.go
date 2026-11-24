@@ -99,10 +99,7 @@ func TestSetupInstallationServerRegistrationUsesRealOwner(t *testing.T) {
 	srv.Post("/api/agents/gateway-installations/"+record.ID+"/enroll", httpxtest.JSON(map[string]any{"agents": proofs}), httpxtest.Bearer(record.Token)).WantStatus(200)
 	// Seed the public deployment receipts to test C36 owner registration only;
 	// real conversion, upload and polling live in installation's Agent tests.
-	m, err := agents.Get(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	m := app.Agents
 	err = srv.Repo.UpdateSystem(ctx, func(_ context.Context, c *model.System) error {
 		for i := range c.Agents {
 			kind := c.Agents[i].ServiceType

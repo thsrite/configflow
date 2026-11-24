@@ -13,7 +13,6 @@ import (
 	"configflow/internal/deploy"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/tasks"
 )
@@ -79,9 +78,9 @@ func TestProductionAssemblyLeavesNoDependencyUnset(t *testing.T) {
 		name string
 		ok   bool
 	}{
-		{"runtime is the process default", app.Runtime == rt && lifecycle.Current() == rt},
-		{"tasks registry is the default", app.Tasks != nil && tasks.Default() == app.Tasks},
-		{"notifications service is the default", app.Notifications != nil && notifications.Default() == app.Notifications},
+		{"runtime is wired", app.Runtime == rt},
+		{"tasks registry is instantiated", app.Tasks != nil},
+		{"notifications service is instantiated", app.Notifications != nil},
 		{"Sub-Store service", app.SubStore != nil && app.SubStore.Repo == app.Repo},
 		{"refresh service is instantiated", app.Refresh != nil},
 		{"provider service is instantiated", app.Provider != nil},

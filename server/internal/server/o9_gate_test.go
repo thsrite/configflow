@@ -22,7 +22,13 @@ func TestO9EveryNonPublicRouteRequiresLogin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := NewApp()
+	t.Cleanup(repository.Close)
+	srv, err := New(t.Context(), Options{Repo: repository})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Agents.Close)
+	app := srv.HTTP
 	param := regexp.MustCompile(`<(?:[a-z]+:)?[A-Za-z_]+>`)
 	selfAuthenticating := map[string]bool{
 		"agents.download_agent_binary": true, "agents.download_install_command": true,

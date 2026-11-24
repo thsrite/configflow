@@ -16,9 +16,7 @@ import (
 	"testing"
 	"time"
 
-	api "configflow/internal/api/config"
 	"configflow/internal/auth"
-	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/repo"
@@ -52,7 +50,13 @@ func TestN811GlobalFlaskBoundaries(t *testing.T) {
 			previousHooks := repo.SetHooks(repo.Hooks{})
 			t.Cleanup(func() { repo.SetHooks(previousHooks) })
 			const secret = "n811-synthetic-jwt-key"
-			srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(api.Register), Setup: func(*httpx.App) { server.NewApp() }})
+			srv := httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret})
+			full, err := server.New(srv.Context(), server.Options{Repo: srv.Repo})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(full.Agents.Close)
+			*srv.App = *full.HTTP
 			ctx := srv.Context()
 			if err := srv.Repo.UpdateSystem(ctx, func(_ context.Context, s *model.System) error {
 				s.SystemConfig.ConfigToken = "n811-config-secret"

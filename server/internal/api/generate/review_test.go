@@ -13,8 +13,14 @@ import (
 )
 
 func TestReviewC34AuthenticationMatrix(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Setup: func(app *httpx.App) { *app = *server.NewApp() }})
-	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(full.Agents.Close)
+	*s.App = *full.HTTP
+	err = s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		system.SystemConfig.ConfigToken = "synthetic-config"
 		system.SystemConfig.RuleProxyToken = "synthetic-rule"
 		system.SystemConfig.RetiredRuleProxyTokens = []string{"synthetic-retired"}
@@ -87,12 +93,16 @@ func TestReviewC34AuthenticationMatrix(t *testing.T) {
 }
 
 func TestReviewC34ForeignAliasDispatch(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
-		*app = *server.NewApp()
-		app.BeforeRequest(func(c *httpx.Ctx) (*httpx.Response, error) {
-			return httpx.JSON(map[string]string{"endpoint": c.Endpoint, "profile": c.ProfileID}), nil
-		})
-	}})
+	s := httpxtest.New(t, httpxtest.Options{})
+	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(full.Agents.Close)
+	full.HTTP.BeforeRequest(func(c *httpx.Ctx) (*httpx.Response, error) {
+		return httpx.JSON(map[string]string{"endpoint": c.Endpoint, "profile": c.ProfileID}), nil
+	})
+	*s.App = *full.HTTP
 	aliases := []struct{ methods, path, endpoint string }{
 		{"GET", "subscriptions/item/proxies", "profile_subscription_proxies"},
 		{"GET POST", "rules", "profile_rules"},
@@ -128,8 +138,14 @@ func TestReviewC34ForeignAliasDispatch(t *testing.T) {
 }
 
 func TestPreviewOxiDNSPreservesAuthObjectAndRedactsSystemSecrets(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) { *app = *server.NewApp() }})
-	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
+	s := httpxtest.New(t, httpxtest.Options{})
+	full, err := server.New(s.Context(), server.Options{Repo: s.Repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(full.Agents.Close)
+	*s.App = *full.HTTP
+	err = s.Repo.UpdateSystem(s.Context(), func(_ context.Context, system *model.System) error {
 		system.SystemConfig.RuleProxyToken = "synthetic-preview-secret"
 		return nil
 	})

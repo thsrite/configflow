@@ -23,18 +23,8 @@ import (
 // server instances (O17 W11 / review L5), with no global registry or assembly
 // snapshot. Preserves ReadOfflineRouteContent (f49f11acc).
 func buildSetupOwners(ag *agentServices, rs *rulesource.Service, rtr *routers.Service) setup.ExternalOwners {
-	resolveManager := func(ctx context.Context, r *repo.Repository) (*agents.Manager, error) {
-		if ag != nil && ag.manager != nil {
-			return ag.manager, nil
-		}
-		return agents.Get(repo.WithRepository(ctx, r))
-	}
-	service := func(ctx context.Context, r *repo.Repository) (*installation.Service, error) {
-		m, e := resolveManager(ctx, r)
-		if e != nil {
-			return nil, e
-		}
-		return &installation.Service{Repository: r, Manager: m}, nil
+	service := func(r *repo.Repository) *installation.Service {
+		return &installation.Service{Repository: r, Manager: ag.manager}
 	}
 	ownerError := func(ctx context.Context, s *installation.Service, e error) error {
 		if e == nil {
@@ -69,10 +59,7 @@ func buildSetupOwners(ag *agentServices, rs *rulesource.Service, rtr *routers.Se
 		},
 		Installation: &setup.InstallationOwner{
 			Latest: func(ctx context.Context, r *repo.Repository, profile string) (*setup.InstallationState, error) {
-				s, e := service(ctx, r)
-				if e != nil {
-					return nil, e
-				}
+				s := service(r)
 				b, e := s.Latest(ctx, profile)
 				if e != nil {
 					return nil, ownerError(ctx, s, e)
@@ -91,10 +78,7 @@ func buildSetupOwners(ag *agentServices, rs *rulesource.Service, rtr *routers.Se
 				return v, ownerError(ctx, s, e)
 			},
 			GatewayStatus: func(ctx context.Context, r *repo.Repository, id, profile string) (setup.GatewayStatus, error) {
-				s, e := service(ctx, r)
-				if e != nil {
-					return setup.GatewayStatus{}, e
-				}
+				s := service(r)
 				bridge := host.Bridge{Repository: r, Manager: s.Manager}
 				reply, e := bridge.Call(ctx, id, "status", "GET", profile, nil)
 				if ctx.Err() != nil {
@@ -107,11 +91,7 @@ func buildSetupOwners(ag *agentServices, rs *rulesource.Service, rtr *routers.Se
 			},
 		},
 		VerifyRouter: func(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *spec.Router) (setup.RouterVerification, error) {
-			m, err := resolveManager(ctx, r)
-			if err != nil {
-				return setup.RouterVerification{}, err
-			}
-			return verifySetupRouter(ctx, rtr, m, r, profileID, config, router)
+			return verifySetupRouter(ctx, rtr, ag.manager, r, profileID, config, router)
 		},
 	}
 }

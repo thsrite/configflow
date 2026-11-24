@@ -42,29 +42,6 @@ type agentServices struct {
 func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *notifications.Service, gen *generateServices) (*agentServices, error) {
 	apiagents.WireContentSyncWith(rt, gen.substore)
 
-	if opts.Repo == nil {
-		// NewApp() test path: no Manager instance, so the deploy Service and
-		// the Manager receipt check use the package-level fallbacks.
-		gen.deploy = newDeployService(deploy.Options{
-			Pair: func(ctx context.Context, m *agents.Manager, id string, b *deploy.Bundle, o deploy.PublishOptions) (*model.Deployment, bool, error) {
-				return dnsha.New(m, dnsha.Options{}).PublishPair(ctx, id, b, o)
-			},
-			IPv6: func(ctx context.Context, m *agents.Manager, id, did string, src *deploy.Source) error {
-				return agentipv6.NewService(m, apiagents.ContentChecker).EnrollSource(ctx, m, id, did, src)
-			},
-			SubStore: gen.substore,
-			Provider: gen.provider,
-			Refresh:  gen.refresh,
-		})
-		agents.RegisterHooks(agents.Hooks{ReceiptMatches: deploy.ReceiptMatches})
-		metrics.New(metrics.Options{}).RegisterTasks(tk)
-		if err := nt.SetAgents(agents.NotificationAgents); err != nil {
-			return nil, err
-		}
-		tk.SetRowBuilder(tasks.SlotAgents, agenttasks.BuildRows(agents.Get, (*rulesync.Service)(nil).TaskRow, (*dnsfollow.Service)(nil).TaskRow))
-		return &agentServices{}, nil
-	}
-
 	dataDir := opts.Repo.DataDir()
 	ts := trafficstore.NewService(dataDir)
 	mt := metrics.New(metrics.Options{Repo: opts.Repo, TrafficStore: ts, Notifications: nt, Tasks: tk})
@@ -92,7 +69,6 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	}
 	mon.MarkStarted()
 	m.MarkStarted()
-	agents.UseManager(m)
 
 	if err := nt.SetAgents(m.NotificationAgents); err != nil {
 		m.Close()

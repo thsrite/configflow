@@ -149,7 +149,17 @@ func TestPythonAuthenticationMatrixForEveryRegisteredRoute(t *testing.T) {
 	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
 		t.Skip("set CONFIGFLOW_DIFF=1")
 	}
-	routes := server.NewApp().Router.Routes()
+	r, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Close)
+	full, err := server.New(t.Context(), server.Options{Repo: r})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(full.Agents.Close)
+	routes := full.HTTP.Router.Routes()
 	type entry struct{ Path, Endpoint, Method string }
 	var entries []entry
 	parameter := regexp.MustCompile(`<[^>]+>`)
@@ -197,7 +207,7 @@ json.dump(out, sys.stdout)
 	}
 	previous := auth.Configure(auth.Config{AdminUsername: "matrix-admin", AdminPassword: "matrix-password", SecretKey: "matrix-secret"})
 	t.Cleanup(func() { auth.Configure(previous) })
-	r, err := repo.Open(t.TempDir(), repo.Options{})
+	r, err = repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

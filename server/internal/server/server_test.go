@@ -45,10 +45,26 @@ func TestEmptyBackendHostFailsAtStartup(t *testing.T) {
 	}
 }
 
+func newTestApp(t *testing.T) *App {
+	t.Helper()
+	r, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Close)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	app, err := New(context.Background(), Options{Repo: r, Runtime: rt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Agents.Close)
+	return app
+}
+
 // The application has every implemented endpoint; the routes waiting for
 // other packages are absent rather than partial.
 func TestNewAppRegistersImplementedRoutes(t *testing.T) {
-	app := NewApp()
+	app := newTestApp(t).HTTP
 	for _, endpoint := range []string{"auth.auth_status", "auth.login", "auth.verify", "settings.handle_web_port",
 		"settings.handle_rule_fetch_proxy", "settings.handle_server_domain", "settings.handle_config_token",
 		"settings.get_version", "settings.backup_config", "settings.handle_subscription_aggregation",
