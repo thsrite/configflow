@@ -149,6 +149,13 @@ D9 setup VerifyRouter was never wired — fixed with Python parity). Gate fix 38
 router state rows and resyncs counters after state-only publishes. Switch rehearsal go-switch-rehearsal: first full
 no-Python gate PASS after 3 test-only fixes (Agent forwarding script path, cache-flush corpus, frontend template path).
 Next: recompute routers deps on new go, then dispatch R line + W line per o17-wiring.md.
+2026-11-24: O17 1.5 W0–W8 MERGED (go-o17-wall-1: W0–W6 Neon, W7/W8 Neon, merge + W5/W6 adversarial review Opus
+(M1 monitor HA rules instance-only, M2 sealed Manager never reads global hooks, M3 refresh wake on the live instance),
+review-w0-8 Opus (H provider DeliveryEnv kept OptionalNodeConverter; 404 text; explicit rulesync wake; deploy.Validate;
+X1 NewApp keeps pre-W1 startup set; X2 test host). W6 full gate core PASS; compare PASS after test-only fix 1c6ec39e6
+(C04 Python harness still stubbed easytier redaction). Reports: review-w0-8.md, review-w5-6.md. Remaining W9–W11 after
+R line. R line (Neon b46ff673, go-o17-r) at R5; R3/R4 done in parallel and folded in. Rehearsal: pure-Go golden replay
+for the other 20 difftest packages added.
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
