@@ -102,8 +102,8 @@ func filterSubscription(sub model.Subscription, nodes []model.Node) []model.Node
 	return out
 }
 
-func subscriptionNodes(ctx context.Context, catalog *model.Shared, sub model.Subscription) ([]model.Node, error) {
-	nodes, err := cachedNodes(ctx, sub.ID)
+func (s *Service) subscriptionNodes(ctx context.Context, catalog *model.Shared, sub model.Subscription) ([]model.Node, error) {
+	nodes, err := s.cachedNodes(ctx, sub.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func (s *Service) Preview(ctx context.Context, body *previewRequest) (previewRes
 			return out, bad(fmt.Sprintf(msgExcludeInvalid, err))
 		}
 	}
-	catalog, err := sharedCatalog(ctx)
+	catalog, err := s.sharedCatalog(ctx)
 	if err != nil {
 		return out, err
 	}
@@ -188,7 +188,7 @@ func (s *Service) Preview(ctx context.Context, body *previewRequest) (previewRes
 				continue
 			}
 			sub := catalog.Subscriptions[i]
-			rows, err := subscriptionNodes(ctx, catalog, sub)
+			rows, err := s.subscriptionNodes(ctx, catalog, sub)
 			if err != nil {
 				return out, err
 			}
@@ -228,7 +228,7 @@ func (s *Service) Preview(ctx context.Context, body *previewRequest) (previewRes
 				if j < 0 || !model.Flag(catalog.Subscriptions[j].Enabled, true) {
 					continue
 				}
-				items, err := subscriptionNodes(ctx, catalog, catalog.Subscriptions[j])
+				items, err := s.subscriptionNodes(ctx, catalog, catalog.Subscriptions[j])
 				if err != nil {
 					return out, err
 				}

@@ -2,6 +2,7 @@
 package nodes
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 
@@ -9,15 +10,40 @@ import (
 	"configflow/internal/health"
 	"configflow/internal/httpx"
 	"configflow/internal/repo"
+	"configflow/internal/substore"
 )
 
-// Register declares the nodes blueprint routes.
-func Register(r *httpx.Router) {
-	registerCRUD(r)
-	r.Handle([]string{"GET", "POST"}, "/api/nodes/latency", "nodes.node_latency", auth.Require(nodeLatency))
-	r.Handle([]string{"GET", "POST"}, "/api/nodes/latency/settings", "nodes.node_latency_settings", auth.Require(nodeLatencySettings))
-	r.POST("/api/nodes/latency/dns/check", "nodes.node_dns_check", auth.Require(nodeDNSCheck))
+// Handler serves the /api/nodes CRUD and latency routes backed by explicit
+// Repository and Sub-Store services.
+type Handler struct {
+	Repo     *repo.Repository
+	SubStore *substore.Service
 }
+
+// NewHandler constructs a nodes Handler. Nil dependencies fall back to
+// context/package defaults until W11.
+func NewHandler(r *repo.Repository, sub *substore.Service) *Handler {
+	return &Handler{Repo: r, SubStore: sub}
+}
+
+func (h *Handler) ctx(c *httpx.Ctx) context.Context {
+	ctx := c.Context()
+	if h != nil && h.Repo != nil {
+		ctx = repo.WithRepository(ctx, h.Repo)
+	}
+	return ctx
+}
+
+// Register declares the nodes blueprint routes on r.
+func (h *Handler) Register(r *httpx.Router) {
+	h.registerCRUD(r)
+	r.Handle([]string{"GET", "POST"}, "/api/nodes/latency", "nodes.node_latency", auth.Require(h.nodeLatency))
+	r.Handle([]string{"GET", "POST"}, "/api/nodes/latency/settings", "nodes.node_latency_settings", auth.Require(h.nodeLatencySettings))
+	r.POST("/api/nodes/latency/dns/check", "nodes.node_dns_check", auth.Require(h.nodeDNSCheck))
+}
+
+// Register declares the nodes blueprint routes.
+func Register(r *httpx.Router) { NewHandler(nil, nil).Register(r) }
 
 func failure(code int, message string) *httpx.Response {
 	return httpx.Message(code, false, message)
@@ -69,8 +95,8 @@ func stringList(sent member[[]*string]) ([]string, bool) {
 }
 
 // nodeLatency is GET/POST /api/nodes/latency.
-func nodeLatency(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
+func (h *Handler) nodeLatency(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.ctx(c)
 	if c.Request.Method == "GET" {
 		return nativeJSON(200, struct {
 			Success bool `json:"success"`
@@ -125,8 +151,8 @@ func nodeLatency(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // nodeLatencySettings is GET/POST /api/nodes/latency/settings.
-func nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
+func (h *Handler) nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.ctx(c)
 	result, err := func() (health.DNSSettingsView, error) {
 		if c.Request.Method == "GET" {
 			return health.DescribeDNSSettingsJSON(ctx, nil)
@@ -172,7 +198,7 @@ func nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // nodeDNSCheck is POST /api/nodes/latency/dns/check.
-func nodeDNSCheck(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) nodeDNSCheck(c *httpx.Ctx) (*httpx.Response, error) {
 	payload, err := decodeObject[dnsSettingsRequest](c, true)
 	if err != nil {
 		return nil, err
@@ -180,7 +206,7 @@ func nodeDNSCheck(c *httpx.Ctx) (*httpx.Response, error) {
 	if payload == nil || payload.DNS == nil {
 		return failure(400, msgCheckDNS), nil
 	}
-	result, err := health.CheckDNSSettingsJSON(c.Context(), payload.DNS)
+	result, err := health.CheckDNSSettingsJSON(h.ctx(c), payload.DNS)
 	if err != nil {
 		var unavailable *health.ProbeUnavailable
 		switch {

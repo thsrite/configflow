@@ -9,15 +9,20 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	shared "configflow/internal/rules"
+	"configflow/internal/substore"
 )
 
 // Service owns group writes and their transaction boundary.
-type Service struct{}
+type Service struct {
+	Repo     *repo.Repository
+	SubStore *substore.Service
+}
 
 // List reads the active profile's stored groups.
 func (s *Service) List(ctx context.Context, id string) ([]model.ProxyGroup, error) {
-	config, err := load(ctx, id)
+	config, err := s.load(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -45,17 +50,17 @@ func (s *Service) Create(ctx context.Context, id string, sent json.RawMessage, b
 	req.clean(kind)
 	req.initHealthDefaults(kind)
 	group, typeErr := req.buildGroup()
-	err = edit(ctx, id, func(ctx context.Context, config *model.Config) error {
+	err = s.edit(ctx, id, func(ctx context.Context, config *model.Config) error {
 		before := profileBefore(config)
 		groups := config.Profile.ProxyGroups
-		if err := validate(ctx, group, req.groupMembers(), groups, nil, nil); err != nil {
+		if err := s.validate(ctx, group, req.groupMembers(), groups, nil, nil); err != nil {
 			return err
 		}
 		if typeErr != nil {
 			return groupTypeError(groups, len(groups), req, typeErr)
 		}
 		config.Profile.ProxyGroups = append(slices.Clone(groups), group)
-		out.Warnings, err = syncFollow(ctx, before, config, base)
+		out.Warnings, err = s.syncFollow(ctx, before, config, base)
 		return err
 	})
 	if err == nil {
@@ -79,7 +84,7 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, sent json.RawM
 			return out, err
 		}
 	}
-	err := edit(ctx, id, func(ctx context.Context, config *model.Config) error {
+	err := s.edit(ctx, id, func(ctx context.Context, config *model.Config) error {
 		before := profileBefore(config)
 		groups := slices.Clone(config.Profile.ProxyGroups)
 		index := find(groups, groupID)
@@ -120,7 +125,7 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, sent json.RawM
 			proposed := slices.Clone(groups)
 			proposed[index] = group
 			beforeMembers := shared.GroupMembersOf(stored)
-			if err = validate(ctx, group, next.groupMembers(), proposed, &stored, &beforeMembers); err != nil {
+			if err = s.validate(ctx, group, next.groupMembers(), proposed, &stored, &beforeMembers); err != nil {
 				return err
 			}
 			for i, other := range groups {
@@ -158,7 +163,7 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, sent json.RawM
 			for _, other := range groups {
 				if model.TextValue(other.FollowGroup) == groupID {
 					otherMembers := shared.GroupMembersOf(other)
-					if err := validate(ctx, other, otherMembers, proposed, &other, &otherMembers); err != nil {
+					if err := s.validate(ctx, other, otherMembers, proposed, &other, &otherMembers); err != nil {
 						return err
 					}
 				}
@@ -180,7 +185,7 @@ func (s *Service) Mutate(ctx context.Context, id, groupID string, sent json.RawM
 			out.Data = &group
 		}
 		var err error
-		out.Warnings, err = syncFollow(ctx, before, config, base)
+		out.Warnings, err = s.syncFollow(ctx, before, config, base)
 		if err != nil {
 			return err
 		}
@@ -232,7 +237,7 @@ func (s *Service) BatchHealthURL(ctx context.Context, id string, body *HealthURL
 		return nil, err
 	}
 	out := []model.ProxyGroup{}
-	err = edit(ctx, id, func(_ context.Context, config *model.Config) error {
+	err = s.edit(ctx, id, func(_ context.Context, config *model.Config) error {
 		groups := slices.Clone(config.Profile.ProxyGroups)
 		positions := make([]int, len(ids))
 		for i, id := range ids {
@@ -267,7 +272,7 @@ func (s *Service) Reorder(ctx context.Context, id string, body json.RawMessage) 
 		return nil, err
 	}
 	order := []string{}
-	err := edit(ctx, id, func(_ context.Context, config *model.Config) error {
+	err := s.edit(ctx, id, func(_ context.Context, config *model.Config) error {
 		groups, missing := reorder(config.Profile.ProxyGroups, body)
 		if len(missing) > 0 {
 			return absent(fmt.Sprintf(msgOrder, missingText(missing)))

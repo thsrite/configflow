@@ -83,12 +83,12 @@ func hasDialer(proxies []proxy) bool {
 	}
 	return false
 }
-func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	if rejected, err := authorize(c); err != nil || rejected != nil {
 		return rejected, err
 	}
-	ctx := materializeContext(c.Context())
-	delivery, list, err := resource(ctx, nil)
+	ctx := materializeContext(h.withRepo(c.Context()))
+	delivery, list, err := h.resource(ctx, nil)
 	if err != nil {
 		return providerFailure(ctx, err)
 	}
@@ -103,14 +103,14 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 		if !model.Flag(sub.Enabled, true) {
 			continue
 		}
-		raw, result, fetchErr := fetchRaw(ctx, sub)
+		raw, result, fetchErr := h.fetchRaw(ctx, sub)
 		proxies := []proxy{}
 		if fetchErr == nil {
 			proxies, err = filter(sub, raw)
 			if err != nil {
 				return providerFailure(ctx, err)
 			}
-			update, err := stageNodes(sub, raw, result, false)
+			update, err := h.stageNodes(sub, raw, result, false)
 			if err != nil {
 				return providerFailure(ctx, err)
 			}
@@ -158,12 +158,12 @@ func combinedProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return providerResponse(all, "", combinedHeader(details, len(all)))
 }
-func subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	if rejected, err := authorize(c); err != nil || rejected != nil {
 		return rejected, err
 	}
 	id := c.Param("sub_id")
-	delivery, list, err := resource(c.Context(), &id)
+	delivery, list, err := h.resource(c.Context(), &id)
 	if err != nil {
 		logProviderFailure(c.Context(), err)
 		return httpx.Message(500, false, msgProviderFailed), nil
@@ -178,7 +178,7 @@ func subscriptionProxies(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	format, _ := c.Arg("format")
 	return delivery.serve(c, id, func(ctx context.Context) (*httpx.Response, error) {
-		ctx = materializeContext(ctx)
+		ctx = materializeContext(h.withRepo(ctx))
 		if err := delivery.capture(ctx); err != nil {
 			return providerFailure(ctx, err)
 		}
@@ -212,7 +212,7 @@ func (d *delivery) renderSingle(ctx context.Context, sub model.Subscription, for
 	cacheUpdated := false
 	fetchError := ""
 	if sub.URL != "" {
-		raw, result, fetchErr := fetchRaw(ctx, sub)
+		raw, result, fetchErr := d.h.fetchRaw(ctx, sub)
 		if fetchErr == nil {
 			proxies, fetchErr = filter(sub, raw)
 			if fetchErr == nil {
@@ -225,7 +225,7 @@ func (d *delivery) renderSingle(ctx context.Context, sub model.Subscription, for
 				fetchErr = d.validateSingle(ctx, sub, proxies)
 			}
 			if fetchErr == nil && len(raw) > 0 && result.Source != "cache" {
-				update, err := stageNodes(sub, raw, result, true)
+				update, err := d.h.stageNodes(sub, raw, result, true)
 				if err == nil {
 					err = commitStaged(ctx, []staged{update})
 				}

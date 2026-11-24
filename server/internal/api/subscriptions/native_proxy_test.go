@@ -75,7 +75,7 @@ func TestStagedIdentityComesFromNodeOwnerNotProtocolParameters(t *testing.T) {
 	for key, value := range map[string]any{"id": "upstream-protocol-id", "name": "Remote", "type": "http", "server": "example.com", "port": 80} {
 		item.set(key, value)
 	}
-	update, err := stageNodes(source, []proxy{item}, &refresh.SourceResult{Source: "prepared_yaml", Text: "proxies: []"}, true)
+	update, err := NewHandler(nil, nil, nil, nil).stageNodes(source, []proxy{item}, &refresh.SourceResult{Source: "prepared_yaml", Text: "proxies: []"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,7 +16,7 @@ func TestReviewTransactionCallbackKeepsOwnerShutdown(t *testing.T) {
 	t.Cleanup(func() { runtime.Shutdown(t.Context()) })
 	ctx := lifecycle.Detach(runtime.BindRequest(app.Context()))
 	before := state(t, app)
-	err := edit(ctx, "default", func(tx context.Context, candidate *model.Config) error {
+	err := (&Service{}).edit(ctx, "default", func(tx context.Context, candidate *model.Config) error {
 		runtime.Shutdown(t.Context())
 		if !errors.Is(tx.Err(), context.Canceled) {
 			t.Error("transaction lost owner shutdown", tx.Err())

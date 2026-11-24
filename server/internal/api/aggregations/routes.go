@@ -17,9 +17,26 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
+	"configflow/internal/provider"
 	"configflow/internal/repo"
 	"configflow/internal/rules"
+	"configflow/internal/substore"
 )
+
+// Handler serves the /api/aggregations catalog and provider download routes
+// backed by explicit services.
+type Handler struct {
+	Repo         *repo.Repository
+	Aggregations *generation.Service
+	Provider     *provider.Service
+	SubStore     *substore.Service
+}
+
+// NewHandler constructs an aggregations Handler. Nil dependencies fall back to
+// context/package defaults until W11.
+func NewHandler(r *repo.Repository, agg *generation.Service, pv *provider.Service, sub *substore.Service) *Handler {
+	return &Handler{Repo: r, Aggregations: agg, Provider: pv, SubStore: sub}
+}
 
 // aggregationRequest is an aggregation create/replace request body decoded with
 // exact member matching. Display statistics (node_count, total_node_count,
@@ -92,20 +109,23 @@ func find(items []model.Aggregation, id string) int {
 	return -1
 }
 
-// Register installs all eleven aggregation routes, including the public alias.
-func Register(r *httpx.Router) {
-	r.Handle([]string{"GET", "POST"}, "/api/aggregations", "subscription_aggregations.handle_subscription_aggregations", auth.Require(collection))
-	r.Handle([]string{"GET", "PUT", "DELETE"}, "/api/aggregations/<agg_id>", "subscription_aggregations.handle_subscription_aggregation_item", auth.Require(item))
-	r.GET("/api/aggregations/<agg_id>/count", "subscription_aggregations.get_aggregation_node_count", auth.Require(count))
-	r.GET("/api/aggregations/<agg_id>/preview", "subscription_aggregations.preview_aggregation_nodes", auth.Require(preview))
-	r.GET("/api/aggregations/<agg_id>/provider", "subscription_aggregations.get_aggregation_provider", download)
-	r.GET("/api/aggregations/<resource_id>/health-impact", "subscription_aggregations.health_impact", auth.Require(healthImpact))
-	r.POST("/api/aggregations/reorder", "subscription_aggregations.reorder_aggregations", auth.Require(reorder))
-	r.GET("/api/profiles/<profile_id>/aggregations/<agg_id>/provider", "profiles.profile_aggregation_provider", download)
+// Register installs all eleven aggregation routes on r, including the public alias.
+func (h *Handler) Register(r *httpx.Router) {
+	r.Handle([]string{"GET", "POST"}, "/api/aggregations", "subscription_aggregations.handle_subscription_aggregations", auth.Require(h.collection))
+	r.Handle([]string{"GET", "PUT", "DELETE"}, "/api/aggregations/<agg_id>", "subscription_aggregations.handle_subscription_aggregation_item", auth.Require(h.item))
+	r.GET("/api/aggregations/<agg_id>/count", "subscription_aggregations.get_aggregation_node_count", auth.Require(h.count))
+	r.GET("/api/aggregations/<agg_id>/preview", "subscription_aggregations.preview_aggregation_nodes", auth.Require(h.preview))
+	r.GET("/api/aggregations/<agg_id>/provider", "subscription_aggregations.get_aggregation_provider", h.download)
+	r.GET("/api/aggregations/<resource_id>/health-impact", "subscription_aggregations.health_impact", auth.Require(h.healthImpact))
+	r.POST("/api/aggregations/reorder", "subscription_aggregations.reorder_aggregations", auth.Require(h.reorder))
+	r.GET("/api/profiles/<profile_id>/aggregations/<agg_id>/provider", "profiles.profile_aggregation_provider", h.download)
 }
 
-func collection(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
+// Register installs all eleven aggregation routes, including the public alias.
+func Register(r *httpx.Router) { NewHandler(nil, nil, nil, nil).Register(r) }
+
+func (h *Handler) collection(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
 	if c.Method() == http.MethodGet {
 		shared, err := generation.LoadCatalog(ctx)
 		if err != nil {
@@ -133,7 +153,7 @@ func collection(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, aggregationTypeError(nil, -1, req, id, true, err)
 	}
-	if err := appendAggregation(ctx, agg); err != nil {
+	if err := h.appendAggregation(ctx, agg); err != nil {
 		return nil, err
 	}
 	return httpx.JSON(struct {
@@ -149,8 +169,8 @@ func aggregationsOf(shared *model.Shared) []model.Aggregation {
 	return shared.Aggregations
 }
 
-func item(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
+func (h *Handler) item(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
 	shared, err := generation.LoadCatalog(ctx)
 	if err != nil {
 		return nil, err
@@ -195,7 +215,7 @@ func item(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, aggregationTypeError(shared.Aggregations, index, req, id, false, err)
 	}
-	if err := replaceAggregation(ctx, shared, index, agg); err != nil {
+	if err := h.replaceAggregation(ctx, shared, index, agg); err != nil {
 		if errors.Is(err, repo.ErrRepository) {
 			return nil, err
 		}
@@ -207,11 +227,12 @@ func item(c *httpx.Ctx) (*httpx.Response, error) {
 	}{true, agg}), nil
 }
 
-func healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
-	return resourceUsage(c.Context(), c.Param("resource_id"))
+func (h *Handler) healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
+	return h.resourceUsage(c.Context(), c.Param("resource_id"))
 }
-func count(c *httpx.Ctx) (*httpx.Response, error) {
-	shared, err := generation.LoadCatalog(c.Context())
+func (h *Handler) count(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
+	shared, err := generation.LoadCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -219,22 +240,23 @@ func count(c *httpx.Ctx) (*httpx.Response, error) {
 	if index < 0 {
 		return httpx.Message(404, false, "Aggregation not found"), nil
 	}
-	result, err := cachedCount(c.Context(), shared, shared.Aggregations[index])
+	result, err := h.cachedCount(ctx, shared, shared.Aggregations[index])
 	if err != nil {
 		return failure(err, msgCountFailed), nil
 	}
 	return httpx.JSON(result), nil
 }
 
-func preview(c *httpx.Ctx) (*httpx.Response, error) {
-	config, agg, _, err := providerResource(c.Context(), c.Param("agg_id"))
+func (h *Handler) preview(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
+	config, agg, _, err := h.providerResource(ctx, c.Param("agg_id"))
 	if err != nil {
 		return nil, err
 	}
 	if agg == nil {
 		return httpx.Message(404, false, "Aggregation not found"), nil
 	}
-	result, err := generation.GenerateConfig(c.Context(), *agg, config, generation.Options{Persist: true})
+	result, err := h.generateConfig(ctx, *agg, config, generation.Options{Persist: true})
 	if err != nil {
 		return renderFailure(err), nil
 	}
@@ -246,8 +268,8 @@ func preview(c *httpx.Ctx) (*httpx.Response, error) {
 	}{true, len(result.Proxies), result.Proxies, result.SubscriptionNodeCounts}), nil
 }
 
-func download(c *httpx.Ctx) (*httpx.Response, error) {
-	config, agg, head, err := providerResource(c.Context(), c.Param("agg_id"))
+func (h *Handler) download(c *httpx.Ctx) (*httpx.Response, error) {
+	config, agg, head, err := h.providerResource(c.Context(), c.Param("agg_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -267,8 +289,9 @@ func download(c *httpx.Ctx) (*httpx.Response, error) {
 		return httpx.Message(400, false, err.Error()), nil
 	}
 	format, _ := c.Arg("format")
-	return serve(c, config, head, c.Param("agg_id"), func(ctx context.Context) (*httpx.Response, error) {
-		result, err := generation.GenerateConfig(ctx, *agg, config, generation.Options{Persist: true, Format: format})
+	return h.serve(c, config, head, c.Param("agg_id"), func(ctx context.Context) (*httpx.Response, error) {
+		ctx = h.withRepo(ctx)
+		result, err := h.generateConfig(ctx, *agg, config, generation.Options{Persist: true, Format: format})
 		if err != nil {
 			return renderFailure(err), nil
 		}
@@ -291,8 +314,8 @@ func renderFailure(err error) *httpx.Response {
 	return failure(err, msgOperationFailed)
 }
 
-func reorder(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
+func (h *Handler) reorder(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
 	shared, err := generation.LoadCatalog(ctx)
 	if err != nil {
 		return nil, err

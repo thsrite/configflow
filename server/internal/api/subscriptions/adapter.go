@@ -68,12 +68,40 @@ func proxyObjects(value []*yamlx.Node) ([]proxy, error) {
 	}
 	return out, nil
 }
-func listShared(ctx context.Context) ([]model.Subscription, []model.Node, error) {
+func (h *Handler) repo(ctx context.Context) (*repo.Repository, error) {
+	if h != nil && h.Repo != nil {
+		return h.Repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
+func (h *Handler) withRepo(ctx context.Context) context.Context {
+	if h != nil && h.Repo != nil {
+		return repo.WithRepository(ctx, h.Repo)
+	}
+	return ctx
+}
+
+func (h *Handler) substore() *substore.Service {
+	if h != nil && h.SubStore != nil {
+		return h.SubStore
+	}
+	return substore.Default()
+}
+
+func (h *Handler) provider() *provider.Service {
+	if h != nil && h.Provider != nil {
+		return h.Provider
+	}
+	return provider.Default()
+}
+
+func (h *Handler) listShared(ctx context.Context) ([]model.Subscription, []model.Node, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -83,12 +111,12 @@ func listShared(ctx context.Context) ([]model.Subscription, []model.Node, error)
 	}
 	return shared.Subscriptions, shared.Nodes, nil
 }
-func editSubscriptions(ctx context.Context, mutate func([]model.Subscription) ([]model.Subscription, error)) error {
+func (h *Handler) editSubscriptions(ctx context.Context, mutate func([]model.Subscription) ([]model.Subscription, error)) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return err
 	}
@@ -104,12 +132,12 @@ func editSubscriptions(ctx context.Context, mutate func([]model.Subscription) ([
 		return nil
 	})
 }
-func appendImported(ctx context.Context, nodes []proxy) (int, error) {
+func (h *Handler) appendImported(ctx context.Context, nodes []proxy) (int, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -208,28 +236,28 @@ func loadHealth(ctx context.Context) (map[string]healthEntry, error) {
 	return out, err
 }
 func healthSize() int { return refresh.HistorySize }
-func usage(ctx context.Context, id string) (*httpx.Response, error) {
-	r, err := repo.GetRepository(ctx)
+func (h *Handler) usage(ctx context.Context, id string) (*httpx.Response, error) {
+	r, err := h.repo(ctx)
 	if err != nil {
 		return nil, err
 	}
 	v, err := r.ResourceUsage(ctx, "subscriptions", id)
 	return httpx.JSON(v), err
 }
-func forgetTask(ctx context.Context, id string) error {
+func (h *Handler) forgetTask(ctx context.Context, id string) error {
 	ctx = lifecycle.Detach(ctx)
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return err
 	}
 	return notifications.TaskStatus(ctx, r.DataDir()).ForgetContext(ctx, refresh.SourceTaskKey(id))
 }
-func forgetSubscription(ctx context.Context, id string) error {
-	ctx = lifecycle.Detach(ctx)
+func (h *Handler) forgetSubscription(ctx context.Context, id string) error {
+	ctx = lifecycle.Detach(h.withRepo(ctx))
 	if err := refresh.ForgetHealth(ctx, id); err != nil {
 		return err
 	}
-	if err := forgetTask(ctx, id); err != nil {
+	if err := h.forgetTask(ctx, id); err != nil {
 		return err
 	}
 	_, err := substore.DeleteSubscriptionCache(ctx, id)
@@ -271,6 +299,7 @@ func failureDetail(err error) string { return "request_failed (" + weburl.SafeEr
 func referenceError(err error) bool  { var e *rules.StrategyReferenceError; return errors.As(err, &e) }
 
 type delivery struct {
+	h         *Handler
 	config    *model.Config
 	head      *store.Head // committed head config was resolved from (provider flight key)
 	main      *yamlx.Node
@@ -279,16 +308,16 @@ type delivery struct {
 }
 type staged struct{ updates []provider.CacheWrite }
 
-func resource(ctx context.Context, id *string) (*delivery, []model.Subscription, error) {
+func (h *Handler) resource(ctx context.Context, id *string) (*delivery, []model.Subscription, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	profileID, err := repo.ResolveProfileID(ctx, "")
+	profileID, err := repo.ResolveProfileID(h.withRepo(ctx), "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -300,7 +329,7 @@ func resource(ctx context.Context, id *string) (*delivery, []model.Subscription,
 	if err != nil {
 		return nil, nil, err
 	}
-	return &delivery{config: config, head: head, profileID: profileID}, config.Subscriptions, nil
+	return &delivery{h: h, config: config, head: head, profileID: profileID}, config.Subscriptions, nil
 }
 func (d *delivery) capture(ctx context.Context) error {
 	main, err := convert.MihomoDocument(ctx, d.config, convert.MihomoOptions{SkipProviderPreflight: true})
@@ -331,9 +360,9 @@ func (d *delivery) adapt(ctx context.Context, sub model.Subscription, proxies []
 	}
 	return proxyObjects(out)
 }
-func fetchRaw(ctx context.Context, sub model.Subscription) ([]proxy, *refresh.SourceResult, error) {
+func (h *Handler) fetchRaw(ctx context.Context, sub model.Subscription) ([]proxy, *refresh.SourceResult, error) {
 	source := sub
-	result, err := refresh.FetchSource(ctx, source, provider.DefaultDeliveryEnv().Fetch)
+	result, err := refresh.FetchSource(ctx, source, h.provider().DeliveryEnv().Fetch)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -344,7 +373,7 @@ func fetchRaw(ctx context.Context, sub model.Subscription) ([]proxy, *refresh.So
 	list, err := proxyObjects(proxies)
 	return list, result, err
 }
-func stageNodes(sub model.Subscription, proxies []proxy, result *refresh.SourceResult, withIdentity bool) (staged, error) {
+func (h *Handler) stageNodes(sub model.Subscription, proxies []proxy, result *refresh.SourceResult, withIdentity bool) (staged, error) {
 	if len(proxies) == 0 || result.Source == "cache" {
 		return staged{}, nil
 	}
@@ -362,7 +391,7 @@ func stageNodes(sub model.Subscription, proxies []proxy, result *refresh.SourceR
 			nodes[i].SubscriptionID = source.ID
 			nodes[i].SubscriptionName = source.Name
 			if nodes[i].ID == "" {
-				nodes[i].ID = "node_" + substore.Default().Env.RandomHex()
+				nodes[i].ID = "node_" + h.substore().Env.RandomHex()
 			}
 		}
 	}
@@ -478,11 +507,12 @@ func (d *delivery) validateBundle(ctx context.Context, sub *model.Subscription, 
 		}
 		yamlx.Set(main, "proxies", &yamlx.Node{Kind: 2, Tag: "!!seq", Content: append(all, graphs...)})
 	}
-	_, err := provider.PrepareBundle(ctx, d.config, main, opts)
+	_, err := d.h.provider().PrepareBundle(d.h.withRepo(ctx), d.config, main, opts)
 	return err
 }
 func (d *delivery) chainedContent(ctx context.Context, sub model.Subscription, format string) (string, error) {
-	bundle, err := provider.PrepareBundle(ctx, d.config, d.main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "subscription", Subscription: &sub}})
+	ctx = d.h.withRepo(ctx)
+	bundle, err := d.h.provider().PrepareBundle(ctx, d.config, d.main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "subscription", Subscription: &sub}})
 	if err != nil {
 		return "", err
 	}
@@ -511,7 +541,7 @@ func (d *delivery) chainedContent(ctx context.Context, sub model.Subscription, f
 	return content, nil
 }
 func (d *delivery) serve(c *httpx.Ctx, id string, render provider.Render) (*httpx.Response, error) {
-	return provider.Serve(c, "subscription", id, d.profileID, d.head, render)
+	return d.h.provider().Serve(c, "subscription", id, d.profileID, d.head, render)
 }
 func recordFetch(ctx context.Context, id string, ok, fromCache bool, count int) error {
 	ctx = lifecycle.Detach(ctx)

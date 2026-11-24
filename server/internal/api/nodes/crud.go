@@ -105,18 +105,18 @@ func decodeNode(c *httpx.Ctx) (*nodeRequest, error) {
 	return out, nil
 }
 
-func registerCRUD(r *httpx.Router) {
-	r.Handle([]string{"GET", "POST"}, "/api/nodes", "nodes.handle_nodes", auth.Require(handleNodes))
-	r.Handle([]string{"DELETE", "PUT"}, "/api/nodes/<node_id>", "nodes.handle_node", auth.Require(handleNode))
-	r.POST("/api/nodes/parse-lines", "nodes.parse_node_lines", auth.Require(parseLines))
-	r.POST("/api/nodes/reorder", "nodes.reorder_nodes", auth.Require(reorderNodes))
-	r.POST("/api/nodes/delete", "nodes.delete_nodes_with_references", auth.Require(deleteNodes))
-	r.POST("/api/nodes/delete-preview", "nodes.delete_nodes_with_references", auth.Require(deleteNodes))
+func (h *Handler) registerCRUD(r *httpx.Router) {
+	r.Handle([]string{"GET", "POST"}, "/api/nodes", "nodes.handle_nodes", auth.Require(h.handleNodes))
+	r.Handle([]string{"DELETE", "PUT"}, "/api/nodes/<node_id>", "nodes.handle_node", auth.Require(h.handleNode))
+	r.POST("/api/nodes/parse-lines", "nodes.parse_node_lines", auth.Require(h.parseLines))
+	r.POST("/api/nodes/reorder", "nodes.reorder_nodes", auth.Require(h.reorderNodes))
+	r.POST("/api/nodes/delete", "nodes.delete_nodes_with_references", auth.Require(h.deleteNodes))
+	r.POST("/api/nodes/delete-preview", "nodes.delete_nodes_with_references", auth.Require(h.deleteNodes))
 }
-func handleNodes(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) handleNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
 	if c.Request.Method == "GET" {
-		list, err := sharedNodes(ctx)
+		list, err := h.sharedNodes(ctx)
 		return nativeJSON(200, list), err
 	}
 	if c.Request.Method != "POST" {
@@ -142,13 +142,13 @@ func handleNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	if err := validateNodeLineFields(body); err != nil {
 		return httpx.Message(400, false, err.Error()), nil
 	}
-	err = mutateNodes(ctx, func(list []model.Node) ([]model.Node, error) { return append(list, body.node), nil })
+	err = h.mutateNodes(ctx, func(list []model.Node) ([]model.Node, error) { return append(list, body.node), nil })
 	return nativeJSON(200, struct {
 		Success bool       `json:"success"`
 		Data    model.Node `json:"data"`
 	}{true, body.node}), err
 }
-func handleNode(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) handleNode(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
 	deleting := c.Request.Method == "DELETE"
 	var body *nodeRequest
@@ -169,7 +169,7 @@ func handleNode(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 	}
 	id := c.Param("node_id")
-	err := mutateNodes(ctx, func(list []model.Node) ([]model.Node, error) {
+	err := h.mutateNodes(ctx, func(list []model.Node) ([]model.Node, error) {
 		for i, node := range list {
 			if node.ID != id {
 				continue
@@ -187,9 +187,9 @@ func handleNode(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, &httpx.HTTPError{Code: 404, Description: "Node not found"}
 	})
 	if err != nil {
-		var h *httpx.HTTPError
-		if errors.As(err, &h) {
-			return httpx.Message(h.Code, false, h.Description), nil
+		var httpErr *httpx.HTTPError
+		if errors.As(err, &httpErr) {
+			return httpx.Message(httpErr.Code, false, httpErr.Description), nil
 		}
 		return nil, err
 	}
@@ -203,7 +203,7 @@ func handleNode(c *httpx.Ctx) (*httpx.Response, error) {
 		Data    model.Node `json:"data"`
 	}{true, body.node}), nil
 }
-func parseLines(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) parseLines(c *httpx.Ctx) (*httpx.Response, error) {
 	body, err := decodeObject[struct {
 		Lines member[[]*string] `json:"lines"`
 	}](c, true)
@@ -225,7 +225,7 @@ func parseLines(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := c.Context()
 	for i, line := range lines {
 		if text := strings.TrimSpace(*line); text != "" {
-			results[i].Proxy = parseLine(ctx, text)
+			results[i].Proxy = h.parseLine(ctx, text)
 		}
 		if len(results[i].Proxy) == 0 {
 			results[i].Error = msgUnknownNode
@@ -247,7 +247,7 @@ func quotedIDs(ids []string) string {
 	}
 	return "[" + strings.Join(values, ", ") + "]"
 }
-func reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	body, err := requestObject(c, false)
 	if err != nil {
 		return nil, err
@@ -255,7 +255,7 @@ func reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	if body == nil {
 		return httpx.Message(400, false, msgBodyObject), nil
 	}
-	order, _, err := reorderNodesStored(c.Context(), body)
+	order, _, err := h.reorderNodesStored(c.Context(), body)
 	var bad *httpx.HTTPError
 	if errors.As(err, &bad) && bad.Code == 400 {
 		return httpx.Message(400, false, bad.Description), nil
@@ -272,7 +272,7 @@ func reorderNodes(c *httpx.Ctx) (*httpx.Response, error) {
 		Order   []string `json:"order"`
 	}{true, order}), nil
 }
-func deleteNodes(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) deleteNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	body, err := decodeObject[struct {
 		IDs          member[[]string] `json:"ids"`
 		Confirmation member[string]   `json:"confirmation"`
@@ -286,7 +286,7 @@ func deleteNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	// A non-list or non-string member becomes an empty selection, which the
 	// planner rejects with msgSelectNodes. The repository checks confirmation
 	// first, so /delete keeps Python's order of the two 400 messages.
-	response, err := reviewedDeletion(c.Context(), body.IDs.Value, body.Confirmation.Value, strings.HasSuffix(c.Path(), "/delete-preview"))
+	response, err := h.reviewedDeletion(c.Context(), body.IDs.Value, body.Confirmation.Value, strings.HasSuffix(c.Path(), "/delete-preview"))
 	if errors.Is(err, repo.ErrNodeDeletionChanged) {
 		return nativeJSON(409, struct {
 			Success bool   `json:"success"`
@@ -298,9 +298,9 @@ func deleteNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	if errors.As(err, &gone) && errors.Is(gone, repo.ErrNodesGone) {
 		return httpx.Message(404, false, gone.Message), nil
 	}
-	var h *httpx.HTTPError
-	if errors.As(err, &h) {
-		return httpx.Message(h.Code, false, h.Description), nil
+	var httpErr *httpx.HTTPError
+	if errors.As(err, &httpErr) {
+		return httpx.Message(httpErr.Code, false, httpErr.Description), nil
 	}
 	return response, err
 }

@@ -11,13 +11,34 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/repo"
 	shared "configflow/internal/rules"
 	"configflow/internal/subs"
+	"configflow/internal/substore"
 )
 
-// Register installs profile group CRUD, probe defaults and candidate previews.
-func Register(r *httpx.Router) {
-	s := &Service{}
+// Handler serves the /api/proxy-groups routes backed by an explicit Service.
+type Handler struct {
+	Service *Service
+}
+
+// NewHandler constructs a proxygroups Handler. Nil dependencies fall back to
+// context/package defaults until W11.
+func NewHandler(r *repo.Repository, sub *substore.Service) *Handler {
+	return &Handler{Service: &Service{Repo: r, SubStore: sub}}
+}
+
+func (h *Handler) service() *Service {
+	if h != nil && h.Service != nil {
+		return h.Service
+	}
+	return &Service{}
+}
+
+// Register installs profile group CRUD, probe defaults and candidate previews
+// on r.
+func (h *Handler) Register(r *httpx.Router) {
+	s := h.service()
 	for _, route := range []struct{ path, name string }{{"/api/proxy-groups", "proxy_groups.handle_proxy_groups"}, {"/api/profiles/<profile_id>/proxy-groups", "profiles.profile_proxy_groups"}} {
 		r.Handle([]string{"GET", "POST"}, route.path, route.name, auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
 			if c.Method() != "POST" {
@@ -95,6 +116,9 @@ func Register(r *httpx.Router) {
 		return respond(out, err)
 	}))
 }
+
+// Register installs profile group CRUD, probe defaults and candidate previews.
+func Register(r *httpx.Router) { NewHandler(nil, nil).Register(r) }
 func respond(out any, err error) (*httpx.Response, error) {
 	if err == nil {
 		return httpx.JSON(out), nil

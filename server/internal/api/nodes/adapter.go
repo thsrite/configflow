@@ -15,8 +15,22 @@ import (
 	"configflow/internal/yamlx"
 )
 
-func sharedNodes(ctx context.Context) ([]model.Node, error) {
-	r, err := repo.GetRepository(ctx)
+func (h *Handler) repo(ctx context.Context) (*repo.Repository, error) {
+	if h != nil && h.Repo != nil {
+		return h.Repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
+func (h *Handler) substore() *substore.Service {
+	if h != nil && h.SubStore != nil {
+		return h.SubStore
+	}
+	return substore.Default()
+}
+
+func (h *Handler) sharedNodes(ctx context.Context) ([]model.Node, error) {
+	r, err := h.repo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -26,12 +40,12 @@ func sharedNodes(ctx context.Context) ([]model.Node, error) {
 	}
 	return shared.Nodes, nil
 }
-func mutateNodes(ctx context.Context, mutate func([]model.Node) ([]model.Node, error)) error {
+func (h *Handler) mutateNodes(ctx context.Context, mutate func([]model.Node) ([]model.Node, error)) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return err
 	}
@@ -47,13 +61,13 @@ func mutateNodes(ctx context.Context, mutate func([]model.Node) ([]model.Node, e
 		return nil
 	})
 }
-func reorderNodesStored(ctx context.Context, body json.RawMessage) ([]string, []string, error) {
+func (h *Handler) reorderNodesStored(ctx context.Context, body json.RawMessage) ([]string, []string, error) {
 	request, err := rules.DecodeOrder(body, "nodes")
 	if err != nil {
 		return nil, nil, httpx.BadRequest(err.Error())
 	}
 	var order, missing []string
-	err = mutateNodes(ctx, func(nodes []model.Node) ([]model.Node, error) {
+	err = h.mutateNodes(ctx, func(nodes []model.Node) ([]model.Node, error) {
 		list, absent := rules.Reorder(nodes, request.IDs, request.Position, func(node model.Node) string { return node.ID })
 		missing = absent
 		if len(missing) > 0 {
@@ -67,16 +81,16 @@ func reorderNodesStored(ctx context.Context, body json.RawMessage) ([]string, []
 	})
 	return order, missing, err
 }
-func parseLine(ctx context.Context, line string) json.RawMessage {
-	proxy, err := substore.Default().Client.ConvertProxy(ctx, line)
+func (h *Handler) parseLine(ctx context.Context, line string) json.RawMessage {
+	proxy, err := h.substore().Client.ConvertProxy(ctx, line)
 	if err != nil || proxy == nil {
 		return nil
 	}
 	data, _ := yamlx.ToJSON(proxy)
 	return data
 }
-func reviewedDeletion(ctx context.Context, ids []string, confirmation string, preview bool) (*httpx.Response, error) {
-	repository, err := repo.GetRepository(ctx)
+func (h *Handler) reviewedDeletion(ctx context.Context, ids []string, confirmation string, preview bool) (*httpx.Response, error) {
+	repository, err := h.repo(ctx)
 	if err != nil {
 		return nil, err
 	}

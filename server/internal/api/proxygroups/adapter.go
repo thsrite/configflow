@@ -29,22 +29,36 @@ func decodeObject[T any](c *httpx.Ctx, silent bool) (*T, bool, error) {
 	return &out, true, nil
 }
 
-func load(ctx context.Context, id string) (*model.Config, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) repo(ctx context.Context) (*repo.Repository, error) {
+	if s != nil && s.Repo != nil {
+		return s.Repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
+func (s *Service) withRepo(ctx context.Context) context.Context {
+	if s != nil && s.Repo != nil {
+		return repo.WithRepository(ctx, s.Repo)
+	}
+	return ctx
+}
+
+func (s *Service) load(ctx context.Context, id string) (*model.Config, error) {
+	r, err := s.repo(ctx)
 	if err != nil {
 		return nil, err
 	}
-	id, err = repo.ResolveProfileID(ctx, id)
+	id, err = repo.ResolveProfileID(s.withRepo(ctx), id)
 	if err != nil {
 		return nil, err
 	}
 	return r.Config(ctx, id, nil)
 }
-func edit(ctx context.Context, id string, fn func(context.Context, *model.Config) error) error {
+func (s *Service) edit(ctx context.Context, id string, fn func(context.Context, *model.Config) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return repo.UpdateConfig(ctx, id, func(tx context.Context, config *model.Config) error {
+	return repo.UpdateConfig(s.withRepo(ctx), id, func(tx context.Context, config *model.Config) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return err
@@ -99,8 +113,8 @@ func healthKind(kind string) bool { return check.IsGroupHealthType(kind) }
 
 // validate checks a group as sent against the catalogs and the proposed
 // profile groups; original is the stored group of an update.
-func validate(ctx context.Context, group model.ProxyGroup, sent shared.GroupMembers, groups []model.ProxyGroup, original *model.ProxyGroup, before *shared.GroupMembers) error {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) validate(ctx context.Context, group model.ProxyGroup, sent shared.GroupMembers, groups []model.ProxyGroup, original *model.ProxyGroup, before *shared.GroupMembers) error {
+	r, err := s.repo(ctx)
 	if err != nil {
 		return err
 	}
@@ -136,7 +150,7 @@ func validateDialers(config *model.Config) error {
 
 // syncFollow re-routes follow-DNS rules whose policy route changed; before
 // is a copy of the profile taken before the edit.
-func syncFollow(ctx context.Context, before, after *model.Config, base string) ([]string, error) {
+func (s *Service) syncFollow(ctx context.Context, before, after *model.Config, base string) ([]string, error) {
 	head, err := oxidns.ReadSettingsHead(after.Profile.OxiDNS)
 	if err != nil {
 		return nil, err
@@ -145,7 +159,7 @@ func syncFollow(ctx context.Context, before, after *model.Config, base string) (
 	if !head.FollowOK || len(following) == 0 {
 		return nil, nil
 	}
-	catalog, err := sharedCatalog(ctx)
+	catalog, err := s.sharedCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -208,16 +222,16 @@ func defaults() (healthDefaults, error) {
 	return healthDefaults{Group: g, Provider: check.DefaultProviderHealth()}, nil
 }
 
-func sharedCatalog(ctx context.Context) (*model.Shared, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) sharedCatalog(ctx context.Context) (*model.Shared, error) {
+	r, err := s.repo(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return r.Shared(ctx)
 }
 
-func cachedNodes(ctx context.Context, id string) ([]model.Node, error) {
-	cache, err := substore.LoadCache(ctx, id)
+func (s *Service) cachedNodes(ctx context.Context, id string) ([]model.Node, error) {
+	cache, err := substore.LoadCache(s.withRepo(ctx), id)
 	if err != nil || cache == nil {
 		return nil, err
 	}

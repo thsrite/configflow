@@ -11,25 +11,47 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
+	"configflow/internal/provider"
+	"configflow/internal/refresh"
 	"configflow/internal/repo"
+	"configflow/internal/substore"
 )
 
-// Register adds the subscriptions blueprint and its profile provider alias.
-func Register(r *httpx.Router) {
-	r.Handle([]string{"GET", "POST"}, "/api/subscriptions", "subscriptions.handle_subscriptions", auth.Require(handleSubscriptions))
-	r.Handle([]string{"DELETE", "PUT"}, "/api/subscriptions/<sub_id>", "subscriptions.handle_subscription", auth.Require(handleSubscription))
-	r.POST("/api/subscriptions/reorder", "subscriptions.reorder_subscriptions", auth.Require(reorderSubscriptions))
-	r.GET("/api/subscriptions/health", "subscriptions.subscriptions_health", auth.Require(subscriptionsHealth))
-	r.GET("/api/subscriptions/<resource_id>/health-impact", "subscriptions.health_impact", auth.Require(healthImpact))
-	r.GET("/api/subscriptions/<sub_id>/nodes", "subscriptions.get_subscription_nodes", auth.Require(subscriptionNodes))
-	r.POST("/api/subscriptions/<sub_id>/fetch", "subscriptions.fetch_subscription", auth.Require(fetchSubscription))
-	r.GET("/api/subscriptions/test", "subscriptions.test_subscription_route", testRoute)
-	r.GET("/api/subscriptions/proxies", "subscriptions.get_all_subscription_proxies", combinedProxies)
-	r.GET("/api/subscriptions/<sub_id>/proxies", "subscriptions.get_subscription_proxies", subscriptionProxies)
-	r.GET("/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies", "profiles.profile_subscription_proxies", subscriptionProxies)
+// Handler serves the /api/subscriptions routes and profile provider alias
+// backed by explicit services.
+type Handler struct {
+	Repo     *repo.Repository
+	SubStore *substore.Service
+	Provider *provider.Service
+	Refresh  *refresh.Service
 }
-func healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
-	return usage(c.Context(), c.Param("resource_id"))
+
+// NewHandler constructs a subscriptions Handler. Nil dependencies fall back to
+// context/package defaults until W11.
+func NewHandler(r *repo.Repository, sub *substore.Service, pv *provider.Service, rf *refresh.Service) *Handler {
+	return &Handler{Repo: r, SubStore: sub, Provider: pv, Refresh: rf}
+}
+
+// Register adds the subscriptions blueprint and its profile provider alias to r.
+func (h *Handler) Register(r *httpx.Router) {
+	r.Handle([]string{"GET", "POST"}, "/api/subscriptions", "subscriptions.handle_subscriptions", auth.Require(h.handleSubscriptions))
+	r.Handle([]string{"DELETE", "PUT"}, "/api/subscriptions/<sub_id>", "subscriptions.handle_subscription", auth.Require(h.handleSubscription))
+	r.POST("/api/subscriptions/reorder", "subscriptions.reorder_subscriptions", auth.Require(h.reorderSubscriptions))
+	r.GET("/api/subscriptions/health", "subscriptions.subscriptions_health", auth.Require(h.subscriptionsHealth))
+	r.GET("/api/subscriptions/<resource_id>/health-impact", "subscriptions.health_impact", auth.Require(h.healthImpact))
+	r.GET("/api/subscriptions/<sub_id>/nodes", "subscriptions.get_subscription_nodes", auth.Require(h.subscriptionNodes))
+	r.POST("/api/subscriptions/<sub_id>/fetch", "subscriptions.fetch_subscription", auth.Require(h.fetchSubscription))
+	r.GET("/api/subscriptions/test", "subscriptions.test_subscription_route", h.testRoute)
+	r.GET("/api/subscriptions/proxies", "subscriptions.get_all_subscription_proxies", h.combinedProxies)
+	r.GET("/api/subscriptions/<sub_id>/proxies", "subscriptions.get_subscription_proxies", h.subscriptionProxies)
+	r.GET("/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies", "profiles.profile_subscription_proxies", h.subscriptionProxies)
+}
+
+// Register adds the subscriptions blueprint and its profile provider alias.
+func Register(r *httpx.Router) { NewHandler(nil, nil, nil, nil).Register(r) }
+
+func (h *Handler) healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
+	return h.usage(c.Context(), c.Param("resource_id"))
 }
 
 // subscriptionWire is a subscription without the stored record's codec, so a
@@ -47,9 +69,9 @@ type subscriptionView struct {
 	CachedUpdatedAt  json.RawMessage `json:"cached_updated_at"`
 }
 
-func handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
-	list, _, err := listShared(ctx)
+func (h *Handler) handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
+	list, _, err := h.listShared(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,18 +125,18 @@ func handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) { return append(list, record), nil })
+	err = h.editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) { return append(list, record), nil })
 	return response(200, struct {
 		Success bool               `json:"success"`
 		Data    model.Subscription `json:"data"`
 	}{true, record}), err
 }
-func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
+func (h *Handler) handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
 	id := c.Param("sub_id")
 	deleting := c.Request.Method == "DELETE"
 	// Python checks existence before decoding a PUT body.
-	list, _, err := listShared(ctx)
+	list, _, err := h.listShared(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +160,7 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 	}
 	changedURL := false
-	err = editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) {
+	err = h.editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) {
 		result := make([]model.Subscription, 0, len(list))
 		replaced := false
 		for _, sub := range list {
@@ -166,7 +188,7 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	if deleting {
-		if err := forgetSubscription(ctx, id); err != nil {
+		if err := h.forgetSubscription(ctx, id); err != nil {
 			return nil, err
 		}
 		return response(200, struct {
@@ -174,7 +196,7 @@ func handleSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 		}{true}), nil
 	}
 	if changedURL {
-		if err := forgetTask(ctx, id); err != nil {
+		if err := h.forgetTask(ctx, id); err != nil {
 			return nil, err
 		}
 	}
@@ -193,8 +215,8 @@ func (e *reorderError) Error() string {
 	}
 	return fmt.Sprintf(msgMissingIDs, "["+strings.Join(quoted, ", ")+"]")
 }
-func reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
+func (h *Handler) reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
 	body, err := readRequestObject(c)
 	if err != nil {
 		var bad *httpx.HTTPError
@@ -204,7 +226,7 @@ func reorderSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	order := []string{}
-	err = editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) {
+	err = h.editSubscriptions(ctx, func(list []model.Subscription) ([]model.Subscription, error) {
 		out, missing, err := reorder(list, body)
 		if err != nil {
 			return nil, err
@@ -247,12 +269,13 @@ type healthItem struct {
 	History   []json.RawMessage `json:"history"`
 }
 
-func subscriptionsHealth(c *httpx.Ctx) (*httpx.Response, error) {
-	list, _, err := listShared(c.Context())
+func (h *Handler) subscriptionsHealth(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
+	list, _, err := h.listShared(ctx)
 	if err != nil {
 		return nil, err
 	}
-	health, err := loadHealth(c.Context())
+	health, err := loadHealth(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -286,8 +309,9 @@ func findSubscription(list []model.Subscription, id string) int {
 	}
 	return -1
 }
-func subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
-	list, nodes, err := listShared(c.Context())
+func (h *Handler) subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
+	list, nodes, err := h.listShared(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +322,7 @@ func subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	sub := list[index]
 	if source, _ := c.Arg("source"); source == "cache" {
-		cached, err := loadCacheSummary(c.Context(), id)
+		cached, err := loadCacheSummary(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -331,8 +355,8 @@ func subscriptionNodes(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return response(200, selected), nil
 }
-func fetchSubscription(c *httpx.Ctx) (*httpx.Response, error) {
-	r, err := fetchSubscriptionData(c)
+func (h *Handler) fetchSubscription(c *httpx.Ctx) (*httpx.Response, error) {
+	r, err := h.fetchSubscriptionData(c)
 	if err != nil {
 		var request *httpx.HTTPError
 		if errors.As(err, &request) || errors.Is(err, repo.ErrRepository) {
@@ -343,8 +367,8 @@ func fetchSubscription(c *httpx.Ctx) (*httpx.Response, error) {
 	return r, nil
 }
 
-func fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
+func (h *Handler) fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.withRepo(c.Context())
 	body, err := readRequestObject(c)
 	if err != nil {
 		var bad *httpx.HTTPError
@@ -353,7 +377,7 @@ func fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return nil, err
 	}
-	list, _, err := listShared(ctx)
+	list, _, err := h.listShared(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +420,7 @@ func fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
 	if nonempty(request.Preview.Raw) {
 		reply.Preview = true
 	} else {
-		added, err := appendImported(ctx, nodes)
+		added, err := h.appendImported(ctx, nodes)
 		if err != nil {
 			return nil, err
 		}
@@ -407,7 +431,7 @@ func fetchSubscriptionData(c *httpx.Ctx) (*httpx.Response, error) {
 func nonempty(raw json.RawMessage) bool {
 	return len(raw) > 0 && string(raw) != "null" && string(raw) != "false" && string(raw) != "0" && string(raw) != `""` && string(raw) != "[]" && string(raw) != "{}"
 }
-func testRoute(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) testRoute(c *httpx.Ctx) (*httpx.Response, error) {
 	return response(200, struct {
 		Success   bool   `json:"success"`
 		Message   string `json:"message"`

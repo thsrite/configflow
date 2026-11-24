@@ -30,18 +30,39 @@ import (
 
 type proxy = generation.Proxy
 
-func appendAggregation(ctx context.Context, agg model.Aggregation) error {
+func (h *Handler) repo(ctx context.Context) (*repo.Repository, error) {
+	if h != nil && h.Repo != nil {
+		return h.Repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
+func (h *Handler) withRepo(ctx context.Context) context.Context {
+	if h != nil && h.Repo != nil {
+		return repo.WithRepository(ctx, h.Repo)
+	}
+	return ctx
+}
+
+func (h *Handler) generateConfig(ctx context.Context, agg model.Aggregation, config *model.Config, options generation.Options) (*generation.Result, error) {
+	if h != nil && h.Aggregations != nil {
+		return h.Aggregations.GenerateConfig(ctx, agg, config, options)
+	}
+	return generation.GenerateConfig(ctx, agg, config, options)
+}
+
+func (h *Handler) appendAggregation(ctx context.Context, agg model.Aggregation) error {
 	raw, err := model.Marshal(agg)
 	if err != nil {
 		return err
 	}
-	return generation.AppendCatalog(ctx, raw)
+	return generation.AppendCatalog(h.withRepo(ctx), raw)
 }
 
 // replaceAggregation stores the catalog with items[index] replaced by agg.
-func replaceAggregation(ctx context.Context, shared *model.Shared, index int, agg model.Aggregation) error {
+func (h *Handler) replaceAggregation(ctx context.Context, shared *model.Shared, index int, agg model.Aggregation) error {
 	shared.Aggregations[index] = agg
-	return generation.SaveCatalog(ctx, shared)
+	return generation.SaveCatalog(h.withRepo(ctx), shared)
 }
 
 type aggregationErrorItem struct {
@@ -130,16 +151,16 @@ func readOrderBody(c *httpx.Ctx) (json.RawMessage, error) {
 // The configuration has the members the provider owner reads (the same ones
 // serve and aggregations.Generate used to rebuild from that JSON). head is the
 // committed head it was resolved from (the provider flight key).
-func providerResource(ctx context.Context, id string) (*model.Config, *model.Aggregation, *store.Head, error) {
+func (h *Handler) providerResource(ctx context.Context, id string) (*model.Config, *model.Aggregation, *store.Head, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, nil, nil, err
 	}
-	profileID, err := repo.ResolveProfileID(ctx, "")
+	profileID, err := repo.ResolveProfileID(h.withRepo(ctx), "")
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -167,8 +188,8 @@ func aggregationEnabled(agg *model.Aggregation) (bool, error) {
 	return model.Switch(raw, true), nil
 }
 
-func resourceUsage(ctx context.Context, id string) (*httpx.Response, error) {
-	r, err := repo.GetRepository(ctx)
+func (h *Handler) resourceUsage(ctx context.Context, id string) (*httpx.Response, error) {
+	r, err := h.repo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +207,10 @@ func authorize(c *httpx.Ctx) (*httpx.Response, error) {
 	return nil, nil
 }
 
-func serve(c *httpx.Ctx, config *model.Config, head *store.Head, id string, render provider.Render) (*httpx.Response, error) {
+func (h *Handler) serve(c *httpx.Ctx, config *model.Config, head *store.Head, id string, render provider.Render) (*httpx.Response, error) {
+	if h != nil && h.Provider != nil {
+		return h.Provider.Serve(c, "aggregation", id, config.ProfileID, head, render)
+	}
 	return provider.Serve(c, "aggregation", id, config.ProfileID, head, render)
 }
 func requestedFilters(c *httpx.Ctx) (*[2]string, error) { return provider.RequestedFilters(c) }
@@ -299,11 +323,11 @@ func (n *numericCount) raw() (json.RawMessage, error) {
 	}
 	return json.RawMessage(n.integer.String()), nil
 }
-func cachedCount(ctx context.Context, shared *model.Shared, aggregation model.Aggregation) (countReply, error) {
+func (h *Handler) cachedCount(ctx context.Context, shared *model.Shared, aggregation model.Aggregation) (countReply, error) {
 	result := countReply{Success: true, Subscriptions: map[string]json.RawMessage{}}
 	var total numericCount
 	for _, id := range aggregation.Subscriptions {
-		cache, err := substore.LoadCache(ctx, id)
+		cache, err := substore.LoadCache(h.withRepo(ctx), id)
 		if err != nil {
 			return result, err
 		}
