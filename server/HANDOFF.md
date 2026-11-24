@@ -170,8 +170,17 @@ with python_generators.py); Codex GET /api/rule-library has_ip_part fix (80711a9
 test commits (81ceb24d6, fac2d9e10) audited by independent Gemini e92b16f4 (0 blockers). Gates: .64 FULL core PASS on
 4411666e8 (gofmt/vet/tags/race cache-hits=0/agent+cross-build/83 fuzz) + CACHE core PASS on fac2d9e10 (incl.
 FuzzEditableContent); .32 compare PASS on fac2d9e10 (proddiff 2831 cases new=0 stale=0, difftest 24 pkgs, LIVE 46/46
-0 skips, pyref check, frontend vue-tsc + vitest 3469/3469). Next: O17 前-1 dead code + UI placeholder sanitization →
-PVE CT 240 final perf (Go 2× / Py 1×) → L6 24h soak ∥ go-switch-rehearsal (2× no-Python gate) → switch + v3.0.0-rc.1.
+0 skips, pyref check, frontend vue-tsc + vitest 3469/3469).
+2026-11-24: O17 §前-1 + UI placeholder sanitization + O14 P10 MERGED (81a07ae8a, -1771 net lines): GPT-6.2 Sol high
+executed two parallel tracks — deadcode/staticcheck/XContext cleanup (e61b0d21f..36989e3ef: server non-test staticcheck
+60→0, deadcode 257→134, go-agent staticcheck 25→0 / deadcode 44→0, 15 pyref metadata refreshed with 11,089 source SHA
+verified) and UI placeholder RFC-5737/2606 sanitization + 4 refreshed guide screenshots + unused Docker API wrapper
+removal (4d6bab0c4..81a07ae8a). Both reviewed by independent Gemini 4 Neon high (4a08f588 & 7158d73b: 0 high/0 med/0 low
+after EasyTier et.net default fix; 0 over-defensive design). Combined gate on 81a07ae8a: .64 FULL core PASS (race
+cache-hits=0, agent+cross-build, 75 affected fuzz targets) + .32 compare PASS (proddiff 2831 cases new=0 stale=0,
+difftest 24 pkgs, LIVE 46/46, pyref check, frontend 3469/3469). O17 ALL DONE. Running: PVE CT 240 final perf (Go-1 on
+81a07ae8a → Python-1 → Go-2) ∥ go-switch-rehearsal rebase/alignment to final go. Next: L6 24h soak & rehearsal on final
+candidate images + 2× consecutive no-Python full gate → switch commit + v3.0.0-rc.1.
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
