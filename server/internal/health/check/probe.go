@@ -2,13 +2,13 @@ package check
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
 	"slices"
-	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -434,26 +434,50 @@ func validTimestamp(entry TimedRecord) bool {
 
 func pruneHosts(hosts *model.OrderedMap[TimedRecord], now time.Time) {
 	bound := oldest(now, ProbeRetentionDays)
-	var expired []string
+	if hosts.Len() <= MaxProbedHosts {
+		expired := false
+		for _, entry := range hosts.All() {
+			if entry.CheckedAt() < bound {
+				expired = true
+				break
+			}
+		}
+		if !expired {
+			return
+		}
+	}
+
+	type retainedHost struct {
+		host      string
+		entry     TimedRecord
+		checkedAt string
+		index     int
+	}
+	retained := make([]retainedHost, 0, hosts.Len())
 	for host, entry := range hosts.All() {
-		if entry.CheckedAt() < bound {
-			expired = append(expired, host)
+		if checkedAt := entry.CheckedAt(); checkedAt >= bound {
+			retained = append(retained, retainedHost{host, entry, checkedAt, len(retained)})
 		}
 	}
-	for _, host := range expired {
-		hosts.Delete(host)
-	}
-	if hosts.Len() > MaxProbedHosts {
-		ranked := hosts.Keys()
-		sort.SliceStable(ranked, func(i, j int) bool {
-			left, _ := hosts.Get(ranked[i])
-			right, _ := hosts.Get(ranked[j])
-			return left.CheckedAt() > right.CheckedAt()
+	if len(retained) > MaxProbedHosts {
+		// Equal timestamps retain the earliest insertions at the cutoff.
+		slices.SortStableFunc(retained, func(a, b retainedHost) int {
+			return cmp.Compare(b.checkedAt, a.checkedAt)
 		})
-		for _, host := range ranked[MaxProbedHosts:] {
-			hosts.Delete(host)
-		}
+		retained = retained[:MaxProbedHosts]
+		slices.SortFunc(retained, func(a, b retainedHost) int {
+			return cmp.Compare(a.index, b.index)
+		})
 	}
+	// Rebuild from an empty map, including when every entry expired.
+	*hosts = model.OrderedMap[TimedRecord]{}
+	hosts.SetAll(func(yield func(string, TimedRecord) bool) {
+		for _, entry := range retained {
+			if !yield(entry.host, entry.entry) {
+				return
+			}
+		}
+	})
 }
 
 // SaveEntries merges probe entries, retaining the caller's owner lifetime
