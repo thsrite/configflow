@@ -3,6 +3,7 @@ package settings
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -11,17 +12,14 @@ import (
 	"configflow/internal/webdav"
 )
 
-func (h *Handler) repo(ctx context.Context) (*repo.Repository, error) {
+func (h *Handler) repo(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.Repo != nil {
 		return h.Repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/settings: repository is nil")
 }
 
 func (h *Handler) withRepo(ctx context.Context) context.Context {
-	if h != nil && h.Repo != nil {
-		return repo.WithRepository(ctx, h.Repo)
-	}
 	return ctx
 }
 

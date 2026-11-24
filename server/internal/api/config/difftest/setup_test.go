@@ -13,7 +13,7 @@ import (
 
 func TestSetupFlaskHTTPStateAndAuthentication(t *testing.T) {
 	w := newWorld(t)
-	apisetup.Register(w.srv.App.Router)
+	apisetup.NewHandler(w.srv.Repo, nil).Register(w.srv.App.Router)
 	id := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	path := "/api/setup/" + id
 	call := func(method, path, body string) {

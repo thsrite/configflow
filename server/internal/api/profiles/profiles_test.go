@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"configflow/internal/agents"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -20,7 +21,14 @@ import (
 
 func profileApp(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	return httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(Register)})
+	s := httpxtest.New(t, httpxtest.Options{})
+	m, err := agents.New(s.Context(), s.Repo, agents.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	New(Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
+	return s
 }
 func state(t *testing.T, s *httpxtest.Server) string {
 	t.Helper()
@@ -126,7 +134,7 @@ func TestProfileOwnerRuntimeShutdownAndDisconnect(t *testing.T) {
 			} else {
 				cancel()
 			}
-			_, err := New(Deps{}).mutate(ctx, func(ctx context.Context, r *repo.Repository) (any, error) {
+			_, err := New(Deps{Repo: s.Repo}).mutate(ctx, func(ctx context.Context, r *repo.Repository) (any, error) {
 				return r.CreateProfileRecord(ctx, repo.ProfileCreation{ID: "new", Name: "New"}, "")
 			})
 			if shutdown {

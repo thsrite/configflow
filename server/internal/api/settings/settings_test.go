@@ -21,7 +21,9 @@ const (
 )
 
 func newServer(t *testing.T, auth bool) *httpxtest.Server {
-	return httpxtest.New(t, httpxtest.Options{Auth: auth, Register: httpxtest.Routes(settings.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: auth})
+	settings.NewHandler(s.Repo, nil, nil).Register(s.App.Router)
+	return s
 }
 
 func assertJSON(t *testing.T, res *httpxtest.Result, want any) *httpxtest.Result {
@@ -295,7 +297,6 @@ func TestBackupConfigMasksPasswordAndValidates(t *testing.T) {
 }
 
 func TestWebPortUnsupportedWithoutWebFrontEnd(t *testing.T) {
-	settings.SetWebListener(nil)
 	srv := newServer(t, false)
 	assertJSON(t, srv.Get("/api/settings/web-port"), weblistener.UnsupportedInformation())
 	assertJSON(t, srv.Post("/api/settings/web-port", httpxtest.JSON(map[string]any{})).WantStatus(400),

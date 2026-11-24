@@ -85,7 +85,7 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body *draftRequest) 
 		return out, fail(400, msgDraftBody)
 	}
 	token, content := body.Revision.Value, body.Content.Value
-	held, release, err := editLease(ctx, id)
+	held, release, err := s.editLease(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -120,7 +120,7 @@ func (s *Service) SaveDraft(ctx context.Context, id string, body *draftRequest) 
 		if err = validateItemContent(next, &old); err != nil {
 			return err
 		}
-		staged, err = stageCache(tx, next, []byte(content), s.replaceCache)
+		staged, err = s.stageCache(tx, next, []byte(content), s.replaceCache)
 		if err != nil {
 			return err
 		}

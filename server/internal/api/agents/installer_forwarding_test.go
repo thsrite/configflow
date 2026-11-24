@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	core "configflow/internal/agents"
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/installer"
@@ -15,7 +16,13 @@ import (
 // generator cases are in internal/installer/standalone_forwarding_test.go).
 
 func forwardingServer(t *testing.T) (*httpxtest.Server, httpxtest.Option) {
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true, Register: httpxtest.Routes(apiagents.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true})
+	m, err := core.New(srv.Context(), srv.Repo, core.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: srv.Repo, Agents: m}).Register(srv.App.Router)
 	return srv, srv.Login()
 }
 

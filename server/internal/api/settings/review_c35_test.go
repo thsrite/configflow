@@ -14,7 +14,8 @@ import (
 )
 
 func TestBackupEditorRemovesURLUserinfoAndPreservesBlankPassword(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(settings.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
+	settings.NewHandler(srv.Repo, nil, nil).Register(srv.App.Router)
 	admin := srv.Login()
 	initial := map[string]any{
 		"webdav_url":      "https://uri-user:uri-private-secret@example.com/dav/",

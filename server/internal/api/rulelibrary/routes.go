@@ -35,9 +35,6 @@ func New(deps Deps) *Handler {
 	return &Handler{service: &Service{repo: deps.Repo, client: client, refresh: deps.Refresh}}
 }
 
-// Register installs shared rule editing and public handwritten-source delivery.
-func Register(r *httpx.Router) { New(Deps{}).Register(r) }
-
 // Options injects loopback-only HTTP transport for boundary tests.
 type Options struct {
 	Repo         *repo.Repository

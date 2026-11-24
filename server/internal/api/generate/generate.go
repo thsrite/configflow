@@ -46,11 +46,11 @@ func New(deps Deps) *Handler {
 	return &Handler{repo: deps.Repo, agents: deps.Agents, deploy: deps.Deploy}
 }
 
-func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
+func (h *Handler) repository(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.repo != nil {
 		return h.repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/generate: repository is nil")
 }
 
 func (h *Handler) manager(_ context.Context) (*agents.Manager, error) {
@@ -66,9 +66,6 @@ func (h *Handler) deployService() *deploy.Service {
 	}
 	return deploy.New(deploy.Options{})
 }
-
-// Register installs five generators and previews with their profile aliases.
-func Register(r *httpx.Router) { New(Deps{}).Register(r) }
 
 // Register mounts five generators, previews, and artifact routes on r.
 func (h *Handler) Register(r *httpx.Router) {

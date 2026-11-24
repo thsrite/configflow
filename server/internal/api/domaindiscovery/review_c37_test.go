@@ -8,7 +8,8 @@ import (
 )
 
 func TestReviewEmptyRegionServiceOptions(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	for _, raw := range []string{`{"services":[]}`, `{"services":{}}`, `{"services":0.0}`, `{"services":0e0}`, `{"services":false,"domains":false}`, `{"services":false,"domains":0}`, `{"services":false,"domains":""}`} {
 		t.Run(raw, func(t *testing.T) {
 			request := httptest.NewRequest("POST", "/api/domain-discovery/region/check", strings.NewReader(raw))

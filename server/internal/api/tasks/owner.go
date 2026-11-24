@@ -69,10 +69,7 @@ func updateIntervalOn(ctx context.Context, reg *tasks.Registry, repository *repo
 			return nil, err
 		}
 		if repository == nil {
-			repository, err = repo.GetRepository(ctx)
-			if err != nil {
-				return nil, err
-			}
+			return nil, errors.New("api/tasks: repository is nil")
 		}
 		err = repository.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
 			if err := ctx.Err(); err != nil {

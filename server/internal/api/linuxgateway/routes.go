@@ -48,8 +48,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	}
 }
 
-// Register adds the legacy and explicit-profile editor/provider routes.
-func Register(r *httpx.Router) { NewHandler(nil, nil, nil).Register(r) }
 func responseError(err error, status int) (*httpx.Response, error) {
 	if errors.Is(err, setupflow.ErrReadSession) {
 		return httpx.Message(500, false, setupflow.ErrReadSession.Error()), nil
@@ -69,28 +67,15 @@ func responseError(err error, status int) (*httpx.Response, error) {
 	return nil, err
 }
 func (h *Handler) editor(c *httpx.Ctx) (*httpx.Response, error) {
-	resolveCtx := c.Context()
-	if h != nil && h.Repo != nil {
-		resolveCtx = repo.WithRepository(resolveCtx, h.Repo)
+	if h == nil || h.Repo == nil {
+		return nil, errors.New("api/linuxgateway: repository is nil")
 	}
-	profile, err := repo.ResolveProfileID(resolveCtx, c.Param("profile_id"))
+	r := h.Repo
+	profile, err := r.ResolveProfileID(c.Context(), c.Param("profile_id"))
 	if err != nil {
 		return nil, err
 	}
-	var r *repo.Repository
-	if h != nil {
-		r = h.Repo
-	}
-	if r == nil {
-		r, err = repo.GetRepository(c.Context())
-		if err != nil {
-			return nil, err
-		}
-	}
-	var m *agents.Manager
-	if h != nil {
-		m = h.Agents
-	}
+	m := h.Agents
 	if m == nil {
 		return nil, errors.New("api/linuxgateway: agents manager is nil")
 	}
@@ -110,23 +95,13 @@ func (h *Handler) editor(c *httpx.Ctx) (*httpx.Response, error) {
 func (h *Handler) provider(c *httpx.Ctx) (*httpx.Response, error) {
 	// One committed typed read serves both the credential check and the
 	// rendered provider, so a token rotation can never split them.
-	resolveCtx := c.Context()
-	if h != nil && h.Repo != nil {
-		resolveCtx = repo.WithRepository(resolveCtx, h.Repo)
+	if h == nil || h.Repo == nil {
+		return nil, errors.New("api/linuxgateway: repository is nil")
 	}
-	profileID, err := repo.ResolveProfileID(resolveCtx, c.Param("profile_id"))
+	repository := h.Repo
+	profileID, err := repository.ResolveProfileID(c.Context(), c.Param("profile_id"))
 	if err != nil {
 		return nil, err
-	}
-	var repository *repo.Repository
-	if h != nil {
-		repository = h.Repo
-	}
-	if repository == nil {
-		repository, err = repo.GetRepository(c.Context())
-		if err != nil {
-			return nil, err
-		}
 	}
 	native, err := repository.Config(c.Context(), profileID, nil)
 	if err != nil {

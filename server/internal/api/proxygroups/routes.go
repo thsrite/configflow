@@ -117,8 +117,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	}))
 }
 
-// Register installs profile group CRUD, probe defaults and candidate previews.
-func Register(r *httpx.Router) { NewHandler(nil, nil).Register(r) }
 func respond(out any, err error) (*httpx.Response, error) {
 	if err == nil {
 		return httpx.JSON(out), nil

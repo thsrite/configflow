@@ -10,7 +10,8 @@ import (
 )
 
 func TestConfigFindingsPreserveLegacyDiscoveryExtension(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(domaindiscovery.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	domaindiscovery.NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	extension := map[string]any{"flag": false, "values": []any{}}
 	_, _, err := srv.Repo.SaveProfileFieldsJSON(srv.Context(), "default", json.RawMessage(`{"domain_discovery":{"synthetic_legacy_extension":{"flag":false,"values":[]}}}`), nil)
 	if err != nil {

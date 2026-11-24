@@ -54,7 +54,7 @@ func TestToolWriteUsesOriginalRuntime(t *testing.T) {
 			app := httpx.New()
 			app.Repo = r
 			NewHandler(r).Register(app.Router)
-			apisubscriptions.Register(app.Router)
+			apisubscriptions.NewHandler(r, nil, nil, nil, nil).Register(app.Router)
 			auth.Install(app)
 			reached, release := make(chan struct{}), make(chan struct{})
 			once := sync.OnceFunc(func() { close(release) })

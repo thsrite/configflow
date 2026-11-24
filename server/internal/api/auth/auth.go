@@ -26,9 +26,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.GET("/api/auth/verify", "auth.verify", auth.Require(h.verify))
 }
 
-// Register adds the auth blueprint.
-func Register(r *httpx.Router) { NewHandler().Register(r) }
-
 func (h *Handler) authStatus(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(map[string]bool{"authEnabled": auth.IsAuthEnabled()}), nil
 }

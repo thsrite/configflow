@@ -68,17 +68,14 @@ func proxyObjects(value []*yamlx.Node) ([]proxy, error) {
 	}
 	return out, nil
 }
-func (h *Handler) repo(ctx context.Context) (*repo.Repository, error) {
+func (h *Handler) repo(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.Repo != nil {
 		return h.Repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/subscriptions: repository is nil")
 }
 
 func (h *Handler) withRepo(ctx context.Context) context.Context {
-	if h != nil && h.Repo != nil {
-		return repo.WithRepository(ctx, h.Repo)
-	}
 	return ctx
 }
 
@@ -341,7 +338,7 @@ func (h *Handler) resource(ctx context.Context, id *string) (*delivery, []model.
 	if err != nil {
 		return nil, nil, err
 	}
-	profileID, err := repo.ResolveProfileID(h.withRepo(ctx), "")
+	profileID, err := r.ResolveProfileID(ctx, "")
 	if err != nil {
 		return nil, nil, err
 	}

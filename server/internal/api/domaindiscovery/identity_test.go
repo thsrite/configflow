@@ -9,7 +9,8 @@ import (
 )
 
 func TestConfigFindingsNewRulesetIDsUseHyphenatedUUID4(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(domaindiscovery.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	domaindiscovery.NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	srv.Post("/api/domain-discovery/rulesets/init", httpxtest.JSON(map[string]any{"targets": []string{"direct"}})).WantStatus(200)
 	profile, err := srv.Repo.Profile(srv.Context(), "default")
 	if err != nil {

@@ -46,11 +46,6 @@ var metricFields = map[string]map[string]bool{
 
 var registrationLogFields = []string{"name", "host", "port", "service_type", "version"}
 
-// Register adds the registry routes using transitional process/context locators.
-func Register(r *httpx.Router) {
-	NewHandler(Deps{}).Register(r)
-}
-
 type registryHandler struct {
 	deps    Deps
 	content *contentHandler

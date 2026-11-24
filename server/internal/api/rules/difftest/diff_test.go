@@ -66,7 +66,7 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 		t.Skip("set CONFIGFLOW_DIFF=1 on test server")
 	}
 	w := &world{t: t, ids: map[string]string{}}
-	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(apirules.Register)})
+	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret})
 	env := refresh.DefaultRefreshEnvFor(w.srv.Repo, nil)
 	env.Clock = fixedClock{}
 	var rf *refresh.Service
@@ -82,6 +82,7 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 		},
 	})
 	rf = refresh.New(refresh.Options{Repo: w.srv.Repo, Env: env, Notifications: nt})
+	apirules.New(apirules.Deps{Repo: w.srv.Repo, Refresh: rf}).Register(w.srv.App.Router)
 	oldClock := notifications.Clock
 	notifications.Clock = fixedClock{}.Now
 	t.Cleanup(func() { notifications.Clock = oldClock })

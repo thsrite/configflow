@@ -108,7 +108,7 @@ func TestReviewWriteCancellation(t *testing.T) {
 					repeats = 16
 				}
 				for attempt := 0; attempt < repeats; attempt++ {
-					err = tc.write(&Service{now: time.Now}, ctx)
+					err = tc.write(&Service{repo: s.Repo, now: time.Now}, ctx)
 					after, readErr := s.Repo.Head(s.Context())
 					if readErr != nil {
 						t.Fatal(readErr)

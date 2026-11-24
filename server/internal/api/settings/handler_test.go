@@ -8,12 +8,11 @@ import (
 	"testing"
 
 	"configflow/internal/httpx"
+	"configflow/internal/repo"
 	"configflow/internal/weblistener"
 )
 
 func TestHandlerSetWebListenerTwoPhase(t *testing.T) {
-	t.Cleanup(func() { SetWebListener(nil) })
-
 	h := NewHandler(nil, nil, nil)
 	m1 := &weblistener.Manager{DataDir: t.TempDir()}
 	m2 := &weblistener.Manager{DataDir: t.TempDir()}
@@ -36,20 +35,23 @@ func TestHandlerSetWebListenerTwoPhase(t *testing.T) {
 }
 
 func TestHandlerExplicitNilWebListenerDoesNotFallbackToGlobal(t *testing.T) {
-	global := &weblistener.Manager{DataDir: t.TempDir()}
-	SetWebListener(global)
-	t.Cleanup(func() { SetWebListener(nil) })
+	r, err := repo.OpenDefault(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(r.Close)
 
-	h := NewHandler(nil, nil, nil)
+	h := NewHandler(r, nil, nil)
 	if err := h.SetWebListener(nil); err != nil {
 		t.Fatalf("SetWebListener(nil): %v", err)
 	}
 	h.MarkStarted()
 	if got := h.currentWebListener(); got != nil {
-		t.Fatalf("explicit nil web listener fell back to global")
+		t.Fatalf("explicit nil web listener fell back to non-nil manager")
 	}
 
 	app := httpx.New()
+	app.Repo = r
 	h.Register(app.Router)
 	res, err := app.Invoke(context.Background(), httpx.InvokeRequest{Method: http.MethodGet, Path: "/api/settings/web-port"})
 	if err != nil {

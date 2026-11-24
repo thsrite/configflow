@@ -28,7 +28,8 @@ func TestGlobalGateAndProfileToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { logger.Close() })
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(subscriptions.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
+	subscriptions.NewHandler(srv.Repo, nil, nil, nil, nil).Register(srv.App.Router)
 	ctx := srv.Context()
 	err = srv.Repo.UpdateShared(ctx, func(_ context.Context, shared *model.Shared) error {
 		raw, err := json.Marshal([]any{map[string]any{"id": "s", "name": "Feed", "url": "https://feed.example/sub", "interval": 0}})

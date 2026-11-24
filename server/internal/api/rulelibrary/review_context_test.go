@@ -24,18 +24,19 @@ func TestReviewTransactionCallbacksKeepOwnerShutdown(t *testing.T) {
 				candidate.RuleLibrary = append(candidate.RuleLibrary, model.RuleLibraryItem{ID: "review_should_not_commit"})
 				return nil
 			}
+			svc := &Service{repo: app.Repo}
 			var err error
 			switch kind {
 			case "shared":
-				err = editShared(ctx, stop)
+				err = svc.editShared(ctx, stop)
 			case "system":
-				err = editSystem(ctx, func(candidate *model.System) error {
+				err = svc.editSystem(ctx, func(candidate *model.System) error {
 					runtime.Shutdown(t.Context())
 					candidate.SystemConfig.GitHubProxyDomain = "review_should_not_commit"
 					return ctx.Err()
 				})
 			case "shared-profiles":
-				_, err = editWithProfiles(ctx, nil, stop, "http://example.com")
+				_, err = svc.editWithProfiles(ctx, nil, stop, "http://example.com")
 			}
 			if !errors.Is(err, context.Canceled) {
 				t.Fatal("callback candidate survived shutdown", err)

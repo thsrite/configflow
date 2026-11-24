@@ -91,7 +91,7 @@ func TestR15JobLockPrecedesValidation(t *testing.T) {
 	}
 }
 func TestR15FlaskRoutePriorities(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apiagents.Register, api.Register), Setup: func(app *httpx.App) {
+	s := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
 		app.BeforeRequest(func(c *httpx.Ctx) (*httpx.Response, error) {
 			if c.Endpoint != "" {
 				return httpx.JSON(map[string]string{"endpoint": c.Endpoint}), nil
@@ -99,6 +99,8 @@ func TestR15FlaskRoutePriorities(t *testing.T) {
 			return nil, nil
 		})
 	}})
+	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo}).Register(s.App.Router)
+	api.New(api.Deps{Repo: s.Repo}).Register(s.App.Router)
 	for _, tc := range []struct{ method, path, endpoint string }{{"GET", "/api/agents/gateway-installations/upstream-routers", "agents.gateway_installation_status"}, {"GET", "/api/agents/i/status", "agents.download_install_command"}, {"POST", "/api/agents/one/mihomo/rule-targets", "agents.mihomo_panel"}, {"GET", "/api/agents/one/mihomo/rule-targets", "agents.rule_targets"}, {"GET", "/api/agents/one/upstream-routers", "agents.upstream_router_pending"}} {
 		result := s.Do(tc.method, tc.path)
 		result.WantStatus(200)

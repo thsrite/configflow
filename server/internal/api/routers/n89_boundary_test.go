@@ -39,7 +39,8 @@ func TestN89NativeRequestBoundary(t *testing.T) {
 			if len(oracle.Responses) != 1 || oracle.Responses[0].Status != tt.python {
 				t.Fatalf("Flask boundary changed: %+v", oracle.Responses)
 			}
-			s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.Register)})
+			s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go")})
+			api.New(api.Deps{Repo: s.Repo}).Register(s.App.Router)
 			wireRouterTestHooks(t)
 			before, err := s.Repo.Profile(s.Context(), "default")
 			if err != nil {

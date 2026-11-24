@@ -34,11 +34,11 @@ func (s *Service) refreshSvc(ctx context.Context) (*refresh.Service, error) {
 	return refresh.New(refresh.Options{Repo: r}), nil
 }
 
-func (s *Service) repository(ctx context.Context) (*repo.Repository, error) {
+func (s *Service) repository(_ context.Context) (*repo.Repository, error) {
 	if s != nil && s.repo != nil {
 		return s.repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/rulelibrary: repository is nil")
 }
 
 // List annotates shared entries with the shared DNS engine's IP projection.
@@ -98,7 +98,7 @@ func (s *Service) Create(ctx context.Context, req *libraryRequest) (itemResult, 
 	// Download before admission so a slow URL creation cannot block an inline
 	// creation of the same ID. Serialize the actual creation with edit/delete
 	// cleanup so a new generation never lands under a previous owner's lease.
-	held, release, err := editLease(ctx, item.ID)
+	held, release, err := s.editLease(ctx, item.ID)
 	if err != nil {
 		return out, err
 	}

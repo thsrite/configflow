@@ -248,18 +248,18 @@ func (s *Service) usage(ctx context.Context, id string) (int, error) {
 	return len(refs), err
 }
 
-func readCache(ctx context.Context, item model.RuleLibraryItem) ([]byte, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) readCache(ctx context.Context, item model.RuleLibraryItem) ([]byte, error) {
+	r, err := s.repository(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return rulefetch.ReadCache(ctx, r, ruleRecord(item), nil)
 }
-func writeCache(ctx context.Context, item model.RuleLibraryItem, content []byte) error {
+func (s *Service) writeCache(ctx context.Context, item model.RuleLibraryItem, content []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository(ctx)
 	if err != nil {
 		return err
 	}
@@ -298,11 +298,11 @@ func (s *Service) removeCache(ctx context.Context, item model.RuleLibraryItem) e
 	}
 	return nil
 }
-func removeLegacy(ctx context.Context, name string) error {
+func (s *Service) removeLegacy(ctx context.Context, name string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repository(ctx)
 	if err != nil {
 		return err
 	}
@@ -320,8 +320,12 @@ func removeLegacy(ctx context.Context, name string) error {
 	return err
 }
 
-func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(context.Context, *model.Shared) error, base string) ([]profileWarning, error) {
+func (s *Service) editWithProfiles(ctx context.Context, changes []sourceChange, edit func(context.Context, *model.Shared) error, base string) ([]profileWarning, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r, err := s.repository(ctx)
+	if err != nil {
 		return nil, err
 	}
 	warnings := []profileWarning{}
@@ -359,7 +363,7 @@ func editWithProfiles(ctx context.Context, changes []sourceChange, edit func(con
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	err := repo.UpdateSharedConfigs(ctx, func(tx context.Context, shared *model.Shared) error {
+	err = r.UpdateScopedSharedConfigs(ctx, func(tx context.Context, shared *model.Shared) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return err
@@ -521,7 +525,7 @@ func (s *Service) cacheOne(ctx context.Context, item model.RuleLibraryItem) (str
 	if content == nil {
 		return "", fail(400, msgSource)
 	}
-	stage, err := stageCache(ctx, item, content, s.replaceCache)
+	stage, err := s.stageCache(ctx, item, content, s.replaceCache)
 	if err != nil {
 		return "", err
 	}

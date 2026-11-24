@@ -120,13 +120,15 @@ func TestR15PublishHTTPDisconnectAndShutdownAfterWrite(t *testing.T) {
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Mode: lifecycle.ModeManual})
 			runtime.Start(t.Context())
 			defer runtime.Shutdown(t.Context())
-			s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apiconfig.Register, apiprofiles.Register), Setup: func(app *httpx.App) {
+			s := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
 				app.AfterRequest(func(c *httpx.Ctx, r *httpx.Response) {
 					if c.Path() == "/api/routers/router-one/apply" {
 						close(finished)
 					}
 				})
 			}})
+			apiconfig.New(apiconfig.Deps{Repo: s.Repo}).Register(s.App.Router)
+			apiprofiles.New(apiprofiles.Deps{Repo: s.Repo}).Register(s.App.Router)
 			mgr, err := agents.New(s.Context(), s.Repo, agents.Options{})
 			if err != nil {
 				t.Fatal(err)
@@ -246,7 +248,8 @@ func TestR15FastCommitStopsAtRuntimeShutdown(t *testing.T) {
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Mode: lifecycle.ModeManual})
 	runtime.Start(t.Context())
 	defer runtime.Shutdown(t.Context())
-	s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(api.Register)})
+	s := httpxtest.New(t, httpxtest.Options{})
+	api.New(api.Deps{Repo: s.Repo}).Register(s.App.Router)
 	before, _ := s.Repo.ConfigRevision(s.Context(), "default")
 	s.Repo.Store().BeforeCommit = func() error { runtime.Shutdown(t.Context()); return nil }
 	defer func() { s.Repo.Store().BeforeCommit = nil }()

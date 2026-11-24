@@ -13,7 +13,6 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/logx"
-	"configflow/internal/repo"
 	"configflow/internal/setupflow"
 )
 
@@ -62,7 +61,11 @@ func (h *gatewayHandler) gatewayOperation(c *httpx.Ctx) (*httpx.Response, error)
 	if profile == "" {
 		return gatewayFailure("PROFILE_REQUIRED", 400, msgGatewayProfile)
 	}
-	profile, err := repo.ResolveProfileID(h.deps.withRepo(c.Context()), profile)
+	repository, err := h.deps.repository(c.Context())
+	if err != nil {
+		return nil, err
+	}
+	profile, err = repository.ResolveProfileID(c.Context(), profile)
 	if err != nil {
 		return nil, err
 	}

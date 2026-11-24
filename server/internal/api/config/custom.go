@@ -205,7 +205,7 @@ func (h *Handler) saveCustom(ctx context.Context, id, engine string, body custom
 	if err != nil {
 		return nil, err
 	}
-	id, err = repo.ResolveProfileID(ctx, id)
+	id, err = r.ResolveProfileID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +395,7 @@ func (h *Handler) agentContext(ctx context.Context, id string) (map[int]string, 
 	if err != nil {
 		return nil, nil, err
 	}
-	id, err = repo.ResolveProfileID(ctx, id)
+	id, err = r.ResolveProfileID(ctx, id)
 	if err != nil {
 		return nil, nil, err
 	}

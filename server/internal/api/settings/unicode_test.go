@@ -9,7 +9,8 @@ import (
 )
 
 func TestConfigFindingsRejectUnpairedSurrogatesWithoutCommit(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(settings.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	settings.NewHandler(srv.Repo, nil, nil).Register(srv.App.Router)
 	before, err := srv.Repo.ExportAllJSON(srv.Context(), false)
 	if err != nil {
 		t.Fatal(err)

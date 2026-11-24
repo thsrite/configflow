@@ -10,7 +10,8 @@ import (
 
 // test_shell_ha_prepare.py::test_unsupported_ha_requests_are_rejected.
 func TestUnsupportedHARequestsAreRejected(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(apiagents.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	apiagents.NewHandler(apiagents.Deps{Repo: srv.Repo}).Register(srv.App.Router)
 	for _, extra := range []url.Values{
 		{"type": {"mihomo"}}, {"type": {"mosdns"}}, {"type": {"aio"}}, {"agent_type": {"shell"}},
 		{"prepare_dns_ha": {"1"}}, {"prepare_dns_ha": {"yes"}}, {"prepare_dns_ha": {""}},

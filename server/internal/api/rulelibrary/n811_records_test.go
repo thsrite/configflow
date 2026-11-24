@@ -49,12 +49,12 @@ func TestN811SectionEditsPreserveUnchangedBytes(t *testing.T) {
 	if bytes.Contains(beforeSubscriptions, []byte("opaque")) || bytes.Contains(beforeBackup, []byte("opaque")) {
 		t.Fatalf("undeclared member kept: %s %s", beforeSubscriptions, beforeBackup)
 	}
-	if err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
+	if err := editShared(s.Repo, ctx, func(_ context.Context, catalog *model.Shared) error {
 		return catalog.SetJSON("rule_library", []byte(`[{"id":"record","name":"Record","source_type":"content","content":"+.records.example\n","behavior":"domain","format":"text"}]`))
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := editSystem(ctx, func(system *model.System) error {
+	if err := editSystem(s.Repo, ctx, func(system *model.System) error {
 		system.SystemConfig.GitHubProxyDomain = "https://proxy.example"
 		return nil
 	}); err != nil {
@@ -80,7 +80,7 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 		t.Fatal(err)
 	}
 	stop := errors.New("abort edit")
-	if err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
+	if err := editShared(s.Repo, ctx, func(_ context.Context, catalog *model.Shared) error {
 		if err := catalog.SetJSON("rule_library", []byte(`[{"id":"temp","name":"Temp","source_type":"content","content":"+.temp.example\n","behavior":"domain","format":"text"}]`)); err != nil {
 			return err
 		}
@@ -88,7 +88,7 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 	}); !errors.Is(err, stop) {
 		t.Fatalf("expected stop error, got %v", err)
 	}
-	if err := editSystem(ctx, func(system *model.System) error {
+	if err := editSystem(s.Repo, ctx, func(system *model.System) error {
 		system.SystemConfig.GitHubProxyDomain = "https://failed.example"
 		return stop
 	}); !errors.Is(err, stop) {
@@ -102,7 +102,7 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 	if len(cached.RuleLibrary) != 0 {
 		t.Fatalf("failed editShared changed snapshot: %v", cached.RuleLibrary)
 	}
-	if err := editShared(ctx, func(_ context.Context, catalog *model.Shared) error {
+	if err := editShared(s.Repo, ctx, func(_ context.Context, catalog *model.Shared) error {
 		return catalog.SetJSON("rule_library", []byte(`[{"id":"saved","name":"Saved","source_type":"content","content":"+.saved.example\n","behavior":"domain","format":"text"}]`))
 	}); err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestReviewN811EditSharedAndSystemInvalidateScopeOnlyOnSuccess(t *testing.T)
 	if err := repo.SaveSharedRecord(ctx, sharedSnap, nil); !errors.Is(err, repo.ErrInUse) {
 		t.Fatalf("editShared did not clear Scope shared baseline: %v", err)
 	}
-	if err := editSystem(ctx, func(system *model.System) error {
+	if err := editSystem(s.Repo, ctx, func(system *model.System) error {
 		system.SystemConfig.GitHubProxyDomain = "https://mirror.example"
 		return nil
 	}); err != nil {

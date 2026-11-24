@@ -13,7 +13,6 @@ import (
 	apionboarding "configflow/internal/api/gatewayonboarding"
 	apisetup "configflow/internal/api/setup"
 	"configflow/internal/gateway/onboarding"
-	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
@@ -23,14 +22,11 @@ import (
 )
 
 func TestSetupServerOwnerRegistrationRemovesUnavailable(t *testing.T) {
-	var setupHandler *apisetup.Handler
-	var onboardingHandler *apionboarding.Handler
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
-		setupHandler = apisetup.NewHandler(nil, nil)
-		setupHandler.Register(r)
-		onboardingHandler = &apionboarding.Handler{DNSLoop: onboarding.CheckDNSLoop}
-		onboardingHandler.Register(r)
-	}), Auth: true})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
+	setupHandler := apisetup.NewHandler(srv.Repo, nil)
+	setupHandler.Register(srv.App.Router)
+	onboardingHandler := &apionboarding.Handler{Repo: srv.Repo, DNSLoop: onboarding.CheckDNSLoop}
+	onboardingHandler.Register(srv.App.Router)
 	admin := srv.Login()
 	const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	const profileID = "setup_aaaaaaaaaaaaaaaaaaaa"

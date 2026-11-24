@@ -17,7 +17,10 @@ import (
 )
 
 func TestNativeResourceRequestsRejectNonfiniteBeforeEffects(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register, aggregations.Register, nodes.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	subscriptions.NewHandler(srv.Repo, nil, nil, nil, nil).Register(srv.App.Router)
+	aggregations.NewHandler(srv.Repo, nil, nil, nil).Register(srv.App.Router)
+	nodes.NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
 		shared.Subscriptions = []model.Subscription{{ID: "s", Name: "Synthetic", URL: "https://feed.example/s"}}
 		shared.Aggregations = []model.Aggregation{{ID: "a", Name: "Aggregate", Subscriptions: []string{}, Nodes: []string{}}}
@@ -57,7 +60,8 @@ func TestNativeResourceRequestsRejectNonfiniteBeforeEffects(t *testing.T) {
 }
 
 func TestNativeRetiredCapabilityRemainsPrivateWithMalformedSibling(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	subscriptions.NewHandler(srv.Repo, nil, nil, nil, nil).Register(srv.App.Router)
 	storeSettings(t, srv.Repo.DatabasePath(), `{"retired_rule_proxy_tokens":["synthetic-retired-capability",42]}`)
 	srv.Get("/api/profiles/default/subscriptions/missing/proxies?token=synthetic-retired-capability").WantStatus(401)
 }
@@ -85,7 +89,8 @@ func TestNativeMalformedConfigTokenFailsClosed(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
+			srv := httpxtest.New(t, httpxtest.Options{})
+			subscriptions.NewHandler(srv.Repo, nil, nil, nil, nil).Register(srv.App.Router)
 			// Stored as a Python-era or damaged store holds it (O18 T1c:
 			// writers refuse a credential that is not text).
 			storeSettings(t, srv.Repo.DatabasePath(), `{"config_token":`+tc.stored+`}`)
@@ -111,7 +116,8 @@ func TestSubscriptionWritesKeepRuntimeThroughPreflight(t *testing.T) {
 				label = "shutdown/"
 			}
 			t.Run(label+tc.method+tc.path, func(t *testing.T) {
-				srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
+				srv := httpxtest.New(t, httpxtest.Options{})
+				subscriptions.NewHandler(srv.Repo, nil, nil, nil, nil).Register(srv.App.Router)
 				if err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
 					shared.Subscriptions = []model.Subscription{{ID: "s", Name: "Synthetic", URL: "https://feed.example/s"}}
 					return nil

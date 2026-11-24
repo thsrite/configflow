@@ -34,7 +34,8 @@ func TestCFG06DuplicateTargetDifference(t *testing.T) {
 				}
 			}
 			py := startPython(t, pyDir)
-			goServer := httpxtest.New(t, httpxtest.Options{DataDir: goDir, Register: httpxtest.Routes(domaindiscovery.Register)})
+			goServer := httpxtest.New(t, httpxtest.Options{DataDir: goDir})
+			domaindiscovery.NewHandler(goServer.Repo, nil).Register(goServer.App.Router)
 			body, err := json.Marshal(map[string]any{"targets": tc.input, "proxy_policy": "PROXY"})
 			if err != nil {
 				t.Fatal(err)

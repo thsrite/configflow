@@ -209,7 +209,7 @@ func (h *clientToolsHandler) clientConnectionRule(c *httpx.Ctx) (*httpx.Response
 
 // ApplyConnection owns guarded shared-rule adoption and its cache/history writes.
 func (t clientTools) ApplyConnection(ctx context.Context, id string, edit connectionEdit) (any, error) {
-	ctx = t.deps.withRepo(lifecycle.Detach(ctx))
+	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

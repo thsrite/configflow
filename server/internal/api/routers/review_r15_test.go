@@ -9,6 +9,7 @@ import (
 
 	api "configflow/internal/api/routers"
 	"configflow/internal/httpx/httpxtest"
+	core "configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -38,7 +39,8 @@ func TestReviewR15ProbeRedirectKeepsManagementOrigin(t *testing.T) {
 		t.Fatalf("reference message changed: %s", want.Message)
 	}
 	fake.Reset(seed)
-	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.Register)})
+	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go")})
+	api.New(api.Deps{Repo: s.Repo, Routers: core.New(s.Repo, core.Options{})}).Register(s.App.Router)
 	result := s.Post("/api/routers/router-one/probe")
 	result.WantStatus(502)
 	got, _ := decodeJSON(t, result)["message"].(string)

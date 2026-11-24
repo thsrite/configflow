@@ -28,7 +28,7 @@ import (
 
 type sourceOptions = rulesource.ReadOptions
 
-func (s *Service) reader(ctx context.Context) *rulesource.Service {
+func (s *Service) reader(_ context.Context) *rulesource.Service {
 	if s != nil && s.ruleSource != nil {
 		return s.ruleSource
 	}
@@ -37,9 +37,6 @@ func (s *Service) reader(ctx context.Context) *rulesource.Service {
 	if s != nil {
 		r = s.repo
 		client = s.client
-	}
-	if r == nil {
-		r, _ = repo.GetRepository(ctx)
 	}
 	return rulesource.New(rulesource.Options{Repo: r, Client: client})
 }
@@ -52,7 +49,7 @@ func (s *Service) fetch(ctx context.Context, config *rulefetch.SourceConfig, hos
 	return s.reader(ctx).FetchWithTimeouts(ctx, config, host, timeout, timeout, false)
 }
 func (s *Service) local(ctx context.Context, id, name, target, host string) (delivery, error) {
-	config, err := scopedLocalConfig(ctx, id)
+	config, err := s.scopedLocalConfig(ctx, id)
 	if err != nil {
 		return delivery{}, err
 	}
@@ -266,7 +263,7 @@ func (s *Service) resolvedConfig(ctx context.Context, id string) (*model.Config,
 	if err != nil {
 		return nil, err
 	}
-	id, err = repo.ResolveProfileID(ctx, id)
+	id, err = r.ResolveProfileID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -286,6 +283,10 @@ func sourceField(value *string, fallback string) string {
 }
 
 // scopedLocalConfig returns the admitted request's Scope snapshot.
-func scopedLocalConfig(ctx context.Context, id string) (*model.Config, error) {
-	return repo.Config(ctx, id)
+func (s *Service) scopedLocalConfig(ctx context.Context, id string) (*model.Config, error) {
+	r, err := s.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.ScopedConfig(ctx, id)
 }

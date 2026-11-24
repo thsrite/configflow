@@ -370,7 +370,7 @@ func (s *Service) Compose(ctx context.Context, id string, body *composeRequest, 
 		return nil
 	}
 	if library == nil {
-		err = editProfile(ctx, id, func(config *model.Config) error {
+		err = s.editProfile(ctx, id, func(config *model.Config) error {
 			before, err := profileView(config)
 			if err != nil {
 				return err
@@ -378,7 +378,7 @@ func (s *Service) Compose(ctx context.Context, id string, body *composeRequest, 
 			return edit(before, config)
 		})
 	} else {
-		err = editSharedProfile(ctx, id, func(shared *model.Shared) error {
+		err = s.editSharedProfile(ctx, id, func(shared *model.Shared) error {
 			used := map[string]bool{}
 			for _, item := range shared.RuleLibrary {
 				if item.Name == library.item.Name {

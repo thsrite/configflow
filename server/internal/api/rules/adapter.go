@@ -62,7 +62,7 @@ func (s *Service) loadProfile(ctx context.Context, id string) (*model.Config, er
 	if err != nil {
 		return nil, err
 	}
-	id, err = repo.ResolveProfileID(ctx, id)
+	id, err = r.ResolveProfileID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -71,11 +71,15 @@ func (s *Service) loadProfile(ctx context.Context, id string) (*model.Config, er
 
 // editProfile edits the resolved profile; the repository stores the members
 // that changed.
-func editProfile(ctx context.Context, id string, edit func(*model.Config) error) error {
+func (s *Service) editProfile(ctx context.Context, id string, edit func(*model.Config) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return repo.UpdateConfig(ctx, id, func(tx context.Context, config *model.Config) error {
+	r, err := s.repository(ctx)
+	if err != nil {
+		return err
+	}
+	return r.UpdateScopedConfig(ctx, id, func(tx context.Context, config *model.Config) error {
 		if err := tx.Err(); err != nil {
 			return err
 		}

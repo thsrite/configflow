@@ -114,13 +114,13 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 				return out, fail(400, msgSource)
 			}
 		} else {
-			prepared, err = readCache(ctx, baseline)
+			prepared, err = s.readCache(ctx, baseline)
 			if err != nil {
 				return out, err
 			}
 		}
 	}
-	ctx, release, err := editLease(ctx, id)
+	ctx, release, err := s.editLease(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -132,7 +132,7 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 		}
 		_, statErr := os.Stat(path)
 		if changed || errors.Is(statErr, os.ErrNotExist) {
-			if err = writeCache(ctx, preview, prepared); err != nil {
+			if err = s.writeCache(ctx, preview, prepared); err != nil {
 				return out, err
 			}
 		}
@@ -150,7 +150,7 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 	if !remove {
 		changes = append(changes, sourceChange{baseline, preview})
 	}
-	warnings, err := editWithProfiles(ctx, changes, func(tx context.Context, catalog *model.Shared) error {
+	warnings, err := s.editWithProfiles(ctx, changes, func(tx context.Context, catalog *model.Shared) error {
 		library := slices.Clone(catalog.RuleLibrary)
 		i := find(library, id)
 		if i < 0 {
@@ -174,7 +174,7 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 			return libraryTypeError(library, i, &cleaned, id, err)
 		}
 		if sourceTypeOf(next) == "content" && prepared != nil {
-			stage, err = stageCache(tx, next, prepared, s.replaceCache)
+			stage, err = s.stageCache(tx, next, prepared, s.replaceCache)
 			if err != nil {
 				return err
 			}
@@ -208,7 +208,7 @@ func (s *Service) Mutate(ctx context.Context, id string, req *libraryRequest, re
 		}
 	}
 	if previous.Name != "" && (remove || previous.Name != saved.Name) {
-		if err = removeLegacy(ctx, previous.Name); err != nil {
+		if err = s.removeLegacy(ctx, previous.Name); err != nil {
 			return out, err
 		}
 	}

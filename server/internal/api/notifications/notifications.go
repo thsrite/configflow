@@ -104,15 +104,10 @@ func (h *Handler) readNotifications(c *httpx.Ctx) (*httpx.Response, error) {
 	if !c.BindSilent(&body) || !body.valid() {
 		return httpx.Message(400, false, msgSpecifyVersions), nil
 	}
-	repository := h.Repo
-	if repository == nil {
-		var err error
-		repository, err = repo.GetRepository(c.Context())
-		if err != nil {
-			return nil, err
-		}
+	if h == nil || h.Repo == nil {
+		return nil, errors.New("api/notifications: repository is nil")
 	}
-	if err := notifications.Dismiss(c.Context(), repository.DataDir(), body.Versions); err != nil {
+	if err := notifications.Dismiss(c.Context(), h.Repo.DataDir(), body.Versions); err != nil {
 		return nil, err
 	}
 	return httpx.JSON(struct {

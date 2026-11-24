@@ -9,7 +9,7 @@ import (
 
 func TestN811W5RouterNonfiniteConfirmation(t *testing.T) {
 	w := newWorld(t)
-	apirouters.Register(w.srv.App.Router)
+	apirouters.New(apirouters.Deps{Repo: w.srv.Repo}).Register(w.srv.App.Router)
 	create := post("/api/routers", map[string]any{"name": "Synthetic", "type": "routeros", "endpoint": "http://192.0.2.1", "username": "operator", "password": "synthetic-password"})
 	create.Headers = map[string]string{"Authorization": w.token, "Content-Type": "application/json"}
 	py := w.py.send(t, create)

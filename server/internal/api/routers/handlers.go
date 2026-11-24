@@ -68,11 +68,11 @@ func NewHandler(svc *core.Service, syncSvc *routerrulesync.RuleSyncService) *Han
 	return New(Deps{Routers: svc, RuleSync: syncSvc})
 }
 
-func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
+func (h *Handler) repository(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.repo != nil {
 		return h.repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/routers: repository is nil")
 }
 
 func (h *Handler) manager(_ context.Context) (*agents.Manager, error) {
@@ -95,10 +95,6 @@ func (h *Handler) syncService() *routerrulesync.RuleSyncService {
 	}
 	return routerrulesync.New(h.repo, routerrulesync.Options{})
 }
-
-// Register installs all R15 routes on the shared Flask-priority matcher. Static
-// segments win per segment; method mismatches may fall through to a path route.
-func Register(r *httpx.Router) { NewHandler(nil, nil).Register(r) }
 
 // Register mounts all router routes on r.
 func (h *Handler) Register(r *httpx.Router) {
@@ -186,7 +182,7 @@ func public(c *httpx.Ctx, cfg *core.ConfigView, value any, status int, noStore b
 	if !cached {
 		r := c.App().Repo
 		if r == nil {
-			r, err = repo.GetRepository(c.Context())
+			err = errors.New("api/routers: repository is nil")
 		}
 		if err == nil {
 			secrets, err = redact.ExternalPayloadSecrets(c.Context(), r, nil)

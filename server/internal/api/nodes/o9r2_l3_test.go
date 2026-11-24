@@ -14,7 +14,8 @@ import (
 // message naming the field) without mutating storage, while normal nodes and
 // valid YAML/URI proxy_string inputs continue to save.
 func TestO9R2NodeControlCharValidation(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	// Seed one clean node for PUT tests.
 	srv.Post("/api/nodes", httpxtest.JSON(map[string]any{
 		"id":     "existing",

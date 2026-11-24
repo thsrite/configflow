@@ -28,15 +28,12 @@ type Handler struct {
 // back to transitional process defaults until W11.
 func New(deps Deps) *Handler { return &Handler{repo: deps.Repo} }
 
-func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
+func (h *Handler) repository(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.repo != nil {
 		return h.repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/config: repository is nil")
 }
-
-// Register installs global backup, custom-config, and live-config routes.
-func Register(r *httpx.Router) { New(Deps{}).Register(r) }
 
 // Register mounts global backup, custom-config, and live-config routes on r.
 func (h *Handler) Register(r *httpx.Router) {

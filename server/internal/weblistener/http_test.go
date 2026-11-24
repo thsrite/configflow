@@ -40,7 +40,9 @@ func unusedPort(t *testing.T) int {
 // The remaining route-level listener contracts use real active native sockets;
 // C06 alone owns the handler's HEAD/Bind changes.
 func TestActiveListenerHTTPAuthenticationMissingPortAndSavedSettings(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(settings.Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	settingsHandler := settings.NewHandler(s.Repo, nil, nil)
+	settingsHandler.Register(s.App.Router)
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond})
 	runtime.Start(context.Background())
 	t.Cleanup(func() { runtime.Shutdown(context.Background()) })
@@ -53,8 +55,9 @@ func TestActiveListenerHTTPAuthenticationMissingPortAndSavedSettings(t *testing.
 	if err := os.WriteFile(path, []byte(`{"port":`+strconv.Itoa(first)+`}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	settings.SetWebListener(m)
-	t.Cleanup(func() { settings.SetWebListener(nil) })
+	if err := settingsHandler.SetWebListener(m); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := m.Listen(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -108,12 +111,15 @@ func TestActiveListenerHTTPAuthenticationMissingPortAndSavedSettings(t *testing.
 	if err := json.Unmarshal(data, &saved); err != nil || saved.Port != second {
 		t.Fatal("saved port mismatch", err)
 	}
-	settings.SetWebListener(nil)
-	status, value = request("GET", second, "", token)
+	unsupported := httpxtest.New(t, httpxtest.Options{Auth: true, DataDir: s.DataDir})
+	settings.NewHandler(unsupported.Repo, nil, nil).Register(unsupported.App.Router)
+	edge.Edge.API = unsupported.Handler()
+	unsupportedToken := unsupported.Login()
+	status, value = request("GET", second, "", unsupportedToken)
 	if status != 200 || string(value["supported"]) != "false" {
 		t.Fatal(status, value)
 	}
-	if status, _ := request("POST", second, `{"port":18088}`, token); status != 503 {
+	if status, _ := request("POST", second, `{"port":18088}`, unsupportedToken); status != 503 {
 		t.Fatal("unsupported deployment changed", status)
 	}
 }

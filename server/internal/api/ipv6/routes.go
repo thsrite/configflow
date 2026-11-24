@@ -37,9 +37,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.POST("/api/agents/<agent_id>/ipv6-readiness/<operation>", "agents.ipv6_readiness_operation", handler)
 }
 
-// Register installs all five methods of the IPv6 readiness blueprint.
-func Register(r *httpx.Router) { NewHandler(nil, nil, nil).Register(r) }
-
 type failureBody struct {
 	Success bool   `json:"success"`
 	Code    string `json:"code"`
@@ -105,11 +102,10 @@ func (h *Handler) operation(c *httpx.Ctx) (*httpx.Response, error) {
 			return rejected("PROFILE_REQUIRED", 400, msgProfile)
 		}
 	}
-	resolveCtx := c.Context()
-	if h != nil && h.Repo != nil {
-		resolveCtx = repo.WithRepository(resolveCtx, h.Repo)
+	if h == nil || h.Repo == nil {
+		return nil, errors.New("api/ipv6: repository is nil")
 	}
-	profile, e := repo.ResolveProfileID(resolveCtx, selected[0])
+	profile, e := h.Repo.ResolveProfileID(c.Context(), selected[0])
 	if e != nil {
 		return nil, e
 	}

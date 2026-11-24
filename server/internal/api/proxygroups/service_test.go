@@ -18,7 +18,10 @@ import (
 
 func fixture(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(aggregations.Register, apirules.Register, Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	aggregations.NewHandler(s.Repo, nil, nil, nil).Register(s.App.Router)
+	apirules.New(apirules.Deps{Repo: s.Repo}).Register(s.App.Router)
+	NewHandler(s.Repo, nil).Register(s.App.Router)
 	err := s.Repo.UpdateShared(s.Context(), func(_ context.Context, p *model.Shared) error {
 		if err := p.SetJSON("subscriptions", json.RawMessage(`[{"id":"feed","name":"Feed","url":"https://source.example/feed","regex_filter":"HK|JP|广告"}]`)); err != nil {
 			return err

@@ -13,7 +13,11 @@ import (
 
 func fixture(t *testing.T) *httpxtest.Server {
 	t.Helper()
-	return httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apirules.Register, proxygroups.Register, Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	apirules.New(apirules.Deps{Repo: s.Repo}).Register(s.App.Router)
+	proxygroups.NewHandler(s.Repo, nil).Register(s.App.Router)
+	New(Deps{Repo: s.Repo}).Register(s.App.Router)
+	return s
 }
 func doc(t *testing.T, s *httpxtest.Server) string {
 	t.Helper()

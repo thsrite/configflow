@@ -71,7 +71,7 @@ func TestO36cForgetStatusWhileWaiting(t *testing.T) {
 				t.Fatal("status holder did not acquire the leaf lock")
 			}
 			done := make(chan error, 1)
-			go func() { done <- forget(ctx, "manual") }()
+			go func() { done <- forget(app.Repo, ctx, "manual") }()
 			select {
 			case err := <-done:
 				t.Fatalf("forget escaped held status lock: %v", err)

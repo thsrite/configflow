@@ -14,7 +14,8 @@ import (
 )
 
 func TestEveryRouteRequiresAdministratorAuthentication(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(domaindiscovery.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
+	domaindiscovery.NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	for _, rt := range []struct{ method, path string }{{"GET", "settings"}, {"PUT", "settings"}, {"POST", "rulesets/init"}, {"GET", "domains"}, {"GET", "agents"}, {"POST", "apply"}, {"POST", "undo"}, {"GET", "history"}, {"POST", "ignore"}, {"DELETE", "ignore"}, {"POST", "probe"}, {"GET", "probe/missing"}, {"GET", "region"}, {"POST", "region/check"}, {"POST", "region/route"}, {"POST", "website/identify"}, {"PUT", "website/note"}} {
 		t.Run(rt.method+"_"+rt.path, func(t *testing.T) {
 			req := httptest.NewRequest(rt.method, "/api/domain-discovery/"+rt.path, strings.NewReader(`{}`))
@@ -28,7 +29,7 @@ func TestEveryRouteRequiresAdministratorAuthentication(t *testing.T) {
 	}
 }
 func TestCancelledHTTPWritesFinishAndPreserveUnknownFields(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(domaindiscovery.Register), Setup: func(app *httpx.App) {
+	srv := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
 		app.BeforeRequest(func(c *httpx.Ctx) (*httpx.Response, error) {
 			ctx, cancel := context.WithCancel(c.Context())
 			cancel()
@@ -37,6 +38,7 @@ func TestCancelledHTTPWritesFinishAndPreserveUnknownFields(t *testing.T) {
 			return nil, nil
 		})
 	}})
+	domaindiscovery.NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	ctx := srv.Context()
 	_, _, err := srv.Repo.SaveProfileFieldsJSON(ctx, "default", json.RawMessage(`{"domain_discovery":{"future_setting":{"keep":true},"history":[{"value":"old.example.net","target":"proxy","ruleset_id":"missing","future_history":true}]}}`), nil)
 	if err != nil {

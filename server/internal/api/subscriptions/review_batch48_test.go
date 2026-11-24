@@ -41,7 +41,8 @@ func TestReviewBatch48LenientMembers(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
+			srv := httpxtest.New(t, httpxtest.Options{})
+			subscriptions.NewHandler(srv.Repo, nil, nil, nil, nil).Register(srv.App.Router)
 			err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 				return s.SetJSON("subscriptions", json.RawMessage(`[{"id":"feed","name":"Feed","url":"https://source.example/feed","interval":3600}]`))
 			})

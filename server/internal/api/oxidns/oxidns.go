@@ -75,15 +75,12 @@ type Handler struct {
 // back to transitional process defaults until W11.
 func New(deps Deps) *Handler { return &Handler{repo: deps.Repo} }
 
-func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
+func (h *Handler) repository(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.repo != nil {
 		return h.repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/oxidns: repository is nil")
 }
-
-// Register installs all 18 method/path pairs, including their profile wrappers.
-func Register(router *httpx.Router) { New(Deps{}).Register(router) }
 
 // Register mounts all 18 OxiDNS method/path pairs on router.
 func (h *Handler) Register(router *httpx.Router) {
@@ -220,7 +217,7 @@ func (h *Handler) draft(c *httpx.Ctx, action string) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	profileID, err := repo.ResolveProfileID(c.Context(), c.ProfileID)
+	profileID, err := repository.ResolveProfileID(c.Context(), c.ProfileID)
 	if err != nil {
 		return nil, err
 	}

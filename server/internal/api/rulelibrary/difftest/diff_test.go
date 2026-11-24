@@ -78,14 +78,10 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 			t.Errorf("lock order violations: %d", count)
 		}
 	})
-	var rf *refresh.Service
-	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret, Register: httpxtest.Routes(func(r *httpx.Router) {
-		apirules.New(apirules.Deps{Refresh: rf}).Register(r)
-		rulelibrary.New(rulelibrary.Deps{Refresh: rf}).Register(r)
-		proxygroups.Register(r)
-	})})
+	w.srv = httpxtest.New(t, httpxtest.Options{Auth: true, Username: "diff-admin", Password: "diff-password", SecretKey: secret})
 	env := refresh.DefaultRefreshEnvFor(w.srv.Repo, nil)
 	env.Clock = fixedClock{}
+	var rf *refresh.Service
 	nt := notifications.New(notifications.Options{
 		Repo:   w.srv.Repo,
 		Agents: func(context.Context) ([]model.Agent, error) { return []model.Agent{}, nil },
@@ -98,6 +94,9 @@ func newWorld(t *testing.T, seed func(context.Context, *repo.Repository)) *world
 		},
 	})
 	rf = refresh.New(refresh.Options{Repo: w.srv.Repo, Env: env, Notifications: nt})
+	apirules.New(apirules.Deps{Repo: w.srv.Repo, Refresh: rf}).Register(w.srv.App.Router)
+	rulelibrary.New(rulelibrary.Deps{Repo: w.srv.Repo, Refresh: rf}).Register(w.srv.App.Router)
+	proxygroups.NewHandler(w.srv.Repo, nil).Register(w.srv.App.Router)
 	oldClock := notifications.Clock
 	notifications.Clock = fixedClock{}.Now
 	t.Cleanup(func() { notifications.Clock = oldClock })

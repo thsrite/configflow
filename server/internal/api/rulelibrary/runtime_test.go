@@ -177,7 +177,7 @@ func TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect(t *testing.T)
 			t.Run(test.name+"/"+mode, func(t *testing.T) {
 				app := fixture(t)
 				createManual(t, app)
-				groups := &proxygroups.Service{}
+				groups := &proxygroups.Service{Repo: app.Repo}
 				if _, err := app.Repo.CreateProfileRecord(app.Context(), repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
 					t.Fatal(err)
 				}
@@ -195,7 +195,7 @@ func TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect(t *testing.T)
 					w.Write([]byte("+.probe.example\n"))
 				}))
 				defer origin.Close()
-				service := &Service{client: rulefetch.DefaultClient}
+				service := &Service{repo: app.Repo, client: rulefetch.DefaultClient}
 				remote := decodeTestJSON[libraryRequest](t, `{"id":"remote","name":"Remote","source_type":"url","behavior":"domain","format":"text","url":`+jsonQuote(t, origin.URL+"/source")+`}`)
 				if _, err := service.Create(app.Context(), remote); err != nil {
 					t.Fatal(err)
@@ -206,11 +206,11 @@ func TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect(t *testing.T)
 					t.Fatal(err)
 				}
 				if test.cache {
-					item, err := source(app.Context(), "manual")
+					item, err := service.source(app.Context(), "manual")
 					if err != nil {
 						t.Fatal(err)
 					}
-					path, err := cachePath(app.Context(), item)
+					path, err := service.cachePath(app.Context(), item)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -256,8 +256,9 @@ func TestEveryWriteOwnerHonoursRuntimeShutdownAndRequestDisconnect(t *testing.T)
 
 func TestStoppedRuntimeCannotStageOrReplaceFiles(t *testing.T) {
 	app := fixture(t)
+	svc := &Service{repo: app.Repo, client: rulefetch.DefaultClient}
 	createManual(t, app)
-	item, err := source(app.Context(), "manual")
+	item, err := svc.source(app.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +266,7 @@ func TestStoppedRuntimeCannotStageOrReplaceFiles(t *testing.T) {
 	// Production leaf calls receive the owner's detached generation context,
 	// rather than the raw request view whose Err only tracks disconnection.
 	ctx = lifecycle.Detach(ctx)
-	stage, err := stageCache(ctx, item, []byte("+.new.example\n"), nil)
+	stage, err := svc.stageCache(ctx, item, []byte("+.new.example\n"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +278,7 @@ func TestStoppedRuntimeCannotStageOrReplaceFiles(t *testing.T) {
 	if err = stage.commit(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatal("stopped stage committed", err)
 	}
-	if _, err = stageCache(ctx, item, []byte("+.later.example\n"), nil); !errors.Is(err, context.Canceled) {
+	if _, err = svc.stageCache(ctx, item, []byte("+.later.example\n"), nil); !errors.Is(err, context.Canceled) {
 		t.Fatal("stopped owner staged bytes", err)
 	}
 	if !reflect.DeepEqual(before, persisted(t, app)) {
@@ -286,7 +287,7 @@ func TestStoppedRuntimeCannotStageOrReplaceFiles(t *testing.T) {
 	// Cleanup happens only after a new generation admits another cache owner.
 	runtime.Start(t.Context())
 	fresh := runtime.BindRequest(app.Context())
-	if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(fresh, decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
+	if _, err = svc.Cache(fresh, decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
 		t.Fatal(err)
 	}
 	for path := range persisted(t, app).Files {
@@ -300,7 +301,7 @@ func TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed(t *testing.T) {
 	createManual(t, app)
 	runtime, ctx, _ := runtimeRequest(t, app.Context())
 	var atShutdown durableState
-	service := &Service{client: rulefetch.DefaultClient, replaceCache: func(leaf context.Context, from, to string) error {
+	service := &Service{repo: app.Repo, client: rulefetch.DefaultClient, replaceCache: func(leaf context.Context, from, to string) error {
 		runtime.Shutdown(t.Context())
 		atShutdown = persisted(t, app)
 		return replaceFile(leaf, from, to)
@@ -315,11 +316,11 @@ func TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed(t *testing.T) {
 	if !reflect.DeepEqual(atShutdown, persisted(t, app)) {
 		t.Fatal("cache publication/cleanup wrote after shutdown")
 	}
-	item, err := source(app.Context(), "manual")
+	item, err := service.source(app.Context(), "manual")
 	if err != nil || model.TextValue(item.Content) != "+.committed.example\n" {
 		t.Fatal("pre-shutdown committed DB was rolled back", err)
 	}
-	path, err := cachePath(app.Context(), item)
+	path, err := service.cachePath(app.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,8 +333,9 @@ func TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed(t *testing.T) {
 	}
 	// Reopen the repository and start a fresh Runtime: the durable marker must
 	// keep every reader on the committed inline declaration, never the old file.
-	reopened := httpxtest.New(t, httpxtest.Options{DataDir: app.DataDir, Auth: true,
-		Register: httpxtest.Routes(apirules.Register, Register)})
+	reopened := httpxtest.New(t, httpxtest.Options{DataDir: app.DataDir, Auth: true})
+	apirules.New(apirules.Deps{Repo: reopened.Repo}).Register(reopened.App.Router)
+	New(Deps{Repo: reopened.Repo}).Register(reopened.App.Router)
 	_, fresh, _ := runtimeRequest(t, reopened.Context())
 	for _, route := range []string{"/api/rule-library/content/manual", "/api/profiles/default/rule-library/content/manual", "/api/rules/local/Manual"} {
 		if got := reopened.Get(route, reopened.Login()).WantStatus(200).Text(); got != "+.committed.example\n" {
@@ -346,7 +348,7 @@ func TestShutdownBetweenDBCommitAndCacheRenameIsFailClosed(t *testing.T) {
 	if _, err = os.Stat(path + ".invalid"); err != nil {
 		t.Fatal("restart reader cleared invalidation", err)
 	}
-	freshService := &Service{client: rulefetch.DefaultClient}
+	freshService := &Service{repo: reopened.Repo, client: rulefetch.DefaultClient}
 	draft, err = freshService.Draft(reopened.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)

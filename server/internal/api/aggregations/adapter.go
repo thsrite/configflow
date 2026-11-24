@@ -30,17 +30,14 @@ import (
 
 type proxy = generation.Proxy
 
-func (h *Handler) repo(ctx context.Context) (*repo.Repository, error) {
+func (h *Handler) repo(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.Repo != nil {
 		return h.Repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/aggregations: repository is nil")
 }
 
 func (h *Handler) withRepo(ctx context.Context) context.Context {
-	if h != nil && h.Repo != nil {
-		return repo.WithRepository(ctx, h.Repo)
-	}
 	return ctx
 }
 
@@ -172,11 +169,11 @@ func (h *Handler) providerResource(ctx context.Context, id string) (*model.Confi
 	if err := ctx.Err(); err != nil {
 		return nil, nil, nil, err
 	}
-	profileID, err := repo.ResolveProfileID(h.withRepo(ctx), "")
+	r, err := h.repo(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	r, err := h.repo(ctx)
+	profileID, err := r.ResolveProfileID(ctx, "")
 	if err != nil {
 		return nil, nil, nil, err
 	}

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	apirules "configflow/internal/api/rules"
-	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/rulefetch"
@@ -89,16 +88,17 @@ func TestRevisionUsesRecursiveNativeSortedJSON(t *testing.T) {
 	}
 }
 func TestFailedCacheReplacementNeverServesStableOrLegacyContent(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(apirules.Register, func(r *httpx.Router) {
-		RegisterWithOptions(r, Options{replaceCache: func(context.Context, string, string) error { return os.ErrPermission }})
-	})})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	apirules.New(apirules.Deps{Repo: s.Repo}).Register(s.App.Router)
+	RegisterWithOptions(s.App.Router, Options{Repo: s.Repo, replaceCache: func(context.Context, string, string) error { return os.ErrPermission }})
+	svc := &Service{repo: s.Repo}
 	createManual(t, s)
 	auth := s.Login()
-	item, err := source(s.Context(), "manual")
+	item, err := svc.source(s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := svc.cachePath(s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestFailedCacheReplacementNeverServesStableOrLegacyContent(t *testing.T) {
 	}
 	token := s.Get("/api/rule-library/manual/draft-content", auth).WantStatus(200).Object().GetString("revision")
 	s.Put("/api/rule-library/manual/draft-content", auth, httpxtest.JSON(map[string]string{"revision": token, "content": "+.new.example\n"})).WantStatus(500)
-	item, err = source(s.Context(), "manual")
+	item, err = svc.source(s.Context(), "manual")
 	if err != nil || model.TextValue(item.Content) != "+.new.example\n" {
 		t.Fatal("committed declaration lost", err)
 	}

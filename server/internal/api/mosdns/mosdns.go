@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"configflow/internal/auth"
@@ -29,15 +30,12 @@ type Handler struct {
 // back to transitional process defaults until W11.
 func New(deps Deps) *Handler { return &Handler{repo: deps.Repo} }
 
-func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
+func (h *Handler) repository(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.repo != nil {
 		return h.repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/mosdns: repository is nil")
 }
-
-// Register adds the MosDNS routes.
-func Register(r *httpx.Router) { New(Deps{}).Register(r) }
 
 // Register mounts the MosDNS routes on r.
 func (h *Handler) Register(r *httpx.Router) {
@@ -184,7 +182,7 @@ func (h *Handler) handleSection(c *httpx.Ctx, path string) (*httpx.Response, err
 		if err != nil {
 			return nil, err
 		}
-		id, err := repo.ResolveProfileID(c.Context(), "")
+		id, err := r.ResolveProfileID(c.Context(), "")
 		if err != nil {
 			return nil, err
 		}
@@ -234,7 +232,7 @@ func (h *Handler) save(ctx context.Context, section string, in model.MosDNSSetti
 	if err != nil {
 		return mosdns.PublishGuard{}, err
 	}
-	id, err := repo.ResolveProfileID(ctx, "")
+	id, err := r.ResolveProfileID(ctx, "")
 	if err != nil {
 		return mosdns.PublishGuard{}, err
 	}

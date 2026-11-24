@@ -97,7 +97,7 @@ func TestLocalDeliveryWarningRedactsRuleName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _, _ = logx.Setup(logx.Config{}) })
-	if _, err := (&Service{}).Local(s.Context(), "default", name, "mihomo", ""); err != nil {
+	if _, err := (&Service{repo: s.Repo}).Local(s.Context(), "default", name, "mihomo", ""); err != nil {
 		t.Fatal(err)
 	}
 	text := logs.String()

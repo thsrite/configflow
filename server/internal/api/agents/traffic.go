@@ -42,7 +42,7 @@ func (h *trafficHandler) register(r *httpx.Router) {
 // agentTrafficReport is agent_traffic_report: an Agent reports its Mihomo
 // traffic summary (domain discovery). Errors are not caught (500 page).
 func (h *trafficHandler) agentTrafficReport(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := h.deps.withRepo(c.Context())
+	ctx := c.Context()
 	agentID := c.Param("agent_id")
 	manager, err := h.deps.manager(ctx)
 	if err != nil {

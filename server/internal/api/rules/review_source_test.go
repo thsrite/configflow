@@ -43,7 +43,7 @@ func TestReviewSourceTimeoutAndMirror(t *testing.T) {
 			library := map[string]any{"id": "remote", "name": "Remote", "source_type": "url", "url": "https://primary.example.com/source", "behavior": "domain", "format": "text"}
 			item := map[string]any{"url": "https://mirror.example.com/source"}
 			var requests []string
-			service := &Service{client: &rulefetch.Client{Transport: reviewTransport(func(_ context.Context, req rulefetch.TransportRequest) (*rulefetch.Response, error) {
+			service := &Service{repo: srv.Repo, client: &rulefetch.Client{Transport: reviewTransport(func(_ context.Context, req rulefetch.TransportRequest) (*rulefetch.Response, error) {
 				requests = append(requests, req.URL)
 				if req.Method != "GET" || req.ConnectTimeout != 30*time.Second || req.ReadTimeout != 30*time.Second {
 					t.Fatalf("download contract: %+v", req)
@@ -100,7 +100,7 @@ func TestReviewShutdownDuringDownload(t *testing.T) {
 				t.Fatal(err)
 			}
 			calls := 0
-			service := &Service{now: time.Now, client: &rulefetch.Client{Transport: reviewTransport(func(_ context.Context, req rulefetch.TransportRequest) (*rulefetch.Response, error) {
+			service := &Service{repo: srv.Repo, now: time.Now, client: &rulefetch.Client{Transport: reviewTransport(func(_ context.Context, req rulefetch.TransportRequest) (*rulefetch.Response, error) {
 				calls++
 				// The response can race with shutdown and still deliver valid bytes.
 				runtime.Shutdown(context.Background())
@@ -140,12 +140,12 @@ func TestReviewStoppedReadOwners(t *testing.T) {
 	runtime, ctx := reviewRuntimeContext(t, srv.Context())
 	runtime.Shutdown(context.Background())
 	for name, call := range map[string]func() error{
-		"local": func() error { _, err := (&Service{}).Local(ctx, "other", "Ads", "", ""); return err },
+		"local": func() error { _, err := (&Service{repo: srv.Repo}).Local(ctx, "other", "Ads", "", ""); return err },
 		"match": func() error {
-			_, err := (&Service{}).Match(ctx, "other", request[matchRequest](record{"query": stringJSON("example.com")}), "")
+			_, err := (&Service{repo: srv.Repo}).Match(ctx, "other", request[matchRequest](record{"query": stringJSON("example.com")}), "")
 			return err
 		},
-		"duplicates": func() error { _, err := (&Service{}).FindDuplicates(ctx, "other", ""); return err },
+		"duplicates": func() error { _, err := (&Service{repo: srv.Repo}).FindDuplicates(ctx, "other", ""); return err },
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := call(); !errors.Is(err, context.Canceled) {

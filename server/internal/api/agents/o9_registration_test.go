@@ -203,7 +203,13 @@ func TestO9CredentialConcurrentSingleUseAndRestart(t *testing.T) {
 		t.Fatal("private credential issuance changed user configuration revision")
 	}
 	// Reopen from disk, without relying on a process-local capability registry.
-	restarted := httpxtest.New(t, httpxtest.Options{Auth: true, DataDir: s.DataDir, DefaultFactories: true, Register: httpxtest.Routes(Register)})
+	restarted := httpxtest.New(t, httpxtest.Options{Auth: true, DataDir: s.DataDir, DefaultFactories: true})
+	restartedMgr, err := core.New(restarted.Context(), restarted.Repo, core.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(restartedMgr.Close)
+	NewHandler(Deps{Repo: restarted.Repo, Agents: restartedMgr}).Register(restarted.App.Router)
 	url := restarted.URL()
 	var wg sync.WaitGroup
 	codes := make(chan int, 2)
@@ -573,7 +579,13 @@ func TestO9RegistrationCapacityEvictsOldestCommand(t *testing.T) {
 	t.Setenv("AGENT_REGISTRATION_KEY", "")
 	core.ResetRuntime()
 	t.Cleanup(core.ResetRuntime)
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	m, err := core.New(s.Context(), s.Repo, core.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	NewHandler(Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
 	t.Setenv("DATA_DIR", s.DataDir)
 	authorization := s.Login()
 	path := "/api/agents/docker-agent-compose?format=both&server_url=https://panel.example.com&agent_name=new-device&agent_ip=192.0.2.30"

@@ -38,11 +38,11 @@ func (s *Service) refreshSvc(r *repo.Repository) *refresh.Service {
 	return refresh.New(refresh.Options{Repo: r})
 }
 
-func (s *Service) repository(ctx context.Context) (*repo.Repository, error) {
+func (s *Service) repository(_ context.Context) (*repo.Repository, error) {
 	if s != nil && s.repo != nil {
 		return s.repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/rules: repository is nil")
 }
 
 func invalid(message string) error { return repo.NewValidationError(message) }
@@ -119,7 +119,12 @@ func profileView(config *model.Config) (*oxidns.Profile, error) {
 	return dnsProfile(&copy)
 }
 func (s *Service) pinned(ctx context.Context, id string, ids []string) *bool {
-	resolved, err := repo.ResolveProfileID(ctx, id)
+	r, err := s.repository(ctx)
+	if err != nil {
+		logger.Warning(msgWithheldWarning)
+		return nil
+	}
+	resolved, err := r.ResolveProfileID(ctx, id)
 	if err != nil {
 		logger.Warning(msgWithheldWarning)
 		return nil
@@ -165,7 +170,7 @@ func (s *Service) Create(ctx context.Context, id string, body json.RawMessage, s
 		}
 		return result, invalid(msgRuleObject)
 	}
-	err := editProfile(ctx, id, func(config *model.Config) error {
+	err := s.editProfile(ctx, id, func(config *model.Config) error {
 		in := decodeRule(body, model.RuleConfig{})
 		if sets {
 			in.ItemType = okMember("ruleset")
@@ -212,7 +217,7 @@ func (s *Service) Mutate(ctx context.Context, profileID, id string, body json.Ra
 			dns, dnsErr = dnsChoice(request.DNS)
 		}
 	}
-	err := editProfile(ctx, profileID, func(config *model.Config) error {
+	err := s.editProfile(ctx, profileID, func(config *model.Config) error {
 		items := slices.Clone(config.Profile.RuleConfigs)
 		index := find(items, id)
 		if index < 0 || (sets && items[index].ItemType != "ruleset") {
@@ -349,7 +354,7 @@ func (s *Service) Rename(ctx context.Context, id string, body *renameRequest) er
 		return err
 	}
 	name := strings.TrimSpace(body.GroupName.Value)
-	return editProfile(ctx, id, func(config *model.Config) error {
+	return s.editProfile(ctx, id, func(config *model.Config) error {
 		items := slices.Clone(config.Profile.RuleConfigs)
 		for _, id := range ids {
 			index := find(items, id)
@@ -393,7 +398,7 @@ func (s *Service) SetPolicy(ctx context.Context, id string, body *policyRequest,
 	if present && !body.GroupName.OK {
 		return out, invalid(msgGroupText)
 	}
-	err = editProfile(ctx, id, func(config *model.Config) error {
+	err = s.editProfile(ctx, id, func(config *model.Config) error {
 		if !knownPolicy(config, policy) {
 			return invalid(fmt.Sprintf(msgPolicyUnknown, policy))
 		}
@@ -440,7 +445,7 @@ func (s *Service) Reorder(ctx context.Context, id string, raw json.RawMessage, b
 		return nil, nil, err
 	}
 	order, warnings := []string{}, []string{}
-	err = editProfile(ctx, id, func(config *model.Config) error {
+	err = s.editProfile(ctx, id, func(config *model.Config) error {
 		before, err := profileView(config)
 		if err != nil {
 			return err
@@ -497,7 +502,7 @@ func (s *Service) Batch(ctx context.Context, id string, body *batchRequest) ([]m
 	policy := new(body.Policy.Value)
 	policyErr := !body.Policy.OK && !body.Policy.Null()
 	added := []model.RuleConfig{}
-	err := editProfile(ctx, id, func(config *model.Config) error {
+	err := s.editProfile(ctx, id, func(config *model.Config) error {
 		items := config.Profile.RuleConfigs
 		used := map[string]bool{}
 		for _, item := range items {

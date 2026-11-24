@@ -48,9 +48,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.GET("/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies", "profiles.profile_subscription_proxies", h.subscriptionProxies)
 }
 
-// Register adds the subscriptions blueprint and its profile provider alias.
-func Register(r *httpx.Router) { NewHandler(nil, nil, nil, nil, nil).Register(r) }
-
 func (h *Handler) healthImpact(c *httpx.Ctx) (*httpx.Response, error) {
 	return h.usage(c.Context(), c.Param("resource_id"))
 }

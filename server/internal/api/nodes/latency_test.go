@@ -159,7 +159,8 @@ func nodeA_() map[string]any {
 }
 
 func setup(t *testing.T) *fixture {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	nodes.NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	f := &fixture{t: t, srv: srv, runner: &runner{fn: probeBy(constant(10))}, conv: &converter{}, vars: map[string]string{}}
 	f.env = &health.ProbeEnv{
 		LookupEnv:   func(key string) (string, bool) { v, ok := f.vars[key]; return v, ok },
@@ -734,7 +735,8 @@ func TestDNSSettingsPersistWithoutChangingNodesOrOtherSettings(t *testing.T) {
 	if diff := testjson.Diff(shared, after); diff != "" {
 		t.Fatalf("shared changed: %s", diff)
 	}
-	fresh := httpxtest.New(t, httpxtest.Options{DataDir: f.srv.DataDir, Register: httpxtest.Routes(nodes.Register)})
+	fresh := httpxtest.New(t, httpxtest.Options{DataDir: f.srv.DataDir})
+	nodes.NewHandler(fresh.Repo, nil).Register(fresh.App.Router)
 	if diff := testjson.Diff(want, decodeMap(t, fresh.Get("/api/nodes/latency/settings").Body)["dns_servers"]); diff != "" {
 		t.Fatalf("reload: %s", diff)
 	}

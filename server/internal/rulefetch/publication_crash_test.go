@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"configflow/internal/agents"
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/api/rulelibrary"
 	apirules "configflow/internal/api/rules"
@@ -97,7 +98,15 @@ func TestInlinePublicationProcess(t *testing.T) {
 	if mode == "" {
 		return
 	}
-	s := httpxtest.New(t, httpxtest.Options{DataDir: os.Getenv("C37_DATA"), Auth: true, Register: httpxtest.Routes(apiagents.Register, rulelibrary.Register, apirules.Register)})
+	s := httpxtest.New(t, httpxtest.Options{DataDir: os.Getenv("C37_DATA"), Auth: true})
+	m, err := agents.New(s.Context(), s.Repo, agents.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: s.Repo, Agents: m}).Register(s.App.Router)
+	rulelibrary.New(rulelibrary.Deps{Repo: s.Repo}).Register(s.App.Router)
+	apirules.New(apirules.Deps{Repo: s.Repo}).Register(s.App.Router)
 	if mode == "write" {
 		seedInlinePublication(t, s)
 		if scenario == "adopt-shared" {

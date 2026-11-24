@@ -16,7 +16,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
@@ -38,12 +37,6 @@ var (
 	ErrWebListenerAlreadySet = errors.New("settings handler web listener already set")
 	ErrHandlerStarted        = errors.New("settings handler already started")
 )
-
-var webListener atomic.Pointer[weblistener.Manager]
-
-// SetWebListener installs the manager of the web front end's sockets (nil:
-// the deployment does not serve the web UI itself, as without nginx).
-func SetWebListener(m *weblistener.Manager) { webListener.Store(m) }
 
 // Handler serves the /api/settings, /api/backup, /api/server-domain,
 // /api/config-token, and /api/version routes backed by explicit services.
@@ -92,16 +85,12 @@ func (h *Handler) MarkStarted() {
 }
 
 func (h *Handler) currentWebListener() *weblistener.Manager {
-	if h != nil {
-		h.wlMu.Lock()
-		set := h.wlSet
-		m := h.wl
-		h.wlMu.Unlock()
-		if set {
-			return m
-		}
+	if h == nil {
+		return nil
 	}
-	return webListener.Load()
+	h.wlMu.Lock()
+	defer h.wlMu.Unlock()
+	return h.wl
 }
 
 // Register adds the settings routes to r.
@@ -119,9 +108,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.POST("/api/settings/dependencies/sub-store/update", "settings.update_sub_store_dependency", auth.Require(h.updateSubStoreDependency))
 	r.POST("/api/settings/dependencies/sub-store/mode", "settings.set_sub_store_mode", auth.Require(h.setSubStoreMode))
 }
-
-// Register adds the settings routes available now.
-func Register(r *httpx.Router) { NewHandler(nil, nil, nil).Register(r) }
 
 func failure(status int, message string) *httpx.Response {
 	return httpx.Message(status, false, message)

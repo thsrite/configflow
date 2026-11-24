@@ -134,7 +134,7 @@ func (s *Service) SetDNS(ctx context.Context, id string, body *dnsWriteRequest, 
 	}
 	skip := isTrue(body.SkipUnsupported)
 	changed := []string{}
-	err := editProfile(ctx, id, func(config *model.Config) error {
+	err := s.editProfile(ctx, id, func(config *model.Config) error {
 		before, err := profileView(config)
 		if err != nil {
 			return err

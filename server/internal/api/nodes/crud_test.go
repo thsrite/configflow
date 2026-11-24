@@ -13,7 +13,8 @@ import (
 )
 
 func TestReviewedDeletionAndConcurrentChanges(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	nodes.NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	ctx := srv.Context()
 	err := srv.Repo.UpdateShared(ctx, func(_ context.Context, s *model.Shared) error {
 		if err := s.SetJSON("nodes", json.RawMessage(`[{"id":"remove","name":"Remove","secret":"never-preview"},{"id":"keep","name":"Keep"}]`)); err != nil {
@@ -56,7 +57,8 @@ func TestReviewedDeletionAndConcurrentChanges(t *testing.T) {
 }
 
 func TestNodeWritesAndValidation(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	nodes.NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	for _, body := range []string{`null`, `[]`, `{"dialer_ref":null}`} {
 		srv.Post("/api/nodes", httpxtest.Body([]byte(body), "application/json")).WantStatus(400)
 	}
@@ -73,7 +75,8 @@ func TestNodeWritesAndValidation(t *testing.T) {
 // A deletion naming a node that no longer exists answers Python's plain 404
 // message, not the repository's "Profile not found" mapping (review W0–W8).
 func TestDeletionOfMissingNodesAnswersNodesGone(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(nodes.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	nodes.NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 		return s.SetJSON("nodes", json.RawMessage(`[{"id":"keep","name":"Keep"}]`))
 	})

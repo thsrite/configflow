@@ -34,7 +34,8 @@ func testServer(t *testing.T) *httpxtest.Server {
 	t.Helper()
 	_ = convert.SetMihomoIntegrations(gateway.Hooks())
 	mihomoenv.OverrideForTest(t, nil, nil, nil)
-	s := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(Register)})
+	s := httpxtest.New(t, httpxtest.Options{Auth: true})
+	NewHandler(s.Repo, nil, nil).Register(s.App.Router)
 	ctx := s.Context()
 	err := s.Repo.UpdateShared(ctx, func(_ context.Context, c *model.Shared) error {
 		return c.SetJSON("nodes", json.RawMessage(`[{"id":"n","name":"Example","type":"ss","server":"192.0.2.2","port":443,"cipher":"aes-128-gcm","password":"synthetic-node-secret"}]`))

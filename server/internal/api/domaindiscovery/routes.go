@@ -23,27 +23,18 @@ func NewHandler(r *repo.Repository, svc *discovery.Service) *Handler {
 	return &Handler{Repo: r, Service: svc}
 }
 
-func (h *Handler) service(ctx context.Context) (*discovery.Service, error) {
+func (h *Handler) service(_ context.Context) (*discovery.Service, error) {
 	if h != nil && h.Service != nil {
 		return h.Service, nil
 	}
-	r := h.Repo
-	if r == nil {
-		var err error
-		r, err = repo.GetRepository(ctx)
-		if err != nil {
-			return nil, err
-		}
+	if h == nil || h.Repo == nil {
+		return nil, errors.New("api/domaindiscovery: repository is nil")
 	}
-	return discovery.New(discovery.Options{Repo: r}), nil
+	return discovery.New(discovery.Options{Repo: h.Repo}), nil
 }
 
 func (h *Handler) ctx(c *httpx.Ctx) context.Context {
-	ctx := c.Context()
-	if h != nil && h.Repo != nil {
-		ctx = repo.WithRepository(ctx, h.Repo)
-	}
-	return ctx
+	return c.Context()
 }
 
 // Register declares all seventeen domain-discovery routes on r.
@@ -70,8 +61,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	}
 }
 
-// Register declares all seventeen domain-discovery routes.
-func Register(r *httpx.Router) { NewHandler(nil, nil).Register(r) }
 func body(c *httpx.Ctx) json.RawMessage {
 	var raw json.RawMessage
 	if !c.BindSilent(&raw) {

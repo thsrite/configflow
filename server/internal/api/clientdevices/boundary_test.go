@@ -119,7 +119,8 @@ func TestR17FlaskHTTPAndStoredState(t *testing.T) {
 	expected := pythonHTTP(t, dir, cfg, requests)
 	pythonState := f.Snapshot()
 	f.Reset(seed)
-	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), SecretKey: "synthetic-fixed-secret", Register: httpxtest.Routes(api.Register)})
+	s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), SecretKey: "synthetic-fixed-secret"})
+	api.NewHandler(s.Repo, nil).Register(s.App.Router)
 	previous := repo.SetHooks(repo.Hooks{RecordHooks: repo.RecordHooks{JobLockRecord: routers.JobLockRecord}})
 	t.Cleanup(func() { repo.SetHooks(previous) })
 	token := ""

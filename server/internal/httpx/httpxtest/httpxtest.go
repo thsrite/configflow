@@ -115,7 +115,7 @@ func New(t testing.TB, options Options) *Server {
 
 	app := httpx.New()
 	app.Repo = repository
-	apiauth.Register(app.Router)
+	apiauth.NewHandler().Register(app.Router)
 	for _, register := range options.Register {
 		register(app.Router)
 	}

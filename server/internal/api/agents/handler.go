@@ -37,11 +37,11 @@ type Deps struct {
 	Discovery *discovery.Service
 }
 
-func (d Deps) repository(ctx context.Context) (*repo.Repository, error) {
+func (d Deps) repository(_ context.Context) (*repo.Repository, error) {
 	if d.Repo != nil {
 		return d.Repo, nil
 	}
-	return repo.GetRepository(ctx)
+	return nil, errors.New("api/agents: repository is nil")
 }
 
 func (d Deps) manager(_ context.Context) (*core.Manager, error) {
@@ -51,18 +51,11 @@ func (d Deps) manager(_ context.Context) (*core.Manager, error) {
 	return nil, errors.New("api/agents: manager is nil")
 }
 
-func (d Deps) withRepo(ctx context.Context) context.Context {
-	if d.Repo != nil {
-		return repo.WithRepository(ctx, d.Repo)
-	}
-	return ctx
-}
-
 func (d Deps) dataDir() string {
 	if d.Repo != nil {
 		return d.Repo.DataDir()
 	}
-	return repo.DataDir()
+	return ""
 }
 
 func (d Deps) dnsFollowService(ctx context.Context) (*dnsfollow.Service, error) {

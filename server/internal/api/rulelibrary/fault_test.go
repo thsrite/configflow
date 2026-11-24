@@ -19,11 +19,11 @@ import (
 func TestStageWriteFailureDoesNotPublishDeclaration(t *testing.T) {
 	s := fixture(t)
 	createManual(t, s)
-	item, err := source(s.Context(), "manual")
+	item, err := source(s.Repo, s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := cachePath(s.Repo, s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestCanceledConnectivityRequestCompletesAndJoinsWorkers(t *testing.T) {
 	if !reply.Contains(`"available":true`) {
 		t.Fatal("request cancellation reached the detached probe", reply.Text())
 	}
-	item, err := source(s.Context(), "remote")
+	item, err := source(s.Repo, s.Context(), "remote")
 	if err != nil || !model.Flag(item.Enabled, true) {
 		t.Fatal("cancellation disabled an available source", err)
 	}
@@ -115,11 +115,11 @@ func TestUnknownCommitFailureRetainsDurableInvalidation(t *testing.T) {
 			s := fixture(t)
 			auth := s.Login()
 			createManual(t, s)
-			item, err := source(s.Context(), "manual")
+			item, err := source(s.Repo, s.Context(), "manual")
 			if err != nil {
 				t.Fatal(err)
 			}
-			path, err := cachePath(s.Context(), item)
+			path, err := cachePath(s.Repo, s.Context(), item)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -141,7 +141,7 @@ func TestUnknownCommitFailureRetainsDurableInvalidation(t *testing.T) {
 			if _, err = os.Stat(path + ".invalid"); err != nil {
 				t.Fatal("unknown commit outcome cleared invalidation", err)
 			}
-			item, err = source(s.Context(), "manual")
+			item, err = source(s.Repo, s.Context(), "manual")
 			if err != nil || model.TextValue(item.Content) != "+.old.example\n" {
 				t.Fatal("test's rejected commit did not roll back", err)
 			}

@@ -100,13 +100,12 @@ func TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation(t *testing.T) 
 					var s *httpxtest.Server
 					rotated := false
 					s = httpxtest.New(t, httpxtest.Options{
-						Register: httpxtest.Routes(Register, linuxgateway.Register),
 						Setup: func(app *httpx.App) {
 							app.BeforeRequest(func(c *httpx.Ctx) (*httpx.Response, error) {
 								if rotated {
 									return nil, nil
 								}
-								profileID, err := repo.ResolveProfileID(c.Context(), c.ProfileID)
+								profileID, err := s.Repo.ResolveProfileID(c.Context(), c.ProfileID)
 								if err != nil {
 									return nil, err
 								}
@@ -123,6 +122,8 @@ func TestLiveAndLinuxGatewayAuthUseRequestSnapshotOnTokenRotation(t *testing.T) 
 							})
 						},
 					})
+					New(Deps{Repo: s.Repo}).Register(s.App.Router)
+					linuxgateway.NewHandler(s.Repo, nil, nil).Register(s.App.Router)
 					if err := s.Repo.UpdateSystem(context.Background(), func(_ context.Context, sys *model.System) error {
 						return sys.SystemConfig.SetJSON("config_token", json.RawMessage(`"token-before-rotation"`))
 					}); err != nil {

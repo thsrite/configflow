@@ -34,7 +34,8 @@ func TestReviewCatalogCancellation(t *testing.T) {
 				label = "shutdown/"
 			}
 			t.Run(label+tc.method+tc.path, func(t *testing.T) {
-				srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(aggregations.Register)})
+				srv := httpxtest.New(t, httpxtest.Options{})
+				aggregations.NewHandler(srv.Repo, nil, nil, nil).Register(srv.App.Router)
 				err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 					if err := s.SetJSON("nodes", json.RawMessage(`[]`)); err != nil {
 						return err

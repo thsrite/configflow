@@ -126,7 +126,7 @@ func TestEveryCustomOwnerRuntime(t *testing.T) {
 					cancel()
 				}
 				body := customRequest{Config: json.RawMessage(`""`)}
-				_, err := New(Deps{}).saveCustom(ctx, "default", engine, body)
+				_, err := New(Deps{Repo: s.Repo}).saveCustom(ctx, "default", engine, body)
 				if shutdown {
 					if err == nil || stored(t, s) != before {
 						t.Fatal("shutdown committed")
@@ -208,7 +208,7 @@ func TestEmptyCustomUpdateRuntime(t *testing.T) {
 				} else {
 					cancel()
 				}
-				_, err := New(Deps{}).saveCustom(ctx, "default", engine, customRequest{})
+				_, err := New(Deps{Repo: s.Repo}).saveCustom(ctx, "default", engine, customRequest{})
 				if shutdown {
 					if err == nil || stored(t, s) != before {
 						t.Fatal("empty update committed after shutdown")

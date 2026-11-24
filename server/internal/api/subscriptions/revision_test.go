@@ -15,7 +15,8 @@ import (
 )
 
 func TestConfigFindingsIdenticalSubscriptionPutDoesNotChangeRevision(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(subscriptions.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	subscriptions.NewHandler(srv.Repo, nil, nil, nil, nil).Register(srv.App.Router)
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, shared *model.Shared) error {
 		raw, err := json.Marshal([]any{
 			testjson.Obj(

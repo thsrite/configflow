@@ -51,7 +51,8 @@ func TestR15MalformedProbePersistsOnlyProbe(t *testing.T) {
 				t.Fatalf("reference bug changed: %d", oracle.Responses[0].Status)
 			}
 			fake.Reset(seed)
-			s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), Register: httpxtest.Routes(api.Register)})
+			s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go")})
+			api.New(api.Deps{Repo: s.Repo, Routers: core.New(s.Repo, core.Options{})}).Register(s.App.Router)
 			before, err := s.Repo.Profile(s.Context(), "default")
 			if err != nil {
 				t.Fatal(err)
@@ -118,13 +119,14 @@ func TestR15ProbeRequestDisconnectAndRuntimeShutdown(t *testing.T) {
 			runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Mode: lifecycle.ModeManual})
 			runtime.Start(t.Context())
 			defer runtime.Shutdown(t.Context())
-			s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(api.Register), Setup: func(app *httpx.App) {
+			s := httpxtest.New(t, httpxtest.Options{Setup: func(app *httpx.App) {
 				app.AfterRequest(func(c *httpx.Ctx, response *httpx.Response) {
 					if strings.HasSuffix(c.Path(), "/probe") {
 						close(finished)
 					}
 				})
 			}})
+			api.New(api.Deps{Repo: s.Repo, Routers: core.New(s.Repo, core.Options{})}).Register(s.App.Router)
 			created := s.Post("/api/routers", httpxtest.JSON(routerBody(server.URL)))
 			created.WantStatus(200)
 			id := decodeJSON(t, created)["router"].(map[string]any)["id"].(string)

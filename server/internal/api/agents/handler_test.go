@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	core "configflow/internal/agents"
@@ -23,26 +22,6 @@ import (
 	"configflow/internal/httpx"
 	"configflow/internal/repo"
 )
-
-func TestHandlerRegistersIdenticalRoutes(t *testing.T) {
-	r1 := httpx.NewRouter()
-	Register(r1)
-
-	r2 := httpx.NewRouter()
-	NewHandler(Deps{}).Register(r2)
-
-	got1, got2 := r1.Routes(), r2.Routes()
-	if len(got1) != len(got2) {
-		t.Fatalf("route count = %d, want %d", len(got2), len(got1))
-	}
-	for i := range got1 {
-		if got1[i].Path != got2[i].Path || got1[i].Endpoint != got2[i].Endpoint || !slices.Equal(got1[i].Methods, got2[i].Methods) {
-			t.Fatalf("route[%d] = %s %v (%s), want %s %v (%s)",
-				i, got2[i].Path, got2[i].Methods, got2[i].Endpoint,
-				got1[i].Path, got1[i].Methods, got1[i].Endpoint)
-		}
-	}
-}
 
 func TestHandlerUsesInjectedDepsWithoutGlobalLocators(t *testing.T) {
 	dir := t.TempDir()
@@ -94,6 +73,7 @@ func TestHandlerUsesInjectedDepsWithoutGlobalLocators(t *testing.T) {
 	dp := deploy.New(deploy.Options{})
 
 	app := httpx.New()
+	app.Repo = r
 	NewHandler(Deps{
 		Repo:      r,
 		Agents:    m,

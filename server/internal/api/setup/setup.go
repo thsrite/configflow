@@ -38,10 +38,6 @@ func (h *Handler) Register(router *httpx.Router) {
 	router.POST("/api/setup/<session_id>/<operation>", "settings.setup_action", auth.Require(h.action))
 }
 
-// Register installs the five authenticated Flask-equivalent wizard methods.
-// GET's implicit HEAD is read-only, including collection and item requests.
-func Register(router *httpx.Router) { NewHandler(nil, nil).Register(router) }
-
 func (h *Handler) sessions(c *httpx.Ctx) (*httpx.Response, error) {
 	service, err := h.serviceFor(c)
 	if err != nil {
@@ -89,19 +85,12 @@ func (h *Handler) action(c *httpx.Ctx) (*httpx.Response, error) {
 	return respond(out, err)
 }
 
-func (h *Handler) serviceFor(c *httpx.Ctx) (*flow.Service, error) {
-	var r *repo.Repository
-	if h != nil {
-		r = h.Repo
+func (h *Handler) serviceFor(_ *httpx.Ctx) (*flow.Service, error) {
+	if h == nil || h.Repo == nil {
+		return nil, errors.New("api/setup: repository is nil")
 	}
-	if r == nil {
-		var err error
-		r, err = repo.GetRepository(c.Context())
-		if err != nil {
-			return nil, err
-		}
-	}
-	if h != nil && h.Owners != nil {
+	r := h.Repo
+	if h.Owners != nil {
 		return flow.NewWithOptions(r, flow.Options{Owners: *h.Owners})
 	}
 	return flow.New(r)

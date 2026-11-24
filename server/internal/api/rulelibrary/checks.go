@@ -104,7 +104,7 @@ func (s *Service) Test(ctx context.Context, base string) (checksResult, error) {
 			changes = append(changes, sourceChange{selected[i], next})
 		}
 	}
-	_, err = editWithProfiles(ctx, changes, func(_ context.Context, current *model.Shared) error {
+	_, err = s.editWithProfiles(ctx, changes, func(_ context.Context, current *model.Shared) error {
 		items := slices.Clone(current.RuleLibrary)
 		for _, change := range changes {
 			i := find(items, change.Old.ID)
@@ -205,7 +205,7 @@ func (s *Service) Cache(ctx context.Context, body *cacheRequest) (cacheResults, 
 	out.Total = len(selected)
 	out.Results, err = parallel(ctx, selected, func(ctx context.Context, item model.RuleLibraryItem) (cacheResult, error) {
 		result := cacheResult{ID: item.ID, Name: item.Name}
-		ctx, release, err := editLease(ctx, item.ID)
+		ctx, release, err := s.editLease(ctx, item.ID)
 		if err != nil {
 			return result, err
 		}
@@ -226,7 +226,7 @@ func (s *Service) Cache(ctx context.Context, body *cacheRequest) (cacheResults, 
 		}
 		result.Path = ""
 		result.Error = describeFailure(err)
-		cached, readErr := readCache(ctx, current)
+		cached, readErr := s.readCache(ctx, current)
 		if readErr != nil {
 			return result, readErr
 		}

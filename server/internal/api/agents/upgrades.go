@@ -211,7 +211,7 @@ func (h *upgradesHandler) getAgentStatus(c *httpx.Ctx) (*httpx.Response, error) 
 }
 
 func (h *upgradesHandler) getAgentLogs(c *httpx.Ctx, m *agents.Manager) (*httpx.Response, error) {
-	ctx := h.deps.withRepo(c.Context())
+	ctx := c.Context()
 	lines := argBigInt(c, "lines", 100)
 	logPath := c.ArgDefault("log_path", "")
 	source := c.ArgDefault("source", "")

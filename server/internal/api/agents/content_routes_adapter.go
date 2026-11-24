@@ -204,7 +204,7 @@ func (h *contentHandler) register(r *httpx.Router) {
 	r.GET("/api/agents/<agent_id>/push-diff/entries", "agents.agent_push_diff_entries", auth.Require(h.agentPushDiffEntries))
 }
 func (h *contentHandler) agentPushDiff(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := h.deps.withRepo(c.Context())
+	ctx := c.Context()
 	m, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err
@@ -269,7 +269,7 @@ func (h *contentHandler) agentPushDiffEntries(c *httpx.Ctx) (*httpx.Response, er
 	if err != nil {
 		return httpx.Message(400, false, messageInvalidContentPage), nil
 	}
-	ctx := h.deps.withRepo(c.Context())
+	ctx := c.Context()
 	m, err := h.deps.manager(ctx)
 	if err != nil {
 		return nil, err

@@ -24,19 +24,15 @@ import (
 
 func TestConfigFindingsRejectInvalidRequestShapesWithoutEffects(t *testing.T) {
 	calls := 0
-	var h *subscriptions.Handler
-	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
-		nodes.Register(r)
-		h = subscriptions.NewHandler(nil, nil, nil, nil, nil)
-		h.Register(r)
-	})})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	nodes.NewHandler(srv.Repo, nil).Register(srv.App.Router)
 	env := refresh.DefaultRefreshEnvFor(srv.Repo, nil)
 	env.Sources.Fetch = func(context.Context, string, string, substore.FetchOptions) (*refresh.SourceResult, error) {
 		calls++
 		return nil, errors.New("synthetic source must not be called")
 	}
-	h.Repo = srv.Repo
-	h.Refresh = refresh.New(refresh.Options{Repo: srv.Repo, Env: env})
+	h := subscriptions.NewHandler(srv.Repo, nil, nil, refresh.New(refresh.Options{Repo: srv.Repo, Env: env}), nil)
+	h.Register(srv.App.Router)
 	err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 		return s.SetJSON("subscriptions", json.RawMessage(`[{"id":"s","name":"Synthetic","url":"https://feed.example/sub"}]`))
 	})

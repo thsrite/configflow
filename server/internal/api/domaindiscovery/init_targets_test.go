@@ -26,7 +26,8 @@ func TestInitTargetsDeduplicateInFirstOccurrenceOrder(t *testing.T) {
 		{"default", []string{}, []string{"direct", "proxy"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(domaindiscovery.Register)})
+			s := httpxtest.New(t, httpxtest.Options{})
+			domaindiscovery.NewHandler(s.Repo, nil).Register(s.App.Router)
 			_, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, p *model.Profile) error {
 				if err := p.SetJSON("proxy_groups", json.RawMessage(`[{"id":"g","name":"PROXY","type":"select"}]`)); err != nil {
 					return err

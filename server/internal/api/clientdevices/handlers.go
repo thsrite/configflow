@@ -49,8 +49,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.POST("/api/client-devices/fixed-ip/apply", "client_devices.apply_fixed_ip", auth.Require(h.apply))
 }
 
-// Register creates an app-owned discovery cache and installs five HTTP routes.
-func Register(r *httpx.Router) { NewHandler(nil, nil).Register(r) }
 func config(ctx context.Context, db *repo.Repository, profile string) (json.RawMessage, error) {
 	value, err := db.ConfigWithOxiDNSAgents(lifecycle.Detach(ctx), profile, repo.ResourceRoots{})
 	if err != nil {
@@ -59,14 +57,10 @@ func config(ctx context.Context, db *repo.Repository, profile string) (json.RawM
 	return json.Marshal(value)
 }
 func (h *Handler) manager(c *httpx.Ctx) (*repo.Repository, *agents.Manager, error) {
-	db := h.Repo
-	if db == nil {
-		var err error
-		db, err = repo.GetRepository(c.Context())
-		if err != nil {
-			return nil, nil, err
-		}
+	if h == nil || h.Repo == nil {
+		return nil, nil, errors.New("api/clientdevices: repository is nil")
 	}
+	db := h.Repo
 	if h.Agents != nil {
 		return db, h.Agents, nil
 	}
@@ -119,15 +113,15 @@ func text(raw json.RawMessage) (string, bool) {
 	err := json.Unmarshal(raw, &value)
 	return value, err == nil
 }
-func sanitize(ctx context.Context, config json.RawMessage, value any) (json.RawMessage, error) {
+func (h *Handler) sanitize(ctx context.Context, config json.RawMessage, value any) (json.RawMessage, error) {
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+	if h == nil || h.Repo == nil {
+		return nil, errors.New("api/clientdevices: repository is nil")
 	}
+	r := h.Repo
 	secrets, err := redact.ExternalPayloadSecrets(ctx, r, nil)
 	if err == nil {
 		secrets, err = redact.AgentRecordCredentials(ctx, r, secrets)
@@ -137,15 +131,15 @@ func sanitize(ctx context.Context, config json.RawMessage, value any) (json.RawM
 	}
 	return redact.SanitizeCredentials(json.RawMessage(encoded), redact.CollectCredentials(config, secrets)), nil
 }
-func public(ctx context.Context, config json.RawMessage, value any, status int) (*httpx.Response, error) {
-	safe, err := sanitize(ctx, config, value)
+func (h *Handler) public(ctx context.Context, config json.RawMessage, value any, status int) (*httpx.Response, error) {
+	safe, err := h.sanitize(ctx, config, value)
 	if err != nil {
 		return nil, err
 	}
 	return httpx.JSONStatus(status, safe).NoStore(), nil
 }
 
-func failure(ctx context.Context, cfg json.RawMessage, err error) (*httpx.Response, error) {
+func (h *Handler) failure(ctx context.Context, cfg json.RawMessage, err error) (*httpx.Response, error) {
 	if err == nil {
 		return nil, nil
 	}
@@ -167,7 +161,7 @@ func failure(ctx context.Context, cfg json.RawMessage, err error) (*httpx.Respon
 	if status == 0 {
 		return nil, err
 	}
-	return public(ctx, cfg, struct {
+	return h.public(ctx, cfg, struct {
 		Success bool   `json:"success"`
 		Message string `json:"message"`
 	}{false, err.Error()}, status)
@@ -304,7 +298,7 @@ func (h *Handler) devices(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		change, err := deviceChange(fields)
 		if err != nil {
-			return failure(c.Context(), cfg, err)
+			return h.failure(c.Context(), cfg, err)
 		}
 		work := lifecycle.Detach(c.Context())
 		if err = work.Err(); err != nil {
@@ -327,14 +321,14 @@ func (h *Handler) devices(c *httpx.Ctx) (*httpx.Response, error) {
 			return ctx.Err()
 		})
 		if err != nil {
-			return failure(work, cfg, err)
+			return h.failure(work, cfg, err)
 		}
 	}
 	cfg, value, err := state(c.Context(), db, m, id)
 	if err != nil {
-		return failure(c.Context(), cfg, err)
+		return h.failure(c.Context(), cfg, err)
 	}
-	return public(c.Context(), cfg, value, 200)
+	return h.public(c.Context(), cfg, value, 200)
 }
 
 // deviceChange reports the first invalid field in the page's order: address,
@@ -444,9 +438,9 @@ func (h *Handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	value, err := service.Discover(c.Context(), cfg, clients.DiscoveryOptions{AgentHosts: hosts, ProfileID: id, Refresh: c.ArgDefault("refresh", "") == "1", Cache: h.cache})
 	if err != nil {
-		return failure(c.Context(), cfg, err)
+		return h.failure(c.Context(), cfg, err)
 	}
-	return public(c.Context(), cfg, struct {
+	return h.public(c.Context(), cfg, struct {
 		Success   bool   `json:"success"`
 		ProfileID string `json:"profile_id"`
 		clients.Discovery
@@ -467,16 +461,16 @@ func (h *Handler) preview(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	raw, intent, err := clients.NormalizeFixedIPRequest(body(c))
 	if err != nil {
-		return failure(c.Context(), cfg, err)
+		return h.failure(c.Context(), cfg, err)
 	}
 	if submitted, ok := text(raw); !ok || submitted != id {
 		return httpx.Message(409, false, messageProfileChanged).NoStore(), nil
 	}
 	value, err := h.fixed(db).Preview(c.Context(), id, intent)
 	if err != nil {
-		return failure(c.Context(), cfg, err)
+		return h.failure(c.Context(), cfg, err)
 	}
-	safe, err := sanitize(c.Context(), cfg, value.Actions)
+	safe, err := h.sanitize(c.Context(), cfg, value.Actions)
 	if err != nil {
 		return nil, err
 	}
@@ -509,13 +503,13 @@ func (h *Handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	token, _ := text(fields["token"])
 	if err = h.fixed(db).Apply(c.Context(), id, token); err != nil {
-		return failure(c.Context(), cfg, err)
+		return h.failure(c.Context(), cfg, err)
 	}
 	cfg, value, err := state(lifecycle.Detach(c.Context()), db, m, id)
 	if err != nil {
-		return failure(c.Context(), cfg, err)
+		return h.failure(c.Context(), cfg, err)
 	}
-	return public(c.Context(), cfg, value, 200)
+	return h.public(c.Context(), cfg, value, 200)
 }
 
 func storedAgentString(agent *model.Agent, key string) (string, error) {

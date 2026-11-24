@@ -28,8 +28,11 @@ func TestReviewCacheCrashRecovery(t *testing.T) {
 			if !errors.As(err, &exit) || exit.ProcessState.Sys().(syscall.WaitStatus).Signal() != syscall.SIGKILL {
 				t.Fatalf("child did not reach crash point: %v %s", err, output)
 			}
-			s := httpxtest.New(t, httpxtest.Options{DataDir: dir, Auth: true, Register: httpxtest.Routes(apirules.Register, Register)})
-			item, err := source(s.Context(), "manual")
+			s := httpxtest.New(t, httpxtest.Options{DataDir: dir, Auth: true})
+			apirules.New(apirules.Deps{Repo: s.Repo}).Register(s.App.Router)
+			New(Deps{Repo: s.Repo}).Register(s.App.Router)
+			svc := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
+			item, err := svc.source(s.Context(), "manual")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -40,7 +43,7 @@ func TestReviewCacheCrashRecovery(t *testing.T) {
 			if model.TextValue(item.Content) != want {
 				t.Fatalf("unexpected reopened DB: %s", model.TextValue(item.Content))
 			}
-			path, err := cachePath(s.Context(), item)
+			path, err := svc.cachePath(s.Context(), item)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -59,7 +62,7 @@ func TestReviewCacheCrashRecovery(t *testing.T) {
 					t.Fatalf("restart delivery %s: %q", route, got)
 				}
 			}
-			if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
+			if _, err = svc.Cache(s.Context(), decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
 				t.Fatal(err)
 			}
 			previousPrimary := "+.old.example\n"
@@ -87,13 +90,15 @@ func TestReviewCacheCrashChild(t *testing.T) {
 	if point == "" {
 		return
 	}
-	s := httpxtest.New(t, httpxtest.Options{DataDir: os.Getenv("C33_REVIEW_DATA"), Auth: true, Register: httpxtest.Routes(Register)})
+	s := httpxtest.New(t, httpxtest.Options{DataDir: os.Getenv("C33_REVIEW_DATA"), Auth: true})
+	New(Deps{Repo: s.Repo}).Register(s.App.Router)
+	svc := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 	createManual(t, s)
-	item, err := source(s.Context(), "manual")
+	item, err := svc.source(s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := svc.cachePath(s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,12 +112,12 @@ func TestReviewCacheCrashChild(t *testing.T) {
 		select {}
 	}
 	if point == "staged" {
-		if _, err = stageCache(s.Context(), item, []byte("+.committed.example\n"), nil); err != nil {
+		if _, err = svc.stageCache(s.Context(), item, []byte("+.committed.example\n"), nil); err != nil {
 			t.Fatal(err)
 		}
 		crash()
 	}
-	service := &Service{client: rulefetch.DefaultClient, replaceCache: func(ctx context.Context, from, to string) error {
+	service := &Service{repo: s.Repo, client: rulefetch.DefaultClient, replaceCache: func(ctx context.Context, from, to string) error {
 		if point == "committed" {
 			crash()
 		}

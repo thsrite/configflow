@@ -32,7 +32,8 @@ func TestReviewBatch48CreateLenientReplaceStrict(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(Register)})
+			srv := httpxtest.New(t, httpxtest.Options{})
+			New(Deps{Repo: srv.Repo}).Register(srv.App.Router)
 			err := srv.Repo.UpdateShared(srv.Context(), func(_ context.Context, s *model.Shared) error {
 				return s.SetJSON("rule_library", json.RawMessage(`[{"id":"r2","name":"R2","source_type":"content","content":"DOMAIN,a.example\n","behavior":"classical","format":"text"}]`))
 			})

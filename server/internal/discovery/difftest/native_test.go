@@ -22,7 +22,8 @@ func TestNativeNonFiniteRequestDifferences(t *testing.T) {
 	seed := t.TempDir()
 	runPython(t, seed, "seed", "1") // No case reaches the Agent endpoint.
 	py := startPython(t, seed)
-	goServer := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(domaindiscovery.Register)})
+	goServer := httpxtest.New(t, httpxtest.Options{})
+	domaindiscovery.NewHandler(goServer.Repo, nil).Register(goServer.App.Router)
 	cases := []struct {
 		method, path, fields string
 		pythonStatus         int

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	core "configflow/internal/agents"
 	apiagents "configflow/internal/api/agents"
 	"configflow/internal/httpx/httpxtest"
 )
@@ -17,7 +18,13 @@ import (
 func TestStorageFailuresHaveActionableErrors(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DATA_DIR", dir) // the install command store follows repo.DataDir()
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true, DataDir: dir, Register: httpxtest.Routes(apiagents.Register)})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true, DefaultFactories: true, DataDir: dir})
+	m, err := core.New(srv.Context(), srv.Repo, core.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	apiagents.NewHandler(apiagents.Deps{Repo: srv.Repo, Agents: m}).Register(srv.App.Router)
 	admin := srv.Login()
 	os.MkdirAll(filepath.Join(dir, "install-commands"), 0o700)
 	if err := os.WriteFile(filepath.Join(dir, "install-commands", "snapshots.sqlite3"), []byte(strings.Repeat("not a database ", 64)), 0o600); err != nil {

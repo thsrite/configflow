@@ -255,7 +255,7 @@ func TestCancelledLocalOwnerCompletesCache(t *testing.T) {
 	s := fixture(t)
 	ctx, cancel := context.WithCancel(s.Context())
 	cancel()
-	out, err := (&Service{}).Local(ctx, "other", "Ads", "mihomo", "http://localhost")
+	out, err := (&Service{repo: s.Repo}).Local(ctx, "other", "Ads", "mihomo", "http://localhost")
 	if err != nil || string(out.Content) != "+.ads.example\n" {
 		t.Fatalf("cancelled provider %q %v", out.Content, err)
 	}

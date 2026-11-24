@@ -46,6 +46,7 @@ func TestNewHandlerNilAdopterFailsClosed(t *testing.T) {
 	}
 
 	app := httpx.New()
+	app.Repo = r
 	NewHandler(r, onboarding.CheckDNSLoop, nil).Register(app.Router)
 
 	res, err := app.Invoke(context.Background(), httpx.InvokeRequest{

@@ -109,7 +109,7 @@ func TestCancelledComposeAndConcurrentDuplicateChecks(t *testing.T) {
 	ctx, cancel := context.WithCancel(s.Context())
 	cancel()
 	body := composeBody(record{"kind": stringJSON("values"), "rule_type": stringJSON("DOMAIN"), "text": stringJSON("cancelled.example")}, "default")
-	if _, err := (&Service{}).Compose(ctx, "other", request[composeRequest](body), "http://localhost"); err != nil {
+	if _, err := (&Service{repo: s.Repo}).Compose(ctx, "other", request[composeRequest](body), "http://localhost"); err != nil {
 		t.Fatal(err)
 	}
 	body = composeBody(record{"kind": stringJSON("values"), "rule_type": stringJSON("DOMAIN"), "text": stringJSON("same.example")}, "default")
@@ -120,7 +120,7 @@ func TestCancelledComposeAndConcurrentDuplicateChecks(t *testing.T) {
 	for range 2 {
 		workers.Go(func() {
 			<-start
-			out, err := (&Service{}).Compose(s.Context(), "other", request[composeRequest](body), "http://localhost")
+			out, err := (&Service{repo: s.Repo}).Compose(s.Context(), "other", request[composeRequest](body), "http://localhost")
 			if err != nil {
 				failures <- err
 			} else {

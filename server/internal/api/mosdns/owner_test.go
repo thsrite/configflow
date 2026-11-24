@@ -34,7 +34,7 @@ func TestTypedSettingsRuntimeOwnership(t *testing.T) {
 				cancel()
 			}
 			value := model.MosDNSSettings{CustomHosts: "192.0.2.4 saved.example"}
-			_, err = New(Deps{}).save(request, "dns-servers", value)
+			_, err = New(Deps{Repo: repository}).save(request, "dns-servers", value)
 			after, readErr := repository.ConfigRevision(root, "default")
 			if readErr != nil {
 				t.Fatal(readErr)
@@ -74,7 +74,7 @@ func TestTypedSettingsShutdownWhileWaitingForTransaction(t *testing.T) {
 	started := make(chan struct{})
 	go func() {
 		close(started)
-		_, err := New(Deps{}).save(request, "dns-servers", model.MosDNSSettings{CustomHosts: "192.0.2.8 blocked.example"})
+		_, err := New(Deps{Repo: repository}).save(request, "dns-servers", model.MosDNSSettings{CustomHosts: "192.0.2.8 blocked.example"})
 		result <- err
 	}()
 	<-started

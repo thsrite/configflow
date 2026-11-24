@@ -119,17 +119,17 @@ func (h *dockerHAHandler) dockerOxidnsHAGuide(c *httpx.Ctx) (*httpx.Response, er
 			return nil, err
 		}
 		if options.Action == "generate" && options.Mode == "new" {
-			ctx := h.deps.withRepo(c.Context())
-			var profileID string
-			if header, present := c.Header("X-ConfigFlow-Profile"); present {
-				profileID, err = repo.ResolveProfile(ctx, &header, nil)
-			} else {
-				profileID, err = repo.ResolveProfile(ctx, nil, nil)
-			}
+			ctx := c.Context()
+			repository, err := h.deps.repository(ctx)
 			if err != nil {
 				return nil, err
 			}
-			repository, err := h.deps.repository(ctx)
+			var profileID string
+			if header, present := c.Header("X-ConfigFlow-Profile"); present {
+				profileID, err = repository.ResolveProfile(ctx, &header, nil)
+			} else {
+				profileID, err = repository.ResolveProfile(ctx, nil, nil)
+			}
 			if err != nil {
 				return nil, err
 			}

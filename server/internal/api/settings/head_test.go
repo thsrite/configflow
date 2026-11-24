@@ -31,7 +31,7 @@ func (s *listenerServer) SetListenerToken(token string) {
 }
 func (s *listenerServer) ListenerToken() string { s.mu.Lock(); defer s.mu.Unlock(); return s.token }
 
-func activeListener(t *testing.T, dir string) {
+func activeListener(t *testing.T, dir string, h *settings.Handler) {
 	t.Helper()
 	l, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -48,8 +48,10 @@ func activeListener(t *testing.T, dir string) {
 	if _, err := m.Listen(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	settings.SetWebListener(m)
-	t.Cleanup(func() { settings.SetWebListener(nil); m.Close(); _ = s.server.Close() })
+	if err := h.SetWebListener(m); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { m.Close(); _ = s.server.Close() })
 }
 
 func storedFiles(t *testing.T, dir string) map[string]string {
@@ -84,9 +86,11 @@ func TestSettingsHEADIsReadOnly(t *testing.T) {
 		{"/api/settings/subscription-aggregation", `{"enabled":true}`},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
-			s := newServer(t, true)
+			s := httpxtest.New(t, httpxtest.Options{Auth: true})
+			h := settings.NewHandler(s.Repo, nil, nil)
+			h.Register(s.App.Router)
 			if tc.path == "/api/settings/web-port" {
-				activeListener(t, s.DataDir)
+				activeListener(t, s.DataDir, h)
 			}
 			admin := s.Login()
 			get := s.Get(tc.path, admin).WantStatus(200)

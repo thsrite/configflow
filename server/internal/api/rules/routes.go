@@ -31,9 +31,8 @@ type Handler struct {
 	service *Service
 }
 
-// New constructs a rules Handler with explicit dependencies. Nil fields fall
-// back to transitional process defaults until W11.
-func New(deps Deps) *Handler {
+// NewService constructs a rules Service with explicit dependencies.
+func NewService(deps Deps) *Service {
 	now := deps.Now
 	if now == nil {
 		now = time.Now
@@ -42,20 +41,19 @@ func New(deps Deps) *Handler {
 	if client == nil {
 		client = rulefetch.DefaultClient
 	}
-	return &Handler{
-		service: &Service{
-			repo:       deps.Repo,
-			ruleSource: deps.RuleSource,
-			refresh:    deps.Refresh,
-			client:     client,
-			now:        now,
-		},
+	return &Service{
+		repo:       deps.Repo,
+		ruleSource: deps.RuleSource,
+		refresh:    deps.Refresh,
+		client:     client,
+		now:        now,
 	}
 }
 
-// Register installs rule composition and DNS routes. Public delivery routes are
-// registered separately with their own cache-owner cancellation semantics.
-func Register(r *httpx.Router) { New(Deps{}).Register(r) }
+// New constructs a rules Handler with explicit dependencies.
+func New(deps Deps) *Handler {
+	return &Handler{service: NewService(deps)}
+}
 
 // Options supplies deterministic time and loopback-only rule transport in tests.
 type Options struct {

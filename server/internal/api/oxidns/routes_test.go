@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	api "configflow/internal/api/oxidns"
-	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/repo"
 	"configflow/internal/server"
@@ -57,7 +56,8 @@ func TestC29RouteRegistrationHasOneOwner(t *testing.T) {
 }
 
 func TestC29HEADReturnsGETHeadersWithoutSaving(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: []func(*httpx.Router){api.Register}})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	api.New(api.Deps{Repo: srv.Repo}).Register(srv.App.Router)
 	for _, path := range []string{"/api/oxidns/settings", "/api/profiles/default/oxidns/settings"} {
 		get := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(get, httptest.NewRequest("GET", path, nil))
@@ -96,7 +96,8 @@ func TestC29HEADReturnsGETHeadersWithoutSaving(t *testing.T) {
 }
 
 func TestNativeRequestTypesReturn400WithoutWrites(t *testing.T) {
-	srv := httpxtest.New(t, httpxtest.Options{Register: []func(*httpx.Router){api.Register}})
+	srv := httpxtest.New(t, httpxtest.Options{})
+	api.New(api.Deps{Repo: srv.Repo}).Register(srv.App.Router)
 	for _, body := range []string{`{"custom_matches":[{"enabled":0}]}`, `{"ros_route":{"args":{"routing_table":5}}}`, `{"ros_route":{"args":{"gateway4":[]}}}`} {
 		before, err := srv.Repo.ExportAllJSON(srv.Context(), false)
 		if err != nil {

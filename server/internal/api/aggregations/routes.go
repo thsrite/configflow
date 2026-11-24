@@ -121,9 +121,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.GET("/api/profiles/<profile_id>/aggregations/<agg_id>/provider", "profiles.profile_aggregation_provider", h.download)
 }
 
-// Register installs all eleven aggregation routes, including the public alias.
-func Register(r *httpx.Router) { NewHandler(nil, nil, nil, nil).Register(r) }
-
 func (h *Handler) collection(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := h.withRepo(c.Context())
 	if c.Method() == http.MethodGet {

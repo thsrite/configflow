@@ -13,22 +13,16 @@ import (
 	apisetup "configflow/internal/api/setup"
 	"configflow/internal/gateway/host"
 	"configflow/internal/gateway/installation"
-	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/routers"
 	"configflow/internal/rulesource"
 )
 
 func TestSetupInstallationReadOwnersDoNotInitializeRegistry(t *testing.T) {
-	var setupHandler *apisetup.Handler
-	srv := httpxtest.New(t, httpxtest.Options{Auth: true, Register: httpxtest.Routes(func(r *httpx.Router) {
-		setupHandler = apisetup.NewHandler(nil, nil)
-		setupHandler.Register(r)
-		apiagents.Register(r)
-	})})
+	srv := httpxtest.New(t, httpxtest.Options{Auth: true})
 	owners := buildSetupOwners(nil, rulesource.New(rulesource.Options{Repo: srv.Repo}), routers.New(srv.Repo, routers.Options{}))
-	setupHandler.Repo = srv.Repo
-	setupHandler.Owners = &owners
+	apisetup.NewHandler(srv.Repo, &owners).Register(srv.App.Router)
+	apiagents.NewHandler(apiagents.Deps{Repo: srv.Repo}).Register(srv.App.Router)
 	admin := srv.Login()
 	const id = "cccccccccccccccccccccccccccccccc"
 	const profile = "setup_cccccccccccccccccccc"

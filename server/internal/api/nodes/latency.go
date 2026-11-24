@@ -27,11 +27,7 @@ func NewHandler(r *repo.Repository, sub *substore.Service) *Handler {
 }
 
 func (h *Handler) ctx(c *httpx.Ctx) context.Context {
-	ctx := c.Context()
-	if h != nil && h.Repo != nil {
-		ctx = repo.WithRepository(ctx, h.Repo)
-	}
-	return ctx
+	return c.Context()
 }
 
 // Register declares the nodes blueprint routes on r.
@@ -41,9 +37,6 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.Handle([]string{"GET", "POST"}, "/api/nodes/latency/settings", "nodes.node_latency_settings", auth.Require(h.nodeLatencySettings))
 	r.POST("/api/nodes/latency/dns/check", "nodes.node_dns_check", auth.Require(h.nodeDNSCheck))
 }
-
-// Register declares the nodes blueprint routes.
-func Register(r *httpx.Router) { NewHandler(nil, nil).Register(r) }
 
 func failure(code int, message string) *httpx.Response {
 	return httpx.Message(code, false, message)

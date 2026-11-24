@@ -62,7 +62,7 @@ func TestReviewConnectivityWorkerBoundAndRawRequest(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		out, err := (&Service{client: rulefetch.DefaultClient}).Test(s.Context(), "http://localhost")
+		out, err := (&Service{repo: s.Repo, client: rulefetch.DefaultClient}).Test(s.Context(), "http://localhost")
 		done <- result{out, err}
 	}()
 	deadline := time.NewTimer(10 * time.Second)

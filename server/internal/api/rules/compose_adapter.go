@@ -133,15 +133,19 @@ func (s *Service) cacheComposed(ctx context.Context, library model.RuleLibraryIt
 
 // editSharedProfile edits the shared catalog and the profile resolved against
 // it in one transaction; profileEdit gets the DNS view from before the edit.
-func editSharedProfile(ctx context.Context, id string, sharedEdit func(*model.Shared) error, profileEdit func(*oxidns.Profile, *model.Config) error) error {
+func (s *Service) editSharedProfile(ctx context.Context, id string, sharedEdit func(*model.Shared) error, profileEdit func(*oxidns.Profile, *model.Config) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	resolved, err := repo.ResolveProfileID(ctx, id)
+	r, err := s.repository(ctx)
 	if err != nil {
 		return err
 	}
-	return repo.UpdateSharedConfigs(ctx, func(tx context.Context, value *model.Shared) error {
+	resolved, err := r.ResolveProfileID(ctx, id)
+	if err != nil {
+		return err
+	}
+	return r.UpdateScopedSharedConfigs(ctx, func(tx context.Context, value *model.Shared) error {
 		if err := tx.Err(); err != nil {
 			return err
 		}

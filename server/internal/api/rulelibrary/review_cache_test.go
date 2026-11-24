@@ -18,12 +18,13 @@ import (
 
 func TestReviewUnreadableReceiptCannotReviveLegacyCache(t *testing.T) {
 	s := fixture(t)
+	svc := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 	createManual(t, s)
-	item, err := source(s.Context(), "manual")
+	item, err := svc.source(s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := svc.cachePath(s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,13 +54,14 @@ func TestReviewUnreadableReceiptCannotReviveLegacyCache(t *testing.T) {
 
 func TestReviewOldInlineReaderCannotOverwriteCommittedDraft(t *testing.T) {
 	s := fixture(t)
+	svc := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 	createManual(t, s)
 	// A request keeps its compat snapshot while an editor commits a newer DB.
 	reader := s.Context()
-	if _, err := repo.Config(reader, "default"); err != nil {
+	if _, err := s.Repo.ScopedConfig(reader, "default"); err != nil {
 		t.Fatal(err)
 	}
-	item, err := source(s.Context(), "manual")
+	item, err := svc.source(s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +69,7 @@ func TestReviewOldInlineReaderCannotOverwriteCommittedDraft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := &Service{client: rulefetch.DefaultClient, replaceCache: func(ctx context.Context, from, to string) error {
+	service := &Service{repo: s.Repo, client: rulefetch.DefaultClient, replaceCache: func(ctx context.Context, from, to string) error {
 		if !s.Repo.InTransaction(ctx) {
 			t.Fatal("cache publication is not serialized with repository editors")
 		}
@@ -76,7 +78,7 @@ func TestReviewOldInlineReaderCannotOverwriteCommittedDraft(t *testing.T) {
 		}
 		// Run that already-admitted reader after the actual rename, before the
 		// receipt is cleared. Its old response is allowed; its cache write is not.
-		out, err := (&apirules.Service{}).Local(reader, "default", "Manual", "", "http://localhost")
+		out, err := apirules.NewService(apirules.Deps{Repo: s.Repo}).Local(reader, "default", "Manual", "", "http://localhost")
 		if err != nil || string(out.Content) != "+.old.example\n" {
 			t.Fatalf("old request snapshot: %q %v", out.Content, err)
 		}
@@ -92,13 +94,14 @@ func TestReviewOldInlineReaderCannotOverwriteCommittedDraft(t *testing.T) {
 
 func TestReviewStageRejectsNewerCommittedDeclaration(t *testing.T) {
 	s := fixture(t)
+	svc := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 	createManual(t, s)
-	first, err := source(s.Context(), "manual")
+	first, err := svc.source(s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
 	first.Content = new("+.first-commit.example\n")
-	stage, err := stageCache(s.Context(), first, []byte(model.TextValue(first.Content)), nil)
+	stage, err := svc.stageCache(s.Context(), first, []byte(model.TextValue(first.Content)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +143,7 @@ func TestReviewStageRejectsNewerCommittedDeclaration(t *testing.T) {
 	if got := s.Get("/api/rules/local/Manual", s.Login()).WantStatus(200).Text(); got != "+.newer-owner.example\n" {
 		t.Fatalf("obsolete stage resurrected old bytes: %q", got)
 	}
-	if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
+	if _, err = svc.Cache(s.Context(), decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = os.Stat(stage.marker); !os.IsNotExist(err) {
@@ -154,13 +157,14 @@ func TestReviewStageRejectsNewerCommittedDeclaration(t *testing.T) {
 
 func TestReviewStageAllowsMetadataAndPreservesPreparedBytes(t *testing.T) {
 	s := fixture(t)
+	svc := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 	createManual(t, s)
-	item, err := source(s.Context(), "manual")
+	item, err := svc.source(s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
 	prepared := "+.prepared-legacy.example\n"
-	stage, err := stageCache(s.Context(), item, []byte(prepared), nil)
+	stage, err := svc.stageCache(s.Context(), item, []byte(prepared), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,13 +201,14 @@ func TestReviewAbortClearsOnlyItsUnchangedBaseline(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			s := fixture(t)
+			svc := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 			createManual(t, s)
-			next, err := source(s.Context(), "manual")
+			next, err := svc.source(s.Context(), "manual")
 			if err != nil {
 				t.Fatal(err)
 			}
 			next.Content = new("+.rejected-proposal.example\n")
-			stage, err := stageCache(s.Context(), next, []byte(model.TextValue(next.Content)), nil)
+			stage, err := svc.stageCache(s.Context(), next, []byte(model.TextValue(next.Content)), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -244,8 +249,9 @@ func TestReviewAbortClearsOnlyItsUnchangedBaseline(t *testing.T) {
 
 func TestReviewCreateUsesTheSourceCleanupLease(t *testing.T) {
 	s := fixture(t)
+	svc := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 	item := decodeTestJSON[libraryRequest](t, `{"id":"created","name":"Created","source_type":"content","behavior":"domain","format":"text","content":"+.created.example\n"}`)
-	path, err := cachePath(s.Context(), item.previewItem(""))
+	path, err := svc.cachePath(s.Context(), item.previewItem(""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +264,7 @@ func TestReviewCreateUsesTheSourceCleanupLease(t *testing.T) {
 		return nil
 	}
 	defer func() { s.Repo.Store().BeforeCommit = nil }()
-	if _, err = (&Service{client: rulefetch.DefaultClient}).Create(s.Context(), item); err != nil {
+	if _, err = svc.Create(s.Context(), item); err != nil {
 		t.Fatal(err)
 	}
 	if !checked || edits.Held(path) {
@@ -268,7 +274,7 @@ func TestReviewCreateUsesTheSourceCleanupLease(t *testing.T) {
 
 func TestReviewCreateDoesNotHoldCleanupLeaseDuringDownload(t *testing.T) {
 	s := fixture(t)
-	service := &Service{client: rulefetch.DefaultClient}
+	service := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 	winner := decodeTestJSON[libraryRequest](t, `{"id":"same","name":"Winner","source_type":"content","behavior":"domain","format":"text","content":"+.winner.example\n"}`)
 	winnerResult := make(chan error, 1)
 	var once sync.Once
@@ -296,11 +302,11 @@ func TestReviewCreateDoesNotHoldCleanupLeaseDuringDownload(t *testing.T) {
 	default:
 		t.Fatal("the actual download did not admit the inline winner")
 	}
-	current, err := source(s.Context(), "same")
+	current, err := service.source(s.Context(), "same")
 	if err != nil || model.TextValue(current.Content) != "+.winner.example\n" {
 		t.Fatal("inline winner was overwritten", err)
 	}
-	path, err := cachePath(s.Context(), current)
+	path, err := service.cachePath(s.Context(), current)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,12 +318,13 @@ func TestReviewCreateDoesNotHoldCleanupLeaseDuringDownload(t *testing.T) {
 
 func TestReviewInlineFallbackDoesNotPublishOutsideEditLease(t *testing.T) {
 	s := fixture(t)
+	svc := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 	createManual(t, s)
-	item, err := source(s.Context(), "manual")
+	item, err := svc.source(s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := svc.cachePath(s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,10 +351,10 @@ func TestReviewColdInlineReaderPopulatesCurrentDeclaration(t *testing.T) {
 	s := fixture(t)
 	createManual(t, s)
 	reader := s.Context()
-	if _, err := repo.Config(reader, "default"); err != nil {
+	if _, err := s.Repo.ScopedConfig(reader, "default"); err != nil {
 		t.Fatal(err)
 	}
-	service := &Service{client: rulefetch.DefaultClient}
+	service := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 	draft, err := service.Draft(s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
@@ -355,11 +362,11 @@ func TestReviewColdInlineReaderPopulatesCurrentDeclaration(t *testing.T) {
 	if _, err = service.SaveDraft(s.Context(), "manual", draftBody(t, draft.Revision, "+.committed.example\n")); err != nil {
 		t.Fatal(err)
 	}
-	item, err := source(s.Context(), "manual")
+	item, err := service.source(s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := service.cachePath(s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +374,7 @@ func TestReviewColdInlineReaderPopulatesCurrentDeclaration(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := doc(t, s)
-	out, err := (&apirules.Service{}).Local(reader, "default", "Manual", "", "http://localhost")
+	out, err := apirules.NewService(apirules.Deps{Repo: s.Repo}).Local(reader, "default", "Manual", "", "http://localhost")
 	if err != nil || string(out.Content) != "+.old.example\n" {
 		t.Fatalf("old request snapshot: %q %v", out.Content, err)
 	}
@@ -382,8 +389,9 @@ func TestReviewColdInlineReaderPopulatesCurrentDeclaration(t *testing.T) {
 
 func TestReviewOtherInlineWritersCannotOverwriteCommittedDraft(t *testing.T) {
 	s := fixture(t)
+	svc := &Service{repo: s.Repo, client: rulefetch.DefaultClient}
 	createManual(t, s)
-	old, err := source(s.Context(), "manual")
+	old, err := svc.source(s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +399,7 @@ func TestReviewOtherInlineWritersCannotOverwriteCommittedDraft(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = (&Service{client: rulefetch.DefaultClient}).SaveDraft(s.Context(), "manual", draftBody(t, token, "+.committed.example\n")); err != nil {
+	if _, err = svc.SaveDraft(s.Context(), "manual", draftBody(t, token, "+.committed.example\n")); err != nil {
 		t.Fatal(err)
 	}
 	before := doc(t, s)

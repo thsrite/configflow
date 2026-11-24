@@ -10,7 +10,8 @@ import (
 )
 
 func TestNativeRequestsRejectMalformedAndNonFinite(t *testing.T) {
-	s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(domaindiscovery.Register)})
+	s := httpxtest.New(t, httpxtest.Options{})
+	domaindiscovery.NewHandler(s.Repo, nil).Register(s.App.Router)
 	for _, route := range []struct{ method, path string }{
 		{"PUT", "settings"}, {"POST", "rulesets/init"}, {"POST", "apply"}, {"POST", "undo"}, {"POST", "ignore"}, {"DELETE", "ignore"}, {"POST", "probe"}, {"POST", "region/check"}, {"POST", "region/route"}, {"POST", "website/identify"}, {"PUT", "website/note"},
 	} {

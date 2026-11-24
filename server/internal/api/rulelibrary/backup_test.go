@@ -31,11 +31,11 @@ func TestCachePublicationRetainsPreviousPrimary(t *testing.T) {
 		t.Run(previous, func(t *testing.T) {
 			s := fixture(t)
 			createManual(t, s)
-			item, err := source(s.Context(), "manual")
+			item, err := source(s.Repo, s.Context(), "manual")
 			if err != nil {
 				t.Fatal(err)
 			}
-			path, err := cachePath(s.Context(), item)
+			path, err := cachePath(s.Repo, s.Context(), item)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -61,11 +61,11 @@ func TestCacheBackupParticipatesInUnchangedCheck(t *testing.T) {
 	s := fixture(t)
 	createManual(t, s)
 	s.Put("/api/rule-library/manual", s.Login(), httpxtest.JSON(map[string]string{"name": "Manual", "source_type": "content", "behavior": "domain", "format": "text", "content": "+.new.example\n"})).WantStatus(200)
-	item, err := source(s.Context(), "manual")
+	item, err := source(s.Repo, s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := cachePath(s.Repo, s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestCacheBackupParticipatesInUnchangedCheck(t *testing.T) {
 		t.Fatal("previous-version backup incorrectly qualified as unchanged")
 	}
 	assertCacheBackup(t, path, string(current))
-	if _, err = (&Service{client: rulefetch.DefaultClient}).Cache(s.Context(), decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
+	if _, err = (&Service{repo: s.Repo, client: rulefetch.DefaultClient}).Cache(s.Context(), decodeTestJSON[cacheRequest](t, `{"rule_ids":["manual"]}`)); err != nil {
 		t.Fatal(err)
 	}
 	assertCacheBackup(t, path, string(current))
@@ -132,11 +132,11 @@ func TestCacheBackupProtectsOrphanIdentity(t *testing.T) {
 	s := fixture(t)
 	createManual(t, s)
 	s.Put("/api/rule-library/manual", s.Login(), httpxtest.JSON(map[string]string{"name": "Manual", "source_type": "content", "behavior": "domain", "format": "text", "content": "+.new.example\n"})).WantStatus(200)
-	item, err := source(s.Context(), "manual")
+	item, err := source(s.Repo, s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := cachePath(s.Repo, s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,12 +158,12 @@ func TestCacheBackupProtectsOrphanIdentity(t *testing.T) {
 func TestCacheBackupFinishesAfterRenameShutdown(t *testing.T) {
 	s := fixture(t)
 	createManual(t, s)
-	item, err := source(s.Context(), "manual")
+	item, err := source(s.Repo, s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
 	runtime, ctx, _ := runtimeRequest(t, s.Context())
-	service := &Service{client: rulefetch.DefaultClient, replaceCache: func(ctx context.Context, from, to string) error {
+	service := &Service{repo: s.Repo, client: rulefetch.DefaultClient, replaceCache: func(ctx context.Context, from, to string) error {
 		if err := replaceFile(ctx, from, to); err != nil {
 			return err
 		}
@@ -177,7 +177,7 @@ func TestCacheBackupFinishesAfterRenameShutdown(t *testing.T) {
 	if _, err = service.SaveDraft(ctx, "manual", draftBody(t, token, "+.new.example\n")); err != nil {
 		t.Fatal("post-rename shutdown aborted committed publication", err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := cachePath(s.Repo, s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,11 +190,11 @@ func TestCacheBackupFinishesAfterRenameShutdown(t *testing.T) {
 func TestCacheBackupFailureDoesNotFailPrimary(t *testing.T) {
 	s := fixture(t)
 	createManual(t, s)
-	item, err := source(s.Context(), "manual")
+	item, err := source(s.Repo, s.Context(), "manual")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := cachePath(s.Repo, s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,7 +24,9 @@ func exportApp(t *testing.T) *httpxtest.Server {
 		RedactRoutersJSON: func(raw json.RawMessage) (json.RawMessage, error) { return spec.RedactRouters(raw) },
 		JobLockRecord:     routers.JobLockRecord,
 	}})
-	return httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(Register)})
+	s := httpxtest.New(t, httpxtest.Options{})
+	New(Deps{Repo: s.Repo}).Register(s.App.Router)
+	return s
 }
 
 func TestFullAndShareableBackupHTTP(t *testing.T) {
@@ -106,7 +108,7 @@ func TestGlobalOwnersRuntimeShutdownAndDisconnect(t *testing.T) {
 				} else {
 					encoded = []byte("null")
 				}
-				_, err = New(Deps{}).writeGlobal(ctx, encoded, reset)
+				_, err = New(Deps{Repo: s.Repo}).writeGlobal(ctx, encoded, reset)
 				after, readErr := s.Repo.ExportAllJSON(s.Context(), false)
 				if readErr != nil {
 					t.Fatal(readErr)

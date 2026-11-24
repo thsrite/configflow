@@ -6,15 +6,14 @@ import (
 	"os"
 
 	"configflow/internal/model"
-	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 )
 
 var edits = rulefetch.CacheEditLocks
 var errStaleCacheStage = rulefetch.ErrStaleCacheStage
 
-func editLease(ctx context.Context, id string) (context.Context, func(), error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) editLease(ctx context.Context, id string) (context.Context, func(), error) {
+	r, err := s.repository(ctx)
 	if err != nil {
 		return ctx, nil, err
 	}
@@ -26,8 +25,8 @@ type stagedCache struct {
 	path, temp, marker string
 }
 
-func stageCache(ctx context.Context, item model.RuleLibraryItem, content []byte, replace func(context.Context, string, string) error) (*stagedCache, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) stageCache(ctx context.Context, item model.RuleLibraryItem, content []byte, replace func(context.Context, string, string) error) (*stagedCache, error) {
+	r, err := s.repository(ctx)
 	if err != nil {
 		return nil, err
 	}

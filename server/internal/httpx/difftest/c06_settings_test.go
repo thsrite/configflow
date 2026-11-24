@@ -271,7 +271,8 @@ func runSettingsBoundary(t *testing.T, cases []settingsCase) {
 	const J = "application/json"
 	var worlds []*httpxtest.Server
 	for i := range cases {
-		s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(settings.Register)})
+		s := httpxtest.New(t, httpxtest.Options{})
+		settings.NewHandler(s.Repo, nil, nil).Register(s.App.Router)
 		worlds = append(worlds, s)
 		if len(cases[i].storedBackup) > 0 {
 			// The stored backup keeps values of the wrong type, as a hand

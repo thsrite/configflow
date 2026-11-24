@@ -5,6 +5,7 @@ package proxygroups
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -29,18 +30,11 @@ func decodeObject[T any](c *httpx.Ctx, silent bool) (*T, bool, error) {
 	return &out, true, nil
 }
 
-func (s *Service) repo(ctx context.Context) (*repo.Repository, error) {
+func (s *Service) repo(_ context.Context) (*repo.Repository, error) {
 	if s != nil && s.Repo != nil {
 		return s.Repo, nil
 	}
-	return repo.GetRepository(ctx)
-}
-
-func (s *Service) withRepo(ctx context.Context) context.Context {
-	if s != nil && s.Repo != nil {
-		return repo.WithRepository(ctx, s.Repo)
-	}
-	return ctx
+	return nil, errors.New("api/proxygroups: repository is nil")
 }
 
 func (s *Service) load(ctx context.Context, id string) (*model.Config, error) {
@@ -48,7 +42,7 @@ func (s *Service) load(ctx context.Context, id string) (*model.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	id, err = repo.ResolveProfileID(s.withRepo(ctx), id)
+	id, err = r.ResolveProfileID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +52,11 @@ func (s *Service) edit(ctx context.Context, id string, fn func(context.Context, 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return repo.UpdateConfig(s.withRepo(ctx), id, func(tx context.Context, config *model.Config) error {
+	r, err := s.repo(ctx)
+	if err != nil {
+		return err
+	}
+	return r.UpdateScopedConfig(ctx, id, func(tx context.Context, config *model.Config) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if err := tx.Err(); err != nil {
 			return err

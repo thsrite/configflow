@@ -29,11 +29,11 @@ func TestReplaceAndDeletePreserveIndependentState(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Put("/api/rule-library/manual", auth, httpxtest.JSON(map[string]string{"name": "Edited", "source_type": "content", "behavior": "domain", "format": "text", "content": "+.edited.example\n"})).WantStatus(200)
-	item, err := source(s.Context(), "manual")
+	item, err := source(s.Repo, s.Context(), "manual")
 	if err != nil || item.UpdateInterval == nil || *item.UpdateInterval != 7200 {
 		t.Fatal("source edit lost its task interval", err)
 	}
-	path, err := cachePath(s.Context(), item)
+	path, err := cachePath(s.Repo, s.Context(), item)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,12 +104,12 @@ func TestConnectivityDoesNotOverwriteConcurrentLibraryEdit(t *testing.T) {
 	s.Put("/api/rule-library/remote", auth, httpxtest.JSON(updated)).WantStatus(200)
 	unblock()
 	(<-pending).WantStatus(200)
-	item, err := source(s.Context(), "remote")
+	item, err := source(s.Repo, s.Context(), "remote")
 	if err != nil || item.Name != "Concurrent edit" || item.Enabled == nil || !*item.Enabled {
 		t.Fatalf("test overwrote concurrent edit: %+v %v", item, err)
 	}
 	s.Post("/api/rule-library/test", auth, httpxtest.JSON(map[string]any{})).WantStatus(200)
-	item, err = source(s.Context(), "remote")
+	item, err = source(s.Repo, s.Context(), "remote")
 	if err != nil || item.Enabled == nil || *item.Enabled {
 		t.Fatal("unchanged failed source was not disabled", err)
 	}
