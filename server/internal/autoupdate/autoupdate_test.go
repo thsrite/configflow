@@ -178,6 +178,24 @@ func TestTreeHashSelectsBuildInputs(t *testing.T) {
 	}
 }
 
+func TestServerTreeHashIncludesLocalModuleSources(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "third_party", "yamlv3", "emitterc.go")
+	write(t, source, "package yaml\n")
+	before, err := ServerTreeHash(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, source, "package yaml\nconst version = 2\n")
+	after, err := ServerTreeHash(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after == before {
+		t.Fatal("changing a local module source did not change the server fingerprint")
+	}
+}
+
 // Fingerprints are pinned: a change here makes every existing autoupdate
 // container rebuild once (the values match docker/auto_update.py).
 func TestTreeHashPinned(t *testing.T) {

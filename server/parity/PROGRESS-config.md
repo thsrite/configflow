@@ -57,6 +57,11 @@ against the upstream module and the local replacement.
   `go test -json -race -count=1 -timeout=40m ./internal/convert ./internal/oxidns`
   (624.435 s and 828.081 s).
 
+The follow-up fingerprints local modules under `third_party/` and excludes that
+directory from first-party source audits. On .64, format, vet, both tagged
+lifecycle suites, race tests for autoupdate, lifecycle, skipaudit and model,
+and the Agent deep-copy audit passed.
+
 ## N7-3c — MosDNS/provider YAML readers (ported)
 
 Branch `go-n7-3c`; call-site and command record:

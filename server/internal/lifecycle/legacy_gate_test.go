@@ -104,6 +104,9 @@ func scanLegacyTree(root string) (map[legacySite]bool, error) {
 		}
 		name = filepath.ToSlash(name)
 		if entry.IsDir() {
+			if name == "third_party" {
+				return filepath.SkipDir
+			}
 			if path != root && (strings.HasPrefix(entry.Name(), ".") || entry.Name() == "vendor" || entry.Name() == "node_modules") {
 				return filepath.SkipDir
 			}

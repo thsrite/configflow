@@ -110,6 +110,9 @@ func scan(root string) ([]finding, error) {
 			return err
 		}
 		if d.IsDir() {
+			if path == filepath.Join(root, "third_party") {
+				return filepath.SkipDir
+			}
 			if name := d.Name(); name == "testdata" || name == "node_modules" || (strings.HasPrefix(name, ".") && path != root) {
 				return filepath.SkipDir
 			}

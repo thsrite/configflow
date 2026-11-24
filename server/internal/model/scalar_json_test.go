@@ -30,12 +30,27 @@ func checkScalarJSON(t *testing.T, v any) {
 	}
 }
 
+type namedScalarString string
+type scalarTextMarshaler string
+
+// MarshalText returns text distinct from the underlying string.
+func (s scalarTextMarshaler) MarshalText() ([]byte, error) {
+	return []byte("text:" + string(s)), nil
+}
+
 func TestScalarJSONLegacyBytes(t *testing.T) {
+	plain := "field_name"
 	for _, tt := range []struct {
 		name  string
 		value any
 	}{
 		{"plain", "field_name"},
+		{"string pointer", &plain},
+		{"nil string pointer", (*string)(nil)},
+		{"nil", nil},
+		{"named string", namedScalarString(plain)},
+		{"text marshaler", scalarTextMarshaler("<&>\u2028")},
+		{"unsupported complex", complex128(1 + 2i)},
 		{"empty", ""},
 		{"html", "<> &"},
 		{"js separators", "\u2028\u2029"},

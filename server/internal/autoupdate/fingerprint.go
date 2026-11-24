@@ -111,7 +111,8 @@ func TreeHash(path string, include func(string) bool) (string, error) {
 }
 
 // ServerTreeHash fingerprints the Go server build inputs: go.mod, go.sum,
-// cmd/ and internal/ (go:embed assets included, tests excluded).
+// cmd/, internal/ and local modules under third_party/ (go:embed assets
+// included, tests excluded).
 func ServerTreeHash(path string) (string, error) {
 	digest := sha256.New()
 	for _, name := range []string{"go.mod", "go.sum"} {
@@ -123,7 +124,7 @@ func ServerTreeHash(path string) (string, error) {
 		}
 	}
 	skip := func(name string) bool { return strings.HasPrefix(name, ".") || serverIgnoredDirs[name] }
-	for _, sub := range []string{"cmd", "internal"} {
+	for _, sub := range []string{"cmd", "internal", "third_party"} {
 		base := filepath.Join(path, sub)
 		if info, err := os.Stat(base); err != nil || !info.IsDir() {
 			continue

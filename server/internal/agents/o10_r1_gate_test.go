@@ -69,6 +69,9 @@ func TestAgentDeepCopyBoundary(t *testing.T) {
 			return err
 		}
 		if entry.IsDir() {
+			if path == filepath.Join(root, "third_party") {
+				return filepath.SkipDir
+			}
 			if path != root && (strings.HasPrefix(entry.Name(), ".") || entry.Name() == "vendor" || entry.Name() == "node_modules" || entry.Name() == "testdata") {
 				return filepath.SkipDir
 			}
