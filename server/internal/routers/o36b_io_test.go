@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"errors"
@@ -124,7 +125,7 @@ func TestO36bIkuaiWriteInFlightRuntimeBoundary(t *testing.T) {
 			before, _ := json.Marshal(fake.Snapshot().Tables)
 			done := make(chan error, 1)
 			go func() {
-				_, err := d.Write(request, "static_rt", "del", Row{"id": "1"}, 0)
+				_, err := d.Write(request, "static_rt", "del", ros.Row{"id": "1"}, 0)
 				done <- err
 			}()
 			select {

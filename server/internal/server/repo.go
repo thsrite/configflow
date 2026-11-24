@@ -5,7 +5,7 @@ import (
 
 	"configflow/internal/configexport"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
+	"configflow/internal/routers/spec"
 )
 
 // RepoOptions returns the repository Options wired by the server: export
@@ -15,7 +15,7 @@ func RepoOptions() repo.Options {
 	return repo.Options{
 		Export: configexport.Exporter{
 			RedactRouters: func(raw json.RawMessage) (json.RawMessage, error) {
-				return routers.RedactRouters(raw)
+				return spec.RedactRouters(raw)
 			},
 		},
 		DefaultServerDomain: defaultServerDomain,

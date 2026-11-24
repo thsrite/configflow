@@ -2,6 +2,7 @@ package routers_test
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -244,7 +245,7 @@ func runGoBoundary(tc boundaryCase, endpoint string) boundaryOutcome {
 	var err error
 	switch tc.action {
 	case "probe":
-		var result *routers.RouterInfo
+		var result *device.RouterInfo
 		result, err = driver.Probe(ctx)
 		outcome.Result = result
 	case "read_state":
@@ -252,7 +253,7 @@ func runGoBoundary(tc boundaryCase, endpoint string) boundaryOutcome {
 		result, err = driver.ReadState(ctx)
 		outcome.Result = result
 	case "read_dhcp_dns":
-		var result *routers.DhcpDnsState
+		var result *device.DhcpDnsState
 		result, err = driver.ReadDHCPDNS(ctx)
 		outcome.Result = result
 	case "ping":
@@ -318,20 +319,20 @@ func pythonRestoreResults(messages []string) []any {
 }
 
 func goErrorClass(err error) string {
-	var routerErr *routers.RouterError
+	var routerErr *device.RouterError
 	if !errors.As(err, &routerErr) {
 		return "error"
 	}
 	switch routerErr.Kind {
-	case routers.KindRollback:
+	case device.KindRollback:
 		return "RouterRollbackError"
-	case routers.KindConflict:
+	case device.KindConflict:
 		return "RouterConflictError"
-	case routers.KindUncertainWrite:
+	case device.KindUncertainWrite:
 		return "UncertainWrite"
-	case routers.KindMissingResource:
+	case device.KindMissingResource:
 		return "MissingResource"
-	case routers.KindPingNotPermitted:
+	case device.KindPingNotPermitted:
 		return "PingNotPermitted"
 	default:
 		return "RouterError"

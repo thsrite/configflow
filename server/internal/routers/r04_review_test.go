@@ -64,7 +64,7 @@ func TestRouteBatchExtraReportedIDFailsClosed(t *testing.T) {
 		}()
 		return driver.ApplyMany(context.Background(), ops, func(_, undo json.RawMessage) { records = append(records, undo) })
 	}()
-	if device.RouterErrorKind(err) != KindRollback || !device.IsRouterError(err) {
+	if device.RouterErrorKind(err) != device.KindRollback || !device.IsRouterError(err) {
 		t.Fatalf("ApplyMany error = %v, want an uncertain-write rollback error", err)
 	}
 	if want := fmt.Sprintf(device.MessageUncertainRouteWrite, ros.PathRoutes); err.Error() != want {
@@ -92,7 +92,7 @@ func findFakeRow(rows []routerfake.Row, id string) routerfake.Row {
 // cancellingHTTP cancels a context once a request matching after has been
 // answered, like a browser that disconnects in the middle of an apply.
 type cancellingHTTP struct {
-	DeviceHTTP
+	device.DeviceHTTP
 	after  string
 	cancel context.CancelFunc
 	once   sync.Once
@@ -136,7 +136,7 @@ func TestApplyFinishesNATBatchAfterCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Apply after cancellation = %v, want the accepted batch proven like Python", err)
 	}
-	var undo ROSUndo
+	var undo ros.ROSUndo
 	if err := json.Unmarshal(raw, &undo); err != nil || len(undo.Changes) != 4 {
 		t.Fatalf("undo = %s, want four DELETE records", raw)
 	}
@@ -169,9 +169,9 @@ func TestRestoreManyIgnoresCancellation(t *testing.T) {
 	for i := range rows {
 		rows[i] = routerfake.Row{".id": fmt.Sprintf("*%X", 0x70+i), "dst-address": fmt.Sprintf("45.42.%d.0/24", i),
 			"gateway": "192.0.2.1", "routing-table": "main", "comment": "cf-sync", "disabled": "false"}
-		change := ROSChange{Method: "DELETE", Path: ros.PathRoutes, ID: rows[i][".id"].(string),
+		change := ros.ROSChange{Method: "DELETE", Path: ros.PathRoutes, ID: rows[i][".id"].(string),
 			Expected: ros.MarshalRow(driver.OwnershipSnapshot(ros.PathRoutes, deviceRow(rows[i])))}
-		undos[i], _ = json.Marshal(ROSUndo{Kind: "ros_restore", Changes: []ROSChange{change}})
+		undos[i], _ = json.Marshal(ros.ROSUndo{Kind: "ros_restore", Changes: []ros.ROSChange{change}})
 	}
 	fake.Reset(routerfake.State{Tables: map[string][]routerfake.Row{ros.PathRoutes: rows}})
 	results := driver.RestoreMany(ctx, undos, false)
@@ -189,7 +189,7 @@ func TestRestoreManyIgnoresCancellation(t *testing.T) {
 // the IDs in its own order: the first ID is still present afterwards and
 // cannot be deleted, the others are gone.
 type removeOrderDevice struct {
-	rows    []Row
+	rows    []ros.Row
 	stuck   string
 	removed map[string]bool
 	log     []string
@@ -201,9 +201,9 @@ func (d *removeOrderDevice) Do(_ context.Context, method, rawURL string, body an
 		return nil, err
 	}
 	path := strings.TrimPrefix(parsed.Path, "/rest")
-	status, result := http.StatusOK, any(Row{})
-	present := func() []Row {
-		out := []Row{}
+	status, result := http.StatusOK, any(ros.Row{})
+	present := func() []ros.Row {
+		out := []ros.Row{}
 		for _, row := range d.rows {
 			if !d.removed[row.ID()] {
 				out = append(out, row)
@@ -215,15 +215,15 @@ func (d *removeOrderDevice) Do(_ context.Context, method, rawURL string, body an
 	case method == http.MethodPost && strings.HasSuffix(path, "/print"):
 		result = present()
 	case method == http.MethodPost && strings.HasSuffix(path, "/remove"):
-		ids := body.(Row)[".id"]
+		ids := body.(ros.Row)[".id"]
 		for _, id := range strings.Split(ids, ",") {
 			if id != d.stuck {
 				d.removed[id] = true
 			}
 		}
-		status, result = http.StatusInternalServerError, Row{"message": "failure: item busy"}
+		status, result = http.StatusInternalServerError, ros.Row{"message": "failure: item busy"}
 	case method == http.MethodGet && path == ros.PathRoutes:
-		rows := []Row{}
+		rows := []ros.Row{}
 		for _, row := range present() {
 			if row.Text("dst-address") == parsed.Query().Get("dst-address") {
 				rows = append(rows, row)
@@ -231,14 +231,14 @@ func (d *removeOrderDevice) Do(_ context.Context, method, rawURL string, body an
 		}
 		result = rows
 	case method == http.MethodGet:
-		status, result = http.StatusNotFound, Row{"message": "Not Found"}
+		status, result = http.StatusNotFound, ros.Row{"message": "Not Found"}
 		for _, row := range present() {
 			if path == ros.PathRoutes+"/"+row.ID() {
 				status, result = http.StatusOK, row
 			}
 		}
 	case method == http.MethodDelete:
-		status, result = http.StatusInternalServerError, Row{"message": "failure: item busy"}
+		status, result = http.StatusInternalServerError, ros.Row{"message": "failure: item busy"}
 	}
 	data, _ := json.Marshal(result)
 	d.log = append(d.log, fmt.Sprintf("%s %s -> %d", method, path, status))
@@ -251,17 +251,17 @@ func (*removeOrderDevice) Close() {}
 // reported as restored (Python leaves them None); only routes still present
 // after the failure are skipped.
 func TestRestoreDeletedReportsRemovedRowsAfterFailure(t *testing.T) {
-	rows := make([]Row, 4)
+	rows := make([]ros.Row, 4)
 	for i := range rows {
-		rows[i] = Row{".id": fmt.Sprintf("*%X", 0x80+i), "dst-address": fmt.Sprintf("45.43.%d.0/24", i),
+		rows[i] = ros.Row{".id": fmt.Sprintf("*%X", 0x80+i), "dst-address": fmt.Sprintf("45.43.%d.0/24", i),
 			"gateway": "192.0.2.1", "routing-table": "main", "comment": "cf-sync", "disabled": "false"}
 	}
 	device := &removeOrderDevice{rows: rows, stuck: "*80", removed: map[string]bool{}}
 	driver := NewRouterOSWithHTTP("http://router.invalid", device)
 	undos := make([]json.RawMessage, len(rows))
 	for i, row := range rows {
-		change := ROSChange{Method: "DELETE", Path: ros.PathRoutes, ID: row.ID(), Expected: ros.MarshalRow(driver.OwnershipSnapshot(ros.PathRoutes, row))}
-		undos[i], _ = json.Marshal(ROSUndo{Kind: "ros_restore", Changes: []ROSChange{change}})
+		change := ros.ROSChange{Method: "DELETE", Path: ros.PathRoutes, ID: row.ID(), Expected: ros.MarshalRow(driver.OwnershipSnapshot(ros.PathRoutes, row))}
+		undos[i], _ = json.Marshal(ros.ROSUndo{Kind: "ros_restore", Changes: []ros.ROSChange{change}})
 	}
 	got := driver.RestoreMany(context.Background(), undos, true)
 	if len(got) != 4 || got[0] == "" || got[0] == ros.BatchSkipped || got[1] != "" || got[2] != "" || got[3] != "" {
@@ -309,12 +309,12 @@ func TestRestoreRemovedRespectsScriptByteLimit(t *testing.T) {
 	driver, fake := newFakeRouterOS(t, routerfake.State{})
 	undos := make([]json.RawMessage, 20)
 	for i := range undos {
-		values := Row{"dst-address": fmt.Sprintf("45.45.%d.0/24", i), "gateway": "192.0.2.1", "routing-table": "main",
+		values := ros.Row{"dst-address": fmt.Sprintf("45.45.%d.0/24", i), "gateway": "192.0.2.1", "routing-table": "main",
 			"comment": strings.Repeat("路", 1000), "disabled": "false"}
-		row := ros.MergeRows(values, Row{".id": fmt.Sprintf("*%X", 0x90+i)})
-		change := ROSChange{Method: "RESTORE", Path: ros.PathRoutes, ID: row.ID(), Values: values,
+		row := ros.MergeRows(values, ros.Row{".id": fmt.Sprintf("*%X", 0x90+i)})
+		change := ros.ROSChange{Method: "RESTORE", Path: ros.PathRoutes, ID: row.ID(), Values: values,
 			Expected: ros.MarshalRow(driver.OwnershipSnapshot(ros.PathRoutes, row)), KnownIDs: []string{row.ID()}}
-		undos[i], _ = json.Marshal(ROSUndo{Kind: "ros_restore", Changes: []ROSChange{change}})
+		undos[i], _ = json.Marshal(ros.ROSUndo{Kind: "ros_restore", Changes: []ros.ROSChange{change}})
 	}
 	for i, result := range driver.RestoreMany(context.Background(), undos, false) {
 		if result != "" {

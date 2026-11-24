@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/spec"
 	"encoding/json"
 	"errors"
 
@@ -57,7 +58,7 @@ func repositoryFailure(c *httpx.Ctx, cfg *core.ConfigView) func(*httpx.Response,
 		}{false, stored.Error()}, 400, false)
 	}
 }
-func (h *handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg *core.ConfigView, r *core.Router) (*httpx.Response, error) {
+func (h *handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg *core.ConfigView, r *spec.Router) (*httpx.Response, error) {
 	var err error
 	if c.Method() == "PUT" {
 		body, ok := workspaceRequest(body(c))
@@ -125,7 +126,7 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	view := &core.ConfigView{Credentials: redact.CollectCredentials(cfg, nil)}
-	var r *core.Router
+	var r *spec.Router
 	for _, row := range selectedRouters(cfg) {
 		if row.ID == c.Param("router_id") {
 			r = row
@@ -230,7 +231,7 @@ func (h *handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 
 // selectedRouters delegates to the shared R5 decoder via the management view.
 // The snapshot is already resolved; this export avoids independent decoder rules.
-func selectedRouters(cfg json.RawMessage) []*core.Router { return core.ManagementRouters(cfg) }
+func selectedRouters(cfg json.RawMessage) []*spec.Router { return core.ManagementRouters(cfg) }
 
 func previewTargets(raw json.RawMessage) ([]string, bool) {
 	var rows *[]json.RawMessage

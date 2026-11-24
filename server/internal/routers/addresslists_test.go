@@ -44,11 +44,11 @@ func TestAddressListBoundary(t *testing.T) {
 				var err error
 				switch action {
 				case "digest":
-					converted := []routers.Row{}
+					converted := []ros.Row{}
 					for _, row := range rows {
 						// As the driver decodes the device reply.
 						data, _ := json.Marshal(row)
-						var decoded routers.Row
+						var decoded ros.Row
 						_ = json.Unmarshal(data, &decoded)
 						converted = append(converted, decoded)
 					}
@@ -81,7 +81,7 @@ func TestAddressListBoundary(t *testing.T) {
 }
 
 func TestAddressDigestMutationIsDetected(t *testing.T) {
-	rows := []routers.Row{{".id": "*1", "list": "L", "comment": "中文;x=1"}}
+	rows := []ros.Row{{".id": "*1", "list": "L", "comment": "中文;x=1"}}
 	digest := ros.DigestAddresses(rows)
 	rows[0]["comment"] = "changed"
 	if ros.DigestAddresses(rows) == digest {

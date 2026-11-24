@@ -40,7 +40,7 @@ func managementTransaction(ctx context.Context, db *repo.Repository, profile str
 	})
 	return err
 }
-func saveManagementSettings(ctx context.Context, db *repo.Repository, profile string, old, next *Router) error {
+func saveManagementSettings(ctx context.Context, db *repo.Repository, profile string, old, next *spec.Router) error {
 	expected, err := spec.ReleaseRouterRecord(old)
 	if err != nil {
 		return err

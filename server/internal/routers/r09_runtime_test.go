@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ros"
 	"context"
@@ -32,17 +33,17 @@ func TestR09RuntimeShutdownAndRequestDisconnect(t *testing.T) {
 			request, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			bound := r.BindRequest(request)
-			undo := &DNSGuardUndo{Kind: "dns_guard_restore"}
+			undo := &dnsguard.Undo{Kind: "dns_guard_restore"}
 			if action == "shutdown_restore" {
 				var err error
-				undo, err = dnsguard.Apply(bound, d.Client, *plan.Ops[0].(*DNSGuardReplace))
+				undo, err = dnsguard.Apply(bound, d.Client, *plan.Ops[0].(*dnsguard.Replace))
 				if err != nil {
 					t.Fatal(err)
 				}
 			}
 			if action == "disconnect" {
 				cancel()
-				undo, err := dnsguard.Apply(bound, d.Client, *plan.Ops[0].(*DNSGuardReplace))
+				undo, err := dnsguard.Apply(bound, d.Client, *plan.Ops[0].(*dnsguard.Replace))
 				if err != nil {
 					t.Fatalf("request disconnect stopped publication: %v", err)
 				}
@@ -60,7 +61,7 @@ func TestR09RuntimeShutdownAndRequestDisconnect(t *testing.T) {
 			before := len(f.Calls())
 			var err error
 			if action == "shutdown_apply" {
-				_, err = dnsguard.Apply(bound, d.Client, *plan.Ops[0].(*DNSGuardReplace))
+				_, err = dnsguard.Apply(bound, d.Client, *plan.Ops[0].(*dnsguard.Replace))
 			} else {
 				err = dnsguard.Restore(bound, d.Client, *undo)
 			}
@@ -72,7 +73,7 @@ func TestR09RuntimeShutdownAndRequestDisconnect(t *testing.T) {
 }
 
 type r09AfterReadHTTP struct {
-	DeviceHTTP
+	device.DeviceHTTP
 	after func(method, url string)
 }
 
@@ -90,7 +91,7 @@ func TestR09ShutdownAfterSnapshotCannotClearManifest(t *testing.T) {
 	settings := r09Base("withdraw").Settings
 	settings.Enabled = false
 	plan := r09Plan(t, d, settings, previous)
-	if len(plan.Blockers) != 0 || len(plan.Ops) != 1 || len(plan.Ops[0].(*DNSGuardReplace).Owned) != 0 {
+	if len(plan.Blockers) != 0 || len(plan.Ops) != 1 || len(plan.Ops[0].(*dnsguard.Replace).Owned) != 0 {
 		t.Fatalf("not a manifest-only withdrawal: %s", r09Raw(plan))
 	}
 	r := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Mode: lifecycle.ModeManual})
@@ -105,7 +106,7 @@ func TestR09ShutdownAfterSnapshotCannotClearManifest(t *testing.T) {
 		}
 	}})
 	before := len(f.Calls())
-	_, err := dnsguard.Apply(bound, d.Client, *plan.Ops[0].(*DNSGuardReplace))
+	_, err := dnsguard.Apply(bound, d.Client, *plan.Ops[0].(*dnsguard.Replace))
 	if !shutdown || err == nil || !strings.Contains(err.Error(), context.Canceled.Error()) || !bytes.Equal(d.DNSGuardManifest(), previous) {
 		t.Fatalf("shutdown after snapshot cleared proof: shutdown=%t err=%v manifest=%s", shutdown, err, d.DNSGuardManifest())
 	}
@@ -142,7 +143,7 @@ func TestR09ShutdownAfterDeleteProofCannotWrite(t *testing.T) {
 		}
 	}})
 	before := len(f.Calls())
-	_, err := dnsguard.Apply(bound, d.Client, *plan.Ops[0].(*DNSGuardReplace))
+	_, err := dnsguard.Apply(bound, d.Client, *plan.Ops[0].(*dnsguard.Replace))
 	if !shutdown || err == nil || !bytes.Equal(d.DNSGuardManifest(), previous) {
 		t.Fatalf("shutdown after ownership proof committed: shutdown=%t err=%v", shutdown, err)
 	}

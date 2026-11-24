@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
 	"context"
@@ -16,12 +17,12 @@ import (
 	"configflow/internal/routers/routerfake"
 )
 
-func r07NewSync() NATListSync {
+func r07NewSync() rospolicy.NATListSync {
 	sources := []string{}
 	for _, p := range ros.ClientSourceNetworks(netip.MustParseAddr("192.0.2.3")) {
 		sources = append(sources, p.String())
 	}
-	return NATListSync{OpHead: OpHead{Kind: "nat_list_sync"}, Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, Sources: sources, Destinations: []string{"198.51.100.0/24"}, SrcAdd: sources, DstAdd: []string{"198.51.100.0/24"}, SrcRemove: []ROSResource{}, DstRemove: []ROSResource{}, Legacy: []ROSResource{}, Stale: []ROSResource{}}
+	return rospolicy.NATListSync{OpHead: device.OpHead{Kind: "nat_list_sync"}, Comment: ros.NATListComment, SrcList: ros.NATSrcList, DstList: ros.NATDstList, Sources: sources, Destinations: []string{"198.51.100.0/24"}, SrcAdd: sources, DstAdd: []string{"198.51.100.0/24"}, SrcRemove: []ros.Resource{}, DstRemove: []ros.Resource{}, Legacy: []ros.Resource{}, Stale: []ros.Resource{}}
 }
 func r07FakeState() routerfake.State {
 	return routerfake.State{Tables: map[string][]routerfake.Row{ros.PathNAT: {{".id": "*3", "chain": "srcnat", "action": "masquerade", "disabled": "false"}}}}
@@ -61,8 +62,8 @@ func TestNATListWriteAndRollbackFinishAfterCancellation(t *testing.T) {
 
 func TestAddressDeleteGuardsAllMembersBeforeAnyWrite(t *testing.T) {
 	d, f := newFakeRouterOS(t, r07FakeState())
-	journal := []NATStep{}
-	created, err := d.CreateAddresses(context.Background(), ros.NATEntries(NATDstList, []string{"198.51.100.1/32", "198.51.100.2/32", "198.51.100.3/32"}), &journal, ROSIDs{})
+	journal := []ros.NATStep{}
+	created, err := d.CreateAddresses(context.Background(), ros.NATEntries(ros.NATDstList, []string{"198.51.100.1/32", "198.51.100.2/32", "198.51.100.3/32"}), &journal, ros.ROSIDs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,11 +81,11 @@ func TestAddressDeleteGuardsAllMembersBeforeAnyWrite(t *testing.T) {
 
 func TestAddressBatchLimitsUseUTF8Bytes(t *testing.T) {
 	d, f := newFakeRouterOS(t, r07FakeState())
-	entries := []Row{}
+	entries := []ros.Row{}
 	for i := 0; i < 450; i++ {
-		entries = append(entries, Row{"list": "L", "comment": strings.Repeat("中", 4800) + `"$` + "\n", "disabled": "false", "address": fmt.Sprintf("198.18.%d.%d/32", i/256, i%256)})
+		entries = append(entries, ros.Row{"list": "L", "comment": strings.Repeat("中", 4800) + `"$` + "\n", "disabled": "false", "address": fmt.Sprintf("198.18.%d.%d/32", i/256, i%256)})
 	}
-	_, err := d.CreateAddresses(context.Background(), entries, &[]NATStep{}, ROSIDs{})
+	_, err := d.CreateAddresses(context.Background(), entries, &[]ros.NATStep{}, ros.ROSIDs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +113,7 @@ func TestAddressBatchLimitsUseUTF8Bytes(t *testing.T) {
 
 func TestAddressProofCacheOwnsCopies(t *testing.T) {
 	d, _ := newFakeRouterOS(t, r07FakeState())
-	rows := []Row{{".id": "*1", "list": "L", "address": "198.51.100.1", "tags": `[{"name":"original"}]`}}
+	rows := []ros.Row{{".id": "*1", "list": "L", "address": "198.51.100.1", "tags": `[{"name":"original"}]`}}
 	d.RememberAddresses("L", rows)
 	rows[0]["tags"] = `[{"name":"external"}]`
 	cached := d.KnownAddresses()["L"]
@@ -144,7 +145,7 @@ func TestAddressSweepRefusesAmbiguousOrDynamicIDs(t *testing.T) {
 	for _, variant := range []string{"twins", "dynamic", "duplicate_id"} {
 		t.Run(variant, func(t *testing.T) {
 			d, f := newFakeRouterOS(t, r07FakeState())
-			row := routerfake.Row{".id": "*AAA", "list": NATDstList, "address": "198.51.100.1", "comment": NATListComment, "disabled": "false"}
+			row := routerfake.Row{".id": "*AAA", "list": ros.NATDstList, "address": "198.51.100.1", "comment": ros.NATListComment, "disabled": "false"}
 			rows := []routerfake.Row{row}
 			if variant == "dynamic" {
 				row["dynamic"] = "true"
@@ -159,7 +160,7 @@ func TestAddressSweepRefusesAmbiguousOrDynamicIDs(t *testing.T) {
 				rows = append(rows, copy)
 			}
 			f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathAddresses: rows}}})
-			step := NATStep{Action: "sweep", Path: ros.PathAddresses, List: NATDstList, Shared: Row{"list": NATDstList, "comment": NATListComment, "disabled": "false"}, Addresses: []string{"198.51.100.1/32"}, Before: []string{}}
+			step := ros.NATStep{Action: "sweep", Path: ros.PathAddresses, List: ros.NATDstList, Shared: ros.Row{"list": ros.NATDstList, "comment": ros.NATListComment, "disabled": "false"}, Addresses: []string{"198.51.100.1/32"}, Before: []string{}}
 			if err := d.RestoreAddressSweep(context.Background(), step); err != nil {
 				t.Fatal(err)
 			}
@@ -184,7 +185,7 @@ func TestDeviceDiagnosticsRedactPassword(t *testing.T) {
 			if action == "http" {
 				_, err = d.ReadState(context.Background())
 			} else {
-				_, err = d.CreateAddresses(context.Background(), ros.NATEntries(NATDstList, []string{"198.51.100.1"}), &[]NATStep{}, ROSIDs{})
+				_, err = d.CreateAddresses(context.Background(), ros.NATEntries(ros.NATDstList, []string{"198.51.100.1"}), &[]ros.NATStep{}, ros.ROSIDs{})
 			}
 			if err == nil || strings.Contains(err.Error(), "synthetic-password") || !strings.Contains(err.Error(), "[REDACTED]") {
 				t.Fatalf("unsafe diagnostic: %v", err)
@@ -195,7 +196,7 @@ func TestDeviceDiagnosticsRedactPassword(t *testing.T) {
 
 func TestInvalidNATUndoCannotWriteOtherTables(t *testing.T) {
 	d, f := newFakeRouterOS(t, r07FakeState())
-	err := rospolicy.RestoreNATLists(context.Background(), d.Client, NATListUndo{Steps: []NATStep{{Action: "delete", Path: "/system/script", ID: "*3", Config: Row{}}}})
+	err := rospolicy.RestoreNATLists(context.Background(), d.Client, rospolicy.NATListUndo{Steps: []ros.NATStep{{Action: "delete", Path: "/system/script", ID: "*3", Config: ros.Row{}}}})
 	if err == nil || len(f.Calls()) > 0 {
 		t.Fatal("wrong-table undo reached device")
 	}
@@ -219,7 +220,7 @@ func TestAddressFetchFallsBackForSeparatorsAndMovingPages(t *testing.T) {
 			}
 			d, f := newFakeRouterOS(t, state)
 			if variant == "malformed_digest" {
-				d.RememberAddresses("L", []Row{})
+				d.RememberAddresses("L", []ros.Row{})
 				if _, err := d.ReadAddresses(context.Background(), []string{"L"}); err == nil {
 					t.Fatal("malformed proof accepted")
 				}
@@ -245,18 +246,18 @@ func TestAddressFetchFallsBackForSeparatorsAndMovingPages(t *testing.T) {
 
 func TestAddressRestoreRetainsPartialNewIDs(t *testing.T) {
 	d, f := newFakeRouterOS(t, r07FakeState())
-	entries := ros.NATEntries(NATDstList, []string{"198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4"})
-	created, err := d.CreateAddresses(context.Background(), entries, &[]NATStep{}, ROSIDs{})
+	entries := ros.NATEntries(ros.NATDstList, []string{"198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4"})
+	created, err := d.CreateAddresses(context.Background(), entries, &[]ros.NATStep{}, ros.ROSIDs{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	journal := []NATStep{}
+	journal := []ros.NATStep{}
 	if err = d.DeleteAddresses(context.Background(), created, &journal); err != nil {
 		t.Fatal(err)
 	}
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathAddresses: {{".id": "*FFFF", "list": NATDstList, "address": "198.51.100.4", "comment": NATListComment, "disabled": "false"}}}}})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathAddresses: {{".id": "*FFFF", "list": ros.NATDstList, "address": "198.51.100.4", "comment": ros.NATListComment, "disabled": "false"}}}}})
 	remapped := map[[2]string]string{}
-	err = d.RestoreAddresses(context.Background(), journal, ROSIDs{}, remapped)
+	err = d.RestoreAddresses(context.Background(), journal, ros.ROSIDs{}, remapped)
 	if err == nil {
 		t.Fatal("conflicting member should refuse recreation")
 	}
@@ -275,12 +276,12 @@ func TestAddressWritesInvalidateScopedProofBeforeBeforeIDs(t *testing.T) {
 	d, f := newFakeRouterOS(t, r07FakeState())
 	done := d.ReuseAddressReads()
 	defer done()
-	if _, err := d.ReadAddresses(context.Background(), []string{NATDstList}); err != nil {
+	if _, err := d.ReadAddresses(context.Background(), []string{ros.NATDstList}); err != nil {
 		t.Fatal(err)
 	}
-	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathAddresses: {{".id": "*FA", "list": NATDstList, "address": "198.51.100.1", "comment": NATListComment, "disabled": "false"}}}}})
-	journal := []NATStep{}
-	_, err := d.CreateAddresses(context.Background(), ros.NATEntries(NATDstList, []string{"198.51.100.1"}), &journal, ROSIDs{})
+	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathAddresses: {{".id": "*FA", "list": ros.NATDstList, "address": "198.51.100.1", "comment": ros.NATListComment, "disabled": "false"}}}}})
+	journal := []ros.NATStep{}
+	_, err := d.CreateAddresses(context.Background(), ros.NATEntries(ros.NATDstList, []string{"198.51.100.1"}), &journal, ros.ROSIDs{})
 	if err == nil {
 		t.Fatal("duplicate unexpectedly succeeded")
 	}

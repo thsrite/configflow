@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/ros"
 	"net/http/httptest"
 	"testing"
@@ -10,8 +11,8 @@ import (
 
 const fixedROSLeases = "/ip/dhcp-server/lease"
 
-var _ FixedIPDriver = (*RouterOS)(nil)
-var _ FixedIPDriver = (*Ikuai)(nil)
+var _ fixedip.Device = (*RouterOS)(nil)
+var _ fixedip.Device = (*Ikuai)(nil)
 
 func r17ROSState(dynamic bool) routerfake.State {
 	rows := []routerfake.Row{}
@@ -49,7 +50,7 @@ func TestR17ROSReservationLifecycle(t *testing.T) {
 			if err != nil || restored.ID == "" {
 				t.Fatal(err, restored)
 			}
-			if err = d.RollbackFixedIP(t.Context(), &FixedIPBinding{Vendor: restored.Vendor, ID: restored.ID, IP: restored.IP, MAC: restored.MAC, Comment: restored.Comment, Server: restored.Server, Undo: receipt.Undo}); err != nil {
+			if err = d.RollbackFixedIP(t.Context(), &fixedip.Binding{Vendor: restored.Vendor, ID: restored.ID, IP: restored.IP, MAC: restored.MAC, Comment: restored.Comment, Server: restored.Server, Undo: receipt.Undo}); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -94,8 +95,8 @@ func TestR17IkuaiReservationLifecycle(t *testing.T) {
 func TestR17MissingScopeCannotProveOwnership(t *testing.T) {
 	for _, vendor := range []string{"routeros", "ikuai"} {
 		t.Run(vendor, func(t *testing.T) {
-			var driver FixedIPDriver
-			var binding *FixedIPBinding
+			var driver fixedip.Device
+			var binding *fixedip.Binding
 			if vendor == "routeros" {
 				seed := r17ROSState(false)
 				seed.Tables[fixedROSLeases] = []routerfake.Row{{".id": "*10", "address": "192.0.2.21", "mac-address": "02:00:00:00:00:21", "comment": "cf-client:Synthetic", "disabled": "false"}}
@@ -104,7 +105,7 @@ func TestR17MissingScopeCannotProveOwnership(t *testing.T) {
 				srv := httptest.NewServer(fake)
 				defer srv.Close()
 				driver = NewRouterOS(srv.URL, "synthetic-user", "synthetic-pass", false)
-				binding = &FixedIPBinding{Vendor: vendor, ID: "*10", IP: "192.0.2.21", MAC: "02:00:00:00:00:21", Comment: "cf-client:Synthetic", Server: new("")}
+				binding = &fixedip.Binding{Vendor: vendor, ID: "*10", IP: "192.0.2.21", MAC: "02:00:00:00:00:21", Comment: "cf-client:Synthetic", Server: new("")}
 			} else {
 				seed := r17IKState()
 				seed.Tables["dhcp_static"] = []routerfake.Row{{"id": 10, "enabled": "yes", "tagname": "cfip_synthetic", "interface": "", "mac": "02:00:00:00:00:21", "gateway": "", "dns1": "", "dns2": "", "ip_addr": "192.0.2.21", "comment": "cf-client:Synthetic"}}
@@ -112,13 +113,13 @@ func TestR17MissingScopeCannotProveOwnership(t *testing.T) {
 				srv := httptest.NewServer(fake)
 				defer srv.Close()
 				driver = NewIkuai(srv.URL, routerfake.IkuaiUser, routerfake.IkuaiPassword, false)
-				binding = &FixedIPBinding{Vendor: vendor, ID: "10", IP: "192.0.2.21", MAC: "02:00:00:00:00:21", Comment: "cf-client:Synthetic", Interface: new(""), Gateway: new("")}
+				binding = &fixedip.Binding{Vendor: vendor, ID: "10", IP: "192.0.2.21", MAC: "02:00:00:00:00:21", Comment: "cf-client:Synthetic", Interface: new(""), Gateway: new("")}
 			}
 			defer driver.Close()
 			if _, err := driver.PreviewDeleteFixedIP(t.Context(), binding); err == nil {
 				t.Fatal("empty scope matched as an ownership proof")
 			}
-			binding.Undo = &FixedIPUndo{}
+			binding.Undo = &fixedip.Undo{}
 			if err := driver.RollbackFixedIP(t.Context(), binding); err == nil {
 				t.Fatal("missing before-image allowed destructive rollback")
 			}

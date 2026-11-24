@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/spec"
 	"context"
 	"errors"
 	"testing"
@@ -33,7 +34,7 @@ func TestO36bR12TrackedPublicationUsesSharedJobLock(t *testing.T) {
 		}
 	}()
 	factory := req.NewDriver
-	req.NewDriver = func(r *Router) Driver { close(entered); <-resume; return factory(r) }
+	req.NewDriver = func(r *spec.Router) Driver { close(entered); <-resume; return factory(r) }
 	held, unlock, err := oplock.RouterJobLock(repo.WithRepository(runtime.BindRequest(t.Context()), db), req.ProfileID, req.RouterID, req.Router)
 	if err != nil {
 		t.Fatal(err)
@@ -50,14 +51,14 @@ func TestO36bR12TrackedPublicationUsesSharedJobLock(t *testing.T) {
 	}
 	for i := 0; i < 24; i++ {
 		_, free, err := oplock.RouterJobLock(t.Context(), "alias-profile", "alias-router", req.Router)
-		var conflict *RouterError
-		if !errors.As(err, &conflict) || conflict.Kind != KindConflict || free != nil {
+		var conflict *device.RouterError
+		if !errors.As(err, &conflict) || conflict.Kind != device.KindConflict || free != nil {
 			t.Fatalf("competing publisher admitted: %v", err)
 		}
 	}
 	edited := *req.Router
 	edited.Password = "synthetic-replacement"
-	_, _, err = db.SaveProfileFieldsJSON(t.Context(), req.ProfileID, device.JSON(map[string]any{"routers": map[string]any{"items": []*Router{&edited}}}), nil)
+	_, _, err = db.SaveProfileFieldsJSON(t.Context(), req.ProfileID, device.JSON(map[string]any{"routers": map[string]any{"items": []*spec.Router{&edited}}}), nil)
 	if !errors.Is(err, repo.ErrInUse) {
 		t.Fatalf("repository bypassed active publication: %v", err)
 	}

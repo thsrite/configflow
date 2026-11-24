@@ -1,8 +1,11 @@
 package routers
 
 import (
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -13,17 +16,17 @@ import (
 )
 
 type r09ForwardCase struct {
-	Name       string             `json:"name"`
-	State      routerfake.State   `json:"state"`
-	Family     int                `json:"family"`
-	LAN        string             `json:"lan"`
-	Targets    []string           `json:"targets"`
-	Router     *Router            `json:"router"`
-	Desired    *Desired           `json:"desired"`
-	Report     json.RawMessage    `json:"report"`
-	PolicyPlan *ROSPolicyPlan     `json:"policy_plan,omitempty"`
-	PolicyLive *ROSPolicySnapshot `json:"policy_live,omitempty"`
-	GuardLive  *DNSGuardSnapshot  `json:"guard_live,omitempty"`
+	Name       string                       `json:"name"`
+	State      routerfake.State             `json:"state"`
+	Family     int                          `json:"family"`
+	LAN        string                       `json:"lan"`
+	Targets    []string                     `json:"targets"`
+	Router     *spec.Router                 `json:"router"`
+	Desired    *spec.Desired                `json:"desired"`
+	Report     json.RawMessage              `json:"report"`
+	PolicyPlan *rospolicy.ROSPolicyPlan     `json:"policy_plan,omitempty"`
+	PolicyLive *rospolicy.ROSPolicySnapshot `json:"policy_live,omitempty"`
+	GuardLive  *dnsguard.Snapshot           `json:"guard_live,omitempty"`
 }
 
 func r09ForwardBase() r09ForwardCase {
@@ -41,7 +44,7 @@ func r09ForwardBase() r09ForwardCase {
 		{".id": "*7", "chain": "forward", "action": "drop", "connection-state": "invalid"},
 		{".id": "*8", "chain": "forward", "action": "drop", "connection-state": "new", "connection-nat-state": "!dstnat", "in-interface-list": "WAN"},
 	}
-	return r09ForwardCase{Name: "default", State: base.State, Family: 4, LAN: "bridge", Targets: []string{"198.18.0.0/16", "198.51.100.0/24"}, Router: &Router{RouterSettings: RouterSettings{Type: "routeros"}}, Desired: base.Desired, Report: r09Raw(map[string]any{"routes": map[string]any{"items": []map[string]string{{"cidr": "198.18.0.0/16", "status": "missing"}, {"cidr": "198.51.100.0/24", "status": "synced"}}}})}
+	return r09ForwardCase{Name: "default", State: base.State, Family: 4, LAN: "bridge", Targets: []string{"198.18.0.0/16", "198.51.100.0/24"}, Router: &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros"}}, Desired: base.Desired, Report: r09Raw(map[string]any{"routes": map[string]any{"items": []map[string]string{{"cidr": "198.18.0.0/16", "status": "missing"}, {"cidr": "198.51.100.0/24", "status": "synced"}}}})}
 }
 func r09ForwardCases() []r09ForwardCase {
 	cases := []r09ForwardCase{}
@@ -101,8 +104,8 @@ func r09ForwardCases() []r09ForwardCase {
 		case "bad_gateway":
 			tc.Desired.ProxyGateway = "not-an-ip"
 		case "policy_only", "policy_blocked", "policy_disabled":
-			tc.Desired.ROSPolicy = &ROSPolicyDesired{Selected: []string{"synthetic-policy"}}
-			tc.PolicyPlan = &ROSPolicyPlan{Items: []ROSPolicyItem{{ProxyCIDR: ProxyCIDR{CIDR: "198.18.0.0/16"}}}, Blockers: []string{}}
+			tc.Desired.ROSPolicy = &spec.ROSPolicyDesired{Selected: []string{"synthetic-policy"}}
+			tc.PolicyPlan = &rospolicy.ROSPolicyPlan{Items: []rospolicy.ROSPolicyItem{{ProxyCIDR: spec.ProxyCIDR{CIDR: "198.18.0.0/16"}}}, Blockers: []string{}}
 			if variant == "policy_blocked" {
 				tc.PolicyPlan.Blockers = []string{"synthetic blocker"}
 			}
@@ -111,14 +114,14 @@ func r09ForwardCases() []r09ForwardCase {
 			}
 			tc.Report = r09Raw(map[string]any{"routes": map[string]any{"items": []any{}}, "policy_routing": map[string]any{"enabled": len(tc.Desired.ROSPolicy.Selected) > 0, "blockers": tc.PolicyPlan.Blockers, "items": tc.PolicyPlan.Items}})
 		case "dns_snapshot", "policy_snapshot", "policy_empty_snapshot", "policy_missing_filter":
-			tc.GuardLive = &DNSGuardSnapshot{ros.PathFilter: {deviceRow(same)}}
+			tc.GuardLive = &dnsguard.Snapshot{ros.PathFilter: {deviceRow(same)}}
 			switch variant {
 			case "policy_snapshot":
-				tc.PolicyLive = &ROSPolicySnapshot{ros.PathFilter: {{".id": "*D", "chain": "forward", "action": "drop"}}}
+				tc.PolicyLive = &rospolicy.ROSPolicySnapshot{ros.PathFilter: {{".id": "*D", "chain": "forward", "action": "drop"}}}
 			case "policy_empty_snapshot":
-				tc.PolicyLive = &ROSPolicySnapshot{ros.PathFilter: {}}
+				tc.PolicyLive = &rospolicy.ROSPolicySnapshot{ros.PathFilter: {}}
 			case "policy_missing_filter":
-				tc.PolicyLive = &ROSPolicySnapshot{}
+				tc.PolicyLive = &rospolicy.ROSPolicySnapshot{}
 			}
 		case "ipv6":
 			tc.Family = 6
@@ -148,12 +151,12 @@ func TestR09ForwardHintPython(t *testing.T) {
 			if err := json.Unmarshal(tc.Report, &report); err != nil {
 				t.Fatal(err)
 			}
-			routes := []Row{}
+			routes := []ros.Row{}
 			for _, row := range tc.State.Tables[ros.PathRoutes] {
 				routes = append(routes, deviceRow(row))
 			}
-			state := &RouterState{NatContext: &NatContext{Routes: routes}, ROSPolicyPlan: tc.PolicyPlan, ROSPolicy: tc.PolicyLive, DNSGuard: tc.GuardLive}
-			hint, err := ipv6.ForwardHint(context.Background(), tc.Router, tc.Desired, ForwardInputs{Guard: state.DNSGuard, NAT: state.NatContext, Policy: state.ROSPolicy, PolicyPlan: state.ROSPolicyPlan}, report.Routes, d.Client)
+			state := &RouterState{NatContext: &ros.NatContext{Routes: routes}, ROSPolicyPlan: tc.PolicyPlan, ROSPolicy: tc.PolicyLive, DNSGuard: tc.GuardLive}
+			hint, err := ipv6.ForwardHint(context.Background(), tc.Router, tc.Desired, ipv6.ForwardInputs{Guard: state.DNSGuard, NAT: state.NatContext, Policy: state.ROSPolicy, PolicyPlan: state.ROSPolicyPlan}, report.Routes, d.Client)
 			if err != nil {
 				t.Fatal(err)
 			}

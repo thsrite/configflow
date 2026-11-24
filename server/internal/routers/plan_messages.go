@@ -1,8 +1,10 @@
 package routers
 
+import "configflow/internal/routers/device"
+
 // StageTitles are the ordered release stage names shown in previews.
 var StageTitles = map[string]string{
-	StageReturnRouting: "mihomo 回流规则", StageRoutes: "主路由代理路由", StageNATBypass: "主路由 NAT 免转换", StageDHCPDNS: "DHCP DNS", StageIPv6DNS: "IPv6 DNS 下发", StageDNSGuard: "DNS 劫持", StageIPv6FakeIP: "IPv6 Fake-IP 分流路由", StageIPv6Routes: "IPv6 规则集路由", StageIPv6PDGuard: "IPv6 前缀变化保护", StageReturnCleanup: "移除 mihomo 回流规则",
+	device.StageReturnRouting: "mihomo 回流规则", device.StageRoutes: "主路由代理路由", device.StageNATBypass: "主路由 NAT 免转换", device.StageDHCPDNS: "DHCP DNS", device.StageIPv6DNS: "IPv6 DNS 下发", device.StageDNSGuard: "DNS 劫持", device.StageIPv6FakeIP: "IPv6 Fake-IP 分流路由", device.StageIPv6Routes: "IPv6 规则集路由", device.StageIPv6PDGuard: "IPv6 前缀变化保护", device.StageReturnCleanup: "移除 mihomo 回流规则",
 }
 
 const (

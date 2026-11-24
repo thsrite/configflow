@@ -4,6 +4,11 @@
 package routers
 
 import (
+	"configflow/internal/routers/dnsguard"
+	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/ipv6"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
 	"slices"
@@ -17,33 +22,33 @@ import (
 // Field order matches the legacy JSON contract: dns_guard, ros_policy,
 // device.State (routes..active_routes), nat_context.
 type RouterState struct {
-	DNSGuard  *DNSGuardSnapshot  `json:"dns_guard,omitempty"`
-	ROSPolicy *ROSPolicySnapshot `json:"ros_policy,omitempty"`
+	DNSGuard  *dnsguard.Snapshot           `json:"dns_guard,omitempty"`
+	ROSPolicy *rospolicy.ROSPolicySnapshot `json:"ros_policy,omitempty"`
 	device.State
 	// RouterOS NAT/forwarding evidence; nil keeps the legacy coverage check
 	// (empty Rules means there are no source-NAT rules).
-	NatContext *NatContext `json:"nat_context"`
+	NatContext *ros.NatContext `json:"nat_context"`
 	// iKuai only: IP groups with ConfigFlow ownership and the rules using them.
-	IkuaiGroups *GroupState `json:"-"`
+	IkuaiGroups *ikuai.GroupState `json:"-"`
 	// NATLists is eager when the lists are referenced; the reader is lazy otherwise.
-	NATLists       *NATLists                                `json:"-"`
-	NATListsReader func(context.Context) (*NATLists, error) `json:"-"`
+	NATLists       *rospolicy.NATLists                                `json:"-"`
+	NATListsReader func(context.Context) (*rospolicy.NATLists, error) `json:"-"`
 	// Planning-stage outputs owned by the orchestration package.
-	DNSGuardPlan    *DNSGuardPlan    `json:"-"`
-	ROSPolicyPlan   *ROSPolicyPlan   `json:"-"`
-	IPv6FakeIPPlan  *IPv6FakeIPPlan  `json:"-"`
-	IPv6DNSPlan     *IPv6DNSPlan     `json:"-"`
-	IPv6PDGuardPlan *IPv6PDGuardPlan `json:"-"`
-	IPv6RoutesPlan  *IPv6RoutesPlan  `json:"-"`
+	DNSGuardPlan    *dnsguard.Plan           `json:"-"`
+	ROSPolicyPlan   *rospolicy.ROSPolicyPlan `json:"-"`
+	IPv6FakeIPPlan  *ipv6.IPv6FakeIPPlan     `json:"-"`
+	IPv6DNSPlan     *ipv6.IPv6DNSPlan        `json:"-"`
+	IPv6PDGuardPlan *ipv6.IPv6PDGuardPlan    `json:"-"`
+	IPv6RoutesPlan  *ipv6.IPv6RoutesPlan     `json:"-"`
 }
 
 // Driver talks to one router.
 type Driver interface {
 	Vendor() string
 	SupportsWrite() bool // false: stages are exported as a script
-	Probe(ctx context.Context) (*RouterInfo, error)
+	Probe(ctx context.Context) (*device.RouterInfo, error)
 	ReadState(ctx context.Context) (*RouterState, error)
-	ReadDHCPDNS(ctx context.Context) (*DhcpDnsState, error) // only when a DNS Agent is selected
+	ReadDHCPDNS(ctx context.Context) (*device.DhcpDnsState, error) // only when a DNS Agent is selected
 	// Apply applies one release operation and returns the one that undoes it.
 	Apply(ctx context.Context, op json.RawMessage) (json.RawMessage, error)
 	RenderScript(ops []json.RawMessage) (string, error)
@@ -65,27 +70,27 @@ func RetirePolicyRoutes(state *RouterState) {
 	if state.PolicyRoutes == nil {
 		return
 	}
-	state.RetiredPolicyRoutes = slices.DeleteFunc(slices.Clone(state.PolicyRoutes), func(e *PolicyRouteEntry) bool {
-		return e.Comment != PolicyAutoComment && e.Comment != PolicyManualComment
+	state.RetiredPolicyRoutes = slices.DeleteFunc(slices.Clone(state.PolicyRoutes), func(e *device.PolicyRouteEntry) bool {
+		return e.Comment != device.PolicyAutoComment && e.Comment != device.PolicyManualComment
 	})
 	state.PolicyRoutes = nil
 }
 
 // StaleRoutes are active routes to the gateway that no configured static
 // route explains (iKuai keeps kernel routes after edits).
-func StaleRoutes(state *RouterState, gateway string) []*RouteEntry {
+func StaleRoutes(state *RouterState, gateway string) []*device.RouteEntry {
 	if gateway == "" || state.ActiveRoutes == nil {
-		return []*RouteEntry{}
+		return []*device.RouteEntry{}
 	}
-	return slices.DeleteFunc(slices.Clone(state.ActiveRoutes), func(a *RouteEntry) bool {
-		return a.Gateway != gateway || slices.ContainsFunc(state.Routes, func(r *RouteEntry) bool {
+	return slices.DeleteFunc(slices.Clone(state.ActiveRoutes), func(a *device.RouteEntry) bool {
+		return a.Gateway != gateway || slices.ContainsFunc(state.Routes, func(r *device.RouteEntry) bool {
 			return r.Enabled && r.Gateway == gateway && r.Dst == a.Dst
 		})
 	})
 }
 
 // StaleRouteWarning explains StaleRoutes to the user.
-func StaleRouteWarning(routes []*RouteEntry, gateway string) string {
+func StaleRouteWarning(routes []*device.RouteEntry, gateway string) string {
 	dsts := make([]string, len(routes))
 	for i, r := range routes {
 		dsts[i] = r.Dst

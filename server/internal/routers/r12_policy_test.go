@@ -71,7 +71,7 @@ func TestR12PolicyReplacementPython(t *testing.T) {
 					ids[v.ID] = true
 				}
 			}
-			state.NatContext.Mangle = []Row{}
+			state.NatContext.Mangle = []ros.Row{}
 			for _, row := range (*state.ROSPolicy)[ros.PathMangle] {
 				if !ids[row.ID()] {
 					copy := ros.CloneRow(row)

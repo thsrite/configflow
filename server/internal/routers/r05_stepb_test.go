@@ -169,8 +169,8 @@ func TestR05StepBProbeInvalidResponses(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			d, fake, _ := stepBIkuai(t, routerfake.IkuaiState{Faults: []routerfake.IkuaiFault{tc.fault}}, false)
 			info, err := d.Probe(t.Context())
-			var re *routers.RouterError
-			if info != nil || !errors.As(err, &re) || re.Kind != routers.KindInvalidResponse || re.Message != tc.message {
+			var re *device.RouterError
+			if info != nil || !errors.As(err, &re) || re.Kind != device.KindInvalidResponse || re.Message != tc.message {
 				t.Fatalf("unusable probe failure: info=%+v err=%#v", info, err)
 			}
 			stepBSaveFailedProbe(t, re)
@@ -183,7 +183,7 @@ func TestR05StepBProbeInvalidResponses(t *testing.T) {
 
 // This is R15's repository-consumer contract, not an implemented HTTP handler:
 // catching RouterError must retain last_probe on failure, with one revision.
-func stepBSaveFailedProbe(t *testing.T, failure *routers.RouterError) {
+func stepBSaveFailedProbe(t *testing.T, failure *device.RouterError) {
 	t.Helper()
 	recordRaw := json.RawMessage(`{"id":"r-ik","type":"ikuai","endpoint":"http://example.com","last_probe":{"ok":true},"custom":"kept"}`)
 	otherRaw := json.RawMessage(`{"id":"other","type":"ikuai","endpoint":"http://other.example.com","last_probe":{"ok":true}}`)

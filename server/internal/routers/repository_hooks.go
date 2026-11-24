@@ -3,13 +3,14 @@ package routers
 import (
 	"configflow/internal/model"
 	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 )
 
 // jobLockHook tries only the existing L1 router publication lease under L3.
 func jobLockHook(ctx context.Context, profileID, routerID string, router model.Router) (func(), bool) {
-	connection := &Router{RouterSettings: RouterSettings{Type: routerStoredText(&router, "type"), Endpoint: routerStoredText(&router, "endpoint")}}
+	connection := &spec.Router{RouterSettings: spec.RouterSettings{Type: routerStoredText(&router, "type"), Endpoint: routerStoredText(&router, "endpoint")}}
 	_, release, err := oplock.RouterJobLock(ctx, profileID, routerID, connection)
 	return release, err == nil
 }

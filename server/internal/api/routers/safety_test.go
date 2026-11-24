@@ -1,6 +1,7 @@
 package routers_test
 
 import (
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"io"
@@ -237,7 +238,7 @@ func TestR15PolicyReadGuardsRawRecordsBeforeDriverCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	constructed := false
-	service.NewDriver = func(r *core.Router) core.Driver { constructed = true; return core.NewDriver(r) }
+	service.NewDriver = func(r *spec.Router) core.Driver { constructed = true; return core.NewDriver(r) }
 	if _, err = service.PolicyObjects(s.Context(), "default", rows[0]); err == nil || constructed || len(fake.Calls()) != 0 {
 		t.Fatalf("display defaults erased changed ownership evidence: %v", err)
 	}

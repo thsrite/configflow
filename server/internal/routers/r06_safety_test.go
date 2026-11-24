@@ -17,7 +17,7 @@ import (
 )
 
 type r06CancelHTTP struct {
-	client   DeviceHTTP
+	client   device.DeviceHTTP
 	cancel   context.CancelFunc
 	vendor   string
 	written  bool
@@ -77,7 +77,7 @@ func TestR06CancellationFinishesReadbackAndCompensation(t *testing.T) {
 				request, cancel := context.WithCancel(context.WithValue(context.Background(), key{}, "scope"))
 				defer cancel()
 				transport := &r06CancelHTTP{client: devhttp.New(devhttp.Config{Cookies: vendor == "ikuai"}), cancel: cancel, vendor: vendor}
-				var editor RouteEditor
+				var editor routeedit.RouteEditor
 				if vendor == "routeros" {
 					editor = NewRouterOSWithHTTP(endpoint, transport)
 				} else {
@@ -93,7 +93,7 @@ func TestR06CancellationFinishesReadbackAndCompensation(t *testing.T) {
 					t.Fatal("test did not cancel accepted write and observe later requests")
 				}
 				if rollback {
-					if e, ok := errors.AsType[*RouterError](err); !ok || e.Kind == KindRollback {
+					if e, ok := errors.AsType[*device.RouterError](err); !ok || e.Kind == device.KindRollback {
 						t.Fatalf("recovery did not complete: %v", err)
 					}
 					if final() != "office" {
@@ -115,7 +115,7 @@ func TestR06CancelledEntryStillWrites(t *testing.T) {
 			tc := r06Base(vendor, "add")
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			var editor RouteEditor
+			var editor routeedit.RouteEditor
 			if vendor == "routeros" {
 				f := routerfake.New(tc.ROS.Tables)
 				s := httptest.NewServer(f)
@@ -198,33 +198,33 @@ func TestR06PreviewBindsFullSnapshotAndConnection(t *testing.T) {
 	tc := r06Base("routeros", "read")
 	row := routeedit.EditROSEntry(deviceRow(tc.ROS.Tables["/ip/route"][0]), nil)
 	payload := r06JSON(map[string]any{"action": "update", "id": row.ID, "revision": row.Public().Revision, "values": tc.Values})
-	original, err := routeedit.BuildRoutePlan(tc.Router, []*EditableRoute{row}, payload)
+	original, err := routeedit.BuildRoutePlan(tc.Router, []*routeedit.EditableRoute{row}, payload)
 	if err != nil {
 		t.Fatal(err)
 	}
 	password := tc.Router
 	password.Password = "changed-secret"
-	same, err := routeedit.BuildRoutePlan(password, []*EditableRoute{row}, payload)
+	same, err := routeedit.BuildRoutePlan(password, []*routeedit.EditableRoute{row}, payload)
 	if err != nil || original.Fingerprint != same.Fingerprint {
 		t.Fatal("password changed fingerprint")
 	}
 	endpoint := tc.Router
 	endpoint.Endpoint = "http://other.example.com"
-	changed, _ := routeedit.BuildRoutePlan(endpoint, []*EditableRoute{row}, payload)
+	changed, _ := routeedit.BuildRoutePlan(endpoint, []*routeedit.EditableRoute{row}, payload)
 	if changed.Fingerprint == original.Fingerprint {
 		t.Fatal("connection omitted from fingerprint")
 	}
 	other := *row
 	other.ID = "*99"
 	other.CIDR = "192.0.2.0/24"
-	same, err = routeedit.BuildRoutePlan(tc.Router, []*EditableRoute{row, &other}, payload)
+	same, err = routeedit.BuildRoutePlan(tc.Router, []*routeedit.EditableRoute{row, &other}, payload)
 	if err != nil || same.Fingerprint != original.Fingerprint {
 		t.Fatal("unrelated route changed fingerprint")
 	}
 	drifted := deviceRow(tc.ROS.Tables["/ip/route"][0])
 	drifted["distance"] = "99"
 	changedRow := routeedit.EditROSEntry(drifted, nil)
-	if _, err := routeedit.BuildRoutePlan(tc.Router, []*EditableRoute{changedRow}, payload); device.RouterErrorKind(err) != KindConflict {
+	if _, err := routeedit.BuildRoutePlan(tc.Router, []*routeedit.EditableRoute{changedRow}, payload); device.RouterErrorKind(err) != device.KindConflict {
 		t.Fatal("advanced drift not rejected")
 	}
 	for _, field := range []string{"active", "inactive", "immediate-gw"} {
@@ -234,8 +234,8 @@ func TestR06PreviewBindsFullSnapshotAndConnection(t *testing.T) {
 			t.Fatalf("runtime %s altered revision", field)
 		}
 	}
-	noop := &RouteValues{CIDR: row.CIDR, Gateway: row.Gateway, Enabled: row.Enabled, Comment: row.Comment}
-	plan, err := routeedit.BuildRoutePlan(tc.Router, []*EditableRoute{row}, r06JSON(map[string]any{"action": "update", "id": row.ID, "revision": row.Public().Revision, "values": noop}))
+	noop := &routeedit.RouteValues{CIDR: row.CIDR, Gateway: row.Gateway, Enabled: row.Enabled, Comment: row.Comment}
+	plan, err := routeedit.BuildRoutePlan(tc.Router, []*routeedit.EditableRoute{row}, r06JSON(map[string]any{"action": "update", "id": row.ID, "revision": row.Public().Revision, "values": noop}))
 	if err != nil || !plan.Empty {
 		t.Fatal("no-op not recognized")
 	}
@@ -249,7 +249,7 @@ func TestR06DeviceCredentialEchoIsHidden(t *testing.T) {
 	for _, vendor := range []string{"routeros", "ikuai"} {
 		t.Run(vendor, func(t *testing.T) {
 			tc := r06Base(vendor, "add")
-			var editor RouteEditor
+			var editor routeedit.RouteEditor
 			if vendor == "routeros" {
 				tc.ROS.Faults = []routerfake.Fault{{Method: "PUT", Path: "/ip/route", Count: 1, Status: 400, Body: routerfake.Row{"message": "synthetic-secret"}}}
 				f := routerfake.New(nil)
@@ -270,7 +270,7 @@ func TestR06DeviceCredentialEchoIsHidden(t *testing.T) {
 				editor = d
 			}
 			_, err := editor.MutateRoute(context.Background(), "add", nil, tc.Values)
-			if e, ok := errors.AsType[*RouterError](err); !ok || e.Message != routeedit.MessageEditSecret {
+			if e, ok := errors.AsType[*device.RouterError](err); !ok || e.Message != routeedit.MessageEditSecret {
 				t.Fatalf("device echo leaked: %v", err)
 			}
 		})
@@ -278,16 +278,16 @@ func TestR06DeviceCredentialEchoIsHidden(t *testing.T) {
 }
 
 func TestR06SecretRedactionKeepsRecoveryStatus(t *testing.T) {
-	for _, kind := range []ErrorKind{KindRollback, KindUncertainWrite} {
+	for _, kind := range []device.ErrorKind{device.KindRollback, device.KindUncertainWrite} {
 		err := routeedit.SafeError(device.KindError(kind, "device echoes synthetic-secret"), "http://example.com", "synthetic-secret")
-		e, ok := errors.AsType[*RouterError](err)
+		e, ok := errors.AsType[*device.RouterError](err)
 		if !ok || e.Kind != kind || strings.Contains(e.Message, "synthetic-secret") {
 			t.Fatal("unsafe redaction", err)
 		}
-		if kind == KindRollback && !strings.Contains(e.Message, "补偿未完成") {
+		if kind == device.KindRollback && !strings.Contains(e.Message, "补偿未完成") {
 			t.Fatal("redaction hid failed compensation")
 		}
-		if kind == KindUncertainWrite && !strings.Contains(e.Message, "无法确认") {
+		if kind == device.KindUncertainWrite && !strings.Contains(e.Message, "无法确认") {
 			t.Fatal("redaction hid uncertain write")
 		}
 	}

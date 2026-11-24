@@ -3,8 +3,10 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
 	"configflow/internal/routers/routeedit"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -80,16 +82,16 @@ func stringValue(raw json.RawMessage) (string, bool) {
 	}
 	return *s, true
 }
-func selected(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *core.Router, error) {
+func selected(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *spec.Router, error) {
 	return selectedFrom(c, (*core.ManagementService).Records)
 }
 
 // selectedConfig is selected with the resolved configuration in the view.
-func selectedConfig(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *core.Router, error) {
+func selectedConfig(c *httpx.Ctx) (*core.ManagementService, *core.ConfigView, *spec.Router, error) {
 	return selectedFrom(c, (*core.ManagementService).ConfigRecords)
 }
 
-func selectedFrom(c *httpx.Ctx, read func(*core.ManagementService, context.Context, string) (*core.ConfigView, error)) (*core.ManagementService, *core.ConfigView, *core.Router, error) {
+func selectedFrom(c *httpx.Ctx, read func(*core.ManagementService, context.Context, string) (*core.ConfigView, error)) (*core.ManagementService, *core.ConfigView, *spec.Router, error) {
 	s, err := service(c)
 	if err != nil {
 		return nil, nil, nil, err
@@ -138,8 +140,8 @@ func failure(c *httpx.Ctx, cfg *core.ConfigView, err error, status int, noStore 
 	if err == nil {
 		return nil, nil
 	}
-	var validation *core.ValidationError
-	var re *core.RouterError
+	var validation *device.ValidationError
+	var re *device.RouterError
 	message := err.Error()
 	// OxidnsValidationError and OxidnsReferenceError subclass OxidnsSettingsError.
 	if text, ok := oxidns.IsSettingsError(err); ok {
@@ -148,7 +150,7 @@ func failure(c *httpx.Ctx, cfg *core.ConfigView, err error, status int, noStore 
 		status = 400
 	} else if errors.As(err, &re) {
 		if status == 0 {
-			if re.Kind == core.KindConflict {
+			if re.Kind == device.KindConflict {
 				status = 409
 			} else {
 				status = 502
@@ -178,8 +180,8 @@ func (h *handler) job(next httpx.HandlerFunc) httpx.HandlerFunc {
 		}
 		held, release, lockErr := oplock.RouterJobLock(ctx, c.ProfileID, c.Param("router_id"), r)
 		if lockErr != nil {
-			var conflict *core.RouterError
-			if !errors.As(lockErr, &conflict) || conflict.Kind != core.KindConflict {
+			var conflict *device.RouterError
+			if !errors.As(lockErr, &conflict) || conflict.Kind != device.KindConflict {
 				return nil, lockErr
 			}
 			return public(c, cfg, struct {
@@ -216,16 +218,16 @@ func (h *handler) collection(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 		return public(c, cfg, struct {
 			Success bool            `json:"success"`
-			Router  core.RouterView `json:"router"`
+			Router  spec.RouterView `json:"router"`
 		}{true, r.View()}, 200, false)
 	}
-	views := make([]core.RouterView, 0, len(cfg.Routers))
+	views := make([]spec.RouterView, 0, len(cfg.Routers))
 	for _, r := range cfg.Routers {
 		views = append(views, r.View())
 	}
 	return public(c, cfg, struct {
 		Success bool              `json:"success"`
-		Routers []core.RouterView `json:"routers"`
+		Routers []spec.RouterView `json:"routers"`
 	}{true, views}, 200, false)
 }
 func (h *handler) settings(c *httpx.Ctx) (*httpx.Response, error) {
@@ -247,7 +249,7 @@ func (h *handler) settings(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return public(c, cfg, struct {
 		Success bool            `json:"success"`
-		Router  core.RouterView `json:"router"`
+		Router  spec.RouterView `json:"router"`
 	}{true, next.View()}, 200, false)
 }
 func (h *handler) probe(c *httpx.Ctx) (*httpx.Response, error) {
@@ -272,7 +274,7 @@ func (h *handler) probe(c *httpx.Ctx) (*httpx.Response, error) {
 		Message string           `json:"message"`
 	}{result.OK, result, result.Message}, status, false)
 }
-func inspect(c *httpx.Ctx, db *repo.Repository, cfg json.RawMessage, r *core.Router) (core.Driver, *core.Inspection, error) {
+func inspect(c *httpx.Ctx, db *repo.Repository, cfg json.RawMessage, r *spec.Router) (core.Driver, *core.Inspection, error) {
 	m, err := manager(c)
 	if err != nil {
 		return nil, nil, err
@@ -282,7 +284,7 @@ func inspect(c *httpx.Ctx, db *repo.Repository, cfg json.RawMessage, r *core.Rou
 	}
 	d := core.NewDriver(r)
 	if d == nil {
-		return nil, nil, &core.RouterError{Message: messageMissing}
+		return nil, nil, &device.RouterError{Message: messageMissing}
 	}
 	value, err := core.Inspect(c.Context(), core.InspectRequest{ProfileID: c.ProfileID, Config: cfg, Router: r, Driver: d, Agents: core.ManagerAgentSource{Manager: m}, Repo: db})
 	return d, value, err
@@ -414,13 +416,13 @@ func (h *handler) routes(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return failure(c, cfg, err, 0, false)
 	}
-	publicRows := make([]*core.PublicRoute, 0, len(rows))
+	publicRows := make([]*routeedit.PublicRoute, 0, len(rows))
 	for _, row := range rows {
 		publicRows = append(publicRows, row.Public())
 	}
 	return public(c, cfg, struct {
-		Success bool                `json:"success"`
-		Routes  []*core.PublicRoute `json:"routes"`
+		Success bool                     `json:"success"`
+		Routes  []*routeedit.PublicRoute `json:"routes"`
 	}{true, publicRows}, 200, false)
 }
 func (h *handler) routeChange(c *httpx.Ctx) (*httpx.Response, error) {
@@ -438,8 +440,8 @@ func (h *handler) routeChange(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	if !apply {
 		return public(c, cfg, struct {
-			Success bool            `json:"success"`
-			Plan    *core.RoutePlan `json:"plan"`
+			Success bool                 `json:"success"`
+			Plan    *routeedit.RoutePlan `json:"plan"`
 		}{true, plan}, 200, false)
 	}
 	message := messageRouteUnchanged
@@ -447,9 +449,9 @@ func (h *handler) routeChange(c *httpx.Ctx) (*httpx.Response, error) {
 		message = messageRouteWritten
 	}
 	return public(c, cfg, struct {
-		Success bool              `json:"success"`
-		Result  *core.RouteResult `json:"result"`
-		Message string            `json:"message"`
+		Success bool                   `json:"success"`
+		Result  *routeedit.RouteResult `json:"result"`
+		Message string                 `json:"message"`
 	}{true, result, message}, 200, false)
 }
 func (h *handler) policy(c *httpx.Ctx) (*httpx.Response, error) {

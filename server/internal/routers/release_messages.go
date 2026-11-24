@@ -1,5 +1,7 @@
 package routers
 
+import "configflow/internal/routers/device"
+
 const (
 	messageReturnUpgrade         = "mihomo Agent 不支持回流占用安全检查，请先升级 Agent，或关闭自动配置回流后继续发布"
 	messageReturnIncomplete      = "mihomo Agent 的回流安全检查结果不完整，无法确认规则归属"
@@ -34,20 +36,20 @@ const (
 )
 
 var releaseEmptyMessages = map[string]string{
-	StageIPv6FakeIP:    "回读确认 IPv6 Fake-IP 路由与计划一致",
-	StageIPv6Routes:    "回读确认 IPv6 规则集路由与计划一致",
-	StageIPv6DNS:       "回读确认 OxiDNS DHCP 与同一局域网的 IPv6 DNS 通告一致",
-	StageIPv6PDGuard:   "回读确认 IPv6 前缀变化保护与模板一致",
-	StageRoutes:        "回读确认来源策略路由与计划一致",
-	StageReturnRouting: "回读确认受管回流配置与占用安全检查通过",
-	StageNATBypass:     "回读确认 NAT 免转换与计划一致",
-	StageDHCPDNS:       "回读确认 DHCP DNS 与所选服务器一致",
-	StageDNSGuard:      "回读确认强制 DNS 规则与计划一致",
+	device.StageIPv6FakeIP:    "回读确认 IPv6 Fake-IP 路由与计划一致",
+	device.StageIPv6Routes:    "回读确认 IPv6 规则集路由与计划一致",
+	device.StageIPv6DNS:       "回读确认 OxiDNS DHCP 与同一局域网的 IPv6 DNS 通告一致",
+	device.StageIPv6PDGuard:   "回读确认 IPv6 前缀变化保护与模板一致",
+	device.StageRoutes:        "回读确认来源策略路由与计划一致",
+	device.StageReturnRouting: "回读确认受管回流配置与占用安全检查通过",
+	device.StageNATBypass:     "回读确认 NAT 免转换与计划一致",
+	device.StageDHCPDNS:       "回读确认 DHCP DNS 与所选服务器一致",
+	device.StageDNSGuard:      "回读确认强制 DNS 规则与计划一致",
 }
 var releaseSkippedMessages = map[string]string{
-	StageIPv6Routes:  "IPv6 规则集路由未能确认下一跳或归属，本次保留现状",
-	StageIPv6DNS:     "IPv6 DNS 下发未能确认可安全修改的 LAN，本次保留现状",
-	StageIPv6PDGuard: "IPv6 前缀变化保护未能确认，本次保留现状",
+	device.StageIPv6Routes:  "IPv6 规则集路由未能确认下一跳或归属，本次保留现状",
+	device.StageIPv6DNS:     "IPv6 DNS 下发未能确认可安全修改的 LAN，本次保留现状",
+	device.StageIPv6PDGuard: "IPv6 前缀变化保护未能确认，本次保留现状",
 }
 
 const messageNATNotRequiredVerified = "回读确认无需额外 NAT 免转换"

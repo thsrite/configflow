@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ipv6"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,7 +18,7 @@ import (
 
 func TestR12FingerprintAcrossProcesses(t *testing.T) {
 	if os.Getenv("R12_FINGERPRINT_CHILD") == "1" {
-		fp, e := Fingerprint([]Stage{}, json.RawMessage(`{"unicode":"合成","a":9007199254740993,"nested":{"z":null,"a":[]}}`), nil, nil)
+		fp, e := Fingerprint([]device.Stage{}, json.RawMessage(`{"unicode":"合成","a":9007199254740993,"nested":{"z":null,"a":[]}}`), nil, nil)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -36,7 +37,7 @@ func TestR12FingerprintAcrossProcesses(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	here, e := Fingerprint([]Stage{}, json.RawMessage(`{"nested":{"a":[],"z":null},"a":9007199254740993,"unicode":"合成"}`), nil, nil)
+	here, e := Fingerprint([]device.Stage{}, json.RawMessage(`{"nested":{"a":[],"z":null},"a":9007199254740993,"unicode":"合成"}`), nil, nil)
 	if e != nil || string(child) != here {
 		t.Fatalf("unstable fingerprint %s %s %v", child, here, e)
 	}
@@ -77,9 +78,9 @@ func TestR12IPv6HostBindingAndFailure(t *testing.T) {
 	old := IPv6HostRequest
 	defer func() { IPv6HostRequest = old }()
 	calls := 0
-	IPv6HostRequest = func(context.Context, *GatewayAgent) (IPv6Host, error) {
+	IPv6HostRequest = func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) {
 		calls++
-		return IPv6Host{}, errors.New("synthetic host unavailable")
+		return ipv6.IPv6Host{}, errors.New("synthetic host unavailable")
 	}
 	for _, mode := range []string{"missing", "profile", "service", "disabled", "valid"} {
 		a := r12Gateway()

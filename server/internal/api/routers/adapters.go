@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 
@@ -16,7 +17,7 @@ import (
 
 // recordNotice is the C07 legacy boundary. Notification failures do not change
 // a successfully read report; cancelled shutdown never starts a new commit.
-func recordNotice(c *httpx.Ctx, cfg json.RawMessage, r *core.Router, report *core.Report, plan *core.Plan) {
+func recordNotice(c *httpx.Ctx, cfg json.RawMessage, r *spec.Router, report *core.Report, plan *core.Plan) {
 	ctx := lifecycle.Detach(c.Context())
 	if ctx.Err() != nil {
 		return

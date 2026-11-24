@@ -32,9 +32,9 @@ func (s r12Source) Agent(_ context.Context, id string) (*GatewayAgent, error) {
 	return nil, nil
 }
 func (s r12Source) ReturnAgent(*GatewayAgent) ReturnAgent { return s.client }
-func r12Repository(t *testing.T, r *Router, yaml string) *repo.Repository {
+func r12Repository(t *testing.T, r *spec.Router, yaml string) *repo.Repository {
 	t.Helper()
-	raw := device.JSON(map[string]any{"mihomo": map[string]any{"custom_config": yaml}, "routers": map[string]any{"items": []*Router{r}}})
+	raw := device.JSON(map[string]any{"mihomo": map[string]any{"custom_config": yaml}, "routers": map[string]any{"items": []*spec.Router{r}}})
 	db, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func r12Repository(t *testing.T, r *Router, yaml string) *repo.Repository {
 	}
 	return db
 }
-func r12Config(t *testing.T, db *repo.Repository) (json.RawMessage, *Router, model.Profile) {
+func r12Config(t *testing.T, db *repo.Repository) (json.RawMessage, *spec.Router, model.Profile) {
 	t.Helper()
 	cfg, e := db.Config(t.Context(), "default", repo.ResourceRoots{})
 	if e != nil {
@@ -73,7 +73,7 @@ func r12Gateway() *GatewayAgent {
 }
 func TestR12RuntimePublicationBoundaries(t *testing.T) {
 	originalHost := IPv6HostRequest
-	IPv6HostRequest = func(context.Context, *GatewayAgent) (IPv6Host, error) { return r10Host(), nil }
+	IPv6HostRequest = func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) { return r10Host(), nil }
 	defer func() { IPv6HostRequest = originalHost }()
 	for _, mode := range []string{"disconnect", "shutdown_before_write", "shutdown_after_write", "shutdown_in_commit", "disconnect_in_commit"} {
 		t.Run(mode, func(t *testing.T) {
@@ -112,7 +112,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 			triggered := false
 			callsAtShutdown := 0
 			var publicationDriver *RouterOS
-			req := PublishRequest{ProfileID: "default", RouterID: r.ID, Expected: plan.Fingerprint, Router: r, Repo: db, Agents: source, NewDriver: func(r *Router) Driver {
+			req := PublishRequest{ProfileID: "default", RouterID: r.ID, Expected: plan.Fingerprint, Router: r, Repo: db, Agents: source, NewDriver: func(r *spec.Router) Driver {
 				d := NewRouterOS(server.URL, r.Username, r.Password, false)
 				publicationDriver = d
 				d.SetHTTP(&r09AfterReadHTTP{DeviceHTTP: d.HTTP(), after: func(method, url string) {
@@ -200,7 +200,7 @@ func TestR12RuntimePublicationBoundaries(t *testing.T) {
 			}
 			if after.Revision == before.Revision+1 {
 				manifests := publicationDriver.Manifests()
-				for name, slot := range map[string]Manifest{"ros_policy_state": manifests.Policy, "dns_guard_state": manifests.DNSGuard, "ipv6_fakeip_state": manifests.IPv6FakeIP, "ipv6_routes_state": manifests.IPv6Routes, "ipv6_pd_guard_state": manifests.IPv6PDGuard} {
+				for name, slot := range map[string]ros.Manifest{"ros_policy_state": manifests.Policy, "dns_guard_state": manifests.DNSGuard, "ipv6_fakeip_state": manifests.IPv6FakeIP, "ipv6_routes_state": manifests.IPv6Routes, "ipv6_pd_guard_state": manifests.IPv6PDGuard} {
 					expected := r.State(name)
 					if slot.Set {
 						expected = slot.Value

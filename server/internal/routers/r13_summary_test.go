@@ -3,6 +3,8 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
+	"configflow/internal/routers/ipv6"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -11,10 +13,10 @@ import (
 	"testing"
 )
 
-func r13Stage(key string, kinds ...string) Stage {
-	s := stageOf(key, false, []Op{})
+func r13Stage(key string, kinds ...string) device.Stage {
+	s := stageOf(key, false, []device.Op{})
 	for _, kind := range kinds {
-		s.Ops = append(s.Ops, OpHead{Kind: kind, Summary: "synthetic"})
+		s.Ops = append(s.Ops, device.OpHead{Kind: kind, Summary: "synthetic"})
 	}
 	return s
 }
@@ -22,30 +24,30 @@ func TestR13SummariesPython(t *testing.T) {
 	base := func() *Report { return &Report{InSync: true} }
 	all := base()
 	all.InSync = false
-	all.Parts = []ReportPart{{Key: "ipv6_fakeip", Section: IPv6FakeIPReport{Enabled: true, Status: "missing"}}, {Key: "ipv6_routes", Section: IPv6RoutesReport{Enabled: true, Items: []IPv6RouteItem{{Status: "missing"}, {Status: "borrowed"}}}}, {Key: "ipv6_pd_guard", Section: IPv6PDGuardReport{Enabled: true, Items: []IPv6PDItem{{Status: "missing"}, {Status: "synced"}}}}}
+	all.Parts = []device.ReportPart{{Key: "ipv6_fakeip", Section: ipv6.IPv6FakeIPReport{Enabled: true, Status: "missing"}}, {Key: "ipv6_routes", Section: ipv6.IPv6RoutesReport{Enabled: true, Items: []ipv6.IPv6RouteItem{{Status: "missing"}, {Status: "borrowed"}}}}, {Key: "ipv6_pd_guard", Section: ipv6.IPv6PDGuardReport{Enabled: true, Items: []ipv6.IPv6PDItem{{Status: "missing"}, {Status: "synced"}}}}}
 	withdraw := base()
-	withdraw.Parts = []ReportPart{{Key: "ipv6_fakeip", Section: IPv6FakeIPReport{Enabled: false}}, {Key: "ipv6_routes", Section: IPv6RoutesReport{Enabled: false}}, {Key: "dns_guard", Section: DNSGuardReport{Enabled: false}}, {Key: "ipv6_pd_guard", Section: IPv6PDGuardReport{Enabled: false}}}
+	withdraw.Parts = []device.ReportPart{{Key: "ipv6_fakeip", Section: ipv6.IPv6FakeIPReport{Enabled: false}}, {Key: "ipv6_routes", Section: ipv6.IPv6RoutesReport{Enabled: false}}, {Key: "dns_guard", Section: dnsguard.Report{Enabled: false}}, {Key: "ipv6_pd_guard", Section: ipv6.IPv6PDGuardReport{Enabled: false}}}
 	skipped := base()
 	skipped.InSync = false
-	skipped.Parts = []ReportPart{{Key: "ipv6_routes", Section: IPv6RoutesReport{Enabled: true, Skip: []string{"synthetic missing next hop"}}}}
+	skipped.Parts = []device.ReportPart{{Key: "ipv6_routes", Section: ipv6.IPv6RoutesReport{Enabled: true, Skip: []string{"synthetic missing next hop"}}}}
 	conflict := base()
 	conflict.InSync = false
-	conflict.Routes.Items = []RouteItem{{CIDR: "198.51.100.0/24", Status: "conflict", Detail: "synthetic conflict"}}
+	conflict.Routes.Items = []device.RouteItem{{CIDR: "198.51.100.0/24", Status: "conflict", Detail: "synthetic conflict"}}
 	pd := base()
 	pd.InSync = false
-	pd.Parts = []ReportPart{{Key: "ipv6_pd_guard", Section: IPv6PDGuardReport{Enabled: true, Items: []IPv6PDItem{{Status: "adopt"}}}}}
+	pd.Parts = []device.ReportPart{{Key: "ipv6_pd_guard", Section: ipv6.IPv6PDGuardReport{Enabled: true, Items: []ipv6.IPv6PDItem{{Status: "adopt"}}}}}
 	cases := []struct {
 		name   string
 		report *Report
 		plan   *Plan
 	}{
-		{"synced", base(), &Plan{Stages: []Stage{r13Stage(StageRoutes), r13Stage(StageNATBypass)}}},
-		{"normal stages", all, &Plan{Stages: []Stage{r13Stage(StageReturnRouting, "return_routing_apply"), r13Stage(StageRoutes, "route_add"), r13Stage(StageIPv6FakeIP, "ipv6_fakeip_replace"), r13Stage(StageIPv6Routes, "ipv6_routes_replace"), r13Stage(StageDHCPDNS, "dhcp_dns_update"), r13Stage(StageIPv6DNS, "ipv6_dns_update"), r13Stage(StageIPv6PDGuard, "ipv6_pd_guard_sync"), r13Stage(StageReturnCleanup, "return_routing_remove")}}},
-		{"withdraw", withdraw, &Plan{Stages: []Stage{r13Stage(StageIPv6FakeIP, "ipv6_fakeip_replace"), r13Stage(StageIPv6Routes, "ipv6_routes_replace"), r13Stage(StageDNSGuard, "dns_guard_replace"), r13Stage(StageIPv6PDGuard, "ipv6_pd_guard_sync")}}},
-		{"blocked", all, &Plan{Stages: []Stage{r13Stage(StageRoutes, "route_add")}, Blockers: []string{"synthetic blocker", "second blocker"}}},
-		{"skipped", skipped, &Plan{Stages: []Stage{{Key: StageIPv6Routes, Title: StageTitles[StageIPv6Routes], Skipped: pointer(true), Ops: []Op{}}}}},
+		{"synced", base(), &Plan{Stages: []device.Stage{r13Stage(device.StageRoutes), r13Stage(device.StageNATBypass)}}},
+		{"normal stages", all, &Plan{Stages: []device.Stage{r13Stage(device.StageReturnRouting, "return_routing_apply"), r13Stage(device.StageRoutes, "route_add"), r13Stage(device.StageIPv6FakeIP, "ipv6_fakeip_replace"), r13Stage(device.StageIPv6Routes, "ipv6_routes_replace"), r13Stage(device.StageDHCPDNS, "dhcp_dns_update"), r13Stage(device.StageIPv6DNS, "ipv6_dns_update"), r13Stage(device.StageIPv6PDGuard, "ipv6_pd_guard_sync"), r13Stage(device.StageReturnCleanup, "return_routing_remove")}}},
+		{"withdraw", withdraw, &Plan{Stages: []device.Stage{r13Stage(device.StageIPv6FakeIP, "ipv6_fakeip_replace"), r13Stage(device.StageIPv6Routes, "ipv6_routes_replace"), r13Stage(device.StageDNSGuard, "dns_guard_replace"), r13Stage(device.StageIPv6PDGuard, "ipv6_pd_guard_sync")}}},
+		{"blocked", all, &Plan{Stages: []device.Stage{r13Stage(device.StageRoutes, "route_add")}, Blockers: []string{"synthetic blocker", "second blocker"}}},
+		{"skipped", skipped, &Plan{Stages: []device.Stage{{Key: device.StageIPv6Routes, Title: StageTitles[device.StageIPv6Routes], Skipped: pointer(true), Ops: []device.Op{}}}}},
 		{"conflict", conflict, &Plan{}},
-		{"adopt", pd, &Plan{Stages: []Stage{r13Stage(StageRoutes, "route_comment"), r13Stage(StageIPv6PDGuard, "ipv6_pd_guard_sync")}}},
+		{"adopt", pd, &Plan{Stages: []device.Stage{r13Stage(device.StageRoutes, "route_comment"), r13Stage(device.StageIPv6PDGuard, "ipv6_pd_guard_sync")}}},
 		{"generic", &Report{}, &Plan{}},
 	}
 	payload := []map[string]any{}
@@ -92,9 +94,9 @@ func TestR13SummariesPython(t *testing.T) {
 			}
 		})
 	}
-	disabled := r13Stage(StageRoutes, "route_add")
+	disabled := r13Stage(device.StageRoutes, "route_add")
 	disabled.Enabled = pointer(false)
-	if got := Summarize(base(), &Plan{Stages: []Stage{disabled}}); got.State != "synced" || got.Pending != 0 {
+	if got := Summarize(base(), &Plan{Stages: []device.Stage{disabled}}); got.State != "synced" || got.Pending != 0 {
 		t.Fatal("disabled stage counted", got)
 	}
 	if _, e := SummarizeJSON(json.RawMessage(`{"in_sync":"true"}`), json.RawMessage(`{}`)); e == nil {

@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"net/http/httptest"
 	"testing"
 
@@ -30,7 +31,7 @@ func TestR12AdvisoryWholePlansPython(t *testing.T) {
 			input := struct {
 				r12BoundaryCase
 				Sets map[string][]string `json:"address_sets"`
-			}{r12BoundaryCase{Router: &Router{RouterSettings: RouterSettings{Type: "routeros"}}, State: s, Desired: r12Desired(), Return: &ReturnStatus{Status: "disabled"}}, tc.sets}
+			}{r12BoundaryCase{Router: &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros"}}, State: s, Desired: r12Desired(), Return: &ReturnStatus{Status: "disabled"}}, tc.sets}
 			py := r12Python(t, server.URL, input)
 			f.Reset(s)
 			d := NewRouterOS(server.URL, "synthetic-user", "synthetic-password", false)

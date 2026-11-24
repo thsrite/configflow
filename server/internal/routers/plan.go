@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,12 +21,12 @@ import (
 
 // Fingerprint is the stable Go-native revision of the exact previewed stages
 // and evidence. Unknown fields remain evidence; presentation warnings are not.
-func Fingerprint(stages []Stage, natEvidence, dhcpEvidence, returnEvidence any) (string, error) {
+func Fingerprint(stages []device.Stage, natEvidence, dhcpEvidence, returnEvidence any) (string, error) {
 	b, err := CanonicalReleaseJSON(struct {
-		Stages []Stage `json:"stages"`
-		NAT    any     `json:"nat_evidence"`
-		DHCP   any     `json:"dhcp_evidence"`
-		Return any     `json:"return_evidence"`
+		Stages []device.Stage `json:"stages"`
+		NAT    any            `json:"nat_evidence"`
+		DHCP   any            `json:"dhcp_evidence"`
+		Return any            `json:"return_evidence"`
 	}{stages, natEvidence, dhcpEvidence, returnEvidence})
 	if err != nil {
 		return "", err
@@ -55,12 +57,12 @@ func CanonicalReleaseJSON(v any) ([]byte, error) {
 	}
 	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }
-func stageOf(key string, manual bool, ops []Op) Stage {
-	return Stage{Key: key, Title: StageTitles[key], Manual: manual, Ops: ops}
+func stageOf(key string, manual bool, ops []device.Op) device.Stage {
+	return device.Stage{Key: key, Title: StageTitles[key], Manual: manual, Ops: ops}
 }
 func pointer[T any](v T) *T { return &v }
-func makeReturnOps(status *ReturnStatus, spec *ReturnSpec) []Op {
-	ops := []Op{}
+func makeReturnOps(status *ReturnStatus, spec *ReturnSpec) []device.Op {
+	ops := []device.Op{}
 	var previous json.RawMessage
 	if status != nil && status.Managed != nil && status.Managed.TablePresent {
 		previous = status.Managed.Spec
@@ -90,10 +92,10 @@ func makeReturnOps(status *ReturnStatus, spec *ReturnSpec) []Op {
 	if len(previous) == 0 {
 		previous = json.RawMessage("null")
 	}
-	return append(ops, ReturnApplyOp{OpHead{Kind: "return_routing_apply", Summary: strings.Join(parts, "；")}, spec, previous})
+	return append(ops, ReturnApplyOp{device.OpHead{Kind: "return_routing_apply", Summary: strings.Join(parts, "；")}, spec, previous})
 }
-func cleanupReturnOps(status *ReturnStatus, warnings *[]string) []Op {
-	ops := []Op{}
+func cleanupReturnOps(status *ReturnStatus, warnings *[]string) []device.Op {
+	ops := []device.Op{}
 	if status == nil || status.Cleanup == nil {
 		return ops
 	}
@@ -115,9 +117,9 @@ func cleanupReturnOps(status *ReturnStatus, warnings *[]string) []Op {
 		*warnings = append(*warnings, fmt.Sprintf(messageReturnCleanupUnsafe, messageReturnIncomplete))
 		return ops
 	}
-	return append(ops, ReturnRemoveOp{OpHead{Kind: "return_routing_remove", Summary: fmt.Sprintf(messageReturnRemove, spec.Table, spec.RouterIP, returnScope(&spec))}, false, c.Spec})
+	return append(ops, ReturnRemoveOp{device.OpHead{Kind: "return_routing_remove", Summary: fmt.Sprintf(messageReturnRemove, spec.Table, spec.RouterIP, returnScope(&spec))}, false, c.Spec})
 }
-func proxyTargets(d *Desired, skipped []string) []string {
+func proxyTargets(d *spec.Desired, skipped []string) []string {
 	out := []string{}
 	for _, v := range d.ProxyCIDRs {
 		if !slices.Contains(skipped, v.CIDR) {
@@ -126,11 +128,11 @@ func proxyTargets(d *Desired, skipped []string) []string {
 	}
 	return out
 }
-func natChecks(items []NatItem, gateway string) NATChecks {
-	c := NATChecks{Gateway: gateway, NATBypass: []string{}, NATNotRequired: []CIDRGateway{}}
+func natChecks(items []device.NatItem, gateway string) device.NATChecks {
+	c := device.NATChecks{Gateway: gateway, NATBypass: []string{}, NATNotRequired: []device.CIDRGateway{}}
 	for _, v := range items {
 		if v.Status == "not_required" {
-			c.NATNotRequired = append(c.NATNotRequired, CIDRGateway{CIDR: v.CIDR, Gateway: gateway})
+			c.NATNotRequired = append(c.NATNotRequired, device.CIDRGateway{CIDR: v.CIDR, Gateway: gateway})
 		} else if v.Status != "unknown" {
 			c.NATBypass = append(c.NATBypass, v.CIDR)
 		}
@@ -140,7 +142,7 @@ func natChecks(items []NatItem, gateway string) NATChecks {
 
 // BuildPlan turns one coherent inspection into reviewable operations. It does
 // no writes and never mutates the inspection's feature operations.
-func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan, error) {
+func BuildPlan(ctx context.Context, r *spec.Router, in *Inspection, d Driver) (*Plan, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -152,7 +154,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 	if status == nil {
 		status = &ReturnStatus{}
 	}
-	plan := &Plan{Stages: []Stage{}, Blockers: []string{}, Warnings: append([]string{}, desired.Warnings...), Empty: true}
+	plan := &Plan{Stages: []device.Stage{}, Blockers: []string{}, Warnings: append([]string{}, desired.Warnings...), Empty: true}
 	warnings, blockers := &plan.Warnings, &plan.Blockers
 	gateway := desired.ProxyGateway
 	if gateway == "" {
@@ -177,11 +179,11 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 	if len(*blockers) > 0 {
 		return plan, nil
 	}
-	var planner *GroupPlanner
+	var planner *ikuai.GroupPlanner
 	if state.IkuaiGroups != nil {
 		planner = ikuai.NewGroupPlanner(state.IkuaiGroups, warnings, blockers)
 	}
-	var routeOps []Op
+	var routeOps []device.Op
 	var skipped []string
 	policyChecks := []PolicyRouteCheck{}
 	policy := state.PolicyRoutes != nil
@@ -191,9 +193,9 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		routeOps, skipped = staticPlanRoutes(report, state, gateway, warnings)
 	}
 	proxy := proxyTargets(desired, skipped)
-	restored := []CIDRGateway{}
+	restored := []device.CIDRGateway{}
 	if state.RetiredPolicyRoutes != nil {
-		var ops []Op
+		var ops []device.Op
 		ops, restored = retiredPlanRoutes(state, proxy, skipped, warnings, blockers)
 		routeOps = append(routeOps, ops...)
 		if planner != nil {
@@ -208,14 +210,14 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 	if planner != nil {
 		removed := planner.Cleanup("pa", "pm")
 		routeOps = append(routeOps, groupOpsInto(removed)...)
-		planner.StageChecks[StageRoutes] = planner.Check([]string{"pa", "pm"}, planner.RouteRules, deletedGroupNames(removed))
+		planner.StageChecks[device.StageRoutes] = planner.Check([]string{"pa", "pm"}, planner.RouteRules, deletedGroupNames(removed))
 	}
 	rosPolicy := state.ROSPolicyPlan
-	policyOps := []*ROSPolicyReplace{}
+	policyOps := []*rospolicy.ROSPolicyReplace{}
 	if rosPolicy != nil {
 		*blockers = append(*blockers, rosPolicy.Blockers...)
 		*warnings = append(*warnings, rosPolicy.Warnings...)
-		var previous ROSPolicyManifest
+		var previous rospolicy.ROSPolicyManifest
 		if desired.ROSPolicy != nil {
 			_ = jsondecode.Unmarshal(desired.ROSPolicy.Previous, &previous)
 		}
@@ -245,16 +247,16 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 			}
 		}
 		for _, raw := range rosPolicy.Ops {
-			op, ok := raw.(*ROSPolicyReplace)
+			op, ok := raw.(*rospolicy.ROSPolicyReplace)
 			if !ok {
 				return nil, device.Error(device.MessageOperationFormat)
 			}
 			copy := *op
-			copy.StaticChecks = []CIDRGateway{}
+			copy.StaticChecks = []device.CIDRGateway{}
 			for _, cidr := range proxy {
 				for _, n := range device.Networks([]string{cidr}) {
 					if overlaps(n) {
-						copy.StaticChecks = append(copy.StaticChecks, CIDRGateway{CIDR: cidr, Gateway: gateway})
+						copy.StaticChecks = append(copy.StaticChecks, device.CIDRGateway{CIDR: cidr, Gateway: gateway})
 						break
 					}
 				}
@@ -266,13 +268,13 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 	if stale := StaleRoutes(state, gateway); len(stale) > 0 {
 		*warnings = append(*warnings, StaleRouteWarning(stale, gateway))
 	}
-	settings := DNSSettings{}
+	settings := device.DNSSettings{}
 	if desired.DNSSettings != nil {
 		settings = *desired.DNSSettings
 	}
 	settings.AgentID = r.DNSAgentID
 	dns := device.BuildDNSReport(settings, gateway, state.DhcpDNS)
-	dnsOps := []Op{}
+	dnsOps := []device.Op{}
 	manageDNS := r.DNSAgentID != ""
 	if manageDNS {
 		*blockers = append(*blockers, dns.Blockers...)
@@ -290,12 +292,12 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 					replacement = messageDHCPBoth
 				}
 				summary := fmt.Sprintf(messageDHCPUpdate, entry.Network, device.OrText(strings.Join(entry.DNS, ", "), messageDHCPAuto), dns.TargetDNS, replacement)
-				dnsOps = append(dnsOps, DHCPDNSUpdateOp{OpHead{Kind: "dhcp_dns_update", Summary: summary}, entry.ID, item.DesiredDNS, entry.Attributes, DNSScope{entry.ID, entry.Network, gateway}})
+				dnsOps = append(dnsOps, DHCPDNSUpdateOp{device.OpHead{Kind: "dhcp_dns_update", Summary: summary}, entry.ID, item.DesiredDNS, entry.Attributes, DNSScope{entry.ID, entry.Network, gateway}})
 				break
 			}
 		}
 	}
-	natItems := []NatItem{}
+	natItems := []device.NatItem{}
 	for _, v := range report.NatBypass.Items {
 		if slices.Contains(skipped, v.CIDR) {
 			continue
@@ -322,10 +324,10 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		*blockers = append(*blockers, ikuai.IkuaiOversizedRequests(raw)...)
 	}
 	if r.Type == "routeros" && state.NatContext != nil {
-		expansions := []BypassExpansion{}
+		expansions := []ros.BypassExpansion{}
 		for _, op := range natOps {
-			if v, ok := op.(NATUpdateOp); ok {
-				expansions = append(expansions, BypassExpansion{ID: v.ID, AddDst: v.AddDst, Comment: v.Comment})
+			if v, ok := op.(device.NATUpdateOp); ok {
+				expansions = append(expansions, ros.BypassExpansion{ID: v.ID, AddDst: v.AddDst, Comment: v.Comment})
 			}
 		}
 		*blockers = append(*blockers, ros.PlannedBypassConflicts(expansions, &state.State, state.NatContext, gateway)...)
@@ -341,7 +343,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 			} else {
 				for i, preparation := range natOps {
 					switch v := preparation.(type) {
-					case *NATListSync:
+					case *rospolicy.NATListSync:
 						copy := *v
 						if listed == nil || listed.Check == nil {
 							return nil, device.Error(device.MessageOperationFormat)
@@ -352,7 +354,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 							*blockers = append(*blockers, problem)
 						}
 						natOps[i] = &copy
-					case NATUpdateOp:
+					case device.NATUpdateOp:
 						v.OutInterface = &iface
 						natOps[i] = v
 					case NATAddOp:
@@ -363,20 +365,20 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 			}
 		}
 		op.Summary += messagePrepareStaticSuffix
-		op.PrepareStatic = append([]Op{}, natOps...)
+		op.PrepareStatic = append([]device.Op{}, natOps...)
 		for _, other := range routeOps {
 			if other != op {
 				op.PrepareStatic = append(op.PrepareStatic, other)
 			}
 		}
 		op.StaticNATChecks = pointer(natChecks(natItems, gateway))
-		routeOps = []Op{op}
-		natOps = []Op{}
+		routeOps = []device.Op{op}
+		natOps = []device.Op{}
 	}
 	if listed != nil && listed.Check != nil && len(natOps) > 0 {
 		natOps, routeOps = rospolicy.NATRemovalsFirst(natOps, routeOps, gateway)
 	}
-	returnOps := []Op{}
+	returnOps := []device.Op{}
 	var spec *ReturnSpec
 	if r.ManageReturnRouting {
 		a := ReturnAllocationOf(status)
@@ -411,12 +413,12 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		}
 		returnOps = makeReturnOps(status, spec)
 	}
-	cleanup := []Op{}
+	cleanup := []device.Op{}
 	if !r.ManageReturnRouting {
 		cleanup = cleanupReturnOps(status, warnings)
 	}
 	manual := d != nil && !d.SupportsWrite()
-	retStage := stageOf(StageReturnRouting, false, returnOps)
+	retStage := stageOf(device.StageReturnRouting, false, returnOps)
 	retStage.Enabled = pointer(r.ManageReturnRouting)
 	note := messageReturnOffNote
 	if r.ManageReturnRouting {
@@ -425,21 +427,21 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		note = messageReturnCleanupNote
 	}
 	retStage.Note = &note
-	routeStage := stageOf(StageRoutes, manual, routeOps)
+	routeStage := stageOf(device.StageRoutes, manual, routeOps)
 	if policy {
 		routeStage.Note = pointer(messagePolicyNote)
 	}
-	dhcpStage := stageOf(StageDHCPDNS, manual, dnsOps)
+	dhcpStage := stageOf(device.StageDHCPDNS, manual, dnsOps)
 	dhcpStage.Enabled = &manageDNS
 	dhcpStage.Note = pointer(messageDHCPOffNote)
 	if manageDNS {
 		dhcpStage.Note = pointer(messageDHCPOnNote)
 	}
-	stages := []Stage{retStage, routeStage}
-	checks := &Checks{NATChecks: natChecks(natItems, gateway), Routes: []CIDRGateway{}, RemovedRoutes: []string{}}
+	stages := []device.Stage{retStage, routeStage}
+	checks := &Checks{NATChecks: natChecks(natItems, gateway), Routes: []device.CIDRGateway{}, RemovedRoutes: []string{}}
 	if !policy {
 		for _, v := range proxy {
-			checks.Routes = append(checks.Routes, CIDRGateway{CIDR: v, Gateway: gateway})
+			checks.Routes = append(checks.Routes, device.CIDRGateway{CIDR: v, Gateway: gateway})
 		}
 	} else {
 		checks.PolicyRoutes = &policyChecks
@@ -461,8 +463,8 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 	}
 	checks.ReturnRouting = spec
 	for _, op := range routeOps {
-		ops := []Op{op}
-		if v, ok := op.(*ROSPolicyReplace); ok && v.PrepareStatic != nil {
+		ops := []device.Op{op}
+		if v, ok := op.(*rospolicy.ROSPolicyReplace); ok && v.PrepareStatic != nil {
 			ops = v.PrepareStatic
 		}
 		for _, entry := range ops {
@@ -474,7 +476,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 	if v := state.IPv6FakeIPPlan; v != nil {
 		*blockers = append(*blockers, v.Blockers...)
 		*warnings = append(*warnings, v.Warnings...)
-		stage := stageOf(StageIPv6FakeIP, manual, v.Ops)
+		stage := stageOf(device.StageIPv6FakeIP, manual, v.Ops)
 		stage.Note = pointer(messageFakeNote)
 		stages = append(stages, stage)
 		check := v.Check
@@ -490,7 +492,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 				*warnings = append(*warnings, w)
 			}
 		}
-		stage := stageOf(StageIPv6Routes, manual, v.Ops)
+		stage := stageOf(device.StageIPv6Routes, manual, v.Ops)
 		stage.Enabled = pointer(v.Enabled || len(v.Ops) > 0)
 		stage.Skipped = &skip
 		stage.Note = pointer(messageIPv6RoutesOffNote)
@@ -498,16 +500,16 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 			stage.Note = pointer(messageIPv6RoutesOnNote)
 		}
 		if skip {
-			stage.Ops = []Op{}
+			stage.Ops = []device.Op{}
 		} else {
 			checks.IPv6Routes = v.Check
 		}
 		stages = append(stages, stage)
 	}
-	stages = append(stages, stageOf(StageNATBypass, manual, natOps), dhcpStage)
+	stages = append(stages, stageOf(device.StageNATBypass, manual, natOps), dhcpStage)
 	if manageDNS && (dns.Status == "pending" || dns.Status == "synced") && len(dns.Items) > 0 {
 		item := dns.Items[0]
-		checks.DHCPDNS = &DNSCheck{ID: item.ID, Network: item.Network, Gateway: gateway, DNS: item.DesiredDNS}
+		checks.DHCPDNS = &device.DNSCheck{ID: item.ID, Network: item.Network, Gateway: gateway, DNS: item.DesiredDNS}
 	}
 	if v := state.IPv6DNSPlan; v != nil {
 		skip := len(v.Blockers) > 0
@@ -518,12 +520,12 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		if len(v.Ops) > 0 && (!manageDNS || (dns.Status != "pending" && dns.Status != "synced")) {
 			*blockers = append(*blockers, messageIPv6DNSNeedsDHCP)
 		}
-		stage := stageOf(StageIPv6DNS, manual, v.Ops)
+		stage := stageOf(device.StageIPv6DNS, manual, v.Ops)
 		stage.Enabled = &v.Enabled
 		stage.Skipped = &skip
 		stage.Note = pointer(messageIPv6DNSNote)
 		if skip {
-			stage.Ops = []Op{}
+			stage.Ops = []device.Op{}
 		}
 		stages = append(stages, stage)
 		checks.IPv6DNS = v.Check
@@ -535,13 +537,13 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		if len(skipped) > 0 && effectful(v.Spec) {
 			*blockers = append(*blockers, messageGuardRouteConflict)
 		}
-		stage := stageOf(StageDNSGuard, manual, v.Ops)
+		stage := stageOf(device.StageDNSGuard, manual, v.Ops)
 		stage.Note = pointer(messageGuardOffNote)
 		if effectful(v.Spec) {
 			stage.Note = pointer(messageGuardOnNote)
 		}
 		stages = append(stages, stage)
-		checks.DNSGuard = &DNSGuardCheck{Roles: v.Roles}
+		checks.DNSGuard = &dnsguard.Check{Roles: v.Roles}
 	}
 	if v := state.IPv6PDGuardPlan; v != nil {
 		skip := len(v.Blockers) > 0
@@ -549,14 +551,14 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 			*warnings = append(*warnings, fmt.Sprintf(messagePDSkip, s))
 		}
 		*warnings = append(*warnings, v.Warnings...)
-		stage := stageOf(StageIPv6PDGuard, manual, v.Ops)
+		stage := stageOf(device.StageIPv6PDGuard, manual, v.Ops)
 		stage.Skipped = &skip
 		stage.Note = pointer(messagePDOffNote)
 		if v.Enabled {
 			stage.Note = pointer(messagePDOnNote)
 		}
 		if skip {
-			stage.Ops = []Op{}
+			stage.Ops = []device.Op{}
 			checks.IPv6PDGuard = json.RawMessage(`{}`)
 		} else {
 			var err error
@@ -568,7 +570,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		stages = append(stages, stage)
 	}
 	if len(cleanup) > 0 {
-		stage := stageOf(StageReturnCleanup, false, cleanup)
+		stage := stageOf(device.StageReturnCleanup, false, cleanup)
 		stage.Note = pointer(messageCleanupNote)
 		stages = append(stages, stage)
 	}
@@ -609,7 +611,7 @@ func BuildPlan(ctx context.Context, r *Router, in *Inspection, d Driver) (*Plan,
 		return nil, err
 	}
 	plan.Fingerprint = fp
-	plan.Empty = !slices.ContainsFunc(stages, func(s Stage) bool { return len(s.Ops) > 0 })
+	plan.Empty = !slices.ContainsFunc(stages, func(s device.Stage) bool { return len(s.Ops) > 0 })
 	if r.Type == "routeros" && !r.ManageReturnRouting {
 		hint := report.Routes.ForwardHint
 		if hint != nil && hint.Status == "drop" {

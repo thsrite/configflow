@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
 	"net/netip"
@@ -41,11 +42,11 @@ func TestNATTargetPrefersGroupedThenMostCustom(t *testing.T) {
 			{"id": 2.0, "action": "filter", "enabled": "yes", "comment": "cf-b", "dst_addr": map[string]any{"custom": []any{"3.3.3.3", "4.4.4.4"}}},
 			{"id": 3.0, "action": "filter", "enabled": "yes", "comment": "cf-c", "dst_addr": map[string]any{"object": []any{map[string]any{"gid": "G1"}}}},
 		}, nil)
-	a, b, c := &NatBypassEntry{ID: "1"}, &NatBypassEntry{ID: "2"}, &NatBypassEntry{ID: "3"}
-	if got := ikuai.NATTarget(s, []*NatBypassEntry{a, b}); got != a {
+	a, b, c := &device.NatBypassEntry{ID: "1"}, &device.NatBypassEntry{ID: "2"}, &device.NatBypassEntry{ID: "3"}
+	if got := ikuai.NATTarget(s, []*device.NatBypassEntry{a, b}); got != a {
 		t.Fatalf("tie: %v", got.ID)
 	}
-	if got := ikuai.NATTarget(s, []*NatBypassEntry{a, b, c}); got != c {
+	if got := ikuai.NATTarget(s, []*device.NatBypassEntry{a, b, c}); got != c {
 		t.Fatalf("grouped: %v", got.ID)
 	}
 	if ikuai.NATTarget(s, nil) != nil {

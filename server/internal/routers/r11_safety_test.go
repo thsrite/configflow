@@ -5,6 +5,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -35,10 +36,10 @@ func r11Driver(t *testing.T) (*RouterOS, *routerfake.Fake) {
 	t.Cleanup(d.Close)
 	return d, f
 }
-func r11PDPlan(t *testing.T, d *RouterOS, enabled bool) *IPv6PDGuardPlan {
+func r11PDPlan(t *testing.T, d *RouterOS, enabled bool) *ipv6.IPv6PDGuardPlan {
 	t.Helper()
 	r := r10Router()
-	r.IPv6PDGuard = &PDGuard{Enabled: enabled}
+	r.IPv6PDGuard = &spec.PDGuard{Enabled: enabled}
 	if d.IPv6PDGuardManifestSet() {
 		r.Extra["ipv6_pd_guard_state"] = ros.GuardRaw(d.IPv6PDGuardManifest())
 	}
@@ -48,7 +49,7 @@ func r11PDPlan(t *testing.T, d *RouterOS, enabled bool) *IPv6PDGuardPlan {
 	}
 	return p
 }
-func r11DNSPlan(t *testing.T, d *RouterOS) *IPv6DNSPlan {
+func r11DNSPlan(t *testing.T, d *RouterOS) *ipv6.IPv6DNSPlan {
 	t.Helper()
 	s := r11StepFor("plan")
 	p, e := ipv6.InspectIPv6DNS(t.Context(), s.Desired, s.Scope, d.Client)
@@ -57,20 +58,20 @@ func r11DNSPlan(t *testing.T, d *RouterOS) *IPv6DNSPlan {
 	}
 	return p
 }
-func r11PDApply(t *testing.T, d *RouterOS, p *IPv6PDGuardPlan) *IPv6PDGuardUndo {
+func r11PDApply(t *testing.T, d *RouterOS, p *ipv6.IPv6PDGuardPlan) *ipv6.IPv6PDGuardUndo {
 	t.Helper()
 	if len(p.Blockers) > 0 || len(p.Ops) != 1 {
 		t.Fatalf("invalid plan %#v", p)
 	}
-	u, e := ipv6.ApplyIPv6PDGuard(t.Context(), d.Client, *p.Ops[0].(*IPv6PDGuardSync))
+	u, e := ipv6.ApplyIPv6PDGuard(t.Context(), d.Client, *p.Ops[0].(*ipv6.IPv6PDGuardSync))
 	if e != nil {
 		t.Fatal(e)
 	}
 	return u
 }
-func r11Manifest(t *testing.T, d *RouterOS) IPv6PDManifest {
+func r11Manifest(t *testing.T, d *RouterOS) ipv6.IPv6PDManifest {
 	t.Helper()
-	var m IPv6PDManifest
+	var m ipv6.IPv6PDManifest
 	if e := json.Unmarshal(d.IPv6PDGuardManifest(), &m); e != nil {
 		t.Fatal(e)
 	}
@@ -107,7 +108,7 @@ func TestR11RuntimeOwners(t *testing.T) {
 				p := r11PDPlan(t, d, true)
 				dns := r11DNSPlan(t, d)
 				s := r11StepFor("plan")
-				readiness, e := ipv6.InspectIPv6Readiness(t.Context(), d.Client, r10Router(), s.Agent, s.Host, s.Configuration, "", PolicyContext{})
+				readiness, e := ipv6.InspectIPv6Readiness(t.Context(), d.Client, r10Router(), s.Agent, s.Host, s.Configuration, "", ipv6.PolicyContext{})
 				if e != nil || readiness.Plan == nil {
 					t.Fatal("readiness", e)
 				}
@@ -117,16 +118,16 @@ func TestR11RuntimeOwners(t *testing.T) {
 				req, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				ctx := rt.BindRequest(req)
-				var pu *IPv6PDGuardUndo
-				var du ROSUndo
-				var ru *IPv6ReadinessReceipt
+				var pu *ipv6.IPv6PDGuardUndo
+				var du ros.ROSUndo
+				var ru *ipv6.IPv6ReadinessReceipt
 				apply := func() error {
 					var e error
 					switch feature {
 					case "pd":
-						pu, e = ipv6.ApplyIPv6PDGuard(ctx, d.Client, *p.Ops[0].(*IPv6PDGuardSync))
+						pu, e = ipv6.ApplyIPv6PDGuard(ctx, d.Client, *p.Ops[0].(*ipv6.IPv6PDGuardSync))
 					case "dns":
-						du, e = ipv6.ApplyIPv6DNS(ctx, d.Client, *dns.Ops[0].(*IPv6DNSUpdate))
+						du, e = ipv6.ApplyIPv6DNS(ctx, d.Client, *dns.Ops[0].(*ipv6.IPv6DNSUpdate))
 					case "readiness":
 						ru, e = ipv6.AddMissingIPv6Route(ctx, d.Client, readiness.Plan)
 					}
@@ -160,9 +161,9 @@ func TestR11RuntimeOwners(t *testing.T) {
 					}
 				}
 				if mode == "shutdown_empty_restore" {
-					pu = &IPv6PDGuardUndo{}
-					du = ROSUndo{Kind: "ros_restore", Changes: []ROSChange{}}
-					ru = &IPv6ReadinessReceipt{}
+					pu = &ipv6.IPv6PDGuardUndo{}
+					du = ros.ROSUndo{Kind: "ros_restore", Changes: []ros.ROSChange{}}
+					ru = &ipv6.IPv6ReadinessReceipt{}
 				}
 				before := f.Snapshot().Tables
 				proof := d.Manifests()
@@ -251,8 +252,8 @@ func TestR11PDLostCompensationDelete(t *testing.T) {
 	d, f := r11Driver(t)
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PATCH", Path: pdClients + "/*C0", Count: 1, Status: 403}, {Method: "DELETE", Path: pdSchedulers + "/*66", Count: 1, AfterCommit: true, LoseReply: true}}})
 	p := r11PDPlan(t, d, true)
-	_, e := ipv6.ApplyIPv6PDGuard(t.Context(), d.Client, *p.Ops[0].(*IPv6PDGuardSync))
-	if e == nil || device.RouterErrorKind(e) == KindRollback {
+	_, e := ipv6.ApplyIPv6PDGuard(t.Context(), d.Client, *p.Ops[0].(*ipv6.IPv6PDGuardSync))
+	if e == nil || device.RouterErrorKind(e) == device.KindRollback {
 		t.Fatalf("lost DELETE reply should be proven absent, retaining original failure only: %v", e)
 	}
 	if len(f.Snapshot().Tables[pdScripts]) != 0 || len(f.Snapshot().Tables[pdSchedulers]) != 0 || device.HasStoredState(d.IPv6PDGuardManifest()) {
@@ -266,7 +267,7 @@ func TestR11PDPartialRestoreRemapsProvenIDs(t *testing.T) {
 	u := r11PDApply(t, d, r11PDPlan(t, d, false))
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: pdSchedulers, Count: 1, Status: 403}}})
 	e := ipv6.RestoreIPv6PDGuard(t.Context(), d.Client, *u)
-	if device.RouterErrorKind(e) != KindRollback {
+	if device.RouterErrorKind(e) != device.KindRollback {
 		t.Fatal("expected partial rollback", e)
 	}
 	current := r11Manifest(t, d)
@@ -297,7 +298,7 @@ func TestR11PDRefusedCompensationKeepsBirthProof(t *testing.T) {
 	for _, externalRestore := range []bool{false, true} {
 		t.Run(map[bool]string{false: "internal", true: "stage"}[externalRestore], func(t *testing.T) {
 			d, f := r11Driver(t)
-			var u *IPv6PDGuardUndo
+			var u *ipv6.IPv6PDGuardUndo
 			if externalRestore {
 				u = r11PDApply(t, d, r11PDPlan(t, d, true))
 			}
@@ -311,12 +312,12 @@ func TestR11PDRefusedCompensationKeepsBirthProof(t *testing.T) {
 				e = ipv6.RestoreIPv6PDGuard(t.Context(), d.Client, *u)
 			} else {
 				p := r11PDPlan(t, d, true)
-				_, e = ipv6.ApplyIPv6PDGuard(t.Context(), d.Client, *p.Ops[0].(*IPv6PDGuardSync))
+				_, e = ipv6.ApplyIPv6PDGuard(t.Context(), d.Client, *p.Ops[0].(*ipv6.IPv6PDGuardSync))
 			}
-			if device.RouterErrorKind(e) != KindRollback {
+			if device.RouterErrorKind(e) != device.KindRollback {
 				t.Fatal(e)
 			}
-			var m IPv6PDManifest
+			var m ipv6.IPv6PDManifest
 			if json.Unmarshal(d.IPv6PDGuardManifest(), &m) != nil {
 				t.Fatal("trusted new object abandoned", string(d.IPv6PDGuardManifest()))
 			}
@@ -400,7 +401,7 @@ func TestR11DNSFinalReadAndRollbackProtectsRA(t *testing.T) {
 					}
 				}
 			}})
-			if _, e := ipv6.ApplyIPv6DNS(t.Context(), d.Client, *p.Ops[0].(*IPv6DNSUpdate)); e == nil {
+			if _, e := ipv6.ApplyIPv6DNS(t.Context(), d.Client, *p.Ops[0].(*ipv6.IPv6DNSUpdate)); e == nil {
 				t.Fatal("late edit accepted")
 			}
 			if findFake(f.Snapshot().Tables[ros.PathIPv6ND], "*E0")["advertise-dns"] != "yes" {
@@ -410,13 +411,13 @@ func TestR11DNSFinalReadAndRollbackProtectsRA(t *testing.T) {
 	}
 	d, f := r11Driver(t)
 	p := r11DNSPlan(t, d)
-	u, e := ipv6.ApplyIPv6DNS(t.Context(), d.Client, *p.Ops[0].(*IPv6DNSUpdate))
+	u, e := ipv6.ApplyIPv6DNS(t.Context(), d.Client, *p.Ops[0].(*ipv6.IPv6DNSUpdate))
 	if e != nil {
 		t.Fatal(e)
 	}
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6ND: {"*E0": {"ra-lifetime": "1h"}}}}})
 	raw, _ := json.Marshal(u)
-	if _, e = d.Apply(t.Context(), raw); device.RouterErrorKind(e) != KindRollback {
+	if _, e = d.Apply(t.Context(), raw); device.RouterErrorKind(e) != device.KindRollback {
 		t.Fatal("undo overwrote external RA", e)
 	}
 	if findFake(f.Snapshot().Tables[ros.PathIPv6ND], "*E0")["advertise-dns"] != "no" {
@@ -427,7 +428,7 @@ func TestR11ReadinessReusesSnapshots(t *testing.T) {
 	d, f := r11Driver(t)
 	s := r11StepFor("plan")
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{"/ipv6/firewall/filter": {{".id": "*F1", "chain": "forward", "action": "drop", "connection-state": "invalid", "src-address-list": "LAN list/中文"}}}}})
-	p, e := ipv6.InspectIPv6Readiness(t.Context(), d.Client, r10Router(), s.Agent, s.Host, s.Configuration, "", PolicyContext{})
+	p, e := ipv6.InspectIPv6Readiness(t.Context(), d.Client, r10Router(), s.Agent, s.Host, s.Configuration, "", ipv6.PolicyContext{})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -443,13 +444,13 @@ func TestR11ReadinessReusesSnapshots(t *testing.T) {
 	}
 	initial := p.Fingerprint
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{ros.PathIPv6Routes: {{".id": "*F2", "dst-address": "2001:db8:9::/48", "gateway": "wan", "active": "true", "expires-after": "5m"}}}}})
-	p, e = ipv6.InspectIPv6Readiness(t.Context(), d.Client, r10Router(), s.Agent, s.Host, s.Configuration, "", PolicyContext{})
+	p, e = ipv6.InspectIPv6Readiness(t.Context(), d.Client, r10Router(), s.Agent, s.Host, s.Configuration, "", ipv6.PolicyContext{})
 	if e != nil || p.Fingerprint == initial {
 		t.Fatal("real route change not fingerprinted", e)
 	}
 	initial = p.Fingerprint
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6Routes: {"*F2": {"expires-after": "4m"}}}}})
-	p, e = ipv6.InspectIPv6Readiness(t.Context(), d.Client, r10Router(), s.Agent, s.Host, s.Configuration, "", PolicyContext{})
+	p, e = ipv6.InspectIPv6Readiness(t.Context(), d.Client, r10Router(), s.Agent, s.Host, s.Configuration, "", ipv6.PolicyContext{})
 	if e != nil || p.Fingerprint != initial {
 		t.Fatal("lease timer changed stable fingerprint", e)
 	}
@@ -458,7 +459,7 @@ func TestR11ReadinessRouteReceipts(t *testing.T) {
 	for _, mode := range []string{"normal", "lost_put", "lost_delete", "external_edit"} {
 		t.Run(mode, func(t *testing.T) {
 			d, f := r11Driver(t)
-			plan := Row{"dst-address": "fd00:face::/64", "gateway": "fe80::4%bridge", "routing-table": "main", "disabled": "false", "distance": "1"}
+			plan := ros.Row{"dst-address": "fd00:face::/64", "gateway": "fe80::4%bridge", "routing-table": "main", "disabled": "false", "distance": "1"}
 			if mode == "lost_put" {
 				f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: ros.PathIPv6Routes, Count: 1, AfterCommit: true, LoseReply: true}}})
 			}
@@ -517,7 +518,7 @@ func TestR11RawWireAndProductionTimeouts(t *testing.T) {
 		t.Fatal(e)
 	}
 	dns := r11DNSPlan(t, d)
-	du, e := ipv6.ApplyIPv6DNS(t.Context(), d.Client, *dns.Ops[0].(*IPv6DNSUpdate))
+	du, e := ipv6.ApplyIPv6DNS(t.Context(), d.Client, *dns.Ops[0].(*ipv6.IPv6DNSUpdate))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -527,7 +528,7 @@ func TestR11RawWireAndProductionTimeouts(t *testing.T) {
 	}
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{"/ipv6/firewall/filter": {{".id": "*F1", "chain": "forward", "action": "drop", "src-address-list": "LAN list/中文"}}}}})
 	step := r11StepFor("plan")
-	if _, err := ipv6.InspectIPv6Readiness(t.Context(), d.Client, r10Router(), step.Agent, step.Host, step.Configuration, "", PolicyContext{}); err != nil {
+	if _, err := ipv6.InspectIPv6Readiness(t.Context(), d.Client, r10Router(), step.Agent, step.Host, step.Configuration, "", ipv6.PolicyContext{}); err != nil {
 		t.Fatal(err)
 	}
 	recorder.mu.Lock()
@@ -688,7 +689,7 @@ func TestR11DeviceErrorsRedactOnlyCredentials(t *testing.T) {
 			d, f := r11Driver(t)
 			f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: pdScripts, Count: 1, Status: 400, Body: routerfake.Row{"message": echo}}}})
 			p := r11PDPlan(t, d, true)
-			_, e := ipv6.ApplyIPv6PDGuard(t.Context(), d.Client, *p.Ops[0].(*IPv6PDGuardSync))
+			_, e := ipv6.ApplyIPv6PDGuard(t.Context(), d.Client, *p.Ops[0].(*ipv6.IPv6PDGuardSync))
 			if e == nil {
 				t.Fatal("expected error")
 			}
@@ -733,7 +734,7 @@ func FuzzR11DNSRow(f *testing.F) {
 		if len(input) > 16384 {
 			t.Skip()
 		}
-		var row Row
+		var row ros.Row
 		if json.Unmarshal([]byte(input), &row) != nil {
 			return
 		}
@@ -756,7 +757,7 @@ func TestR11BuildReportSections(t *testing.T) {
 		t.Run(status, func(t *testing.T) {
 			desired := r10Wanted(0)
 			desired.ProxyGateway = "192.0.2.4"
-			state := &RouterState{IPv6DNSPlan: &IPv6DNSPlan{IPv6DNSReport: IPv6DNSReport{Status: status, Items: []IPv6DNSItem{}, Blockers: []string{}, Warnings: []string{}}, Ops: []Op{}}, IPv6PDGuardPlan: &IPv6PDGuardPlan{IPv6PDGuardReport: IPv6PDGuardReport{Status: status, Items: []IPv6PDItem{}, Blockers: []string{}, Warnings: []string{}}, Ops: []Op{}}}
+			state := &RouterState{IPv6DNSPlan: &ipv6.IPv6DNSPlan{IPv6DNSReport: ipv6.IPv6DNSReport{Status: status, Items: []ipv6.IPv6DNSItem{}, Blockers: []string{}, Warnings: []string{}}, Ops: []device.Op{}}, IPv6PDGuardPlan: &ipv6.IPv6PDGuardPlan{IPv6PDGuardReport: ipv6.IPv6PDGuardReport{Status: status, Items: []ipv6.IPv6PDItem{}, Blockers: []string{}, Warnings: []string{}}, Ops: []device.Op{}}}
 			report, e := BuildReport(desired, state)
 			if e != nil {
 				t.Fatal(e)
@@ -852,7 +853,7 @@ func TestR11PDRestoredReplySurvivesFailedReadback(t *testing.T) {
 	previous := r11Manifest(t, d)
 	u := r11PDApply(t, d, r11PDPlan(t, d, false))
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "GET", Path: pdScripts, Count: 3, Status: 403}}})
-	if e := ipv6.RestoreIPv6PDGuard(t.Context(), d.Client, *u); device.RouterErrorKind(e) != KindRollback {
+	if e := ipv6.RestoreIPv6PDGuard(t.Context(), d.Client, *u); device.RouterErrorKind(e) != device.KindRollback {
 		t.Fatal("unverified restore reported success", e)
 	}
 	m := r11Manifest(t, d)

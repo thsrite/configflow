@@ -4,6 +4,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -16,22 +17,22 @@ import (
 )
 
 type r11Step struct {
-	Action        string                     `json:"action"`
-	Enabled       bool                       `json:"enabled"`
-	Desired       *Desired                   `json:"desired"`
-	Scope         DNSCheck                   `json:"scope"`
-	Mutation      *routerfake.ExternalWrite  `json:"mutation,omitempty"`
-	Agent         *model.Agent               `json:"agent,omitempty"`
-	Host          IPv6Host                   `json:"host"`
-	Configuration IPv6ReadinessConfiguration `json:"configuration"`
-	DNSTarget     string                     `json:"dns_target"`
-	PolicyContext PolicyContext              `json:"policy_context"`
+	Action        string                          `json:"action"`
+	Enabled       bool                            `json:"enabled"`
+	Desired       *spec.Desired                   `json:"desired"`
+	Scope         device.DNSCheck                 `json:"scope"`
+	Mutation      *routerfake.ExternalWrite       `json:"mutation,omitempty"`
+	Agent         *model.Agent                    `json:"agent,omitempty"`
+	Host          ipv6.IPv6Host                   `json:"host"`
+	Configuration ipv6.IPv6ReadinessConfiguration `json:"configuration"`
+	DNSTarget     string                          `json:"dns_target"`
+	PolicyContext ipv6.PolicyContext              `json:"policy_context"`
 }
 type r11Case struct {
 	Name    string           `json:"name"`
 	Feature string           `json:"feature"`
 	State   routerfake.State `json:"state"`
-	Router  *Router          `json:"router"`
+	Router  *spec.Router     `json:"router"`
 	Steps   []r11Step        `json:"steps"`
 }
 
@@ -52,7 +53,7 @@ func r11State() routerfake.State {
 	return s
 }
 func r11StepFor(action string) r11Step {
-	return r11Step{Action: action, Enabled: true, Desired: &Desired{ProxyCIDRs: []ProxyCIDR{}, IPv6CIDRs: []ProxyCIDR{}, Warnings: []string{}, BlockingWarnings: []string{}, ProxyGateway: "192.0.2.4", DNSSettings: &DNSSettings{AgentID: "dns", Server: "192.0.2.2"}}, Scope: DNSCheck{ID: "*D0", Network: "192.0.2.0/24", Gateway: "192.0.2.4", DNS: []string{"192.0.2.2"}}, Agent: r10Agent(), Host: r10Host(), Configuration: IPv6ReadinessConfiguration{PolicyConfiguration: PolicyConfiguration{FakeIPv6Enabled: true, FakeIPv6Range: "fd00:face::/64"}, IPv6: true, FakeIPv6Route: new(true), TUNEnabled: true}}
+	return r11Step{Action: action, Enabled: true, Desired: &spec.Desired{ProxyCIDRs: []spec.ProxyCIDR{}, IPv6CIDRs: []spec.ProxyCIDR{}, Warnings: []string{}, BlockingWarnings: []string{}, ProxyGateway: "192.0.2.4", DNSSettings: &device.DNSSettings{AgentID: "dns", Server: "192.0.2.2"}}, Scope: device.DNSCheck{ID: "*D0", Network: "192.0.2.0/24", Gateway: "192.0.2.4", DNS: []string{"192.0.2.2"}}, Agent: r10Agent(), Host: r10Host(), Configuration: ipv6.IPv6ReadinessConfiguration{PolicyConfiguration: ipv6.PolicyConfiguration{FakeIPv6Enabled: true, FakeIPv6Range: "fd00:face::/64"}, IPv6: true, FakeIPv6Route: new(true), TUNEnabled: true}}
 }
 func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Output {
 	t.Helper()
@@ -60,8 +61,8 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 	d := NewRouterOS(endpoint, "synthetic-user", "synthetic-password", false)
 	defer d.Close()
 	out := r08Output{Results: []json.RawMessage{}}
-	var plan *IPv6PDGuardPlan
-	var dns *IPv6DNSPlan
+	var plan *ipv6.IPv6PDGuardPlan
+	var dns *ipv6.IPv6DNSPlan
 	var undo json.RawMessage
 	var err error
 	add := func(v any) {
@@ -76,7 +77,7 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 			f.ApplyExternal(*s.Mutation)
 		}
 		if tc.Feature == "readiness" {
-			var result *IPv6Readiness
+			var result *ipv6.IPv6Readiness
 			result, err = ipv6.InspectIPv6Readiness(context.Background(), d.Client, tc.Router, s.Agent, s.Host, s.Configuration, s.DNSTarget, s.PolicyContext)
 			if err == nil {
 				add(result)
@@ -88,7 +89,7 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 				add(v)
 			}
 		} else if s.Action == "apply" {
-			var op Op
+			var op device.Op
 			if tc.Feature == "pd" {
 				op = plan.Ops[0]
 			} else {
@@ -100,14 +101,14 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 				add(undo)
 			}
 		} else {
-			var ops []Op
+			var ops []device.Op
 			if tc.Feature == "pd" {
 				r := *tc.Router
 				r.Extra = map[string]json.RawMessage{}
 				for k, v := range tc.Router.Extra {
 					r.Extra[k] = v
 				}
-				r.IPv6PDGuard = &PDGuard{Enabled: s.Enabled}
+				r.IPv6PDGuard = &spec.PDGuard{Enabled: s.Enabled}
 				if d.IPv6PDGuardManifestSet() {
 					r.Extra["ipv6_pd_guard_state"] = d.IPv6PDGuardManifest()
 				}
@@ -179,7 +180,7 @@ func r11Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r11Case) r08Ou
 	}
 	if err != nil {
 		class := "RouterError"
-		if device.RouterErrorKind(err) == KindRollback {
+		if device.RouterErrorKind(err) == device.KindRollback {
 			class = "RouterRollbackError"
 		}
 		out.Error = &r08Error{class, err.Error()}

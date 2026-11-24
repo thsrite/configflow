@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
@@ -36,8 +37,8 @@ func TestR09ReportPreservesPolicyAndDNSGuard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tc.Desired.DNSGuard = &DesiredDNSGuard{Settings: tc.Settings}
-	tc.Desired.ROSPolicy = &ROSPolicyDesired{Selected: []string{"synthetic-policy"}, Sources: []string{"192.0.2.0/24"}, CIDRs: []ProxyCIDR{{CIDR: "203.0.113.0/24"}}}
+	tc.Desired.DNSGuard = &spec.DesiredDNSGuard{Settings: tc.Settings}
+	tc.Desired.ROSPolicy = &spec.ROSPolicyDesired{Selected: []string{"synthetic-policy"}, Sources: []string{"192.0.2.0/24"}, CIDRs: []spec.ProxyCIDR{{CIDR: "203.0.113.0/24"}}}
 	report, err := BuildReport(tc.Desired, state)
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +54,7 @@ func TestR09ReportPreservesPolicyAndDNSGuard(t *testing.T) {
 		t.Fatalf("combined planning blocked policy: %s", r09Raw(state.ROSPolicyPlan))
 	}
 	// The real combined desired model must also protect DNS from policy routing.
-	tc.Desired.ROSPolicy.CIDRs = []ProxyCIDR{{CIDR: "192.0.2.2/32"}}
+	tc.Desired.ROSPolicy.CIDRs = []spec.ProxyCIDR{{CIDR: "192.0.2.2/32"}}
 	if plan := dnsguard.Build(tc.Desired, state.DNSGuard, state.NatContext); len(plan.Blockers) != 1 || plan.Blockers[0] != dnsguard.MessageProxy || len(plan.Ops) != 0 {
 		t.Fatalf("policy destination did not protect DNS: %s", r09Raw(plan))
 	}

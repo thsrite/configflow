@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -99,7 +100,7 @@ func TestR13ReviewEmptyAgentMatchesNothing(t *testing.T) {
 	}
 	plain := *l.router
 	plain.ProxyGatewayAgentID = ""
-	if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "plain", device.JSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*Router{&plain}}}), nil); e != nil {
+	if _, _, e := l.db.SaveProfileFieldsJSON(t.Context(), "plain", device.JSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*spec.Router{&plain}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	req := l.request(t)
@@ -132,7 +133,7 @@ func TestR13ReviewNoticeWaitingForLeafLock(t *testing.T) {
 			req.Cache = NewPendingCache(rt, nil)
 			req.ProfileID = pointer("default")
 			var closed atomic.Int32
-			req.NewDriver = func(r *Router) Driver { return r13CloseDriver{NewDriver(r), &closed} }
+			req.NewDriver = func(r *spec.Router) Driver { return r13CloseDriver{NewDriver(r), &closed} }
 			held, release := make(chan struct{}), make(chan struct{})
 			blocker := make(chan error, 1)
 			go func() {

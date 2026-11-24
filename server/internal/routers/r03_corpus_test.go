@@ -6,6 +6,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ikuai"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"encoding/json"
 	"net/netip"
 	"os"
@@ -81,13 +82,13 @@ func TestR03Corpus(t *testing.T) {
 }
 
 type r03State struct {
-	NatContext   *NatContext         `json:"nat_context"`
-	AddressSets  map[string][]string `json:"address_sets"`
-	Retiring     []string            `json:"retiring"`
-	Routes       []*RouteEntry       `json:"routes"`
-	NatBypass    []*NatBypassEntry   `json:"nat_bypass"`
-	PolicyRoutes []*PolicyRouteEntry `json:"policy_routes"`
-	Retired      []*PolicyRouteEntry `json:"retired_policy_routes"`
+	NatContext   *ros.NatContext            `json:"nat_context"`
+	AddressSets  map[string][]string        `json:"address_sets"`
+	Retiring     []string                   `json:"retiring"`
+	Routes       []*device.RouteEntry       `json:"routes"`
+	NatBypass    []*device.NatBypassEntry   `json:"nat_bypass"`
+	PolicyRoutes []*device.PolicyRouteEntry `json:"policy_routes"`
+	Retired      []*device.PolicyRouteEntry `json:"retired_policy_routes"`
 }
 
 type r03Ikuai struct {
@@ -96,7 +97,7 @@ type r03Ikuai struct {
 	Policy []ikuai.Row `json:"policy"`
 }
 
-func (k r03Ikuai) state() *GroupState {
+func (k r03Ikuai) state() *ikuai.GroupState {
 	return ikuai.ReadGroupRules(ikuai.GroupsFromRows(k.Groups), k.NAT, k.Policy)
 }
 
@@ -116,7 +117,7 @@ func texts(list []netip.Prefix) []string {
 	return out
 }
 
-func groupView(g *IkuaiGroup) map[string]any {
+func groupView(g *ikuai.IkuaiGroup) map[string]any {
 	return map[string]any{"id": g.ID, "gid": g.GID, "name": g.Name, "comment": g.Comment, "values": g.Values,
 		"entries": g.Entries, "refs": g.Refs, "role": g.Role, "index": g.Index, "users": g.Users,
 		"dup": g.Dup, "adopted": g.Adopted}
@@ -124,30 +125,30 @@ func groupView(g *IkuaiGroup) map[string]any {
 
 func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 	var v struct {
-		CIDR          string              `json:"cidr"`
-		Gateway       string              `json:"gateway"`
-		State         r03State            `json:"state"`
-		PolicyRouting bool                `json:"policy_routing"`
-		Retiring      []string            `json:"retiring"`
-		Ops           []map[string]any    `json:"ops"`
-		Rows          []Row               `json:"rows"`
-		Sources       []string            `json:"sources"`
-		Destinations  []string            `json:"destinations"`
-		Interface     *string             `json:"interface"`
-		Context       *NatContext         `json:"context"`
-		AddressSets   map[string][]string `json:"address_sets"`
-		Mangle        [][2]string         `json:"mangle"`
-		Firewall      [][3]string         `json:"firewall"`
-		Desired       *Desired            `json:"desired"`
-		Ikuai         *r03Ikuai           `json:"ikuai"`
-		Steps         []r03Step           `json:"steps"`
-		Check         GroupStageCheck     `json:"check"`
-		Missing       bool                `json:"missing"`
-		Name          string              `json:"name"`
-		Role          string              `json:"role"`
-		Values        []string            `json:"values"`
-		Notes         map[string]string   `json:"notes"`
-		ID            *int64              `json:"id"`
+		CIDR          string                `json:"cidr"`
+		Gateway       string                `json:"gateway"`
+		State         r03State              `json:"state"`
+		PolicyRouting bool                  `json:"policy_routing"`
+		Retiring      []string              `json:"retiring"`
+		Ops           []map[string]any      `json:"ops"`
+		Rows          []ros.Row             `json:"rows"`
+		Sources       []string              `json:"sources"`
+		Destinations  []string              `json:"destinations"`
+		Interface     *string               `json:"interface"`
+		Context       *ros.NatContext       `json:"context"`
+		AddressSets   map[string][]string   `json:"address_sets"`
+		Mangle        [][2]string           `json:"mangle"`
+		Firewall      [][3]string           `json:"firewall"`
+		Desired       *spec.Desired         `json:"desired"`
+		Ikuai         *r03Ikuai             `json:"ikuai"`
+		Steps         []r03Step             `json:"steps"`
+		Check         ikuai.GroupStageCheck `json:"check"`
+		Missing       bool                  `json:"missing"`
+		Name          string                `json:"name"`
+		Role          string                `json:"role"`
+		Values        []string              `json:"values"`
+		Notes         map[string]string     `json:"notes"`
+		ID            *int64                `json:"id"`
 		r03Ikuai
 	}
 	switch fn {
@@ -179,9 +180,9 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 		state.PolicyNATRetiring = v.Retiring
 		return ros.AssessBypass(v.CIDR, v.Gateway, &state.State, state.NatContext, nil)
 	case "planned":
-		var expansions []BypassExpansion
+		var expansions []ros.BypassExpansion
 		for _, op := range v.Ops {
-			e := BypassExpansion{ID: op["id"].(string), Comment: op["comment"].(string)}
+			e := ros.BypassExpansion{ID: op["id"].(string), Comment: op["comment"].(string)}
 			for _, d := range op["add_dst"].([]any) {
 				e.AddDst = append(e.AddDst, d.(string))
 			}
@@ -198,12 +199,12 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 			v.AddressSets, &accepted, nil)
 		return map[string]any{"result": ok, "accepted": accepted}
 	case "inspect_rule":
-		var others []ListRef
+		var others []ros.ListRef
 		for _, m := range v.Mangle {
-			others = append(others, ListRef{Path: PathMangle + "/" + m[0], Name: m[1]})
+			others = append(others, ros.ListRef{Path: ros.PathMangle + "/" + m[0], Name: m[1]})
 		}
 		for _, f := range v.Firewall {
-			others = append(others, ListRef{Path: f[0] + "/" + f[1], Name: f[2]})
+			others = append(others, ros.ListRef{Path: f[0] + "/" + f[1], Name: f[2]})
 		}
 		found := ros.InspectNATListRule(v.Rows, others)
 		return map[string]any{"rule": found.Rule, "problem": found.Problem, "out_interface": found.OutInterface}
@@ -242,9 +243,9 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 		}
 		return nil
 	case "payload":
-		entries := make([]GroupEntry, len(v.Values))
+		entries := make([]ikuai.GroupEntry, len(v.Values))
 		for i, value := range v.Values {
-			entries[i] = GroupEntry{IP: value, Comment: "n"}
+			entries[i] = ikuai.GroupEntry{IP: value, Comment: "n"}
 		}
 		return map[string]any{"payload": ikuai.GroupPayload(v.Name, v.Role, v.Values, v.ID, v.Notes),
 			"bytes":         ikuai.GroupBytes(v.Name, v.Role, v.Values, v.Notes),
@@ -255,18 +256,18 @@ func r03Call(t *testing.T, fn string, in json.RawMessage) any {
 }
 
 type r03Step struct {
-	Op      string           `json:"op"`
-	Role    string           `json:"role"`
-	Want    []string         `json:"want"`
-	Subject *string          `json:"subject"`
-	Key     *string          `json:"key"`
-	Keep    bool             `json:"keep"`
-	Kind    string           `json:"kind"`
-	Rule    string           `json:"rule"`
-	Names   []string         `json:"names"`
-	Roles   []string         `json:"roles"`
-	Rules   []GroupRuleCheck `json:"rules"`
-	Removed []string         `json:"removed"`
+	Op      string                 `json:"op"`
+	Role    string                 `json:"role"`
+	Want    []string               `json:"want"`
+	Subject *string                `json:"subject"`
+	Key     *string                `json:"key"`
+	Keep    bool                   `json:"keep"`
+	Kind    string                 `json:"kind"`
+	Rule    string                 `json:"rule"`
+	Names   []string               `json:"names"`
+	Roles   []string               `json:"roles"`
+	Rules   []ikuai.GroupRuleCheck `json:"rules"`
+	Removed []string               `json:"removed"`
 }
 
 func deref(s *string) string {
@@ -276,7 +277,7 @@ func deref(s *string) string {
 	return *s
 }
 
-func runSteps(state *GroupState, steps []r03Step) any {
+func runSteps(state *ikuai.GroupState, steps []r03Step) any {
 	warnings, blockers := []string{"earlier"}, []string{}
 	p := ikuai.NewGroupPlanner(state, &warnings, &blockers)
 	results := []any{}
@@ -313,9 +314,9 @@ func runSteps(state *GroupState, steps []r03Step) any {
 	return map[string]any{"results": results, "warnings": warnings, "blockers": blockers, "migration_warning": migration}
 }
 
-func nonNilOps(ops []GroupOp) []GroupOp {
+func nonNilOps(ops []ikuai.GroupOp) []ikuai.GroupOp {
 	if ops == nil {
-		return []GroupOp{}
+		return []ikuai.GroupOp{}
 	}
 	return ops
 }

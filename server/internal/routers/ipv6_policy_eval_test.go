@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
@@ -10,15 +11,15 @@ import (
 )
 
 type r09EvalCase struct {
-	Name     string          `json:"name"`
-	Snapshot *PolicySnapshot `json:"snapshot"`
-	Packet   PolicyPacket    `json:"packet"`
-	Row      Row             `json:"row"`
-	Family   int             `json:"family"`
+	Name     string               `json:"name"`
+	Snapshot *ipv6.PolicySnapshot `json:"snapshot"`
+	Packet   ipv6.PolicyPacket    `json:"packet"`
+	Row      ros.Row              `json:"row"`
+	Family   int                  `json:"family"`
 }
 
 func r09EvalCases() []r09EvalCase {
-	base := PolicySnapshot{Filter: []Row{}, AddressLists: []Row{{"list": "proxied", "address": "198.51.100.0/24"}}, Interfaces: []Row{{"name": "bridge", "dynamic": "false"}}, InterfaceLists: []Row{{"name": "LAN"}, {"name": "WAN"}, {"name": "nested", "include": "LAN", "exclude": "WAN"}, {"name": "cycle", "include": "cycle"}}, InterfaceMembers: []Row{{"list": "LAN", "interface": "bridge"}}}
+	base := ipv6.PolicySnapshot{Filter: []ros.Row{}, AddressLists: []ros.Row{{"list": "proxied", "address": "198.51.100.0/24"}}, Interfaces: []ros.Row{{"name": "bridge", "dynamic": "false"}}, InterfaceLists: []ros.Row{{"name": "LAN"}, {"name": "WAN"}, {"name": "nested", "include": "LAN", "exclude": "WAN"}, {"name": "cycle", "include": "cycle"}}, InterfaceMembers: []ros.Row{{"list": "LAN", "interface": "bridge"}}}
 	packet := ipv6.SamePortPacket("bridge", "198.51.100.0/25")
 	cases := []r09EvalCase{}
 	for key, values := range map[string][]string{
@@ -35,31 +36,31 @@ func r09EvalCases() []r09EvalCase {
 		for _, value := range values {
 			for _, action := range []string{"accept", "drop", "jump"} {
 				s := r09Copy(base)
-				row := Row{"chain": "forward", "action": action, key: value, "jump-target": "child"}
-				s.Filter = []Row{row, {"chain": "forward", "action": "drop"}, {"chain": "child", "action": "return"}}
+				row := ros.Row{"chain": "forward", "action": action, key: value, "jump-target": "child"}
+				s.Filter = []ros.Row{row, {"chain": "forward", "action": "drop"}, {"chain": "child", "action": "return"}}
 				cases = append(cases, r09EvalCase{Name: key + "/" + value + "/" + action, Snapshot: &s, Packet: packet, Row: row, Family: 4})
 			}
 		}
 	}
 	for _, variant := range []string{"all_unknown_accept_drop", "both_unknown_drop", "return", "jump_missing", "jump_loop", "disabled", "invalid", "passthrough", "log", "action_unknown", "action_empty", "action_bool", "unreadable", "branch_budget"} {
 		s := r09Copy(base)
-		row := Row{"chain": "forward", "action": "drop"}
-		s.Filter = []Row{row}
+		row := ros.Row{"chain": "forward", "action": "drop"}
+		s.Filter = []ros.Row{row}
 		p := packet
 		switch variant {
 		case "all_unknown_accept_drop":
-			s.Filter = []Row{{"chain": "forward", "action": "accept", "packet-mark": "unknown"}, row}
+			s.Filter = []ros.Row{{"chain": "forward", "action": "accept", "packet-mark": "unknown"}, row}
 		case "both_unknown_drop":
-			s.Filter = []Row{{"chain": "forward", "action": "drop", "packet-mark": "unknown"}, row}
+			s.Filter = []ros.Row{{"chain": "forward", "action": "drop", "packet-mark": "unknown"}, row}
 		case "return":
-			s.Filter = []Row{{"chain": "forward", "action": "jump", "jump-target": "child"}, row, {"chain": "child", "action": "return"}}
+			s.Filter = []ros.Row{{"chain": "forward", "action": "jump", "jump-target": "child"}, row, {"chain": "child", "action": "return"}}
 		case "jump_missing":
 			row["action"] = "jump"
 			row["jump-target"] = "absent"
 		case "jump_loop":
 			row["action"] = "jump"
 			row["jump-target"] = "child"
-			s.Filter = append(s.Filter, Row{"chain": "child", "action": "jump", "jump-target": "forward"})
+			s.Filter = append(s.Filter, ros.Row{"chain": "child", "action": "jump", "jump-target": "forward"})
 		case "disabled":
 			row["disabled"] = "yes"
 		case "invalid":
@@ -75,15 +76,15 @@ func r09EvalCases() []r09EvalCase {
 		case "unreadable":
 			s.Filter = nil
 		case "branch_budget":
-			s.Filter = []Row{}
+			s.Filter = []ros.Row{}
 			for range 300 {
-				s.Filter = append(s.Filter, Row{"chain": "forward", "action": "log"})
+				s.Filter = append(s.Filter, ros.Row{"chain": "forward", "action": "log"})
 			}
 		}
 		cases = append(cases, r09EvalCase{Name: variant, Snapshot: &s, Packet: p, Row: row, Family: 4})
 	}
 	// Known numeric/flags/ICMP fields and the IPv6 address path use the same matcher.
-	for _, row := range []Row{{"dst-port": "50-60"}, {"port": "50,53"}, {"src-port": "!1-1024"}, {"icmp-options": "128:0"}, {"tcp-flags": "syn,!ack"}, {"hop-limit": "equal:64"}, {"hop-limit": "less-than:65"}, {"hop-limit": "greater-than:65"}, {"dst-address": "2001:db8::/32"}} {
+	for _, row := range []ros.Row{{"dst-port": "50-60"}, {"port": "50,53"}, {"src-port": "!1-1024"}, {"icmp-options": "128:0"}, {"tcp-flags": "syn,!ack"}, {"hop-limit": "equal:64"}, {"hop-limit": "less-than:65"}, {"hop-limit": "greater-than:65"}, {"dst-address": "2001:db8::/32"}} {
 		s := r09Copy(base)
 		p := packet
 		p.SrcPort = new(2000)
@@ -94,15 +95,15 @@ func r09EvalCases() []r09EvalCase {
 		flags := []string{"syn"}
 		p.TCPFlags = &flags
 		p.DstAddress = new("2001:db8:1::/64")
-		s.Filter = []Row{ros.MergeRows(row, Row{"chain": "forward", "action": "drop"})}
+		s.Filter = []ros.Row{ros.MergeRows(row, ros.Row{"chain": "forward", "action": "drop"})}
 		cases = append(cases, r09EvalCase{Name: fmt.Sprint(row), Snapshot: &s, Packet: p, Row: row, Family: 6})
 	}
 	// Non-text device values arrive as their text (Row decoding).
 	for _, bad := range []string{"", "true", "7", `["LAN"]`} {
 		s := r09Copy(base)
-		s.InterfaceLists = append(s.InterfaceLists, Row{"name": "malformed", "include": bad})
-		row := Row{"chain": "forward", "action": "accept", "in-interface-list": "malformed"}
-		s.Filter = []Row{row, {"chain": "forward", "action": "drop"}}
+		s.InterfaceLists = append(s.InterfaceLists, ros.Row{"name": "malformed", "include": bad})
+		row := ros.Row{"chain": "forward", "action": "accept", "in-interface-list": "malformed"}
+		s.Filter = []ros.Row{row, {"chain": "forward", "action": "drop"}}
 		cases = append(cases, r09EvalCase{Name: fmt.Sprintf("malformed_include_%q", bad), Snapshot: &s, Packet: packet, Row: row, Family: 4})
 	}
 	return cases
@@ -162,9 +163,9 @@ func FuzzR09DNSGuardManifest(f *testing.F) {
 		}
 		m, err := dnsguard.ParseManifest(data)
 		if err == nil && m != nil {
-			live := DNSGuardSnapshot{}
+			live := dnsguard.Snapshot{}
 			for _, path := range dnsguard.Paths() {
-				live[path] = []Row{}
+				live[path] = []ros.Row{}
 			}
 			_, _ = dnsguard.Owned(m, &live)
 		}
@@ -172,14 +173,14 @@ func FuzzR09DNSGuardManifest(f *testing.F) {
 }
 
 func FuzzR09DNSGuardOperation(f *testing.F) {
-	spec := &DNSGuardSpec{Agent: "192.0.2.2", Interface: "bridge", Network: "192.0.2.0/24", Bypass: []string{"192.0.2.2/32"}, Failover: true}
-	f.Add([]byte(r09Raw(DNSGuardReplace{OpHead: OpHead{Kind: "dns_guard_replace"}, Spec: spec, Previous: json.RawMessage("null"), Owned: []DNSGuardResource{}, Create: dnsguard.Resources(spec)})))
+	spec := &dnsguard.Spec{Agent: "192.0.2.2", Interface: "bridge", Network: "192.0.2.0/24", Bypass: []string{"192.0.2.2/32"}, Failover: true}
+	f.Add([]byte(r09Raw(dnsguard.Replace{OpHead: device.OpHead{Kind: "dns_guard_replace"}, Spec: spec, Previous: json.RawMessage("null"), Owned: []dnsguard.Resource{}, Create: dnsguard.Resources(spec)})))
 	f.Add([]byte(`{"kind":"dns_guard_replace","spec":null,"owned":[],"create":[]}`))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > 1<<20 {
 			return
 		}
-		var op DNSGuardReplace
+		var op dnsguard.Replace
 		if json.Unmarshal(data, &op) != nil {
 			return
 		}

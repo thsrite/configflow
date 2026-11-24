@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,7 +25,7 @@ type r13Lab struct {
 	source        r12Source
 	first, second *routerfake.Fake
 	one, two      *httptest.Server
-	router        *Router
+	router        *spec.Router
 }
 
 func r13Fixture(t *testing.T) *r13Lab {
@@ -57,7 +58,7 @@ func r13Fixture(t *testing.T) *r13Lab {
 	second := *r
 	second.Name = "synthetic branch"
 	second.Endpoint = two.URL
-	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", device.JSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*Router{&second}}}), nil); e != nil {
+	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", device.JSON(map[string]any{"mihomo": map[string]string{"custom_config": "{}"}, "routers": map[string]any{"items": []*spec.Router{&second}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	gateway := r12Gateway()
@@ -159,7 +160,7 @@ type r13ReadDriver struct {
 func (d *r13ReadDriver) ReadState(ctx context.Context) (*RouterState, error) { return d.read(ctx) }
 func TestR13Fanout25SecondsAndEightWorkers(t *testing.T) {
 	l := r13Fixture(t)
-	routers := []*Router{}
+	routers := []*spec.Router{}
 	for i := 0; i < 12; i++ {
 		r := *l.router
 		r.ID = string(rune('a' + i))
@@ -179,7 +180,7 @@ func TestR13Fanout25SecondsAndEightWorkers(t *testing.T) {
 	req.Cache = NewPendingCache(rt, clock)
 	req.ProfileID = pointer("many")
 	var reads atomic.Int32
-	req.NewDriver = func(r *Router) Driver {
+	req.NewDriver = func(r *spec.Router) Driver {
 		d := NewDriver(r)
 		return &r13ReadDriver{Driver: d, read: func(ctx context.Context) (*RouterState, error) { reads.Add(1); <-ctx.Done(); return nil, ctx.Err() }}
 	}
@@ -225,7 +226,7 @@ func TestR13DisconnectFinishesButShutdownDoesNotCommit(t *testing.T) {
 			req.ProfileID = pointer("default")
 			started := make(chan struct{})
 			gate := make(chan struct{})
-			req.NewDriver = func(r *Router) Driver {
+			req.NewDriver = func(r *spec.Router) Driver {
 				d := NewDriver(r)
 				return &r13ReadDriver{Driver: d, read: func(ctx context.Context) (*RouterState, error) {
 					close(started)
@@ -286,7 +287,7 @@ func TestR13OneReadErrorDoesNotHideOtherRouters(t *testing.T) {
 	l := r13Fixture(t)
 	req := l.request(t)
 	var mode atomic.Int32
-	req.NewDriver = func(r *Router) Driver {
+	req.NewDriver = func(r *spec.Router) Driver {
 		d := NewDriver(r)
 		if r.Endpoint != l.one.URL {
 			return d

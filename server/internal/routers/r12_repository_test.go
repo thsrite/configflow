@@ -23,7 +23,7 @@ func TestR12ReturnCleanupUsesExplicitProfilePair(t *testing.T) {
 	other := r10Router()
 	other.Name = "synthetic other owner"
 	other.ProxyGatewayAgentID = "gateway"
-	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", device.JSON(map[string]any{"routers": map[string]any{"items": []*Router{other}}}), nil); e != nil {
+	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", device.JSON(map[string]any{"routers": map[string]any{"items": []*spec.Router{other}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	a := r12Gateway()

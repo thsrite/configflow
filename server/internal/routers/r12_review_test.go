@@ -3,7 +3,10 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -26,7 +29,7 @@ import (
 func r12ReviewSetup(t *testing.T, wrap func(*RouterOS)) (*routerfake.Fake, *repo.Repository, PublishRequest, model.Profile) {
 	t.Helper()
 	originalHost := IPv6HostRequest
-	IPv6HostRequest = func(context.Context, *GatewayAgent) (IPv6Host, error) { return r10Host(), nil }
+	IPv6HostRequest = func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) { return r10Host(), nil }
 	t.Cleanup(func() { IPv6HostRequest = originalHost })
 	f := routerfake.New(nil)
 	f.Reset(r11State())
@@ -52,7 +55,7 @@ func r12ReviewSetup(t *testing.T, wrap func(*RouterOS)) (*routerfake.Fake, *repo
 		t.Fatalf("preview %v %+v", e, plan)
 	}
 	return f, db, PublishRequest{ProfileID: "default", RouterID: r.ID, Expected: plan.Fingerprint, Router: r, Repo: db, Agents: source,
-		NewDriver: func(r *Router) Driver {
+		NewDriver: func(r *spec.Router) Driver {
 			d := NewRouterOS(server.URL, r.Username, r.Password, false)
 			if wrap != nil {
 				wrap(d)
@@ -68,8 +71,8 @@ func TestR12ReviewCaptureSeesPublishedIPv6Manifest(t *testing.T) {
 	_, db, req, _ := r12ReviewSetup(t, nil)
 	original := CaptureManual
 	t.Cleanup(func() { CaptureManual = original })
-	var captured *Router
-	CaptureManual = func(_ context.Context, _ string, _ json.RawMessage, r *Router, _ Driver, _ *Desired) error {
+	var captured *spec.Router
+	CaptureManual = func(_ context.Context, _ string, _ json.RawMessage, r *spec.Router, _ Driver, _ *spec.Desired) error {
 		captured = r
 		return nil
 	}
@@ -130,7 +133,7 @@ func TestR12ReviewReturnOpsRequirePreviewedAgentSpec(t *testing.T) {
 	reordered := json.RawMessage(`{"router_ip":"192.0.2.1","table":104,"priority":104,"mark":"0x400000","safety_version":1,"proxy_dst":["198.51.100.0/24","198.18.0.0/16"]}`)
 	other := json.RawMessage(`{"router_ip":"192.0.2.9","table":104,"priority":104,"mark":"0x400000","safety_version":1,"proxy_dst":["198.18.0.0/16","198.51.100.0/24"]}`)
 	spec := &ReturnSpec{RouterIP: "192.0.2.1", Table: 104, Priority: 104, Mark: "0x400000", SafetyVersion: 1, ProxyDst: &[]string{"198.18.0.0/16"}}
-	remove := device.JSON(ReturnRemoveOp{OpHead{Kind: "return_routing_remove", Summary: "synthetic"}, false, previewed})
+	remove := device.JSON(ReturnRemoveOp{device.OpHead{Kind: "return_routing_remove", Summary: "synthetic"}, false, previewed})
 	tests := []struct {
 		name     string
 		op       json.RawMessage
@@ -141,10 +144,10 @@ func TestR12ReviewReturnOpsRequirePreviewedAgentSpec(t *testing.T) {
 		{"remove_same_set_other_order", remove, reordered, true},
 		{"remove_other_router_spec", remove, other, false},
 		{"remove_already_gone", remove, nil, false},
-		{"apply_new_previewed_absent", device.JSON(ReturnApplyOp{OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, json.RawMessage("null")}), nil, true},
-		{"apply_new_but_other_applied", device.JSON(ReturnApplyOp{OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, json.RawMessage("null")}), other, false},
-		{"apply_replace_previewed", device.JSON(ReturnApplyOp{OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, previewed}), previewed, true},
-		{"apply_replace_changed", device.JSON(ReturnApplyOp{OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, previewed}), other, false},
+		{"apply_new_previewed_absent", device.JSON(ReturnApplyOp{device.OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, json.RawMessage("null")}), nil, true},
+		{"apply_new_but_other_applied", device.JSON(ReturnApplyOp{device.OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, json.RawMessage("null")}), other, false},
+		{"apply_replace_previewed", device.JSON(ReturnApplyOp{device.OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, previewed}), previewed, true},
+		{"apply_replace_changed", device.JSON(ReturnApplyOp{device.OpHead{Kind: "return_routing_apply", Summary: "synthetic"}, spec, previewed}), other, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -194,7 +197,7 @@ func TestR12ReviewStartPublishPanicIsLogged(t *testing.T) {
 	_, r, _ = r12Config(t, db)
 	released := 0
 	ch, e := StartPublish(t.Context(), PublishRequest{ProfileID: "default", RouterID: r.ID, Router: r, Repo: db,
-		NewDriver: func(*Router) Driver { panic("synthetic-password") }}, func() { released++ })
+		NewDriver: func(*spec.Router) Driver { panic("synthetic-password") }}, func() { released++ })
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -221,30 +224,30 @@ func TestR12ReviewStartPublishPanicIsLogged(t *testing.T) {
 // (Python _grouped_nat_ops); the shared planner check echoes its input rules,
 // so GroupRuleCheck's own JSON keeps an absent id absent (R03 corpus).
 func TestR12ReviewNewNATRuleNullIDOnlyInPlanView(t *testing.T) {
-	rules := []GroupRuleCheck{
+	rules := []ikuai.GroupRuleCheck{
 		{Func: "nat_rule", Comment: "cf-mihomo", Groups: []string{"cf_nat_1"}, KeepForeign: true},
 		{Func: "nat_rule", ID: "11", Comment: "cf-mihomo", Groups: []string{"cf_nat_1"}, KeepForeign: true},
 		{Func: "stream_ipport", Comment: "cf-mihomo", Groups: []string{"cf_pa_1"}},
 	}
-	shared := r08Comparable(t, GroupStageCheck{Groups: map[string]string{}, Rules: rules, Removed: []string{}}).(map[string]any)
+	shared := r08Comparable(t, ikuai.GroupStageCheck{Groups: map[string]string{}, Rules: rules, Removed: []string{}}).(map[string]any)
 	for i, rule := range shared["rules"].([]any) {
 		if _, present := rule.(map[string]any)["id"]; present != (i == 1) {
 			t.Fatalf("shared check rule %d id presence %v: %v", i, present, rule)
 		}
 	}
-	checks := Checks{Routes: []CIDRGateway{}, RemovedRoutes: []string{}, IkuaiGroups: map[string]GroupStageCheck{
-		StageNATBypass: {Groups: map[string]string{}, Rules: rules[:2], Removed: []string{}},
-		StageRoutes:    {Groups: map[string]string{}, Rules: rules[2:], Removed: []string{}},
+	checks := Checks{Routes: []device.CIDRGateway{}, RemovedRoutes: []string{}, IkuaiGroups: map[string]ikuai.GroupStageCheck{
+		device.StageNATBypass: {Groups: map[string]string{}, Rules: rules[:2], Removed: []string{}},
+		device.StageRoutes:    {Groups: map[string]string{}, Rules: rules[2:], Removed: []string{}},
 	}}
 	view := r08Comparable(t, checks).(map[string]any)["ikuai_groups"].(map[string]any)
-	nat := view[StageNATBypass].(map[string]any)["rules"].([]any)
+	nat := view[device.StageNATBypass].(map[string]any)["rules"].([]any)
 	if id, present := nat[0].(map[string]any)["id"]; !present || id != nil {
 		t.Fatalf("new NAT rule lost explicit null id: %v", nat[0])
 	}
 	if nat[1].(map[string]any)["id"] != "11" {
 		t.Fatalf("existing NAT rule id changed: %v", nat[1])
 	}
-	if _, present := view[StageRoutes].(map[string]any)["rules"].([]any)[0].(map[string]any)["id"]; present {
+	if _, present := view[device.StageRoutes].(map[string]any)["rules"].([]any)[0].(map[string]any)["id"]; present {
 		t.Fatal("policy check gained an id")
 	}
 }

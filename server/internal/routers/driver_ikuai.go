@@ -23,7 +23,7 @@ func NewIkuai(endpoint, username, password string, verifyTLS bool) *Ikuai {
 }
 
 // NewIkuaiWithHTTP creates an iKuai driver with an injected device client.
-func NewIkuaiWithHTTP(endpoint, username, password string, client DeviceHTTP) *Ikuai {
+func NewIkuaiWithHTTP(endpoint, username, password string, client device.DeviceHTTP) *Ikuai {
 	return &Ikuai{Client: ikuai.NewClientWithHTTP(endpoint, username, password, client)}
 }
 
@@ -32,8 +32,8 @@ func NewIkuaiWithHTTP(endpoint, username, password string, client DeviceHTTP) *I
 // static route would also catch the gateway's own (DIRECT) traffic to a proxy
 // CIDR and bounce it between router and gateway forever.
 func (d *Ikuai) ReadState(ctx context.Context) (*RouterState, error) {
-	state := &RouterState{Routes: []*RouteEntry{}, NatBypass: []*NatBypassEntry{},
-		AddressSets: map[string][]string{}, PolicyRoutes: []*PolicyRouteEntry{}}
+	state := &RouterState{Routes: []*device.RouteEntry{}, NatBypass: []*device.NatBypassEntry{},
+		AddressSets: map[string][]string{}, PolicyRoutes: []*device.PolicyRouteEntry{}}
 	routes, err := d.ListAll(ctx, "static_rt", "", true, "")
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (d *Ikuai) ReadState(ctx context.Context) (*RouterState, error) {
 		if !row.Is("action", "filter") {
 			continue
 		}
-		state.NatBypass = append(state.NatBypass, &NatBypassEntry{ID: row.Text("id"),
+		state.NatBypass = append(state.NatBypass, &device.NatBypassEntry{ID: row.Text("id"),
 			Dst: ikuai.Addresses(row["dst_addr"], state.AddressSets, byGID), Src: ikuai.Addresses(row["src_addr"], state.AddressSets, byGID),
 			Enabled: row.Is("enabled", "yes"), Comment: ikuai.PercentDecode(row.Text("comment")), Attributes: json.RawMessage("{}")})
 	}
@@ -74,7 +74,7 @@ func (d *Ikuai) ReadState(ctx context.Context) (*RouterState, error) {
 	}
 	policyRows := ikuai.DecodeRows(policyRaw)
 	for _, row := range policyRows {
-		entry := &PolicyRouteEntry{ID: row.Text("id"), Dst: ikuai.Addresses(row["dst_addr"], state.AddressSets, byGID),
+		entry := &device.PolicyRouteEntry{ID: row.Text("id"), Dst: ikuai.Addresses(row["dst_addr"], state.AddressSets, byGID),
 			Enabled: row.Is("enabled", "yes"), Comment: row.Text("comment"),
 			Src:       ikuai.Addresses(row["src_addr"], state.AddressSets, byGID),
 			SrcInvert: ikuai.NumberEquals(row["src_addr_inv"], 1), DstInvert: ikuai.NumberEquals(row["dst_addr_inv"], 1),
@@ -93,47 +93,47 @@ func (d *Ikuai) ReadState(ctx context.Context) (*RouterState, error) {
 }
 
 // ReadRoutes implements routeedit.RouteEditor for iKuai.
-func (d *Ikuai) ReadRoutes(ctx context.Context) ([]*EditableRoute, error) {
+func (d *Ikuai) ReadRoutes(ctx context.Context) ([]*routeedit.EditableRoute, error) {
 	return routeedit.ReadIkuaiRoutes(ctx, d.Client)
 }
 
 // MutateRoute implements routeedit.RouteEditor for iKuai.
-func (d *Ikuai) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (*RouteMutation, error) {
+func (d *Ikuai) MutateRoute(ctx context.Context, action string, expected *routeedit.EditableRoute, values *routeedit.RouteValues) (*routeedit.RouteMutation, error) {
 	return routeedit.MutateIkuaiRoute(ctx, d.Client, action, expected, values)
 }
 
 // ReadFixedIP implements fixedip.Device for iKuai.
-func (d *Ikuai) ReadFixedIP(ctx context.Context) (*FixedIPSnapshot, error) {
+func (d *Ikuai) ReadFixedIP(ctx context.Context) (*fixedip.Snapshot, error) {
 	return fixedip.NewIkuai(d.Client).ReadFixedIP(ctx)
 }
 
 // PreviewFixedIP implements fixedip.Device for iKuai.
-func (d *Ikuai) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*FixedIPOperation, error) {
+func (d *Ikuai) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*fixedip.Operation, error) {
 	return fixedip.NewIkuai(d.Client).PreviewFixedIP(ctx, ip, mac, name)
 }
 
 // ApplyFixedIP implements fixedip.Device for iKuai.
-func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (*FixedIPBinding, error) {
+func (d *Ikuai) ApplyFixedIP(ctx context.Context, op *fixedip.Operation) (*fixedip.Binding, error) {
 	return fixedip.NewIkuai(d.Client).ApplyFixedIP(ctx, op)
 }
 
 // RollbackFixedIP implements fixedip.Device for iKuai.
-func (d *Ikuai) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error {
+func (d *Ikuai) RollbackFixedIP(ctx context.Context, b *fixedip.Binding) error {
 	return fixedip.NewIkuai(d.Client).RollbackFixedIP(ctx, b)
 }
 
 // PreviewDeleteFixedIP implements fixedip.Device for iKuai.
-func (d *Ikuai) PreviewDeleteFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPOperation, error) {
+func (d *Ikuai) PreviewDeleteFixedIP(ctx context.Context, b *fixedip.Binding) (*fixedip.Operation, error) {
 	return fixedip.NewIkuai(d.Client).PreviewDeleteFixedIP(ctx, b)
 }
 
 // DeleteFixedIP implements fixedip.Device for iKuai.
-func (d *Ikuai) DeleteFixedIP(ctx context.Context, op *FixedIPOperation) (*FixedIPBinding, error) {
+func (d *Ikuai) DeleteFixedIP(ctx context.Context, op *fixedip.Operation) (*fixedip.Binding, error) {
 	return fixedip.NewIkuai(d.Client).DeleteFixedIP(ctx, op)
 }
 
 // RestoreDeletedFixedIP implements fixedip.Device for iKuai.
-func (d *Ikuai) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPBinding, error) {
+func (d *Ikuai) RestoreDeletedFixedIP(ctx context.Context, b *fixedip.Binding) (*fixedip.Binding, error) {
 	return fixedip.NewIkuai(d.Client).RestoreDeletedFixedIP(ctx, b)
 }
 
@@ -143,6 +143,6 @@ func (d *Ikuai) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error) {
 }
 
 // ReadClients implements clientlist.Reader for iKuai.
-func (d *Ikuai) ReadClients(ctx context.Context, opts ClientReadOptions) (*routerdoc.Reading, error) {
+func (d *Ikuai) ReadClients(ctx context.Context, opts clientlist.ReadOptions) (*routerdoc.Reading, error) {
 	return clientlist.NewIkuai(d.Client).ReadClients(ctx, opts)
 }

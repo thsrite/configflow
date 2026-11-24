@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -18,9 +19,9 @@ import (
 )
 
 type r12BoundaryCase struct {
-	Router  *Router       `json:"router"`
+	Router  *spec.Router  `json:"router"`
 	State   any           `json:"state"`
-	Desired *Desired      `json:"desired"`
+	Desired *spec.Desired `json:"desired"`
 	Return  *ReturnStatus `json:"return_status"`
 	Execute bool          `json:"execute"`
 	DHCP    bool          `json:"dhcp"`
@@ -120,15 +121,15 @@ func r12PlanComparable(t *testing.T, p any) any {
 	delete(m, "fingerprint")
 	return m
 }
-func r12Desired() *Desired {
-	return &Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: "192.0.2.4", ProxyCIDRs: []ProxyCIDR{{CIDR: "198.18.0.0/16", Sources: []string{"fake-ip"}}, {CIDR: "198.51.100.0/25", Sources: []string{"Synthetic"}}}, IPv6CIDRs: []ProxyCIDR{}, Warnings: []string{}, BlockingWarnings: []string{}, DNSSettings: &DNSSettings{}}
+func r12Desired() *spec.Desired {
+	return &spec.Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: "192.0.2.4", ProxyCIDRs: []spec.ProxyCIDR{{CIDR: "198.18.0.0/16", Sources: []string{"fake-ip"}}, {CIDR: "198.51.100.0/25", Sources: []string{"Synthetic"}}}, IPv6CIDRs: []spec.ProxyCIDR{}, Warnings: []string{}, BlockingWarnings: []string{}, DNSSettings: &device.DNSSettings{}}
 }
 func TestR12PythonWholePlanAndExecution(t *testing.T) {
 	for _, vendor := range []string{"routeros", "ikuai"} {
 		for _, mode := range []string{"missing", "adopt", "conflict", "return1", "return2", "nat_failure", "route_failure", "return_nat_failure", "empty", "retire", "dhcp"} {
 			t.Run(vendor+"/"+mode, func(t *testing.T) {
 				desired := r12Desired()
-				r := &Router{RouterSettings: RouterSettings{ID: "r1", Type: vendor, Endpoint: "http://192.0.2.1"}}
+				r := &spec.Router{RouterSettings: spec.RouterSettings{ID: "r1", Type: vendor, Endpoint: "http://192.0.2.1"}}
 				ret := r12SafeStatus()
 				if strings.HasPrefix(mode, "return") {
 					r.ManageReturnRouting = true
@@ -159,7 +160,7 @@ func TestR12PythonWholePlanAndExecution(t *testing.T) {
 					}
 					if mode == "dhcp" {
 						r.DNSAgentID = "dns"
-						desired.DNSSettings = &DNSSettings{AgentID: "dns", Server: "192.0.2.2"}
+						desired.DNSSettings = &device.DNSSettings{AgentID: "dns", Server: "192.0.2.2"}
 						s.Tables[ros.PathDHCPNetworks] = []routerfake.Row{{".id": "*D0", "address": "192.0.2.0/24", "gateway": "192.0.2.1", "dns-server": "192.0.2.99", "dns-none": "false"}}
 						s.Tables[ros.PathDHCPServers] = []routerfake.Row{{".id": "*D1", "interface": "bridge", "disabled": "false"}}
 					}
@@ -198,7 +199,7 @@ func TestR12PythonWholePlanAndExecution(t *testing.T) {
 						s.Tables["static_rt"] = []routerfake.Row{{"id": 1, "tagname": "RT_1", "dst_addr": "198.18.0.0", "netmask": "255.255.0.0", "gateway": gw, "ip_type": "4", "interface": "auto", "prio": 1, "comment": comment, "enabled": "yes"}}
 					}
 					if mode == "retire" {
-						s.Tables["stream_ipport"] = []routerfake.Row{{"id": 1, "tagname": "cf_pr_1", "comment": PolicyManualComment, "enabled": "yes", "nexthop": "192.0.2.4", "protocol": "any", "prio": 0, "type": 1, "src_addr": map[string]any{"custom": []string{"192.0.2.4"}, "object": []any{}}, "dst_addr": map[string]any{"custom": []string{"203.0.113.0/24"}, "object": []any{}}, "src_addr_inv": 1, "dst_addr_inv": 0}}
+						s.Tables["stream_ipport"] = []routerfake.Row{{"id": 1, "tagname": "cf_pr_1", "comment": device.PolicyManualComment, "enabled": "yes", "nexthop": "192.0.2.4", "protocol": "any", "prio": 0, "type": 1, "src_addr": map[string]any{"custom": []string{"192.0.2.4"}, "object": []any{}}, "dst_addr": map[string]any{"custom": []string{"203.0.113.0/24"}, "object": []any{}}, "src_addr_inv": 1, "dst_addr_inv": 0}}
 					}
 					if mode == "nat_failure" || mode == "return_nat_failure" {
 						s.Faults = []routerfake.IkuaiFault{{Func: "nat_rule", Action: "add", Count: 1, Code: pointer(2), Message: "synthetic refusal"}}

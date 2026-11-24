@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/spec"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -12,7 +13,7 @@ import (
 
 func TestR15ManagementDiagnosticsHidePeerCredentials(t *testing.T) {
 	config := json.RawMessage(`{"routers":{"items":[{"id":"peer","password":"synthetic-peer-password"}]}}`)
-	r := &Router{Password: "synthetic-old-password"}
+	r := &spec.Router{Password: "synthetic-old-password"}
 	for _, text := range []string{"reference synthetic-peer-password", "reference synthetic-old-password", "reference synthetic-peer%2Dpassword"} {
 		if actual := managementLogText(config, nil, r, text); actual != redact.Redacted {
 			t.Fatalf("credential reference exposed: %s", actual)

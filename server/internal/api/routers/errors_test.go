@@ -3,7 +3,7 @@ package routers
 import (
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
-	core "configflow/internal/routers"
+	"configflow/internal/routers/device"
 	"testing"
 )
 
@@ -17,7 +17,7 @@ func TestR15ErrorClassesRespectTheirHTTPBoundary(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(func(r *httpx.Router) {
 				r.GET("/api/failure", "routers.synthetic_failure", func(c *httpx.Ctx) (*httpx.Response, error) {
-					return failure(c, nil, &core.RouterError{Kind: core.KindConflict, Message: messageChanged}, tc.override, false)
+					return failure(c, nil, &device.RouterError{Kind: device.KindConflict, Message: messageChanged}, tc.override, false)
 				})
 			})})
 			s.Get("/api/failure").WantStatus(tc.want)

@@ -222,7 +222,7 @@ func RouterIP(endpoint string) string {
 // return next hop and rejects it at apply time when it is not on its LAN.
 // Without connected-route evidence (iKuai, unread routes, gateway not on a
 // connected network) the Agent's apply check stays the only guard.
-func returnUpstreamProblem(upstream, gateway string, ctx *NatContext) string {
+func returnUpstreamProblem(upstream, gateway string, ctx *ros.NatContext) string {
 	router, ok := netipx.ParseAddr4(upstream)
 	if !ok {
 		return ""

@@ -36,7 +36,7 @@ func NewRouterOS(endpoint, username, password string, verifyTLS bool) *RouterOS 
 }
 
 // NewRouterOSWithHTTP creates a RouterOS driver with an injected device client.
-func NewRouterOSWithHTTP(endpoint string, client DeviceHTTP) *RouterOS {
+func NewRouterOSWithHTTP(endpoint string, client device.DeviceHTTP) *RouterOS {
 	return &RouterOS{Client: ros.NewClientWithHTTP(endpoint, client)}
 }
 
@@ -205,7 +205,7 @@ func (d *RouterOS) Apply(ctx context.Context, raw json.RawMessage) (json.RawMess
 // needed to assess the active source-NAT selectors.
 func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 	d.ResetForwardFilterRows()
-	state := &RouterState{Routes: []*RouteEntry{}, NatBypass: []*NatBypassEntry{}, AddressSets: map[string][]string{}}
+	state := &RouterState{Routes: []*device.RouteEntry{}, NatBypass: []*device.NatBypassEntry{}, AddressSets: map[string][]string{}}
 	routes, err := d.List(ctx, ros.PathRoutes)
 	if err != nil {
 		return nil, err
@@ -218,16 +218,16 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 	if err != nil && !device.IsRouterError(err) {
 		return nil, err
 	}
-	var mangleRows []Row
+	var mangleRows []ros.Row
 	if err == nil {
 		mangleRows = mangle
 	}
 	referencedNames := ros.ReferencedAddressLists(append(slices.Clone(nats), mangleRows...))
 	listNames := slices.Clone(referencedNames)
-	if (d.NATListTouched() || slices.Contains(referencedNames, NATSrcList) || slices.Contains(referencedNames, NATDstList)) && !slices.Contains(listNames, "cf-mihomo-nat-src") {
+	if (d.NATListTouched() || slices.Contains(referencedNames, ros.NATSrcList) || slices.Contains(referencedNames, ros.NATDstList)) && !slices.Contains(listNames, "cf-mihomo-nat-src") {
 		listNames = append(listNames, "cf-mihomo-nat-src")
 	}
-	if (d.NATListTouched() || slices.Contains(referencedNames, NATSrcList) || slices.Contains(referencedNames, NATDstList)) && !slices.Contains(listNames, "cf-mihomo-nat-dst") {
+	if (d.NATListTouched() || slices.Contains(referencedNames, ros.NATSrcList) || slices.Contains(referencedNames, ros.NATDstList)) && !slices.Contains(listNames, "cf-mihomo-nat-dst") {
 		listNames = append(listNames, "cf-mihomo-nat-dst")
 	}
 	slices.Sort(listNames)
@@ -242,11 +242,11 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 			}
 		}
 	}
-	if slices.Contains(listNames, NATSrcList) || slices.Contains(listNames, NATDstList) || d.NATListTouched() {
+	if slices.Contains(listNames, ros.NATSrcList) || slices.Contains(listNames, ros.NATDstList) || d.NATListTouched() {
 		state.NATLists, _ = rospolicy.StateNATLists(ctx, d.Client, nats, listRows, mangleRows)
 	} else {
-		state.NATListsReader = func(ctx context.Context) (*NATLists, error) {
-			rows, err := d.ReadAddresses(ctx, []string{NATSrcList, NATDstList})
+		state.NATListsReader = func(ctx context.Context) (*rospolicy.NATLists, error) {
+			rows, err := d.ReadAddresses(ctx, []string{ros.NATSrcList, ros.NATDstList})
 			if err != nil {
 				return nil, err
 			}
@@ -257,20 +257,20 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 	assessed := nats
 	if len(d.DNSGuardManifest()) != 0 && string(d.DNSGuardManifest()) != "null" {
 		ids := ros.OwnedHairpinIDs(d.DNSGuardManifest(), nats)
-		assessed = make([]Row, 0, len(nats))
+		assessed = make([]ros.Row, 0, len(nats))
 		for _, row := range nats {
 			if !ids[row.ID()] {
 				assessed = append(assessed, row)
 			}
 		}
 	}
-	contextRows := &NatContext{
+	contextRows := &ros.NatContext{
 		Routes: ros.SelectFields(routes, ros.RouteEvidence), Rules: ros.WithoutCounters(assessed),
 	}
 	contextRows.RoutingRules, contextRows.Mangle, contextRows.VRFs = nil, nil, nil
 	contextRows.InterfaceLists, contextRows.InterfaceMembers = nil, nil
 
-	scoped := []Row{}
+	scoped := []ros.Row{}
 	for _, row := range assessed {
 		if row.Is("chain", "srcnat") && !ros.Flag(row["disabled"]) &&
 			(row.Set("out-interface") || row.Set("out-interface-list")) {
@@ -301,7 +301,7 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 				contextRows.VRFs = rows
 			}
 		}
-		if slices.ContainsFunc(scoped, func(row Row) bool { return row.Set("out-interface-list") }) {
+		if slices.ContainsFunc(scoped, func(row ros.Row) bool { return row.Set("out-interface-list") }) {
 			for _, item := range []struct{ field, path string }{
 				{"interface_lists", "/interface/list"}, {"interface_members", "/interface/list/member"},
 			} {
@@ -341,7 +341,7 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 			distance = &n
 		}
 		table := device.FirstNonEmpty(row.Text("routing-table"), "main")
-		state.Routes = append(state.Routes, &RouteEntry{ID: row.ID(), Dst: dst.String(), Gateway: row.Text("gateway"),
+		state.Routes = append(state.Routes, &device.RouteEntry{ID: row.ID(), Dst: dst.String(), Gateway: row.Text("gateway"),
 			Enabled: !ros.Flag(row["disabled"]), Comment: row.Text("comment"), Table: table, Active: active, Distance: distance})
 	}
 	for _, row := range nats {
@@ -363,7 +363,7 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 		if row.Set("src-address-list") {
 			src = append(src, state.AddressSets[row.Text("src-address-list")]...)
 		}
-		attrs := make(Row)
+		attrs := make(ros.Row)
 		for key, value := range row {
 			if !ros.ReadOnlyFields[key] && !strings.HasPrefix(key, ".") {
 				attrs[key] = value
@@ -373,7 +373,7 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 		if marshalErr != nil {
 			return nil, marshalErr
 		}
-		state.NatBypass = append(state.NatBypass, &NatBypassEntry{ID: row.ID(), Dst: dst, Src: src,
+		state.NatBypass = append(state.NatBypass, &device.NatBypassEntry{ID: row.ID(), Dst: dst, Src: src,
 			Enabled: !ros.Flag(row["disabled"]), Comment: comment, Attributes: encoded})
 	}
 	if len(d.PolicyManifest()) != 0 {
@@ -385,47 +385,47 @@ func (d *RouterOS) ReadState(ctx context.Context) (*RouterState, error) {
 }
 
 // ReadRoutes implements routeedit.RouteEditor for RouterOS.
-func (d *RouterOS) ReadRoutes(ctx context.Context) ([]*EditableRoute, error) {
+func (d *RouterOS) ReadRoutes(ctx context.Context) ([]*routeedit.EditableRoute, error) {
 	return routeedit.ReadROSRoutes(ctx, d.Client)
 }
 
 // MutateRoute implements routeedit.RouteEditor for RouterOS.
-func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *EditableRoute, values *RouteValues) (*RouteMutation, error) {
+func (d *RouterOS) MutateRoute(ctx context.Context, action string, expected *routeedit.EditableRoute, values *routeedit.RouteValues) (*routeedit.RouteMutation, error) {
 	return routeedit.MutateROSRoute(ctx, d.Client, action, expected, values)
 }
 
 // ReadFixedIP implements fixedip.Device for RouterOS.
-func (d *RouterOS) ReadFixedIP(ctx context.Context) (*FixedIPSnapshot, error) {
+func (d *RouterOS) ReadFixedIP(ctx context.Context) (*fixedip.Snapshot, error) {
 	return fixedip.NewROS(d.Client).ReadFixedIP(ctx)
 }
 
 // PreviewFixedIP implements fixedip.Device for RouterOS.
-func (d *RouterOS) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*FixedIPOperation, error) {
+func (d *RouterOS) PreviewFixedIP(ctx context.Context, ip, mac, name string) (*fixedip.Operation, error) {
 	return fixedip.NewROS(d.Client).PreviewFixedIP(ctx, ip, mac, name)
 }
 
 // ApplyFixedIP implements fixedip.Device for RouterOS.
-func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *FixedIPOperation) (*FixedIPBinding, error) {
+func (d *RouterOS) ApplyFixedIP(ctx context.Context, op *fixedip.Operation) (*fixedip.Binding, error) {
 	return fixedip.NewROS(d.Client).ApplyFixedIP(ctx, op)
 }
 
 // RollbackFixedIP implements fixedip.Device for RouterOS.
-func (d *RouterOS) RollbackFixedIP(ctx context.Context, b *FixedIPBinding) error {
+func (d *RouterOS) RollbackFixedIP(ctx context.Context, b *fixedip.Binding) error {
 	return fixedip.NewROS(d.Client).RollbackFixedIP(ctx, b)
 }
 
 // PreviewDeleteFixedIP implements fixedip.Device for RouterOS.
-func (d *RouterOS) PreviewDeleteFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPOperation, error) {
+func (d *RouterOS) PreviewDeleteFixedIP(ctx context.Context, b *fixedip.Binding) (*fixedip.Operation, error) {
 	return fixedip.NewROS(d.Client).PreviewDeleteFixedIP(ctx, b)
 }
 
 // DeleteFixedIP implements fixedip.Device for RouterOS.
-func (d *RouterOS) DeleteFixedIP(ctx context.Context, op *FixedIPOperation) (*FixedIPBinding, error) {
+func (d *RouterOS) DeleteFixedIP(ctx context.Context, op *fixedip.Operation) (*fixedip.Binding, error) {
 	return fixedip.NewROS(d.Client).DeleteFixedIP(ctx, op)
 }
 
 // RestoreDeletedFixedIP implements fixedip.Device for RouterOS.
-func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *FixedIPBinding) (*FixedIPBinding, error) {
+func (d *RouterOS) RestoreDeletedFixedIP(ctx context.Context, b *fixedip.Binding) (*fixedip.Binding, error) {
 	return fixedip.NewROS(d.Client).RestoreDeletedFixedIP(ctx, b)
 }
 
@@ -435,12 +435,12 @@ func (d *RouterOS) SeenFixedIP(ctx context.Context, ip, mac string) (bool, error
 }
 
 // ReadClients implements clientlist.Reader for RouterOS.
-func (d *RouterOS) ReadClients(ctx context.Context, opts ClientReadOptions) (*routerdoc.Reading, error) {
+func (d *RouterOS) ReadClients(ctx context.Context, opts clientlist.ReadOptions) (*routerdoc.Reading, error) {
 	return clientlist.NewROS(d.Client).ReadClients(ctx, opts)
 }
 
 // ReadConnections delegates RouterOS firewall connection reads to clientlist.
-func (d *RouterOS) ReadConnections(ctx context.Context, q ConnectionQuery, timeout time.Duration) ([]Row, bool, error) {
+func (d *RouterOS) ReadConnections(ctx context.Context, q clientlist.ConnectionQuery, timeout time.Duration) ([]ros.Row, bool, error) {
 	return clientlist.ReadConnections(ctx, d.Client, q, timeout)
 }
 

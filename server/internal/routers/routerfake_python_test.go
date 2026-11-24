@@ -2,6 +2,7 @@ package routers_test
 
 import (
 	"bytes"
+	"configflow/internal/routers/ros"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -42,7 +43,7 @@ func TestRouterFakePythonScriptHelpers(t *testing.T) {
 	if _, err = d.Apply(context.Background(), undo); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = d.FetchAddresses(context.Background(), routers.NATSrcList); err != nil {
+	if _, err = d.FetchAddresses(context.Background(), ros.NATSrcList); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = d.OccupiedAddressNames(context.Background(), []string{"cf-.*"}, nil); err != nil {
@@ -62,7 +63,7 @@ func TestRouterFakePythonScriptHelpers(t *testing.T) {
 	}
 	seed := f.Snapshot().Tables
 	for i := 0; i < 501; i++ {
-		seed["/ip/firewall/address-list"] = append(seed["/ip/firewall/address-list"], routerfake.Row{".id": fmt.Sprintf("*%X", 0xF000+i), "list": routers.NATSrcList, "address": fmt.Sprintf("198.18.%d.%d", i/256, i%256), "comment": "中文;x=1", "disabled": "false", "creation-time": "synthetic"})
+		seed["/ip/firewall/address-list"] = append(seed["/ip/firewall/address-list"], routerfake.Row{".id": fmt.Sprintf("*%X", 0xF000+i), "list": ros.NATSrcList, "address": fmt.Sprintf("198.18.%d.%d", i/256, i%256), "comment": "中文;x=1", "disabled": "false", "creation-time": "synthetic"})
 	}
 	for _, script := range scripts {
 		t.Run(scriptClass(script), func(t *testing.T) {

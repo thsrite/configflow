@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/ipv6"
+	"configflow/internal/routers/spec"
 	"encoding/json"
 	"net/http/httptest"
 	"reflect"
@@ -89,9 +90,9 @@ func TestR11ReviewPythonProbes(t *testing.T) {
 func TestR11ReviewFingerprintExcludesPassword(t *testing.T) {
 	d, _ := r11Driver(t)
 	s := r11StepFor("plan")
-	fingerprint := func(r *Router) string {
+	fingerprint := func(r *spec.Router) string {
 		t.Helper()
-		got, e := ipv6.InspectIPv6Readiness(t.Context(), d.Client, r, s.Agent, s.Host, s.Configuration, "", PolicyContext{})
+		got, e := ipv6.InspectIPv6Readiness(t.Context(), d.Client, r, s.Agent, s.Host, s.Configuration, "", ipv6.PolicyContext{})
 		if e != nil {
 			t.Fatal(e)
 		}

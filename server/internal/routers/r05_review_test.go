@@ -6,11 +6,11 @@ package routers_test
 // and the error type a release needs to roll back.
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"errors"
 	"testing"
 
-	"configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
 )
 
@@ -28,7 +28,7 @@ func writes(state routerfake.IkuaiState) []string {
 
 func wantRouterError(t *testing.T, err error, message string) {
 	t.Helper()
-	routerErr, ok := errors.AsType[*routers.RouterError](err)
+	routerErr, ok := errors.AsType[*device.RouterError](err)
 	if !ok || routerErr.Message != message {
 		t.Fatalf("error = %#v, want RouterError %q", err, message)
 	}

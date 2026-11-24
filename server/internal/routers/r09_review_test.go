@@ -4,6 +4,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"reflect"
@@ -25,7 +26,7 @@ func r09ReviewRow(rows []routerfake.Row, id string) routerfake.Row {
 }
 
 // r09ReviewOwned returns the manifest resource for role, failing when absent.
-func r09ReviewOwned(t *testing.T, raw json.RawMessage, role string) DNSGuardResource {
+func r09ReviewOwned(t *testing.T, raw json.RawMessage, role string) dnsguard.Resource {
 	t.Helper()
 	m, err := dnsguard.ParseManifest(raw)
 	if err != nil || m == nil {
@@ -37,7 +38,7 @@ func r09ReviewOwned(t *testing.T, raw json.RawMessage, role string) DNSGuardReso
 		}
 	}
 	t.Fatalf("role %s not owned: %s", role, raw)
-	return DNSGuardResource{}
+	return dnsguard.Resource{}
 }
 
 // A rollback that restores some objects and fails on another must keep owning
@@ -48,7 +49,7 @@ func TestR09ReviewPartialRollbackKeepsRestoredObjectsOwned(t *testing.T) {
 	changed := r09Base("partial").Settings
 	changed.Bypass = []string{"192.0.2.60/32"}
 	p := r09Plan(t, d, changed, previous)
-	op := p.Ops[0].(*DNSGuardReplace)
+	op := p.Ops[0].(*dnsguard.Replace)
 	deleted := []string{}
 	for _, e := range *op.Delete {
 		deleted = append(deleted, e.Role)
@@ -65,7 +66,7 @@ func TestR09ReviewPartialRollbackKeepsRestoredObjectsOwned(t *testing.T) {
 		{Method: "PUT", Path: ros.PathNetwatch, Count: 2, Status: 400, Body: refused},
 	}})
 	_, err := dnsguard.Apply(context.Background(), d.Client, *op)
-	if err == nil || device.RouterErrorKind(err) != KindRollback {
+	if err == nil || device.RouterErrorKind(err) != device.KindRollback {
 		t.Fatalf("incomplete rollback not reported: %v", err)
 	}
 	restored := r09ReviewOwned(t, ros.GuardRaw(d.DNSGuardManifest()), "bypass:192.0.2.50/32")
@@ -76,7 +77,7 @@ func TestR09ReviewPartialRollbackKeepsRestoredObjectsOwned(t *testing.T) {
 	if row == nil || row["address"] != "192.0.2.50" {
 		t.Fatalf("manifest does not point at the restored member: %v", row)
 	}
-	for _, settings := range []DNSGuard{changed, r09Base("partial").Settings} {
+	for _, settings := range []spec.DNSGuard{changed, r09Base("partial").Settings} {
 		next := r09Plan(t, d, settings, ros.GuardRaw(d.DNSGuardManifest()))
 		if len(next.Blockers) != 0 || next.Status != "pending" || len(next.Ops) != 1 {
 			t.Fatalf("own restored objects block the next preview: %s", r09Raw(next))
@@ -142,7 +143,7 @@ func TestR09ReviewRestoredHijacksAreNotForeign(t *testing.T) {
 	p := r09Plan(t, d, off, previous)
 	first := r09ReviewOwned(t, previous, "bypass:192.0.2.2/32")
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: ros.PathAddresses + "/" + first.ID, Status: 400, Body: routerfake.Row{"message": "injected refusal"}}}})
-	if _, err := dnsguard.Apply(context.Background(), d.Client, *p.Ops[0].(*DNSGuardReplace)); err == nil || device.RouterErrorKind(err) == KindRollback {
+	if _, err := dnsguard.Apply(context.Background(), d.Client, *p.Ops[0].(*dnsguard.Replace)); err == nil || device.RouterErrorKind(err) == device.KindRollback {
 		t.Fatalf("refused withdrawal should roll back completely: %v", err)
 	}
 	manifest := ros.GuardRaw(d.DNSGuardManifest())

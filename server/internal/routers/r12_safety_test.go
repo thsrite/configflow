@@ -64,7 +64,7 @@ func TestR12LostAgentRepliesAreCompensatedAndConfirmed(t *testing.T) {
 				old = device.JSON(map[string]any{"router_ip": "192.0.2.1", "table": 104, "priority": 104, "mark": "0x400000", "safety_version": 1, "proxy_dst": []string{"198.18.0.0/16"}, "lan_interface": "synthetic-lan", "tun_device": "synthetic-tun"})
 				a.s.Managed = &ReturnManaged{TablePresent: true, Spec: old}
 			}
-			undo, err := applyRelease(t.Context(), device.JSON(ReturnApplyOp{OpHead: OpHead{Kind: "return_routing_apply"}, Spec: want, Previous: old}), nil, a, false)
+			undo, err := applyRelease(t.Context(), device.JSON(ReturnApplyOp{OpHead: device.OpHead{Kind: "return_routing_apply"}, Spec: want, Previous: old}), nil, a, false)
 			if err == nil || effectful(undo) || !effectful(device.UndoOf(err)) {
 				t.Fatalf("lost reply missing compensation %s %v", undo, err)
 			}
@@ -96,7 +96,7 @@ func TestR12ReturnStatusPreservesUnknownAndPresence(t *testing.T) {
 	r12Compare(t, "Agent body", original, out)
 }
 func TestR12FingerprintCanonicalEvidence(t *testing.T) {
-	stages := []Stage{stageOf(StageRoutes, false, []Op{RouteAddOp{OpHead{Kind: "route_add", Summary: "synthetic"}, "198.18.0.0/16", "192.0.2.4", "cf"}})}
+	stages := []device.Stage{stageOf(device.StageRoutes, false, []device.Op{RouteAddOp{device.OpHead{Kind: "route_add", Summary: "synthetic"}, "198.18.0.0/16", "192.0.2.4", "cf"}})}
 	base, err := Fingerprint(stages, json.RawMessage(`{"z":2,"a":{"b":3,"a":1}}`), nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -117,9 +117,9 @@ func TestR12FingerprintCanonicalEvidence(t *testing.T) {
 }
 func TestR12ExecuteDisabledAndEmptyContracts(t *testing.T) {
 	d, _ := r11Driver(t)
-	disabled := stageOf(StageRoutes, false, []Op{RouteAddOp{OpHead{Kind: "route_add", Summary: "synthetic"}, "198.18.0.0/16", "192.0.2.4", "cf"}})
+	disabled := stageOf(device.StageRoutes, false, []device.Op{RouteAddOp{device.OpHead{Kind: "route_add", Summary: "synthetic"}, "198.18.0.0/16", "192.0.2.4", "cf"}})
 	disabled.Enabled = pointer(false)
-	got := Execute(t.Context(), &Plan{Stages: []Stage{disabled}}, d, nil)
+	got := Execute(t.Context(), &Plan{Stages: []device.Stage{disabled}}, d, nil)
 	if got.OK || got.Log[0].Summary != messageDisabledWrites {
 		t.Fatalf("disabled writes %+v", got)
 	}
@@ -129,7 +129,7 @@ func TestR12ExecuteDisabledAndEmptyContracts(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if got := Execute(ctx, &Plan{Stages: []Stage{}}, d, nil); !got.OK {
+	if got := Execute(ctx, &Plan{Stages: []device.Stage{}}, d, nil); !got.OK {
 		t.Fatal("outside Runtime detach should finish")
 	}
 }

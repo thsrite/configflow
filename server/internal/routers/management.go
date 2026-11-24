@@ -25,7 +25,7 @@ import (
 // router writes require the caller's L1 job context; the service acquires L2.
 type ManagementService struct {
 	Repo      *repo.Repository
-	NewDriver func(*Router) Driver
+	NewDriver func(*spec.Router) Driver
 }
 
 var managementLogger = logx.Get("backend.routes.routers")
@@ -37,7 +37,7 @@ type ConfigView struct {
 	// sets it.
 	Config *model.Config
 	// Routers are the profile's router records, decoded with the R5 fallback.
-	Routers []*Router
+	Routers []*spec.Router
 	// Credentials are the credential values redact.CollectCredentials finds
 	// in the encoded resolved configuration; responses built from this view
 	// hide them.
@@ -80,7 +80,7 @@ func (s *ManagementService) ConfigRecords(ctx context.Context, profile string) (
 	}
 	return &ConfigView{Config: config, Routers: routers, Credentials: credentials}, nil
 }
-func (s *ManagementService) open(r *Router) (Driver, error) {
+func (s *ManagementService) open(r *spec.Router) (Driver, error) {
 	if err := r.ValidateForDevice(); err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (s *ManagementService) open(r *Router) (Driver, error) {
 }
 
 // Create validates and appends one router inside a repository transaction.
-func (s *ManagementService) Create(ctx context.Context, profile string, body json.RawMessage) (*Router, error) {
+func (s *ManagementService) Create(ctx context.Context, profile string, body json.RawMessage) (*spec.Router, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func (s *ManagementService) Create(ctx context.Context, profile string, body jso
 	managementLogger.Infof(messageManagementCreated, s.safeLog(ctx, profile, r, device.OrText(r.Name, r.ID)), r.Type)
 	return r, nil
 }
-func replaceManagementRouter(config json.RawMessage, id string, next *Router) (json.RawMessage, error) {
+func replaceManagementRouter(config json.RawMessage, id string, next *spec.Router) (json.RawMessage, error) {
 	var p model.Profile
 	if err := json.Unmarshal(config, &p); err != nil {
 		return nil, err
@@ -156,15 +156,15 @@ func replaceManagementRouter(config json.RawMessage, id string, next *Router) (j
 	return model.Marshal(&p)
 }
 
-func (s *ManagementService) locked(ctx context.Context, profile string, old *Router) (context.Context, func(), *Router, error) {
+func (s *ManagementService) locked(ctx context.Context, profile string, old *spec.Router) (context.Context, func(), *spec.Router, error) {
 	return s.lockedFor(ctx, profile, old, true)
 }
-func (s *ManagementService) lockedFor(ctx context.Context, profile string, old *Router, write bool) (context.Context, func(), *Router, error) {
+func (s *ManagementService) lockedFor(ctx context.Context, profile string, old *spec.Router, write bool) (context.Context, func(), *spec.Router, error) {
 	if write {
 		ctx = lifecycle.Detach(ctx)
 	}
 	if old == nil {
-		return ctx, nil, nil, device.KindError(KindConflict, messageManagementMissing)
+		return ctx, nil, nil, device.KindError(device.KindConflict, messageManagementMissing)
 	}
 	if err := ctx.Err(); err != nil {
 		return ctx, nil, nil, err
@@ -180,24 +180,24 @@ func (s *ManagementService) lockedFor(ctx context.Context, profile string, old *
 				return held, release, r, nil
 			}
 		}
-		err = device.KindError(KindConflict, messageManagementChanged)
+		err = device.KindError(device.KindConflict, messageManagementChanged)
 	}
 	release()
 	return ctx, nil, nil, err
 }
 
 // Save updates settings or deletes an unowned record under L2 and the repo CAS.
-func (s *ManagementService) Save(ctx context.Context, profile string, old *Router, body json.RawMessage, remove bool) (*Router, error) {
+func (s *ManagementService) Save(ctx context.Context, profile string, old *spec.Router, body json.RawMessage, remove bool) (*spec.Router, error) {
 	work, release, r, err := s.locked(ctx, profile, old)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	var next *Router
+	var next *spec.Router
 	if remove {
 		for _, check := range []struct{ field, message string }{{"ros_policy_state", messageDeletePolicy}, {"ipv6_fakeip_state", messageDeleteIPv6Fake}, {"ipv6_routes_state", messageDeleteIPv6Routes}, {"dns_guard_state", messageDeleteDNS}, {"ipv6_pd_guard_state", messageDeletePD}} {
 			if r.State(check.field) != nil {
-				return nil, device.KindError(KindConflict, check.message)
+				return nil, device.KindError(device.KindConflict, check.message)
 			}
 		}
 	} else {
@@ -255,13 +255,13 @@ func cloneExtra(v map[string]json.RawMessage) map[string]json.RawMessage {
 type ProbeResult struct {
 	At string `json:"at"`
 	OK bool   `json:"ok"`
-	*RouterInfo
+	*device.RouterInfo
 	Message string `json:"message,omitempty"`
 }
 
 // Probe records both ordinary and malformed-response failures, preserving every
 // other stored field and rejecting a concurrent change of the selected record.
-func (s *ManagementService) Probe(ctx context.Context, profile string, r *Router) (ProbeResult, error) {
+func (s *ManagementService) Probe(ctx context.Context, profile string, r *spec.Router) (ProbeResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return ProbeResult{}, err
@@ -274,7 +274,7 @@ func (s *ManagementService) Probe(ctx context.Context, profile string, r *Router
 	result := ProbeResult{At: lifecycle.ClockFrom(ctx).Now().Local().Format("2006-01-02T15:04:05")}
 	info, err := d.Probe(ctx)
 	if err != nil {
-		var re *RouterError
+		var re *device.RouterError
 		if !errors.As(err, &re) {
 			return result, err
 		}
@@ -291,7 +291,7 @@ func (s *ManagementService) Probe(ctx context.Context, profile string, r *Router
 	err = managementTransaction(ctx, s.Repo, profile, func(work context.Context, current json.RawMessage) (json.RawMessage, error) {
 		live := spec.FindSyncRouter(current, r.ID)
 		if live == nil || !spec.SameReleaseRouter(live, r) {
-			return nil, device.KindError(KindConflict, messageManagementChanged)
+			return nil, device.KindError(device.KindConflict, messageManagementChanged)
 		}
 		raw, e := spec.ReleaseRouterRecord(live)
 		if e != nil {
@@ -339,7 +339,7 @@ func replaceManagementRawRouter(config json.RawMessage, id string, fields map[st
 }
 
 // EditRoute validates, locks, rebuilds and optionally applies a manual route plan.
-func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *Router, body json.RawMessage, apply bool) (*RoutePlan, *RouteResult, error) {
+func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *spec.Router, body json.RawMessage, apply bool) (*routeedit.RoutePlan, *routeedit.RouteResult, error) {
 	if _, err := routeedit.NormalizeRouteRequest(body); err != nil {
 		return nil, nil, err
 	}
@@ -366,7 +366,7 @@ func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *Ro
 	}
 	_ = jsondecode.Unmarshal(body, &confirmation)
 	if confirmation.Fingerprint == "" || confirmation.Fingerprint != plan.Fingerprint {
-		return plan, nil, device.KindError(KindConflict, messageRoutePreviewStale)
+		return plan, nil, device.KindError(device.KindConflict, messageRoutePreviewStale)
 	}
 	result, err := routeedit.ExecuteRoutePlan(work, d, rows, plan)
 	if err != nil {
@@ -382,7 +382,7 @@ func (s *ManagementService) EditRoute(ctx context.Context, profile string, r *Ro
 }
 
 // SavePolicyWorkspace commits the source and router draft in one transaction.
-func (s *ManagementService) SavePolicyWorkspace(ctx context.Context, profile string, r *Router, body WorkspaceRequest) error {
+func (s *ManagementService) SavePolicyWorkspace(ctx context.Context, profile string, r *spec.Router, body WorkspaceRequest) error {
 	work, release, _, err := s.locked(ctx, profile, r)
 	if err != nil {
 		return err
@@ -397,7 +397,7 @@ func (s *ManagementService) SavePolicyWorkspace(ctx context.Context, profile str
 }
 
 // SaveSyncSettings updates only the two automatic sync fields.
-func (s *ManagementService) SaveSyncSettings(ctx context.Context, profile string, r *Router, body json.RawMessage) error {
+func (s *ManagementService) SaveSyncSettings(ctx context.Context, profile string, r *spec.Router, body json.RawMessage) error {
 	work, release, _, err := s.locked(ctx, profile, r)
 	if err != nil {
 		return err
@@ -425,11 +425,11 @@ func (s *ManagementService) SaveSyncSettings(ctx context.Context, profile string
 }
 
 // ManagementRouters exposes the shared R5 decoder for a frozen HTTP snapshot.
-func ManagementRouters(config json.RawMessage) []*Router { return spec.RoutersOf(config) }
+func ManagementRouters(config json.RawMessage) []*spec.Router { return spec.RoutersOf(config) }
 
 // PolicyObjects reads under the same L2 and complete stored-record guard as
 // writes. R5 display defaults never erase changes from the optimistic proof.
-func (s *ManagementService) PolicyObjects(ctx context.Context, profile string, r *Router) ([]ROSPolicyObject, error) {
+func (s *ManagementService) PolicyObjects(ctx context.Context, profile string, r *spec.Router) ([]rospolicy.ROSPolicyObject, error) {
 	work, release, current, err := s.lockedFor(ctx, profile, r, false)
 	if err != nil {
 		return nil, err
@@ -447,12 +447,12 @@ func (s *ManagementService) PolicyObjects(ctx context.Context, profile string, r
 	return rospolicy.ReadPolicyObjects(work, ros.Client, current.Extra["ros_policy_state"])
 }
 
-func (s *ManagementService) safeLog(ctx context.Context, profile string, r *Router, value string) string {
+func (s *ManagementService) safeLog(ctx context.Context, profile string, r *spec.Router, value string) string {
 	return eventText(s.safeText(ctx, profile, r, value))
 }
 
 // safeText hides stored and peer credentials without the diagnostic filters.
-func (s *ManagementService) safeText(ctx context.Context, profile string, r *Router, value string) string {
+func (s *ManagementService) safeText(ctx context.Context, profile string, r *spec.Router, value string) string {
 	if ctx.Err() != nil {
 		return redact.Redacted
 	}
@@ -469,7 +469,7 @@ func (s *ManagementService) safeText(ctx context.Context, profile string, r *Rou
 	}
 	return managementSafeText(nil, redact.NewSecrets(seeds, credentials), r, value)
 }
-func managementLogText(config json.RawMessage, seeds redact.Secrets, r *Router, value string) string {
+func managementLogText(config json.RawMessage, seeds redact.Secrets, r *spec.Router, value string) string {
 	return eventText(managementSafeText(config, seeds, r, value))
 }
 func eventText(value string) string {
@@ -478,7 +478,7 @@ func eventText(value string) string {
 	}
 	return diag.EventMessage(value, nil)
 }
-func managementSafeText(config json.RawMessage, seeds redact.Secrets, r *Router, value string) string {
+func managementSafeText(config json.RawMessage, seeds redact.Secrets, r *spec.Router, value string) string {
 	if r == nil {
 		return redact.Redacted
 	}

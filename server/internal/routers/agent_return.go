@@ -14,8 +14,8 @@ import (
 // GatewayAgent carries a native Agent view and its opaque A01 transport handle.
 type GatewayAgent struct {
 	*model.Agent
-	Record *model.Agent `json:"-"`
-	DNS    *DNSAgent    `json:"-"`
+	Record *model.Agent     `json:"-"`
+	DNS    *device.DNSAgent `json:"-"`
 }
 
 // AgentSource supplies Agent records and their owned return-routing client.
@@ -51,7 +51,7 @@ var dnsAgentMembers = []string{"id", "host", "service_type", "status", "oxidns_h
 
 // dnsAgentOf decodes the DNS projection from only the members it reads, with
 // the same strict decoder (and errors) as decoding the encoded record.
-func dnsAgentOf(record *model.Agent) (*DNSAgent, error) {
+func dnsAgentOf(record *model.Agent) (*device.DNSAgent, error) {
 	var members model.Fields
 	for _, name := range dnsAgentMembers {
 		raw, present, err := model.EncodeMember(record, name)
@@ -68,7 +68,7 @@ func dnsAgentOf(record *model.Agent) (*DNSAgent, error) {
 	if err != nil {
 		return nil, err
 	}
-	var dns DNSAgent
+	var dns device.DNSAgent
 	if err = jsondecode.Unmarshal(data, &dns); err != nil {
 		return nil, err
 	}

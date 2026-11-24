@@ -20,7 +20,7 @@ import (
 
 // r06TimeoutRecorder records the per-request timeout every device call uses.
 type r06TimeoutRecorder struct {
-	client   DeviceHTTP
+	client   device.DeviceHTTP
 	mu       sync.Mutex
 	requests []string
 	timeouts []time.Duration
@@ -66,7 +66,7 @@ func TestR06RouterOSRequestsKeepDeviceTimeout(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var expected *EditableRoute
+			var expected *routeedit.EditableRoute
 			if tt.action != "add" {
 				expected = rows[0]
 			}
@@ -121,7 +121,7 @@ func TestR06RouterOSUnansweredWriteTimesOut(t *testing.T) {
 	}()
 	select {
 	case err := <-done:
-		if device.RouterErrorKind(err) != KindUncertainWrite {
+		if device.RouterErrorKind(err) != device.KindUncertainWrite {
 			t.Fatalf("unanswered write error = %v, want an uncertain write after reconciliation", err)
 		}
 	case <-time.After(3 * ros.Timeout):
@@ -194,7 +194,7 @@ func TestR06RedactionHidesOnlySecrets(t *testing.T) {
 			driver := NewRouterOS(server.URL, tt.username, "synthetic-secret", false)
 			defer driver.Close()
 			_, err := driver.MutateRoute(context.Background(), "add", nil, tc.Values)
-			e, ok := errors.AsType[*RouterError](err)
+			e, ok := errors.AsType[*device.RouterError](err)
 			if !ok {
 				t.Fatalf("error = %#v, want RouterError", err)
 			}

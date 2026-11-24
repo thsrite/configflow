@@ -19,28 +19,28 @@ func TestR01ReviewModelHelpers(t *testing.T) {
 		}
 	}
 	zero, one := int64(0), int64(1)
-	ok := &PolicyRouteEntry{Enabled: true, Gateway: "10.0.0.2", Src: []string{"10.0.0.2"}, SrcInvert: true, Protocol: "any", Priority: &zero}
+	ok := &device.PolicyRouteEntry{Enabled: true, Gateway: "10.0.0.2", Src: []string{"10.0.0.2"}, SrcInvert: true, Protocol: "any", Priority: &zero}
 	bad := *ok
 	bad.Priority = &one
 	if !device.PolicyRouteOK(ok, "10.0.0.2") || device.PolicyRouteOK(&bad, "10.0.0.2") || device.PolicyRouteOK(ok, "") {
 		t.Error("PolicyRouteOK")
 	}
-	state := &RouterState{PolicyRoutes: []*PolicyRouteEntry{{Comment: "x"}, {Comment: PolicyAutoComment}, {Comment: PolicyManualComment}}}
-	if device.PolicyRoute(state.PolicyRoutes, PolicyManualComment) != state.PolicyRoutes[2] {
+	state := &RouterState{PolicyRoutes: []*device.PolicyRouteEntry{{Comment: "x"}, {Comment: device.PolicyAutoComment}, {Comment: device.PolicyManualComment}}}
+	if device.PolicyRoute(state.PolicyRoutes, device.PolicyManualComment) != state.PolicyRoutes[2] {
 		t.Error("PolicyRoute")
 	}
 	RetirePolicyRoutes(state)
 	if state.PolicyRoutes != nil || len(state.RetiredPolicyRoutes) != 2 {
 		t.Errorf("RetirePolicyRoutes: %+v", state)
 	}
-	state = &RouterState{PolicyRoutes: []*PolicyRouteEntry{{Comment: "x"}}}
+	state = &RouterState{PolicyRoutes: []*device.PolicyRouteEntry{{Comment: "x"}}}
 	if RetirePolicyRoutes(state); state.RetiredPolicyRoutes == nil || len(state.RetiredPolicyRoutes) != 0 {
 		t.Error("RetirePolicyRoutes must leave an empty, non-nil list")
 	}
 	gw := "10.0.0.2"
 	state = &RouterState{
-		Routes: []*RouteEntry{device.NewRoute("1", "91.108.4.0/22", gw, true, ""), device.NewRoute("2", "1.1.1.0/24", gw, false, "")},
-		ActiveRoutes: []*RouteEntry{device.NewRoute("a", "91.108.4.0/22", gw, true, ""), device.NewRoute("b", "1.1.1.0/24", gw, true, ""),
+		Routes: []*device.RouteEntry{device.NewRoute("1", "91.108.4.0/22", gw, true, ""), device.NewRoute("2", "1.1.1.0/24", gw, false, "")},
+		ActiveRoutes: []*device.RouteEntry{device.NewRoute("a", "91.108.4.0/22", gw, true, ""), device.NewRoute("b", "1.1.1.0/24", gw, true, ""),
 			device.NewRoute("c", "8.8.8.0/24", "10.0.0.9", true, "")},
 	}
 	stale := StaleRoutes(state, gw)

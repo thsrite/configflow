@@ -5,6 +5,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -26,21 +27,21 @@ func r10Config(raw string) *model.Profile {
 func r10Agent() *model.Agent {
 	return &model.Agent{ID: "gateway", Host: "192.0.2.4", ServiceType: "mihomo", Enabled: new(true)}
 }
-func r10Host() IPv6Host {
-	return IPv6Host{Interface: "eth0", Addresses: []IPv6HostAddress{{Address: "fd00:1::4", Usable: true}, {Address: "fe80::4"}}}
+func r10Host() ipv6.IPv6Host {
+	return ipv6.IPv6Host{Interface: "eth0", Addresses: []ipv6.IPv6HostAddress{{Address: "fd00:1::4", Usable: true}, {Address: "fe80::4"}}}
 }
-func r10Router() *Router {
-	return &Router{RouterSettings: RouterSettings{ID: "synthetic", Type: "routeros"}, Extra: map[string]json.RawMessage{}}
+func r10Router() *spec.Router {
+	return &spec.Router{RouterSettings: spec.RouterSettings{ID: "synthetic", Type: "routeros"}, Extra: map[string]json.RawMessage{}}
 }
 func r10State() routerfake.State {
 	return routerfake.State{IPv6Wire: true, Tables: map[string][]routerfake.Row{
 		ros.PathIPv6Routes: {}, rosIPv6Addresses: {{".id": "*A1", "address": "fd00:1::1/64", "interface": "bridge"}}, rosIPv4Addresses: {{".id": "*B1", "address": "192.0.2.1/24", "interface": "bridge", "actual-interface": "bridge"}}, "/ipv6/firewall/filter": {}, "/ipv6/firewall/address-list": {}, "/interface": {{".id": "*C1", "name": "bridge"}}, "/interface/list": {}, "/interface/list/member": {},
 	}}
 }
-func r10Wanted(n int) *Desired {
-	d := &Desired{ProxyCIDRs: []ProxyCIDR{}, Warnings: []string{}, IPv6CIDRs: []ProxyCIDR{}, BlockingWarnings: []string{}}
+func r10Wanted(n int) *spec.Desired {
+	d := &spec.Desired{ProxyCIDRs: []spec.ProxyCIDR{}, Warnings: []string{}, IPv6CIDRs: []spec.ProxyCIDR{}, BlockingWarnings: []string{}}
 	for i := 0; i < n; i++ {
-		d.IPv6CIDRs = append(d.IPv6CIDRs, ProxyCIDR{CIDR: fmt.Sprintf("2001:db8:%x::/48", i+10), Sources: []string{"Synthetic"}})
+		d.IPv6CIDRs = append(d.IPv6CIDRs, spec.ProxyCIDR{CIDR: fmt.Sprintf("2001:db8:%x::/48", i+10), Sources: []string{"Synthetic"}})
 	}
 	return d
 }
@@ -51,16 +52,16 @@ func r10Route(id, cidr, gateway string) routerfake.Row {
 type r10Step struct {
 	Action   string                    `json:"action"`
 	Config   *model.Profile            `json:"config"`
-	Desired  *Desired                  `json:"desired"`
+	Desired  *spec.Desired             `json:"desired"`
 	Agent    *model.Agent              `json:"agent"`
-	Host     IPv6Host                  `json:"host"`
+	Host     ipv6.IPv6Host             `json:"host"`
 	Mutation *routerfake.ExternalWrite `json:"mutation,omitempty"`
 }
 type r10Case struct {
 	Name    string           `json:"name"`
 	Feature string           `json:"feature"`
 	State   routerfake.State `json:"state"`
-	Router  *Router          `json:"router"`
+	Router  *spec.Router     `json:"router"`
 	Steps   []r10Step        `json:"steps"`
 }
 
@@ -75,8 +76,8 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 	ctx := context.Background()
 	out := r08Output{Results: []json.RawMessage{}}
 	var undo json.RawMessage
-	var fakePlan *IPv6FakeIPPlan
-	var routesPlan *IPv6RoutesPlan
+	var fakePlan *ipv6.IPv6FakeIPPlan
+	var routesPlan *ipv6.IPv6RoutesPlan
 	var err error
 	add := func(value any) {
 		raw, e := json.Marshal(value)
@@ -92,7 +93,7 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 		if step.Action == "undo" {
 			_, err = d.Apply(ctx, undo)
 			if err == nil {
-				add(Row{})
+				add(ros.Row{})
 			}
 		} else if step.Action == "apply" {
 			var raw json.RawMessage
@@ -111,7 +112,7 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 				r.Extra = map[string]json.RawMessage{}
 			}
 			blocked := false
-			var ops []Op
+			var ops []device.Op
 			if tc.Feature == "fake" {
 				if d.IPv6FakeIPManifestSet() {
 					r.Extra["ipv6_fakeip_state"] = ros.GuardRaw(d.IPv6FakeIPManifest())
@@ -167,7 +168,7 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 			if err == nil && step.Action == "rollback" && len(ops) > 0 {
 				_, err = d.Apply(ctx, undo)
 				if err == nil {
-					add(Row{})
+					add(ros.Row{})
 				}
 			}
 		}
@@ -177,7 +178,7 @@ func r10Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r10Case) r08Ou
 	}
 	if err != nil {
 		class := "RouterError"
-		if e, ok := errors.AsType[*RouterError](err); ok && e.Kind == KindRollback {
+		if e, ok := errors.AsType[*device.RouterError](err); ok && e.Kind == device.KindRollback {
 			class = "RouterRollbackError"
 		}
 		out.Error = &r08Error{class, err.Error()}
@@ -233,10 +234,10 @@ func r10Cases() []r10Case {
 		off := r10StepFor("publish", 5)
 		off.Config = r10Config("ipv6: false\n")
 		off.Agent = nil
-		off.Host = IPv6Host{Error: "offline"}
+		off.Host = ipv6.IPv6Host{Error: "offline"}
 		out = append(out, base("withdraw", r10StepFor("publish", 5), off))
 		replace := r10StepFor("publish", 5)
-		replace.Host.Addresses = []IPv6HostAddress{{Address: "fe80::5"}}
+		replace.Host.Addresses = []ipv6.IPv6HostAddress{{Address: "fe80::5"}}
 		out = append(out, base("replace", r10StepFor("publish", 5), replace, r10StepFor("plan", 5)), base("replace_rollback", r10StepFor("publish", 5), func() r10Step { s := replace; s.Action = "rollback"; return s }()))
 		for _, variant := range []string{"foreign_good", "foreign_wrong", "foreign_disabled", "foreign_inactive", "foreign_duplicate", "local_overlap", "unavailable_host", "ambiguous_host", "ula_only", "preserve_ula", "no_tun", "nodes_only", "invalid_bool", "incomplete_input", "same_port_drop", "unread_filter"} {
 			step := r10StepFor("plan", 5)
@@ -269,9 +270,9 @@ func r10Cases() []r10Case {
 			case "local_overlap":
 				tc.State.Tables[rosIPv6Addresses] = append(tc.State.Tables[rosIPv6Addresses], routerfake.Row{".id": "*99", "address": stringsReplaceCIDRHost(cidr), "interface": "other"})
 			case "unavailable_host":
-				tc.Steps[0].Host = IPv6Host{Error: "offline"}
+				tc.Steps[0].Host = ipv6.IPv6Host{Error: "offline"}
 			case "ambiguous_host":
-				tc.Steps[0].Host.Addresses = append(tc.Steps[0].Host.Addresses, IPv6HostAddress{Address: "fe80::5"})
+				tc.Steps[0].Host.Addresses = append(tc.Steps[0].Host.Addresses, ipv6.IPv6HostAddress{Address: "fe80::5"})
 			case "ula_only":
 				tc.Steps[0].Host.Addresses = tc.Steps[0].Host.Addresses[:1]
 			case "no_tun":
@@ -330,7 +331,7 @@ func r10Cases() []r10Case {
 				step := r10StepFor("rollback", 5)
 				step.Config = r10Config("ipv6: false")
 				step.Agent = nil
-				step.Host = IPv6Host{}
+				step.Host = ipv6.IPv6Host{}
 				tc.Steps = append(tc.Steps, step, r10StepFor("plan", 5))
 			}
 			out = append(out, tc)
@@ -342,7 +343,7 @@ func r10Cases() []r10Case {
 			step := r10StepFor("publish", 0)
 			step.Config = r10Config("ipv6: false")
 			step.Agent = nil
-			step.Host = IPv6Host{}
+			step.Host = ipv6.IPv6Host{}
 			tc.Steps = append(tc.Steps, step)
 		}
 		out = append(out, tc)

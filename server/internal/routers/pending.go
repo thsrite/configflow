@@ -26,7 +26,7 @@ type PendingRequest struct {
 	Repo      *repo.Repository
 	Agents    AgentSource
 	Cache     *PendingCache
-	NewDriver func(*Router) Driver
+	NewDriver func(*spec.Router) Driver
 }
 
 // PendingResponse is the handler-independent upstream-router reminder payload.
@@ -40,7 +40,7 @@ type PendingResponse struct {
 type pendingTarget struct {
 	profile spec.PendingProfile
 	config  json.RawMessage
-	router  *Router
+	router  *spec.Router
 }
 type pendingSignatureProfile struct {
 	ID       string            `json:"id"`
@@ -97,7 +97,7 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 		if err != nil {
 			return nil, "", "", err
 		}
-		if !slices.ContainsFunc(routers, func(r *Router) bool { return pendingLinked(r, req.AgentID) }) {
+		if !slices.ContainsFunc(routers, func(r *spec.Router) bool { return pendingLinked(r, req.AgentID) }) {
 			continue
 		}
 		config, err := req.Repo.ConfigWithOxiDNSAgents(ctx, profile.ID, repo.ResourceRoots{})
@@ -146,7 +146,7 @@ func pendingTargets(ctx context.Context, req PendingRequest) ([]pendingTarget, s
 // pendingLinked reports whether r sends proxied traffic to the Agent. An empty
 // Agent ID is a missing identity, never a match against routers without a
 // proxy gateway.
-func pendingLinked(r *Router, agentID string) bool {
+func pendingLinked(r *spec.Router, agentID string) bool {
 	return agentID != "" && r.LinkID("proxy_gateway_agent_id") == agentID
 }
 
@@ -212,7 +212,7 @@ func readPendingRouter(ctx context.Context, req PendingRequest, target pendingTa
 		plan, err = BuildPlan(ctx, target.router, in, driver)
 	}
 	if err != nil {
-		var re *RouterError
+		var re *device.RouterError
 		if errors.As(err, &re) {
 			message := diag.FailureText(re.Error(), []any{target.router.Password}, 0)
 			out.summary = unknownPending(device.OrText(message, messagePendingReadError))

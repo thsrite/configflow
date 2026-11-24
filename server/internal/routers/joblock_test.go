@@ -4,6 +4,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/spec"
 	"context"
 	"errors"
 	"os"
@@ -16,19 +17,19 @@ import (
 	"configflow/internal/repo"
 )
 
-func jobConnection(endpoint string) *Router {
-	return &Router{RouterSettings: RouterSettings{Type: "routeros", Endpoint: endpoint}}
+func jobConnection(endpoint string) *spec.Router {
+	return &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros", Endpoint: endpoint}}
 }
 
 func TestO36bJobLockConnectionIdentity(t *testing.T) {
 	tests := []struct {
 		name, profile, id string
-		connection        *Router
+		connection        *spec.Router
 		busy              bool
 	}{
 		{"same-device-other-record", "other", "alias", jobConnection("http://192.0.2.1///"), true},
 		{"different-device", "profile", "router", jobConnection("http://192.0.2.2"), false},
-		{"different-type", "profile", "router", &Router{RouterSettings: RouterSettings{Type: "ikuai", Endpoint: "http://192.0.2.1"}}, false},
+		{"different-type", "profile", "router", &spec.Router{RouterSettings: spec.RouterSettings{Type: "ikuai", Endpoint: "http://192.0.2.1"}}, false},
 		{"missing-record", "profile", "router", nil, false},
 	}
 	_, release, err := oplock.RouterJobLock(t.Context(), "profile", "router", jobConnection("http://192.0.2.1/"))
@@ -43,8 +44,8 @@ func TestO36bJobLockConnectionIdentity(t *testing.T) {
 				defer unlock()
 			}
 			if tt.busy {
-				failure, ok := errors.AsType[*RouterError](err)
-				if !ok || failure.Kind != KindConflict || failure.Message != device.MessageEditBusy || unlock != nil {
+				failure, ok := errors.AsType[*device.RouterError](err)
+				if !ok || failure.Kind != device.KindConflict || failure.Message != device.MessageEditBusy || unlock != nil {
 					t.Fatalf("busy identity: %v", err)
 				}
 			} else if err != nil {
@@ -77,8 +78,8 @@ func TestO36bMissingRouterJobLockAndTryOnly(t *testing.T) {
 	}()
 	select {
 	case err := <-done:
-		failure, ok := errors.AsType[*RouterError](err)
-		if !ok || failure.Kind != KindConflict {
+		failure, ok := errors.AsType[*device.RouterError](err)
+		if !ok || failure.Kind != device.KindConflict {
 			t.Fatal("missing-record key did not conflict", err)
 		}
 	case <-time.After(5 * time.Second):

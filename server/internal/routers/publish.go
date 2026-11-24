@@ -3,6 +3,7 @@ package routers
 import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/ros"
 	"configflow/internal/routers/routeedit"
 	"configflow/internal/routers/spec"
 	"context"
@@ -27,11 +28,11 @@ type PublishRequest struct {
 	ProfileID string
 	RouterID  string
 	Expected  string
-	Router    *Router
+	Router    *spec.Router
 	Repo      *repo.Repository
 	Agents    AgentSource
-	NewDriver func(*Router) Driver
-	Loader    ContentLoader
+	NewDriver func(*spec.Router) Driver
+	Loader    spec.ContentLoader
 }
 
 // PublishStatus identifies the handler-independent release outcome.
@@ -66,13 +67,13 @@ type LastRelease struct {
 }
 
 // CaptureManual is wired by R14. Failure is logged, never a successful baseline.
-var CaptureManual = func(context.Context, string, json.RawMessage, *Router, Driver, *Desired) error {
+var CaptureManual = func(context.Context, string, json.RawMessage, *spec.Router, Driver, *spec.Desired) error {
 	return device.ErrNotPorted
 }
 var releaseLogger = logx.Get("backend.routes.routers")
 
 // NewDriver constructs one vendor driver per inspection or publication.
-func NewDriver(r *Router) Driver {
+func NewDriver(r *spec.Router) Driver {
 	switch r.Type {
 	case "routeros":
 		return NewRouterOS(r.Endpoint, r.Username, r.Password, r.VerifyTLS)
@@ -114,10 +115,10 @@ func StartPublish(ctx context.Context, req PublishRequest, unlock func()) (<-cha
 }
 
 // ReleaseLabel returns the display name used in release summaries for r.
-func ReleaseLabel(r *Router) string {
+func ReleaseLabel(r *spec.Router) string {
 	return diag.EventMessage(device.OrText(r.Name, r.ID), []any{r.Password})
 }
-func captureRelease(ctx context.Context, req PublishRequest, cfg json.RawMessage, r *Router, d Driver, desired *Desired) {
+func captureRelease(ctx context.Context, req PublishRequest, cfg json.RawMessage, r *spec.Router, d Driver, desired *spec.Desired) {
 	if err := ctx.Err(); err != nil {
 		return
 	}
@@ -129,8 +130,8 @@ func captureRelease(ctx context.Context, req PublishRequest, cfg json.RawMessage
 // captureRouter is the router as the rule-sync baseline must see it (Python
 // _capture_sync): the IPv6 manifests this release just published replace the
 // pre-release ones, so the control signature matches the stored record.
-func captureRouter(r *Router, d Driver) *Router {
-	holder, ok := d.(ManifestHolder)
+func captureRouter(r *spec.Router, d Driver) *spec.Router {
+	holder, ok := d.(ros.ManifestHolder)
 	if !ok {
 		return r
 	}
@@ -141,7 +142,7 @@ func captureRouter(r *Router, d Driver) *Router {
 	if out.Extra == nil {
 		out.Extra = map[string]json.RawMessage{}
 	}
-	for key, v := range map[string]Manifest{"ipv6_fakeip_state": m.IPv6FakeIP, "ipv6_routes_state": m.IPv6Routes} {
+	for key, v := range map[string]ros.Manifest{"ipv6_fakeip_state": m.IPv6FakeIP, "ipv6_routes_state": m.IPv6Routes} {
 		if !v.Set {
 			continue
 		}
@@ -157,8 +158,8 @@ func refreshRelease(ctx context.Context) {
 		notifications.Safely(func() error { return notifications.RefreshTasks(ctx, "") })
 	}
 }
-func publishError(r *Router, err error) PublishOutcome {
-	var re *RouterError
+func publishError(r *spec.Router, err error) PublishOutcome {
+	var re *device.RouterError
 	if errors.As(err, &re) {
 		safe := routeedit.SafeError(err, r.Endpoint, r.Password)
 		releaseLogger.Warningf(messagePublishStopped, ReleaseLabel(r), safe)
@@ -196,7 +197,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 	if err != nil {
 		return PublishOutcome{Err: err}
 	}
-	current := (*Router)(nil)
+	current := (*spec.Router)(nil)
 	for _, r := range spec.RoutersOf(config) {
 		if r.ID == req.RouterID {
 			current = r
@@ -313,7 +314,7 @@ func Publish(ctx context.Context, req PublishRequest) PublishOutcome {
 	}
 	return outcome
 }
-func releasePublication(ctx context.Context, r *Router, p *Plan, result *Result, d Driver) (repo.RouterPublicationJSON, error) {
+func releasePublication(ctx context.Context, r *spec.Router, p *Plan, result *Result, d Driver) (repo.RouterPublicationJSON, error) {
 	failure := []string{}
 	for _, entry := range append(slices.Clone(result.Log), result.Rollback...) {
 		if entry.Status == "failed" {
@@ -334,9 +335,9 @@ func releasePublication(ctx context.Context, r *Router, p *Plan, result *Result,
 		return repo.RouterPublicationJSON{}, err
 	}
 	out := repo.RouterPublicationJSON{LastRelease: repo.JSONUpdate{Set: true, Value: b}}
-	if holder, ok := d.(ManifestHolder); ok && !p.Empty {
+	if holder, ok := d.(ros.ManifestHolder); ok && !p.Empty {
 		m := holder.Manifests()
-		slot := func(v Manifest) repo.JSONUpdate { return repo.JSONUpdate{Set: v.Set, Value: v.Value} }
+		slot := func(v ros.Manifest) repo.JSONUpdate { return repo.JSONUpdate{Set: v.Set, Value: v.Value} }
 		out.Manifest = slot(m.Policy)
 		out.DNSGuard = slot(m.DNSGuard)
 		out.IPv6FakeIP = slot(m.IPv6FakeIP)
@@ -360,7 +361,7 @@ func planOps(p *Plan) int {
 func saveAbortedPublication(ctx context.Context, r *repo.Repository, profileID string, expected json.RawMessage, p repo.RouterPublicationJSON) error {
 	return r.SaveRouterPublicationJSON(ctxx.Uninterruptible(ctx), profileID, expected, p)
 }
-func logRelease(r *Router, count int, result *Result) {
+func logRelease(r *spec.Router, count int, result *Result) {
 	label := ReleaseLabel(r)
 	safe := func(s string) string { return diag.EventMessage(s, []any{r.Password}) }
 	for _, e := range result.Log {

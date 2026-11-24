@@ -23,9 +23,9 @@ import (
 type InspectRequest struct {
 	ProfileID string
 	Config    json.RawMessage
-	Router    *Router
+	Router    *spec.Router
 	Driver    Driver
-	Loader    ContentLoader
+	Loader    spec.ContentLoader
 	Agents    AgentSource
 	Repo      *repo.Repository
 }
@@ -33,14 +33,14 @@ type InspectRequest struct {
 // Inspection is one coherent desired state and readback, with an optional Agent.
 type Inspection struct {
 	Gateway *GatewayAgent
-	Desired *Desired
+	Desired *spec.Desired
 	State   *RouterState
 	Report  *Report
 }
 
 // IPv6HostRequest is supplied by A23; missing wiring fails closed for this stage.
-var IPv6HostRequest = func(context.Context, *GatewayAgent) (IPv6Host, error) {
-	return IPv6Host{}, device.Error(messageIPv6HostUnavailable)
+var IPv6HostRequest = func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) {
+	return ipv6.IPv6Host{}, device.Error(messageIPv6HostUnavailable)
 }
 
 // Inspect reads device and Agent state, never writes to either.
@@ -101,7 +101,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	guard := dnsguard.Relevant(r)
 	if policy || guard {
 		if !isROS {
-			return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, StageRoutes))
+			return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, device.StageRoutes))
 		}
 	}
 	if policy {
@@ -118,7 +118,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		RetirePolicyRoutes(state)
 	}
 	if guard {
-		desired.DNSGuard = &DesiredDNSGuard{Settings: dnsGuardSettings(r), Previous: r.State("dns_guard_state")}
+		desired.DNSGuard = &spec.DesiredDNSGuard{Settings: dnsGuardSettings(r), Previous: r.State("dns_guard_state")}
 		state.DNSGuard, err = dnsguard.Read(ctx, rosDriver.Client)
 		if err != nil {
 			return nil, err
@@ -144,9 +144,9 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 			}
 		}
 		if state.NatContext == nil {
-			state.NatContext = &NatContext{}
+			state.NatContext = &ros.NatContext{}
 		}
-		state.NatContext.Mangle = []Row{}
+		state.NatContext.Mangle = []ros.Row{}
 		for _, v := range (*state.ROSPolicy)[ros.PathMangle] {
 			if !slices.Contains(ids, v.ID()) {
 				row := ros.CloneRow(v)
@@ -160,8 +160,8 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		state.NatContext.Routes = (*state.ROSPolicy)[ros.PathRoutes]
 	}
 	if isROS {
-		var ipv6Host *IPv6Host
-		hostReport := func() IPv6Host {
+		var ipv6Host *ipv6.IPv6Host
+		hostReport := func() ipv6.IPv6Host {
 			if ipv6Host == nil {
 				v := inspectIPv6Host(ctx, req.ProfileID, req.Config, gateway)
 				ipv6Host = &v
@@ -173,7 +173,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 			agent = gateway.Agent
 		}
 		if ipv6.IPv6FakeIPRelevant(&profile, r) {
-			h := IPv6Host{}
+			h := ipv6.IPv6Host{}
 			if ipv6.IPv6FakeIPSettings(&profile).Enabled {
 				h = hostReport()
 			}
@@ -181,7 +181,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 			state.IPv6FakeIPPlan = ipv6.InspectIPv6FakeIP(ctx, &profile, r, agent, h, rosDriver.Client)
 		}
 		if ipv6.IPv6RoutesRelevant(&profile, r, desired) {
-			h := IPv6Host{}
+			h := ipv6.IPv6Host{}
 			if ipv6.IPv6RoutesNeedsHost(&profile, r, desired) {
 				h = hostReport()
 			}
@@ -193,7 +193,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	if r.DNSAgentID != "" && desired.DNSSettings.Error == "" {
 		state.DhcpDNS, err = d.ReadDHCPDNS(ctx)
 		if err != nil {
-			var re *RouterError
+			var re *device.RouterError
 			if !errors.As(err, &re) {
 				return nil, err
 			}
@@ -204,7 +204,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		dns := device.BuildDNSReport(*desired.DNSSettings, desired.ProxyGateway, state.DhcpDNS)
 		if (dns.Status == "pending" || dns.Status == "synced") && len(dns.Items) == 1 {
 			item := dns.Items[0]
-			state.IPv6DNSPlan, err = ipv6.InspectIPv6DNS(ctx, desired, DNSCheck{ID: item.ID, Network: item.Network, Gateway: desired.ProxyGateway, DNS: item.DesiredDNS}, rosDriver.Client)
+			state.IPv6DNSPlan, err = ipv6.InspectIPv6DNS(ctx, desired, device.DNSCheck{ID: item.ID, Network: item.Network, Gateway: desired.ProxyGateway, DNS: item.DesiredDNS}, rosDriver.Client)
 			if err != nil {
 				return nil, err
 			}
@@ -212,7 +212,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	}
 	if ipv6.IPv6PDGuardRelevant(r) {
 		if !isROS {
-			return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, StageIPv6PDGuard))
+			return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, device.StageIPv6PDGuard))
 		}
 		state.IPv6PDGuardPlan, err = ipv6.InspectIPv6PDGuard(ctx, r, host, rosDriver.Client)
 		if err != nil {
@@ -224,7 +224,7 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 		return nil, err
 	}
 	if isROS {
-		report.Routes.ForwardHint, err = ipv6.ForwardHint(ctx, r, desired, ForwardInputs{Guard: state.DNSGuard, NAT: state.NatContext, Policy: state.ROSPolicy, PolicyPlan: state.ROSPolicyPlan}, report.Routes, rosDriver.Client)
+		report.Routes.ForwardHint, err = ipv6.ForwardHint(ctx, r, desired, ipv6.ForwardInputs{Guard: state.DNSGuard, NAT: state.NatContext, Policy: state.ROSPolicy, PolicyPlan: state.ROSPolicyPlan}, report.Routes, rosDriver.Client)
 		if err != nil {
 			return nil, err
 		}
@@ -247,16 +247,16 @@ func Inspect(ctx context.Context, req InspectRequest) (*Inspection, error) {
 	}
 	return &Inspection{gateway, desired, state, report}, nil
 }
-func inspectionDNS(ctx context.Context, source AgentSource, id string) (DNSSettings, error) {
+func inspectionDNS(ctx context.Context, source AgentSource, id string) (device.DNSSettings, error) {
 	if id == "" {
 		return device.DNSAgentSettings(id, nil), nil
 	}
 	if source == nil {
-		return DNSSettings{}, device.ErrNotPorted
+		return device.DNSSettings{}, device.ErrNotPorted
 	}
 	a, err := source.Agent(ctx, id)
 	if err != nil {
-		return DNSSettings{}, err
+		return device.DNSSettings{}, err
 	}
 	if a == nil {
 		return device.DNSAgentSettings(id, nil), nil
@@ -265,18 +265,18 @@ func inspectionDNS(ctx context.Context, source AgentSource, id string) (DNSSetti
 	if dns == nil {
 		b, e := json.Marshal(a.Agent)
 		if e != nil {
-			return DNSSettings{}, e
+			return device.DNSSettings{}, e
 		}
 		if e = jsondecode.Unmarshal(b, &dns); e != nil {
-			return DNSSettings{}, e
+			return device.DNSSettings{}, e
 		}
 	}
 	if dns.HA != nil && dns.HA.Enabled {
 		peer, e := source.Agent(ctx, dns.HA.PeerID)
 		if e != nil {
-			return DNSSettings{}, e
+			return device.DNSSettings{}, e
 		}
-		var view *DNSAgent
+		var view *device.DNSAgent
 		if peer != nil {
 			view = peer.DNS
 		}
@@ -284,7 +284,7 @@ func inspectionDNS(ctx context.Context, source AgentSource, id string) (DNSSetti
 	}
 	return device.DNSAgentSettings(id, dns), nil
 }
-func inspectIPv6Host(ctx context.Context, profileID string, config json.RawMessage, a *GatewayAgent) IPv6Host {
+func inspectIPv6Host(ctx context.Context, profileID string, config json.RawMessage, a *GatewayAgent) ipv6.IPv6Host {
 	var cfg struct {
 		ProfileID string `json:"profile_id"`
 	}
@@ -293,14 +293,14 @@ func inspectIPv6Host(ctx context.Context, profileID string, config json.RawMessa
 		profileID = cfg.ProfileID
 	}
 	if a == nil || a.Agent == nil || a.ProfileID != profileID {
-		return IPv6Host{Error: messageIPv6ForeignGateway}
+		return ipv6.IPv6Host{Error: messageIPv6ForeignGateway}
 	}
 	if a.ServiceType != "mihomo" || (a.Enabled != nil && !*a.Enabled) {
-		return IPv6Host{Error: messageIPv6InvalidGateway}
+		return ipv6.IPv6Host{Error: messageIPv6InvalidGateway}
 	}
 	h, err := IPv6HostRequest(ctx, a)
 	if err != nil {
-		return IPv6Host{Error: releaseErrorText(err)}
+		return ipv6.IPv6Host{Error: releaseErrorText(err)}
 	}
 	return h
 }
@@ -324,7 +324,7 @@ func returnStatus(ctx context.Context, source AgentSource, a *GatewayAgent) *Ret
 	s.Status = "ok"
 	return s
 }
-func returnCleanup(ctx context.Context, req InspectRequest, r *Router, a *GatewayAgent) (*ReturnCleanup, error) {
+func returnCleanup(ctx context.Context, req InspectRequest, r *spec.Router, a *GatewayAgent) (*ReturnCleanup, error) {
 	if a == nil || a.Agent == nil || a.Status != "online" || a.Host == "" || a.Port == 0 {
 		return nil, nil
 	}
@@ -357,7 +357,7 @@ func returnCleanup(ctx context.Context, req InspectRequest, r *Router, a *Gatewa
 	}
 	return &ReturnCleanup{Spec: s.Managed.Spec, SharedWith: shared, Complete: s.Managed.TablePresent, Safety: s.Safety}, nil
 }
-func dnsGuardSettings(r *Router) DNSGuard {
+func dnsGuardSettings(r *spec.Router) spec.DNSGuard {
 	if r.DNSGuard == nil {
 		return spec.DefaultDNSGuard()
 	}

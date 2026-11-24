@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/oplock"
 	"configflow/internal/routers/ros"
 	"context"
@@ -238,8 +239,8 @@ func TestO36bConcurrentPublicationsShareJobLock(t *testing.T) {
 	for range rivals {
 		select {
 		case err := <-errorsOut:
-			failure, ok := errors.AsType[*RouterError](err)
-			if !ok || failure.Kind != KindConflict {
+			failure, ok := errors.AsType[*device.RouterError](err)
+			if !ok || failure.Kind != device.KindConflict {
 				t.Fatal("concurrent publisher acquired a live device", err)
 			}
 		case <-time.After(10 * time.Second):

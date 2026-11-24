@@ -15,6 +15,8 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/spec"
 	"configflow/internal/rulesource"
 	"configflow/internal/setup"
 )
@@ -25,7 +27,7 @@ func wireRuleSource(rs *rulesource.Service) {
 	if rs == nil {
 		rs = rulesource.Default()
 	}
-	routers.RulesetContent = func(ctx context.Context, profile json.RawMessage, item routers.RuleSet, library *routers.LibraryRule) (string, error) {
+	routers.RulesetContent = func(ctx context.Context, profile json.RawMessage, item spec.RuleSet, library *spec.LibraryRule) (string, error) {
 		var libRaw json.RawMessage
 		if library != nil {
 			libRaw = library.Raw
@@ -40,7 +42,7 @@ func wireSetupContentWith(rs *rulesource.Service) {
 	if rs == nil {
 		rs = rulesource.Default()
 	}
-	setup.RegisterExternalOwners(setup.ExternalOwners{ReadRouteContent: func(ctx context.Context, config json.RawMessage, item routers.RuleSet, library *routers.LibraryRule, options setup.RouteReadOptions) (string, error) {
+	setup.RegisterExternalOwners(setup.ExternalOwners{ReadRouteContent: func(ctx context.Context, config json.RawMessage, item spec.RuleSet, library *spec.LibraryRule, options setup.RouteReadOptions) (string, error) {
 		var raw json.RawMessage
 		if library != nil {
 			raw = library.Raw
@@ -133,7 +135,7 @@ func wireSetupRouter() {
 // verifySetupRouter inspects one router of the setup profile without writing to
 // the device or the Agents. Device and plan failures (*routers.RouterError)
 // become the wizard's 502 with the router's own message, as on the router page.
-func verifySetupRouter(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *routers.Router) (setup.RouterVerification, error) {
+func verifySetupRouter(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *spec.Router) (setup.RouterVerification, error) {
 	m, err := agents.Get(repo.WithRepository(ctx, r))
 	if err != nil {
 		return setup.RouterVerification{}, err
@@ -160,8 +162,8 @@ func verifySetupRouter(ctx context.Context, r *repo.Repository, profileID string
 // routerFailure maps the router owner's public errors to wizard statuses and
 // keeps every other error (storage, cancellation) on the internal path.
 func routerFailure(err error) error {
-	var re *routers.RouterError
-	var invalid *routers.ValidationError
+	var re *device.RouterError
+	var invalid *device.ValidationError
 	switch {
 	case errors.As(err, &invalid):
 		return &setup.Error{Message: err.Error(), Status: 400, Cause: err}

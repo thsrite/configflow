@@ -15,7 +15,7 @@ import (
 
 func TestX1RouterDecodeFallsBackPerMember(t *testing.T) {
 	data := []byte(`{"id":"synthetic","name":"kept","type":"routeros","endpoint":"http://192.0.2.1","rule_sync_interval":"sixty","verify_tls":"no","ip_rule_sets":[1],"dns_guard":{"enabled":"yes"},"proxy_gateway_agent_id":"gateway","future":{"keep":true}}`)
-	var r Router
+	var r spec.Router
 	if e := json.Unmarshal(data, &r); e != nil {
 		t.Fatal("malformed member failed the record:", e)
 	}
@@ -96,7 +96,7 @@ func TestX1ReturnCleanupWithMalformedProfile(t *testing.T) {
 	other := r10Router()
 	other.Name = "synthetic other owner"
 	other.ProxyGatewayAgentID = "gateway"
-	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", device.JSON(map[string]any{"routers": map[string]any{"items": []*Router{other}}}), nil); e != nil {
+	if _, _, e := db.SaveProfileFieldsJSON(t.Context(), "other", device.JSON(map[string]any{"routers": map[string]any{"items": []*spec.Router{other}}}), nil); e != nil {
 		t.Fatal(e)
 	}
 	if _, e := db.CreateProfileRecord(t.Context(), repo.ProfileCreation{ID: "legacy", Name: "Synthetic legacy"}, ""); e != nil {

@@ -82,12 +82,12 @@ func TestO36bLegacyWriteRuntimeBoundary(t *testing.T) {
 					case "apply", "restore":
 						_, err = driver.Apply(request, op)
 					case "edit":
-						_, err = driver.(RouteEditor).MutateRoute(request, "add", nil, tc.Values)
+						_, err = driver.(routeedit.RouteEditor).MutateRoute(request, "add", nil, tc.Values)
 					case "plan", "empty-plan":
-						plan := &RoutePlan{Action: "add", Values: tc.Values, Empty: operation == "empty-plan"}
+						plan := &routeedit.RoutePlan{Action: "add", Values: tc.Values, Empty: operation == "empty-plan"}
 						_, err = routeedit.ExecuteRoutePlan(request, driver, nil, plan)
 					case "write":
-						_, err = driver.(*Ikuai).Write(request, "static_rt", "del", Row{"id": "1"}, 0)
+						_, err = driver.(*Ikuai).Write(request, "static_rt", "del", ros.Row{"id": "1"}, 0)
 					case "batch":
 						err = driver.(*Ikuai).Batch(request, true, func(context.Context) error { callback = true; return nil })
 					}
@@ -180,7 +180,7 @@ func TestO36bPolicyRestoreCommitRuntimeBoundary(t *testing.T) {
 				}
 			}})
 			before, _ := json.Marshal(fake.Snapshot().Tables)
-			err := rospolicy.RestoreROSPolicy(request, d.Client, ROSPolicyUndo{Kind: "ros_policy_restore", Previous: json.RawMessage(`null`)})
+			err := rospolicy.RestoreROSPolicy(request, d.Client, rospolicy.ROSPolicyUndo{Kind: "ros_policy_restore", Previous: json.RawMessage(`null`)})
 			after, _ := json.Marshal(fake.Snapshot().Tables)
 			if !stopped || !bytes.Equal(before, after) {
 				t.Fatal("fixture did not hit manifest-only restore", stopped)

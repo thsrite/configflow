@@ -1,6 +1,10 @@
 package routers
 
 import (
+	"configflow/internal/routers/dnsguard"
+	"configflow/internal/routers/ipv6"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -13,20 +17,20 @@ import (
 // RouterState preserves the exact legacy JSON member order when dns_guard,
 // ros_policy, device facts, and nat_context are all populated.
 func TestRouterStateJSONFieldOrder(t *testing.T) {
-	guard := DNSGuardSnapshot{"/ip/firewall/nat": {Row{".id": "*1"}}}
-	policy := ROSPolicySnapshot{"/routing/table": {Row{".id": "*2"}}}
+	guard := dnsguard.Snapshot{"/ip/firewall/nat": {ros.Row{".id": "*1"}}}
+	policy := rospolicy.ROSPolicySnapshot{"/routing/table": {ros.Row{".id": "*2"}}}
 	state := &RouterState{
 		DNSGuard:  &guard,
 		ROSPolicy: &policy,
 		State: device.State{
-			Routes:              []*RouteEntry{},
-			NatBypass:           []*NatBypassEntry{},
+			Routes:              []*device.RouteEntry{},
+			NatBypass:           []*device.NatBypassEntry{},
 			AddressSets:         map[string][]string{},
-			PolicyRoutes:        []*PolicyRouteEntry{},
-			RetiredPolicyRoutes: []*PolicyRouteEntry{},
-			ActiveRoutes:        []*RouteEntry{},
+			PolicyRoutes:        []*device.PolicyRouteEntry{},
+			RetiredPolicyRoutes: []*device.PolicyRouteEntry{},
+			ActiveRoutes:        []*device.RouteEntry{},
 		},
-		NatContext: &NatContext{Routes: []Row{}, Rules: []Row{}},
+		NatContext: &ros.NatContext{Routes: []ros.Row{}, Rules: []ros.Row{}},
 	}
 	raw, err := json.Marshal(state)
 	if err != nil {
@@ -61,27 +65,27 @@ func TestRouterStateJSONFieldOrder(t *testing.T) {
 // TestBuildReportSectionOrder verifies that removing ReportParts/init keeps
 // the exact fixed section order: dns_guard, policy_routing, ipv6_*.
 func TestBuildReportSectionOrder(t *testing.T) {
-	desired := &Desired{
+	desired := &spec.Desired{
 		ProxyGateway: "192.0.2.2",
-		ProxyCIDRs:   []ProxyCIDR{},
-		IPv6CIDRs:    []ProxyCIDR{},
-		DNSGuard:     &DesiredDNSGuard{Settings: spec.DefaultDNSGuard()},
-		ROSPolicy:    &ROSPolicyDesired{Selected: []string{}, Sources: []string{}, CIDRs: []ProxyCIDR{}},
+		ProxyCIDRs:   []spec.ProxyCIDR{},
+		IPv6CIDRs:    []spec.ProxyCIDR{},
+		DNSGuard:     &spec.DesiredDNSGuard{Settings: spec.DefaultDNSGuard()},
+		ROSPolicy:    &spec.ROSPolicyDesired{Selected: []string{}, Sources: []string{}, CIDRs: []spec.ProxyCIDR{}},
 	}
-	guard := DNSGuardSnapshot{}
-	policy := ROSPolicySnapshot{}
+	guard := dnsguard.Snapshot{}
+	policy := rospolicy.ROSPolicySnapshot{}
 	state := &RouterState{
 		DNSGuard:  &guard,
 		ROSPolicy: &policy,
 		State: device.State{
-			Routes:      []*RouteEntry{},
-			NatBypass:   []*NatBypassEntry{},
+			Routes:      []*device.RouteEntry{},
+			NatBypass:   []*device.NatBypassEntry{},
 			AddressSets: map[string][]string{},
 		},
-		IPv6FakeIPPlan:  &IPv6FakeIPPlan{IPv6FakeIPReport: IPv6FakeIPReport{Status: "disabled"}},
-		IPv6RoutesPlan:  &IPv6RoutesPlan{IPv6RoutesReport: IPv6RoutesReport{Status: "disabled"}},
-		IPv6DNSPlan:     &IPv6DNSPlan{IPv6DNSReport: IPv6DNSReport{Status: "disabled"}},
-		IPv6PDGuardPlan: &IPv6PDGuardPlan{IPv6PDGuardReport: IPv6PDGuardReport{Status: "disabled"}},
+		IPv6FakeIPPlan:  &ipv6.IPv6FakeIPPlan{IPv6FakeIPReport: ipv6.IPv6FakeIPReport{Status: "disabled"}},
+		IPv6RoutesPlan:  &ipv6.IPv6RoutesPlan{IPv6RoutesReport: ipv6.IPv6RoutesReport{Status: "disabled"}},
+		IPv6DNSPlan:     &ipv6.IPv6DNSPlan{IPv6DNSReport: ipv6.IPv6DNSReport{Status: "disabled"}},
+		IPv6PDGuardPlan: &ipv6.IPv6PDGuardPlan{IPv6PDGuardReport: ipv6.IPv6PDGuardReport{Status: "disabled"}},
 	}
 	report, err := BuildReport(desired, state)
 	if err != nil {

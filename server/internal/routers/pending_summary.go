@@ -3,6 +3,8 @@ package routers
 import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
+	"configflow/internal/routers/ipv6"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -39,10 +41,10 @@ type pendingSection struct {
 type pendingReport struct {
 	InSync bool `json:"in_sync"`
 	Routes struct {
-		Items []RouteItem `json:"items"`
+		Items []device.RouteItem `json:"items"`
 	} `json:"routes"`
 	NAT struct {
-		Items []NatItem `json:"items"`
+		Items []device.NatItem `json:"items"`
 	} `json:"nat_bypass"`
 	Fake       *pendingSection `json:"ipv6_fakeip"`
 	IPv6Routes *pendingSection `json:"ipv6_routes"`
@@ -73,25 +75,25 @@ func pendingProjection(r *Report, p *Plan) (pendingReport, pendingPlan) {
 		report.NAT.Items = r.NatBypass.Items
 		for _, part := range r.Parts {
 			switch v := part.Section.(type) {
-			case IPv6FakeIPReport:
+			case ipv6.IPv6FakeIPReport:
 				report.Fake = &pendingSection{Enabled: pointer(v.Enabled), Status: v.Status, Blockers: v.Blockers}
-			case IPv6RoutesReport:
+			case ipv6.IPv6RoutesReport:
 				report.IPv6Routes = &pendingSection{Enabled: pointer(v.Enabled), Status: v.Status, Skip: v.Skip}
 				for _, i := range v.Items {
 					report.IPv6Routes.Items = append(report.IPv6Routes.Items, struct {
 						Status string `json:"status"`
 					}{i.Status})
 				}
-			case IPv6DNSReport:
+			case ipv6.IPv6DNSReport:
 				report.DNS = &pendingSection{Enabled: pointer(v.Enabled), Status: v.Status, Blockers: v.Blockers}
-			case IPv6PDGuardReport:
+			case ipv6.IPv6PDGuardReport:
 				report.PD = &pendingSection{Enabled: pointer(v.Enabled), Status: v.Status, Blockers: v.Blockers}
 				for _, i := range v.Items {
 					report.PD.Items = append(report.PD.Items, struct {
 						Status string `json:"status"`
 					}{i.Status})
 				}
-			case DNSGuardReport:
+			case dnsguard.Report:
 				report.Guard = &pendingSection{Enabled: pointer(v.Enabled), Status: v.Status, Blockers: v.Blockers}
 			}
 		}
@@ -214,24 +216,24 @@ func pendingBlockedReasons(r pendingReport) []string {
 func pendingStageWord(s pendingStage, r pendingReport) string {
 	var section *pendingSection
 	switch s.Key {
-	case StageIPv6FakeIP:
+	case device.StageIPv6FakeIP:
 		section = r.Fake
-	case StageIPv6Routes:
+	case device.StageIPv6Routes:
 		section = r.IPv6Routes
-	case StageDNSGuard:
+	case device.StageDNSGuard:
 		section = r.Guard
-	case StageIPv6PDGuard:
+	case device.StageIPv6PDGuard:
 		section = r.PD
 	}
 	if section != nil && section.Enabled != nil && !*section.Enabled {
 		return messagePendingWithdraw
 	}
-	if s.Key == StageIPv6FakeIP && section != nil {
+	if s.Key == device.StageIPv6FakeIP && section != nil {
 		if word := pendingSectionWords[section.Status]; word != "" {
 			return word
 		}
 	}
-	if s.Key == StageIPv6Routes || s.Key == StageIPv6PDGuard {
+	if s.Key == device.StageIPv6Routes || s.Key == device.StageIPv6PDGuard {
 		statuses := []string{}
 		if section != nil {
 			for _, item := range section.Items {
@@ -241,20 +243,20 @@ func pendingStageWord(s pendingStage, r pendingReport) string {
 			}
 		}
 		if slices.Equal(statuses, []string{"missing"}) {
-			if s.Key == StageIPv6PDGuard {
+			if s.Key == device.StageIPv6PDGuard {
 				return messagePendingInstall
 			}
 			return messagePendingAdd
 		}
-		if s.Key == StageIPv6PDGuard && slices.Equal(statuses, []string{"adopt"}) {
+		if s.Key == device.StageIPv6PDGuard && slices.Equal(statuses, []string{"adopt"}) {
 			return messagePendingAdopt
 		}
 		return messagePendingUpdate
 	}
-	if s.Key == StageIPv6DNS {
+	if s.Key == device.StageIPv6DNS {
 		return messagePendingClose
 	}
-	if s.Key == StageReturnCleanup {
+	if s.Key == device.StageReturnCleanup {
 		return messagePendingRemove
 	}
 	kinds := []string{}

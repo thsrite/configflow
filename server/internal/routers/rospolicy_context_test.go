@@ -16,7 +16,7 @@ func TestROSPolicyDesiredPassesContextToDefaultContentLoader(t *testing.T) {
 	previous := spec.RulesetContent
 	t.Cleanup(func() { spec.RulesetContent = previous })
 	calls := 0
-	spec.RulesetContent = func(received context.Context, _ json.RawMessage, item RuleSet, _ *LibraryRule) (string, error) {
+	spec.RulesetContent = func(received context.Context, _ json.RawMessage, item spec.RuleSet, _ *spec.LibraryRule) (string, error) {
 		calls++
 		if received != ctx || received.Value(contextKey{}) != "request-scope" {
 			t.Fatal("policy inspection lost the caller's context")
@@ -32,8 +32,8 @@ func TestROSPolicyDesiredPassesContextToDefaultContentLoader(t *testing.T) {
 		return "IP-CIDR,198.51.100.0/24,no-resolve\n", nil
 	}
 	config := json.RawMessage(`{"rule_configs":[{"id":"selected","itemType":"ruleset","name":"Synthetic","behavior":"classical","policy":"PROXY","enabled":true}]}`)
-	router := &Router{RouterSettings: RouterSettings{ID: "synthetic-router", RosPolicyRuleSets: []string{"selected"}}}
-	out, err := rospolicy.InspectROSPolicyDesired(ctx, config, router, &Desired{ProxyGateway: "192.0.2.1"}, nil)
+	router := &spec.Router{RouterSettings: spec.RouterSettings{ID: "synthetic-router", RosPolicyRuleSets: []string{"selected"}}}
+	out, err := rospolicy.InspectROSPolicyDesired(ctx, config, router, &spec.Desired{ProxyGateway: "192.0.2.1"}, nil)
 	if err != nil || out == nil || calls != 1 {
 		t.Fatalf("context-aware inspection: %+v, calls=%d, err=%v", out, calls, err)
 	}

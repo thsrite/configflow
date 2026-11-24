@@ -35,7 +35,7 @@ func pendingSummary(report *notifications.RouterReport, plan json.RawMessage) (*
 	}
 	return &result, nil
 }
-func recordPendingNotice(ctx context.Context, db *repo.Repository, profileID string, config json.RawMessage, r *Router, report *Report, plan *Plan) {
+func recordPendingNotice(ctx context.Context, db *repo.Repository, profileID string, config json.RawMessage, r *spec.Router, report *Report, plan *Plan) {
 	work := lifecycle.Detach(repo.WithRepository(ctx, db))
 	if work.Err() != nil {
 		return

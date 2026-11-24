@@ -14,6 +14,7 @@ import (
 	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
 	"encoding/json"
 	"net/netip"
 	"slices"
@@ -24,15 +25,15 @@ import (
 
 // Report is the drift report.
 type Report struct {
-	ReturnRouting *ReturnStatus  `json:"return_routing,omitempty"`
-	Desired       *Desired       `json:"desired"`
-	Routes        RoutesReport   `json:"routes"`
-	NatBypass     NatReport      `json:"nat_bypass"`
-	DhcpDNS       DNSReport      `json:"dhcp_dns"`
-	Summary       map[string]int `json:"summary"`
-	InSync        bool           `json:"in_sync"`
-	IkuaiGroups   *GroupReport   `json:"ikuai_groups,omitempty"`
-	Parts         []ReportPart   `json:"-"`
+	ReturnRouting *ReturnStatus       `json:"return_routing,omitempty"`
+	Desired       *spec.Desired       `json:"desired"`
+	Routes        device.RoutesReport `json:"routes"`
+	NatBypass     device.NatReport    `json:"nat_bypass"`
+	DhcpDNS       device.DNSReport    `json:"dhcp_dns"`
+	Summary       map[string]int      `json:"summary"`
+	InSync        bool                `json:"in_sync"`
+	IkuaiGroups   *ikuai.GroupReport  `json:"ikuai_groups,omitempty"`
+	Parts         []device.ReportPart `json:"-"`
 }
 
 // MarshalJSON adds the later modules' sections under their keys.
@@ -67,7 +68,7 @@ func gatewayOrUnknown(gateway string) string {
 	return gateway
 }
 
-func desiredCIDRs(desired *Desired) map[string]bool {
+func desiredCIDRs(desired *spec.Desired) map[string]bool {
 	set := map[string]bool{}
 	for _, e := range desired.ProxyCIDRs {
 		set[e.CIDR] = true
@@ -75,7 +76,7 @@ func desiredCIDRs(desired *Desired) map[string]bool {
 	return set
 }
 
-func routeIDs(routes []*RouteEntry) []string {
+func routeIDs(routes []*device.RouteEntry) []string {
 	ids := make([]string, len(routes))
 	for i, r := range routes {
 		ids[i] = r.ID
@@ -86,29 +87,29 @@ func routeIDs(routes []*RouteEntry) []string {
 // policyRouteItems: proxy CIDRs routed by a policy rule that excludes the
 // gateway as a source. Every enabled static route to the gateway loops and is
 // migrated into a policy rule (hand-made ones into cf-mihomo-manual).
-func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
+func policyRouteItems(desired *spec.Desired, state *RouterState) device.RoutesReport {
 	gateway := desired.ProxyGateway
 	wanted := desiredCIDRs(desired)
-	auto := device.PolicyRoute(state.PolicyRoutes, PolicyAutoComment)
+	auto := device.PolicyRoute(state.PolicyRoutes, device.PolicyAutoComment)
 	var covered []netip.Prefix
 	if auto != nil && device.PolicyRouteOK(auto, gateway) {
 		covered = device.Networks(auto.Dst)
 	}
 	coverage := device.NewSupernetIndex(covered)
 	// A disabled static route forwards nothing: the policy rule decides.
-	enabledByDst := map[string][]*RouteEntry{}
+	enabledByDst := map[string][]*device.RouteEntry{}
 	for _, r := range state.Routes {
 		if r.Enabled {
 			enabledByDst[r.Dst] = append(enabledByDst[r.Dst], r)
 		}
 	}
-	out := RoutesReport{Items: []RouteItem{}, Extra: []ExtraRoute{}, UnmanagedOther: []UnmanagedRoute{}, Mode: "policy",
-		Policy: &PolicyRules{Auto: auto, Manual: device.PolicyRoute(state.PolicyRoutes, PolicyManualComment)}}
+	out := device.RoutesReport{Items: []device.RouteItem{}, Extra: []device.ExtraRoute{}, UnmanagedOther: []device.UnmanagedRoute{}, Mode: "policy",
+		Policy: &device.PolicyRules{Auto: auto, Manual: device.PolicyRoute(state.PolicyRoutes, device.PolicyManualComment)}}
 	for _, entry := range desired.ProxyCIDRs {
 		matches := enabledByDst[entry.CIDR]
-		item := RouteItem{CIDR: entry.CIDR, Sources: entry.Sources, Status: "missing", RouteIDs: routeIDs(matches)}
+		item := device.RouteItem{CIDR: entry.CIDR, Sources: entry.Sources, Status: "missing", RouteIDs: routeIDs(matches)}
 		target, _ := netipx.ParseNetwork4(entry.CIDR, true)
-		if bad := slices.IndexFunc(matches, func(r *RouteEntry) bool { return gateway == "" || r.Gateway != gateway }); bad >= 0 {
+		if bad := slices.IndexFunc(matches, func(r *device.RouteEntry) bool { return gateway == "" || r.Gateway != gateway }); bad >= 0 {
 			item.Status, item.Detail = "conflict", "同网段路由下一跳为 "+matches[bad].Gateway+"，期望下一跳 "+gatewayOrUnknown(gateway)
 		} else if len(matches) > 0 {
 			item.Status, item.Detail = "adoptable", "静态路由会让 mihomo 自身的流量回环，将迁移为排除 mihomo 的策略路由"
@@ -119,7 +120,7 @@ func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
 	}
 	for _, r := range state.Routes {
 		if device.IsManaged(r.Comment) && !wanted[r.Dst] {
-			out.Extra = append(out.Extra, ExtraRoute{CIDR: r.Dst, Gateway: r.Gateway, RouteID: r.ID, Comment: r.Comment})
+			out.Extra = append(out.Extra, device.ExtraRoute{CIDR: r.Dst, Gateway: r.Gateway, RouteID: r.ID, Comment: r.Comment})
 		}
 	}
 	if auto != nil {
@@ -130,28 +131,28 @@ func policyRouteItems(desired *Desired, state *RouterState) RoutesReport {
 		}
 		for _, cidr := range auto.Dst {
 			if !canon[ikuai.CanonAddress(cidr)] {
-				out.Extra = append(out.Extra, ExtraRoute{CIDR: cidr, Gateway: auto.Gateway, RouteID: "policy:" + auto.ID, Comment: auto.Comment})
+				out.Extra = append(out.Extra, device.ExtraRoute{CIDR: cidr, Gateway: auto.Gateway, RouteID: "policy:" + auto.ID, Comment: auto.Comment})
 			}
 		}
 	}
 	for _, r := range state.Routes {
 		if gateway != "" && r.Gateway == gateway && !device.IsManaged(r.Comment) && !wanted[r.Dst] {
-			out.UnmanagedOther = append(out.UnmanagedOther, UnmanagedRoute{CIDR: r.Dst, Gateway: r.Gateway, Comment: r.Comment, Enabled: r.Enabled, Migrate: new(r.Enabled)})
+			out.UnmanagedOther = append(out.UnmanagedOther, device.UnmanagedRoute{CIDR: r.Dst, Gateway: r.Gateway, Comment: r.Comment, Enabled: r.Enabled, Migrate: new(r.Enabled)})
 		}
 	}
 	return out
 }
 
-func routeItems(desired *Desired, state *RouterState) RoutesReport {
+func routeItems(desired *spec.Desired, state *RouterState) device.RoutesReport {
 	if state.PolicyRoutes != nil {
 		return policyRouteItems(desired, state)
 	}
 	gateway := desired.ProxyGateway
 	wanted := desiredCIDRs(desired)
-	out := RoutesReport{Items: []RouteItem{}, Extra: []ExtraRoute{}, UnmanagedOther: []UnmanagedRoute{}}
+	out := device.RoutesReport{Items: []device.RouteItem{}, Extra: []device.ExtraRoute{}, UnmanagedOther: []device.UnmanagedRoute{}}
 	required := map[string]bool{}
 	index := device.NewStaticRouteIndex(state.Routes)
-	exact := map[string][]*RouteEntry{}
+	exact := map[string][]*device.RouteEntry{}
 	for _, r := range state.Routes {
 		if r.Table == "main" {
 			exact[r.Dst] = append(exact[r.Dst], r)
@@ -164,9 +165,9 @@ func routeItems(desired *Desired, state *RouterState) RoutesReport {
 		for _, r := range good {
 			required[r.ID] = true
 		}
-		item := RouteItem{CIDR: entry.CIDR, Sources: entry.Sources, Status: "missing", RouteIDs: routeIDs(matches)}
+		item := device.RouteItem{CIDR: entry.CIDR, Sources: entry.Sources, Status: "missing", RouteIDs: routeIDs(matches)}
 		switch {
-		case len(good) > 0 && !slices.ContainsFunc(good, func(r *RouteEntry) bool { return !device.IsManaged(r.Comment) }):
+		case len(good) > 0 && !slices.ContainsFunc(good, func(r *device.RouteEntry) bool { return !device.IsManaged(r.Comment) }):
 			item.Status = "synced"
 		case len(good) > 0:
 			item.Status, item.Detail = "adoptable", "已有手工路由提供完整有效覆盖，将直接接管"
@@ -175,7 +176,7 @@ func routeItems(desired *Desired, state *RouterState) RoutesReport {
 			if !matches[0].Enabled {
 				reason = "已停用"
 			}
-			if slices.ContainsFunc(matches, func(r *RouteEntry) bool { return r.Enabled && r.Gateway == gateway }) {
+			if slices.ContainsFunc(matches, func(r *device.RouteEntry) bool { return r.Enabled && r.Gateway == gateway }) {
 				reason = "未成为有效主路由，或存在可优先/等价转发到其他下一跳的路由"
 			}
 			item.Status, item.Detail = "conflict", "同网段路由"+reason+"，期望下一跳 "+gatewayOrUnknown(gateway)
@@ -188,33 +189,33 @@ func routeItems(desired *Desired, state *RouterState) RoutesReport {
 		// Policy ownership is established by its manifest, not its name.
 		if r.Table == "main" && device.IsManaged(r.Comment) && !wanted[r.Dst] && !required[r.ID] &&
 			!strings.HasPrefix(r.Comment, "cf-ros-policy-") {
-			out.Extra = append(out.Extra, ExtraRoute{CIDR: r.Dst, Gateway: r.Gateway, RouteID: r.ID, Comment: r.Comment})
+			out.Extra = append(out.Extra, device.ExtraRoute{CIDR: r.Dst, Gateway: r.Gateway, RouteID: r.ID, Comment: r.Comment})
 		}
 	}
 	// Hand-made routes to the gateway ConfigFlow does not derive (e.g. public
 	// DNS routed for TUN DNS hijack) are informational, never touched.
 	for _, r := range state.Routes {
 		if r.Table == "main" && gateway != "" && r.Gateway == gateway && !device.IsManaged(r.Comment) && !wanted[r.Dst] {
-			out.UnmanagedOther = append(out.UnmanagedOther, UnmanagedRoute{CIDR: r.Dst, Gateway: r.Gateway, Comment: r.Comment, Enabled: r.Enabled})
+			out.UnmanagedOther = append(out.UnmanagedOther, device.UnmanagedRoute{CIDR: r.Dst, Gateway: r.Gateway, Comment: r.Comment, Enabled: r.Enabled})
 		}
 	}
 	return out
 }
 
-func natItems(desired *Desired, state *RouterState) NatReport {
-	var rules []*NatBypassEntry
-	out := NatReport{Items: []NatItem{}, DisabledRules: []DisabledNat{}}
+func natItems(desired *spec.Desired, state *RouterState) device.NatReport {
+	var rules []*device.NatBypassEntry
+	out := device.NatReport{Items: []device.NatItem{}, DisabledRules: []device.DisabledNat{}}
 	for _, r := range state.NatBypass {
 		if r.Enabled {
 			rules = append(rules, r)
 		} else {
-			out.DisabledRules = append(out.DisabledRules, DisabledNat{RuleID: r.ID, Comment: r.Comment, Dst: r.Dst})
+			out.DisabledRules = append(out.DisabledRules, device.DisabledNat{RuleID: r.ID, Comment: r.Comment, Dst: r.Dst})
 		}
 	}
 	routeIndex := ros.NewRouteEgressIndex(state.NatContext)
-	var cover *SupernetIndex
+	var cover *device.SupernetIndex
 	for _, entry := range desired.ProxyCIDRs {
-		item := NatItem{CIDR: entry.CIDR, RuleIDs: []string{}}
+		item := device.NatItem{CIDR: entry.CIDR, RuleIDs: []string{}}
 		if state.NatContext != nil {
 			a := ros.AssessBypass(entry.CIDR, desired.ProxyGateway, &state.State, state.NatContext, routeIndex)
 			item.Status, item.Detail, item.RuleIDs = a.Status, a.Detail, a.RuleIDs
@@ -228,7 +229,7 @@ func natItems(desired *Desired, state *RouterState) NatReport {
 				cover.Add(device.Networks(rule.Dst), position)
 			}
 		}
-		var covering []*NatBypassEntry
+		var covering []*device.NatBypassEntry
 		if target, ok := netipx.ParseNetwork4(entry.CIDR, true); ok {
 			for _, position := range cover.Owners(target) {
 				covering = append(covering, rules[position])
@@ -238,7 +239,7 @@ func natItems(desired *Desired, state *RouterState) NatReport {
 			item.RuleIDs = append(item.RuleIDs, r.ID)
 		}
 		switch {
-		case slices.ContainsFunc(covering, func(r *NatBypassEntry) bool { return device.IsManaged(r.Comment) }):
+		case slices.ContainsFunc(covering, func(r *device.NatBypassEntry) bool { return device.IsManaged(r.Comment) }):
 			item.Status = "synced"
 		case len(covering) > 0:
 			name := covering[0].Comment
@@ -256,9 +257,9 @@ func natItems(desired *Desired, state *RouterState) NatReport {
 
 // BuildReport compares desired with the router state, calling each feature's
 // report builder in fixed order (dns_guard, policy_routing, ipv6).
-func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
+func BuildReport(desired *spec.Desired, state *RouterState) (*Report, error) {
 	r := &Report{Desired: desired, Routes: routeItems(desired, state), Summary: map[string]int{}}
-	parts := []ReportPart{}
+	parts := []device.ReportPart{}
 	if desired.DNSGuard != nil {
 		p := dnsguard.Build(desired, state.DNSGuard, state.NatContext)
 		state.DNSGuardPlan = p
@@ -274,18 +275,18 @@ func BuildReport(desired *Desired, state *RouterState) (*Report, error) {
 	parts = append(parts, ipv6.ReportParts(state.IPv6FakeIPPlan, state.IPv6RoutesPlan, state.IPv6DNSPlan, state.IPv6PDGuardPlan)...)
 	r.Parts = parts
 	for _, part := range parts {
-		r.Routes.Extra = slices.DeleteFunc(r.Routes.Extra, func(e ExtraRoute) bool { return slices.Contains(part.RetireExtra, e.RouteID) })
+		r.Routes.Extra = slices.DeleteFunc(r.Routes.Extra, func(e device.ExtraRoute) bool { return slices.Contains(part.RetireExtra, e.RouteID) })
 	}
 	// Policy rules being withdrawn because the router routes by static routes again.
-	r.Routes.RetiredPolicy = []RetiredPolicyItem{}
+	r.Routes.RetiredPolicy = []device.RetiredPolicyItem{}
 	for _, entry := range state.RetiredPolicyRoutes {
 		for _, cidr := range entry.Dst {
 			r.Routes.RetiredPolicy = append(r.Routes.RetiredPolicy,
-				RetiredPolicyItem{CIDR: cidr, Gateway: entry.Gateway, Comment: entry.Comment, Restore: entry.Comment == PolicyManualComment})
+				device.RetiredPolicyItem{CIDR: cidr, Gateway: entry.Gateway, Comment: entry.Comment, Restore: entry.Comment == device.PolicyManualComment})
 		}
 	}
 	r.NatBypass = natItems(desired, state)
-	var dns DNSSettings
+	var dns device.DNSSettings
 	if desired.DNSSettings != nil {
 		dns = *desired.DNSSettings
 	}

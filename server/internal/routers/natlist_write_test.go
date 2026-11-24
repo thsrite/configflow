@@ -145,14 +145,14 @@ func runR07Boundary(t *testing.T, tc boundaryCase) {
 	if tc.action == "addresses" {
 		d := routers.NewRouterOS(srv.URL, "synthetic-user", "synthetic-password", false)
 		defer d.Close()
-		var entries []routers.Row
+		var entries []ros.Row
 		raw, _ := json.Marshal(tc.op["entries"])
 		_ = json.Unmarshal(raw, &entries)
-		ids := routers.ROSIDs{"/ip/firewall/address-list": map[string]bool{}}
+		ids := ros.ROSIDs{"/ip/firewall/address-list": map[string]bool{}}
 		for _, row := range tc.state.Tables["/ip/firewall/address-list"] {
 			ids["/ip/firewall/address-list"][fmt.Sprint(row[".id"])] = true
 		}
-		journal := []routers.NATStep{}
+		journal := []ros.NATStep{}
 		resources, err := d.CreateAddresses(context.Background(), entries, &journal, ids)
 		if err == nil {
 			goOut.Result = resources
@@ -264,7 +264,7 @@ func TestAddressWriteBoundary(t *testing.T) {
 				for i := 0; i < count; i++ {
 					addresses = append(addresses, fmt.Sprintf("198.18.%d.%d/32", i/256, i%256))
 				}
-				entries := ros.NATEntries(routers.NATDstList, addresses)
+				entries := ros.NATEntries(ros.NATDstList, addresses)
 				state := routerfake.State{Tables: map[string][]routerfake.Row{}}
 				switch failure {
 				case "partial":
@@ -274,7 +274,7 @@ func TestAddressWriteBoundary(t *testing.T) {
 				case "unreadable":
 					state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 2}, {Method: "POST", Path: "/execute", Count: 3}, {Method: "POST", Path: "/execute", Count: 4}}
 				case "unknown":
-					state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, ExtraRows: map[string][]routerfake.Row{"/ip/firewall/address-list": {{".id": "*F0001", "list": routers.NATDstList, "address": "203.0.113.9", "comment": "foreign", "disabled": "false"}}}}}
+					state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, ExtraRows: map[string][]routerfake.Row{"/ip/firewall/address-list": {{".id": "*F0001", "list": ros.NATDstList, "address": "203.0.113.9", "comment": "foreign", "disabled": "false"}}}}}
 				case "bad_marker":
 					state.Faults = []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 1, AfterCommit: true, Status: 200, Body: routerfake.Row{"ret": "cf-done:x:"}}}
 				}
@@ -292,7 +292,7 @@ func TestNATRestoreFaultBoundary(t *testing.T) {
 		mutation routerfake.ExternalWrite
 	}{
 		{"anchor_gone", routerfake.ExternalWrite{Fault: routerfake.Fault{RemoveIDs: map[string][]string{"/ip/firewall/nat": {"*3"}}}}},
-		{"foreign_reference", routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{"/ip/firewall/raw": {{".id": "*F1", "dst-address-list": routers.NATDstList, "chain": "prerouting", "action": "accept"}}}}}},
+		{"foreign_reference", routerfake.ExternalWrite{Fault: routerfake.Fault{ExtraRows: map[string][]routerfake.Row{"/ip/firewall/raw": {{".id": "*F1", "dst-address-list": ros.NATDstList, "chain": "prerouting", "action": "accept"}}}}}},
 		{"changed_member", routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{"/ip/firewall/address-list": {"*65": {"comment": "external"}}}}}},
 		{"lost_restore", routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "POST", Path: "/execute", Count: 2, LoseReply: true}}}},
 		{"partial_restore", routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "PUT", Path: "/ip/firewall/nat", Count: 3}}}},

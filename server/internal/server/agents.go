@@ -20,6 +20,7 @@ import (
 	"configflow/internal/model"
 	"configflow/internal/notifications"
 	"configflow/internal/routers"
+	rosipv6 "configflow/internal/routers/ipv6"
 	"configflow/internal/tasks"
 )
 
@@ -129,7 +130,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	// service injection (W9 routers, W10 api handlers). The monitor bridge
 	// dispatches through mon so mon's two-phase HA owner is the only one.
 	monitor.SetHARulesJSON(mon.PairRules)
-	routers.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (routers.IPv6Host, error) {
+	rosipv6.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (rosipv6.IPv6Host, error) {
 		if agent == nil {
 			return ip.Host(ctx, nil)
 		}
@@ -169,10 +170,10 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 
 func wireIPv6On(rt *lifecycle.Runtime) {
 	agentipv6.WireOn(rt, apiagents.ContentChecker)
-	routers.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (routers.IPv6Host, error) {
+	rosipv6.IPv6HostRequest = func(ctx context.Context, agent *routers.GatewayAgent) (rosipv6.IPv6Host, error) {
 		m, err := agents.Get(ctx)
 		if err != nil {
-			return routers.IPv6Host{}, err
+			return rosipv6.IPv6Host{}, err
 		}
 		if agent == nil {
 			return (&agentipv6.Service{Manager: m}).Host(ctx, nil)

@@ -34,7 +34,7 @@ func TestR08ReviewNATListRollbackKeepsMovedMember(t *testing.T) {
 	}
 	moved := ""
 	for _, row := range f.Snapshot().Tables[ros.PathAddresses] {
-		if row["list"] == NATDstList {
+		if row["list"] == ros.NATDstList {
 			moved, _ = row[".id"].(string)
 		}
 	}
@@ -84,15 +84,15 @@ func TestR08ReviewSubtractNetworksFamilies(t *testing.T) {
 
 // F3: prepare_static is present exactly when the planner set it, even empty.
 func TestR08ReviewPrepareStaticPresence(t *testing.T) {
-	base := ROSPolicyReplace{OpHead: OpHead{Kind: "ros_policy_replace", Summary: "s"}, Bundle: []ROSReplacement{}, Owned: []ROSResource{}, Migrations: []ROSResource{}, Replacements: []ROSReplacement{}, StaticChecks: []CIDRGateway{}}
+	base := rospolicy.ROSPolicyReplace{OpHead: device.OpHead{Kind: "ros_policy_replace", Summary: "s"}, Bundle: []rospolicy.ROSReplacement{}, Owned: []ros.Resource{}, Migrations: []ros.Resource{}, Replacements: []rospolicy.ROSReplacement{}, StaticChecks: []device.CIDRGateway{}}
 	tests := []struct {
 		name    string
-		prepare []Op
+		prepare []device.Op
 		want    string // raw prepare_static, "" = absent
 	}{
 		{"unset", nil, ""},
-		{"empty", []Op{}, `[]`},
-		{"typed op", []Op{&NATListSync{OpHead: OpHead{Kind: "nat_list_sync", Summary: "x"}}}, "kind"},
+		{"empty", []device.Op{}, `[]`},
+		{"typed op", []device.Op{&rospolicy.NATListSync{OpHead: device.OpHead{Kind: "nat_list_sync", Summary: "x"}}}, "kind"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -145,17 +145,17 @@ func TestR08ReviewViewRolesIgnoreEmptyLists(t *testing.T) {
 // read-back mismatch, not a generic uncertain write.
 func TestR08ReviewRestoredRouteVanished(t *testing.T) {
 	d, f := r08Driver(t)
-	steps := []NATStep{}
+	steps := []ros.NATStep{}
 	for i := range 4 {
-		values := Row{"dst-address": fmt.Sprintf("203.0.113.%d/32", i), "gateway": r08Gateway, "comment": "cf", "disabled": "false"}
+		values := ros.Row{"dst-address": fmt.Sprintf("203.0.113.%d/32", i), "gateway": r08Gateway, "comment": "cf", "disabled": "false"}
 		config := ros.CloneRow(values)
 		config["routing-table"] = "main"
-		steps = append(steps, NATStep{Action: "restore", Path: ros.PathRoutes, ID: fmt.Sprintf("*B%d", i), Config: config, Values: values})
+		steps = append(steps, ros.NATStep{Action: "restore", Path: ros.PathRoutes, ID: fmt.Sprintf("*B%d", i), Config: config, Values: values})
 	}
 	// The fake numbers new rows from *65: the second restored route vanishes
 	// right after the console batch reported it.
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "POST", Path: "/execute", AfterCommit: true, RemoveIDs: map[string][]string{ros.PathRoutes: {"*66"}}}}})
-	err := rospolicy.RestoreROSPolicy(context.Background(), d.Client, ROSPolicyUndo{Kind: "ros_policy_restore", Steps: steps, Previous: json.RawMessage(`null`)})
+	err := rospolicy.RestoreROSPolicy(context.Background(), d.Client, rospolicy.ROSPolicyUndo{Kind: "ros_policy_restore", Steps: steps, Previous: json.RawMessage(`null`)})
 	if err == nil {
 		t.Fatal("vanished route accepted")
 	}

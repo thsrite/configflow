@@ -2,6 +2,8 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/fixedip"
 	"context"
 	"io"
 	"net/http"
@@ -15,7 +17,7 @@ import (
 )
 
 type r17Timeouts struct {
-	DeviceHTTP
+	device.DeviceHTTP
 	timeouts []time.Duration
 }
 
@@ -69,7 +71,7 @@ func TestR17RawWireAndProductionTimeouts(t *testing.T) {
 				endpoint.ServeHTTP(w, r)
 			}))
 			defer server.Close()
-			var d FixedIPDriver
+			var d fixedip.Device
 			var spy *r17Timeouts
 			if vendor == "routeros" {
 				driver := NewRouterOS(server.URL, "synthetic-user", "synthetic-pass", false)

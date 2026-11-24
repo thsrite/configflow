@@ -59,7 +59,7 @@ func r10ReviewCases() []r10Case {
 			// Large replacements and rollbacks go through the console/remove
 			// batches with the per-batch ownership proofs Go adds.
 			swap := r10StepFor("publish", 101)
-			swap.Host.Addresses = []IPv6HostAddress{{Address: "fe80::5"}}
+			swap.Host.Addresses = []ipv6.IPv6HostAddress{{Address: "fe80::5"}}
 			back := swap
 			back.Action = "rollback"
 			out = append(out, base("replace_101", r10StepFor("publish", 101), swap, r10StepFor("plan", 101)))
@@ -109,7 +109,7 @@ func TestR10ReviewPythonProbes(t *testing.T) {
 func TestR10ReviewFakeRollbackRestoresAfterLostDelete(t *testing.T) {
 	d, f := r10Driver(t)
 	p := r10FakePlan(t, d)
-	if _, err := ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *p.Ops[0].(*IPv6FakeIPReplace)); err != nil {
+	if _, err := ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *p.Ops[0].(*ipv6.IPv6FakeIPReplace)); err != nil {
 		t.Fatal(err)
 	}
 	f.ApplyExternal(routerfake.ExternalWrite{Faults: []routerfake.Fault{
@@ -117,14 +117,14 @@ func TestR10ReviewFakeRollbackRestoresAfterLostDelete(t *testing.T) {
 		{Method: "DELETE", Path: ros.PathIPv6Routes + "/*66", Count: 1, AfterCommit: true, LoseReply: true},
 	}})
 	host := r10Host()
-	host.Addresses = []IPv6HostAddress{{Address: "fe80::5"}}
+	host.Addresses = []ipv6.IPv6HostAddress{{Address: "fe80::5"}}
 	r := r10Router()
 	r.Extra["ipv6_fakeip_state"] = ros.GuardRaw(d.IPv6FakeIPManifest())
 	p = ipv6.InspectIPv6FakeIP(t.Context(), r10Config(r10YAML), r, r10Agent(), host, d.Client)
 	if len(p.Ops) != 1 {
 		t.Fatalf("no replacement planned: %s", device.JSON(p))
 	}
-	if _, err := ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *p.Ops[0].(*IPv6FakeIPReplace)); err == nil {
+	if _, err := ipv6.ApplyIPv6FakeIP(t.Context(), d.Client, *p.Ops[0].(*ipv6.IPv6FakeIPReplace)); err == nil {
 		t.Fatal("inactive replacement accepted")
 	}
 	live, err := ipv6.SnapshotIPv6(t.Context(), d.Client, false)
@@ -147,7 +147,7 @@ func TestR10ReviewLostDeleteDeviceMatchesPython(t *testing.T) {
 	srv := httptest.NewServer(f)
 	defer srv.Close()
 	replace := r10StepFor("publish", 5)
-	replace.Host.Addresses = []IPv6HostAddress{{Address: "fe80::5"}}
+	replace.Host.Addresses = []ipv6.IPv6HostAddress{{Address: "fe80::5"}}
 	replace.Mutation = &routerfake.ExternalWrite{Faults: []routerfake.Fault{
 		{Method: "PUT", Path: ros.PathIPv6Routes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{ros.PathIPv6Routes: {"*66": {"active": "false"}}}},
 		{Method: "DELETE", Path: ros.PathIPv6Routes + "/*66", Count: 1, AfterCommit: true, LoseReply: true},

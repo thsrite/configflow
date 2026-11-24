@@ -2,6 +2,7 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
 	"context"
@@ -59,7 +60,7 @@ func TestR07RedactionHidesOnlyPassword(t *testing.T) {
 			} else {
 				_, err = rospolicy.NATResources(context.Background(), d.Client)
 			}
-			e, ok := errors.AsType[*RouterError](err)
+			e, ok := errors.AsType[*device.RouterError](err)
 			if !ok {
 				t.Fatalf("error = %#v, want RouterError", err)
 			}
@@ -117,18 +118,18 @@ func TestR07RequestsKeepTimeoutAndRawBodies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := []ROSResource{}
+	legacy := []ros.Resource{}
 	for _, row := range rows {
 		if row.Is("comment", "cf-mihomo") {
 			legacy = append(legacy, ros.NewResource(nat, row))
 		}
 	}
-	journal := []NATStep{}
+	journal := []ros.NATStep{}
 	if err = rospolicy.DeleteNATRules(ctx, d.Client, legacy, &journal); err != nil {
 		t.Fatal(err)
 	}
 	slices.Reverse(journal)
-	if err = rospolicy.RestoreNATLists(ctx, d.Client, NATListUndo{Kind: "nat_list_restore", Steps: journal, Keep: []string{}}); err != nil {
+	if err = rospolicy.RestoreNATLists(ctx, d.Client, rospolicy.NATListUndo{Kind: "nat_list_restore", Steps: journal, Keep: []string{}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = d.LocateAddresses(ctx, []string{"*1"}); err != nil {
@@ -218,21 +219,21 @@ func TestR07ReuseScopeOwnsDownloadedRows(t *testing.T) {
 // F5: the member check is a set comparison like Python's; a repeated key in
 // the planned members does not fail a correct read-back.
 func TestR07VerifyComparesMemberSets(t *testing.T) {
-	rule := Row{".id": "*5", "chain": "srcnat", "action": "accept", "src-address-list": NATSrcList, "dst-address-list": NATDstList, "comment": NATListComment, "disabled": "false"}
-	member := func(id, list, address string) Row {
-		return Row{".id": id, "list": list, "address": address, "comment": NATListComment, "disabled": "false"}
+	rule := ros.Row{".id": "*5", "chain": "srcnat", "action": "accept", "src-address-list": ros.NATSrcList, "dst-address-list": ros.NATDstList, "comment": ros.NATListComment, "disabled": "false"}
+	member := func(id, list, address string) ros.Row {
+		return ros.Row{".id": id, "list": list, "address": address, "comment": ros.NATListComment, "disabled": "false"}
 	}
 	state := &RouterState{
-		NatContext: &NatContext{Rules: []Row{rule}},
-		NATLists: &NATLists{
-			Src:        []Row{member("*20", NATSrcList, "192.0.2.128/25")},
-			Dst:        []Row{member("*30", NATDstList, "198.51.100.0/24")},
-			MangleRefs: []ListRef{}, FirewallRefs: []ListRef{},
+		NatContext: &ros.NatContext{Rules: []ros.Row{rule}},
+		NATLists: &rospolicy.NATLists{
+			Src:        []ros.Row{member("*20", ros.NATSrcList, "192.0.2.128/25")},
+			Dst:        []ros.Row{member("*30", ros.NATDstList, "198.51.100.0/24")},
+			MangleRefs: []ros.ListRef{}, FirewallRefs: []ros.ListRef{},
 		},
 	}
 	id := "*5"
-	check := &NATListCheck{Rule: &id, Sources: []string{"192.0.2.128/25"}, Destinations: []string{"198.51.100.0/24"}, Removed: []string{},
-		Members: NATListMembers{Src: []string{"192.0.2.128/25"}, Dst: []string{"198.51.100.0/24", "198.51.100.0/24"}}}
+	check := &rospolicy.NATListCheck{Rule: &id, Sources: []string{"192.0.2.128/25"}, Destinations: []string{"198.51.100.0/24"}, Removed: []string{},
+		Members: rospolicy.NATListMembers{Src: []string{"192.0.2.128/25"}, Dst: []string{"198.51.100.0/24", "198.51.100.0/24"}}}
 	if err := rospolicy.VerifyNATLists(context.Background(), check, state.NatContext, &state.NATLists, &state.NATListsReader); err != nil {
 		t.Fatal(err)
 	}

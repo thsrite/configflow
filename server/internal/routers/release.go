@@ -44,7 +44,7 @@ func releaseErrorText(err error) string {
 	}
 	return err.Error()
 }
-func rawOp(op Op) (json.RawMessage, error) { return json.Marshal(op) }
+func rawOp(op device.Op) (json.RawMessage, error) { return json.Marshal(op) }
 func effectful(raw json.RawMessage) bool {
 	b := bytes.TrimSpace(raw)
 	return len(b) > 0 && !bytes.Equal(b, []byte("null")) && !bytes.Equal(b, []byte("{}"))
@@ -60,30 +60,30 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		return nil, device.Error(device.MessageOperationFormat)
 	}
 	switch stage {
-	case StageIPv6FakeIP, StageIPv6Routes, StageIPv6DNS, StageIPv6PDGuard, StageDNSGuard:
+	case device.StageIPv6FakeIP, device.StageIPv6Routes, device.StageIPv6DNS, device.StageIPv6PDGuard, device.StageDNSGuard:
 		ros, ok := d.(*RouterOS)
 		if !ok {
 			return nil, device.Error(fmt.Sprintf(messageStageNeedsRouterOS, stage))
 		}
 		var err error
 		switch stage {
-		case StageIPv6FakeIP:
+		case device.StageIPv6FakeIP:
 			err = ipv6.VerifyIPv6FakeIP(ctx, ros.Client, checks.IPv6FakeIP)
-		case StageIPv6Routes:
+		case device.StageIPv6Routes:
 			err = ipv6.VerifyIPv6Routes(ctx, ros.Client, checks.IPv6Routes)
-		case StageIPv6DNS:
+		case device.StageIPv6DNS:
 			err = ipv6.VerifyIPv6DNS(ctx, ros.Client, checks.IPv6DNS)
-		case StageIPv6PDGuard:
-			var c IPv6PDGuardCheck
+		case device.StageIPv6PDGuard:
+			var c ipv6.IPv6PDGuardCheck
 			if jsondecode.Unmarshal(checks.IPv6PDGuard, &c) != nil {
 				return nil, device.Error(device.MessageOperationFormat)
 			}
 			err = ipv6.VerifyIPv6PDGuard(ctx, ros.Client, &c)
-		case StageDNSGuard:
+		case device.StageDNSGuard:
 			err = dnsguard.Verify(ctx, ros.Client, checks.DNSGuard)
 		}
 		return nil, err
-	case StageDHCPDNS:
+	case device.StageDHCPDNS:
 		if checks.DHCPDNS == nil {
 			return nil, device.Error(device.MessageOperationFormat)
 		}
@@ -92,7 +92,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 			return nil, err
 		}
 		return nil, device.VerifyDNS(*checks.DHCPDNS, live)
-	case StageReturnRouting, StageReturnCleanup:
+	case device.StageReturnRouting, device.StageReturnCleanup:
 		if a == nil {
 			return nil, device.Error(messageNoReturnAgent)
 		}
@@ -103,7 +103,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		if live == nil {
 			return nil, device.Error(messageReturnIncomplete)
 		}
-		if stage == StageReturnCleanup {
+		if stage == device.StageReturnCleanup {
 			if live.Managed != nil && (live.Managed.Active || live.Managed.TablePresent) {
 				return nil, device.Error(messageReturnStillPresent)
 			}
@@ -141,7 +141,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 			return nil, err
 		}
 	}
-	if stage == StageRoutes {
+	if stage == device.StageRoutes {
 		if checks.ROSPolicy != nil {
 			ros, ok := d.(*RouterOS)
 			if !ok {
@@ -155,7 +155,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		for _, c := range checks.Routes {
 			sel, _ := ix.Select(c.CIDR, c.Gateway)
 			candidates := sel.Candidates
-			if len(candidates) == 0 || slices.ContainsFunc(candidates, func(r *RouteEntry) bool { return !device.IsManaged(r.Comment) }) {
+			if len(candidates) == 0 || slices.ContainsFunc(candidates, func(r *device.RouteEntry) bool { return !device.IsManaged(r.Comment) }) {
 				return nil, device.Error(fmt.Sprintf(messageRouteVerify, c.CIDR, c.Gateway))
 			}
 		}
@@ -174,7 +174,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 		}
 		if checks.RestoredRoutes != nil {
 			for _, c := range *checks.RestoredRoutes {
-				if !slices.ContainsFunc(state.Routes, func(r *RouteEntry) bool { return r.Dst == c.CIDR && r.Gateway == c.Gateway && r.Enabled }) {
+				if !slices.ContainsFunc(state.Routes, func(r *device.RouteEntry) bool { return r.Dst == c.CIDR && r.Gateway == c.Gateway && r.Enabled }) {
 					return nil, device.Error(fmt.Sprintf(messageRestoredRouteMissing, c.CIDR, c.Gateway))
 				}
 			}
@@ -186,7 +186,7 @@ func Verify(ctx context.Context, stage string, checks *Checks, d Driver, a Retur
 				}
 			}
 		}
-	} else if stage == StageNATBypass {
+	} else if stage == device.StageNATBypass {
 		if err := rospolicy.VerifyNAT(ctx, checks.NATChecks, &state.State, state.NatContext); err != nil {
 			return nil, err
 		}
@@ -301,7 +301,7 @@ func applyRelease(ctx context.Context, raw json.RawMessage, d Driver, a ReturnAg
 			}
 		}
 	}
-	return nil, &RouterError{Kind: KindUncertainWrite, Message: releaseErrorText(err), Undo: undo}
+	return nil, &device.RouterError{Kind: device.KindUncertainWrite, Message: releaseErrorText(err), Undo: undo}
 }
 
 // Execute runs a rebuilt plan in order, retaining proven partial writes before
@@ -323,8 +323,8 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 			return result
 		}
 		record(releaseErrorText(err), "failed")
-		var re *RouterError
-		if errors.As(err, &re) && re.Kind == KindRollback {
+		var re *device.RouterError
+		if errors.As(err, &re) && re.Kind == device.KindRollback {
 			result.Rollback = append(result.Rollback, ReleaseEntry{current, re.Error(), "failed"})
 		}
 		result.Rollback = append(result.Rollback, rollbackRelease(work, done, d, a)...)
@@ -360,7 +360,7 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 				var err error
 				var readback *RouterState
 				readback, err = Verify(work, current, plan.Checks, d, a, func() *RouterState {
-					if current == StageNATBypass {
+					if current == device.StageNATBypass {
 						return unchanged
 					}
 					return nil
@@ -368,7 +368,7 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 				if err != nil {
 					return fail(err)
 				}
-				if current == StageRoutes || current == StageNATBypass {
+				if current == device.StageRoutes || current == device.StageNATBypass {
 					unchanged = readback
 				}
 			}
@@ -384,21 +384,21 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 		if plan.Checks == nil {
 			return fail(device.Error(device.MessageOperationFormat))
 		}
-		var checked *DhcpDnsState
-		if current == StageDHCPDNS || (current == StageDNSGuard && plan.Checks.DNSGuard != nil && len(plan.Checks.DNSGuard.Roles) > 0) {
-			state, err := Verify(work, StageRoutes, plan.Checks, d, a, nil)
+		var checked *device.DhcpDnsState
+		if current == device.StageDHCPDNS || (current == device.StageDNSGuard && plan.Checks.DNSGuard != nil && len(plan.Checks.DNSGuard.Roles) > 0) {
+			state, err := Verify(work, device.StageRoutes, plan.Checks, d, a, nil)
 			if err != nil {
 				return fail(err)
 			}
 			if plan.Checks.IPv6FakeIP != nil {
-				if _, err = Verify(work, StageIPv6FakeIP, plan.Checks, d, a, nil); err != nil {
+				if _, err = Verify(work, device.StageIPv6FakeIP, plan.Checks, d, a, nil); err != nil {
 					return fail(err)
 				}
 			}
-			if _, err = Verify(work, StageNATBypass, plan.Checks, d, a, state); err != nil {
+			if _, err = Verify(work, device.StageNATBypass, plan.Checks, d, a, state); err != nil {
 				return fail(err)
 			}
-			if current == StageDHCPDNS {
+			if current == device.StageDHCPDNS {
 				if plan.Checks.DHCPDNS == nil {
 					return fail(device.Error(device.MessageOperationFormat))
 				}
@@ -411,11 +411,11 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 				}
 			}
 		}
-		if current == StageIPv6DNS {
+		if current == device.StageIPv6DNS {
 			if plan.Checks.DHCPDNS == nil {
 				return fail(device.Error(messageIPv6DNSNeedsDHCP))
 			}
-			if _, err := Verify(work, StageDHCPDNS, plan.Checks, d, a, nil); err != nil {
+			if _, err := Verify(work, device.StageDHCPDNS, plan.Checks, d, a, nil); err != nil {
 				return fail(err)
 			}
 		}
@@ -506,7 +506,7 @@ func Execute(ctx context.Context, plan *Plan, d Driver, a ReturnAgent) *Result {
 			return fail(err)
 		}
 		record(messageReleaseVerified, "verified")
-		if current == StageRoutes {
+		if current == device.StageRoutes {
 			if stale := StaleRoutes(unchanged, plan.Checks.Gateway); len(stale) > 0 {
 				record(StaleRouteWarning(stale, plan.Checks.Gateway), "warning")
 			}
@@ -579,7 +579,7 @@ func rollbackRelease(ctx context.Context, done []releaseDone, d Driver, a Return
 	return out
 }
 
-func emptyStageReadback(stage Stage, c *Checks) (string, string, bool) {
+func emptyStageReadback(stage device.Stage, c *Checks) (string, string, bool) {
 	if stage.Skipped != nil && *stage.Skipped {
 		if m := releaseSkippedMessages[stage.Key]; m != "" {
 			return m, "warning", false
@@ -590,28 +590,28 @@ func emptyStageReadback(stage Stage, c *Checks) (string, string, bool) {
 	}
 	verify := false
 	switch stage.Key {
-	case StageIPv6FakeIP, StageIPv6DNS:
+	case device.StageIPv6FakeIP, device.StageIPv6DNS:
 		verify = true
-	case StageIPv6Routes:
+	case device.StageIPv6Routes:
 		verify = c.IPv6Routes != nil
-	case StageIPv6PDGuard:
+	case device.StageIPv6PDGuard:
 		var v struct {
 			Enabled bool `json:"enabled"`
 		}
 		_ = jsondecode.Unmarshal(c.IPv6PDGuard, &v)
 		verify = v.Enabled
-	case StageRoutes:
+	case device.StageRoutes:
 		verify = c.ROSPolicy != nil
-	case StageReturnRouting:
+	case device.StageReturnRouting:
 		verify = c.ReturnRouting != nil
-	case StageNATBypass:
+	case device.StageNATBypass:
 		if len(c.NATNotRequired) > 0 {
 			return messageNATNotRequiredVerified, "verified", true
 		}
 		verify = c.NATList != nil
-	case StageDHCPDNS:
+	case device.StageDHCPDNS:
 		verify = c.DHCPDNS != nil
-	case StageDNSGuard:
+	case device.StageDNSGuard:
 		verify = c.DNSGuard != nil && len(c.DNSGuard.Roles) > 0
 	}
 	if verify {

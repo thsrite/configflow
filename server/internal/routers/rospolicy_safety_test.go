@@ -5,6 +5,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -34,7 +35,7 @@ func r08Driver(t *testing.T) (*RouterOS, *routerfake.Fake) {
 	t.Cleanup(d.Close)
 	return d, f
 }
-func r08Publish(t *testing.T, d *RouterOS, desired *Desired) (*ROSPolicyPlan, *ROSPolicyUndo) {
+func r08Publish(t *testing.T, d *RouterOS, desired *spec.Desired) (*rospolicy.ROSPolicyPlan, *rospolicy.ROSPolicyUndo) {
 	t.Helper()
 	plan, err := r08Plan(context.Background(), d, desired)
 	if err != nil {
@@ -43,7 +44,7 @@ func r08Publish(t *testing.T, d *RouterOS, desired *Desired) (*ROSPolicyPlan, *R
 	if len(plan.Blockers) > 0 || len(plan.Ops) != 1 {
 		t.Fatalf("plan: %s", device.JSON(plan))
 	}
-	undo, err := rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*ROSPolicyReplace))
+	undo, err := rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*rospolicy.ROSPolicyReplace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,9 +138,9 @@ func TestR08DeviceTimeoutActuallyExpires(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	start := time.Now()
-	_, err := rospolicy.ApplyROSPolicy(ctx, d.Client, d.ReadPolicyState, &ROSPolicyReplace{Bundle: []ROSReplacement{}, Migrations: []ROSResource{}, Replacements: []ROSReplacement{}, Evidence: ROSPolicySnapshot{}})
+	_, err := rospolicy.ApplyROSPolicy(ctx, d.Client, d.ReadPolicyState, &rospolicy.ROSPolicyReplace{Bundle: []rospolicy.ROSReplacement{}, Migrations: []ros.Resource{}, Replacements: []rospolicy.ROSReplacement{}, Evidence: rospolicy.ROSPolicySnapshot{}})
 	elapsed := time.Since(start)
-	if _, ok := errors.AsType[*RouterError](err); !ok {
+	if _, ok := errors.AsType[*device.RouterError](err); !ok {
 		t.Fatalf("expected bounded RouterError, got %v", err)
 	}
 	if elapsed < 9*time.Second || elapsed > 20*time.Second {
@@ -155,7 +156,7 @@ func TestR08CancellationAndManifestCopies(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	undo, err := rospolicy.ApplyROSPolicy(ctx, d.Client, d.ReadPolicyState, plan.Ops[0].(*ROSPolicyReplace))
+	undo, err := rospolicy.ApplyROSPolicy(ctx, d.Client, d.ReadPolicyState, plan.Ops[0].(*rospolicy.ROSPolicyReplace))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +199,7 @@ func TestR08PreviewAndOwnershipGuards(t *testing.T) {
 			}
 			f.ApplyExternal(tt.mutation)
 			before := f.Snapshot()
-			_, err = rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*ROSPolicyReplace))
+			_, err = rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*rospolicy.ROSPolicyReplace))
 			if err == nil {
 				t.Fatal("stale plan accepted")
 			}
@@ -210,7 +211,7 @@ func TestR08PreviewAndOwnershipGuards(t *testing.T) {
 	d, f := r08Driver(t)
 	_, undo := r08Publish(t, d, r08Desired(true))
 	manifest := d.Manifests().Policy.Value
-	var parsed ROSPolicyManifest
+	var parsed rospolicy.ROSPolicyManifest
 	_ = json.Unmarshal(manifest, &parsed)
 	source := parsed.Resources[0]
 	f.ApplyExternal(routerfake.ExternalWrite{Fault: routerfake.Fault{PatchRows: map[string]map[string]routerfake.Row{ros.PathAddresses: {source.ID: {"list": "moved", "address": "192.0.2.99"}}}}})
@@ -246,20 +247,20 @@ func findRowFake(rows []routerfake.Row, id string) routerfake.Row {
 }
 
 func TestR08OwnershipProofShapesAndCopies(t *testing.T) {
-	row := Row{".id": "*1", "name": "x", "unknown": `[{"a":"original"}]`}
+	row := ros.Row{".id": "*1", "name": "x", "unknown": `[{"a":"original"}]`}
 	config := rospolicy.ROSPolicyConfigRow(row)
 	config["unknown"] = `[{"a":"changed"}]`
 	if row["unknown"] != `[{"a":"original"}]` {
 		t.Fatal("stable baseline aliases caller")
 	}
 	for _, manifest := range []json.RawMessage{json.RawMessage(`{"resources":[{"path":"/routing/table","id":"","config":{}}]}`), json.RawMessage(`{"resources":[{"path":"/routing/table","id":"*1"}]}`), json.RawMessage(`[]`)} {
-		snap := ROSPolicySnapshot{ros.PathTables: []Row{row}}
+		snap := rospolicy.ROSPolicySnapshot{ros.PathTables: []ros.Row{row}}
 		if _, err := rospolicy.OwnedROSPolicyRows(manifest, &snap); err == nil {
 			t.Fatalf("missing proof accepted: %s", manifest)
 		}
 	}
-	manifest := device.JSON(ROSPolicyManifest{Resources: []ROSResource{{Path: ros.PathTables, ID: "*1", Config: ros.ConfigROSRow(row)}}})
-	snap := ROSPolicySnapshot{ros.PathTables: []Row{row, row}}
+	manifest := device.JSON(rospolicy.ROSPolicyManifest{Resources: []ros.Resource{{Path: ros.PathTables, ID: "*1", Config: ros.ConfigROSRow(row)}}})
+	snap := rospolicy.ROSPolicySnapshot{ros.PathTables: []ros.Row{row, row}}
 	if _, err := rospolicy.OwnedROSPolicyRows(manifest, &snap); err == nil {
 		t.Fatal("duplicate ID accepted")
 	}
@@ -268,16 +269,16 @@ func TestR08OwnershipProofShapesAndCopies(t *testing.T) {
 func TestR08TableFlagsAndNetworkSubtraction(t *testing.T) {
 	// A JSON true arrives as "true"; null as "" (Row decoding).
 	for _, value := range []string{"", "true", "yes"} {
-		if !ros.ValuesMatch(ros.PathTables, Row{"name": "x", "fib": value}, Row{"name": "x", "fib": "true"}) {
+		if !ros.ValuesMatch(ros.PathTables, ros.Row{"name": "x", "fib": value}, ros.Row{"name": "x", "fib": "true"}) {
 			t.Fatalf("enabled fib=%v", value)
 		}
 	}
 	for _, value := range []string{"false", "no", "unknown"} {
-		if ros.ValuesMatch(ros.PathTables, Row{"name": "x", "fib": value}, Row{"name": "x", "fib": "true"}) {
+		if ros.ValuesMatch(ros.PathTables, ros.Row{"name": "x", "fib": value}, ros.Row{"name": "x", "fib": "true"}) {
 			t.Fatalf("unset fib=%v", value)
 		}
 	}
-	if ros.ValuesMatch(ros.PathMangle, Row{"fib": ""}, Row{"fib": "true"}) {
+	if ros.ValuesMatch(ros.PathMangle, ros.Row{"fib": ""}, ros.Row{"fib": "true"}) {
 		t.Fatal("FIB normalization escaped table")
 	}
 	got := rospolicy.SubtractNetworks([]netip.Prefix{netip.MustParsePrefix("198.51.100.0/24")}, []netip.Prefix{netip.MustParsePrefix("198.51.100.0/25")})
@@ -288,17 +289,17 @@ func TestR08TableFlagsAndNetworkSubtraction(t *testing.T) {
 		t.Fatal("range identity normalized")
 	}
 	for _, value := range []string{r08Gateway, r08Gateway + "@main"} {
-		if !ros.ValuesMatch(ros.PathRoutes, Row{"gateway": value}, Row{"gateway": r08Gateway + "@main"}) {
+		if !ros.ValuesMatch(ros.PathRoutes, ros.Row{"gateway": value}, ros.Row{"gateway": r08Gateway + "@main"}) {
 			t.Fatal("default gateway alias rejected")
 		}
 	}
 	for _, value := range []string{"", r08Gateway + "@other", r08Gateway + "%wan", r08Gateway + ",192.0.2.4"} {
-		if ros.ValuesMatch(ros.PathRoutes, Row{"gateway": value}, Row{"gateway": r08Gateway + "@main"}) {
+		if ros.ValuesMatch(ros.PathRoutes, ros.Row{"gateway": value}, ros.Row{"gateway": r08Gateway + "@main"}) {
 			t.Fatal("different gateway alias accepted")
 		}
 	}
 	for _, value := range []string{"", "unknown", "true", "yes"} {
-		if ros.ValuesMatch(ros.PathMangle, Row{"passthrough": value}, Row{"passthrough": "false"}) {
+		if ros.ValuesMatch(ros.PathMangle, ros.Row{"passthrough": value}, ros.Row{"passthrough": "false"}) {
 			t.Fatal("invalid passthrough accepted")
 		}
 	}
@@ -330,7 +331,7 @@ func TestR08ActivationWaitsOnlyForRuntimeFlags(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			undo, err := rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*ROSPolicyReplace))
+			undo, err := rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*rospolicy.ROSPolicyReplace))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -412,9 +413,9 @@ func TestR08NamesGatewayAndReportIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rs.NatContext.RoutingRules = []Row{}
-	rs.NatContext.VRFs = []Row{}
-	rs.NatContext.Mangle = []Row{}
+	rs.NatContext.RoutingRules = []ros.Row{}
+	rs.NatContext.VRFs = []ros.Row{}
+	rs.NatContext.Mangle = []ros.Row{}
 	report, err := BuildReport(desired, rs)
 	if err != nil {
 		t.Fatal(err)
@@ -443,7 +444,7 @@ func FuzzR08PolicyInput(f *testing.F) {
 		_, _ = rospolicy.ROSPolicyDigest(data)
 		manifest, _ := rospolicy.ParseManifest(data)
 		if manifest != nil {
-			snap := ROSPolicySnapshot{}
+			snap := rospolicy.ROSPolicySnapshot{}
 			for _, item := range manifest.Resources {
 				row := ros.ConfigROSRow(item.Config)
 				row[".id"] = item.ID
@@ -452,9 +453,9 @@ func FuzzR08PolicyInput(f *testing.F) {
 			_, _ = rospolicy.OwnedROSPolicyRows(data, &snap)
 		}
 		_, _ = rospolicy.SmartROSPolicySources(data, r08Gateway)
-		var row Row
+		var row ros.Row
 		if json.Unmarshal(data, &row) == nil {
-			_ = rospolicy.CheckOrder(ROSPolicySnapshot{rospolicy.SettingsPath: []Row{row}})
+			_ = rospolicy.CheckOrder(rospolicy.ROSPolicySnapshot{rospolicy.SettingsPath: []ros.Row{row}})
 			_ = ros.ComparableValues(ros.PathTables, row)
 		}
 	})
@@ -488,7 +489,7 @@ func TestR08ReadbackBeforeActivation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*ROSPolicyReplace))
+			_, err = rospolicy.ApplyROSPolicy(context.Background(), d.Client, d.ReadPolicyState, plan.Ops[0].(*rospolicy.ROSPolicyReplace))
 			if err == nil {
 				t.Fatal("bad readback activated")
 			}

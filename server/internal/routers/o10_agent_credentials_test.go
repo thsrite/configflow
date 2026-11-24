@@ -1,6 +1,7 @@
 package routers
 
 import (
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"strings"
@@ -49,7 +50,7 @@ func TestO10RouterRedactionKeepsAgentRecordCredentials(t *testing.T) {
 	t.Run("management safeText", func(t *testing.T) {
 		s := &ManagementService{Repo: r}
 		for _, secret := range secrets {
-			got := s.safeText(ctx, "default", &Router{}, "diagnostic "+secret)
+			got := s.safeText(ctx, "default", &spec.Router{}, "diagnostic "+secret)
 			if strings.Contains(got, secret) {
 				t.Fatalf("%q leaked: %q", secret, got)
 			}
@@ -61,11 +62,11 @@ func TestO10RouterRedactionKeepsAgentRecordCredentials(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if got := s.safeText(ctx, "default", &Router{}, "diagnostic synthetic-later-pass"); strings.Contains(got, "synthetic-later-pass") {
+		if got := s.safeText(ctx, "default", &spec.Router{}, "diagnostic synthetic-later-pass"); strings.Contains(got, "synthetic-later-pass") {
 			t.Fatalf("credential written after the first read leaked: %q", got)
 		}
 		// Control: an ordinary value passes through unchanged.
-		if got := s.safeText(ctx, "default", &Router{}, "diagnostic ok"); got != "diagnostic ok" {
+		if got := s.safeText(ctx, "default", &spec.Router{}, "diagnostic ok"); got != "diagnostic ok" {
 			t.Fatalf("plain text changed: %q", got)
 		}
 	})

@@ -2,6 +2,7 @@ package routers
 
 import (
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"fmt"
 	"net/http/httptest"
 	"slices"
@@ -52,7 +53,7 @@ func TestReturnUpstreamOutsideGatewayNetworkBlocksPlan(t *testing.T) {
 				t.Fatal(e)
 			}
 			report.ReturnRouting = r12SafeStatus()
-			r := &Router{RouterSettings: RouterSettings{ID: "r1", Type: "routeros", Endpoint: tt.endpoint, ManageReturnRouting: true}}
+			r := &spec.Router{RouterSettings: spec.RouterSettings{ID: "r1", Type: "routeros", Endpoint: tt.endpoint, ManageReturnRouting: true}}
 			plan, e := BuildPlan(t.Context(), r, &Inspection{Desired: desired, State: s, Report: report}, d)
 			if e != nil {
 				t.Fatal(e)

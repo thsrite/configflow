@@ -1,20 +1,25 @@
 package routers
 
 import (
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/dnsguard"
+	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/ipv6"
+	"configflow/internal/routers/rospolicy"
 	"encoding/json"
 	"slices"
 )
 
 // Plan is the reviewable, ordered release and its readback requirements.
 type Plan struct {
-	Stages       []Stage  `json:"stages"`
-	Checks       *Checks  `json:"checks,omitempty"`
-	Blockers     []string `json:"blockers"`
-	Warnings     []string `json:"warnings"`
-	Script       string   `json:"script"`
-	Fingerprint  string   `json:"fingerprint"`
-	Empty        bool     `json:"empty"`
-	SyncBaseline *bool    `json:"sync_baseline,omitempty"`
+	Stages       []device.Stage `json:"stages"`
+	Checks       *Checks        `json:"checks,omitempty"`
+	Blockers     []string       `json:"blockers"`
+	Warnings     []string       `json:"warnings"`
+	Script       string         `json:"script"`
+	Fingerprint  string         `json:"fingerprint"`
+	Empty        bool           `json:"empty"`
+	SyncBaseline *bool          `json:"sync_baseline,omitempty"`
 }
 
 // PolicyRouteCheck is the destination set of a source-aware route.
@@ -29,27 +34,27 @@ type PolicyRouteCheck struct {
 type Checks struct {
 	ipv6DNSPresent   bool
 	rosPolicyPresent bool
-	NATChecks
-	Routes              []CIDRGateway              `json:"routes"`
-	RemovedRoutes       []string                   `json:"removed_routes"`
-	PolicyRoutes        *[]PolicyRouteCheck        `json:"policy_routes,omitempty"`
-	RestoredRoutes      *[]CIDRGateway             `json:"restored_routes,omitempty"`
-	RemovedPolicyRoutes *[]string                  `json:"removed_policy_routes,omitempty"`
-	IPv6FakeIP          *IPv6FakeIPCheck           `json:"ipv6_fakeip,omitempty"`
-	IPv6Routes          *IPv6RoutesCheck           `json:"ipv6_routes,omitempty"`
-	NATList             *NATListCheck              `json:"nat_list,omitempty"`
-	ROSPolicy           *ROSPolicyCheck            `json:"ros_policy,omitempty"`
-	ReturnRouting       *ReturnSpec                `json:"return_routing,omitempty"`
-	DNSGuard            *DNSGuardCheck             `json:"dns_guard,omitempty"`
-	IkuaiGroups         map[string]GroupStageCheck `json:"ikuai_groups,omitempty"`
-	DHCPDNS             *DNSCheck                  `json:"dhcp_dns,omitempty"`
-	IPv6DNS             *IPv6DNSCheck              `json:"ipv6_dns,omitempty"`
-	IPv6PDGuard         json.RawMessage            `json:"ipv6_pd_guard,omitempty"`
+	device.NATChecks
+	Routes              []device.CIDRGateway             `json:"routes"`
+	RemovedRoutes       []string                         `json:"removed_routes"`
+	PolicyRoutes        *[]PolicyRouteCheck              `json:"policy_routes,omitempty"`
+	RestoredRoutes      *[]device.CIDRGateway            `json:"restored_routes,omitempty"`
+	RemovedPolicyRoutes *[]string                        `json:"removed_policy_routes,omitempty"`
+	IPv6FakeIP          *ipv6.IPv6FakeIPCheck            `json:"ipv6_fakeip,omitempty"`
+	IPv6Routes          *ipv6.IPv6RoutesCheck            `json:"ipv6_routes,omitempty"`
+	NATList             *rospolicy.NATListCheck          `json:"nat_list,omitempty"`
+	ROSPolicy           *rospolicy.ROSPolicyCheck        `json:"ros_policy,omitempty"`
+	ReturnRouting       *ReturnSpec                      `json:"return_routing,omitempty"`
+	DNSGuard            *dnsguard.Check                  `json:"dns_guard,omitempty"`
+	IkuaiGroups         map[string]ikuai.GroupStageCheck `json:"ikuai_groups,omitempty"`
+	DHCPDNS             *device.DNSCheck                 `json:"dhcp_dns,omitempty"`
+	IPv6DNS             *ipv6.IPv6DNSCheck               `json:"ipv6_dns,omitempty"`
+	IPv6PDGuard         json.RawMessage                  `json:"ipv6_pd_guard,omitempty"`
 }
 
 // RouteAddOp creates a static route.
 type RouteAddOp struct {
-	OpHead
+	device.OpHead
 	CIDR    string `json:"cidr"`
 	Gateway string `json:"gateway"`
 	Comment string `json:"comment"`
@@ -57,7 +62,7 @@ type RouteAddOp struct {
 
 // RouteCommentOp adopts one existing static route.
 type RouteCommentOp struct {
-	OpHead
+	device.OpHead
 	ID      string `json:"id"`
 	CIDR    string `json:"cidr"`
 	Comment string `json:"comment"`
@@ -65,14 +70,14 @@ type RouteCommentOp struct {
 
 // RouteDeleteOp withdraws one existing static route.
 type RouteDeleteOp struct {
-	OpHead
+	device.OpHead
 	ID   string `json:"id"`
 	CIDR string `json:"cidr"`
 }
 
 // PolicyRouteOp creates or updates a source-aware route.
 type PolicyRouteOp struct {
-	OpHead
+	device.OpHead
 	ID          string    `json:"id,omitempty"`
 	Gateway     string    `json:"gateway"`
 	Dst         []string  `json:"dst"`
@@ -83,13 +88,13 @@ type PolicyRouteOp struct {
 
 // PolicyRouteDeleteOp withdraws a source-aware route.
 type PolicyRouteDeleteOp struct {
-	OpHead
+	device.OpHead
 	ID string `json:"id"`
 }
 
 // NATAddOp creates a source NAT exemption.
 type NATAddOp struct {
-	OpHead
+	device.OpHead
 	Src          []string  `json:"src"`
 	Dst          []string  `json:"dst"`
 	Comment      string    `json:"comment"`
@@ -99,7 +104,7 @@ type NATAddOp struct {
 
 // DHCPDNSUpdateOp replaces only the selected DHCP network's DNS list.
 type DHCPDNSUpdateOp struct {
-	OpHead
+	device.OpHead
 	ID       string          `json:"id"`
 	DNS      []string        `json:"dns"`
 	Expected json.RawMessage `json:"expected"`
@@ -115,14 +120,14 @@ type DNSScope struct {
 
 // ReturnApplyOp applies a negotiated Agent spec and preserves its old raw spec.
 type ReturnApplyOp struct {
-	OpHead
+	device.OpHead
 	Spec     *ReturnSpec     `json:"spec"`
 	Previous json.RawMessage `json:"previous"`
 }
 
 // ReturnRemoveOp removes only resources whose ownership the Agent proves.
 type ReturnRemoveOp struct {
-	OpHead
+	device.OpHead
 	RestoreLegacy bool            `json:"restore_legacy"`
 	Previous      json.RawMessage `json:"previous,omitempty"`
 }
@@ -183,13 +188,13 @@ func (c Checks) MarshalJSON() ([]byte, error) {
 }
 
 // isNewNATRuleCheck is the check of a NAT rule this release creates.
-func isNewNATRuleCheck(r GroupRuleCheck) bool { return r.Func == "nat_rule" && r.ID == "" }
+func isNewNATRuleCheck(r ikuai.GroupRuleCheck) bool { return r.Func == "nat_rule" && r.ID == "" }
 
 // releaseGroupChecks is the release view of the iKuai group checks. Python's
 // _grouped_nat_ops writes "id": null for a NAT rule it creates, while the
 // shared planner check echoes the rules it is given (policy checks have no id),
 // so the explicit null belongs to the plan, not to GroupRuleCheck's own JSON.
-func releaseGroupChecks(stages map[string]GroupStageCheck) (json.RawMessage, error) {
+func releaseGroupChecks(stages map[string]ikuai.GroupStageCheck) (json.RawMessage, error) {
 	out := make(map[string]json.RawMessage, len(stages))
 	for key, stage := range stages {
 		b, err := json.Marshal(stage)

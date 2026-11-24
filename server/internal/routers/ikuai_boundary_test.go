@@ -165,11 +165,11 @@ func runPythonIkuai(t *testing.T, python, repoRoot, helper, endpoint string, tc 
 
 func goErrorOf(err error) *ikuaiError {
 	e := &ikuaiError{Class: "crash", Message: err.Error()}
-	if routerErr, ok := errors.AsType[*routers.RouterError](err); ok {
+	if routerErr, ok := errors.AsType[*device.RouterError](err); ok {
 		switch routerErr.Kind {
-		case routers.KindRejected:
+		case device.KindRejected:
 			e.Class = "_Rejected"
-		case routers.KindRollback:
+		case device.KindRollback:
 			e.Class = "RouterRollbackError"
 		default:
 			e.Class = "RouterError"
@@ -187,7 +187,7 @@ func decoded(raw json.RawMessage) any {
 	return v
 }
 
-func groupStateView(s *routers.GroupState) any {
+func groupStateView(s *ikuai.GroupState) any {
 	if s == nil {
 		return nil
 	}

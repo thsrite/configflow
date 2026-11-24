@@ -66,7 +66,7 @@ func TestO17NullFieldsStayRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &PolicySnapshot{InterfaceLists: lists, InterfaceMembers: []Row{}}
+	s := &ipv6.PolicySnapshot{InterfaceLists: lists, InterfaceMembers: []ros.Row{}}
 	if got := ipv6.PolicyInterface(s, new("ether1"), "LAN", map[string]bool{}); got != PolicyUnknown {
 		t.Errorf("interface list with null include: %v, want unknown", got)
 	}
@@ -75,8 +75,8 @@ func TestO17NullFieldsStayRefused(t *testing.T) {
 // TestO17StructuredSelectorUnknown: a firewall selector that is a JSON array
 // or object (held as its JSON text) is unknown, as before rows were text.
 func TestO17StructuredSelectorUnknown(t *testing.T) {
-	s := &PolicySnapshot{AddressLists: []Row{}, InterfaceLists: []Row{}, InterfaceMembers: []Row{}}
-	packet := PolicyPacket{Protocol: new("tcp"), InInterface: new("ether1"), SrcAddress: new("192.0.2.1"),
+	s := &ipv6.PolicySnapshot{AddressLists: []ros.Row{}, InterfaceLists: []ros.Row{}, InterfaceMembers: []ros.Row{}}
+	packet := ipv6.PolicyPacket{Protocol: new("tcp"), InInterface: new("ether1"), SrcAddress: new("192.0.2.1"),
 		DstPort: new(443)}
 	for _, raw := range []string{
 		`{"chain":"forward","protocol":["udp"]}`,

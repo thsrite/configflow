@@ -2,7 +2,9 @@ package routers
 
 import (
 	"bytes"
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -48,12 +50,12 @@ func TestR12RouterOSRawStageRequests(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	plan, e := BuildPlan(t.Context(), &Router{RouterSettings: RouterSettings{Type: "routeros"}}, &Inspection{Desired: desired, State: s, Report: report}, d)
+	plan, e := BuildPlan(t.Context(), &spec.Router{RouterSettings: spec.RouterSettings{Type: "routeros"}}, &Inspection{Desired: desired, State: s, Report: report}, d)
 	if e != nil {
 		t.Fatal(e)
 	}
 	result := Execute(t.Context(), plan, d, nil)
-	if result.OK || result.FailedStage == nil || *result.FailedStage != StageNATBypass {
+	if result.OK || result.FailedStage == nil || *result.FailedStage != device.StageNATBypass {
 		t.Fatalf("failure boundary not reached %+v", result)
 	}
 	routeBody := `{"comment":"cf-fake-ip","disabled":"false","dst-address":"198.18.0.0/16","gateway":"192.0.2.4"}`

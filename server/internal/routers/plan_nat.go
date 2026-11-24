@@ -37,16 +37,16 @@ func lanExcept(gateway string) []string {
 	}
 	return out
 }
-func groupedNATOps(p *GroupPlanner, rules map[string]*NatBypassEntry, target *NatBypassEntry, adopt, missing []string, gateway string) []Op {
+func groupedNATOps(p *ikuai.GroupPlanner, rules map[string]*device.NatBypassEntry, target *device.NatBypassEntry, adopt, missing []string, gateway string) []device.Op {
 	key := ""
 	if target != nil {
 		key = "nat:" + target.ID
 	}
 	final := []string{}
-	ops := []Op{}
+	ops := []device.Op{}
 	if target != nil || len(missing) > 0 {
 		want := append(append(slices.Clone(p.Refs(key).Custom), p.ReferencedValues(key)...), missing...)
-		var changes []GroupOp
+		var changes []ikuai.GroupOp
 		final, changes = p.Family("nat", want, key)
 		ops = append(ops, groupOpsInto(changes)...)
 	}
@@ -57,16 +57,16 @@ func groupedNATOps(p *GroupPlanner, rules map[string]*NatBypassEntry, target *Na
 		}
 		r := rules[id]
 		comment := device.ManagedComment(r.Comment)
-		ops = append(ops, NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: fmt.Sprintf(messagePlanNATAdopt, device.OrText(r.Comment, id), comment, "")}, ID: id, AddDst: []string{}, Comment: comment})
+		ops = append(ops, device.NATUpdateOp{OpHead: device.OpHead{Kind: "nat_update", Summary: fmt.Sprintf(messagePlanNATAdopt, device.OrText(r.Comment, id), comment, "")}, ID: id, AddDst: []string{}, Comment: comment})
 	}
-	checks := []GroupRuleCheck{}
+	checks := []ikuai.GroupRuleCheck{}
 	if target != nil {
 		adopting := slices.Contains(adopt, target.ID)
 		comment := target.Comment
 		if adopting {
 			comment = device.ManagedComment(comment)
 		}
-		checks = append(checks, GroupRuleCheck{Func: "nat_rule", ID: target.ID, Comment: comment, Groups: final, KeepForeign: true})
+		checks = append(checks, ikuai.GroupRuleCheck{Func: "nat_rule", ID: target.ID, Comment: comment, Groups: final, KeepForeign: true})
 		if adopting || p.NeedsRewrite(key, "nat", true) {
 			p.Rewritten[key] = final
 			added := ""
@@ -79,24 +79,24 @@ func groupedNATOps(p *GroupPlanner, rules map[string]*NatBypassEntry, target *Na
 			} else if p.Migration(key, messageNATLabel, comment) > 0 {
 				summary = fmt.Sprintf(messageNATGroupMigrate, comment, ikuai.GroupSpan(final), total, added)
 			}
-			ops = append(ops, NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: summary}, ID: target.ID, AddDst: missing, Groups: &final, KeepForeign: true, Comment: comment})
+			ops = append(ops, device.NATUpdateOp{OpHead: device.OpHead{Kind: "nat_update", Summary: summary}, ID: target.ID, AddDst: missing, Groups: &final, KeepForeign: true, Comment: comment})
 		}
 	} else if len(missing) > 0 {
 		src := lanExcept(gateway)
-		checks = append(checks, GroupRuleCheck{Func: "nat_rule", Comment: PolicyAutoComment, Groups: final, KeepForeign: true})
-		ops = append(ops, NATAddOp{OpHead: OpHead{Kind: "nat_add", Summary: fmt.Sprintf(messageNATGroupAdd, strings.Join(src, ", "), ikuai.GroupSpan(final), total)}, Src: src, Dst: missing, Groups: &final, Comment: PolicyAutoComment})
+		checks = append(checks, ikuai.GroupRuleCheck{Func: "nat_rule", Comment: device.PolicyAutoComment, Groups: final, KeepForeign: true})
+		ops = append(ops, NATAddOp{OpHead: device.OpHead{Kind: "nat_add", Summary: fmt.Sprintf(messageNATGroupAdd, strings.Join(src, ", "), ikuai.GroupSpan(final), total)}, Src: src, Dst: missing, Groups: &final, Comment: device.PolicyAutoComment})
 	}
 	removed := p.Cleanup("nat")
-	p.StageChecks[StageNATBypass] = p.Check([]string{"nat"}, checks, deletedGroupNames(removed))
+	p.StageChecks[device.StageNATBypass] = p.Check([]string{"nat"}, checks, deletedGroupNames(removed))
 	return append(ops, groupOpsInto(removed)...)
 }
-func planNAT(ctx context.Context, report *Report, state *RouterState, gateway string, skipped []string, vendor string, p *GroupPlanner) ([]Op, []string, *NATListPlan) {
+func planNAT(ctx context.Context, report *Report, state *RouterState, gateway string, skipped []string, vendor string, p *ikuai.GroupPlanner) ([]device.Op, []string, *rospolicy.NATListPlan) {
 	if vendor == "routeros" && state.NatContext != nil {
 		if listed := rospolicy.PlanNATLists(ctx, report.Routes, report.NatBypass, &state.State, state.NatContext, &state.NATLists, &state.NATListsReader, state.ROSPolicyPlan, gateway, skipped); listed != nil {
 			return listed.Ops, listed.Exempt, listed
 		}
 	}
-	items := []NatItem{}
+	items := []device.NatItem{}
 	for _, v := range report.NatBypass.Items {
 		if !slices.Contains(skipped, v.CIDR) {
 			items = append(items, v)
@@ -110,9 +110,9 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 			}
 		}
 	}
-	rules := map[string]*NatBypassEntry{}
-	ordered := []*NatBypassEntry{}
-	managed := []*NatBypassEntry{}
+	rules := map[string]*device.NatBypassEntry{}
+	ordered := []*device.NatBypassEntry{}
+	managed := []*device.NatBypassEntry{}
 	for _, r := range state.NatBypass {
 		if r.Enabled && !slices.Contains(retiring, r.ID) {
 			rules[r.ID] = r
@@ -135,7 +135,7 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 			}
 		}
 	}
-	var target *NatBypassEntry
+	var target *device.NatBypassEntry
 	if len(managed) > 0 {
 		target = managed[0]
 	} else if len(adopt) > 0 {
@@ -154,7 +154,7 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 		exempt = append(exempt, missing...)
 		for _, op := range ops {
 			switch op := op.(type) {
-			case NATUpdateOp:
+			case device.NATUpdateOp:
 				exempt = append(exempt, op.AddDst...)
 			case NATAddOp:
 				exempt = append(exempt, op.Dst...)
@@ -162,7 +162,7 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 		}
 		return ops, exempt, nil
 	}
-	targets := []*NatBypassEntry{}
+	targets := []*device.NatBypassEntry{}
 	if target != nil {
 		targets = append(targets, target)
 	}
@@ -187,11 +187,11 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 			}
 		}
 	}
-	ops := []Op{}
+	ops := []device.Op{}
 	for _, id := range adopt {
 		r := rules[id]
 		add := []string{}
-		if slices.ContainsFunc(targets, func(t *NatBypassEntry) bool { return t.ID == id }) {
+		if slices.ContainsFunc(targets, func(t *device.NatBypassEntry) bool { return t.ID == id }) {
 			add = missing
 		}
 		comment := device.ManagedComment(r.Comment)
@@ -199,7 +199,7 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 		if len(add) > 0 {
 			extra = fmt.Sprintf(messagePlanNATAdoptAdd, strings.Join(add, ", "))
 		}
-		ops = append(ops, NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: fmt.Sprintf(messagePlanNATAdopt, device.OrText(r.Comment, r.ID), comment, extra)}, ID: id, AddDst: add, Comment: comment})
+		ops = append(ops, device.NATUpdateOp{OpHead: device.OpHead{Kind: "nat_update", Summary: fmt.Sprintf(messagePlanNATAdopt, device.OrText(r.Comment, r.ID), comment, extra)}, ID: id, AddDst: add, Comment: comment})
 	}
 	for _, r := range targets {
 		if device.IsManaged(r.Comment) && len(missing) > 0 {
@@ -207,16 +207,16 @@ func planNAT(ctx context.Context, report *Report, state *RouterState, gateway st
 			if len(targets) > 1 {
 				summary += fmt.Sprintf(messageNATSource, strings.Join(r.Src, ", "))
 			}
-			ops = append(ops, NATUpdateOp{OpHead: OpHead{Kind: "nat_update", Summary: summary}, ID: r.ID, AddDst: missing, Comment: r.Comment})
+			ops = append(ops, device.NATUpdateOp{OpHead: device.OpHead{Kind: "nat_update", Summary: summary}, ID: r.ID, AddDst: missing, Comment: r.Comment})
 		}
 	}
 	if target == nil && len(missing) > 0 {
 		src := lanExcept(gateway)
-		ops = append(ops, NATAddOp{OpHead: OpHead{Kind: "nat_add", Summary: fmt.Sprintf(messagePlanNATAdd, strings.Join(src, ", "), strings.Join(missing, ", "))}, Src: src, Dst: missing, Comment: PolicyAutoComment})
+		ops = append(ops, NATAddOp{OpHead: device.OpHead{Kind: "nat_add", Summary: fmt.Sprintf(messagePlanNATAdd, strings.Join(src, ", "), strings.Join(missing, ", "))}, Src: src, Dst: missing, Comment: device.PolicyAutoComment})
 	}
 	for i, op := range ops {
 		switch v := op.(type) {
-		case NATUpdateOp:
+		case device.NATUpdateOp:
 			if vendor == "routeros" {
 				v.Expected = rules[v.ID].Attributes
 				ops[i] = v

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"configflow/internal/routers/ros"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -91,7 +92,7 @@ func TestReviewDeviceCorpusExactKeys(t *testing.T) {
 			raw, required = input.Groups, "group_name"
 		}
 		t.Run(row.Fn, func(t *testing.T) {
-			var native, got []Row
+			var native, got []ros.Row
 			d := json.NewDecoder(bytes.NewReader(raw))
 			d.UseNumber()
 			if err := d.Decode(&native); err != nil {

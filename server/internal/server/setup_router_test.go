@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +16,6 @@ import (
 
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
-	"configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
 	"configflow/internal/setup"
 	"configflow/internal/testjson"
@@ -79,7 +79,7 @@ func TestVerifySetupRouterUsesRouterPlan(t *testing.T) {
 				t.Fatal(err)
 			}
 			b, _ := json.Marshal(router)
-			var r routers.Router
+			var r spec.Router
 			if err = json.Unmarshal(b, &r); err != nil {
 				t.Fatal(err)
 			}

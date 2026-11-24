@@ -3,7 +3,9 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/devhttp"
+	"configflow/internal/routers/device"
 	"configflow/internal/routers/routeedit"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,17 +23,17 @@ import (
 )
 
 type r06Case struct {
-	DuplicateName  bool                  `json:"-"`
-	Timeout        bool                  `json:"timeout,omitempty"`
-	Name           string                `json:"-"`
-	Vendor         string                `json:"vendor"`
-	Action         string                `json:"action"`
-	Values         *RouteValues          `json:"values,omitempty"`
-	Payload        json.RawMessage       `json:"payload,omitempty"`
-	Router         Router                `json:"router"`
-	ExpectedChange map[string]any        `json:"expected_change,omitempty"`
-	ROS            routerfake.State      `json:"-"`
-	IK             routerfake.IkuaiState `json:"-"`
+	DuplicateName  bool                   `json:"-"`
+	Timeout        bool                   `json:"timeout,omitempty"`
+	Name           string                 `json:"-"`
+	Vendor         string                 `json:"vendor"`
+	Action         string                 `json:"action"`
+	Values         *routeedit.RouteValues `json:"values,omitempty"`
+	Payload        json.RawMessage        `json:"payload,omitempty"`
+	Router         spec.Router            `json:"router"`
+	ExpectedChange map[string]any         `json:"expected_change,omitempty"`
+	ROS            routerfake.State       `json:"-"`
+	IK             routerfake.IkuaiState  `json:"-"`
 }
 type r06Error struct {
 	Class   string `json:"class"`
@@ -65,7 +67,7 @@ func r06StripHashes(v any) {
 	}
 }
 func r06Base(vendor, action string) r06Case {
-	tc := r06Case{Vendor: vendor, Action: action, Values: &RouteValues{CIDR: "198.51.100.0/24", Gateway: "192.0.2.3", Enabled: true, Comment: "用户 & backup\n备注"}, Router: Router{RouterSettings: RouterSettings{ID: "r1", Type: vendor, Endpoint: "http://example.com", Username: "synthetic-admin", VerifyTLS: true}}}
+	tc := r06Case{Vendor: vendor, Action: action, Values: &routeedit.RouteValues{CIDR: "198.51.100.0/24", Gateway: "192.0.2.3", Enabled: true, Comment: "用户 & backup\n备注"}, Router: spec.Router{RouterSettings: spec.RouterSettings{ID: "r1", Type: vendor, Endpoint: "http://example.com", Username: "synthetic-admin", VerifyTLS: true}}}
 	tc.ROS.Tables = map[string][]routerfake.Row{"/ip/route": {{".id": "*10", "dst-address": "203.0.113.0/24", "gateway": "192.0.2.1", "routing-table": "main", "disabled": "false", "comment": "office", "distance": "17", "scope": "20", "target-scope": "12", "check-gateway": "ping", "pref-src": "192.0.2.2", "suppress-hw-offload": "true", "dynamic": "false", "static": "true", "active": "true", "blackhole": "false", "immediate-gw": "192.0.2.1%ether1", "hw-offloaded": "false"}}}
 	tc.IK.Tables = map[string][]routerfake.Row{"static_rt": {{"id": 1, "enabled": "yes", "tagname": "RT_1", "ip_type": "4", "interface": "lan4", "dst_addr": "203.0.113.0", "gateway": "192.0.2.1", "netmask": "255.255.255.0", "prio": 7, "comment": "office", "status": 1}}}
 	return tc
@@ -190,7 +192,7 @@ func r06Cases() []r06Case {
 			add(tc, action+"/preflight_drift")
 		}
 		tc := r06Base(vendor, "update")
-		tc.Values = &RouteValues{CIDR: "203.0.113.0/24", Gateway: "192.0.2.1", Enabled: true, Comment: "office"}
+		tc.Values = &routeedit.RouteValues{CIDR: "203.0.113.0/24", Gateway: "192.0.2.1", Enabled: true, Comment: "office"}
 		add(tc, "noop")
 		for _, action := range []string{"add", "update", "delete"} {
 			tc := r06Base(vendor, "plan")
@@ -330,7 +332,7 @@ func TestR06PythonBoundary(t *testing.T) {
 }
 func r06Run(tc r06Case, endpoint string) r06Outcome {
 	out := r06Outcome{Records: []json.RawMessage{}}
-	var editor RouteEditor
+	var editor routeedit.RouteEditor
 	var driver Driver
 	if tc.Vendor == "ikuai" {
 		d := NewIkuai(endpoint, "synthetic-admin", "synthetic-secret", false)
@@ -351,7 +353,7 @@ func r06Run(tc r06Case, endpoint string) r06Outcome {
 	if tc.Action == "normalize" {
 		result, err = routeedit.NormalizeRouteRequest(tc.Payload)
 	} else {
-		var rows []*EditableRoute
+		var rows []*routeedit.EditableRoute
 		rows, err = editor.ReadRoutes(context.Background())
 		if err == nil {
 			switch tc.Action {
@@ -368,7 +370,7 @@ func r06Run(tc r06Case, endpoint string) r06Outcome {
 				}
 				result, err = routeedit.BuildRoutePlan(tc.Router, rows, r06JSON(payload))
 			default:
-				var expected *EditableRoute
+				var expected *routeedit.EditableRoute
 				if tc.Action != "add" {
 					expected = rows[0]
 				}
@@ -387,9 +389,9 @@ func r06Run(tc r06Case, endpoint string) r06Outcome {
 	}
 	if err != nil {
 		class := "crash"
-		if e, ok := errors.AsType[*RouterError](err); ok {
-			class = map[ErrorKind]string{KindRouter: "RouterError", KindConflict: "RouterConflictError", KindRollback: "RouterRollbackError", KindUncertainWrite: "UncertainWrite", KindRejected: "_Rejected"}[e.Kind]
-		} else if _, ok := errors.AsType[*ValidationError](err); ok {
+		if e, ok := errors.AsType[*device.RouterError](err); ok {
+			class = map[device.ErrorKind]string{device.KindRouter: "RouterError", device.KindConflict: "RouterConflictError", device.KindRollback: "RouterRollbackError", device.KindUncertainWrite: "UncertainWrite", device.KindRejected: "_Rejected"}[e.Kind]
+		} else if _, ok := errors.AsType[*device.ValidationError](err); ok {
 			class = "RouteEditValidationError"
 		}
 		out.Error = &r06Error{class, err.Error()}
@@ -498,7 +500,7 @@ func r06ExtraCases() []r06Case {
 		tc.Payload = json.RawMessage(raw)
 		add(tc, fmt.Sprintf("normalize/%d", i))
 	}
-	base := RouteValues{CIDR: "198.51.100.9/24", Gateway: "192.0.2.3", Enabled: true, Comment: "user"}
+	base := routeedit.RouteValues{CIDR: "198.51.100.9/24", Gateway: "192.0.2.3", Enabled: true, Comment: "user"}
 	for key, list := range map[string][]any{"cidr": {"2001:db8::/32", "bad", true}, "gateway": {"0.0.0.0", "127.0.0.1", "224.0.0.1", "255.255.255.255", "ether1", "2001:db8::1", 3}, "enabled": {"true", nil, 1}, "comment": {"bad\x00", strings.Repeat("😀", 513), nil, strings.Repeat("😀", 512)}} {
 		for i, v := range list {
 			values := r06Normalize(base).(map[string]any)
@@ -605,7 +607,7 @@ func r06ReconciliationCases() []r06Case {
 	return cases
 }
 
-type r06ShortHTTP struct{ DeviceHTTP }
+type r06ShortHTTP struct{ device.DeviceHTTP }
 
 func (c r06ShortHTTP) Do(ctx context.Context, method, target string, body any, _ time.Duration) (*devhttp.Response, error) {
 	return c.DeviceHTTP.Do(ctx, method, target, body, 200*time.Millisecond)

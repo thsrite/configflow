@@ -1,6 +1,8 @@
 package routers_test
 
 import (
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
 	"context"
 	"encoding/json"
@@ -19,15 +21,15 @@ type r07WireStage struct {
 	Ops []json.RawMessage `json:"ops"`
 }
 type r07FixtureOp struct {
-	routers.OpHead
+	device.OpHead
 	raw json.RawMessage
 }
 
 func (o r07FixtureOp) MarshalJSON() ([]byte, error) { return o.raw, nil }
-func r07TypedOps(rows []json.RawMessage) []routers.Op {
-	ops := []routers.Op{}
+func r07TypedOps(rows []json.RawMessage) []device.Op {
+	ops := []device.Op{}
 	for _, raw := range rows {
-		var head routers.OpHead
+		var head device.OpHead
 		_ = json.Unmarshal(raw, &head)
 		switch head.Kind {
 		case "ros_policy_replace":
@@ -35,13 +37,13 @@ func r07TypedOps(rows []json.RawMessage) []routers.Op {
 				Prepare []json.RawMessage `json:"prepare_static"`
 			}
 			_ = json.Unmarshal(raw, &wire)
-			ops = append(ops, &routers.ROSPolicyReplace{OpHead: head, PrepareStatic: r07TypedOps(wire.Prepare)})
+			ops = append(ops, &rospolicy.ROSPolicyReplace{OpHead: head, PrepareStatic: r07TypedOps(wire.Prepare)})
 		case "nat_list_sync":
-			var op routers.NATListSync
+			var op rospolicy.NATListSync
 			_ = json.Unmarshal(raw, &op)
 			ops = append(ops, &op)
 		case "nat_update":
-			var op routers.NATUpdateOp
+			var op device.NATUpdateOp
 			_ = json.Unmarshal(raw, &op)
 			ops = append(ops, &op)
 		default:
@@ -50,10 +52,10 @@ func r07TypedOps(rows []json.RawMessage) []routers.Op {
 	}
 	return ops
 }
-func r07TypedStages(rows []r07WireStage) []routers.Stage {
-	stages := []routers.Stage{}
+func r07TypedStages(rows []r07WireStage) []device.Stage {
+	stages := []device.Stage{}
 	for _, row := range rows {
-		stages = append(stages, routers.Stage{Key: row.Key, Ops: r07TypedOps(row.Ops)})
+		stages = append(stages, device.Stage{Key: row.Key, Ops: r07TypedOps(row.Ops)})
 	}
 	return stages
 }
@@ -66,13 +68,13 @@ func runR07Helper(tc boundaryCase, endpoint string) boundaryOutcome {
 		NATOps                             []json.RawMessage `json:"nat_ops"`
 		RouteOps                           []json.RawMessage `json:"route_ops"`
 		Gateway                            string
-		Sync                               routers.NATListSync
-		Check                              routers.NATListCheck
+		Sync                               rospolicy.NATListSync
+		Check                              rospolicy.NATListCheck
 		Interface                          string
 		Stages                             []r07WireStage
-		Baseline                           *routers.NATBaseline
-		Row                                routers.Row
-		Addresses                          []routers.Row
+		Baseline                           *rospolicy.NATBaseline
+		Row                                ros.Row
+		Addresses                          []ros.Row
 		Exclusions, IDs, Patterns, Exclude []string
 	}
 	_ = json.Unmarshal(raw, &p)
@@ -120,10 +122,10 @@ func rawValue(value any) json.RawMessage { raw, _ := json.Marshal(value); return
 func TestNATListHelperBoundary(t *testing.T) {
 	initial := r07State("list", 5)
 	raw := r07PlannedOperation(t, initial, 6)
-	var op routers.NATListSync
+	var op rospolicy.NATListSync
 	_ = json.Unmarshal(rawValue(raw), &op)
-	op.DstRemove = []routers.ROSResource{{Path: "/ip/firewall/address-list", ID: "*BBA", Config: routers.Row{"address": "198.51.100.2/32", "list": routers.NATDstList, "comment": routers.NATListComment, "disabled": "false"}}}
-	op.Stale = []routers.ROSResource{{Path: "/ip/firewall/nat", ID: "*FA", Config: routers.Row{"dst-address": "203.0.113.0/24"}}}
+	op.DstRemove = []ros.Resource{{Path: "/ip/firewall/address-list", ID: "*BBA", Config: ros.Row{"address": "198.51.100.2/32", "list": ros.NATDstList, "comment": ros.NATListComment, "disabled": "false"}}}
+	op.Stale = []ros.Resource{{Path: "/ip/firewall/nat", ID: "*FA", Config: ros.Row{"dst-address": "203.0.113.0/24"}}}
 	cases := []boundaryCase{}
 	add := func(name string, p map[string]any) {
 		cases = append(cases, boundaryCase{name: name, action: "helper", state: initial, op: p})
@@ -151,15 +153,15 @@ func TestNATListHelperBoundary(t *testing.T) {
 			for _, withdraw := range []bool{false, true} {
 				copy := op
 				copy.OutInterface, copy.Withdraw = egress, withdraw
-				check := routers.NATListCheck{OutInterface: egress, Removed: []string{}, Sources: []string{}, Destinations: []string{}, Members: routers.NATListMembers{Src: []string{}, Dst: []string{}}}
+				check := rospolicy.NATListCheck{OutInterface: egress, Removed: []string{}, Sources: []string{}, Destinations: []string{}, Members: rospolicy.NATListMembers{Src: []string{}, Dst: []string{}}}
 				add(fmt.Sprintf("restrict/%s/%s/%v", egress, iface, withdraw), map[string]any{"function": "restrict", "sync": copy, "check": check, "interface": iface})
 			}
 		}
 	}
 	for _, change := range []string{"none", "rule", "source", "withdraw", "legacy", "stale", "replace", "adopt", "no_baseline"} {
 		copy := op
-		copy.Stale = []routers.ROSResource{}
-		baseline := &routers.NATBaseline{Rule: *op.Rule, Src: []routers.ROSResource{}}
+		copy.Stale = []ros.Resource{}
+		baseline := &rospolicy.NATBaseline{Rule: *op.Rule, Src: []ros.Resource{}}
 		ops := []json.RawMessage{}
 		switch change {
 		case "rule":
@@ -185,10 +187,10 @@ func TestNATListHelperBoundary(t *testing.T) {
 		stages := []r07WireStage{{Key: "routes", Ops: []json.RawMessage{rawValue(copy)}}, {Key: "nat_bypass", Ops: ops}}
 		add("member/"+change, map[string]any{"function": "member", "stages": stages, "baseline": baseline})
 	}
-	add("migration/nested", map[string]any{"function": "migration", "stages": []r07WireStage{{Key: "routes", Ops: []json.RawMessage{rawValue(map[string]any{"kind": "ros_policy_replace", "prepare_static": []routers.NATListSync{op}})}}, {Key: "nat_bypass", Ops: []json.RawMessage{rawValue(op)}}}})
+	add("migration/nested", map[string]any{"function": "migration", "stages": []r07WireStage{{Key: "routes", Ops: []json.RawMessage{rawValue(map[string]any{"kind": "ros_policy_replace", "prepare_static": []rospolicy.NATListSync{op}})}}, {Key: "nat_bypass", Ops: []json.RawMessage{rawValue(op)}}}})
 	for _, change := range []string{"owned", "foreign", "dynamic", "disabled", "invalid", "no_overlap"} {
 		address := "198.51.100.0/24"
-		comment := routers.NATListComment
+		comment := ros.NATListComment
 		dynamic, disabled := "false", "false"
 		switch change {
 		case "foreign":
@@ -202,7 +204,7 @@ func TestNATListHelperBoundary(t *testing.T) {
 		case "no_overlap":
 			address = "203.0.113.0/24"
 		}
-		add("policy/"+change, map[string]any{"function": "policy_migrations", "row": routers.Row{"dst-address-list": routers.NATDstList}, "addresses": []routers.Row{{".id": "*A", "list": routers.NATDstList, "address": address, "comment": comment, "dynamic": dynamic, "disabled": disabled}}, "exclusions": []string{"198.51.100.0/25"}})
+		add("policy/"+change, map[string]any{"function": "policy_migrations", "row": ros.Row{"dst-address-list": ros.NATDstList}, "addresses": []ros.Row{{".id": "*A", "list": ros.NATDstList, "address": address, "comment": comment, "dynamic": dynamic, "disabled": disabled}}, "exclusions": []string{"198.51.100.0/25"}})
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) { runR07Boundary(t, tc) })
@@ -229,7 +231,7 @@ func TestNATListReadHelpersBoundary(t *testing.T) {
 	t.Run("occupied", func(t *testing.T) {
 		state := r07State("list", 3)
 		state.Tables["/ip/firewall/address-list"] = append(state.Tables["/ip/firewall/address-list"], routerfake.Row{".id": "*FFFF", "list": "CF_Source_Proxy_IP_01", "address": "203.0.113.1"})
-		runR07Boundary(t, boundaryCase{action: "helper", state: state, op: map[string]any{"function": "occupied", "patterns": []string{"CF_Source_Proxy_IP_[0-9]+", "cf-mihomo-nat-.*"}, "exclude": []string{routers.NATSrcList}}})
+		runR07Boundary(t, boundaryCase{action: "helper", state: state, op: map[string]any{"function": "occupied", "patterns": []string{"CF_Source_Proxy_IP_[0-9]+", "cf-mihomo-nat-.*"}, "exclude": []string{ros.NATSrcList}}})
 	})
 }
 
@@ -237,7 +239,7 @@ func TestNATListVerifyBoundary(t *testing.T) {
 	initial := r07State("list", 5)
 	src, dst := []string{}, []string{}
 	for _, row := range initial.Tables["/ip/firewall/address-list"] {
-		if row["list"] == routers.NATSrcList {
+		if row["list"] == ros.NATSrcList {
 			src = append(src, fmt.Sprint(row["address"]))
 		} else {
 			dst = append(dst, fmt.Sprint(row["address"]))
@@ -246,10 +248,10 @@ func TestNATListVerifyBoundary(t *testing.T) {
 	for _, variant := range []string{"valid", "extra_owned", "missing_member", "withdraw", "egress", "rule_missing", "legacy_present", "mangle_unreadable", "filter_unreadable", "raw_unreadable"} {
 		t.Run(variant, func(t *testing.T) {
 			state := r07State("list", 5)
-			check := routers.NATListCheck{Sources: src, Destinations: dst, Removed: []string{}, Members: routers.NATListMembers{Src: src, Dst: dst}}
+			check := rospolicy.NATListCheck{Sources: src, Destinations: dst, Removed: []string{}, Members: rospolicy.NATListMembers{Src: src, Dst: dst}}
 			switch variant {
 			case "extra_owned":
-				state.Tables["/ip/firewall/address-list"] = append(state.Tables["/ip/firewall/address-list"], routerfake.Row{".id": "*FFFF", "list": routers.NATDstList, "address": "203.0.113.1", "comment": routers.NATListComment, "disabled": "false"})
+				state.Tables["/ip/firewall/address-list"] = append(state.Tables["/ip/firewall/address-list"], routerfake.Row{".id": "*FFFF", "list": ros.NATDstList, "address": "203.0.113.1", "comment": ros.NATListComment, "disabled": "false"})
 			case "missing_member":
 				state.Tables["/ip/firewall/address-list"] = state.Tables["/ip/firewall/address-list"][1:]
 			case "withdraw":

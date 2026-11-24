@@ -2,7 +2,9 @@ package routers
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/ipv6"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -26,13 +28,13 @@ type r12FullCase struct {
 	r12BoundaryCase
 	Config json.RawMessage         `json:"config"`
 	Agents map[string]*model.Agent `json:"agents"`
-	Host   IPv6Host                `json:"host"`
+	Host   ipv6.IPv6Host           `json:"host"`
 }
 
 func TestR12FullInspectionStagesPython(t *testing.T) {
 	old := IPv6HostRequest
 	hostCalls := 0
-	IPv6HostRequest = func(context.Context, *GatewayAgent) (IPv6Host, error) { hostCalls++; return r10Host(), nil }
+	IPv6HostRequest = func(context.Context, *GatewayAgent) (ipv6.IPv6Host, error) { hostCalls++; return r10Host(), nil }
 	defer func() { IPv6HostRequest = old }()
 	for _, mode := range []string{"all", "fake_fail", "dhcp_fail", "dns6_fail", "guard_fail", "pd_fail", "pd_skip", "dns6_skip", "ipv4_only"} {
 		t.Run(mode, func(t *testing.T) {
@@ -64,8 +66,8 @@ func TestR12FullInspectionStagesPython(t *testing.T) {
 			r.Endpoint = "http://192.0.2.1"
 			r.ProxyGatewayAgentID = "gateway"
 			r.DNSAgentID = "dns"
-			r.DNSGuard = &DNSGuard{Enabled: true, BlockDoT: true, Failover: true, Bypass: []string{}}
-			r.IPv6PDGuard = &PDGuard{Enabled: true}
+			r.DNSGuard = &spec.DNSGuard{Enabled: true, BlockDoT: true, Failover: true, Bypass: []string{}}
+			r.IPv6PDGuard = &spec.PDGuard{Enabled: true}
 			yaml := r10YAML
 			if mode == "ipv4_only" {
 				yaml = "{}"
@@ -77,7 +79,7 @@ func TestR12FullInspectionStagesPython(t *testing.T) {
 			gateway := r12Gateway()
 			dns := &model.Agent{ID: "dns", Host: "192.0.2.2", ServiceType: "oxidns", Status: "online", ProfileID: "default"}
 			records := map[string]*model.Agent{"gateway": gateway.Agent, "dns": dns}
-			source := r12FullSource{records: map[string]*GatewayAgent{"gateway": gateway, "dns": {Agent: dns, DNS: &DNSAgent{ID: dns.ID, Host: dns.Host, ServiceType: dns.ServiceType, Status: dns.Status}}}}
+			source := r12FullSource{records: map[string]*GatewayAgent{"gateway": gateway, "dns": {Agent: dns, DNS: &device.DNSAgent{ID: dns.ID, Host: dns.Host, ServiceType: dns.ServiceType, Status: dns.Status}}}}
 			tc := r12FullCase{r12BoundaryCase: r12BoundaryCase{Router: r, State: s, Desired: r12Desired(), Return: r12SafeStatus(), Execute: true}, Config: cfg, Agents: records, Host: r10Host()}
 			f := routerfake.New(nil)
 			server := httptest.NewServer(f)

@@ -142,7 +142,7 @@ finalize（脱敏、CORS、头）→ 写回；结束时 `repo.ResetConfigContext
 |  | `internal/mosdns`、`internal/oxidns` | MosDNS、OxiDNS 配置生成与编辑器（保留用户 YAML） |
 |  | `internal/subs`、`internal/rules`、`internal/rulefetch`、`internal/provider`、`internal/aggregations` | 订阅节点读取/过滤/链式代理；规则语法与匹配；规则下载；provider 下载的校验与 last-good 回退；聚合 provider |
 | 订阅与刷新 | `internal/substore`、`internal/refresh` | Sub-Store 客户端与运行时；订阅/规则源定时刷新与健康条 |
-| 路由器 | `internal/routers`（+ `routersplit`、`routerdoc`、`devhttp`） | 路由器记录、期望状态、漂移、发布（RouterOS/iKuai）、地址列表/策略路由规则同步、DNS 守卫、IPv6 |
+| 路由器 | `internal/routers`（13 个分层包：`device` / `ros`、`ikuai`、`spec` / `oplock`、`dnsguard`、`fixedip`、`clientlist` / `routeedit` / `rospolicy` / `ipv6` / `routers` / `rulesync`；+ `routersplit`、`routerdoc`、`devhttp`） | 分层结构（`routers/layers_test.go` 守门）：`device`（L0 厂商无关模型与工具）→ `ros`/`ikuai`/`spec`（L1 驱动客户端与配置模型）→ `oplock`/`dnsguard`/`fixedip`/`clientlist`/`routeedit`/`rospolicy`/`ipv6`（L2–L5 独立功能包）→ `routers`（L6 组合驱动、检查、计划、发布与报告编排）→ `rulesync`（L7 远程规则自动同步）。`agents/ipv6` 与 `clients` 仅依赖功能子包，不 import 编排包 `routers` |
 | Linux 网关 | `internal/gateway`（+ `draft`、`host`、`installation`、`onboarding`、`gwbase`） | 选择性接管的 Mihomo 网关：设置、provider、补丁、向导、安装 |
 | 其他 | `setup`/`setupflow`、`clients`、`devicenotes`、`discovery`、`health`、`installer`、`webdav`、`tasks`/`taskstatus`、`notifications`、`importer`、`configexport` | 首次向导、客户端设备、域名发现、节点测速、安装脚本、WebDAV 备份、定时任务页、通知、导入、导出脱敏 |
 
@@ -210,9 +210,7 @@ deploy.PushConfig
 
 ### 3.3 发布到路由器
 
-`internal/routers`：从配置计算期望状态（规则地址列表、策略路由、NAT、DNS 守卫、DHCP/固定 IP、IPv6）→ 读设备现状 →
-计划 → 写设备 → 读回 → 写回执与 repo。设备写在 L2 `router_operation_lock`（每连接）下，写路径用分离 ctx、10 分钟上限；
-定时循环 `router-rule-sync`（30 s）做规则同步。详见 `design/r12-release.md`。
+`internal/routers`（编排层 L6）组合各功能子包完成发布：由 `routers/spec` 从配置计算期望状态，调用 `routers/ros`、`routers/ikuai`、`routers/dnsguard`、`routers/rospolicy`、`routers/ipv6` 读设备现状与生成计划，经由组合驱动（`driver_routeros.go` / `driver_ikuai.go`）显式 `switch` 分发写设备并回读校验，最后写回执与 repo。设备锁由 `routers/oplock` 托管（L1 作业锁、L2 每连接 `router_operation_lock`），写路径用分离 ctx、10 分钟上限；定时循环 `router-rule-sync`（30 s）位于上层 `routers/rulesync`（L7）。详见 `design/r12-release.md`。
 
 ### 3.4 心跳与指标
 
@@ -237,7 +235,7 @@ metrics-history-flush 循环（30 s 轮询，间隔可在定时任务页改）�
   worker（`Spawn`）。以最近一次成功部署的回执为基线，比较引用的规则集是否变化：只是内容变化 → 让 Agent 原生接口下载并热重载；
   结构变化 → 走一次受限的发布。状态 `pending/running/succeeded/failed/blocked/idle` 写在 Agent 记录上，状态迁移见
   `design/a16-a18-sync-follow-ha.md` 3.1。
-- **路由器规则同步**（`routers`，循环 `router-rule-sync`）：把分流规则里的 IP 同步到 RouterOS 地址列表 / iKuai IP 组。
+- **路由器规则同步**（`routers/rulesync`，循环 `router-rule-sync`，位于 `routers` 编排包之上，由 `server.go` 接上 `CaptureManual` 回调）：把分流规则里的 IP 同步到 RouterOS 地址列表 / 策略路由 / IPv6 规则集路由。
 
 规则源本身由 `refresh`（循环 `scheduled-refresh`，30 s 检查到期）下载进缓存。
 

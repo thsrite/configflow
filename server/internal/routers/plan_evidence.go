@@ -1,11 +1,18 @@
 package routers
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
+	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/ipv6"
+)
 
 type natPlanEvidence struct {
-	Context     *NatContext         `json:"context"`
-	AddressSets map[string][]string `json:"address_sets"`
-	NATList     *NATListEvidence    `json:"nat_list,omitempty"`
+	Context     *ros.NatContext            `json:"context"`
+	AddressSets map[string][]string        `json:"address_sets"`
+	NATList     *rospolicy.NATListEvidence `json:"nat_list,omitempty"`
 }
 type policyPlanEvidence struct {
 	NAT     any             `json:"nat"`
@@ -13,35 +20,35 @@ type policyPlanEvidence struct {
 	Request json.RawMessage `json:"request"`
 }
 type fakePlanEvidence struct {
-	NAT   any             `json:"nat"`
-	Fake  IPv6EvidenceSet `json:"ipv6_fakeip"`
-	Check IPv6FakeIPCheck `json:"ipv6_check"`
+	NAT   any                  `json:"nat"`
+	Fake  ipv6.IPv6EvidenceSet `json:"ipv6_fakeip"`
+	Check ipv6.IPv6FakeIPCheck `json:"ipv6_check"`
 }
 type routes6PlanEvidence struct {
-	IPv4   any              `json:"v4"`
-	Routes IPv6EvidenceSet  `json:"ipv6_routes"`
-	Check  *IPv6RoutesCheck `json:"ipv6_routes_check"`
-	Skip   []string         `json:"ipv6_routes_skip"`
+	IPv4   any                   `json:"v4"`
+	Routes ipv6.IPv6EvidenceSet  `json:"ipv6_routes"`
+	Check  *ipv6.IPv6RoutesCheck `json:"ipv6_routes_check"`
+	Skip   []string              `json:"ipv6_routes_skip"`
 }
 type dns6PlanEvidence struct {
-	Routing any              `json:"routing"`
-	DNS     *IPv6DNSEvidence `json:"ipv6_dns"`
-	Check   *IPv6DNSCheck    `json:"ipv6_dns_check"`
+	Routing any                   `json:"routing"`
+	DNS     *ipv6.IPv6DNSEvidence `json:"ipv6_dns"`
+	Check   *ipv6.IPv6DNSCheck    `json:"ipv6_dns_check"`
 }
 type pdPlanEvidence struct {
-	Base   any             `json:"base"`
-	PD     *IPv6PDEvidence `json:"ipv6_pd_guard"`
-	Status string          `json:"ipv6_pd_guard_status"`
+	Base   any                  `json:"base"`
+	PD     *ipv6.IPv6PDEvidence `json:"ipv6_pd_guard"`
+	Status string               `json:"ipv6_pd_guard_status"`
 }
 type dhcpPlanEvidence struct {
-	AgentID   string        `json:"agent_id"`
-	TargetDNS string        `json:"target_dns"`
-	Gateway   string        `json:"gateway"`
-	State     *DhcpDnsState `json:"state"`
-	HA        *DNSHA        `json:"ha,omitempty"`
+	AgentID   string               `json:"agent_id"`
+	TargetDNS string               `json:"target_dns"`
+	Gateway   string               `json:"gateway"`
+	State     *device.DhcpDnsState `json:"state"`
+	HA        *device.DNSHA        `json:"ha,omitempty"`
 }
 
-func planEvidence(r *Router, d *Desired, state *RouterState, listed *NATListPlan, dns DNSReport) (any, any) {
+func planEvidence(r *spec.Router, d *spec.Desired, state *RouterState, listed *rospolicy.NATListPlan, dns device.DNSReport) (any, any) {
 	var evidence any
 	if state.NatContext != nil {
 		v := natPlanEvidence{Context: state.NatContext, AddressSets: state.AddressSets}

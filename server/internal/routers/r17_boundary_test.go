@@ -3,6 +3,7 @@ package routers
 import (
 	"bytes"
 	"configflow/internal/routers/device"
+	"configflow/internal/routers/fixedip"
 	"configflow/internal/routers/ros"
 	"encoding/json"
 	"net/http/httptest"
@@ -17,8 +18,8 @@ import (
 )
 
 type r17Output struct {
-	Preview *FixedIPOperation `json:"preview"`
-	Binding *FixedIPBinding   `json:"binding"`
+	Preview *fixedip.Operation `json:"preview"`
+	Binding *fixedip.Binding   `json:"binding"`
 	Error   *struct {
 		Class   string `json:"class"`
 		Message string `json:"message"`
@@ -91,7 +92,7 @@ func TestR17RealPythonVendorBoundaries(t *testing.T) {
 				if mode == "bad_mac" {
 					mac = "01:00:00:00:00:21"
 				}
-				var d FixedIPDriver
+				var d fixedip.Device
 				var initial any
 				var reset func()
 				var state func() any
@@ -162,14 +163,14 @@ func TestR17RealPythonVendorBoundaries(t *testing.T) {
 				if !reflect.DeepEqual(r17Comparable(t, op), r17Comparable(t, expected.Preview)) {
 					t.Fatalf("preview differs Go=%s Python=%s", device.JSON(op), device.JSON(expected.Preview))
 				}
-				var binding *FixedIPBinding
+				var binding *fixedip.Binding
 				if err == nil && write {
 					binding, err = d.ApplyFixedIP(t.Context(), op)
 					if err == nil {
 						deletion, e := d.PreviewDeleteFixedIP(t.Context(), binding)
 						err = e
 						if err == nil {
-							var removed, restored *FixedIPBinding
+							var removed, restored *fixedip.Binding
 							removed, err = d.DeleteFixedIP(t.Context(), deletion)
 							if err == nil {
 								restored, err = d.RestoreDeletedFixedIP(t.Context(), removed)

@@ -175,16 +175,16 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 	switch fn {
 	case "normalize":
 		args := decode[struct{ Payload, Existing json.RawMessage }](t, in)
-		var existing *Router
+		var existing *spec.Router
 		if string(args.Existing) != "null" {
-			existing = decode[*Router](t, args.Existing)
+			existing = decode[*spec.Router](t, args.Existing)
 		}
 		return spec.Normalize(args.Payload, existing)
 	case "public_view":
-		r := decode[Router](t, in)
+		r := decode[spec.Router](t, in)
 		return r.View(), nil
 	case "stored":
-		return decode[Router](t, in), nil
+		return decode[spec.Router](t, in), nil
 	case "redact_routers":
 		out, err := spec.RedactRouters(in)
 		return json.RawMessage(out), err
@@ -195,45 +195,45 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 			RuleSets []string `json:"rule_sets"`
 			Contents map[string]string
 		}](t, in)
-		return spec.ComputeDesired(context.Background(), args.Profile, args.Gateway, args.RuleSets, func(item RuleSet, _ *LibraryRule) (string, error) {
+		return spec.ComputeDesired(context.Background(), args.Profile, args.Gateway, args.RuleSets, func(item spec.RuleSet, _ *spec.LibraryRule) (string, error) {
 			return args.Contents[item.ID], nil
 		})
 	case "dns_agent_settings":
 		args := decode[struct {
 			ID    string
-			Agent *DNSAgent
+			Agent *device.DNSAgent
 		}](t, in)
 		return device.DNSAgentSettings(args.ID, args.Agent), nil
 	case "dns_ha_settings":
 		args := decode[struct {
 			ID          string
-			Agent, Peer *DNSAgent
+			Agent, Peer *device.DNSAgent
 		}](t, in)
 		return device.DNSHASettings(args.ID, args.Agent, args.Peer), nil
 	case "build_dns_report":
 		args := decode[struct {
-			DNS     DNSSettings
+			DNS     device.DNSSettings
 			Gateway string
-			Entries []*DhcpDnsEntry
+			Entries []*device.DhcpDnsEntry
 		}](t, in)
-		var state *DhcpDnsState
+		var state *device.DhcpDnsState
 		if args.Entries != nil {
-			state = &DhcpDnsState{Entries: args.Entries}
+			state = &device.DhcpDnsState{Entries: args.Entries}
 		}
 		return device.BuildDNSReport(args.DNS, args.Gateway, state), nil
 	case "verify_dns":
 		args := decode[struct {
-			Check   DNSCheck
-			Entries []*DhcpDnsEntry
+			Check   device.DNSCheck
+			Entries []*device.DhcpDnsEntry
 		}](t, in)
-		return nil, device.VerifyDNS(args.Check, &DhcpDnsState{Entries: args.Entries})
+		return nil, device.VerifyDNS(args.Check, &device.DhcpDnsState{Entries: args.Entries})
 	case "select":
 		args := decode[struct {
-			Routes        []*RouteEntry
+			Routes        []*device.RouteEntry
 			CIDR, Gateway string
 		}](t, in)
 		sel, _ := device.NewStaticRouteIndex(args.Routes).Select(args.CIDR, args.Gateway)
-		ids := func(routes []*RouteEntry) []string {
+		ids := func(routes []*device.RouteEntry) []string {
 			out := []string{}
 			for _, r := range routes {
 				out = append(out, r.ID)
@@ -245,7 +245,7 @@ func r01Call(t *testing.T, fn string, in json.RawMessage) (any, error) {
 	case "comparable_values":
 		args := decode[struct {
 			Path string
-			Row  Row
+			Row  ros.Row
 		}](t, in)
 		return ros.ComparableValues(args.Path, args.Row), nil
 	case "normalize_mac":
@@ -287,7 +287,7 @@ func desiredReaderPolicy(t *testing.T, input json.RawMessage, got any, actualErr
 	if kind == nil {
 		return false
 	}
-	plan, ok := got.(*Desired)
-	var validation *ValidationError
+	plan, ok := got.(*spec.Desired)
+	var validation *device.ValidationError
 	return ok && plan == nil && errors.As(actualErr, &validation) && errors.Is(actualErr, kind) && strings.HasSuffix(actualErr.Error(), parseErr.Error())
 }

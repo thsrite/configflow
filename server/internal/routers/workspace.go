@@ -49,7 +49,7 @@ type Workspace struct {
 	ProfileName    string             `json:"profile_name"`
 	Revision       string             `json:"revision"`
 	NamesRevision  string             `json:"names_revision"`
-	Router         RouterView         `json:"router"`
+	Router         spec.RouterView    `json:"router"`
 	Sources        WorkspaceSources   `json:"sources"`
 	SourceAgents   []WorkspacePeer    `json:"source_agents"`
 	Gateways       []WorkspaceGateway `json:"gateways"`
@@ -74,7 +74,7 @@ type WorkspaceRequest struct {
 }
 
 // WorkspaceRevision omits probe-only changes and uses D2 native JSON encoding.
-func WorkspaceRevision(config json.RawMessage, r *Router) (string, error) {
+func WorkspaceRevision(config json.RawMessage, r *spec.Router) (string, error) {
 	p, err := oxidns.ProfileFromJSON(config)
 	if err != nil {
 		return "", err
@@ -84,7 +84,7 @@ func WorkspaceRevision(config json.RawMessage, r *Router) (string, error) {
 
 // workspaceRevision digests the router record with the OxiDNS settings
 // revision oxidnsRevision.
-func workspaceRevision(oxidnsRevision string, r *Router) (string, error) {
+func workspaceRevision(oxidnsRevision string, r *spec.Router) (string, error) {
 	raw, err := spec.ReleaseRouterRecord(r)
 	if err != nil {
 		return "", err
@@ -106,7 +106,7 @@ func workspaceRevision(oxidnsRevision string, r *Router) (string, error) {
 
 // ReadWorkspace reads policy metadata without contacting the router. config
 // is a borrowed resolved view and is only read.
-func ReadWorkspace(config *model.Config, r *Router, profile, name, defaultProfile string, agents []WorkspaceAgent) (Workspace, error) {
+func ReadWorkspace(config *model.Config, r *spec.Router, profile, name, defaultProfile string, agents []WorkspaceAgent) (Workspace, error) {
 	p, err := oxidns.NewTypedProfile(config)
 	if err != nil {
 		return Workspace{}, err
@@ -164,7 +164,7 @@ func workspaceRuleSets(profile *model.Profile) ([]WorkspaceRule, error) {
 func SaveWorkspace(config json.RawMessage, id string, body WorkspaceRequest) (json.RawMessage, error) {
 	r := spec.FindSyncRouter(config, id)
 	if r == nil || r.Type != "routeros" {
-		return nil, device.KindError(KindConflict, messageWorkspaceStale)
+		return nil, device.KindError(device.KindConflict, messageWorkspaceStale)
 	}
 	rev, err := WorkspaceRevision(config, r)
 	if err != nil {
@@ -179,7 +179,7 @@ func SaveWorkspace(config json.RawMessage, id string, body WorkspaceRequest) (js
 		return nil, err
 	}
 	if rev != body.Revision || body.Policies != nil && names != body.NamesRevision {
-		return nil, device.KindError(KindConflict, messageWorkspaceStale)
+		return nil, device.KindError(device.KindConflict, messageWorkspaceStale)
 	}
 	updated, err := spec.Normalize(body.Router, r)
 	if err != nil {

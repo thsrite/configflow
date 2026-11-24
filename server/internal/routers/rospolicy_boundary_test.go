@@ -5,6 +5,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,21 +37,21 @@ func r08State() routerfake.State {
 	}}
 }
 
-func r08Desired(selected bool) *Desired {
-	d := &Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: r08Gateway, ProxyCIDRs: []ProxyCIDR{{CIDR: "198.18.0.0/16", Sources: []string{"fake-ip"}}}, Warnings: []string{}}
-	p := &ROSPolicyDesired{Selected: []string{}, Sources: []string{}, CIDRs: []ProxyCIDR{}, Owner: "cf-ros-policy-test"}
+func r08Desired(selected bool) *spec.Desired {
+	d := &spec.Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: r08Gateway, ProxyCIDRs: []spec.ProxyCIDR{{CIDR: "198.18.0.0/16", Sources: []string{"fake-ip"}}}, Warnings: []string{}}
+	p := &spec.ROSPolicyDesired{Selected: []string{}, Sources: []string{}, CIDRs: []spec.ProxyCIDR{}, Owner: "cf-ros-policy-test"}
 	if selected {
 		p.Selected = []string{"synthetic"}
 		p.Sources = []string{"192.0.2.101/32"}
-		p.CIDRs = []ProxyCIDR{{CIDR: r08Target, Sources: []string{"Synthetic"}}}
+		p.CIDRs = []spec.ProxyCIDR{{CIDR: r08Target, Sources: []string{"Synthetic"}}}
 	} else {
-		d.ProxyCIDRs = append(d.ProxyCIDRs, ProxyCIDR{CIDR: r08Target, Sources: []string{"Synthetic"}})
+		d.ProxyCIDRs = append(d.ProxyCIDRs, spec.ProxyCIDR{CIDR: r08Target, Sources: []string{"Synthetic"}})
 	}
 	d.ROSPolicy = p
 	return d
 }
 
-func r08Plan(ctx context.Context, d *RouterOS, desired *Desired) (*ROSPolicyPlan, error) {
+func r08Plan(ctx context.Context, d *RouterOS, desired *spec.Desired) (*rospolicy.ROSPolicyPlan, error) {
 	desired.ROSPolicy.Previous = slices.Clone(d.PolicyManifest())
 	state, err := r08InspectState(ctx, d)
 	if err != nil {
@@ -78,13 +79,13 @@ func r08InspectState(ctx context.Context, d *RouterOS) (*RouterState, error) {
 
 type r08Step struct {
 	Action   string                    `json:"action"`
-	Desired  *Desired                  `json:"desired,omitempty"`
+	Desired  *spec.Desired             `json:"desired,omitempty"`
 	Mutation *routerfake.ExternalWrite `json:"mutation,omitempty"`
 	Prepare  json.RawMessage           `json:"prepare,omitempty"`
 	Rows     json.RawMessage           `json:"rows,omitempty"`
 	Gateway  string                    `json:"gateway,omitempty"`
 	Config   json.RawMessage           `json:"config,omitempty"`
-	Router   *Router                   `json:"router,omitempty"`
+	Router   *spec.Router              `json:"router,omitempty"`
 	Contents map[string]string         `json:"contents,omitempty"`
 }
 type r08Case struct {
@@ -116,7 +117,7 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 		}
 		out.Results = append(out.Results, data)
 	}
-	var undo *ROSPolicyUndo
+	var undo *rospolicy.ROSPolicyUndo
 	var err error
 	for _, step := range tc.Steps {
 		if step.Mutation != nil {
@@ -177,13 +178,13 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 				appendResult(value)
 			}
 		case "inspect":
-			var value *ROSPolicyDesired
-			value, err = rospolicy.InspectROSPolicyDesired(ctx, step.Config, step.Router, step.Desired, func(item RuleSet, _ *LibraryRule) (string, error) { return step.Contents[item.ID], nil })
+			var value *spec.ROSPolicyDesired
+			value, err = rospolicy.InspectROSPolicyDesired(ctx, step.Config, step.Router, step.Desired, func(item spec.RuleSet, _ *spec.LibraryRule) (string, error) { return step.Contents[item.ID], nil })
 			if err == nil {
 				appendResult(value)
 			}
 		case "view":
-			var value []ROSPolicyObject
+			var value []rospolicy.ROSPolicyObject
 			value, err = rospolicy.ReadPolicyObjects(ctx, d.Client, d.PolicyManifest())
 			if err == nil {
 				appendResult(value)
@@ -191,10 +192,10 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 		case "undo":
 			err = rospolicy.RestoreROSPolicy(ctx, d.Client, *undo)
 			if err == nil {
-				appendResult(Row{})
+				appendResult(ros.Row{})
 			}
 		default:
-			var plan *ROSPolicyPlan
+			var plan *rospolicy.ROSPolicyPlan
 			plan, err = r08Plan(ctx, d, step.Desired)
 			if err != nil {
 				break
@@ -222,7 +223,7 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 			if step.Action == "rollback" {
 				err = rospolicy.RestoreROSPolicy(ctx, d.Client, *undo)
 				if err == nil {
-					appendResult(Row{})
+					appendResult(ros.Row{})
 				}
 			}
 		}
@@ -232,11 +233,11 @@ func r08Run(t *testing.T, f *routerfake.Fake, endpoint string, tc r08Case) r08Ou
 	}
 	if err != nil {
 		class := "RouterError"
-		if e, ok := errors.AsType[*RouterError](err); ok {
+		if e, ok := errors.AsType[*device.RouterError](err); ok {
 			switch e.Kind {
-			case KindRollback:
+			case device.KindRollback:
 				class = "RouterRollbackError"
-			case KindUncertainWrite:
+			case device.KindUncertainWrite:
 				class = "UncertainWrite"
 			}
 		}
@@ -423,8 +424,8 @@ func r08Cases() []r08Case {
 	for _, network := range ros.ClientSourceNetworks(netip.MustParseAddr(r08Gateway)) {
 		sources = append(sources, network.String())
 	}
-	nested := NATListSync{OpHead: OpHead{Kind: "nat_list_sync"}, Comment: NATListComment, SrcList: NATSrcList, DstList: NATDstList, OutInterface: "bridge", Sources: sources, Destinations: []string{"198.18.0.0/16", r08Target}, SrcAdd: sources, DstAdd: []string{"198.18.0.0/16", r08Target}, SrcRemove: []ROSResource{}, DstRemove: []ROSResource{}, Legacy: []ROSResource{}, Stale: []ROSResource{}}
-	nestedPreparation := device.JSON(map[string]any{"prepare_static": []any{nested, Row{"kind": "route_add", "cidr": r08Target, "gateway": r08Gateway, "comment": "cf"}}, "static_checks": []CIDRGateway{{CIDR: r08Target, Gateway: r08Gateway}}, "static_nat_checks": NATChecks{Gateway: r08Gateway, NATBypass: []string{"198.18.0.0/16", r08Target}, NATNotRequired: []CIDRGateway{}}})
+	nested := rospolicy.NATListSync{OpHead: device.OpHead{Kind: "nat_list_sync"}, Comment: ros.NATListComment, SrcList: ros.NATSrcList, DstList: ros.NATDstList, OutInterface: "bridge", Sources: sources, Destinations: []string{"198.18.0.0/16", r08Target}, SrcAdd: sources, DstAdd: []string{"198.18.0.0/16", r08Target}, SrcRemove: []ros.Resource{}, DstRemove: []ros.Resource{}, Legacy: []ros.Resource{}, Stale: []ros.Resource{}}
+	nestedPreparation := device.JSON(map[string]any{"prepare_static": []any{nested, ros.Row{"kind": "route_add", "cidr": r08Target, "gateway": r08Gateway, "comment": "cf"}}, "static_checks": []device.CIDRGateway{{CIDR: r08Target, Gateway: r08Gateway}}, "static_nat_checks": device.NATChecks{Gateway: r08Gateway, NATBypass: []string{"198.18.0.0/16", r08Target}, NATNotRequired: []device.CIDRGateway{}}})
 	cases = append(cases, r08Case{"static_nat_list_nested_rollback", nestedState, []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "rollback", Desired: r08Desired(false), Prepare: nestedPreparation}, {Action: "plan", Desired: r08Desired(true)}, {Action: "view"}}})
 	for _, action := range []string{"publish", "rollback"} {
 		cases = append(cases, r08Case{"legacy_" + action, r08State(), []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "legacy"}, {Action: "view"}, {Action: action, Desired: r08Desired(true)}}})
@@ -441,13 +442,13 @@ func r08Cases() []r08Case {
 		}
 		cases = append(cases, r08Case{fmt.Sprintf("replace_withdraw_%t", nat), state, []r08Step{
 			{Action: "publish", Desired: r08Desired(true)},
-			{Action: "publish", Desired: func() *Desired {
+			{Action: "publish", Desired: func() *spec.Desired {
 				d := r08Desired(true)
-				d.ROSPolicy.CIDRs = append(d.ROSPolicy.CIDRs, ProxyCIDR{CIDR: "203.0.113.0/24", Sources: []string{"Second"}})
+				d.ROSPolicy.CIDRs = append(d.ROSPolicy.CIDRs, spec.ProxyCIDR{CIDR: "203.0.113.0/24", Sources: []string{"Second"}})
 				return d
 			}()},
 			{Action: "view"},
-			{Action: "publish", Desired: func() *Desired { d := r08Desired(false); d.ProxyCIDRs = d.ProxyCIDRs[:1]; return d }()},
+			{Action: "publish", Desired: func() *spec.Desired { d := r08Desired(false); d.ProxyCIDRs = d.ProxyCIDRs[:1]; return d }()},
 		}})
 		for _, path := range []string{ros.PathTables, ros.PathRoutes, ros.PathMangle, ros.PathNAT} {
 			if path == ros.PathNAT && !nat {
@@ -524,7 +525,7 @@ func r08Cases() []r08Case {
 	}
 	for _, path := range []string{ros.PathAddresses + "/*65", ros.PathTables + "/*68", ros.PathRoutes + "/*69", ros.PathMangle + "/*6C"} {
 		desired := r08Desired(true)
-		desired.ROSPolicy.CIDRs = []ProxyCIDR{{CIDR: "203.0.113.0/24", Sources: []string{"Replacement"}}}
+		desired.ROSPolicy.CIDRs = []spec.ProxyCIDR{{CIDR: "203.0.113.0/24", Sources: []string{"Replacement"}}}
 		mutation := &routerfake.ExternalWrite{Faults: []routerfake.Fault{{Method: "DELETE", Path: path, Count: 1, Status: 400}}}
 		cases = append(cases, r08Case{"old_delete_failure_" + path, r08State(), []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "publish", Desired: desired, Mutation: mutation}}})
 	}
@@ -557,13 +558,13 @@ func r08Cases() []r08Case {
 			if condition == "inactive" {
 				mutation.Faults = []routerfake.Fault{{Method: "PUT", Path: ros.PathRoutes, Count: 1, AfterCommit: true, PatchRows: map[string]map[string]routerfake.Row{ros.PathRoutes: {"*6D": {"active": "false"}, "*6F": {"active": "false"}}}}}
 			}
-			bypass, notRequired := []string{}, []CIDRGateway{}
+			bypass, notRequired := []string{}, []device.CIDRGateway{}
 			if nat {
 				bypass = append(bypass, r08Target)
 			} else {
-				notRequired = append(notRequired, CIDRGateway{CIDR: r08Target, Gateway: r08Gateway})
+				notRequired = append(notRequired, device.CIDRGateway{CIDR: r08Target, Gateway: r08Gateway})
 			}
-			prepare := device.JSON(map[string]any{"prepare_static": prepares, "static_checks": []CIDRGateway{{CIDR: r08Target, Gateway: r08Gateway}}, "static_nat_checks": NATChecks{Gateway: r08Gateway, NATBypass: bypass, NATNotRequired: notRequired}})
+			prepare := device.JSON(map[string]any{"prepare_static": prepares, "static_checks": []device.CIDRGateway{{CIDR: r08Target, Gateway: r08Gateway}}, "static_nat_checks": device.NATChecks{Gateway: r08Gateway, NATBypass: bypass, NATNotRequired: notRequired}})
 			cases = append(cases, r08Case{fmt.Sprintf("static_replacement_nat_%t_%s", nat, condition), state, []r08Step{{Action: "publish", Desired: r08Desired(true)}, {Action: "publish", Desired: r08Desired(false), Mutation: mutation, Prepare: prepare}}})
 		}
 	}
@@ -594,16 +595,16 @@ func r08Cases() []r08Case {
 	}
 	for _, count := range []int{200, 201, 4096} {
 		desired := r08Desired(true)
-		desired.ROSPolicy.CIDRs = []ProxyCIDR{}
+		desired.ROSPolicy.CIDRs = []spec.ProxyCIDR{}
 		for i := range count {
-			desired.ROSPolicy.CIDRs = append(desired.ROSPolicy.CIDRs, ProxyCIDR{CIDR: fmt.Sprintf("198.18.%d.%d/32", i/256, i%256), Sources: []string{"Synthetic"}})
+			desired.ROSPolicy.CIDRs = append(desired.ROSPolicy.CIDRs, spec.ProxyCIDR{CIDR: fmt.Sprintf("198.18.%d.%d/32", i/256, i%256), Sources: []string{"Synthetic"}})
 		}
 		cases = append(cases, r08Case{fmt.Sprintf("large_bundle_%d", count), r08State(), []r08Step{{Action: "rollback", Desired: desired}}})
 	}
 	cases = append(cases, r08Case{"longest_prefix_sources", r08State(), []r08Step{{Action: "sources", Gateway: r08Gateway, Rows: json.RawMessage(`[{"ip":"192.0.2.0/24","mode":"smart"},{"ip":"192.0.2.0/25","mode":"direct"},{"ip":"192.0.2.101","mode":"smart"},{"ip":"192.0.2.151","mode":"direct"},{"ip":"2001:db8::/32","mode":"smart"}]`)}}})
 	for _, policy := range []string{"Proxy", "DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE", "Only direct"} {
 		for _, problem := range []string{"none", "missing", "disabled", "deleted"} {
-			config := map[string]any{"rule_configs": []map[string]any{{"id": "selected", "itemType": "ruleset", "name": "已停用，没有本地缓存，未计入", "policy": policy, "enabled": true}}, "oxidns": map[string]any{"device_policies": []Row{{"ip": "192.0.2.101", "mode": "smart"}}}, "proxy_groups": []map[string]any{{"name": "Only direct", "manual_nodes": []string{"DIRECT", "REJECT"}}}}
+			config := map[string]any{"rule_configs": []map[string]any{{"id": "selected", "itemType": "ruleset", "name": "已停用，没有本地缓存，未计入", "policy": policy, "enabled": true}}, "oxidns": map[string]any{"device_policies": []ros.Row{{"ip": "192.0.2.101", "mode": "smart"}}}, "proxy_groups": []map[string]any{{"name": "Only direct", "manual_nodes": []string{"DIRECT", "REJECT"}}}}
 			contents := map[string]string{"selected": "IP-CIDR,198.51.100.0/24,no-resolve\n"}
 			if problem == "missing" {
 				contents["selected"] = ""
@@ -612,9 +613,9 @@ func r08Cases() []r08Case {
 				config["rule_configs"].([]map[string]any)[0]["enabled"] = false
 			}
 			if problem == "deleted" {
-				config["rule_configs"] = []Row{}
+				config["rule_configs"] = []ros.Row{}
 			}
-			router := &Router{RouterSettings: RouterSettings{ID: "synthetic-router", RosPolicyRuleSets: []string{"selected"}}}
+			router := &spec.Router{RouterSettings: spec.RouterSettings{ID: "synthetic-router", RosPolicyRuleSets: []string{"selected"}}}
 			cases = append(cases, r08Case{fmt.Sprintf("inspect_%s_%s", policy, problem), r08State(), []r08Step{{Action: "inspect", Config: device.JSON(config), Router: router, Desired: r08Desired(true), Contents: contents}}})
 		}
 	}

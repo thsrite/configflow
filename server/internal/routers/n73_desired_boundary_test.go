@@ -1,6 +1,7 @@
 package routers_test
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
 	"configflow/internal/routers/spec"
 	"configflow/internal/yamlx"
@@ -40,7 +40,7 @@ func TestN73DesiredPolicyStopsBeforeAnyDeviceRequest(t *testing.T) {
 			// This loader deliberately reaches the loopback device. The desired YAML
 			// guard must stop before any caller-supplied work can make that request.
 			reads := 0
-			loader := func(routers.RuleSet, *routers.LibraryRule) (string, error) {
+			loader := func(spec.RuleSet, *spec.LibraryRule) (string, error) {
 				reads++
 				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 				defer cancel()
@@ -67,7 +67,7 @@ func TestN73DesiredPolicyStopsBeforeAnyDeviceRequest(t *testing.T) {
 				return raw
 			}
 			plan, err := spec.ComputeDesired(context.Background(), profile(test.source), "192.0.2.1", []string{"selected"}, loader)
-			var validation *routers.ValidationError
+			var validation *device.ValidationError
 			if plan != nil || !errors.As(err, &validation) || !errors.Is(err, test.reason) {
 				t.Fatalf("policy generated plan: %#v %v", plan, err)
 			}

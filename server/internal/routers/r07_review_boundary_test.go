@@ -1,6 +1,7 @@
 package routers_test
 
 import (
+	"configflow/internal/routers/ros"
 	"configflow/internal/routers/rospolicy"
 	"context"
 	"fmt"
@@ -35,7 +36,7 @@ func TestR07RangeKeysMatchPython(t *testing.T) {
 		"range_member": func(count int) routerfake.State {
 			state := r07State("list", count)
 			for _, row := range state.Tables["/ip/firewall/address-list"] {
-				if row["list"] == routers.NATDstList && row["address"] == r07CIDR(0) {
+				if row["list"] == ros.NATDstList && row["address"] == r07CIDR(0) {
 					row["address"] = first
 				}
 			}

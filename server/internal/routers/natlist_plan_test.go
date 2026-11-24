@@ -2,6 +2,7 @@ package routers_test
 
 import (
 	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -54,23 +55,23 @@ func r07State(variant string, count int) routerfake.State {
 		}
 	}
 	if variant == "list" || variant == "foreign" || variant == "dynamic" || variant == "disabled" || variant == "ref" || variant == "modified" || variant == "shadowed" {
-		rule := routerfake.Row{".id": "*5", "chain": "srcnat", "action": "accept", "src-address-list": routers.NATSrcList, "dst-address-list": routers.NATDstList, "comment": routers.NATListComment, "disabled": "false"}
+		rule := routerfake.Row{".id": "*5", "chain": "srcnat", "action": "accept", "src-address-list": ros.NATSrcList, "dst-address-list": ros.NATDstList, "comment": ros.NATListComment, "disabled": "false"}
 		tables[nat] = append([]routerfake.Row{rule}, tables[nat]...)
 		for i, source := range ros.ClientSourceNetworks(gateway) {
-			tables[addresses] = append(tables[addresses], routerfake.Row{".id": fmt.Sprintf("*%X", 2000+i), "list": routers.NATSrcList, "address": source.String(), "comment": routers.NATListComment, "disabled": "false"})
+			tables[addresses] = append(tables[addresses], routerfake.Row{".id": fmt.Sprintf("*%X", 2000+i), "list": ros.NATSrcList, "address": source.String(), "comment": ros.NATListComment, "disabled": "false"})
 		}
 		for i := 0; i < count; i++ {
-			tables[addresses] = append(tables[addresses], routerfake.Row{".id": fmt.Sprintf("*%X", 3000+i), "list": routers.NATDstList, "address": r07CIDR(i), "comment": routers.NATListComment, "disabled": "false"})
+			tables[addresses] = append(tables[addresses], routerfake.Row{".id": fmt.Sprintf("*%X", 3000+i), "list": ros.NATDstList, "address": r07CIDR(i), "comment": ros.NATListComment, "disabled": "false"})
 		}
 		switch variant {
 		case "foreign":
-			tables[addresses] = append(tables[addresses], routerfake.Row{".id": "*FFFF", "list": routers.NATDstList, "address": "203.0.113.0/24", "comment": "mine", "disabled": "false"})
+			tables[addresses] = append(tables[addresses], routerfake.Row{".id": "*FFFF", "list": ros.NATDstList, "address": "203.0.113.0/24", "comment": "mine", "disabled": "false"})
 		case "dynamic":
 			tables[addresses][0]["dynamic"] = "true"
 		case "disabled":
 			tables[addresses][0]["disabled"] = "true"
 		case "ref":
-			tables["/ip/firewall/raw"] = []routerfake.Row{{".id": "*F1", "dst-address-list": routers.NATDstList, "action": "accept"}}
+			tables["/ip/firewall/raw"] = []routerfake.Row{{".id": "*F1", "dst-address-list": ros.NATDstList, "action": "accept"}}
 		case "modified":
 			rule["protocol"] = "tcp"
 		case "shadowed":
@@ -85,7 +86,7 @@ func r07CIDR(index int) string {
 	}
 	return fmt.Sprintf("198.51.100.%d/32", index)
 }
-func r07Desired(count int) *routers.Desired {
+func r07Desired(count int) *spec.Desired {
 	raw := map[string]any{"fake_ip_range": "", "proxy_gateway": "192.0.2.3", "warnings": []string{}, "proxy_cidrs": []map[string]any{}}
 	items := []map[string]any{}
 	for i := 0; i < count; i++ {
@@ -93,7 +94,7 @@ func r07Desired(count int) *routers.Desired {
 	}
 	raw["proxy_cidrs"] = items
 	b, _ := json.Marshal(raw)
-	var want routers.Desired
+	var want spec.Desired
 	_ = json.Unmarshal(b, &want)
 	return &want
 }

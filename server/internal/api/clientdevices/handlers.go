@@ -3,6 +3,7 @@
 package clientdevices
 
 import (
+	"configflow/internal/routers/device"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,7 +21,6 @@ import (
 	"configflow/internal/oxidns"
 	"configflow/internal/redact"
 	"configflow/internal/repo"
-	"configflow/internal/routers"
 	"configflow/internal/setupflow"
 )
 
@@ -122,10 +122,10 @@ func failure(ctx context.Context, cfg json.RawMessage, err error) (*httpx.Respon
 		return nil, nil
 	}
 	status := 0
-	var re *routers.RouterError
+	var re *device.RouterError
 	if errors.As(err, &re) {
 		status = 502
-		if re.Kind == routers.KindConflict {
+		if re.Kind == device.KindConflict {
 			status = 409
 		}
 	}
@@ -349,7 +349,7 @@ func setupGuard(ctx context.Context, db *repo.Repository, id string) error {
 			return err
 		}
 		if !flags.Completed && !flags.Abandoned {
-			return &routers.RouterError{Kind: routers.KindConflict, Message: messageSetup}
+			return &device.RouterError{Kind: device.KindConflict, Message: messageSetup}
 		}
 	}
 	return nil

@@ -27,9 +27,9 @@ func TestR10SettingsAndYAMLBytesPython(t *testing.T) {
 		t.Run(hex.EncodeToString([]byte(inputs[i]))[:min(32, len(inputs[i])*2)], func(t *testing.T) {
 			before, _ := json.Marshal(c)
 			got := struct {
-				Fake    IPv6Settings      `json:"fake"`
-				Routes  IPv6RouteSettings `json:"routes"`
-				YAMLHex string            `json:"yaml_hex"`
+				Fake    ipv6.IPv6Settings      `json:"fake"`
+				Routes  ipv6.IPv6RouteSettings `json:"routes"`
+				YAMLHex string                 `json:"yaml_hex"`
 			}{ipv6.IPv6FakeIPSettings(c), ipv6.IPv6RoutesSettings(c), hex.EncodeToString([]byte(c.Mihomo.CustomConfig))}
 			// Python's internal IPv6Network(None) text is deliberately replaced
 			// by a clear Chinese validation error (PORTING native-parser rule).
@@ -38,9 +38,9 @@ func TestR10SettingsAndYAMLBytesPython(t *testing.T) {
 					t.Fatal("missing range not rejected", got.Fake)
 				}
 				var ref struct {
-					Fake    IPv6Settings      `json:"fake"`
-					Routes  IPv6RouteSettings `json:"routes"`
-					YAMLHex string            `json:"yaml_hex"`
+					Fake    ipv6.IPv6Settings      `json:"fake"`
+					Routes  ipv6.IPv6RouteSettings `json:"routes"`
+					YAMLHex string                 `json:"yaml_hex"`
 				}
 				_ = json.Unmarshal(expected[i], &ref)
 				if !strings.HasPrefix(ref.Fake.Error, messageIPv6FakeSettings) {
@@ -70,8 +70,8 @@ func FuzzR10IPv6Input(f *testing.F) {
 		if len(data) > 1<<18 {
 			return
 		}
-		_, _ = ipv6.Owned(data, IPv6Snapshot{"routes": {}}, true)
-		_, _ = ipv6.Owned(data, IPv6Snapshot{"routes": {}}, false)
+		_, _ = ipv6.Owned(data, ipv6.IPv6Snapshot{"routes": {}}, true)
+		_, _ = ipv6.Owned(data, ipv6.IPv6Snapshot{"routes": {}}, false)
 		config := r10Config(string(data))
 		_ = ipv6.IPv6FakeIPSettings(config)
 		_ = ipv6.IPv6RoutesSettings(config)
@@ -80,7 +80,7 @@ func FuzzR10IPv6Input(f *testing.F) {
 			_ = ipv6.IPv6FakeIPSettings(&p)
 			_ = ipv6.IPv6RoutesSettings(&p)
 		}
-		var row Row
+		var row ros.Row
 		if json.Unmarshal(data, &row) == nil {
 			_ = ros.StableIPv6Row(row)
 		}
@@ -88,12 +88,12 @@ func FuzzR10IPv6Input(f *testing.F) {
 }
 
 func TestR10IPv6AddressMathPython(t *testing.T) {
-	rows := []Row{}
+	rows := []ros.Row{}
 	for _, address := range []string{"fd00:1::4", "fd00:1::4/64", "fd00:1::4/064", "fe80::4", "fe80::4%eth0", "fe80::4%eth0/64", "fe80::4%eth0/128", "::ffff:192.0.2.4/128", "2001:db8:1::4/64", "invalid"} {
-		rows = append(rows, Row{"address": address, "actual-interface": "bridge", "valid": "2h", "preferred": "1h", "dynamic": "true"})
+		rows = append(rows, ros.Row{"address": address, "actual-interface": "bridge", "valid": "2h", "preferred": "1h", "dynamic": "true"})
 	}
 	raw := r09Python(t, "r10_address_reference.py", rows, "")
-	var expected []Row
+	var expected []ros.Row
 	if err := json.Unmarshal(raw, &expected); err != nil {
 		t.Fatal(err, string(raw))
 	}
@@ -112,8 +112,8 @@ func TestR10IPv6AddressMathPython(t *testing.T) {
 			t.Error("host bits were not masked", text, p)
 		}
 	}
-	live := IPv6Snapshot{"addresses": {{"address": "fd00:1::1/64", "interface": "bridge"}}}
-	if gateway := ipv6.IPv6Gateway(IPv6Host{Addresses: []IPv6HostAddress{{Address: "fe80::4%eth0"}}}, live, "bridge", nil); gateway != "" {
+	live := ipv6.IPv6Snapshot{"addresses": {{"address": "fd00:1::1/64", "interface": "bridge"}}}
+	if gateway := ipv6.IPv6Gateway(ipv6.IPv6Host{Addresses: []ipv6.IPv6HostAddress{{Address: "fe80::4%eth0"}}}, live, "bridge", nil); gateway != "" {
 		t.Error("double-scoped next hop produced", gateway)
 	}
 }

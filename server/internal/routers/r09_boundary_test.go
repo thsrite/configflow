@@ -5,6 +5,7 @@ import (
 	"configflow/internal/routers/device"
 	"configflow/internal/routers/dnsguard"
 	"configflow/internal/routers/ros"
+	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"net/http/httptest"
@@ -20,18 +21,18 @@ import (
 
 type r09Step struct {
 	Action       string                    `json:"action"`
-	Settings     *DNSGuard                 `json:"settings,omitempty"`
-	Desired      *Desired                  `json:"desired,omitempty"`
+	Settings     *spec.DNSGuard            `json:"settings,omitempty"`
+	Desired      *spec.Desired             `json:"desired,omitempty"`
 	Mutation     *routerfake.ExternalWrite `json:"mutation,omitempty"`
 	AfterPreview *routerfake.ExternalWrite `json:"after_preview,omitempty"`
 }
 type r09Case struct {
 	Name        string           `json:"name"`
 	State       routerfake.State `json:"state"`
-	Desired     *Desired         `json:"desired"`
-	Settings    DNSGuard         `json:"settings"`
+	Desired     *spec.Desired    `json:"desired"`
+	Settings    spec.DNSGuard    `json:"settings"`
 	Previous    json.RawMessage  `json:"previous"`
-	PolicyCIDRs []ProxyCIDR      `json:"policy_cidrs,omitempty"`
+	PolicyCIDRs []spec.ProxyCIDR `json:"policy_cidrs,omitempty"`
 	Steps       []r09Step        `json:"steps"`
 }
 type r09Outcome struct {
@@ -40,7 +41,7 @@ type r09Outcome struct {
 	Writes []routerfake.Call           `json:"writes"`
 }
 type r09StepResult struct {
-	Plan     *DNSGuardPlan   `json:"plan"`
+	Plan     *dnsguard.Plan  `json:"plan"`
 	Undo     json.RawMessage `json:"undo"`
 	Error    *r09Error       `json:"error"`
 	Manifest json.RawMessage `json:"manifest"`
@@ -56,7 +57,7 @@ func r09Base(name string) r09Case {
 	return r09Case{Name: name, State: routerfake.State{Tables: map[string][]routerfake.Row{
 		ros.PathRoutes: {{".id": "*10", "dst-address": "192.0.2.0/24", "gateway": "bridge", "immediate-gw": "bridge", "connect": "true", "active": "true", "dynamic": "true", "distance": "0", "routing-table": "main"}},
 		ros.PathNAT:    {{".id": "*20", "chain": "dstnat", "action": "dst-nat", "protocol": "udp", "dst-port": "53", "to-addresses": "192.0.2.2", "comment": "old-dns", "disabled": "false"}, {".id": "*21", "chain": "srcnat", "action": "masquerade", "out-interface": "ether1", "disabled": "false"}},
-	}}, Desired: &Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: "192.0.2.4", ProxyCIDRs: []ProxyCIDR{{CIDR: "198.18.0.0/16", Sources: []string{"fake-ip"}}}, DNSSettings: &DNSSettings{Server: "192.0.2.2"}}, Settings: DNSGuard{Enabled: true, BlockDoT: true, Failover: true, Bypass: []string{"192.0.2.50/32"}}, Steps: []r09Step{{Action: "apply"}, {Action: "plan"}}}
+	}}, Desired: &spec.Desired{FakeIPRange: "198.18.0.0/16", ProxyGateway: "192.0.2.4", ProxyCIDRs: []spec.ProxyCIDR{{CIDR: "198.18.0.0/16", Sources: []string{"fake-ip"}}}, DNSSettings: &device.DNSSettings{Server: "192.0.2.2"}}, Settings: spec.DNSGuard{Enabled: true, BlockDoT: true, Failover: true, Bypass: []string{"192.0.2.50/32"}}, Steps: []r09Step{{Action: "apply"}, {Action: "plan"}}}
 }
 func r09Cases() []r09Case {
 	cases := []r09Case{r09Base("first_enable_synced")}
@@ -105,7 +106,7 @@ func r09Cases() []r09Case {
 		tc.Steps = []r09Step{{Action: "plan"}}
 		switch variant {
 		case "foreign_list":
-			tc.State.Tables[ros.PathAddresses] = []routerfake.Row{{".id": "*F1", "list": DNSGuardBypassList, "address": "192.0.2.9"}}
+			tc.State.Tables[ros.PathAddresses] = []routerfake.Row{{".id": "*F1", "list": dnsguard.BypassList, "address": "192.0.2.9"}}
 		case "foreign_watch":
 			tc.State.Tables[ros.PathNetwatch] = []routerfake.Row{{".id": "*F1", "name": dnsguard.WatchName, "host": "192.0.2.9"}}
 		case "no_netwatch":
@@ -124,9 +125,9 @@ func r09Cases() []r09Case {
 		case "inactive":
 			tc.State.Tables[ros.PathRoutes][0]["active"] = "false"
 		case "proxy_overlap":
-			tc.Desired.ProxyCIDRs = append(tc.Desired.ProxyCIDRs, ProxyCIDR{CIDR: "192.0.2.2/32"})
+			tc.Desired.ProxyCIDRs = append(tc.Desired.ProxyCIDRs, spec.ProxyCIDR{CIDR: "192.0.2.2/32"})
 		case "policy_overlap":
-			tc.PolicyCIDRs = []ProxyCIDR{{CIDR: "192.0.2.2/32"}}
+			tc.PolicyCIDRs = []spec.ProxyCIDR{{CIDR: "192.0.2.2/32"}}
 		case "no_routes":
 			tc.State.Tables[ros.PathRoutes] = []routerfake.Row{}
 		}
@@ -180,7 +181,7 @@ func r09Cases() []r09Case {
 		tc = r09Base(variant)
 		ha := r09Copy(tc.Desired)
 		ha.Server = "192.0.2.10"
-		ha.HA = &DNSHA{VIP: "192.0.2.10", Hosts: []string{"192.0.2.8", "192.0.2.9"}, PeerID: "peer"}
+		ha.HA = &device.DNSHA{VIP: "192.0.2.10", Hosts: []string{"192.0.2.8", "192.0.2.9"}, PeerID: "peer"}
 		ha.ProxyGateway = "192.0.2.11"
 		switch variant {
 		case "ha_host_outside":
@@ -188,14 +189,14 @@ func r09Cases() []r09Case {
 		case "ha_vip_outside":
 			ha.HA.VIP = "203.0.113.10"
 		case "ha_host_proxy":
-			ha.ProxyCIDRs = append(ha.ProxyCIDRs, ProxyCIDR{CIDR: "192.0.2.9/32"})
+			ha.ProxyCIDRs = append(ha.ProxyCIDRs, spec.ProxyCIDR{CIDR: "192.0.2.9/32"})
 		case "ha_empty_hosts":
 			ha.HA.Hosts = []string{}
 		case "ha_validation_order":
 			ha.HA.Hosts[1] = "203.0.113.9"
-			ha.ProxyCIDRs = append(ha.ProxyCIDRs, ProxyCIDR{CIDR: "192.0.2.10/32"})
+			ha.ProxyCIDRs = append(ha.ProxyCIDRs, spec.ProxyCIDR{CIDR: "192.0.2.10/32"})
 		case "ha_vip_proxy":
-			ha.ProxyCIDRs = append(ha.ProxyCIDRs, ProxyCIDR{CIDR: "192.0.2.10/32"})
+			ha.ProxyCIDRs = append(ha.ProxyCIDRs, spec.ProxyCIDR{CIDR: "192.0.2.10/32"})
 		}
 		tc.Settings.Bypass = []string{"192.0.2.12/30", "192.0.2.64/26"}
 		if variant == "ha_transition" {
@@ -257,9 +258,9 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 			t.Fatal(err)
 		}
 		request := r09Copy(*desired)
-		request.DNSGuard = &DesiredDNSGuard{Settings: settings, Previous: previous}
+		request.DNSGuard = &spec.DesiredDNSGuard{Settings: settings, Previous: previous}
 		if len(tc.PolicyCIDRs) > 0 {
-			request.ROSPolicy = &ROSPolicyDesired{CIDRs: tc.PolicyCIDRs}
+			request.ROSPolicy = &spec.ROSPolicyDesired{CIDRs: tc.PolicyCIDRs}
 		}
 		plan := dnsguard.Build(&request, state.DNSGuard, state.NatContext)
 		row := r09StepResult{Plan: plan, Manifest: ros.GuardRaw(previous), Undo: json.RawMessage("null")}
@@ -273,11 +274,11 @@ func r09Go(t *testing.T, tc r09Case, f *routerfake.Fake, endpoint string) r09Out
 			if err == nil && step.Action == "roundtrip" && len(row.Undo) > 0 && string(row.Undo) != "null" {
 				_, err = d.Apply(context.Background(), row.Undo)
 			} else if err == nil {
-				err = dnsguard.Verify(context.Background(), d.Client, &DNSGuardCheck{Roles: plan.Roles})
+				err = dnsguard.Verify(context.Background(), d.Client, &dnsguard.Check{Roles: plan.Roles})
 			}
 			if err != nil {
 				class := "RouterError"
-				if device.RouterErrorKind(err) == KindRollback {
+				if device.RouterErrorKind(err) == device.KindRollback {
 					class = "RouterRollbackError"
 				}
 				row.Error = &r09Error{Class: class, Message: err.Error()}
