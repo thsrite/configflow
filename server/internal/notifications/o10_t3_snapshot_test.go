@@ -22,6 +22,7 @@ import (
 	"configflow/internal/notifications"
 	"configflow/internal/refresh"
 	"configflow/internal/routers"
+	routerrulesync "configflow/internal/routers/rulesync"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
@@ -162,6 +163,9 @@ func wireAllO10T3Slots(t *testing.T, agentReads *atomic.Int32) {
 	discovery.Wire()
 	refresh.Wire()
 	routers.Wire()
+	// O17 R10a moved the router rule-sync task slot and CaptureManual out of
+	// routers.Wire into routers/rulesync.Wire (server/app.go calls both).
+	routerrulesync.Wire()
 	// O17 W5 removed the self-installing Agent row slot (SetRuleSyncRow /
 	// SetDNSFollowRow); server assembly installs it through agenttasks.
 	t.Cleanup(tasks.SetRowBuilder(tasks.SlotAgents, agenttasks.BuildRows(agents.Get, rulesync.TaskRow, dnsfollow.TaskRow)))
