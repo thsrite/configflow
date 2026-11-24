@@ -7,12 +7,12 @@ import (
 	"configflow/internal/webdav"
 )
 
-func connectionSettings(c *httpx.Ctx, inheritRetention bool) (webdav.Settings, *httpx.Response, error) {
+func (h *Handler) connectionSettings(c *httpx.Ctx, inheritRetention bool) (webdav.Settings, *httpx.Response, error) {
 	data, bad := backupRequestData(c)
 	if bad != nil {
 		return webdav.Settings{}, bad, nil
 	}
-	saved, err := loadBackup(c.Context())
+	saved, err := h.loadBackup(c.Context())
 	if err != nil {
 		return webdav.Settings{}, nil, err
 	}

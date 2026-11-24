@@ -9,10 +9,10 @@ import (
 
 // listThirdPartyDependencies is GET /api/settings/dependencies: version,
 // latest release and update state of the bundled Sub-Store.
-func listThirdPartyDependencies(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) listThirdPartyDependencies(c *httpx.Ctx) (*httpx.Response, error) {
 	refresh, _ := c.Arg("refresh")
 	force := refresh == "1" || refresh == "true"
-	dependencies, err := substore.Default().Dependencies.List(c.Context(), force)
+	dependencies, err := h.substore().Dependencies.List(h.withRepo(c.Context()), force)
 	if err != nil {
 		return nil, err
 	}
@@ -22,8 +22,8 @@ func listThirdPartyDependencies(c *httpx.Ctx) (*httpx.Response, error) {
 // updateSubStoreDependency is POST /api/settings/dependencies/sub-store/update:
 // the online update runs in the background; progress is polled through the
 // dependency list.
-func updateSubStoreDependency(c *httpx.Ctx) (*httpx.Response, error) {
-	message, err := substore.Default().Dependencies.StartUpdate(c.Context())
+func (h *Handler) updateSubStoreDependency(c *httpx.Ctx) (*httpx.Response, error) {
+	message, err := h.substore().Dependencies.StartUpdate(h.withRepo(c.Context()))
 	if err == nil {
 		appLogger.Info("Sub-Store 在线更新：" + message)
 		return httpx.JSONStatus(202, map[string]any{"success": true, "message": message}), nil
@@ -33,7 +33,7 @@ func updateSubStoreDependency(c *httpx.Ctx) (*httpx.Response, error) {
 }
 
 // setSubStoreMode is POST /api/settings/dependencies/sub-store/mode.
-func setSubStoreMode(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) setSubStoreMode(c *httpx.Ctx) (*httpx.Response, error) {
 	var request settingsRequest
 	ok := c.BindSilent(&request)
 	var mode string
@@ -43,7 +43,7 @@ func setSubStoreMode(c *httpx.Ctx) (*httpx.Response, error) {
 	if !ok || (mode != "on_demand" && mode != "always") {
 		return failure(400, "请选择按需启动或常驻运行"), nil
 	}
-	if err := substore.Default().Runtime.SetMode(c.Context(), mode); err != nil {
+	if err := h.substore().Runtime.SetMode(h.withRepo(c.Context()), mode); err != nil {
 		if substore.IsRuntimeUnavailable(err) {
 			return failure(409, err.Error()), nil
 		}

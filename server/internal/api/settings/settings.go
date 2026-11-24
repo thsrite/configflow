@@ -15,6 +15,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"configflow/internal/auth"
@@ -23,6 +24,7 @@ import (
 	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/store"
+	"configflow/internal/substore"
 	"configflow/internal/version"
 	"configflow/internal/webdav"
 	"configflow/internal/weblistener"
@@ -31,34 +33,102 @@ import (
 // appLogger is Flask's current_app.logger (backend/app.py).
 var appLogger = logx.Get("backend.app")
 
+// Two-phase web-listener wiring errors (O17 D5).
+var (
+	ErrWebListenerAlreadySet = errors.New("settings handler web listener already set")
+	ErrHandlerStarted        = errors.New("settings handler already started")
+)
+
 var webListener atomic.Pointer[weblistener.Manager]
 
 // SetWebListener installs the manager of the web front end's sockets (nil:
 // the deployment does not serve the web UI itself, as without nginx).
 func SetWebListener(m *weblistener.Manager) { webListener.Store(m) }
 
-// Register adds the settings routes available now.
-func Register(r *httpx.Router) {
-	r.POST("/api/backup/test", "settings.test_backup", auth.Require(testBackup))
-	r.POST("/api/backup/now", "settings.backup_now", auth.Require(backupNow))
-	r.Handle([]string{"GET", "POST"}, "/api/settings/web-port", "settings.handle_web_port", auth.Require(handleWebPort))
-	r.Handle([]string{"GET", "POST"}, "/api/settings/rule-fetch-proxy", "settings.handle_rule_fetch_proxy", auth.Require(handleRuleFetchProxy))
-	r.Handle([]string{"GET", "POST"}, "/api/server-domain", "settings.handle_server_domain", auth.Require(handleServerDomain))
-	r.Handle([]string{"GET", "POST", "DELETE"}, "/api/config-token", "settings.handle_config_token", auth.Require(handleConfigToken))
-	r.GET("/api/version", "settings.get_version", getVersion)
-	r.Handle([]string{"GET", "POST"}, "/api/backup/config", "settings.backup_config", auth.Require(backupConfig))
-	r.Handle([]string{"GET", "POST"}, "/api/settings/subscription-aggregation", "settings.handle_subscription_aggregation", auth.Require(handleSubscriptionAggregation))
-	r.GET("/api/settings/dependencies", "settings.list_third_party_dependencies", auth.Require(listThirdPartyDependencies))
-	r.POST("/api/settings/dependencies/sub-store/update", "settings.update_sub_store_dependency", auth.Require(updateSubStoreDependency))
-	r.POST("/api/settings/dependencies/sub-store/mode", "settings.set_sub_store_mode", auth.Require(setSubStoreMode))
+// Handler serves the /api/settings, /api/backup, /api/server-domain,
+// /api/config-token, and /api/version routes backed by explicit services.
+// The web listener is bound in phase two via SetWebListener before MarkStarted
+// (O17 D5).
+type Handler struct {
+	Repo     *repo.Repository
+	SubStore *substore.Service
+	WebDAV   *webdav.Service
+
+	wlMu    sync.Mutex
+	wlSet   bool
+	started bool
+	wl      *weblistener.Manager
 }
+
+// NewHandler constructs a settings Handler. Nil dependencies fall back to
+// context/package defaults until W11.
+func NewHandler(r *repo.Repository, sub *substore.Service, wd *webdav.Service) *Handler {
+	return &Handler{Repo: r, SubStore: sub, WebDAV: wd}
+}
+
+// SetWebListener binds the deployment's web-listener manager in phase two
+// (O17 D5). It may be called at most once and only before MarkStarted.
+func (h *Handler) SetWebListener(m *weblistener.Manager) error {
+	h.wlMu.Lock()
+	defer h.wlMu.Unlock()
+	if h.started {
+		appLogger.Warning("settings.Handler.SetWebListener called after start")
+		return ErrHandlerStarted
+	}
+	if h.wlSet {
+		appLogger.Warning("settings.Handler.SetWebListener called more than once")
+		return ErrWebListenerAlreadySet
+	}
+	h.wl = m
+	h.wlSet = true
+	return nil
+}
+
+// MarkStarted seals phase-two wiring on h.
+func (h *Handler) MarkStarted() {
+	h.wlMu.Lock()
+	h.started = true
+	h.wlMu.Unlock()
+}
+
+func (h *Handler) currentWebListener() *weblistener.Manager {
+	if h != nil {
+		h.wlMu.Lock()
+		set := h.wlSet
+		m := h.wl
+		h.wlMu.Unlock()
+		if set {
+			return m
+		}
+	}
+	return webListener.Load()
+}
+
+// Register adds the settings routes to r.
+func (h *Handler) Register(r *httpx.Router) {
+	r.POST("/api/backup/test", "settings.test_backup", auth.Require(h.testBackup))
+	r.POST("/api/backup/now", "settings.backup_now", auth.Require(h.backupNow))
+	r.Handle([]string{"GET", "POST"}, "/api/settings/web-port", "settings.handle_web_port", auth.Require(h.handleWebPort))
+	r.Handle([]string{"GET", "POST"}, "/api/settings/rule-fetch-proxy", "settings.handle_rule_fetch_proxy", auth.Require(h.handleRuleFetchProxy))
+	r.Handle([]string{"GET", "POST"}, "/api/server-domain", "settings.handle_server_domain", auth.Require(h.handleServerDomain))
+	r.Handle([]string{"GET", "POST", "DELETE"}, "/api/config-token", "settings.handle_config_token", auth.Require(h.handleConfigToken))
+	r.GET("/api/version", "settings.get_version", h.getVersion)
+	r.Handle([]string{"GET", "POST"}, "/api/backup/config", "settings.backup_config", auth.Require(h.backupConfig))
+	r.Handle([]string{"GET", "POST"}, "/api/settings/subscription-aggregation", "settings.handle_subscription_aggregation", auth.Require(h.handleSubscriptionAggregation))
+	r.GET("/api/settings/dependencies", "settings.list_third_party_dependencies", auth.Require(h.listThirdPartyDependencies))
+	r.POST("/api/settings/dependencies/sub-store/update", "settings.update_sub_store_dependency", auth.Require(h.updateSubStoreDependency))
+	r.POST("/api/settings/dependencies/sub-store/mode", "settings.set_sub_store_mode", auth.Require(h.setSubStoreMode))
+}
+
+// Register adds the settings routes available now.
+func Register(r *httpx.Router) { NewHandler(nil, nil, nil).Register(r) }
 
 func failure(status int, message string) *httpx.Response {
 	return httpx.Message(status, false, message)
 }
 
-func handleWebPort(c *httpx.Ctx) (*httpx.Response, error) {
-	m := webListener.Load()
+func (h *Handler) handleWebPort(c *httpx.Ctx) (*httpx.Response, error) {
+	m := h.currentWebListener()
 	out, err := func() (*httpx.Response, error) {
 		if c.Method() == "GET" || c.Method() == "HEAD" {
 			status, err := m.InformationFor(c.Context())
@@ -110,8 +180,8 @@ func exceptionName(err error) string {
 	return "Exception"
 }
 
-func handleRuleFetchProxy(c *httpx.Ctx) (*httpx.Response, error) {
-	config, err := loadSystemConfig(c.Context())
+func (h *Handler) handleRuleFetchProxy(c *httpx.Ctx) (*httpx.Response, error) {
+	config, err := h.loadSystemConfig(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +204,7 @@ func handleRuleFetchProxy(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = config.SystemConfig.SetJSON("rule_fetch_proxy", raw); err != nil {
 		return nil, err
 	}
-	if err := saveSystemConfig(c.Context(), config); err != nil {
+	if err := h.saveSystemConfig(c.Context(), config); err != nil {
 		appLogger.Error("Failed to update rule download proxy: exception_type=" + exceptionName(err))
 		return failure(500, msgProxySave), nil
 	}
@@ -160,11 +230,11 @@ func inputText(raw json.RawMessage) (string, error) {
 	}
 	return strings.TrimSpace(text), nil
 }
-func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Method() == "POST" && invalidUnicode(c) {
 		return failure(400, msgInvalidUnicode), nil
 	}
-	config, err := loadSystemConfig(c.Context())
+	config, err := h.loadSystemConfig(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -186,17 +256,17 @@ func handleServerDomain(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = config.SystemConfig.SetJSON("server_domain", raw); err != nil {
 		return nil, err
 	}
-	if err = saveSystemConfig(c.Context(), config); err != nil {
+	if err = h.saveSystemConfig(c.Context(), config); err != nil {
 		return failure(500, err.Error()), nil
 	}
 	appLogger.Info("Updated server domain")
 	return httpx.JSON(map[string]any{"success": true, "server_domain": domain}), nil
 }
-func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 	if c.Method() == "POST" && invalidUnicode(c) {
 		return failure(400, msgInvalidUnicode), nil
 	}
-	config, err := loadSystemConfig(c.Context())
+	config, err := h.loadSystemConfig(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +277,7 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 		if err = config.SystemConfig.SetJSON("config_token", json.RawMessage(`""`)); err != nil {
 			return nil, err
 		}
-		if err = saveSystemConfig(c.Context(), config); err != nil {
+		if err = h.saveSystemConfig(c.Context(), config); err != nil {
 			return failure(500, err.Error()), nil
 		}
 		appLogger.Info("Deleted config token")
@@ -229,7 +299,7 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 	if token == "" {
 		return failure(400, "Token is required or set generate=true"), nil
 	}
-	internal, err := redact.ContainsInternalRuleProxyToken(c.Context(), token)
+	internal, err := redact.ContainsInternalRuleProxyToken(h.withRepo(c.Context()), token)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +310,7 @@ func handleConfigToken(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = config.SystemConfig.SetJSON("config_token", raw); err != nil {
 		return nil, err
 	}
-	if err = saveSystemConfig(c.Context(), config); err != nil {
+	if err = h.saveSystemConfig(c.Context(), config); err != nil {
 		return failure(500, err.Error()), nil
 	}
 	appLogger.Info("Updated config token")
@@ -258,7 +328,9 @@ func enabledInput(raw json.RawMessage) bool {
 	}
 	return true
 }
-func getVersion(c *httpx.Ctx) (*httpx.Response, error) { return httpx.JSON(version.Info()), nil }
+func (h *Handler) getVersion(c *httpx.Ctx) (*httpx.Response, error) {
+	return httpx.JSON(version.Info()), nil
+}
 func backupRequestData(c *httpx.Ctx) (*settingsRequest, *httpx.Response) {
 	var data settingsRequest
 	if !c.BindSilent(&data) || !data.nonempty {
@@ -298,8 +370,8 @@ func backupRequestData(c *httpx.Ctx) (*settingsRequest, *httpx.Response) {
 	}
 	return &data, nil
 }
-func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
-	config, err := loadBackup(c.Context())
+func (h *Handler) backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
+	config, err := h.loadBackup(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +445,7 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 		return failure(400, err.Error()), nil
 	}
 	*config.Backup = backup
-	if err = saveBackup(c.Context(), config); err != nil {
+	if err = h.saveBackup(c.Context(), config); err != nil {
 		return nil, err
 	}
 	summary := strings.Join(changed, "、")
@@ -387,8 +459,8 @@ func backupConfig(c *httpx.Ctx) (*httpx.Response, error) {
 	appLogger.Info(msgBackupSaved + "：" + summary + "；" + msgBackupAutomatic + state)
 	return httpx.Message(200, true, msgBackupSaved), nil
 }
-func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
-	config, err := loadSystemConfig(c.Context())
+func (h *Handler) handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
+	config, err := h.loadSystemConfig(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -407,7 +479,7 @@ func handleSubscriptionAggregation(c *httpx.Ctx) (*httpx.Response, error) {
 	// settings record stores its truth value (O18 T1c).
 	enabled := model.Switch(raw, false)
 	config.SystemConfig.SubscriptionAggregationEnabled = &enabled
-	if err = saveSystemConfig(c.Context(), config); err != nil {
+	if err = h.saveSystemConfig(c.Context(), config); err != nil {
 		return failure(500, err.Error()), nil
 	}
 	appLogger.Info("Updated subscription aggregation")

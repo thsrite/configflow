@@ -7,8 +7,37 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/substore"
 	"configflow/internal/webdav"
 )
+
+func (h *Handler) repo(ctx context.Context) (*repo.Repository, error) {
+	if h != nil && h.Repo != nil {
+		return h.Repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
+func (h *Handler) withRepo(ctx context.Context) context.Context {
+	if h != nil && h.Repo != nil {
+		return repo.WithRepository(ctx, h.Repo)
+	}
+	return ctx
+}
+
+func (h *Handler) substore() *substore.Service {
+	if h != nil && h.SubStore != nil {
+		return h.SubStore
+	}
+	return substore.Default()
+}
+
+func (h *Handler) webdav() *webdav.Service {
+	if h != nil && h.WebDAV != nil {
+		return h.WebDAV
+	}
+	return webdav.Default()
+}
 
 // saveSystemConfig / saveBackup own the C06 settings commits. The HTTP layer
 // passes its request lifetime unchanged; only the owner drops disconnect
@@ -24,9 +53,9 @@ type backupEdit struct {
 	baseline *model.Backup
 }
 
-func loadSystemConfig(ctx context.Context) (*systemConfigEdit, error) {
+func (h *Handler) loadSystemConfig(ctx context.Context) (*systemConfigEdit, error) {
 	ctx = lifecycle.Detach(ctx)
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -39,9 +68,9 @@ func loadSystemConfig(ctx context.Context) (*systemConfigEdit, error) {
 	return &systemConfigEdit{settings, &base}, nil
 }
 
-func loadBackup(ctx context.Context) (*backupEdit, error) {
+func (h *Handler) loadBackup(ctx context.Context) (*backupEdit, error) {
 	ctx = lifecycle.Detach(ctx)
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +91,12 @@ func settingValue(config *systemConfigEdit, key string, fallback json.RawMessage
 	return raw
 }
 
-func saveSystemConfig(ctx context.Context, config *systemConfigEdit) error {
+func (h *Handler) saveSystemConfig(ctx context.Context, config *systemConfigEdit) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return err
 	}
@@ -78,12 +107,12 @@ func saveSystemConfig(ctx context.Context, config *systemConfigEdit) error {
 	return err
 }
 
-func saveBackup(ctx context.Context, config *backupEdit) error {
+func (h *Handler) saveBackup(ctx context.Context, config *backupEdit) error {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := h.repo(ctx)
 	if err != nil {
 		return err
 	}
@@ -96,19 +125,19 @@ func saveBackup(ctx context.Context, config *backupEdit) error {
 
 // testBackupConnection can create remote directories, so it is a write owner
 // even though it does not save the panel settings.
-func testBackupConnection(ctx context.Context, settings webdav.Settings) (bool, error) {
+func (h *Handler) testBackupConnection(ctx context.Context, settings webdav.Settings) (bool, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	return webdav.Default().Test(ctx, settings)
+	return h.webdav().Test(ctx, settings)
 }
 
 // runManualBackup owns capture -> upload/receipt as one disconnected request.
 // Shared WebDAV/taskstatus final commit windows belong to O3-6c; do not replace
 // its receipt helper or suppress a stopped Runtime with Uninterruptible here.
-func runManualBackup(ctx context.Context, settings webdav.Settings) (webdav.Result, error) {
-	ctx = lifecycle.Detach(ctx)
+func (h *Handler) runManualBackup(ctx context.Context, settings webdav.Settings) (webdav.Result, error) {
+	ctx = lifecycle.Detach(h.withRepo(ctx))
 	if err := ctx.Err(); err != nil {
 		return webdav.Result{}, err
 	}

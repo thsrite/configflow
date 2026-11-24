@@ -19,12 +19,12 @@ func backupEditorURL(address string) string {
 	return u.String()
 }
 
-func testBackup(c *httpx.Ctx) (*httpx.Response, error) {
-	settings, bad, err := connectionSettings(c, false)
+func (h *Handler) testBackup(c *httpx.Ctx) (*httpx.Response, error) {
+	settings, bad, err := h.connectionSettings(c, false)
 	if bad != nil || err != nil {
 		return bad, err
 	}
-	connected, err := testBackupConnection(c.Context(), settings)
+	connected, err := h.testBackupConnection(c.Context(), settings)
 	if err != nil {
 		var directory *webdav.DirectoryError
 		if errors.Is(err, webdav.ErrIncompleteSettings) || errors.Is(err, webdav.ErrUnsafePath) || errors.As(err, &directory) {
@@ -39,12 +39,12 @@ func testBackup(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return httpx.Message(200, true, msgBackupConnectOK), nil
 }
-func backupNow(c *httpx.Ctx) (*httpx.Response, error) {
-	settings, bad, err := connectionSettings(c, true)
+func (h *Handler) backupNow(c *httpx.Ctx) (*httpx.Response, error) {
+	settings, bad, err := h.connectionSettings(c, true)
 	if bad != nil || err != nil {
 		return bad, err
 	}
-	result, err := runManualBackup(c.Context(), settings)
+	result, err := h.runManualBackup(c.Context(), settings)
 	if err == nil {
 		cleaned := ""
 		if result.Removed > 0 {
