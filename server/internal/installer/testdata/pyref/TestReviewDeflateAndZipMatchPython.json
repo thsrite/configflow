@@ -590,7 +590,7 @@
       "backend/utils/webdav_backup.py": "6e2b1af0f771ce62fb0e8dd30cdeb78d423e3af4a4c19ceee38ea726d4ac19da",
       "backend/utils/website_identity.py": "076e83356d86317e7c023c821dd634e1ceec4147ced766f7599779287e2d69bf",
       "backend/version.py": "53955c3452330caed40735495038819a872584ef64ddd655d5a930ca46baeca7",
-      "server/go.mod": "d3868a67f6395711756587d1a8124eb741db35bd07012216b65e830fab5412c1",
+      "server/go.mod": "2345743adafc37bab8171fa608ab92acb7755feb3f758cdc1eb92a87e57e27a6",
       "server/go.sum": "bdb21d60d4cbfe73226d5b181e849f26b9bd1f63b493c961e86fb7fd65c6cca3",
       "server/internal/digest/digest.go": "d7c335b1622ad4eb2d135a5b02de8515daa93d8c5db0043cd9e0db9db7e6f3db",
       "server/internal/installer/archive_native_test.go": "884d6d044e1dd40042e30df2c5fa723f2650194cfbbbb40f8cf1902cccd74b9f",
