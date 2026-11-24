@@ -5,6 +5,8 @@ go 1.27.0
 // Release toolchain pinned for the server and its Docker image.
 toolchain go1.27.4
 
+replace gopkg.in/yaml.v3 => ./third_party/yamlv3
+
 require (
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/google/uuid v1.6.0

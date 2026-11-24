@@ -4,6 +4,59 @@ Domain `config` (WORKFLOW.md): foundation (old packages #0–#5) and configurati
 
 Planning audit: 2026-11-15, worktree `configflow-go`, branch `go` at 9783acd1 (plus uncommitted work of the subs and agents agents). File list and other domains: `server/parity/FILES.md`.
 
+## O10 — targeted performance changes
+
+Branch `go-o10-perf-polish`, based on `go@7feb6e125`.
+
+- `cec573c1e` reuses JSON v1-compatible options and fast-paths plain ASCII
+  strings. Byte and error equivalence tests pass, including a 60 s fuzz run.
+- `216a1d73b` rebuilds probe retention once and ranks by decoded timestamps.
+  Tests cover the expiry boundary, empty result, tie cutoff and insertion order.
+- `cbf299cfe` reads both token sets in one repository lookup. Tests cover cache
+  reuse, rotation, the transaction working copy, rollback and database errors.
+- The YAML patch reuses the empty emitter queue in a local copy of yaml.v3 v3.0.1.
+  Docker copies the replacement's manifest before downloading dependencies.
+  The 320-proxy fixture emits 64,512 bytes with the upstream SHA-256
+  `3b45a209b1d5c5e25317cc578d0a2cf3f1f34b814e3664840ced901cc350a968`.
+
+### Benchmark medians from three runs on .32
+
+| Benchmark | Time/op before → after | B/op before → after | Allocs/op before → after |
+|---|---:|---:|---:|
+| Scalar ASCII | 189.9 → 20.49 ns | 240 → 16 | 4 → 1 |
+| Scalar escaped | 215.7 → 134.3 ns | 240 → 40 | 4 → 2 |
+| Scalar float64 | 209.1 → 126.9 ns | 232 → 16 | 4 → 2 |
+| Prune 6,000 hosts | 979.0 → 3.91 ms | 234,624,252 → 2,046,935 | 531,875 → 23,887 |
+| Marshal 320-proxy YAML | 5.37 → 3.55 ms | 8,980,951 → 924,227 | 15,496 → 15,483 |
+
+Benchmarks used `go test -run '^$' -bench <name> -benchmem -count=3 <package>`
+with `BenchmarkScalarJSON`, `BenchmarkPruneHosts6000` and
+`BenchmarkMarshalLargeDocument`. The YAML benchmark used the same fixture
+against the upstream module and the local replacement.
+
+### Verification on .32
+
+- `gofmt -l internal/ tools/ cmd/` reported no files. `go vet ./...` passed.
+- `go build -tags configflow_proddiff ./...` and
+  `go build -tags configflow_difftest ./...` passed.
+- `CGO_ENABLED=0 go build -o /dev/null ./cmd/...` passed with
+  `GOOS=linux` for `amd64`, `arm64` and `arm` with `GOARM=7`.
+- `go list -m -json gopkg.in/yaml.v3` resolved v3.0.1 to `./third_party/yamlv3`.
+  `go test -count=1 gopkg.in/yaml.v3` passed.
+- `docker build --target server-builder -f docker/Dockerfile .` passed.
+- `go test -run '^$' -fuzz '^FuzzScalarJSONLegacyBytes$' -fuzztime=60s -parallel=4 ./internal/model`
+  passed with 3,139,459 executions. The concurrency and pyref process audit
+  tests passed.
+- `PYREF_MODE=check go test -count=1 -v ./internal/installer ./internal/mosdns ./internal/oxidns ./internal/routersplit`
+  passed with 17 live matches and zero input/output diffs. Comparing the
+  decompressed files to the base confirmed that only source hashes changed
+  across 14,036 recorded input/output pairs.
+- `go test -race -count=1 ./internal/model ./internal/health/check ./internal/repo ./internal/redact ./internal/yamlx/... ./internal/aggregations ./internal/convert ./internal/oxidns ./internal/discovery`
+  passed eight packages. The two corpus-heavy packages reached the default
+  10-minute timeout. Both passed when rerun with
+  `go test -json -race -count=1 -timeout=40m ./internal/convert ./internal/oxidns`
+  (624.435 s and 828.081 s).
+
 ## N7-3c — MosDNS/provider YAML readers (ported)
 
 Branch `go-n7-3c`; call-site and command record:

@@ -12,6 +12,7 @@ WORKDIR /build
 ENV GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 GOTOOLCHAIN=local
 
 COPY server/go.mod server/go.sum ./
+COPY server/third_party/yamlv3/go.mod ./third_party/yamlv3/
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
