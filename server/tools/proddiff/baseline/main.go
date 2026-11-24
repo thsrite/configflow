@@ -82,12 +82,15 @@ func run() (resultErr error) {
 		repository.Close()
 		return nil
 	}
-	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
-	srvApp, err := server.New(context.Background(), server.Options{Repo: repository, Runtime: rt})
+	// Use the same public wiring as the panel, keeping its Runtime unstarted so
+	// startup steps (PrepareConfig) and periodic loops never touch DB metadata;
+	// bind requests to an empty Runtime so deploy.RunDetached has a live spawner.
+	srvApp, err := server.New(context.Background(), server.Options{Repo: repository})
 	if err != nil {
 		return err
 	}
 	defer srvApp.Agents.Close()
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 	rt.Start(context.Background())
 	defer rt.Stop(8 * time.Second)
 	ctx := rt.BindRequest(context.Background())
