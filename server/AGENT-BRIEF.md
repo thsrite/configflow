@@ -120,6 +120,18 @@ under load). Background-job notifications do not reliably wake an agent in this 
 saying "waiting for the run", nothing resumes you and the task stalls. Only end your turn when the task is
 finished (or you are blocked on a question to the coordinator).
 
+**Time cap (2026-11-24, R line stalled ~90 min waiting on a full routerdiff):** no single verification command may
+run longer than 45 minutes in an agent task. Give every long command an explicit timeout; if it hits the cap, kill
+it, record "not finished — covered by the coordinator's gate" and move on. Never wait on a command whose baseline is
+known to be broken or incomplete.
+
+**Full routerdiff / full proddiff / full gate are the coordinator's job.** Agents run only the routerdiff recipes
+that touch the code they changed (filter by recipe ID), the affected packages' tests, and the stage the brief names.
+The coordinator runs the full comparisons in the batch gate.
+
+**Destructive commands:** never use wildcards outside your own directories (e.g. `rm -rf /var/folders/*/*/T/tmp.*`
+deleted other sessions' temp files on 2026-11-24). Delete only paths you created and can name exactly.
+
 ## Reporting
 
 At the end (and when your context gets long) update your PROGRESS section: status, commits, decisions,
