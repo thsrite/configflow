@@ -2,6 +2,7 @@
 package domaindiscovery
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 
@@ -11,13 +12,30 @@ import (
 	"configflow/internal/repo"
 )
 
-// Register declares all seventeen domain-discovery routes.
-func Register(r *httpx.Router) {
+// Handler serves the authenticated domain-discovery routes.
+type Handler struct {
+	Repo *repo.Repository
+}
+
+// NewHandler constructs a domain-discovery Handler for r (nil falls back to the
+// context/default repository until W11 removes the locators).
+func NewHandler(r *repo.Repository) *Handler { return &Handler{Repo: r} }
+
+func (h *Handler) ctx(c *httpx.Ctx) context.Context {
+	ctx := c.Context()
+	if h != nil && h.Repo != nil {
+		ctx = repo.WithRepository(ctx, h.Repo)
+	}
+	return ctx
+}
+
+// Register declares all seventeen domain-discovery routes on r.
+func (h *Handler) Register(r *httpx.Router) {
 	routes := []struct {
 		method, path, endpoint string
 		handler                httpx.HandlerFunc
 	}{
-		{"GET", "settings", "get_settings", settings}, {"PUT", "settings", "update_settings", updateSettings}, {"POST", "rulesets/init", "init_rulesets", initRulesets}, {"GET", "domains", "list_domains", domains}, {"GET", "agents", "list_agents", agents}, {"POST", "apply", "apply_rules", apply}, {"POST", "undo", "undo", undo}, {"GET", "history", "history", history}, {"POST", "ignore", "add_ignored", ignore}, {"DELETE", "ignore", "remove_ignored", ignore}, {"POST", "probe", "start_probe", probe}, {"GET", "probe/<job_id>", "get_probe", getProbe}, {"GET", "region", "region_status", region}, {"POST", "region/check", "start_region_check", checkRegion}, {"POST", "region/route", "route_region", routeRegion}, {"POST", "website/identify", "identify_website", website}, {"PUT", "website/note", "website_note", note},
+		{"GET", "settings", "get_settings", h.settings}, {"PUT", "settings", "update_settings", h.updateSettings}, {"POST", "rulesets/init", "init_rulesets", h.initRulesets}, {"GET", "domains", "list_domains", h.domains}, {"GET", "agents", "list_agents", h.agents}, {"POST", "apply", "apply_rules", h.apply}, {"POST", "undo", "undo", h.undo}, {"GET", "history", "history", h.history}, {"POST", "ignore", "add_ignored", h.ignore}, {"DELETE", "ignore", "remove_ignored", h.ignore}, {"POST", "probe", "start_probe", h.probe}, {"GET", "probe/<job_id>", "get_probe", h.getProbe}, {"GET", "region", "region_status", h.region}, {"POST", "region/check", "start_region_check", h.checkRegion}, {"POST", "region/route", "route_region", h.routeRegion}, {"POST", "website/identify", "identify_website", h.website}, {"PUT", "website/note", "website_note", h.note},
 	}
 	for _, rt := range routes {
 		handler := rt.handler
@@ -34,6 +52,9 @@ func Register(r *httpx.Router) {
 		r.Handle([]string{rt.method}, "/api/domain-discovery/"+rt.path, "domain_discovery."+rt.endpoint, auth.Require(handler))
 	}
 }
+
+// Register declares all seventeen domain-discovery routes.
+func Register(r *httpx.Router) { NewHandler(nil).Register(r) }
 func body(c *httpx.Ctx) json.RawMessage {
 	var raw json.RawMessage
 	if !c.BindSilent(&raw) {
@@ -91,15 +112,15 @@ func response[T any](status int, v T, err error) (*httpx.Response, error) {
 	}
 	return httpx.RawJSON(status, b), nil
 }
-func settings(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.SettingsPayload(c.Context(), c.ProfileID)
+func (h *Handler) settings(c *httpx.Ctx) (*httpx.Response, error) {
+	v, e := discovery.SettingsPayload(h.ctx(c), c.ProfileID)
 	return response(200, v, e)
 }
-func updateSettings(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.UpdateSettings(c.Context(), c.ProfileID, body(c))
+func (h *Handler) updateSettings(c *httpx.Ctx) (*httpx.Response, error) {
+	v, e := discovery.UpdateSettings(h.ctx(c), c.ProfileID, body(c))
 	return response(200, v, e)
 }
-func initRulesets(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) initRulesets(c *httpx.Ctx) (*httpx.Response, error) {
 	p, err := payload(c)
 	if err != nil {
 		return nil, err
@@ -110,24 +131,24 @@ func initRulesets(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, repo.NewValidationError(msgTargets)
 		}
 	}
-	v, e := discovery.InitRulesets(c.Context(), c.ProfileID, targets, text(p.ProxyPolicy))
+	v, e := discovery.InitRulesets(h.ctx(c), c.ProfileID, targets, text(p.ProxyPolicy))
 	return response(200, v, e)
 }
-func domains(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) domains(c *httpx.Ctx) (*httpx.Response, error) {
 	days := 7
 	if c.ArgInt("days", 7) <= 1 {
 		days = 1
 	}
 	view := c.ArgDefault("view", "uncovered")
-	v, e := discovery.LoadDomains(c.Context(), c.ProfileID, days, view, c.ArgDefault("agent_id", ""))
+	v, e := discovery.LoadDomains(h.ctx(c), c.ProfileID, days, view, c.ArgDefault("agent_id", ""))
 	return response(200, v, e)
 }
-func agents(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.AgentsPayload(c.Context(), c.ProfileID)
+func (h *Handler) agents(c *httpx.Ctx) (*httpx.Response, error) {
+	v, e := discovery.AgentsPayload(h.ctx(c), c.ProfileID)
 	return response(200, v, e)
 }
-func apply(c *httpx.Ctx) (*httpx.Response, error) {
-	ctx := c.Context()
+func (h *Handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
+	ctx := h.ctx(c)
 	p, err := payload(c)
 	if err != nil {
 		return nil, err
@@ -143,28 +164,28 @@ func apply(c *httpx.Ctx) (*httpx.Response, error) {
 	v, e := discovery.ApplyDomains(ctx, c.ProfileID, entries, "manual", proof)
 	return response(200, v, e)
 }
-func undo(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) undo(c *httpx.Ctx) (*httpx.Response, error) {
 	p, err := payload(c)
 	if err != nil {
 		return nil, err
 	}
-	v, e := discovery.UndoDomain(c.Context(), c.ProfileID, text(p.Value), text(p.Target))
+	v, e := discovery.UndoDomain(h.ctx(c), c.ProfileID, text(p.Value), text(p.Target))
 	return response(200, struct {
 		Removed []string `json:"removed"`
 	}{v}, e)
 }
-func history(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.HistoryPayload(c.Context(), c.ProfileID)
+func (h *Handler) history(c *httpx.Ctx) (*httpx.Response, error) {
+	v, e := discovery.HistoryPayload(h.ctx(c), c.ProfileID)
 	return response(200, struct {
 		Items []map[string]json.RawMessage `json:"items"`
 	}{v}, e)
 }
-func ignore(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) ignore(c *httpx.Ctx) (*httpx.Response, error) {
 	p, err := payload(c)
 	if err != nil {
 		return nil, err
 	}
-	v, e := discovery.UpdateIgnored(c.Context(), c.ProfileID, values(p.Values), c.Request.Method == "POST")
+	v, e := discovery.UpdateIgnored(h.ctx(c), c.ProfileID, values(p.Values), c.Request.Method == "POST")
 	return response(200, struct {
 		Ignored []string `json:"ignored"`
 	}{v}, e)
@@ -186,15 +207,15 @@ func jobResponse(c *httpx.Ctx, j *discovery.Job, err error) (*httpx.Response, er
 		Job *discovery.Job `json:"job"`
 	}{j}, err)
 }
-func probe(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) probe(c *httpx.Ctx) (*httpx.Response, error) {
 	p, err := payload(c)
 	if err != nil {
 		return nil, err
 	}
-	j, e := discovery.StartProbe(c.Context(), c.ProfileID, values(p.Domains))
+	j, e := discovery.StartProbe(h.ctx(c), c.ProfileID, values(p.Domains))
 	return jobResponse(c, j, e)
 }
-func getProbe(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) getProbe(c *httpx.Ctx) (*httpx.Response, error) {
 	j := discovery.GetJob(c.Param("job_id"), c.ProfileID)
 	if j == nil {
 		return httpx.Message(404, false, "Probe job not found"), nil
@@ -203,11 +224,11 @@ func getProbe(c *httpx.Ctx) (*httpx.Response, error) {
 		Job *discovery.Job `json:"job"`
 	}{j}, nil)
 }
-func region(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.RegionPayload(c.Context(), c.ProfileID)
+func (h *Handler) region(c *httpx.Ctx) (*httpx.Response, error) {
+	v, e := discovery.RegionPayload(h.ctx(c), c.ProfileID)
 	return response(200, v, e)
 }
-func checkRegion(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) checkRegion(c *httpx.Ctx) (*httpx.Response, error) {
 	p, err := payload(c)
 	if err != nil {
 		return nil, err
@@ -220,23 +241,23 @@ func checkRegion(c *httpx.Ctx) (*httpx.Response, error) {
 	if v := p.Domains; len(v) > 0 && discovery.JSONOptionEnabled(v) && vs == nil {
 		return nil, repo.NewValidationError(msgDomains)
 	}
-	j, e := discovery.StartRegion(c.Context(), c.ProfileID, services, vs)
+	j, e := discovery.StartRegion(h.ctx(c), c.ProfileID, services, vs)
 	return jobResponse(c, j, e)
 }
-func routeRegion(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) routeRegion(c *httpx.Ctx) (*httpx.Response, error) {
 	p, err := payload(c)
 	if err != nil {
 		return nil, err
 	}
-	v, e := discovery.RouteToPolicy(c.Context(), c.ProfileID, text(p.Kind), text(p.Value), text(p.Policy))
+	v, e := discovery.RouteToPolicy(h.ctx(c), c.ProfileID, text(p.Kind), text(p.Value), text(p.Policy))
 	return response(200, v, e)
 }
-func website(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) website(c *httpx.Ctx) (*httpx.Response, error) {
 	p, _ := payload(c)
-	j, e := discovery.StartWebsite(c.Context(), c.ProfileID, values(p.Domains))
+	j, e := discovery.StartWebsite(h.ctx(c), c.ProfileID, values(p.Domains))
 	return jobResponse(c, j, e)
 }
-func note(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.SaveWebsiteNote(c.Context(), c.ProfileID, body(c))
+func (h *Handler) note(c *httpx.Ctx) (*httpx.Response, error) {
+	v, e := discovery.SaveWebsiteNote(h.ctx(c), c.ProfileID, body(c))
 	return response(200, v, e)
 }

@@ -7,17 +7,26 @@ import (
 
 	"configflow/internal/auth"
 	"configflow/internal/httpx"
+	"configflow/internal/repo"
 	"configflow/internal/tasks"
 )
 
-// Handler serves the /api/tasks routes backed by a tasks.Registry.
+// Handler serves the /api/tasks routes backed by a tasks.Registry and an
+// optional explicit Repository.
 type Handler struct {
 	Tasks *tasks.Registry
+	Repo  *repo.Repository
 }
 
 // NewHandler constructs a Handler for reg (nil falls back to tasks.Default).
 func NewHandler(reg *tasks.Registry) *Handler {
 	return &Handler{Tasks: reg}
+}
+
+// NewHandlerWithRepo constructs a Handler with an explicit tasks.Registry and
+// Repository (nil fields fall back to package/context defaults until W11).
+func NewHandlerWithRepo(reg *tasks.Registry, r *repo.Repository) *Handler {
+	return &Handler{Tasks: reg, Repo: r}
 }
 
 func (h *Handler) registry() *tasks.Registry {
@@ -101,7 +110,7 @@ func (h *Handler) setInterval(c *httpx.Ctx) (*httpx.Response, error) {
 	if !c.BindSilent(&body) || !body.valid {
 		return message(400, msgSpecifyTaskInterval), nil
 	}
-	row, err := updateIntervalOn(c.Context(), h.registry(), body)
+	row, err := updateIntervalOn(c.Context(), h.registry(), h.Repo, body)
 	var notReady *tasks.Unavailable
 	var invalid *tasks.Invalid
 	var missing *tasks.NotFound

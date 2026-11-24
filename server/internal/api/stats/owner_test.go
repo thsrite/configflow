@@ -80,7 +80,7 @@ func TestSamplingOwnerRuntimeAndCancellationBeforeCommit(t *testing.T) {
 				}
 				return time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
 			}
-			_, err := recordHistory(request, Counts{Nodes: 1}, true)
+			_, err := NewHandler(nil).recordHistory(request, Counts{Nodes: 1}, true)
 			path, _ := r.ProfilePath("default", HistoryFile)
 			_, statErr := os.Stat(path)
 			if mode == "disconnect" {
@@ -101,7 +101,7 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	clock := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
 	Now = func() time.Time { return clock }
 	for range HistorySize + 5 {
-		if _, err := recordHistory(ctx, Counts{Nodes: 1}, true); err != nil {
+		if _, err := NewHandler(nil).recordHistory(ctx, Counts{Nodes: 1}, true); err != nil {
 			t.Fatal(err)
 		}
 		clock = clock.Add(SampleInterval)
@@ -130,7 +130,7 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 20 {
 		wg.Go(func() {
-			if _, err := recordHistory(ctx, Counts{Nodes: 2}, true); err != nil {
+			if _, err := NewHandler(nil).recordHistory(ctx, Counts{Nodes: 2}, true); err != nil {
 				t.Error(err)
 			}
 		})
@@ -142,7 +142,7 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{bad"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := recordHistory(ctx, Counts{Nodes: 3}, true); err != nil {
+	if _, err := NewHandler(nil).recordHistory(ctx, Counts{Nodes: 3}, true); err != nil {
 		t.Fatal("corrupt optional history prevented overview", err)
 	}
 	if err := os.Remove(path); err != nil {
@@ -151,7 +151,7 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := recordHistory(ctx, Counts{Nodes: 4}, true); err != nil {
+	if _, err := NewHandler(nil).recordHistory(ctx, Counts{Nodes: 4}, true); err != nil {
 		t.Fatal("optional history write failure prevented overview", err)
 	}
 }

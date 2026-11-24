@@ -18,7 +18,7 @@ func TestNativeHistoryInterchangeAndExactCounters(t *testing.T) {
 	t.Cleanup(func() { Now = previous })
 	clock := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
 	Now = func() time.Time { return clock }
-	if _, err := recordHistory(ctx, Counts{Nodes: 2}, true); err != nil {
+	if _, err := NewHandler(repository).recordHistory(ctx, Counts{Nodes: 2}, true); err != nil {
 		t.Fatal(err)
 	}
 	path, err := repository.ProfilePath("default", HistoryFile)
@@ -33,7 +33,7 @@ json.dump(v,open(p,'w'))`
 		t.Fatalf("Python: %s %v", out, err)
 	}
 	clock = clock.Add(SampleInterval)
-	history, err := recordHistory(ctx, Counts{Nodes: 3}, true)
+	history, err := NewHandler(repository).recordHistory(ctx, Counts{Nodes: 3}, true)
 	if err != nil {
 		t.Fatal(err)
 	}

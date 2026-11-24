@@ -27,10 +27,10 @@ func findRow(ctx context.Context, reg *tasks.Registry, key, slot string) (*tasks
 }
 
 func updateInterval(ctx context.Context, body intervalRequest) (*tasks.Task, error) {
-	return updateIntervalOn(ctx, tasks.Default(), body)
+	return updateIntervalOn(ctx, tasks.Default(), nil, body)
 }
 
-func updateIntervalOn(ctx context.Context, reg *tasks.Registry, body intervalRequest) (*tasks.Task, error) {
+func updateIntervalOn(ctx context.Context, reg *tasks.Registry, repository *repo.Repository, body intervalRequest) (*tasks.Task, error) {
 	if reg == nil {
 		reg = tasks.Default()
 	}
@@ -71,9 +71,11 @@ func updateIntervalOn(ctx context.Context, reg *tasks.Registry, body intervalReq
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		repository, err := repo.GetRepository(ctx)
-		if err != nil {
-			return nil, err
+		if repository == nil {
+			repository, err = repo.GetRepository(ctx)
+			if err != nil {
+				return nil, err
+			}
 		}
 		err = repository.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
 			if err := ctx.Err(); err != nil {

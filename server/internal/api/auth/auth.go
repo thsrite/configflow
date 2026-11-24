@@ -13,18 +13,27 @@ import (
 
 var logger = logx.Get("backend.routes.auth")
 
-// Register adds the auth blueprint.
-func Register(r *httpx.Router) {
-	r.GET("/api/auth/status", "auth.auth_status", authStatus)
-	r.POST("/api/auth/login", "auth.login", login)
-	r.GET("/api/auth/verify", "auth.verify", auth.Require(verify))
+// Handler serves the /api/auth routes.
+type Handler struct{}
+
+// NewHandler constructs a Handler for the auth blueprint.
+func NewHandler() *Handler { return &Handler{} }
+
+// Register adds the auth blueprint routes to r.
+func (h *Handler) Register(r *httpx.Router) {
+	r.GET("/api/auth/status", "auth.auth_status", h.authStatus)
+	r.POST("/api/auth/login", "auth.login", h.login)
+	r.GET("/api/auth/verify", "auth.verify", auth.Require(h.verify))
 }
 
-func authStatus(c *httpx.Ctx) (*httpx.Response, error) {
+// Register adds the auth blueprint.
+func Register(r *httpx.Router) { NewHandler().Register(r) }
+
+func (h *Handler) authStatus(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.JSON(map[string]bool{"authEnabled": auth.IsAuthEnabled()}), nil
 }
 
-func login(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) login(c *httpx.Ctx) (*httpx.Response, error) {
 	fail := func(message string) (*httpx.Response, error) {
 		return httpx.Message(500, false, fmt.Sprintf(msgLoginFailure, message)), nil
 	}
@@ -50,6 +59,6 @@ func login(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.Message(401, false, msgInvalidCredentials), nil
 }
 
-func verify(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) verify(c *httpx.Ctx) (*httpx.Response, error) {
 	return httpx.Message(200, true, "登录状态有效。"), nil
 }

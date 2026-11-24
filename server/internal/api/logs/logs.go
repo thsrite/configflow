@@ -24,12 +24,39 @@ import (
 	"configflow/internal/rules"
 )
 
-// Register adds the logs blueprint.
-func Register(r *httpx.Router) {
-	r.GET("/api/logs/tail", "logs.get_logs", getLogs)
-	r.GET("/api/logs/info", "logs.get_log_info", getLogInfo)
-	r.POST("/api/logs/clear", "logs.clear_logs", clearLogs)
+// Handler serves the /api/logs routes. Nil hook fields fall back to the
+// package-level defaults until W11 removes the test seams.
+type Handler struct {
+	LogFilePath func() (string, error)
+	OpenFile    func(string) (io.ReadCloser, error)
 }
+
+// NewHandler constructs a Handler for the logs blueprint.
+func NewHandler() *Handler { return &Handler{} }
+
+func (h *Handler) logFilePath() (string, error) {
+	if h != nil && h.LogFilePath != nil {
+		return h.LogFilePath()
+	}
+	return LogFilePath()
+}
+
+func (h *Handler) openLogFile(path string) (io.ReadCloser, error) {
+	if h != nil && h.OpenFile != nil {
+		return h.OpenFile(path)
+	}
+	return openFile(path)
+}
+
+// Register adds the logs blueprint routes to r.
+func (h *Handler) Register(r *httpx.Router) {
+	r.GET("/api/logs/tail", "logs.get_logs", h.getLogs)
+	r.GET("/api/logs/info", "logs.get_log_info", h.getLogInfo)
+	r.POST("/api/logs/clear", "logs.clear_logs", h.clearLogs)
+}
+
+// Register adds the logs blueprint.
+func Register(r *httpx.Router) { NewHandler().Register(r) }
 
 // LogFilePath is get_log_file_path(); tests replace it.
 var LogFilePath = getLogFilePath
@@ -122,8 +149,8 @@ type tailResponse struct {
 	Message  string   `json:"message,omitempty"`
 }
 
-func getLogs(c *httpx.Ctx) (*httpx.Response, error) {
-	logPath, err := LogFilePath()
+func (h *Handler) getLogs(c *httpx.Ctx) (*httpx.Response, error) {
+	logPath, err := h.logFilePath()
 	if err != nil {
 		return errorResponse(err, true), nil
 	}
@@ -138,7 +165,7 @@ func getLogs(c *httpx.Ctx) (*httpx.Response, error) {
 	if !present {
 		return httpx.JSON(tailResponse{Success: true, Logs: []string{}, Message: fmt.Sprintf(msgMissingPath, logPath)}), nil
 	}
-	file, err := openFile(logPath)
+	file, err := h.openLogFile(logPath)
 	if err != nil {
 		return errorResponse(err, true), nil
 	}
@@ -240,8 +267,8 @@ func dropInvalidUTF8(b []byte) string {
 // mapping; Python's special full mappings such as U+0130 differ).
 func pyLower(s string) string { return strings.ToLower(s) }
 
-func getLogInfo(c *httpx.Ctx) (*httpx.Response, error) {
-	logPath, err := LogFilePath()
+func (h *Handler) getLogInfo(c *httpx.Ctx) (*httpx.Response, error) {
+	logPath, err := h.logFilePath()
 	if err != nil {
 		return errorResponse(err, false), nil
 	}
@@ -275,16 +302,16 @@ func pyRound2(x float64) float64 {
 	return v
 }
 
-func clearLogs(c *httpx.Ctx) (*httpx.Response, error) {
-	return clearLog(c.Context())
+func (h *Handler) clearLogs(c *httpx.Ctx) (*httpx.Response, error) {
+	return h.clearLog(c.Context())
 }
 
-func clearLog(ctx context.Context) (*httpx.Response, error) {
+func (h *Handler) clearLog(ctx context.Context) (*httpx.Response, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	logPath, err := LogFilePath()
+	logPath, err := h.logFilePath()
 	if err != nil {
 		return errorResponse(err, false), nil
 	}

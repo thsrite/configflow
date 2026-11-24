@@ -23,8 +23,44 @@ import (
 	"configflow/internal/taskstatus"
 )
 
+// Handler serves the /api/stats routes backed by an explicit Repository.
+type Handler struct {
+	Repo *repo.Repository
+	Now  func() time.Time
+}
+
+// NewHandler constructs a Handler for r (nil falls back to the context/default
+// repository until W11 removes the locators).
+func NewHandler(r *repo.Repository) *Handler { return &Handler{Repo: r} }
+
+func (h *Handler) repo(ctx context.Context) (*repo.Repository, error) {
+	if h != nil && h.Repo != nil {
+		return h.Repo, nil
+	}
+	return repo.GetRepository(ctx)
+}
+
+func (h *Handler) resolveProfileID(ctx context.Context) (string, error) {
+	if h != nil && h.Repo != nil {
+		ctx = repo.WithRepository(ctx, h.Repo)
+	}
+	return repo.ResolveProfileID(ctx, "")
+}
+
+func (h *Handler) now() time.Time {
+	if h != nil && h.Now != nil {
+		return h.Now()
+	}
+	return Now()
+}
+
+// Register adds the overview route to r.
+func (h *Handler) Register(r *httpx.Router) {
+	r.GET("/api/stats/overview", "stats.get_overview", h.getOverview)
+}
+
 // Register adds the overview route.
-func Register(r *httpx.Router) { r.GET("/api/stats/overview", "stats.get_overview", getOverview) }
+func Register(r *httpx.Router) { NewHandler(nil).Register(r) }
 
 // Sampling and retention constants.
 const (
@@ -68,8 +104,8 @@ type sample struct {
 	Rules         json.RawMessage `json:"rules"`
 }
 
-func currentCounts(ctx context.Context) (Counts, error) {
-	repository, err := repo.GetRepository(ctx)
+func (h *Handler) currentCounts(ctx context.Context) (Counts, error) {
+	repository, err := h.repo(ctx)
 	if err != nil {
 		return Counts{}, err
 	}
@@ -77,7 +113,7 @@ func currentCounts(ctx context.Context) (Counts, error) {
 	if err != nil {
 		return Counts{}, err
 	}
-	profileID, err := repo.ResolveProfileID(ctx, "")
+	profileID, err := h.resolveProfileID(ctx)
 	if err != nil {
 		return Counts{}, err
 	}
@@ -88,18 +124,18 @@ func currentCounts(ctx context.Context) (Counts, error) {
 	return Counts{len(shared.Subscriptions), len(shared.Nodes), len(profile.ProxyGroups), len(profile.RuleConfigs)}, nil
 }
 
-func recordHistory(ctx context.Context, counts Counts, persist bool) (map[string][]*json.Number, error) {
+func (h *Handler) recordHistory(ctx context.Context, counts Counts, persist bool) (map[string][]*json.Number, error) {
 	if persist {
 		ctx = lifecycle.Detach(ctx)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	profileID, err := repo.ResolveProfileID(ctx, "")
+	profileID, err := h.resolveProfileID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	repository, err := repo.GetRepository(ctx)
+	repository, err := h.repo(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +147,7 @@ func recordHistory(ctx context.Context, counts Counts, persist bool) (map[string
 	var document historyDocument
 	_ = jsonstore.New(filepath.Dir(path)).Read(strings.TrimSuffix(HistoryFile, ".json"), &document)
 	samples := document.Samples
-	now := Now().UTC()
+	now := h.now().UTC()
 	var lastAt *time.Time
 	if len(samples) > 0 {
 		var last sample
@@ -173,12 +209,12 @@ func recordHistory(ctx context.Context, counts Counts, persist bool) (map[string
 	}
 	return result, nil
 }
-func profileRevision(ctx context.Context) (int64, *string) {
-	profileID, err := repo.ResolveProfileID(ctx, "")
+func (h *Handler) profileRevision(ctx context.Context) (int64, *string) {
+	profileID, err := h.resolveProfileID(ctx)
 	if err != nil {
 		return 0, nil
 	}
-	repository, err := repo.GetRepository(ctx)
+	repository, err := h.repo(ctx)
 	if err != nil {
 		return 0, nil
 	}
@@ -196,8 +232,8 @@ func profileRevision(ctx context.Context) (int64, *string) {
 	}
 	return revision, updated
 }
-func getOverview(c *httpx.Ctx) (*httpx.Response, error) {
-	result, err := overview(c.Context(), c.Request.Method != http.MethodHead)
+func (h *Handler) getOverview(c *httpx.Ctx) (*httpx.Response, error) {
+	result, err := h.overview(c.Context(), c.Request.Method != http.MethodHead)
 	if err != nil {
 		return httpx.JSONStatus(500, struct {
 			Success bool   `json:"success"`
@@ -222,18 +258,18 @@ type overviewData struct {
 	} `json:"profile"`
 }
 
-func overview(ctx context.Context, persist bool) (*httpx.Response, error) {
+func (h *Handler) overview(ctx context.Context, persist bool) (*httpx.Response, error) {
 	if persist {
 		ctx = lifecycle.Detach(ctx)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	counts, err := currentCounts(ctx)
+	counts, err := h.currentCounts(ctx)
 	if err != nil {
 		return nil, err
 	}
-	history, err := recordHistory(ctx, counts, persist)
+	history, err := h.recordHistory(ctx, counts, persist)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +279,7 @@ func overview(ctx context.Context, persist bool) (*httpx.Response, error) {
 		ProxyGroups:   overviewSeries{counts.ProxyGroups, history["proxyGroups"]},
 		Rules:         overviewSeries{counts.Rules, history["rules"]},
 	}
-	data.Profile.Revision, data.Profile.UpdatedAt = profileRevision(ctx)
+	data.Profile.Revision, data.Profile.UpdatedAt = h.profileRevision(ctx)
 	return httpx.JSON(struct {
 		Success bool         `json:"success"`
 		Data    overviewData `json:"data"`
