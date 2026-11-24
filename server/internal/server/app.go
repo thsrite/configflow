@@ -67,6 +67,7 @@ type App struct {
 	Routers       *routers.Service
 	RouterSync    *routerrulesync.RuleSyncService
 	WebDAV        *webdav.Service
+	Discovery     *discovery.Service
 	Settings      *apisettings.Handler
 
 	api apiHandlers // the mounted route handlers (production-wiring tests)
@@ -119,7 +120,15 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		}})
 		wd.Register(rt, tk)
 	}
-	rtrSvc, err := wireOtherSubsystems(opts, rt, tk, nt, ag, gen, rs)
+	disc := discovery.New(discovery.Options{
+		Repo:          opts.Repo,
+		Agents:        ag.manager,
+		Traffic:       ag.traffic,
+		Notifications: nt,
+		Runtime:       rt,
+		Tasks:         tk,
+	})
+	rtrSvc, err := wireOtherSubsystems(opts, rt, tk, nt, ag, gen, rs, disc)
 	if err != nil {
 		return nil, err
 	}
@@ -138,9 +147,9 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 	httpApp.Runtime = rt
 	api := apiHandlers{
 		mcp:    mcp.NewHandler(opts.Repo),
-		agents: newAgentAPIHandler(opts, ag, gen),
+		agents: newAgentAPIHandler(opts, ag, gen, disc),
 		w10b:   newW10bHandlers(opts, ag, gen, rs, rtrSvc),
-		w10c:   newW10cHandlers(opts, tk, nt, ag, gen, rs, wd),
+		w10c:   newW10cHandlers(opts, tk, nt, ag, gen, rs, wd, disc),
 	}
 	registerRoutes(httpApp.Router, api)
 	auth.Install(httpApp)
@@ -168,6 +177,7 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 		Routers:       rtrSvc.routers,
 		RouterSync:    rtrSvc.rulesync,
 		WebDAV:        wd,
+		Discovery:     disc,
 		Settings:      api.w10c.settings,
 		api:           api,
 	}, nil
@@ -176,10 +186,10 @@ func build(ctx context.Context, opts Options, process bool) (*App, error) {
 // wireOtherSubsystems registers the generation-pipeline loops and task rows
 // (W7), routers and router rule-sync services (W9), and the subsystems not yet
 // instantiated (W10). Agent-domain services are wired exactly once in wireAgents.
-func wireOtherSubsystems(opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service) (*routerServices, error) {
+func wireOtherSubsystems(opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service, disc *discovery.Service) (*routerServices, error) {
 	gen.substore.Register(rt)
 	gen.refresh.Register(rt, tk)
-	discovery.WireOn(rt)
+	disc.Register(rt, tk)
 	if err := wireConvertOnce(gen); err != nil {
 		return nil, err
 	}

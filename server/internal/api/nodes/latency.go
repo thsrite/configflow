@@ -97,11 +97,15 @@ func stringList(sent member[[]*string]) ([]string, bool) {
 // nodeLatency is GET/POST /api/nodes/latency.
 func (h *Handler) nodeLatency(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := h.ctx(c)
+	r, err := h.repo(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if c.Request.Method == "GET" {
 		return nativeJSON(200, struct {
 			Success bool `json:"success"`
 			Results any  `json:"results"`
-		}{true, health.LoadLatencyResults(ctx)}), nil
+		}{true, health.LoadLatencyResults(ctx, r)}), nil
 	}
 	body, err := decodeObject[latencyRequest](c, true)
 	if err != nil {
@@ -130,7 +134,7 @@ func (h *Handler) nodeLatency(c *httpx.Ctx) (*httpx.Response, error) {
 	if names != nil && keys != nil {
 		return failure(400, msgLatencyBoth), nil
 	}
-	outcome, err := health.RunLatencyTests(ctx, names, keys)
+	outcome, err := health.RunLatencyTests(ctx, r, names, keys)
 	if err != nil {
 		var busy *health.ProbeBusy
 		var unavailable *health.ProbeUnavailable
@@ -153,9 +157,13 @@ func (h *Handler) nodeLatency(c *httpx.Ctx) (*httpx.Response, error) {
 // nodeLatencySettings is GET/POST /api/nodes/latency/settings.
 func (h *Handler) nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := h.ctx(c)
+	r, err := h.repo(ctx)
+	if err != nil {
+		return nil, err
+	}
 	result, err := func() (health.DNSSettingsView, error) {
 		if c.Request.Method == "GET" {
-			return health.DescribeDNSSettingsJSON(ctx, nil)
+			return health.DescribeDNSSettingsJSON(ctx, r, nil)
 		}
 		payload, err := decodeObject[dnsSettingsRequest](c, true)
 		if err != nil {
@@ -183,7 +191,7 @@ func (h *Handler) nodeLatencySettings(c *httpx.Ctx) (*httpx.Response, error) {
 		} else {
 			return health.DNSSettingsView{}, &health.ValidationError{Message: msgLatencyDNS}
 		}
-		return health.SaveDNSConfigJSON(ctx, value)
+		return health.SaveDNSConfigJSON(ctx, r, value)
 	}()
 	if err != nil {
 		if isValueError(err) {
@@ -206,7 +214,12 @@ func (h *Handler) nodeDNSCheck(c *httpx.Ctx) (*httpx.Response, error) {
 	if payload == nil || payload.DNS == nil {
 		return failure(400, msgCheckDNS), nil
 	}
-	result, err := health.CheckDNSSettingsJSON(h.ctx(c), payload.DNS)
+	ctx := h.ctx(c)
+	r, err := h.repo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result, err := health.CheckDNSSettingsJSON(ctx, r, payload.DNS)
 	if err != nil {
 		var unavailable *health.ProbeUnavailable
 		switch {

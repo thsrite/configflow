@@ -30,7 +30,7 @@ func websiteCandidates(domain string, h *Host) []ProbeTarget {
 }
 
 // StartWebsite identifies only domains recently collected by eligible Agents.
-func StartWebsite(ctx context.Context, id string, values []string) (*Job, error) {
+func (svc *Service) StartWebsite(ctx context.Context, id string, values []string) (*Job, error) {
 	ctx = lifecycle.Detach(ctx)
 	values, err := cleanValues(values)
 	if err != nil {
@@ -39,11 +39,11 @@ func StartWebsite(ctx context.Context, id string, values []string) (*Job, error)
 	if len(values) > 30 {
 		return nil, invalid(msgWebsiteLimit)
 	}
-	c, err := loadConfig(ctx, id)
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	as, err := profileAgents(ctx, id)
+	as, err := svc.profileAgents(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func StartWebsite(ctx context.Context, id string, values []string) (*Job, error)
 	missing := []string{}
 	summaries := map[string]Listing{}
 	for _, a := range eligible {
-		listing, err := rawSummary(ctx, []Agent{a})
+		listing, err := svc.rawSummary(ctx, []Agent{a})
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +93,7 @@ func StartWebsite(ctx context.Context, id string, values []string) (*Job, error)
 	if p := proxyPath(c); p != nil && *p != "" {
 		path = *p
 	}
-	j, _, err := startJob(ctx, id, "website", false, func(ctx context.Context, progress func(int, int)) (outcome, error) {
+	j, _, err := svc.startJob(ctx, id, "website", false, func(ctx context.Context, progress func(int, int)) (outcome, error) {
 		out := outcome{Errors: []JobError{}}
 		for _, v := range missing {
 			out.Errors = append(out.Errors, JobError{Host: v, Message: msgWebsiteSkip})
@@ -105,7 +105,7 @@ func StartWebsite(ctx context.Context, id string, values []string) (*Job, error)
 			for j, target := range candidates {
 				req.Requests = append(req.Requests, PageRequest{ID: fmt.Sprintf("website-%d", j), URL: target.URL, Markers: websiteMarkers()})
 			}
-			rows, err := client.Region(ctx, p.agent, req)
+			rows, err := svc.agentClient().Region(ctx, p.agent, req)
 			if err == nil {
 				var chosen WebsitePage
 				at := timestamp()
@@ -130,7 +130,7 @@ func StartWebsite(ctx context.Context, id string, values []string) (*Job, error)
 					}
 				}
 				if err == nil {
-					err = editRegion(ctx, p.agent.ID, func(data *regionRecord) error { data.Websites[p.host.Host] = chosen; return nil })
+					err = svc.editRegion(ctx, p.agent.ID, func(data *regionRecord) error { data.Websites[p.host.Host] = chosen; return nil })
 					if err == nil && chosen.Reason != "" {
 						out.Errors = append(out.Errors, JobError{Host: p.host.Host, Message: chosen.Reason})
 					}

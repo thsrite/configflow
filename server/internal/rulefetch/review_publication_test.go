@@ -48,12 +48,13 @@ func TestReviewInlinePublicationInterleaving(t *testing.T) {
 				_ = os.Remove(pause)
 				writers.Wait()
 			})
+			disc := discovery.New(discovery.Options{Repo: s.Repo})
 			edit := func(domain string) error {
 				if domain == "" {
-					_, err := discovery.UndoDomain(s.Context(), "default", "remove.example", "direct")
+					_, err := disc.UndoDomain(s.Context(), "default", "remove.example", "direct")
 					return err
 				}
-				_, err := discovery.ApplyDomains(s.Context(), "default", []discovery.ApplyEntry{{Value: domain, RuleType: "DOMAIN-SUFFIX", Target: "direct"}}, "manual", nil)
+				_, err := disc.ApplyDomains(s.Context(), "default", []discovery.ApplyEntry{{Value: domain, RuleType: "DOMAIN-SUFFIX", Target: "direct"}}, "manual", nil)
 				return err
 			}
 			first := make(chan error, 1)

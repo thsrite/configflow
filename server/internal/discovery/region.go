@@ -204,16 +204,16 @@ func regionPlan(list Listing, values []string) []ProbeTarget {
 	}
 	return out
 }
-func runRegion(ctx context.Context, id string, services bool, values []string, progress func(int, int)) (outcome, error) {
+func (svc *Service) runRegion(ctx context.Context, id string, services bool, values []string, progress func(int, int)) (outcome, error) {
 	out := outcome{Errors: []JobError{}}
-	c, err := loadConfig(ctx, id)
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return out, err
 	}
 	if !c.Settings.RegionEnabled {
 		return out, &ProbeError{msgRegionEnabled}
 	}
-	as, err := profileAgents(ctx, id)
+	as, err := svc.profileAgents(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -222,7 +222,7 @@ func runRegion(ctx context.Context, id string, services bool, values []string, p
 		return out, &ProbeError{msgRegionAgents}
 	}
 	a := eligible[0]
-	available, err := client.Targets(ctx, a)
+	available, err := svc.agentClient().Targets(ctx, a)
 	if err != nil {
 		return out, &ProbeError{err.Error()}
 	}
@@ -230,7 +230,7 @@ func runRegion(ctx context.Context, id string, services bool, values []string, p
 	if err != nil {
 		return out, err
 	}
-	listing, err := rawSummary(ctx, as)
+	listing, err := svc.rawSummary(ctx, as)
 	if err != nil {
 		return out, err
 	}
@@ -244,7 +244,7 @@ func runRegion(ctx context.Context, id string, services bool, values []string, p
 	for i, t := range targets {
 		results := []RegionResult{}
 		for start := 0; start < len(requests); start += 12 {
-			res, err := client.Region(ctx, a, RegionRequest{t.Name, 8000, requests[start:min(start+12, len(requests))]})
+			res, err := svc.agentClient().Region(ctx, a, RegionRequest{t.Name, 8000, requests[start:min(start+12, len(requests))]})
 			if err != nil {
 				out.Errors = append(out.Errors, JobError{Target: t.Name, Message: err.Error()})
 				break
@@ -258,7 +258,7 @@ func runRegion(ctx context.Context, id string, services bool, values []string, p
 	if err != nil {
 		return out, err
 	}
-	err = editRegion(ctx, a.ID, func(data *regionRecord) error {
+	err = svc.editRegion(ctx, a.ID, func(data *regionRecord) error {
 		if services {
 			data.Services = payload.Services
 		}
@@ -271,7 +271,7 @@ func runRegion(ctx context.Context, id string, services bool, values []string, p
 }
 
 // StartRegion starts an exclusive service/domain region check.
-func StartRegion(ctx context.Context, id string, services bool, values []string) (*Job, error) {
+func (svc *Service) StartRegion(ctx context.Context, id string, services bool, values []string) (*Job, error) {
 	ctx = lifecycle.Detach(ctx)
 	var err error
 	if len(values) > 0 {
@@ -286,19 +286,19 @@ func StartRegion(ctx context.Context, id string, services bool, values []string)
 	if !services && len(values) == 0 {
 		return nil, invalid(msgRegionSelect)
 	}
-	j, _, err := startJob(ctx, id, "region", false, func(ctx context.Context, p func(int, int)) (outcome, error) {
-		return runRegion(ctx, id, services, values, p)
+	j, _, err := svc.startJob(ctx, id, "region", false, func(ctx context.Context, p func(int, int)) (outcome, error) {
+		return svc.runRegion(ctx, id, services, values, p)
 	})
 	return j, err
 }
 
 // RegionPayload merges the newest persisted results of the current profile.
-func RegionPayload(ctx context.Context, id string) (*RegionView, error) {
-	c, err := loadConfig(ctx, id)
+func (svc *Service) RegionPayload(ctx context.Context, id string) (*RegionView, error) {
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	as, err := profileAgents(ctx, id)
+	as, err := svc.profileAgents(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +307,7 @@ func RegionPayload(ctx context.Context, id string) (*RegionView, error) {
 	latest := ""
 	domains := map[string]json.RawMessage{}
 	for i, a := range as {
-		data, err := regionData(ctx, a.ID)
+		data, err := svc.regionData(ctx, a.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -331,7 +331,7 @@ func RegionPayload(ctx context.Context, id string) (*RegionView, error) {
 	for policy, rid := range c.Settings.RegionalRulesets {
 		regional[policy] = info(c, new(rid))
 	}
-	return &RegionView{Enabled: c.Settings.RegionEnabled, Port: c.Settings.RegionPort, Services: publicServices(), Result: result, Agent: agent, Domains: domains, Policies: c.policies(), Ready: len(capable(as, minRegionVersion)) > 0, MinAgentVersion: minRegionVersion, Job: runningJob(id), RegionalRulesets: regional}, nil
+	return &RegionView{Enabled: c.Settings.RegionEnabled, Port: c.Settings.RegionPort, Services: publicServices(), Result: result, Agent: agent, Domains: domains, Policies: c.policies(), Ready: len(capable(as, minRegionVersion)) > 0, MinAgentVersion: minRegionVersion, Job: svc.runningJob(id), RegionalRulesets: regional}, nil
 }
 func checkedAt(raw json.RawMessage) string {
 	var v struct {
@@ -342,7 +342,7 @@ func checkedAt(raw json.RawMessage) string {
 }
 
 // RouteToPolicy prepares a regional ruleset ahead of competing rules and adopts domains.
-func RouteToPolicy(ctx context.Context, id, kind, value, policy string) (ApplyResult, error) {
+func (svc *Service) RouteToPolicy(ctx context.Context, id, kind, value, policy string) (ApplyResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	var values []string
 	switch kind {
@@ -361,17 +361,17 @@ func RouteToPolicy(ctx context.Context, id, kind, value, policy string) (ApplyRe
 	default:
 		return ApplyResult{}, invalid(msgKind)
 	}
-	if err := ensurePolicy(ctx, id, policy, values); err != nil {
+	if err := svc.ensurePolicy(ctx, id, policy, values); err != nil {
 		return ApplyResult{}, err
 	}
 	entries := []ApplyEntry{}
 	for _, v := range values {
 		entries = append(entries, ApplyEntry{v, "DOMAIN-SUFFIX", "policy:" + policy})
 	}
-	return ApplyDomains(ctx, id, entries, "region", nil)
+	return svc.ApplyDomains(ctx, id, entries, "region", nil)
 }
-func ensurePolicy(ctx context.Context, id, policy string, values []string) error {
-	c, err := loadConfig(ctx, id)
+func (svc *Service) ensurePolicy(ctx context.Context, id, policy string, values []string) error {
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -382,7 +382,7 @@ func ensurePolicy(ctx context.Context, id, policy string, values []string) error
 	if inf != nil && inf.Problem == nil && inf.Active {
 		return nil
 	}
-	m, err := localMatcher(ctx, id)
+	m, err := svc.localMatcher(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -397,7 +397,7 @@ func ensurePolicy(ctx context.Context, id, policy string, values []string) error
 		rid = inf.ID
 	} else {
 		var created libraryItem
-		err = editLibrary(ctx, func(items *[]libraryItem) error {
+		err = svc.editLibrary(ctx, func(items *[]libraryItem) error {
 			created = newLibrary(*items, fmt.Sprintf(msgPolicyName, policy))
 			*items = append(*items, created)
 			return nil
@@ -405,12 +405,12 @@ func ensurePolicy(ctx context.Context, id, policy string, values []string) error
 		if err != nil {
 			return err
 		}
-		if err = saveRule(ctx, created); err != nil {
+		if err = svc.saveRule(ctx, created); err != nil {
 			return err
 		}
 		rid = created.ID
 	}
-	return editProfile(ctx, id, func(c *config) error {
+	return svc.editProfile(ctx, id, func(c *config) error {
 		exists := false
 		for _, r := range c.Rules {
 			exists = exists || r.ItemType == "ruleset" && r.LibraryID == rid && r.Enabled

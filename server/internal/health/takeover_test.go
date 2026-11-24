@@ -80,14 +80,14 @@ func TestConversionPanicsDoNotStrandBatchOrPublishPanicText(t *testing.T) {
 	}}, nil)
 	env.Collaborators.ConvertNode = func(context.Context, json.RawMessage) (model.Fields, bool) { panic("synthetic-private-detail") }
 	var saved json.RawMessage
-	env.Collaborators.WriteLatencyFile = func(_ context.Context, raw json.RawMessage) error {
+	env.Collaborators.WriteLatencyFile = func(_ context.Context, _ *repo.Repository, raw json.RawMessage) error {
 		saved = append(json.RawMessage(nil), raw...)
 		return nil
 	}
 	t.Cleanup(SetProbeEnv(env))
 	done := make(chan error, 1)
 	go func() {
-		out, err := RunLatencyTests(ctx, nil, nil)
+		out, err := RunLatencyTests(ctx, repository, nil, nil)
 		if err == nil && out.Results.Len() != MaxNodes {
 			err = fmt.Errorf("results=%d", out.Results.Len())
 		}

@@ -29,8 +29,10 @@ import (
 	"configflow/internal/discovery"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/lifecycle"
 	"configflow/internal/model/modeltest"
 	"configflow/internal/repo"
+	"configflow/internal/tasks"
 	"configflow/internal/testjson"
 )
 
@@ -339,11 +341,13 @@ func TestHTTPAndStorageParity(t *testing.T) {
 	prev := auth.Configure(auth.Config{})
 	t.Cleanup(func() { auth.Configure(prev) })
 	app := httpx.New()
-	domaindiscovery.Register(app.Router)
+	app.Repo = r
+	disc := discovery.New(discovery.Options{Repo: r})
+	domaindiscovery.NewHandler(r, disc).Register(app.Router)
 	auth.Install(app)
 	goServer := httptest.NewServer(app)
 	defer goServer.Close()
-	discovery.Wire()
+	disc.Register(lifecycle.Current(), tasks.Default())
 	type request struct{ method, path, body string }
 	rs := []request{
 		{"POST", "apply", `[1]`}, {"POST", "probe", `[1]`}, {"PUT", "website/note", `[1]`}, {"POST", "website/identify", `[1]`},

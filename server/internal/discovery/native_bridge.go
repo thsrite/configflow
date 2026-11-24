@@ -7,10 +7,10 @@ import (
 	"configflow/internal/version"
 	"context"
 	"encoding/json"
+	"errors"
 
 	"configflow/internal/agents"
 	"configflow/internal/agents/trafficstore"
-	"configflow/internal/health"
 	"configflow/internal/health/check"
 	"configflow/internal/rulefetch"
 )
@@ -25,19 +25,19 @@ func project[A, B any](v A, out *B) error {
 func legacySupported(text, minimum string) bool {
 	return text != "" && version.CompareAgent(text, minimum) >= 0
 }
-func legacyLoadTraffic(ctx context.Context, a Agent, full bool) (traffic, error) {
-	s, err := trafficstore.GetNative(ctx)
+func (s *Service) legacyLoadTraffic(ctx context.Context, a Agent, full bool) (traffic, error) {
+	store, err := s.trafficStore()
 	if err != nil {
 		return traffic{}, err
 	}
 	var out traffic
 	var state trafficstore.StoreState
 	if full {
-		doc := s.LoadDocument(a.ID, nil)
+		doc := store.LoadDocument(a.ID, nil)
 		err = project(doc, &out)
 		state = doc.StoreState()
 	} else {
-		snap := s.InspectStatus(a.ID)
+		snap := store.InspectStatus(a.ID)
 		state = snap.State
 		if len(snap.Status) > 0 {
 			err = jsondecode.Unmarshal(snap.Status, &out.Status)
@@ -52,8 +52,8 @@ func legacyLoadTraffic(ctx context.Context, a Agent, full bool) (traffic, error)
 	}
 	return out, err
 }
-func legacyProbes(ctx context.Context, as []Agent) (map[string]Probe, error) {
-	store, err := health.GetProbeStore(ctx)
+func (s *Service) legacyProbes(ctx context.Context, as []Agent) (map[string]Probe, error) {
+	store, err := s.probeStore()
 	if err != nil {
 		return nil, err
 	}
@@ -69,8 +69,8 @@ func legacyProbes(ctx context.Context, as []Agent) (map[string]Probe, error) {
 	err = project(entries, &out)
 	return out, err
 }
-func legacySaveProbes(ctx context.Context, id string, ps map[string]Probe) error {
-	store, err := health.GetProbeStore(ctx)
+func (s *Service) legacySaveProbes(ctx context.Context, id string, ps map[string]Probe) error {
+	store, err := s.probeStore()
 	if err != nil {
 		return err
 	}
@@ -92,11 +92,11 @@ func legacyJudge(d, p *PathStats, failing, dh, ph bool) (Probe, error) {
 	err := project(check.JudgePath(direct, proxy, check.JudgeOptions{PassiveFailing: failing, DirectHealthy: dh, ProxyHealthy: ph}), &out)
 	return out, err
 }
-func legacyRegionData(ctx context.Context, id string) (regionRecord, error) {
-	s, err := health.GetRegionStore(ctx)
+func (s *Service) legacyRegionData(ctx context.Context, id string) (regionRecord, error) {
+	store, err := s.regionStore()
 	var out regionRecord
 	if err == nil {
-		err = project(s.LoadData(id), &out)
+		err = project(store.LoadData(id), &out)
 	}
 	if out.Domains == nil {
 		out.Domains = map[string]json.RawMessage{}
@@ -106,12 +106,12 @@ func legacyRegionData(ctx context.Context, id string) (regionRecord, error) {
 	}
 	return out, err
 }
-func legacyEditRegion(ctx context.Context, id string, edit func(*regionRecord) error) error {
-	s, err := health.GetRegionStore(ctx)
+func (s *Service) legacyEditRegion(ctx context.Context, id string, edit func(*regionRecord) error) error {
+	store, err := s.regionStore()
 	if err != nil {
 		return err
 	}
-	return s.UpdateDataContext(ctx, id, func(data *check.RegionData) error {
+	return store.UpdateDataContext(ctx, id, func(data *check.RegionData) error {
 		var out regionRecord
 		if err := project(data, &out); err != nil {
 			return err
@@ -139,14 +139,14 @@ func legacyPublicServices() json.RawMessage {
 	return json.RawMessage(b)
 }
 
-type managerClient struct{}
+type managerClient struct{ agents *agents.Manager }
 
 // Probe sends a bounded domain-probe request through the Agent manager.
-func (managerClient) Probe(ctx context.Context, a Agent, p ProbeRequest) ([]ProbeRow, error) {
-	m, err := agents.Get(ctx)
-	if err != nil {
-		return nil, err
+func (c managerClient) Probe(ctx context.Context, a Agent, p ProbeRequest) ([]ProbeRow, error) {
+	if c.agents == nil {
+		return nil, errors.New("discovery: agent manager is nil")
 	}
+	m := c.agents
 	agent, err := m.ReadAgent(ctx, a.ID, false)
 	if err != nil {
 		return nil, err
@@ -166,11 +166,11 @@ func (managerClient) Probe(ctx context.Context, a Agent, p ProbeRequest) ([]Prob
 }
 
 // Targets reads the available region-check paths from the Agent.
-func (managerClient) Targets(ctx context.Context, a Agent) ([]AvailableTarget, error) {
-	m, err := agents.Get(ctx)
-	if err != nil {
-		return nil, err
+func (c managerClient) Targets(ctx context.Context, a Agent) ([]AvailableTarget, error) {
+	if c.agents == nil {
+		return nil, errors.New("discovery: agent manager is nil")
 	}
+	m := c.agents
 	agent, err := m.ReadAgent(ctx, a.ID, false)
 	if err != nil {
 		return nil, err
@@ -185,11 +185,11 @@ func (managerClient) Targets(ctx context.Context, a Agent) ([]AvailableTarget, e
 }
 
 // Region sends a bounded page-check batch through the Agent manager.
-func (managerClient) Region(ctx context.Context, a Agent, p RegionRequest) ([]RegionResult, error) {
-	m, err := agents.Get(ctx)
-	if err != nil {
-		return nil, err
+func (c managerClient) Region(ctx context.Context, a Agent, p RegionRequest) ([]RegionResult, error) {
+	if c.agents == nil {
+		return nil, errors.New("discovery: agent manager is nil")
 	}
+	m := c.agents
 	agent, err := m.ReadAgent(ctx, a.ID, false)
 	if err != nil {
 		return nil, err
@@ -241,8 +241,8 @@ func legacyDomainRequest(id, url string) (PageRequest, error) {
 	err := project(check.BuildDomainRequest(id, url), &out)
 	return out, err
 }
-func legacyRegistryAgents(ctx context.Context) ([]model.Agent, error) {
-	manager, err := agents.Get(ctx)
+func (s *Service) legacyRegistryAgents(ctx context.Context) ([]model.Agent, error) {
+	manager, err := s.agents()
 	if err != nil {
 		return nil, err
 	}
@@ -310,6 +310,6 @@ func legacyWebsiteMarkers() map[string]string {
 }
 
 // ProviderRevisions returns provider hashes for the existing Agent traffic protocol.
-func ProviderRevisions(ctx context.Context, id string) (map[string]string, error) {
-	return providerRevisions(ctx, id)
+func (s *Service) ProviderRevisions(ctx context.Context, id string) (map[string]string, error) {
+	return s.providerRevisions(ctx, id)
 }

@@ -11,9 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"configflow/internal/agents"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 )
 
 // TestNativeStoredIdentifierTypes (O18 T1c): rule library items, rules and
@@ -102,18 +100,15 @@ func TestNativeStoredR5AndSharedNumbers(t *testing.T) {
 // undeclared members are dropped; a settings edit changes only that setting
 // and keeps the history; a failed edit changes nothing.
 func TestNativeRepositoryUpdatesDropUndeclaredMembers(t *testing.T) {
-	ctx := jobFixture(t)
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
+	svc, ctx := jobFixture(t)
+	r := svc.Repo
+	_, err := r.UpdateProfile(ctx, "default", func(_ context.Context, p *model.Profile) error {
 		return p.SetJSON("domain_discovery", json.RawMessage(`{"history":[{"value":"example.com","future":{"n":123.50}}],"future":{"flag":false}}`))
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; return nil }); err != nil {
+	if err = svc.editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	p, err := r.Profile(ctx, "default")
@@ -131,7 +126,7 @@ func TestNativeRepositoryUpdatesDropUndeclaredMembers(t *testing.T) {
 	}
 	sentinel := errors.New("discard")
 	before, _ := json.Marshal(p)
-	err = editProfile(ctx, "default", func(c *config) error { c.Settings.AutoApply = true; return sentinel })
+	err = svc.editProfile(ctx, "default", func(c *config) error { c.Settings.AutoApply = true; return sentinel })
 	if !errors.Is(err, sentinel) {
 		t.Fatal(err)
 	}
@@ -144,7 +139,7 @@ func TestNativeRepositoryUpdatesDropUndeclaredMembers(t *testing.T) {
 
 func TestNativeCollaboratorsInstalled(t *testing.T) {
 	t.Parallel()
-	if client == nil {
+	if New(Options{}).agentClient() == nil {
 		t.Fatal("missing Agent client")
 	}
 }
@@ -213,26 +208,20 @@ func FuzzNativeConfigProjection(f *testing.F) {
 }
 
 func TestNativeRegistryRetainsHeartbeatOverlay(t *testing.T) {
-	ctx := jobFixture(t)
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = repository.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+	svc, ctx := jobFixture(t)
+	repository := svc.Repo
+	err := repository.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
 		system.Agents = []model.Agent{{ID: "runtime-agent", Name: "Synthetic", ProfileID: "default", ServiceType: "mihomo", DomainDiscoveryEnabled: new(true), LastHeartbeat: "2000-01-01T00:00:00Z", Version: "1.0.0"}}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := agents.Get(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	manager := svc.Agents
 	if err := manager.Runtime().RestoreHeartbeat(ctx, "runtime-agent", 4070908800, "2099-01-01T00:00:00Z", &model.Agent{Version: minRegionVersion}); err != nil {
 		t.Fatal(err)
 	}
-	records, err := profileAgents(ctx, "default")
+	records, err := svc.profileAgents(ctx, "default")
 	if err != nil || len(records) != 1 {
 		t.Fatalf("registry: %+v %v", records, err)
 	}

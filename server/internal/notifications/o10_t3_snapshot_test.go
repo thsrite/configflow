@@ -160,7 +160,6 @@ func wireAllO10T3Slots(t *testing.T, agentReads *atomic.Int32) {
 	rulesync.Wire()
 	dnsfollow.Register()
 	metrics.Wire()
-	discovery.Wire()
 	refresh.Wire()
 	rr := routerrulesync.New(nil, routerrulesync.Options{})
 	t.Cleanup(tasks.SetRowBuilder(tasks.SlotRouters, rr.TaskRows))
@@ -195,6 +194,7 @@ func TestO10T3NotificationSnapshotSkipsHistoryRedactsAndInvalidatesRouterCache(t
 
 	smallSrv, smallMgr := seedO10T3Server(t, 1)
 	largeSrv, largeMgr := seedO10T3Server(t, 300)
+	discovery.New(discovery.Options{Repo: largeSrv.Repo}).Register(nil, tasks.Default())
 
 	// Record a failed subscription receipt on both so SnapshotItems exercises
 	// task, agent, rulesync, dnsfollow, discovery, and router paths.

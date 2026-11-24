@@ -234,11 +234,12 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 		}
 		dir := t.TempDir()
 		ctx := context.Background()
+		var r *repo.Repository
 		var err error
 		switch fn {
 		case "load_config", "effective_settings", "describe_settings", "check_settings", "settings", "_proxy_of":
 			system, _ := row["system"].(map[string]any)
-			r := defaults
+			r = defaults
 			if r == nil || len(system) > 0 {
 				r, err = repo.Open(dir, repo.Options{})
 				if err != nil {
@@ -371,18 +372,18 @@ func replayRecordedRows(t *testing.T, rows []recordedRow, native map[int]typedEx
 			case "normalize_config":
 				value, err = NormalizeDNSConfigJSON(rawArg("value"))
 			case "load_config":
-				value, err = LoadDNSConfig(ctx)
+				value, err = LoadDNSConfig(ctx, r)
 			case "effective_settings":
 				raw, _ := optRaw(arg("value"))
-				value, err = EffectiveDNSSettingsJSON(ctx, raw)
+				value, err = EffectiveDNSSettingsJSON(ctx, r, raw)
 			case "describe_settings":
 				raw, _ := optRaw(arg("value"))
-				value, err = DescribeDNSSettingsJSON(ctx, raw)
+				value, err = DescribeDNSSettingsJSON(ctx, r, raw)
 			case "check_settings":
 				raw, _ := optRaw(arg("value"))
-				value, err = CheckDNSSettingsJSON(ctx, raw)
+				value, err = CheckDNSSettingsJSON(ctx, r, raw)
 			case "settings":
-				value, err = ResolveSettings(ctx)
+				value, err = ResolveSettings(ctx, r)
 			case "_proxy_of":
 				if nodeRaw := rawArg("node"); len(nodeRaw) > 0 && !bytes.Equal(bytes.TrimSpace(nodeRaw), []byte("null")) {
 					if proxy, ok := defaultCollaborators(func() convert.NodeConverter { return converter }).ConvertNode(ctx, nodeRaw); ok {

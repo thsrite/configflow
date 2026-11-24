@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"configflow/internal/lifecycle"
-	"configflow/internal/notifications"
 	"configflow/internal/repo"
 	"configflow/internal/taskstatus"
 )
@@ -19,9 +18,9 @@ type AutoOutcome struct {
 	Rechecked int `json:"rechecked"`
 }
 
-func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
+func (svc *Service) autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 	var out AutoOutcome
-	c, err := loadConfig(ctx, id)
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -29,14 +28,14 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 	if !s.AutoProbe || proxyPath(c) == nil {
 		return out, nil
 	}
-	as, err := profileAgents(ctx, id)
+	as, err := svc.profileAgents(ctx, id)
 	if err != nil {
 		return out, err
 	}
 	if len(capable(as, minProbeVersion)) == 0 {
 		return out, nil
 	}
-	listing, err := LoadDomains(ctx, id, 7, "uncovered", "")
+	listing, err := svc.LoadDomains(ctx, id, 7, "uncovered", "")
 	if err != nil {
 		return out, err
 	}
@@ -62,12 +61,12 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 		if autoStopping(ctx) {
 			return out, nil
 		}
-		_, _, err = startJob(ctx, id, "probe", true, func(ctx context.Context, p func(int, int)) (outcome, error) { return runProbes(ctx, id, values, p) })
+		_, _, err = svc.startJob(ctx, id, "probe", true, func(ctx context.Context, p func(int, int)) (outcome, error) { return svc.runProbes(ctx, id, values, p) })
 		if err != nil {
 			return out, err
 		}
 		if s.AutoApply && !autoStopping(ctx) {
-			refreshed, err := LoadDomains(ctx, id, 7, "uncovered", "")
+			refreshed, err := svc.LoadDomains(ctx, id, 7, "uncovered", "")
 			if err != nil {
 				return out, err
 			}
@@ -82,7 +81,7 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 				evidence[d.Domain] = Probe{Verdict: v.Verdict, Confidence: v.Confidence}
 			}
 			if len(entries) > 0 {
-				result, err := ApplyDomains(ctx, id, entries, "auto", evidence)
+				result, err := svc.ApplyDomains(ctx, id, entries, "auto", evidence)
 				if err != nil {
 					if !errors.Is(err, repo.ErrValidation) {
 						return out, err
@@ -94,7 +93,7 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 			}
 		}
 	}
-	c, err = loadConfig(ctx, id)
+	c, err = svc.loadConfig(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -117,7 +116,7 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 		for _, h := range history {
 			values = append(values, h.Value)
 		}
-		_, results, err := startJob(ctx, id, "probe", true, func(ctx context.Context, p func(int, int)) (outcome, error) { return runProbes(ctx, id, values, p) })
+		_, results, err := svc.startJob(ctx, id, "probe", true, func(ctx context.Context, p func(int, int)) (outcome, error) { return svc.runProbes(ctx, id, values, p) })
 		if err != nil {
 			return out, err
 		}
@@ -152,7 +151,7 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 			}
 			checks[[2]string{h.Value, h.Target}] = check
 		}
-		err = editSettings(ctx, id, func(s *Settings) error {
+		err = svc.editSettings(ctx, id, func(s *Settings) error {
 			for i, h := range s.History {
 				if v, ok := checks[[2]string{h.Value, h.Target}]; ok {
 					s.History[i].Recheck = new(v)
@@ -168,20 +167,25 @@ func autoRound(ctx context.Context, id string) (AutoOutcome, error) {
 }
 
 // RunAutoTask records a scheduled or manually triggered automatic round.
-func RunAutoTask(ctx context.Context, id, trigger string) (*AutoOutcome, error) {
+func (s *Service) RunAutoTask(ctx context.Context, id, trigger string) (*AutoOutcome, error) {
 	ctx = lifecycle.Detach(ctx)
-	c, err := loadConfig(ctx, id)
+	c, err := s.loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if !c.Settings.AutoProbe {
 		return nil, nil
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repo()
 	if err != nil {
 		return nil, err
 	}
-	store := notifications.TaskStatus(ctx, r.DataDir())
+	var store *taskstatus.Store
+	if s.Notifications != nil {
+		store = s.Notifications.TaskStatus(ctx, r.DataDir())
+	} else {
+		store = taskstatus.New(r.DataDir())
+	}
 	started, clock := taskstatus.NowISO(), time.Now()
 	record := func(ok, skipped bool, msg string) error {
 		_, err := store.SaveResult(ctx, "domain_discovery:"+id, taskstatus.Result{OK: ok, Skipped: skipped, Error: msg, StartedAt: started, DurationMs: float64(time.Since(clock).Milliseconds()), Trigger: trigger})
@@ -190,14 +194,14 @@ func RunAutoTask(ctx context.Context, id, trigger string) (*AutoOutcome, error) 
 	if proxyPath(c) == nil {
 		return nil, record(false, true, msgAutoPath)
 	}
-	as, err := profileAgents(ctx, id)
+	as, err := s.profileAgents(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if len(capable(as, minProbeVersion)) == 0 {
 		return nil, record(false, true, msgAutoAgents)
 	}
-	out, err := autoRound(ctx, id)
+	out, err := s.autoRound(ctx, id)
 	if err != nil {
 		var busy *Busy
 		if errors.As(err, &busy) {
@@ -213,21 +217,20 @@ func RunAutoTask(ctx context.Context, id, trigger string) (*AutoOutcome, error) 
 func stringsHasDomain(host, value string) bool {
 	return len(host) > len(value) && host[len(host)-len(value)-1:] == "."+value
 }
-func autoPeriodic() lifecycle.Periodic {
+func (s *Service) autoPeriodic() lifecycle.Periodic {
 	return lifecycle.Periodic{
 		Name: "domain-discovery-auto", Start: lifecycle.AtBoot, FirstDelay: 120 * time.Second,
 		Interval: func(context.Context) time.Duration { return 600 * time.Second },
-		OnStart:  activateMatcherCache,
-		Round:    automaticRound,
+		OnStart:  s.activateMatcherCache,
+		Round:    s.automaticRound,
 	}
 }
 
-func automaticRound(ctx context.Context) error {
-	r, err := repo.GetRepository(ctx)
-	if err != nil {
+func (s *Service) automaticRound(ctx context.Context) error {
+	if _, err := s.repo(); err != nil {
 		return err
 	}
-	profiles, err := listProfiles(ctx)
+	profiles, err := s.listProfiles(ctx)
 	if err != nil {
 		return err
 	}
@@ -241,32 +244,19 @@ func automaticRound(ctx context.Context) error {
 			return err
 		}
 		func() {
-			scope := repo.WithScope(repo.WithRepository(lifecycle.Detach(ctx), r))
+			scope := repo.WithScope(lifecycle.Detach(ctx))
 			defer repo.ResetConfigContext(scope)
 			defer func() {
 				if p := recover(); p != nil {
 					logger.Errorf("Domain discovery automatic round failed: %v", p)
 				}
 			}()
-			if _, err := RunAutoTask(scope, p.ID, "schedule"); err != nil {
+			if _, err := s.RunAutoTask(scope, p.ID, "schedule"); err != nil {
 				logger.Exception("Domain discovery automatic round failed", err)
 			}
 		}()
 	}
 	return nil
-}
-
-// Wire registers task providers and the automatic discovery periodic on the default runtime.
-func Wire() { WireOn(lifecycle.Current()) }
-
-// WireOn registers task providers and the automatic discovery periodic on rt.
-func WireOn(rt *lifecycle.Runtime) {
-	if rt == nil {
-		rt = lifecycle.Current()
-	}
-	wireTasks()
-	rt.RegisterPeriodic(autoPeriodic())
-	rt.RegisterShutdown(matcherShutdown(clearMatcherCache))
 }
 
 func autoStopping(ctx context.Context) bool {

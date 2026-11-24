@@ -11,7 +11,7 @@ import (
 )
 
 func TestProductionMatcherWiringStopsBeforeDrain(t *testing.T) {
-	opts := matcherOptions()
+	opts := New(Options{}).matcherOptions(context.Background())
 	if opts.Spawner == nil || opts.Clock == nil || opts.MaxMatchers != 4 || opts.MaxHostResults != 1024 || opts.IdleSeconds != 300 {
 		t.Fatal("production matcher wiring lost", opts)
 	}

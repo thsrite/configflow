@@ -17,6 +17,7 @@ import (
 	apistats "configflow/internal/api/stats"
 	apisubscriptions "configflow/internal/api/subscriptions"
 	apitasks "configflow/internal/api/tasks"
+	"configflow/internal/discovery"
 	"configflow/internal/gateway"
 	"configflow/internal/gateway/onboarding"
 	"configflow/internal/notifications"
@@ -48,7 +49,7 @@ type w10cHandlers struct {
 	notifications     *apinotifications.Handler
 }
 
-func newW10cHandlers(opts Options, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service, wd *webdav.Service) *w10cHandlers {
+func newW10cHandlers(opts Options, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service, wd *webdav.Service, disc *discovery.Service) *w10cHandlers {
 	var ruleReader gateway.RuleSourceReader
 	if rs != nil {
 		ruleReader = rs.ReadGateway
@@ -77,7 +78,7 @@ func newW10cHandlers(opts Options, tk *tasks.Registry, nt *notifications.Service
 		setup:             setupHandler,
 		logs:              apilogs.NewHandler(),
 		stats:             apistats.NewHandler(opts.Repo),
-		domaindiscovery:   apidiscovery.NewHandler(opts.Repo),
+		domaindiscovery:   apidiscovery.NewHandler(opts.Repo, disc),
 		tasks:             apitasks.NewHandlerWithRepo(tk, opts.Repo),
 		notifications:     apinotifications.NewHandler(tk, nt, opts.Repo),
 	}

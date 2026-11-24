@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -104,7 +105,7 @@ func TestReviewN811OutdatedAgentsSkipAgentHistory(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		store := trafficstore.NewNative(r.DataDir())
+		store := trafficstore.NewNative(filepath.Join(r.DataDir(), "traffic"))
 		if _, err := store.Add(ctx, "agent-1", &trafficstore.Report{
 			Status:        "running",
 			MihomoVersion: json.RawMessage(`"v1.18.0"`),

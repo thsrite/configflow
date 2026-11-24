@@ -68,18 +68,17 @@ func TestNewAppRegistersImplementedRoutes(t *testing.T) {
 // registers from its wire function; this fails when a fully wired server
 // would delete an Agent and leave any of those files behind.
 func TestDeleteAgentClearsEveryPerAgentStoreInAFullyWiredServer(t *testing.T) {
-	agents.ResetHooks()
-	t.Cleanup(agents.ResetHooks)
-	NewApp()
-	if got, want := strings.Join(agents.AgentDeletedHookNames(), ","), strings.Join(agents.AgentDeletedStores, ","); !strings.HasPrefix(got, want) {
+	app := newProductionApp(t)
+	stores := app.Agents.DeletedStores()
+	names := make([]string, len(stores))
+	for i, s := range stores {
+		names[i] = s.Name
+	}
+	if got, want := strings.Join(names, ","), strings.Join(agents.AgentDeletedStores, ","); !strings.HasPrefix(got, want) {
 		t.Errorf("DELETE /api/agents/<id> store hooks %q, want %q first", got, want)
 	}
-	hooks := agents.CurrentHooks()
-	if hooks.DeleteMetricsHistoryContext == nil {
-		t.Error("delete_agent: metrics_history.delete_agent_history (A04) not registered")
-	}
-	if hooks.DeleteTrafficHistoryContext == nil {
-		t.Error("delete_agent: traffic_history.delete (A05) not registered")
+	if app.Metrics == nil {
+		t.Error("delete_agent: metrics service (A04/A05) not wired")
 	}
 }
 

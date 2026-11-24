@@ -25,15 +25,16 @@ func TestReviewStoreDeleteOfADirectoryFailsLikeOSRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := repo.WithRepository(context.Background(), r)
+	stores := DeletedStores(r.DataDir())
 	for _, c := range []struct {
 		dir   string
 		del   func(context.Context, string) error
 		empty bool
 	}{
-		{"probes", deleteProbeStore, true},
-		{"probes", deleteProbeStore, false},
-		{"regions", deleteRegionStore, true},
-		{"regions", deleteRegionStore, false},
+		{"probes", stores[0].Delete, true},
+		{"probes", stores[0].Delete, false},
+		{"regions", stores[1].Delete, true},
+		{"regions", stores[1].Delete, false},
 	} {
 		path := filepath.Join(r.DataDir(), c.dir, "a_b.json")
 		_ = os.RemoveAll(path)
@@ -85,7 +86,7 @@ func TestReviewCancelledRequestFinishesTheLatencyTest(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		ctx, cancel := context.WithCancel(base)
 		go func() { time.Sleep(50 * time.Millisecond); cancel() }()
-		outcome, err := RunLatencyTests(ctx, nil, nil)
+		outcome, err := RunLatencyTests(ctx, r, nil, nil)
 		if err != nil {
 			t.Fatalf("round %d: %v", i, err)
 		}
@@ -100,7 +101,7 @@ func TestReviewCancelledRequestFinishesTheLatencyTest(t *testing.T) {
 		if got, _ := testjson.Path(parsedOutcome, "results", `["node","n1"]`, "latency"); !testjson.Equal(got, 42) {
 			t.Fatalf("round %d: %s", i, outcomeRaw)
 		}
-		storedRaw, err := json.Marshal(LoadLatencyResults(base))
+		storedRaw, err := json.Marshal(LoadLatencyResults(base, r))
 		if err != nil {
 			t.Fatal(err)
 		}

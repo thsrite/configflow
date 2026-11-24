@@ -2,7 +2,6 @@ package agents
 
 import (
 	"context"
-	"path/filepath"
 
 	core "configflow/internal/agents"
 	"configflow/internal/agents/dnsfollow"
@@ -13,6 +12,7 @@ import (
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/deploy"
+	"configflow/internal/discovery"
 	"configflow/internal/health"
 	"configflow/internal/health/check"
 	"configflow/internal/httpx"
@@ -33,6 +33,7 @@ type Deps struct {
 	DNSFollow *dnsfollow.Service
 	RuleSync  *rulesync.Service
 	Deploy    *deploy.Service
+	Discovery *discovery.Service
 }
 
 func (d Deps) repository(ctx context.Context) (*repo.Repository, error) {
@@ -114,17 +115,30 @@ func (d Deps) trafficStore(ctx context.Context) (*trafficstore.NativeStore, erro
 }
 
 func (d Deps) probeStore(ctx context.Context) (*check.ProbeStore, error) {
-	if d.Repo != nil {
-		return check.NewProbeStore(filepath.Join(d.Repo.DataDir(), "probes")), nil
+	r, err := d.repository(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return health.GetProbeStore(ctx)
+	return health.ProbeStore(r.DataDir()), nil
 }
 
 func (d Deps) regionStore(ctx context.Context) (*check.RegionStore, error) {
-	if d.Repo != nil {
-		return check.NewRegionStore(filepath.Join(d.Repo.DataDir(), "regions")), nil
+	r, err := d.repository(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return health.GetRegionStore(ctx)
+	return health.RegionStore(r.DataDir()), nil
+}
+
+func (d Deps) discoveryService(ctx context.Context) (*discovery.Service, error) {
+	if d.Discovery != nil {
+		return d.Discovery, nil
+	}
+	r, err := d.repository(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return discovery.New(discovery.Options{Repo: r, Agents: d.Agents, Traffic: d.Traffic}), nil
 }
 
 func (d Deps) loadPreview(m *core.Manager, previewID, agentID string) (*deploy.Preview, error) {

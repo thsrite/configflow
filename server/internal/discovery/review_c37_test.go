@@ -29,15 +29,15 @@ func collectGarbage() {
 }
 
 func TestReviewNullNoteCannotDeleteExistingAnnotation(t *testing.T) {
-	ctx := jobFixture(t)
-	if _, err := SaveWebsiteNote(ctx, "default", json.RawMessage(`{"domain":"example.com","note":"keep"}`)); err != nil {
+	svc, ctx := jobFixture(t)
+	if _, err := svc.SaveWebsiteNote(ctx, "default", json.RawMessage(`{"domain":"example.com","note":"keep"}`)); err != nil {
 		t.Fatal(err)
 	}
-	_, err := SaveWebsiteNote(ctx, "default", json.RawMessage(`{"domain":"example.com","note":null}`))
+	_, err := svc.SaveWebsiteNote(ctx, "default", json.RawMessage(`{"domain":"example.com","note":null}`))
 	if err == nil || err.Error() != msgNote {
 		t.Errorf("null note accepted: %v", err)
 	}
-	cfg, err := loadConfig(ctx, "default")
+	cfg, err := svc.loadConfig(ctx, "default")
 	if err != nil || cfg.Settings.WebsiteNotes["example.com"] != "keep" {
 		t.Fatalf("annotation deleted: %v", err)
 	}
@@ -51,15 +51,15 @@ func TestReviewExplicitNullApplyTypeIsRejected(t *testing.T) {
 }
 
 func TestReviewDiscardedJobsAreActuallyCollected(t *testing.T) {
-	ctx := jobFixture(t)
+	svc, ctx := jobFixture(t)
 	refs := []weak.Pointer[Job]{}
 	for range 80 {
-		if _, _, err := startJob(ctx, "default", "probe", true, func(context.Context, func(int, int)) (outcome, error) { return outcome{}, nil }); err != nil {
+		if _, _, err := svc.startJob(ctx, "default", "probe", true, func(context.Context, func(int, int)) (outcome, error) { return outcome{}, nil }); err != nil {
 			t.Fatal(err)
 		}
-		jobState.Lock()
-		refs = append(refs, weak.Make(jobState.jobs[len(jobState.jobs)-1]))
-		jobState.Unlock()
+		svc.jobMu.Lock()
+		refs = append(refs, weak.Make(svc.jobs[len(svc.jobs)-1]))
+		svc.jobMu.Unlock()
 	}
 	collectGarbage()
 	for i, ref := range refs[:len(refs)-21] {
@@ -67,9 +67,9 @@ func TestReviewDiscardedJobsAreActuallyCollected(t *testing.T) {
 			t.Errorf("discarded metadata %d remains reachable", i)
 		}
 	}
-	jobState.Lock()
-	n := len(jobState.jobs)
-	jobState.Unlock()
+	svc.jobMu.Lock()
+	n := len(svc.jobs)
+	svc.jobMu.Unlock()
 	if n != 21 {
 		t.Fatalf("retained %d jobs", n)
 	}
@@ -109,11 +109,11 @@ func TestReviewLargeAgentSummariesDoNotSurviveRequests(t *testing.T) {
 }
 
 func TestReviewJobExclusivityAndCancellationStress(t *testing.T) {
-	ctx := jobFixture(t)
+	svc, ctx := jobFixture(t)
 	for round := range 60 {
 		release := make(chan struct{})
 		request, cancel := context.WithCancel(ctx)
-		j, _, err := startJob(request, "default", "probe", false, func(worker context.Context, progress func(int, int)) (outcome, error) {
+		j, _, err := svc.startJob(request, "default", "probe", false, func(worker context.Context, progress func(int, int)) (outcome, error) {
 			<-release
 			if worker.Err() != nil {
 				return outcome{}, worker.Err()
@@ -125,7 +125,7 @@ func TestReviewJobExclusivityAndCancellationStress(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, _, err = startJob(ctx, "other", "region", true, func(context.Context, func(int, int)) (outcome, error) {
+		_, _, err = svc.startJob(ctx, "other", "region", true, func(context.Context, func(int, int)) (outcome, error) {
 			t.Error("competing worker started")
 			return outcome{}, nil
 		})
@@ -133,7 +133,7 @@ func TestReviewJobExclusivityAndCancellationStress(t *testing.T) {
 			t.Fatalf("round %d lost exclusivity: %v", round, err)
 		}
 		close(release)
-		if done := awaitJob(t, j.ID, "default"); done.Status != "done" {
+		if done := awaitJob(t, svc, j.ID, "default"); done.Status != "done" {
 			t.Fatalf("cancelled request stopped worker: %+v", done)
 		}
 	}
@@ -167,7 +167,7 @@ func TestReviewTypedSettingsDefaultsAndLegacyNumber(t *testing.T) {
 }
 
 func TestReviewProductionMatcherLimitsAndRelease(t *testing.T) {
-	opts := matcherOptions()
+	opts := New(Options{}).matcherOptions(context.Background())
 	if opts.MaxMatchers != 4 || opts.MaxHostResults != 1024 || opts.IdleSeconds != 300 {
 		t.Fatalf("unexpected production limits: %+v", opts)
 	}
@@ -239,11 +239,9 @@ func (f *reviewBlockedClient) Probe(ctx context.Context, a Agent, p ProbeRequest
 }
 
 func TestReviewManualAutoTaskKeepsWorkValuesWithFreshScope(t *testing.T) {
-	ctx := jobFixture(t)
-	lifecycle.Start(context.Background())
-	r, _ := repo.GetRepository(ctx)
-	repo.SetRepository(r)
-	t.Cleanup(func() { repo.SetRepository(nil) })
+	svc, ctx := jobFixture(t)
+	r := svc.Repo
+	rt := svc.Runtime
 	var err error
 	if _, err = r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
 		profile.ProxyGroups = []model.ProxyGroup{{ID: "g", Name: "PROXY", Type: "select"}}
@@ -258,10 +256,10 @@ func TestReviewManualAutoTaskKeepsWorkValuesWithFreshScope(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = InitRulesets(ctx, "default", nil, "PROXY"); err != nil {
+	if _, err = svc.InitRulesets(ctx, "default", nil, "PROXY"); err != nil {
 		t.Fatal(err)
 	}
-	if err = editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; return nil }); err != nil {
+	if err = svc.editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(r.DataDir(), "traffic")
@@ -273,14 +271,13 @@ func TestReviewManualAutoTaskKeepsWorkValuesWithFreshScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	fake := &reviewBlockedClient{started: make(chan struct{}), release: make(chan struct{}), seen: make(chan context.Context, 1)}
-	previous := client
-	client = fake
-	t.Cleanup(func() { client = previous })
-	wireTasks()
+	svc.client = fake
+	tk := tasks.NewRegistry(r, rt)
+	svc.registerTasks(tk)
 	type key struct{}
-	request, cancel := context.WithCancel(lifecycle.BindRequest(context.WithValue(repo.WithScope(ctx), key{}, "kept-work-value")))
+	request, cancel := context.WithCancel(rt.BindRequest(context.WithValue(repo.WithScope(ctx), key{}, "kept-work-value")))
 	original := repo.ScopeOf(request)
-	if err := tasks.Runner(tasks.SlotDomains)(request, "domain_discovery:default", "default"); err != nil {
+	if err := tk.Runner(tasks.SlotDomains)(request, "domain_discovery:default", "default"); err != nil {
 		t.Fatal(err)
 	}
 	cancel()
@@ -304,11 +301,11 @@ func TestReviewManualAutoTaskKeepsWorkValuesWithFreshScope(t *testing.T) {
 	if worker.Value(key{}) != "kept-work-value" || worker.Err() != nil || repo.ScopeOf(worker) == original {
 		t.Fatal("work lost its lifetime/values or retained the request repository scope")
 	}
-	lifecycle.Stop(time.Second)
+	rt.Shutdown(context.Background())
 	if worker.Err() == nil {
 		t.Fatal("manual task lost its Runtime shutdown lifetime")
 	}
-	lifecycle.Start(context.Background())
+	rt.Start(context.Background())
 	if worker.Err() == nil {
 		t.Fatal("old task moved to the successor generation")
 	}
@@ -341,8 +338,8 @@ func TestReviewRegionTargetOrdering(t *testing.T) {
 }
 
 func TestReviewOverallFailureDoesNotExposePartialErrors(t *testing.T) {
-	ctx := jobFixture(t)
-	j, _, err := startJob(ctx, "default", "probe", true, func(context.Context, func(int, int)) (outcome, error) {
+	svc, ctx := jobFixture(t)
+	j, _, err := svc.startJob(ctx, "default", "probe", true, func(context.Context, func(int, int)) (outcome, error) {
 		return outcome{Errors: []JobError{{Message: "partial"}}}, fmt.Errorf("synthetic final failure")
 	})
 	if err == nil || j.Status != "failed" || len(j.Errors) != 0 {
@@ -351,24 +348,24 @@ func TestReviewOverallFailureDoesNotExposePartialErrors(t *testing.T) {
 }
 
 func TestReviewJobSnapshotDoesNotShareCompletionPointer(t *testing.T) {
-	ctx := jobFixture(t)
-	returned, _, err := startJob(ctx, "default", "probe", true, func(context.Context, func(int, int)) (outcome, error) { return outcome{}, nil })
+	svc, ctx := jobFixture(t)
+	returned, _, err := svc.startJob(ctx, "default", "probe", true, func(context.Context, func(int, int)) (outcome, error) { return outcome{}, nil })
 	if err != nil || returned.FinishedAt == nil {
 		t.Fatalf("job failed: %v", err)
 	}
 	original := *returned.FinishedAt
 	*returned.FinishedAt = "caller modification"
-	if got := GetJob(returned.ID, "default"); got.FinishedAt == nil || *got.FinishedAt != original {
+	if got := svc.GetJob(returned.ID, "default"); got.FinishedAt == nil || *got.FinishedAt != original {
 		t.Fatal("caller mutated stored completion time")
 	}
 }
 
 func TestReviewAutoLoopRunsUnderInstanceLock(t *testing.T) {
-	ctx := jobFixture(t)
-	if err := editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; return nil }); err != nil {
+	svc, ctx := jobFixture(t)
+	if err := svc.editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	r, _ := repo.GetRepository(ctx)
+	r := svc.Repo
 	owner, err := instance.Acquire(ctx, r.DataDir())
 	if err != nil {
 		t.Fatal(err)
@@ -376,7 +373,7 @@ func TestReviewAutoLoopRunsUnderInstanceLock(t *testing.T) {
 	defer owner.Release()
 	clock := lifecycletest.NewClock(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
 	reg := lifecycle.NewRegistry()
-	spec := autoPeriodic()
+	spec := svc.autoPeriodic()
 	original := spec.Round
 	rounds := make(chan struct{}, 3)
 	spec.Round = func(ctx context.Context) error {

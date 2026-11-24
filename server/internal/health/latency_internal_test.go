@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"configflow/internal/agents"
-	"configflow/internal/repo"
 	"configflow/internal/testjson"
 )
 
@@ -83,28 +81,20 @@ func TestISOUTCOmitsZeroMicroseconds(t *testing.T) {
 	}
 }
 
-// The DELETE /api/agents/<id> hooks clear both stores of the Agent.
-func TestWireRegistersTheAgentDeleteHooksInOrder(t *testing.T) {
-	// Sequential: resets and installs the process-wide Agent delete hooks.
-	agents.ResetHooks()
-	t.Cleanup(agents.ResetHooks)
-	Wire()
-	names := agents.AgentDeletedHookNames()
-	if len(names) != 2 || names[0] != "domain_probe" || names[1] != "region_check" {
-		t.Fatal(names)
-	}
+// The DELETE /api/agents/<id> deleters clear both stores of the Agent in order.
+func TestDeletedStoresDeleteBothStoresInOrder(t *testing.T) {
 	dir := t.TempDir()
-	r, err := repo.Open(dir, repo.Options{})
-	if err != nil {
-		t.Fatal(err)
+	stores := DeletedStores(dir)
+	if len(stores) != 2 || stores[0].Name != "domain_probe" || stores[1].Name != "region_check" {
+		t.Fatal(stores)
 	}
-	ctx := repo.WithRepository(context.Background(), r)
+	ctx := context.Background()
 	for _, sub := range []string{"probes", "regions"} {
 		os.MkdirAll(filepath.Join(dir, sub), 0o755)
 		os.WriteFile(filepath.Join(dir, sub, "agent-1.json"), []byte("{}"), 0o644)
 	}
-	for _, hook := range agents.AgentDeletedHooks() {
-		if err := hook(ctx, "agent-1"); err != nil {
+	for _, deleter := range stores {
+		if err := deleter.Delete(ctx, "agent-1"); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -11,32 +11,26 @@ import (
 )
 
 func TestMatcherUsesEachPeriodicActivationClock(t *testing.T) {
-	clearMatcherCache()
-	t.Cleanup(func() {
-		matcherMu.Lock()
-		defer matcherMu.Unlock()
-		if matcherCache != nil {
-			matcherCache.Clear()
-		}
-		matcherCache = nil
-	})
+	svc := New(Options{})
+	t.Cleanup(svc.clearMatcherCache)
 	for _, year := range []int{2025, 2026} {
 		source := lifecycletest.NewClock(time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC))
 		reg := lifecycle.NewRegistry()
-		spec := autoPeriodic()
+		spec := svc.autoPeriodic()
 		activated := make(chan struct{})
 		original := spec.OnStart
 		spec.OnStart = func(ctx context.Context) { original(ctx); close(activated) }
 		reg.RegisterPeriodic(spec)
-		reg.RegisterShutdown(matcherShutdown(clearMatcherCache))
+		reg.RegisterShutdown(matcherShutdown(svc.clearMatcherCache))
 		runner := lifecycle.NewRuntime(lifecycle.Options{Registry: reg, Clock: source})
+		svc.Runtime = runner
 		runner.Start(context.Background())
 		select {
 		case <-activated:
 		case <-time.After(5 * time.Second):
 			t.Fatal("matcher activation missing")
 		}
-		owner := cache(runner.BindRequest(context.Background()))
+		owner := svc.cache(runner.BindRequest(context.Background()))
 		owner.LocalMatcher(rules.MatcherInput{}, "default")
 		deadline := time.Now().Add(5 * time.Second)
 		for source.Pending() != 2 {

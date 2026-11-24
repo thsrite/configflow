@@ -11,7 +11,7 @@ import (
 )
 
 func TestSynchronousJobKeepsShutdownContextWithFreshScope(t *testing.T) {
-	ctx := jobFixture(t)
+	svc, ctx := jobFixture(t)
 	clock := lifecycletest.NewClock(time.Now())
 	runner := lifecycle.NewRuntime(lifecycle.Options{Clock: clock})
 	runner.Start(ctx)
@@ -22,7 +22,7 @@ func TestSynchronousJobKeepsShutdownContextWithFreshScope(t *testing.T) {
 	entered, cancelled, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	if err := runner.Spawn(request, "automatic-probe", func(work context.Context) {
 		defer close(done)
-		_, _, _ = startJob(work, "default", "probe", true, func(ioCtx context.Context, _ func(int, int)) (outcome, error) {
+		_, _, _ = svc.startJob(work, "default", "probe", true, func(ioCtx context.Context, _ func(int, int)) (outcome, error) {
 			if ioCtx.Err() != nil || repo.ScopeOf(ioCtx) == original || lifecycle.ClockFrom(ioCtx) != clock {
 				t.Error("synchronous job lost shutdown context or reused request scope")
 			}
@@ -61,7 +61,7 @@ func TestSynchronousJobKeepsShutdownContextWithFreshScope(t *testing.T) {
 			t.Fatal("cancelled work leaked")
 		}
 	}
-	if j := runningJob(""); j != nil {
+	if j := svc.runningJob(""); j != nil {
 		t.Fatal("synchronous job left running")
 	}
 }

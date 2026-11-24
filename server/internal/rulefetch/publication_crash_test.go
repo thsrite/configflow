@@ -110,14 +110,15 @@ func TestInlinePublicationProcess(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		disc := discovery.New(discovery.Options{Repo: s.Repo})
 		switch scenario {
 		case "adopt", "adopt-shared":
-			_, err := discovery.ApplyDomains(s.Context(), "default", []discovery.ApplyEntry{{Value: "new.example", RuleType: "DOMAIN-SUFFIX", Target: "direct"}, {Value: "proxy.example", RuleType: "DOMAIN-SUFFIX", Target: "proxy"}}, "manual", nil)
+			_, err := disc.ApplyDomains(s.Context(), "default", []discovery.ApplyEntry{{Value: "new.example", RuleType: "DOMAIN-SUFFIX", Target: "direct"}, {Value: "proxy.example", RuleType: "DOMAIN-SUFFIX", Target: "proxy"}}, "manual", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 		case "undo":
-			if _, err := discovery.UndoDomain(s.Context(), "default", "remove.example", "direct"); err != nil {
+			if _, err := disc.UndoDomain(s.Context(), "default", "remove.example", "direct"); err != nil {
 				t.Fatal(err)
 			}
 		case "agent-ip":

@@ -51,9 +51,8 @@ func defaultCollaborators(converterFn func() convert.NodeConverter) Collaborator
 			}
 			return out, nil
 		},
-		ReadLatencyFile: func(ctx context.Context) (json.RawMessage, bool) {
-			r, err := repo.GetRepository(ctx)
-			if err != nil {
+		ReadLatencyFile: func(ctx context.Context, r *repo.Repository) (json.RawMessage, bool) {
+			if r == nil {
 				return nil, false
 			}
 			data, err := r.ReadSharedBytes(ctx, LatencyFile)
@@ -62,18 +61,17 @@ func defaultCollaborators(converterFn func() convert.NodeConverter) Collaborator
 			}
 			return json.RawMessage(data), true
 		},
-		WriteLatencyFile: func(ctx context.Context, data json.RawMessage) error {
+		WriteLatencyFile: func(ctx context.Context, r *repo.Repository, data json.RawMessage) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			r, err := repo.GetRepository(ctx)
-			if err != nil {
-				return err
+			if r == nil {
+				return &ValidationError{Message: msgSaveLatencyFailed}
 			}
 			if !json.Valid(data) {
 				return &ValidationError{Message: msgSaveLatencyFailed}
 			}
-			_, err = r.WriteSharedText(ctx, LatencyFile, append(data, '\n'))
+			_, err := r.WriteSharedText(ctx, LatencyFile, append(data, '\n'))
 			return err
 		},
 	}

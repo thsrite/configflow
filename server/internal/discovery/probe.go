@@ -97,15 +97,15 @@ func capable(as []Agent, minimum string) []Agent {
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Heartbeat > out[j].Heartbeat })
 	return out
 }
-func rawSummary(ctx context.Context, as []Agent) (Listing, error) {
-	rs, err := reports(ctx, as, "")
+func (svc *Service) rawSummary(ctx context.Context, as []Agent) (Listing, error) {
+	rs, err := svc.reports(ctx, as, "")
 	if err != nil {
 		return Listing{}, err
 	}
 	return summarize(rs, 7, "all", "", nil, nil), nil
 }
-func probePlan(ctx context.Context, id string, values []string) (map[string]Agent, []plannedHost, error) {
-	as, err := profileAgents(ctx, id)
+func (svc *Service) probePlan(ctx context.Context, id string, values []string) (map[string]Agent, []plannedHost, error) {
+	as, err := svc.profileAgents(ctx, id)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -113,7 +113,7 @@ func probePlan(ctx context.Context, id string, values []string) (map[string]Agen
 	if len(eligible) == 0 {
 		return nil, nil, &ProbeError{msgProbeAgents}
 	}
-	listing, err := rawSummary(ctx, as)
+	listing, err := svc.rawSummary(ctx, as)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -160,9 +160,9 @@ func probePlan(ctx context.Context, id string, values []string) (map[string]Agen
 func healthy(s *PathStats) bool {
 	return s != nil && s.Total > 0 && float64(s.OK)/float64(s.Total) >= 0.5
 }
-func runProbes(ctx context.Context, id string, values []string, progress func(int, int)) (outcome, error) {
+func (svc *Service) runProbes(ctx context.Context, id string, values []string, progress func(int, int)) (outcome, error) {
 	out := outcome{Results: map[string]Probe{}, Errors: []JobError{}}
-	c, err := loadConfig(ctx, id)
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -170,7 +170,7 @@ func runProbes(ctx context.Context, id string, values []string, progress func(in
 	if path == nil || *path == "" {
 		return out, &ProbeError{msgProbePath}
 	}
-	as, plan, err := probePlan(ctx, id, values)
+	as, plan, err := svc.probePlan(ctx, id, values)
 	if err != nil {
 		return out, err
 	}
@@ -193,7 +193,7 @@ func runProbes(ctx context.Context, id string, values []string, progress func(in
 			for _, h := range batch {
 				req.Targets = append(req.Targets, h.ProbeTarget)
 			}
-			rows, err := client.Probe(ctx, as[aid], req)
+			rows, err := svc.agentClient().Probe(ctx, as[aid], req)
 			if err != nil {
 				out.Errors = append(out.Errors, JobError{AgentID: aid, Message: err.Error()})
 			} else if len(rows) != len(req.Targets) {
@@ -216,7 +216,7 @@ func runProbes(ctx context.Context, id string, values []string, progress func(in
 					saved[h.Host] = v
 					out.Results[h.Host] = v
 				}
-				if err := saveProbes(ctx, aid, saved); err != nil {
+				if err := svc.saveProbes(ctx, aid, saved); err != nil {
 					return out, err
 				}
 			}
@@ -228,12 +228,12 @@ func runProbes(ctx context.Context, id string, values []string, progress func(in
 }
 
 // StartProbe starts an exclusive asynchronous probe job.
-func StartProbe(ctx context.Context, id string, values []string) (*Job, error) {
+func (svc *Service) StartProbe(ctx context.Context, id string, values []string) (*Job, error) {
 	ctx = lifecycle.Detach(ctx)
 	values, err := cleanValues(values)
 	if err != nil {
 		return nil, err
 	}
-	j, _, err := startJob(ctx, id, "probe", false, func(ctx context.Context, p func(int, int)) (outcome, error) { return runProbes(ctx, id, values, p) })
+	j, _, err := svc.startJob(ctx, id, "probe", false, func(ctx context.Context, p func(int, int)) (outcome, error) { return svc.runProbes(ctx, id, values, p) })
 	return j, err
 }

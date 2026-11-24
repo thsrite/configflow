@@ -341,10 +341,9 @@ func checkSystemConfigRoot(ctx context.Context, repository *repo.Repository) err
 
 // LoadDNSConfig loads and normalizes the saved node-test DNS configuration from
 // the repository, falling back to the legacy node_test_dns list when needed.
-func LoadDNSConfig(ctx context.Context) (DNSConfig, error) {
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return DNSConfig{}, err
+func LoadDNSConfig(ctx context.Context, repository *repo.Repository) (DNSConfig, error) {
+	if repository == nil {
+		return DNSConfig{}, errors.New("health: repository is nil")
 	}
 	var rawSaved, rawSettings []byte
 	hasSaved := false
@@ -373,6 +372,7 @@ func LoadDNSConfig(ctx context.Context) (DNSConfig, error) {
 	}
 	servers := []string{}
 	if rawLegacy, ok := settingsObj.Fields.Get("node_test_dns"); ok {
+		var err error
 		servers, err = NormalizeDNSServersJSON(rawLegacy, false)
 		if err != nil {
 			return DNSConfig{}, err
@@ -385,21 +385,21 @@ func LoadDNSConfig(ctx context.Context) (DNSConfig, error) {
 	return NormalizeDNSConfig(DNSConfig{Mode: mode, Servers: servers, Bootstrap: []string{}})
 }
 
-func resolveConfigJSON(ctx context.Context, raw json.RawMessage) (DNSConfig, error) {
+func resolveConfigJSON(ctx context.Context, repository *repo.Repository, raw json.RawMessage) (DNSConfig, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
-		return LoadDNSConfig(ctx)
+		return LoadDNSConfig(ctx, repository)
 	}
 	return NormalizeDNSConfigJSON(trimmed)
 }
 
 // EffectiveDNSSettings resolves effective DNS server and bootstrap lists from
 // override (or loads saved settings when override is nil).
-func EffectiveDNSSettings(ctx context.Context, override *DNSConfig) (EffectiveDNS, error) {
+func EffectiveDNSSettings(ctx context.Context, repository *repo.Repository, override *DNSConfig) (EffectiveDNS, error) {
 	var cfg DNSConfig
 	var err error
 	if override == nil {
-		cfg, err = LoadDNSConfig(ctx)
+		cfg, err = LoadDNSConfig(ctx, repository)
 	} else {
 		cfg, err = NormalizeDNSConfig(*override)
 	}
@@ -414,8 +414,8 @@ func EffectiveDNSSettings(ctx context.Context, override *DNSConfig) (EffectiveDN
 
 // EffectiveDNSSettingsJSON resolves effective DNS lists from raw JSON (loading
 // saved settings when raw is empty or null).
-func EffectiveDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (EffectiveDNS, error) {
-	cfg, err := resolveConfigJSON(ctx, raw)
+func EffectiveDNSSettingsJSON(ctx context.Context, repository *repo.Repository, raw json.RawMessage) (EffectiveDNS, error) {
+	cfg, err := resolveConfigJSON(ctx, repository, raw)
 	if err != nil {
 		return EffectiveDNS{}, err
 	}
@@ -426,8 +426,8 @@ func EffectiveDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (Effecti
 }
 
 // DescribeDNSSettingsJSON returns normalized DNSConfig alongside effective lists.
-func DescribeDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (DNSSettingsView, error) {
-	cfg, err := resolveConfigJSON(ctx, raw)
+func DescribeDNSSettingsJSON(ctx context.Context, repository *repo.Repository, raw json.RawMessage) (DNSSettingsView, error) {
+	cfg, err := resolveConfigJSON(ctx, repository, raw)
 	if err != nil {
 		return DNSSettingsView{}, err
 	}
@@ -440,7 +440,7 @@ func DescribeDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (DNSSetti
 
 // SaveDNSConfigJSON validates and persists raw DNS settings and the legacy
 // node_test_dns mirror into system_config.
-func SaveDNSConfigJSON(ctx context.Context, raw json.RawMessage) (DNSSettingsView, error) {
+func SaveDNSConfigJSON(ctx context.Context, repository *repo.Repository, raw json.RawMessage) (DNSSettingsView, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return DNSSettingsView{}, err
@@ -449,9 +449,8 @@ func SaveDNSConfigJSON(ctx context.Context, raw json.RawMessage) (DNSSettingsVie
 	if err != nil {
 		return DNSSettingsView{}, err
 	}
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return DNSSettingsView{}, err
+	if repository == nil {
+		return DNSSettingsView{}, errors.New("health: repository is nil")
 	}
 	cfgJSON, err := jsonresp.Encode(cfg)
 	if err != nil {
@@ -537,13 +536,13 @@ type dnsCheckPayload struct {
 
 // CheckDNSSettingsJSON executes a live DNS check against the worker using raw
 // DNS settings (or saved settings when raw is empty or null).
-func CheckDNSSettingsJSON(ctx context.Context, raw json.RawMessage) (DNSCheckResult, error) {
+func CheckDNSSettingsJSON(ctx context.Context, repository *repo.Repository, raw json.RawMessage) (DNSCheckResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return DNSCheckResult{}, err
 	}
 	env := CurrentProbeEnv()
-	options, err := EffectiveDNSSettingsJSON(ctx, raw)
+	options, err := EffectiveDNSSettingsJSON(ctx, repository, raw)
 	if err != nil {
 		return DNSCheckResult{}, err
 	}

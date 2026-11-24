@@ -19,8 +19,8 @@ func RegistrableDomain(host string) string {
 }
 
 // providerRevisions hashes the bytes served by active discovery rule providers.
-func providerRevisions(ctx context.Context, profileID string) (map[string]string, error) {
-	c, err := loadConfig(ctx, profileID)
+func (s *Service) providerRevisions(ctx context.Context, profileID string) (map[string]string, error) {
+	c, err := s.loadConfig(ctx, profileID)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func providerRevisions(ctx context.Context, profileID string) (map[string]string
 		if v == nil || v.Problem != nil || !v.Active {
 			continue
 		}
-		b, err := cachedContent(ctx, *c.library(*id))
+		b, err := s.cachedContent(ctx, *c.library(*id))
 		if err != nil {
 			return nil, err
 		}

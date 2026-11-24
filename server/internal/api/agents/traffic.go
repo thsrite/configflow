@@ -15,7 +15,6 @@ import (
 	"configflow/internal/agents/metrics"
 	"configflow/internal/agents/trafficstore"
 	"configflow/internal/auth"
-	"configflow/internal/discovery"
 	"configflow/internal/httpx"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
@@ -82,7 +81,11 @@ func (h *trafficHandler) agentTrafficReport(c *httpx.Ctx) (*httpx.Response, erro
 		return nil, err
 	}
 
-	revisions, err := discovery.ProviderRevisions(ctx, profileID)
+	disc, err := h.deps.discoveryService(ctx)
+	if err != nil {
+		return nil, err
+	}
+	revisions, err := disc.ProviderRevisions(ctx, profileID)
 	if err != nil {
 		return nil, err
 	}

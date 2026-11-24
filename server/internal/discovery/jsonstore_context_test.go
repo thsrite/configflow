@@ -44,17 +44,12 @@ func TestDiscoveryJSONStoreOwnerLifetime(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				request, disconnect := context.WithCancel(r.BindRequest(repo.WithRepository(context.Background(), repository)))
+				svc := New(Options{Repo: repository, Runtime: r})
+				request, disconnect := context.WithCancel(r.BindRequest(context.Background()))
 				t.Cleanup(disconnect)
 				owner := lifecycle.Detach(request)
-				probe, err := health.GetProbeStore(owner)
-				if err != nil {
-					t.Fatal(err)
-				}
-				region, err := health.GetRegionStore(owner)
-				if err != nil {
-					t.Fatal(err)
-				}
+				probe := health.ProbeStore(repository.DataDir())
+				region := health.RegionStore(repository.DataDir())
 				path := probe.Path("synthetic")
 				before := `{"hosts":{},"opaque":"keep"}`
 				if operation == "region" {
@@ -84,9 +79,9 @@ func TestDiscoveryJSONStoreOwnerLifetime(t *testing.T) {
 					r.Shutdown(context.Background())
 				}
 				if operation == "probe" {
-					err = saveProbes(ctx, "synthetic", map[string]Probe{"example.com": {Host: "example.com", CheckedAt: timestamp(), Verdict: "usable"}})
+					err = svc.saveProbes(ctx, "synthetic", map[string]Probe{"example.com": {Host: "example.com", CheckedAt: timestamp(), Verdict: "usable"}})
 				} else {
-					err = editRegion(ctx, "synthetic", func(data *regionRecord) error { data.Services = json.RawMessage(`{"new":true}`); return nil })
+					err = svc.editRegion(ctx, "synthetic", func(data *regionRecord) error { data.Services = json.RawMessage(`{"new":true}`); return nil })
 				}
 				if phase != "already-stopped" && !paused {
 					t.Error("health publication boundary was not reached through production adapter")

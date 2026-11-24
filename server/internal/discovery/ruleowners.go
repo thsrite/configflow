@@ -2,7 +2,6 @@ package discovery
 
 import (
 	"configflow/internal/model"
-	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
 	"context"
@@ -27,8 +26,8 @@ func ruleRecord(item libraryItem) (model.RuleConfig, error) {
 	declaration.Behavior, declaration.Content = &item.Behavior, &item.Content
 	return rules.LibraryRule(declaration), nil
 }
-func nativeSaveRule(ctx context.Context, item libraryItem) error {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) nativeSaveRule(ctx context.Context, item libraryItem) error {
+	r, err := s.repo()
 	if err != nil {
 		return err
 	}
@@ -46,8 +45,8 @@ func nativeValidateContent(item libraryItem) error {
 	}
 	return rulefetch.ValidateContent(rule, nil)
 }
-func nativeCachedContent(ctx context.Context, item libraryItem) ([]byte, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) nativeCachedContent(ctx context.Context, item libraryItem) ([]byte, error) {
+	r, err := s.repo()
 	if err != nil {
 		return nil, err
 	}
@@ -57,11 +56,11 @@ func nativeCachedContent(ctx context.Context, item libraryItem) ([]byte, error) 
 	}
 	return rulefetch.ReadCache(ctx, r, rule, nil)
 }
-func nativeMatcherOptions() rules.CacheOptions {
+func (s *Service) nativeMatcherOptions() rules.CacheOptions {
 	return rules.CacheOptions{
 		ReadPath: func(rule model.RuleConfig, library []model.RuleLibraryItem, directory string) string {
 			return matcherCachePath(context.Background(), rule, library, directory, func(ctx context.Context, visit func(*model.Document) error) error {
-				r, err := repo.GetRepository(ctx)
+				r, err := s.repo()
 				if err != nil {
 					return err
 				}
@@ -99,8 +98,8 @@ func matcherCachePath(ctx context.Context, rule model.RuleConfig, library []mode
 	return selected
 }
 
-func nativeLocalMatcher(ctx context.Context, id string) (func(string) *Match, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) nativeLocalMatcher(ctx context.Context, id string) (func(string) *Match, error) {
+	r, err := s.repo()
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +111,7 @@ func nativeLocalMatcher(ctx context.Context, id string) (func(string) *Match, er
 	for _, item := range view.RuleLibrary {
 		input.CacheLibrary = append(input.CacheLibrary, model.RuleLibraryItem{ID: item.ID, Name: item.Name})
 	}
-	matcher := cache(ctx).LocalMatcher(input, id)
+	matcher := s.cache(ctx).LocalMatcher(input, id)
 	return func(host string) *Match {
 		hit := matcher.Match(host)
 		if hit == nil {
@@ -153,7 +152,7 @@ func nativePageIdentity(result RegionResult, host, at string) (WebsitePage, erro
 	return out, err
 }
 
-func stageRule(ctx context.Context, item libraryItem) (*rulefetch.CachePublication, error) {
+func (s *Service) stageRule(ctx context.Context, item libraryItem) (*rulefetch.CachePublication, error) {
 	raw, err := json.Marshal(item)
 	if err != nil {
 		return nil, err
@@ -162,7 +161,7 @@ func stageRule(ctx context.Context, item libraryItem) (*rulefetch.CachePublicati
 	if err = json.Unmarshal(raw, &declaration); err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := s.repo()
 	if err != nil {
 		return nil, err
 	}

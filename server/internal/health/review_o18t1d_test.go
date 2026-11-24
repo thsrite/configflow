@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+
+	"configflow/internal/repo"
 )
 
 // TestReviewO18T1dDamagedSettingsNotContinued: a stored entry whose test
@@ -40,10 +42,10 @@ func TestReviewO18T1dDamagedSettingsNotContinued(t *testing.T) {
 	}
 	file += `}`
 	collabs := defaultCollaborators(nil)
-	collabs.ReadLatencyFile = func(context.Context) (json.RawMessage, bool) { return json.RawMessage(file), true }
+	collabs.ReadLatencyFile = func(context.Context, *repo.Repository) (json.RawMessage, bool) { return json.RawMessage(file), true }
 	restore := SetProbeEnv(&ProbeEnv{Collaborators: collabs})
 	defer restore()
-	results := LoadLatencyResults(context.Background())
+	results := LoadLatencyResults(context.Background(), nil)
 	if results.Len() != len(cases)+1 {
 		t.Fatalf("loaded %d entries", results.Len())
 	}

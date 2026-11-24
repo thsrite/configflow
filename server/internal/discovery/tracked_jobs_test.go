@@ -20,7 +20,7 @@ func (refusedJobSpawner) Spawn(context.Context, string, func(context.Context)) e
 
 func TestAsyncJobUsesRuntimeWithoutRetainingRequestValues(t *testing.T) {
 	type key struct{}
-	ctx := jobFixture(t)
+	svc, ctx := jobFixture(t)
 	request, cancel := context.WithCancel(context.WithValue(repo.WithScope(ctx), key{}, "request-only"))
 	cancel()
 	original := repo.ScopeOf(request)
@@ -30,7 +30,7 @@ func TestAsyncJobUsesRuntimeWithoutRetainingRequestValues(t *testing.T) {
 	forceExit := make(chan struct{})
 	defer func() { close(forceExit); runner.Shutdown(context.Background()) }()
 	entered, exited := make(chan struct{}), make(chan struct{})
-	job, _, err := startJobOn(request, "default", "probe", false, func(worker context.Context, _ func(int, int)) (outcome, error) {
+	job, _, err := svc.startJobOn(request, "default", "probe", false, func(worker context.Context, _ func(int, int)) (outcome, error) {
 		if worker.Err() != nil || worker.Value(key{}) != nil || repo.ScopeOf(worker) == original || lifecycle.ClockFrom(worker) != clock {
 			t.Error("request retained or runtime lost")
 		}
@@ -80,7 +80,7 @@ func TestAsyncJobUsesRuntimeWithoutRetainingRequestValues(t *testing.T) {
 	default:
 		t.Fatal("I/O did not receive cancellation")
 	}
-	if saved := GetJob(job.ID, "default"); saved.Status != "failed" || saved.Message != msgFailed || saved.FinishedAt == nil {
+	if saved := svc.GetJob(job.ID, "default"); saved.Status != "failed" || saved.Message != msgFailed || saved.FinishedAt == nil {
 		t.Fatal(saved)
 	}
 	if lockx.Violations() != 0 {
@@ -89,20 +89,20 @@ func TestAsyncJobUsesRuntimeWithoutRetainingRequestValues(t *testing.T) {
 }
 
 func TestAsyncJobRefusalAndPanicReleaseAdmission(t *testing.T) {
-	ctx := jobFixture(t)
-	if _, _, err := startJobOn(ctx, "default", "probe", false, func(context.Context, func(int, int)) (outcome, error) {
+	svc, ctx := jobFixture(t)
+	if _, _, err := svc.startJobOn(ctx, "default", "probe", false, func(context.Context, func(int, int)) (outcome, error) {
 		t.Error("refused work ran")
 		return outcome{}, nil
 	}, refusedJobSpawner{}); !errors.Is(err, lifecycle.ErrStopping) {
 		t.Fatal(err)
 	}
-	if runningJob("") != nil {
+	if svc.runningJob("") != nil {
 		t.Fatal("refused job left running")
 	}
 	runner := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 20 * time.Millisecond})
 	runner.Start(ctx)
 	defer runner.Shutdown(context.Background())
-	job, _, err := startJobOn(ctx, "default", "probe", false, func(context.Context, func(int, int)) (outcome, error) { panic("synthetic secret must not be logged") }, runner)
+	job, _, err := svc.startJobOn(ctx, "default", "probe", false, func(context.Context, func(int, int)) (outcome, error) { panic("synthetic secret must not be logged") }, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,10 +111,10 @@ func TestAsyncJobRefusalAndPanicReleaseAdmission(t *testing.T) {
 	if err := runner.WaitIdle(wait); err != nil {
 		t.Fatal(err)
 	}
-	if saved := GetJob(job.ID, "default"); saved.Status != "failed" || saved.Message != msgFailed {
+	if saved := svc.GetJob(job.ID, "default"); saved.Status != "failed" || saved.Message != msgFailed {
 		t.Fatal(saved)
 	}
-	_, release, ok := jobLock.TryLock(ctx)
+	_, release, ok := svc.mutex().TryLock(ctx)
 	if !ok {
 		t.Fatal("panic leaked admission lock")
 	}

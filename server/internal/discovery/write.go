@@ -11,7 +11,6 @@ import (
 	"configflow/internal/ctxx"
 	"configflow/internal/faultprobe"
 	"configflow/internal/lifecycle"
-	"configflow/internal/repo"
 	"configflow/internal/rulefetch"
 	"configflow/internal/rules"
 )
@@ -111,10 +110,10 @@ type ApplyOptions struct {
 }
 
 // ApplyDomains commits shared rule content, refreshes served caches, and records history.
-func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source string, evidence map[string]Probe, options ...ApplyOptions) (ApplyResult, error) {
+func (svc *Service) ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source string, evidence map[string]Probe, options ...ApplyOptions) (ApplyResult, error) {
 	ctx = lifecycle.Detach(ctx)
 	out := ApplyResult{Added: []AddedEntry{}, Skipped: []SkippedEntry{}, Warnings: []string{}}
-	c, err := loadConfig(ctx, id)
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -135,7 +134,7 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 	for _, target := range targets {
 		ids = append(ids, infos[target].ID)
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := svc.repo()
 	if err != nil {
 		return out, err
 	}
@@ -151,7 +150,7 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 			stage.Discard(ctx)
 		}
 	}()
-	err = editLibraryContext(ctx, func(tx context.Context, items *[]libraryItem) error {
+	err = svc.editLibraryContext(ctx, func(tx context.Context, items *[]libraryItem) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		for _, option := range options {
 			if option.BeforeWrite != nil {
@@ -206,7 +205,7 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 			if !ok {
 				continue
 			}
-			stage, err := stageRule(tx, item)
+			stage, err := svc.stageRule(tx, item)
 			if err != nil {
 				return err
 			}
@@ -228,7 +227,7 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 	}
 	if len(out.Added) > 0 {
 		at := timestamp()
-		err = editSettings(ctx, id, func(s *Settings) error {
+		err = svc.editSettings(ctx, id, func(s *Settings) error {
 			history := []HistoryEntry{}
 			for _, h := range s.History {
 				replace := false
@@ -264,11 +263,11 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 			out.Warnings = append(out.Warnings, fmt.Sprintf(msgInactive, *v.Name))
 		}
 	}
-	match, err := localMatcher(ctx, id)
+	match, err := svc.localMatcher(ctx, id)
 	if err != nil {
 		return out, err
 	}
-	fresh, err := loadConfig(ctx, id)
+	fresh, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return out, err
 	}
@@ -309,13 +308,13 @@ func ApplyDomains(ctx context.Context, id string, entries []ApplyEntry, source s
 }
 
 // ProbeEvidence picks the strongest actionable probe or latest observation.
-func ProbeEvidence(ctx context.Context, id string, entries []ApplyEntry) (map[string]Probe, error) {
+func (svc *Service) ProbeEvidence(ctx context.Context, id string, entries []ApplyEntry) (map[string]Probe, error) {
 	ctx = lifecycle.Detach(ctx)
-	as, err := profileAgents(ctx, id)
+	as, err := svc.profileAgents(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	ps, err := probes(ctx, as)
+	ps, err := svc.probes(ctx, as)
 	if err != nil {
 		return nil, err
 	}
@@ -351,13 +350,13 @@ func betterProbe(a, b Probe) bool {
 }
 
 // UndoDomain removes matching domain lines from the historically selected library.
-func UndoDomain(ctx context.Context, id, value, target string) ([]string, error) {
+func (svc *Service) UndoDomain(ctx context.Context, id, value, target string) ([]string, error) {
 	ctx = lifecycle.Detach(ctx)
 	value = CleanDomain(value)
 	if value == "" || (target != "direct" && target != "proxy" && !strings.HasPrefix(target, "policy:")) {
 		return nil, invalid(msgUndo)
 	}
-	c, err := loadConfig(ctx, id)
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +375,7 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 	if rid != nil {
 		ids = append(ids, *rid)
 	}
-	r, err := repo.GetRepository(ctx)
+	r, err := svc.repo()
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +385,7 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 	}
 	defer release()
 	defer func() { stage.Discard(ctx) }()
-	err = editLibraryContext(ctx, func(tx context.Context, items *[]libraryItem) error {
+	err = svc.editLibraryContext(ctx, func(tx context.Context, items *[]libraryItem) error {
 		tx = ctxx.Detach(ctxx.WithParent(tx, ctx))
 		if rid == nil {
 			return nil
@@ -408,7 +407,7 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 			}
 			if len(lines) > 0 {
 				item.Content = content
-				stage, err = stageRule(tx, *item)
+				stage, err = svc.stageRule(tx, *item)
 				if err != nil {
 					return err
 				}
@@ -426,7 +425,7 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 			return nil, err
 		}
 	}
-	err = editSettings(ctx, id, func(s *Settings) error {
+	err = svc.editSettings(ctx, id, func(s *Settings) error {
 		h := []HistoryEntry{}
 		for _, e := range s.History {
 			if e.Value != value || e.Target != target {
@@ -440,8 +439,8 @@ func UndoDomain(ctx context.Context, id, value, target string) ([]string, error)
 }
 
 // HistoryPayload adds current library names to the newest-first history.
-func HistoryPayload(ctx context.Context, id string) ([]map[string]json.RawMessage, error) {
-	c, err := loadConfig(ctx, id)
+func (svc *Service) HistoryPayload(ctx context.Context, id string) ([]map[string]json.RawMessage, error) {
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}

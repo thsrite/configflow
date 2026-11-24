@@ -495,7 +495,7 @@ func sortedKeys[V any](m map[string]V) []string {
 	sort.Strings(ks)
 	return ks
 }
-func reports(ctx context.Context, as []Agent, selected string) ([]struct {
+func (svc *Service) reports(ctx context.Context, as []Agent, selected string) ([]struct {
 	agent Agent
 	data  traffic
 }, error) {
@@ -504,7 +504,7 @@ func reports(ctx context.Context, as []Agent, selected string) ([]struct {
 		data  traffic
 	}{}
 	for _, a := range as {
-		t, err := loadTraffic(ctx, a, selected == "" || selected == a.ID)
+		t, err := svc.loadTraffic(ctx, a, selected == "" || selected == a.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -517,12 +517,12 @@ func reports(ctx context.Context, as []Agent, selected string) ([]struct {
 }
 
 // AgentsPayload reads only small collection statuses, without rule indexes.
-func AgentsPayload(ctx context.Context, id string) (*AgentsView, error) {
-	as, err := profileAgents(ctx, id)
+func (svc *Service) AgentsPayload(ctx context.Context, id string) (*AgentsView, error) {
+	as, err := svc.profileAgents(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	rs, err := reports(ctx, as, "\x00")
+	rs, err := svc.reports(ctx, as, "\x00")
 	if err != nil {
 		return nil, err
 	}
@@ -534,25 +534,25 @@ func AgentsPayload(ctx context.Context, id string) (*AgentsView, error) {
 }
 
 // LoadDomains aggregates selected traffic while retaining every Agent status.
-func LoadDomains(ctx context.Context, id string, days int, view, selected string) (Listing, error) {
-	c, err := loadConfig(ctx, id)
+func (svc *Service) LoadDomains(ctx context.Context, id string, days int, view, selected string) (Listing, error) {
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return Listing{}, err
 	}
-	as, err := profileAgents(ctx, id)
+	as, err := svc.profileAgents(ctx, id)
 	if err != nil {
 		return Listing{}, err
 	}
-	rs, err := reports(ctx, as, selected)
+	rs, err := svc.reports(ctx, as, selected)
 	if err != nil {
 		return Listing{}, err
 	}
-	match, err := localMatcher(ctx, id)
+	match, err := svc.localMatcher(ctx, id)
 	if err != nil {
 		return Listing{}, err
 	}
 	out := summarize(rs, days, view, selected, c.Settings.Ignored, match)
-	ps, err := probes(ctx, as)
+	ps, err := svc.probes(ctx, as)
 	if err != nil {
 		return out, err
 	}
@@ -562,7 +562,7 @@ func LoadDomains(ctx context.Context, id string, days int, view, selected string
 		if selected != "" && a.ID != selected {
 			continue
 		}
-		data, err := regionData(ctx, a.ID)
+		data, err := svc.regionData(ctx, a.ID)
 		if err != nil {
 			return out, err
 		}
@@ -585,6 +585,6 @@ func LoadDomains(ctx context.Context, id string, days int, view, selected string
 		d.Website.Service = knownService(d.Domain)
 		d.Website.Note = c.Settings.WebsiteNotes[d.Domain]
 	}
-	out.Job = runningJob(id)
+	out.Job = svc.runningJob(id)
 	return out, nil
 }

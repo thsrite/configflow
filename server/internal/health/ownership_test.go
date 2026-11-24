@@ -34,7 +34,7 @@ func TestDNSOwnerKeepsWorkParentForIO(t *testing.T) {
 	bound := ctxx.WithParent(request, job)
 	disconnect()
 	done := make(chan error, 1)
-	go func() { _, err := CheckDNSSettingsJSON(bound, json.RawMessage(`{"mode":"system"}`)); done <- err }()
+	go func() { _, err := CheckDNSSettingsJSON(bound, nil, json.RawMessage(`{"mode":"system"}`)); done <- err }()
 	select {
 	case <-entered:
 	case <-time.After(5 * time.Second):

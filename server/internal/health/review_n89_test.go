@@ -16,9 +16,9 @@ import (
 
 func TestReviewN89DeleteHooksRespectOwnerLifetime(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		remove func(context.Context, string) error
-	}{{"probes", deleteProbeStore}, {"regions", deleteRegionStore}} {
+		name  string
+		index int
+	}{{"probes", 0}, {"regions", 1}} {
 		for _, shutdown := range []bool{true, false} {
 			lifetime := "disconnect"
 			if shutdown {
@@ -29,6 +29,7 @@ func TestReviewN89DeleteHooksRespectOwnerLifetime(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				remove := DeletedStores(r.DataDir())[tc.index].Delete
 				runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
 				runtime.Start(context.Background())
 				t.Cleanup(func() { runtime.Shutdown(context.Background()) })
@@ -47,7 +48,7 @@ func TestReviewN89DeleteHooksRespectOwnerLifetime(t *testing.T) {
 				} else {
 					disconnect()
 				}
-				err = tc.remove(ctx, "synthetic")
+				err = remove(ctx, "synthetic")
 				raw, readErr := os.ReadFile(path)
 				if shutdown {
 					if !errors.Is(err, context.Canceled) {
@@ -106,14 +107,14 @@ func TestReviewN89RealWorkerLifetimeControlsPersistence(t *testing.T) {
 				done := make(chan error, 1)
 				go func() {
 					if operation == "dns" {
-						result, err := CheckDNSSettingsJSON(request, json.RawMessage(`{"mode":"system"}`))
+						result, err := CheckDNSSettingsJSON(request, r, json.RawMessage(`{"mode":"system"}`))
 						if err == nil && !result.Success {
 							err = errors.New("DNS check did not succeed")
 						}
 						done <- err
 						return
 					}
-					_, err := RunLatencyTests(request, nil, nil)
+					_, err := RunLatencyTests(request, r, nil, nil)
 					done <- err
 				}()
 				finished := false
@@ -215,7 +216,7 @@ func TestReviewN89DNSWriteRespectsOwnerLifetime(t *testing.T) {
 			} else {
 				disconnect()
 			}
-			_, err = SaveDNSConfigJSON(request, json.RawMessage(`{"mode":"custom","servers":["192.0.2.53"]}`))
+			_, err = SaveDNSConfigJSON(request, r, json.RawMessage(`{"mode":"custom","servers":["192.0.2.53"]}`))
 			if shutdown && !errors.Is(err, context.Canceled) {
 				t.Fatalf("shutdown error: %v", err)
 			}
@@ -235,7 +236,7 @@ func TestReviewN89DNSWriteRespectsOwnerLifetime(t *testing.T) {
 				t.Fatal("shutdown changed system")
 			}
 			if !shutdown {
-				config, err := LoadDNSConfig(base)
+				config, err := LoadDNSConfig(base, r)
 				if err != nil || config.Mode != "custom" || len(config.Servers) != 1 || config.Servers[0] != "192.0.2.53" {
 					t.Fatalf("disconnect lost settings: %+v %v", config, err)
 				}

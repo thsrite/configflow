@@ -59,8 +59,8 @@ type ProbeSettings struct {
 }
 
 // ResolveDNSSettings returns the active node-test DNS server list.
-func ResolveDNSSettings(ctx context.Context) ([]string, error) {
-	effective, err := EffectiveDNSSettings(ctx, nil)
+func ResolveDNSSettings(ctx context.Context, repository *repo.Repository) ([]string, error) {
+	effective, err := EffectiveDNSSettings(ctx, repository, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func isInvalidInput(err error) bool {
 }
 
 // ResolveSettings resolves ProbeSettings from environment variables and saved DNS config.
-func ResolveSettings(ctx context.Context) (ProbeSettings, error) {
+func ResolveSettings(ctx context.Context, repository *repo.Repository) (ProbeSettings, error) {
 	env := CurrentProbeEnv()
 	invalid := &ProbeUnavailable{Message: msgProbeInvalidSettings}
 	url := strings.TrimSpace(env.getenv("CONFIGFLOW_NODE_TEST_URL", "https://www.gstatic.com/generate_204"))
@@ -94,7 +94,7 @@ func ResolveSettings(ctx context.Context) (ProbeSettings, error) {
 	if err != nil || timeout < 500 || timeout > 10000 {
 		return ProbeSettings{}, invalid
 	}
-	dns, err := EffectiveDNSSettings(ctx, nil)
+	dns, err := EffectiveDNSSettings(ctx, repository, nil)
 	if err != nil {
 		if isInvalidInput(err) {
 			return ProbeSettings{}, &ProbeUnavailable{Message: err.Error()}
@@ -139,19 +139,18 @@ func (c *candidateSet) has(key string) bool {
 
 // CollectCandidateNodes gathers enabled manual and cached subscription nodes
 // keyed by canonical JSON source identifiers.
-func CollectCandidateNodes(ctx context.Context) ([]CandidateNode, error) {
-	set, err := collectCandidateSet(ctx)
+func CollectCandidateNodes(ctx context.Context, repository *repo.Repository) ([]CandidateNode, error) {
+	set, err := collectCandidateSet(ctx, repository)
 	if err != nil {
 		return nil, err
 	}
 	return set.list, nil
 }
 
-func collectCandidateSet(ctx context.Context) (*candidateSet, error) {
+func collectCandidateSet(ctx context.Context, repository *repo.Repository) (*candidateSet, error) {
 	env := CurrentProbeEnv()
-	repository, err := repo.GetRepository(ctx)
-	if err != nil {
-		return nil, err
+	if repository == nil {
+		return nil, errors.New("health: repository is nil")
 	}
 	shared, err := repository.Shared(ctx)
 	if err != nil {
@@ -538,13 +537,13 @@ func parseProbeResults(stdout string, proxies []model.Fields) (model.OrderedMap[
 }
 
 // LoadLatencyResults reads persisted node latency entries of the current probe Method.
-func LoadLatencyResults(ctx context.Context) model.OrderedMap[LatencyEntry] {
+func LoadLatencyResults(ctx context.Context, repository *repo.Repository) model.OrderedMap[LatencyEntry] {
 	var out model.OrderedMap[LatencyEntry]
 	env := CurrentProbeEnv()
 	if env.Collaborators.ReadLatencyFile == nil {
 		return out
 	}
-	raw, ok := env.Collaborators.ReadLatencyFile(ctx)
+	raw, ok := env.Collaborators.ReadLatencyFile(ctx, repository)
 	if !ok {
 		return out
 	}
@@ -574,7 +573,7 @@ func LoadLatencyResults(ctx context.Context) model.OrderedMap[LatencyEntry] {
 	return out
 }
 
-func saveLatencyResults(ctx context.Context, results model.OrderedMap[LatencyEntry]) {
+func saveLatencyResults(ctx context.Context, repository *repo.Repository, results model.OrderedMap[LatencyEntry]) {
 	env := CurrentProbeEnv()
 	if env.Collaborators.WriteLatencyFile == nil {
 		latencyLog.Error(msgSaveLatencyFailed)
@@ -585,7 +584,7 @@ func saveLatencyResults(ctx context.Context, results model.OrderedMap[LatencyEnt
 		latencyLog.Error(msgSaveLatencyFailed)
 		return
 	}
-	if err := env.Collaborators.WriteLatencyFile(ctx, encoded); err != nil {
+	if err := env.Collaborators.WriteLatencyFile(ctx, repository, encoded); err != nil {
 		latencyLog.Error(msgSaveLatencyFailed)
 	}
 }
@@ -600,7 +599,7 @@ type TestOutcome struct {
 
 // RunLatencyTests executes an exclusive node latency probe for names or keys
 // (nil for both tests all enabled candidates).
-func RunLatencyTests(ctx context.Context, names, keys []string) (TestOutcome, error) {
+func RunLatencyTests(ctx context.Context, repository *repo.Repository, names, keys []string) (TestOutcome, error) {
 	ctx = lifecycle.Detach(ctx)
 	if err := ctx.Err(); err != nil {
 		return TestOutcome{}, err
@@ -609,7 +608,7 @@ func RunLatencyTests(ctx context.Context, names, keys []string) (TestOutcome, er
 		return TestOutcome{}, &ProbeBusy{Message: msgProbeBusy}
 	}
 	defer testLock.Unlock()
-	return runLatencyTestsLocked(ctx, names, keys)
+	return runLatencyTestsLocked(ctx, repository, names, keys)
 }
 
 func dedupeStrings(items []string) []string {
@@ -629,9 +628,9 @@ func buildFailedMeasurement() LatencyEntry {
 	return LatencyEntry{Latency: json.RawMessage("null"), ErrorCode: "config", Error: message}
 }
 
-func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutcome, error) {
+func runLatencyTestsLocked(ctx context.Context, repository *repo.Repository, names, keys []string) (TestOutcome, error) {
 	env := CurrentProbeEnv()
-	candidates, err := collectCandidateSet(ctx)
+	candidates, err := collectCandidateSet(ctx, repository)
 	if err != nil {
 		return TestOutcome{}, err
 	}
@@ -696,7 +695,7 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 		return TestOutcome{}, invalidInput(fmt.Sprintf(msgMaxRemoteConversions, MaxConversionWorker))
 	}
 
-	settings, err := ResolveSettings(ctx)
+	settings, err := ResolveSettings(ctx, repository)
 	if err != nil {
 		return TestOutcome{}, err
 	}
@@ -765,7 +764,7 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 
 	stamp := isoUTC(env.Now())
 
-	stored := LoadLatencyResults(ctx)
+	stored := LoadLatencyResults(ctx, repository)
 	for key, m := range measured.All() {
 		prev, hasPrev := stored.Get(key)
 		history := []json.RawMessage{}
@@ -800,7 +799,7 @@ func runLatencyTestsLocked(ctx context.Context, names, keys []string) (TestOutco
 	if err := ctx.Err(); err != nil {
 		return TestOutcome{}, err
 	}
-	saveLatencyResults(ctx, kept)
+	saveLatencyResults(ctx, repository, kept)
 
 	var outcomeResults model.OrderedMap[LatencyEntry]
 	for _, id := range identityIDs {

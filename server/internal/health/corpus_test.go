@@ -326,14 +326,14 @@ func TestReferenceCorpus(t *testing.T) {
 		case "check_settings":
 			runner := &fakeRunner{result: Result{Stdout: []byte(mapStr(row, "stdout")), ReturnCode: int(mapInt(row, "code"))}}
 			restore := SetProbeEnv(testEnv(runner, nil))
-			out, callErr = CheckDNSSettingsJSON(ctx, json.RawMessage(`{"mode":"system"}`))
+			out, callErr = CheckDNSSettingsJSON(ctx, r, json.RawMessage(`{"mode":"system"}`))
 			restore()
 		case "decode":
 			stdout, _ := hex.DecodeString(mapStr(row, "stdout_hex"))
 			stderr, _ := hex.DecodeString(mapStr(row, "stderr_hex"))
 			runner := &fakeRunner{result: Result{Stdout: stdout, Stderr: stderr}}
 			restore := SetProbeEnv(testEnv(runner, nil))
-			_, callErr = CheckDNSSettingsJSON(ctx, json.RawMessage(`{"mode":"system"}`))
+			_, callErr = CheckDNSSettingsJSON(ctx, r, json.RawMessage(`{"mode":"system"}`))
 			restore()
 			skipOut = true
 		case "run_probe", "run_probe_code":
@@ -356,7 +356,7 @@ func TestReferenceCorpus(t *testing.T) {
 				}
 			}
 			restore := SetProbeEnv(testEnv(nil, vars))
-			out, callErr = ResolveSettings(ctx)
+			out, callErr = ResolveSettings(ctx, r)
 			restore()
 		case "region_of_name":
 			out, callErr = evalRegionOfName(arg(0))

@@ -14,12 +14,29 @@ import (
 
 // Handler serves the authenticated domain-discovery routes.
 type Handler struct {
-	Repo *repo.Repository
+	Repo    *repo.Repository
+	Service *discovery.Service
 }
 
-// NewHandler constructs a domain-discovery Handler for r (nil falls back to the
-// context/default repository until W11 removes the locators).
-func NewHandler(r *repo.Repository) *Handler { return &Handler{Repo: r} }
+// NewHandler constructs a domain-discovery Handler for r and svc.
+func NewHandler(r *repo.Repository, svc *discovery.Service) *Handler {
+	return &Handler{Repo: r, Service: svc}
+}
+
+func (h *Handler) service(ctx context.Context) (*discovery.Service, error) {
+	if h != nil && h.Service != nil {
+		return h.Service, nil
+	}
+	r := h.Repo
+	if r == nil {
+		var err error
+		r, err = repo.GetRepository(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return discovery.New(discovery.Options{Repo: r}), nil
+}
 
 func (h *Handler) ctx(c *httpx.Ctx) context.Context {
 	ctx := c.Context()
@@ -54,7 +71,7 @@ func (h *Handler) Register(r *httpx.Router) {
 }
 
 // Register declares all seventeen domain-discovery routes.
-func Register(r *httpx.Router) { NewHandler(nil).Register(r) }
+func Register(r *httpx.Router) { NewHandler(nil, nil).Register(r) }
 func body(c *httpx.Ctx) json.RawMessage {
 	var raw json.RawMessage
 	if !c.BindSilent(&raw) {
@@ -113,11 +130,21 @@ func response[T any](status int, v T, err error) (*httpx.Response, error) {
 	return httpx.RawJSON(status, b), nil
 }
 func (h *Handler) settings(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.SettingsPayload(h.ctx(c), c.ProfileID)
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.SettingsPayload(ctx, c.ProfileID)
 	return response(200, v, e)
 }
 func (h *Handler) updateSettings(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.UpdateSettings(h.ctx(c), c.ProfileID, body(c))
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.UpdateSettings(ctx, c.ProfileID, body(c))
 	return response(200, v, e)
 }
 func (h *Handler) initRulesets(c *httpx.Ctx) (*httpx.Response, error) {
@@ -131,7 +158,12 @@ func (h *Handler) initRulesets(c *httpx.Ctx) (*httpx.Response, error) {
 			return nil, repo.NewValidationError(msgTargets)
 		}
 	}
-	v, e := discovery.InitRulesets(h.ctx(c), c.ProfileID, targets, text(p.ProxyPolicy))
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.InitRulesets(ctx, c.ProfileID, targets, text(p.ProxyPolicy))
 	return response(200, v, e)
 }
 func (h *Handler) domains(c *httpx.Ctx) (*httpx.Response, error) {
@@ -140,15 +172,29 @@ func (h *Handler) domains(c *httpx.Ctx) (*httpx.Response, error) {
 		days = 1
 	}
 	view := c.ArgDefault("view", "uncovered")
-	v, e := discovery.LoadDomains(h.ctx(c), c.ProfileID, days, view, c.ArgDefault("agent_id", ""))
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.LoadDomains(ctx, c.ProfileID, days, view, c.ArgDefault("agent_id", ""))
 	return response(200, v, e)
 }
 func (h *Handler) agents(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.AgentsPayload(h.ctx(c), c.ProfileID)
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.AgentsPayload(ctx, c.ProfileID)
 	return response(200, v, e)
 }
 func (h *Handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
 	p, err := payload(c)
 	if err != nil {
 		return nil, err
@@ -157,11 +203,11 @@ func (h *Handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 	if e != nil {
 		return nil, e
 	}
-	proof, e := discovery.ProbeEvidence(ctx, c.ProfileID, entries)
+	proof, e := svc.ProbeEvidence(ctx, c.ProfileID, entries)
 	if e != nil {
 		return nil, e
 	}
-	v, e := discovery.ApplyDomains(ctx, c.ProfileID, entries, "manual", proof)
+	v, e := svc.ApplyDomains(ctx, c.ProfileID, entries, "manual", proof)
 	return response(200, v, e)
 }
 func (h *Handler) undo(c *httpx.Ctx) (*httpx.Response, error) {
@@ -169,13 +215,23 @@ func (h *Handler) undo(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, e := discovery.UndoDomain(h.ctx(c), c.ProfileID, text(p.Value), text(p.Target))
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.UndoDomain(ctx, c.ProfileID, text(p.Value), text(p.Target))
 	return response(200, struct {
 		Removed []string `json:"removed"`
 	}{v}, e)
 }
 func (h *Handler) history(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.HistoryPayload(h.ctx(c), c.ProfileID)
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.HistoryPayload(ctx, c.ProfileID)
 	return response(200, struct {
 		Items []map[string]json.RawMessage `json:"items"`
 	}{v}, e)
@@ -185,16 +241,21 @@ func (h *Handler) ignore(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, e := discovery.UpdateIgnored(h.ctx(c), c.ProfileID, values(p.Values), c.Request.Method == "POST")
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.UpdateIgnored(ctx, c.ProfileID, values(p.Values), c.Request.Method == "POST")
 	return response(200, struct {
 		Ignored []string `json:"ignored"`
 	}{v}, e)
 }
-func jobResponse(c *httpx.Ctx, j *discovery.Job, err error) (*httpx.Response, error) {
+func (h *Handler) jobResponse(c *httpx.Ctx, svc *discovery.Service, j *discovery.Job, err error) (*httpx.Response, error) {
 	var busy *discovery.Busy
 	var pe *discovery.ProbeError
 	if errors.As(err, &busy) {
-		b, e := json.Marshal(discovery.BusyPayload(busy, c.ProfileID))
+		b, e := json.Marshal(svc.BusyPayload(busy, c.ProfileID))
 		if e != nil {
 			return nil, e
 		}
@@ -212,11 +273,21 @@ func (h *Handler) probe(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	j, e := discovery.StartProbe(h.ctx(c), c.ProfileID, values(p.Domains))
-	return jobResponse(c, j, e)
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	j, e := svc.StartProbe(ctx, c.ProfileID, values(p.Domains))
+	return h.jobResponse(c, svc, j, e)
 }
 func (h *Handler) getProbe(c *httpx.Ctx) (*httpx.Response, error) {
-	j := discovery.GetJob(c.Param("job_id"), c.ProfileID)
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	j := svc.GetJob(c.Param("job_id"), c.ProfileID)
 	if j == nil {
 		return httpx.Message(404, false, "Probe job not found"), nil
 	}
@@ -225,7 +296,12 @@ func (h *Handler) getProbe(c *httpx.Ctx) (*httpx.Response, error) {
 	}{j}, nil)
 }
 func (h *Handler) region(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.RegionPayload(h.ctx(c), c.ProfileID)
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.RegionPayload(ctx, c.ProfileID)
 	return response(200, v, e)
 }
 func (h *Handler) checkRegion(c *httpx.Ctx) (*httpx.Response, error) {
@@ -241,23 +317,43 @@ func (h *Handler) checkRegion(c *httpx.Ctx) (*httpx.Response, error) {
 	if v := p.Domains; len(v) > 0 && discovery.JSONOptionEnabled(v) && vs == nil {
 		return nil, repo.NewValidationError(msgDomains)
 	}
-	j, e := discovery.StartRegion(h.ctx(c), c.ProfileID, services, vs)
-	return jobResponse(c, j, e)
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	j, e := svc.StartRegion(ctx, c.ProfileID, services, vs)
+	return h.jobResponse(c, svc, j, e)
 }
 func (h *Handler) routeRegion(c *httpx.Ctx) (*httpx.Response, error) {
 	p, err := payload(c)
 	if err != nil {
 		return nil, err
 	}
-	v, e := discovery.RouteToPolicy(h.ctx(c), c.ProfileID, text(p.Kind), text(p.Value), text(p.Policy))
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.RouteToPolicy(ctx, c.ProfileID, text(p.Kind), text(p.Value), text(p.Policy))
 	return response(200, v, e)
 }
 func (h *Handler) website(c *httpx.Ctx) (*httpx.Response, error) {
 	p, _ := payload(c)
-	j, e := discovery.StartWebsite(h.ctx(c), c.ProfileID, values(p.Domains))
-	return jobResponse(c, j, e)
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	j, e := svc.StartWebsite(ctx, c.ProfileID, values(p.Domains))
+	return h.jobResponse(c, svc, j, e)
 }
 func (h *Handler) note(c *httpx.Ctx) (*httpx.Response, error) {
-	v, e := discovery.SaveWebsiteNote(h.ctx(c), c.ProfileID, body(c))
+	ctx := h.ctx(c)
+	svc, err := h.service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, e := svc.SaveWebsiteNote(ctx, c.ProfileID, body(c))
 	return response(200, v, e)
 }

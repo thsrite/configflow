@@ -7,11 +7,10 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/repo"
 )
 
-func loadConfig(ctx context.Context, id string) (config, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) loadConfig(ctx context.Context, id string) (config, error) {
+	r, err := s.repo()
 	if err != nil {
 		return config{}, err
 	}
@@ -56,8 +55,8 @@ func configFromModel(view *model.Config) (config, error) {
 	return c, nil
 }
 
-func editProfile(ctx context.Context, id string, edit func(*config) error) error {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) editProfile(ctx context.Context, id string, edit func(*config) error) error {
+	r, err := s.repo()
 	if err != nil {
 		return err
 	}
@@ -91,14 +90,14 @@ func editProfile(ctx context.Context, id string, edit func(*config) error) error
 	})
 	return err
 }
-func editSettings(ctx context.Context, id string, edit func(*Settings) error) error {
-	return editProfile(ctx, id, func(c *config) error { return edit(&c.Settings) })
+func (s *Service) editSettings(ctx context.Context, id string, edit func(*Settings) error) error {
+	return s.editProfile(ctx, id, func(c *config) error { return edit(&c.Settings) })
 }
-func editLibrary(ctx context.Context, edit func(*[]libraryItem) error) error {
-	return editLibraryContext(ctx, func(_ context.Context, items *[]libraryItem) error { return edit(items) })
+func (s *Service) editLibrary(ctx context.Context, edit func(*[]libraryItem) error) error {
+	return s.editLibraryContext(ctx, func(_ context.Context, items *[]libraryItem) error { return edit(items) })
 }
-func editLibraryContext(ctx context.Context, edit func(context.Context, *[]libraryItem) error) error {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) editLibraryContext(ctx context.Context, edit func(context.Context, *[]libraryItem) error) error {
+	r, err := s.repo()
 	if err != nil {
 		return err
 	}
@@ -127,8 +126,8 @@ type profile struct {
 	Name string
 }
 
-func listProfiles(ctx context.Context) ([]profile, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) listProfiles(ctx context.Context) ([]profile, error) {
+	r, err := s.repo()
 	if err != nil {
 		return nil, err
 	}
@@ -142,12 +141,12 @@ func listProfiles(ctx context.Context) ([]profile, error) {
 	return out, err
 }
 
-func profileAgents(ctx context.Context, id string) ([]Agent, error) {
-	r, err := repo.GetRepository(ctx)
+func (s *Service) profileAgents(ctx context.Context, id string) ([]Agent, error) {
+	r, err := s.repo()
 	if err != nil {
 		return nil, err
 	}
-	records, err := legacyRegistryAgents(ctx)
+	records, err := s.legacyRegistryAgents(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -14,11 +14,11 @@ import (
 func TestApplyDomainsTransactionGuard(t *testing.T) {
 	for _, reject := range []bool{true, false} {
 		t.Run(map[bool]string{true: "reject", false: "accept"}[reject], func(t *testing.T) {
-			ctx := jobFixture(t)
-			if _, err := InitRulesets(ctx, "default", []string{"direct"}, ""); err != nil {
+			svc, ctx := jobFixture(t)
+			if _, err := svc.InitRulesets(ctx, "default", []string{"direct"}, ""); err != nil {
 				t.Fatal(err)
 			}
-			r, _ := repo.GetRepository(ctx)
+			r := svc.Repo
 			before, err := r.ExportAllJSON(ctx, false)
 			if err != nil {
 				t.Fatal(err)
@@ -27,7 +27,7 @@ func TestApplyDomainsTransactionGuard(t *testing.T) {
 			cacheBefore := ruleCacheSnapshot(t, r.DataDir())
 			sentinel := errors.New("guard rejected")
 			calls := 0
-			_, err = ApplyDomains(ctx, "default", []ApplyEntry{{Value: "example.com", RuleType: "DOMAIN", Target: "direct"}}, "manual", nil, ApplyOptions{BeforeWrite: func(tx context.Context, infos map[string]*RulesetInfo) error {
+			_, err = svc.ApplyDomains(ctx, "default", []ApplyEntry{{Value: "example.com", RuleType: "DOMAIN", Target: "direct"}}, "manual", nil, ApplyOptions{BeforeWrite: func(tx context.Context, infos map[string]*RulesetInfo) error {
 				calls++
 				if infos["direct"] == nil {
 					t.Fatal("missing captured selection")
@@ -66,11 +66,11 @@ func TestApplyDomainsTransactionGuard(t *testing.T) {
 }
 
 func TestApplyDomainsGuardPassMatchesDefault(t *testing.T) {
-	seed := jobFixture(t)
-	if _, err := InitRulesets(seed, "default", []string{"direct"}, ""); err != nil {
+	seedSvc, seed := jobFixture(t)
+	if _, err := seedSvc.InitRulesets(seed, "default", []string{"direct"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	source, _ := repo.GetRepository(seed)
+	source := seedSvc.Repo
 	document, err := source.ExportAllJSON(seed, false)
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +83,8 @@ func TestApplyDomainsGuardPassMatchesDefault(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ctx := repo.WithRepository(context.Background(), r)
+		svc := New(Options{Repo: r})
+		ctx := context.Background()
 		if _, err := r.ImportAllJSON(ctx, document); err != nil {
 			t.Fatal(err)
 		}
@@ -91,11 +92,11 @@ func TestApplyDomainsGuardPassMatchesDefault(t *testing.T) {
 		if guarded {
 			options = []ApplyOptions{{BeforeWrite: func(context.Context, map[string]*RulesetInfo) error { return nil }}}
 		}
-		out, err := ApplyDomains(ctx, "default", []ApplyEntry{{Value: "example.com", RuleType: "DOMAIN", Target: "direct"}}, "manual", nil, options...)
+		out, err := svc.ApplyDomains(ctx, "default", []ApplyEntry{{Value: "example.com", RuleType: "DOMAIN", Target: "direct"}}, "manual", nil, options...)
 		if err != nil {
 			t.Fatal(err)
 		}
-		c, err := loadConfig(ctx, "default")
+		c, err := svc.loadConfig(ctx, "default")
 		if err != nil {
 			t.Fatal(err)
 		}

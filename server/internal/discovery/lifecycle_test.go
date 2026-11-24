@@ -12,70 +12,49 @@ import (
 	"time"
 	"weak"
 
+	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
 )
 
-func resetJobRuntime(t *testing.T) {
+func jobFixture(t *testing.T) (*Service, context.Context) {
 	t.Helper()
-	options := lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		err := lifecycle.Configure(options)
-		if err == nil {
-			return
-		}
-		// A worker releases its busy key before Runtime finishes its scope
-		// cleanup. Wait for that tracked tail, rather than replacing live work.
-		if !errors.Is(err, lifecycle.ErrRunning) || time.Now().After(deadline) {
-			t.Fatal(err)
-		}
-		time.Sleep(time.Millisecond)
-	}
-}
-
-func jobFixture(t *testing.T) context.Context {
-	t.Helper()
-	// Async jobs use DefaultSpawner. Give each fixture an empty Runtime as
-	// well as fresh metadata; a preceding shutdown must stay local to its test.
-	resetJobRuntime(t)
 	r, err := repo.Open(t.TempDir(), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobState.Lock()
-	old := jobState.jobs
-	jobState.jobs = nil
-	jobState.Unlock()
-	t.Cleanup(func() {
-		defer func() { jobState.Lock(); jobState.jobs = old; jobState.Unlock() }()
-		lifecycle.Stop(time.Second)
-		// Leave the process default idle and admitting, just like a fresh
-		// process, also for tests that use it without opening a job fixture.
-		resetJobRuntime(t)
-	})
-	return repo.WithRepository(context.Background(), r)
+	t.Cleanup(r.Close)
+	m, err := agents.New(context.Background(), r, agents.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(m.Close)
+	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond})
+	rt.Start(context.Background())
+	t.Cleanup(func() { rt.Shutdown(context.Background()) })
+	svc := New(Options{Repo: r, Agents: m, Runtime: rt})
+	return svc, context.Background()
 }
 
 func TestJobFixtureStartsFreshRuntimeAfterShutdown(t *testing.T) {
 	var stopped context.Context
 	t.Run("previous owner", func(t *testing.T) {
-		resetJobRuntime(t)
-		lifecycle.Start(context.Background())
-		stopped = lifecycle.BindRequest(context.Background())
-		lifecycle.Stop(time.Second)
+		rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: time.Millisecond})
+		rt.Start(context.Background())
+		stopped = rt.BindRequest(context.Background())
+		rt.Shutdown(context.Background())
 	})
 	t.Run("next fixture", func(t *testing.T) {
-		ctx := jobFixture(t)
-		j, _, err := startJob(ctx, "default", "probe", false, func(context.Context, func(int, int)) (outcome, error) { return outcome{}, nil })
+		svc, ctx := jobFixture(t)
+		j, _, err := svc.startJob(ctx, "default", "probe", false, func(context.Context, func(int, int)) (outcome, error) { return outcome{}, nil })
 		if err != nil {
 			t.Fatalf("fresh fixture inherited stopped Runtime: %v", err)
 		}
-		if saved := awaitJob(t, j.ID, "default"); saved.Status != "done" {
+		if saved := awaitJob(t, svc, j.ID, "default"); saved.Status != "done" {
 			t.Fatal(saved)
 		}
-		if _, _, err := startJob(stopped, "default", "probe", false, func(context.Context, func(int, int)) (outcome, error) {
+		if _, _, err := svc.startJob(stopped, "default", "probe", false, func(context.Context, func(int, int)) (outcome, error) {
 			t.Error("old generation was revived")
 			return outcome{}, nil
 		}); !errors.Is(err, context.Canceled) {
@@ -84,10 +63,10 @@ func TestJobFixtureStartsFreshRuntimeAfterShutdown(t *testing.T) {
 	})
 }
 
-func awaitJob(t *testing.T, id, profile string) *Job {
+func awaitJob(t *testing.T, svc *Service, id, profile string) *Job {
 	t.Helper()
 	for end := time.Now().Add(3 * time.Second); time.Now().Before(end); {
-		j := GetJob(id, profile)
+		j := svc.GetJob(id, profile)
 		if j != nil && j.Status != "running" {
 			return j
 		}
@@ -97,7 +76,7 @@ func awaitJob(t *testing.T, id, profile string) *Job {
 	return nil
 }
 func TestJobOutlivesCancelledRequestAndDoesNotRetainScope(t *testing.T) {
-	ctx := jobFixture(t)
+	svc, ctx := jobFixture(t)
 	type marker struct{ bytes [1 << 20]byte }
 	type key struct{}
 	started, release := make(chan struct{}), make(chan struct{})
@@ -109,14 +88,14 @@ func TestJobOutlivesCancelledRequestAndDoesNotRetainScope(t *testing.T) {
 		request, cancel := context.WithCancel(context.WithValue(repo.WithScope(ctx), key{}, payload))
 		original = repo.ScopeOf(request)
 		cancel()
-		j, _, err := startJob(request, "default", "probe", false, func(worker context.Context, p func(int, int)) (outcome, error) {
+		j, _, err := svc.startJob(request, "default", "probe", false, func(worker context.Context, p func(int, int)) (outcome, error) {
 			if worker.Err() != nil || worker.Value(key{}) != nil || repo.ScopeOf(worker) == original {
 				t.Error("worker inherited the request cancellation or scope")
 			}
 			p(0, 1)
 			close(started)
 			<-release
-			_, err := SaveWebsiteNote(worker, "default", json.RawMessage(`{"domain":"example.com","note":"completed"}`))
+			_, err := svc.SaveWebsiteNote(worker, "default", json.RawMessage(`{"domain":"example.com","note":"completed"}`))
 			p(1, 1)
 			return outcome{Results: map[string]Probe{"example.com": {Host: "example.com"}}}, err
 		})
@@ -132,20 +111,20 @@ func TestJobOutlivesCancelledRequestAndDoesNotRetainScope(t *testing.T) {
 	if ref.Value() != nil {
 		t.Error("running worker retained the request values")
 	}
-	_, _, err := startJob(ctx, "other", "region", false, func(context.Context, func(int, int)) (outcome, error) { return outcome{}, nil })
+	_, _, err := svc.startJob(ctx, "other", "region", false, func(context.Context, func(int, int)) (outcome, error) { return outcome{}, nil })
 	var busy *Busy
 	if !errors.As(err, &busy) || busy.JobID != j.ID {
 		t.Fatalf("exclusive job: %v", err)
 	}
-	if payload := BusyPayload(busy, "other"); payload.Job != nil || payload.Message != msgOtherBusy {
+	if payload := svc.BusyPayload(busy, "other"); payload.Job != nil || payload.Message != msgOtherBusy {
 		t.Fatalf("cross-profile job disclosed: %v", payload)
 	}
 	close(release)
-	saved := awaitJob(t, j.ID, "default")
+	saved := awaitJob(t, svc, j.ID, "default")
 	if saved.Status != "done" || saved.Done != 1 || saved.Total != 1 || saved.FinishedAt == nil {
 		t.Fatalf("metadata: %+v", saved)
 	}
-	c, err := loadConfig(ctx, "default")
+	c, err := svc.loadConfig(ctx, "default")
 	if err != nil || c.Settings.WebsiteNotes["example.com"] != "completed" {
 		t.Fatalf("cancelled write was dropped: %v", err)
 	}
@@ -163,8 +142,8 @@ func TestJobFailureAndResultLifetime(t *testing.T) {
 		message string
 	}{{"user", &ProbeError{"synthetic failure"}, "synthetic failure"}, {"internal", errors.New("synthetic internal failure"), msgFailed}, {"panic", nil, msgFailed}} {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := jobFixture(t)
-			j, _, err := startJob(ctx, "default", "probe", true, func(context.Context, func(int, int)) (outcome, error) {
+			svc, ctx := jobFixture(t)
+			j, _, err := svc.startJob(ctx, "default", "probe", true, func(context.Context, func(int, int)) (outcome, error) {
 				if tt.name == "panic" {
 					panic("synthetic")
 				}
@@ -183,10 +162,10 @@ func TestJobFailureAndResultLifetime(t *testing.T) {
 
 		})
 	}
-	ctx := jobFixture(t)
+	svc, ctx := jobFixture(t)
 	var ref weak.Pointer[PathStats]
 	func() {
-		j, results, err := startJob(ctx, "default", "probe", true, func(_ context.Context, p func(int, int)) (outcome, error) {
+		j, results, err := svc.startJob(ctx, "default", "probe", true, func(_ context.Context, p func(int, int)) (outcome, error) {
 			stats := &PathStats{Delays: make([]float64, 1<<18)}
 			ref = weak.Make(stats)
 			p(1, 1)
@@ -204,9 +183,9 @@ func TestJobFailureAndResultLifetime(t *testing.T) {
 	}
 }
 func TestJobHistoryBoundAndImmutableSnapshots(t *testing.T) {
-	ctx := jobFixture(t)
+	svc, ctx := jobFixture(t)
 	for i := 0; i < 45; i++ {
-		j, _, err := startJob(ctx, "default", "probe", true, func(_ context.Context, p func(int, int)) (outcome, error) {
+		j, _, err := svc.startJob(ctx, "default", "probe", true, func(_ context.Context, p func(int, int)) (outcome, error) {
 			p(1, 1)
 			return outcome{Errors: []JobError{{Message: "partial"}}}, nil
 		})
@@ -214,29 +193,29 @@ func TestJobHistoryBoundAndImmutableSnapshots(t *testing.T) {
 			t.Fatal(err)
 		}
 		j.Errors[0].Message = "modified"
-		if GetJob(j.ID, "default").Errors[0].Message != "partial" {
+		if svc.GetJob(j.ID, "default").Errors[0].Message != "partial" {
 			t.Fatal("caller mutated stored metadata")
 		}
 	}
-	jobState.Lock()
-	n := len(jobState.jobs)
-	jobState.Unlock()
+	svc.jobMu.Lock()
+	n := len(svc.jobs)
+	svc.jobMu.Unlock()
 	if n > 21 {
 		t.Fatalf("unbounded history: %d", n)
 	}
 }
 func TestAutomaticRoundPrerequisitesAndTaskReceipts(t *testing.T) {
-	ctx := jobFixture(t)
-	if out, err := RunAutoTask(ctx, "default", "schedule"); err != nil || out != nil {
+	svc, ctx := jobFixture(t)
+	if out, err := svc.RunAutoTask(ctx, "default", "schedule"); err != nil || out != nil {
 		t.Fatalf("disabled: %v %v", out, err)
 	}
-	if err := editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; return nil }); err != nil {
+	if err := svc.editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := RunAutoTask(ctx, "default", "manual"); err != nil {
+	if _, err := svc.RunAutoTask(ctx, "default", "manual"); err != nil {
 		t.Fatal(err)
 	}
-	r, _ := repo.GetRepository(ctx)
+	r := svc.Repo
 	b, err := osReadTask(r.DataDir())
 	if err != nil {
 		t.Fatal(err)
@@ -282,14 +261,10 @@ func (*autoClient) Region(context.Context, Agent, RegionRequest) ([]RegionResult
 	return nil, nil
 }
 func TestAutomaticProbeAdoptionRecheckAndNoRepeatedWrites(t *testing.T) {
-	ctx := jobFixture(t)
-	r, _ := repo.GetRepository(ctx)
-	repo.SetRepository(r)
-	t.Cleanup(func() { repo.SetRepository(nil) })
+	svc, ctx := jobFixture(t)
+	r := svc.Repo
 	fake := &autoClient{}
-	previous := client
-	client = fake
-	t.Cleanup(func() { client = previous })
+	svc.client = fake
 	var err error
 	if _, err = r.UpdateProfile(ctx, "default", func(_ context.Context, profile *model.Profile) error {
 		profile.ProxyGroups = []model.ProxyGroup{{ID: "g1", Name: "PROXY", Type: "select"}}
@@ -304,7 +279,7 @@ func TestAutomaticProbeAdoptionRecheckAndNoRepeatedWrites(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = InitRulesets(ctx, "default", nil, "PROXY"); err != nil {
+	if _, err = svc.InitRulesets(ctx, "default", nil, "PROXY"); err != nil {
 		t.Fatal(err)
 	}
 	// Write a synthetic collector document: the route cannot create passive history.
@@ -316,14 +291,14 @@ func TestAutomaticProbeAdoptionRecheckAndNoRepeatedWrites(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dir, "a1.json"), []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err = editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; s.AutoApply = true; return nil }); err != nil {
+	if err = svc.editSettings(ctx, "default", func(s *Settings) error { s.AutoProbe = true; s.AutoApply = true; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	out, err := RunAutoTask(ctx, "default", "schedule")
+	out, err := svc.RunAutoTask(ctx, "default", "schedule")
 	if err != nil || out == nil || out.Probed != 2 || out.Applied != 1 {
 		t.Fatalf("automatic adoption: %+v %v", out, err)
 	}
-	c, err := loadConfig(ctx, "default")
+	c, err := svc.loadConfig(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -331,25 +306,25 @@ func TestAutomaticProbeAdoptionRecheckAndNoRepeatedWrites(t *testing.T) {
 		t.Fatalf("history: %+v", c.Settings.History)
 	}
 	before := fake.calls
-	out, err = RunAutoTask(ctx, "default", "schedule")
+	out, err = svc.RunAutoTask(ctx, "default", "schedule")
 	if err != nil || out.Probed != 0 || fake.calls != before {
 		t.Fatalf("recent probes repeated: %+v %v", out, err)
 	}
 	old := now().AddDate(0, 0, -40).Format("2006-01-02T15:04:05")
-	if err = editSettings(ctx, "default", func(s *Settings) error { s.History[0].AppliedAt = old; return nil }); err != nil {
+	if err = svc.editSettings(ctx, "default", func(s *Settings) error { s.History[0].AppliedAt = old; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	fake.empty = true
-	out, err = RunAutoTask(ctx, "default", "schedule")
+	out, err = svc.RunAutoTask(ctx, "default", "schedule")
 	if err != nil || out.Rechecked != 1 {
 		t.Fatalf("recheck: %+v %v", out, err)
 	}
-	c, _ = loadConfig(ctx, "default")
+	c, _ = svc.loadConfig(ctx, "default")
 	if c.Settings.History[0].Recheck == nil || c.Settings.History[0].Recheck.Reason != msgRecheckEmpty {
 		t.Fatalf("missing-result recheck: %+v", c.Settings.History)
 	}
 	revision := r.CommitCount()
-	out, err = RunAutoTask(ctx, "default", "schedule")
+	out, err = svc.RunAutoTask(ctx, "default", "schedule")
 	if err != nil || out.Rechecked != 0 || r.CommitCount() != revision {
 		t.Fatalf("no-result recheck repeatedly rewrote config: %+v %v", out, err)
 	}

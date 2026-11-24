@@ -39,10 +39,11 @@ type Handler struct {
 // session exists, without falling back to the package-level hook.
 func NewHandler(r *repo.Repository, dnsLoop onboarding.DNSLoopChecker, adopt onboarding.AdoptOwnedWrite) *Handler {
 	return &Handler{
-		Repo:            r,
-		DNSLoop:         dnsLoop,
-		AdoptOwnedWrite: adopt,
-		explicitAdopter: true,
+		Repo:             r,
+		DNSLoop:          dnsLoop,
+		AdoptOwnedWrite:  adopt,
+		ReadSplitContext: routersplit.ReadContext,
+		explicitAdopter:  true,
 	}
 }
 

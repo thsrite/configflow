@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"configflow/internal/agents/trafficstore"
@@ -251,7 +252,7 @@ func outdatedAgents(ctx context.Context, r *repo.Repository, id string) ([]subs.
 	if err != nil {
 		return nil, err
 	}
-	store := trafficstore.NewNative(r.DataDir())
+	store := trafficstore.NewNative(filepath.Join(r.DataDir(), "traffic"))
 	names := make(map[string]string, len(list))
 	for _, item := range list {
 		names[item.ID] = item.Name

@@ -20,7 +20,7 @@ import (
 )
 
 func TestHealthCoreHasNoLegacyOrUntypedDependency(t *testing.T) {
-	coreFiles := []string{"messages.go", "values.go", "conversion.go", "wire.go", "ipaddr.go", "runner.go", "dns.go", "latency.go"}
+	coreFiles := []string{"messages.go", "values.go", "conversion.go", "deleters.go", "ipaddr.go", "runner.go", "dns.go", "latency.go"}
 	forbiddenImports := []string{"jsonx", "pystr", "internal/subs", "internal/substore"}
 	forbiddenNames := map[string]bool{
 		"any":           true,
@@ -232,7 +232,7 @@ func TestWrongTypedCandidateIdentitiesReadLeniently(t *testing.T) {
 			restore := SetProbeEnv(probeEnv)
 			defer restore()
 
-			_, err = CollectCandidateNodes(ctx)
+			_, err = CollectCandidateNodes(ctx, r)
 			if tt.cacheRaw != "" {
 				// The subscription cache is a data file, checked as read.
 				var ve *ValidationError
@@ -290,10 +290,10 @@ func TestNumericNodeNamesAcceptedLosslessly(t *testing.T) {
 	collabs.LoadSubscriptionCache = func(context.Context, string) (json.RawMessage, error) {
 		return json.RawMessage(`{"nodes":[{"name":` + cachedBig + `,"type":"http","server":"b.example.test","port":80}]}`), nil
 	}
-	collabs.ReadLatencyFile = func(context.Context) (json.RawMessage, bool) {
+	collabs.ReadLatencyFile = func(context.Context, *repo.Repository) (json.RawMessage, bool) {
 		return storedFile, len(storedFile) > 0
 	}
-	collabs.WriteLatencyFile = func(_ context.Context, data json.RawMessage) error {
+	collabs.WriteLatencyFile = func(_ context.Context, _ *repo.Repository, data json.RawMessage) error {
 		storedFile = append(json.RawMessage(nil), data...)
 		return nil
 	}
@@ -308,7 +308,7 @@ func TestNumericNodeNamesAcceptedLosslessly(t *testing.T) {
 	})
 	defer restore()
 
-	candidates, err := CollectCandidateNodes(ctx)
+	candidates, err := CollectCandidateNodes(ctx, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestNumericNodeNamesAcceptedLosslessly(t *testing.T) {
 		t.Fatalf("unexpected candidates: %+v", candidates)
 	}
 
-	outcome, err := RunLatencyTests(ctx, []string{manualBig, cachedBig}, nil)
+	outcome, err := RunLatencyTests(ctx, r, []string{manualBig, cachedBig}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestR5StoredFallbacksAndSystemPreservation(t *testing.T) {
 	}
 	repo.ResetConfigContext(ctx)
 
-	if _, err := SaveDNSConfigJSON(ctx, json.RawMessage(`{"mode":"custom","servers":["192.0.2.53"]}`)); err != nil {
+	if _, err := SaveDNSConfigJSON(ctx, r, json.RawMessage(`{"mode":"custom","servers":["192.0.2.53"]}`)); err != nil {
 		t.Fatal(err)
 	}
 	sysAfter, err := r.System(ctx)
@@ -360,8 +360,8 @@ func TestR5StoredFallbacksAndSystemPreservation(t *testing.T) {
 	// Stored node_latency.json with non-list history falls back to empty history under R5 instead of iterating string chars.
 	storedFile := json.RawMessage(`{"[\"node\",\"n1\"]":{"latency":10,"history":"corrupt","method":"proxy_http_v2","url":"https://www.gstatic.com/generate_204","unified_delay":true,"dns_servers":["192.0.2.53"],"dns_bootstrap":[]}}`)
 	collabs := defaultCollaborators(nil)
-	collabs.ReadLatencyFile = func(context.Context) (json.RawMessage, bool) { return storedFile, true }
-	collabs.WriteLatencyFile = func(_ context.Context, data json.RawMessage) error {
+	collabs.ReadLatencyFile = func(context.Context, *repo.Repository) (json.RawMessage, bool) { return storedFile, true }
+	collabs.WriteLatencyFile = func(_ context.Context, _ *repo.Repository, data json.RawMessage) error {
 		storedFile = append(json.RawMessage(nil), data...)
 		return nil
 	}
@@ -377,7 +377,7 @@ func TestR5StoredFallbacksAndSystemPreservation(t *testing.T) {
 	})
 	defer restore()
 
-	outcome, err := RunLatencyTests(ctx, []string{"A"}, nil)
+	outcome, err := RunLatencyTests(ctx, r, []string{"A"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

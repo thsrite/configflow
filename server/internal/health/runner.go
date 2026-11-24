@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"configflow/internal/model"
+	"configflow/internal/repo"
 	"configflow/internal/resource"
 )
 
@@ -82,8 +83,8 @@ type Collaborators struct {
 	ConvertNode             func(ctx context.Context, node json.RawMessage) (model.Fields, bool)
 	LoadSubscriptionCache   func(ctx context.Context, subID string) (json.RawMessage, error)
 	FilterSubscriptionNodes func(sub model.Subscription, nodes []json.RawMessage) ([]json.RawMessage, error)
-	ReadLatencyFile         func(ctx context.Context) (json.RawMessage, bool)
-	WriteLatencyFile        func(ctx context.Context, data json.RawMessage) error
+	ReadLatencyFile         func(ctx context.Context, r *repo.Repository) (json.RawMessage, bool)
+	WriteLatencyFile        func(ctx context.Context, r *repo.Repository, data json.RawMessage) error
 }
 
 // ProbeEnv configures external dependencies for node DNS and latency probes.

@@ -210,7 +210,7 @@ func (f *fixture) post(body any) *httpxtest.Result {
 	return f.srv.Post("/api/nodes/latency", httpxtest.JSON(body))
 }
 
-func (f *fixture) stored() map[string]any { return loadResults(f.t, f.ctx()) }
+func (f *fixture) stored() map[string]any { return f.loadResults() }
 
 func (f *fixture) writeLatency(v any) {
 	if _, err := f.srv.Repo.WriteSharedJSON(context.Background(), health.LatencyFile, v); err != nil {
@@ -258,7 +258,7 @@ func keys(list ...string) any  { return map[string]any{"keys": list} }
 func TestPreviousProbeResultsAreHiddenAndNotMixed(t *testing.T) {
 	for _, method := range []any{nil, "proxy_http_v1"} {
 		f := setup(t)
-		settings, _ := healthSettings(t, f.ctx())
+		settings, _ := f.healthSettings()
 		f.writeLatency(map[string]any{
 			nodeA: map[string]any{
 				"latency": nil, "history": []any{1, nil}, "method": method,
@@ -269,7 +269,7 @@ func TestPreviousProbeResultsAreHiddenAndNotMixed(t *testing.T) {
 			t.Fatal("old method visible")
 		}
 		f.runner.fn = probeBy(constant(150))
-		out, err := runTests(t, f.ctx(), []string{"A", "A"}, nil)
+		out, err := f.runTests([]string{"A", "A"}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -278,7 +278,7 @@ func TestPreviousProbeResultsAreHiddenAndNotMixed(t *testing.T) {
 			t.Fatalf("%v", encode(a))
 		}
 		f.vars["CONFIGFLOW_NODE_TEST_URL"] = "https://test.example/generate_204"
-		out, _ = runTests(t, f.ctx(), []string{"A"}, nil)
+		out, _ = f.runTests([]string{"A"}, nil)
 		if encode(asMap(asMap(out["results"])["A"])["history"]) != "[150]" {
 			t.Fatal("history mixed across URLs")
 		}
@@ -305,7 +305,7 @@ func TestWorkerGetsStdinJSONAndNoCredentialsInCommand(t *testing.T) {
 			},
 		}), nil
 	}
-	out, err := runTests(t, f.ctx(), []string{"A"}, nil)
+	out, err := f.runTests([]string{"A"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +329,7 @@ func TestSubscriptionCacheKeepsProtocolOptionsAndDistinctSources(t *testing.T) {
 		map[string]any{"name": "A", "type": "http", "server": "other.invalid", "port": 443},
 		map[string]any{"name": "cached", "type": "trojan", "server": "proxy.invalid", "port": 443,
 			"params": map[string]any{"password": "cached-secret", "sni": "tls.invalid"}})
-	_, candidates, err := collectCandidates(t, f.ctx())
+	_, candidates, err := f.collectCandidates()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +342,7 @@ func TestSubscriptionCacheKeepsProtocolOptionsAndDistinctSources(t *testing.T) {
 		seen = asMap(asSlice(payload["nodes"])[0])
 		return probeBy(constant(1))(command)
 	}
-	if _, err := runTests(t, f.ctx(), nil, []string{`["subscription","sub","cached"]`}); err != nil {
+	if _, err := f.runTests(nil, []string{`["subscription","sub","cached"]`}); err != nil {
 		t.Fatal(err)
 	}
 	if asString(seen["password"]) != "cached-secret" || asString(seen["sni"]) != "tls.invalid" {
@@ -356,7 +356,7 @@ func TestInvalidWorkerOutputDoesNotReplaceHistory(t *testing.T) {
 		`{"version": 4, "results": [{"name": "[\"node\",\"a\"]", "latency": null}]}`} {
 		f := setup(t)
 		f.runner.fn = func(health.Command) (health.Result, error) { return health.Result{Stdout: []byte(output)}, nil }
-		_, err := runTests(t, f.ctx(), []string{"A"}, nil)
+		_, err := f.runTests([]string{"A"}, nil)
 		if _, ok := err.(*health.ProbeUnavailable); !ok {
 			t.Fatalf("%s: %v", output, err)
 		}
@@ -525,7 +525,7 @@ func TestTwentyJSONAndYAMLNodesNeedNoRemoteConversion(t *testing.T) {
 func TestParseFailureIsAResultNotMissing(t *testing.T) {
 	f := setup(t)
 	f.saveShared("nodes", []any{map[string]any{"id": "a", "name": "A", "proxy_string": "ss://unconvertible"}})
-	out, err := runTests(t, f.ctx(), []string{"A", "deleted"}, nil)
+	out, err := f.runTests([]string{"A", "deleted"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -680,7 +680,7 @@ func TestInvalidURLIsRejected(t *testing.T) {
 	for _, url := range []string{"file:///etc/passwd", "https://user:secret@example.com", "not-a-url"} {
 		f := setup(t)
 		f.vars["CONFIGFLOW_NODE_TEST_URL"] = url
-		if _, err := healthSettings(t, f.ctx()); err == nil {
+		if _, err := f.healthSettings(); err == nil {
 			t.Fatal(url)
 		}
 	}
@@ -811,7 +811,7 @@ func TestLegacyMigrationIsReadOnlyAndDoesNotAdoptManualListener(t *testing.T) {
 	f := setup(t)
 	setSystem(t, f.srv.Repo, "node_test_dns", []any{"192.168.0.2:15353"})
 	before := systemWithoutRevision(t, f.srv.Repo)
-	config, err := loadConfig(t, f.ctx())
+	config, err := f.loadConfig()
 	if err != nil || !testjson.Equal(config, map[string]any{"mode": "custom", "servers": []any{"192.168.0.2:15353"}, "bootstrap": []any{}}) {
 		t.Fatal(encode(config), err)
 	}
@@ -894,8 +894,8 @@ func TestCustomSaveIsGlobalAndDoesNotPublishOrChangeProfile(t *testing.T) {
 			t.Fatal("profile changed: " + key)
 		}
 	}
-	loaded, _ := loadConfig(t, f.ctx())
-	settings, _ := healthSettings(t, f.ctx())
+	loaded, _ := f.loadConfig()
+	settings, _ := f.healthSettings()
 	if !testjson.Equal(loaded, body["dns"]) || encode(settings["dns_bootstrap"]) != `["192.0.2.53"]` {
 		t.Fatal("reload")
 	}
@@ -905,7 +905,7 @@ func TestCustomSaveIsGlobalAndDoesNotPublishOrChangeProfile(t *testing.T) {
 			"managed": map[string]any{"agent_id": "old"},
 		},
 	})).WantStatus(200)
-	loaded, _ = loadConfig(t, f.ctx())
+	loaded, _ = f.loadConfig()
 	if encode(decodeMap(t, system.Body)["dns_servers"]) != "[]" || !testjson.Equal(loaded, map[string]any{"mode": "system", "servers": []any{}, "bootstrap": []any{}}) {
 		t.Fatal(system.Text())
 	}
@@ -922,8 +922,8 @@ func TestRemovedManagedModeKeepsQueryingItsListenerAsCustomDNS(t *testing.T) {
 	)
 	before := systemWithoutRevision(t, f.srv.Repo)
 	expected := map[string]any{"mode": "custom", "servers": []any{"192.0.2.2:15353"}, "bootstrap": []any{}}
-	loaded, _ := loadConfig(t, f.ctx())
-	effective, _ := effectiveSettings(t, f.ctx(), nil)
+	loaded, _ := f.loadConfig()
+	effective, _ := f.effectiveSettings(nil)
 	if !testjson.Equal(loaded, expected) || !testjson.Equal(effective, map[string]any{"dns_servers": []any{"192.0.2.2:15353"}, "dns_bootstrap": []any{}}) {
 		t.Fatal(encode(loaded))
 	}
@@ -946,7 +946,7 @@ func TestRemovedManagedModeWithoutARecordedAddressFallsBackToSystemDNS(t *testin
 		"mode": "managed", "servers": []any{}, "bootstrap": []any{},
 		"managed": map[string]any{"agent_id": "missing", "endpoint_id": "gone"},
 	})
-	loaded, err := loadConfig(t, f.ctx())
+	loaded, err := f.loadConfig()
 	if err != nil || !testjson.Equal(loaded, map[string]any{"mode": "system", "servers": []any{}, "bootstrap": []any{}}) {
 		t.Fatal(encode(loaded), err)
 	}
@@ -1062,17 +1062,17 @@ func TestChangingOnlyBootstrapResetsLatencyHistory(t *testing.T) {
 	f.saveShared("nodes", []any{map[string]any{"id": "a", "name": "A", "type": "http", "server": "proxy.invalid", "port": 8080}})
 	f.runner.fn = probeBy(constant(12))
 	value := map[string]any{"mode": "custom", "servers": []any{"tls://dns.example"}, "bootstrap": []any{"192.0.2.53"}}
-	if _, err := saveConfig(t, f.ctx(), value); err != nil {
+	if _, err := f.saveConfig(value); err != nil {
 		t.Fatal(err)
 	}
-	runTests(t, f.ctx(), []string{"A"}, nil)
-	out, _ := runTests(t, f.ctx(), []string{"A"}, nil)
+	f.runTests([]string{"A"}, nil)
+	out, _ := f.runTests([]string{"A"}, nil)
 	if encode(asMap(asMap(out["results"])["A"])["history"]) != "[12,12]" {
 		t.Fatal(encode(out))
 	}
 	value["bootstrap"] = []any{"192.0.2.54"}
-	saveConfig(t, f.ctx(), value)
-	out, _ = runTests(t, f.ctx(), []string{"A"}, nil)
+	f.saveConfig(value)
+	out, _ = f.runTests([]string{"A"}, nil)
 	a := asMap(asMap(out["results"])["A"])
 	if encode(a["history"]) != "[12]" || encode(a["dns_bootstrap"]) != `["192.0.2.54"]` {
 		t.Fatal(encode(a))
@@ -1099,28 +1099,28 @@ func testObject(t *testing.T, value any, err error) (map[string]any, error) {
 	return toMap(t, value), nil
 }
 
-func loadResults(t *testing.T, ctx context.Context) map[string]any {
-	t.Helper()
-	out, _ := testObject(t, health.LoadLatencyResults(ctx), nil)
+func (f *fixture) loadResults() map[string]any {
+	f.t.Helper()
+	out, _ := testObject(f.t, health.LoadLatencyResults(f.ctx(), f.srv.Repo), nil)
 	return out
 }
 
-func runTests(t *testing.T, ctx context.Context, names, keys []string) (map[string]any, error) {
-	t.Helper()
-	v, err := health.RunLatencyTests(ctx, names, keys)
-	return testObject(t, v, err)
+func (f *fixture) runTests(names, keys []string) (map[string]any, error) {
+	f.t.Helper()
+	v, err := health.RunLatencyTests(f.ctx(), f.srv.Repo, names, keys)
+	return testObject(f.t, v, err)
 }
 
-func healthSettings(t *testing.T, ctx context.Context) (map[string]any, error) {
-	t.Helper()
-	v, err := health.ResolveSettings(ctx)
-	return testObject(t, v, err)
+func (f *fixture) healthSettings() (map[string]any, error) {
+	f.t.Helper()
+	v, err := health.ResolveSettings(f.ctx(), f.srv.Repo)
+	return testObject(f.t, v, err)
 }
 
-func loadConfig(t *testing.T, ctx context.Context) (map[string]any, error) {
-	t.Helper()
-	v, err := health.LoadDNSConfig(ctx)
-	return testObject(t, v, err)
+func (f *fixture) loadConfig() (map[string]any, error) {
+	f.t.Helper()
+	v, err := health.LoadDNSConfig(f.ctx(), f.srv.Repo)
+	return testObject(f.t, v, err)
 }
 
 func normalizeConfig(t *testing.T, value any) (map[string]any, error) {
@@ -1130,18 +1130,18 @@ func normalizeConfig(t *testing.T, value any) (map[string]any, error) {
 	return testObject(t, v, err)
 }
 
-func effectiveSettings(t *testing.T, ctx context.Context, value any) (map[string]any, error) {
-	t.Helper()
+func (f *fixture) effectiveSettings(value any) (map[string]any, error) {
+	f.t.Helper()
 	raw, _ := json.Marshal(value)
-	v, err := health.EffectiveDNSSettingsJSON(ctx, raw)
-	return testObject(t, v, err)
+	v, err := health.EffectiveDNSSettingsJSON(f.ctx(), f.srv.Repo, raw)
+	return testObject(f.t, v, err)
 }
 
-func saveConfig(t *testing.T, ctx context.Context, value any) (map[string]any, error) {
-	t.Helper()
+func (f *fixture) saveConfig(value any) (map[string]any, error) {
+	f.t.Helper()
 	raw, _ := json.Marshal(value)
-	v, err := health.SaveDNSConfigJSON(ctx, raw)
-	return testObject(t, v, err)
+	v, err := health.SaveDNSConfigJSON(f.ctx(), f.srv.Repo, raw)
+	return testObject(f.t, v, err)
 }
 
 func normalizeServers(value any, bootstrap bool) ([]any, error) {
@@ -1157,9 +1157,9 @@ func normalizeServers(value any, bootstrap bool) ([]any, error) {
 	return out, nil
 }
 
-func collectCandidates(t *testing.T, ctx context.Context) ([]string, map[string]map[string]any, error) {
-	t.Helper()
-	list, err := health.CollectCandidateNodes(ctx)
+func (f *fixture) collectCandidates() ([]string, map[string]map[string]any, error) {
+	f.t.Helper()
+	list, err := health.CollectCandidateNodes(f.ctx(), f.srv.Repo)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1167,7 +1167,7 @@ func collectCandidates(t *testing.T, ctx context.Context) ([]string, map[string]
 	out := map[string]map[string]any{}
 	for i, item := range list {
 		keys[i] = item.Key
-		out[item.Key] = decodeMap(t, item.Raw)
+		out[item.Key] = decodeMap(f.t, item.Raw)
 	}
 	return keys, out, nil
 }

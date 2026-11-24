@@ -43,9 +43,6 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	apiagents.WireContentSyncWith(rt, gen.substore)
 
 	if opts.Repo == nil {
-		// health's global OnAgentDeleted stores serve only Managers without
-		// DeletedStores; the server Manager below gets them as Options.
-		health.Wire()
 		// NewApp() test path: no Manager instance, so the deploy Service and
 		// the Manager receipt check use the package-level fallbacks.
 		gen.deploy = newDeployService(deploy.Options{})
@@ -72,7 +69,7 @@ func wireAgents(ctx context.Context, opts Options, rt *lifecycle.Runtime, tk *ta
 	mt := metrics.New(dataDir, ts)
 	mon := monitor.New(dataDir)
 
-	deletedStores := append([]agents.NamedDeleter{mt.TrafficStoreDeleter()}, health.DeletedStores()...)
+	deletedStores := append([]agents.NamedDeleter{mt.TrafficStoreDeleter()}, health.DeletedStores(dataDir)...)
 	m, err := agents.New(ctx, opts.Repo, agents.Options{
 		Metrics:        mt,
 		Publication:    mon,

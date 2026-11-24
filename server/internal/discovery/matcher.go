@@ -2,43 +2,39 @@ package discovery
 
 import (
 	"configflow/internal/lifecycle"
-	"configflow/internal/repo"
+	"configflow/internal/lockx"
 	"configflow/internal/rules"
 	"context"
 	"path/filepath"
-	"sync"
 )
 
-var matcherMu sync.Mutex
-var matcherCache *rules.Cache
-
-func activateMatcherCache(ctx context.Context) {
-	matcherMu.Lock()
-	defer matcherMu.Unlock()
-	if matcherCache != nil {
-		matcherCache.Clear()
+func (s *Service) activateMatcherCache(ctx context.Context) {
+	s.matcherMu.Lock()
+	defer s.matcherMu.Unlock()
+	if s.matcherCache != nil {
+		s.matcherCache.Clear()
 	}
-	opts := matcherOptions()
+	opts := s.matcherOptions(ctx)
 	opts.Clock = lifecycle.ClockFrom(ctx)
-	matcherCache = rules.NewCache(opts)
+	s.matcherCache = rules.NewCache(opts)
 }
 
-func cache(ctx context.Context) *rules.Cache {
-	matcherMu.Lock()
-	defer matcherMu.Unlock()
-	if matcherCache == nil {
-		opts := matcherOptions()
+func (s *Service) cache(ctx context.Context) *rules.Cache {
+	s.matcherMu.Lock()
+	defer s.matcherMu.Unlock()
+	if s.matcherCache == nil {
+		opts := s.matcherOptions(ctx)
 		opts.Clock = lifecycle.ClockFrom(ctx)
-		matcherCache = rules.NewCache(opts)
+		s.matcherCache = rules.NewCache(opts)
 	}
-	return matcherCache
+	return s.matcherCache
 }
 
-func clearMatcherCache() {
-	matcherMu.Lock()
-	defer matcherMu.Unlock()
-	if matcherCache != nil {
-		matcherCache.Clear()
+func (s *Service) clearMatcherCache() {
+	s.matcherMu.Lock()
+	defer s.matcherMu.Unlock()
+	if s.matcherCache != nil {
+		s.matcherCache.Clear()
 	}
 }
 
@@ -48,22 +44,27 @@ func matcherShutdown(clear func()) lifecycle.ShutdownHook {
 
 // Cleanup is housekeeping: no new timer job is needed once shutdown starts.
 // The hook clears existing waits at T0, including jobs admitted just before it.
-type matcherSpawner struct{}
+type matcherSpawner struct{ inner lockx.Spawner }
 
-func (matcherSpawner) Spawn(ctx context.Context, name string, fn func(context.Context)) error {
+func (m matcherSpawner) Spawn(ctx context.Context, name string, fn func(context.Context)) error {
 	select {
 	case <-lifecycle.Stopping(ctx):
 		return lifecycle.ErrStopping
 	default:
 	}
-	return lifecycle.Spawn(ctx, name, fn)
+	return m.inner.Spawn(ctx, name, fn)
 }
 
-func matcherOptions() rules.CacheOptions {
-	options := nativeMatcherOptions()
-	options.Clock = lifecycle.ClockFrom(context.Background())
-	options.Spawner = matcherSpawner{}
-	options.RulesDir = func() string { return filepath.Join(repo.DataDir(), "shared", "rules") }
+func (s *Service) matcherOptions(ctx context.Context) rules.CacheOptions {
+	options := s.nativeMatcherOptions()
+	options.Clock = lifecycle.ClockFrom(ctx)
+	options.Spawner = matcherSpawner{inner: s.spawner(ctx)}
+	options.RulesDir = func() string {
+		if s != nil && s.Repo != nil {
+			return filepath.Join(s.Repo.DataDir(), "shared", "rules")
+		}
+		return ""
+	}
 	options.MaxMatchers, options.MaxHostResults, options.IdleSeconds = 4, 1024, 300
 	return options
 }

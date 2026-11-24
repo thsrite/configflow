@@ -18,8 +18,8 @@ import (
 )
 
 // SettingsPayload returns the selected rulesets and valid candidates.
-func SettingsPayload(ctx context.Context, id string) (*SettingsView, error) {
-	c, err := loadConfig(ctx, id)
+func (svc *Service) SettingsPayload(ctx context.Context, id string) (*SettingsView, error) {
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -35,13 +35,13 @@ func SettingsPayload(ctx context.Context, id string) (*SettingsView, error) {
 func invalid(msg string) error { return repo.NewValidationError(msg) }
 
 // UpdateSettings validates and saves a partial settings object.
-func UpdateSettings(ctx context.Context, id string, payload json.RawMessage) (*SettingsView, error) {
+func (svc *Service) UpdateSettings(ctx context.Context, id string, payload json.RawMessage) (*SettingsView, error) {
 	ctx = lifecycle.Detach(ctx)
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(payload, &fields) != nil || fields == nil {
 		return nil, invalid(msgObject)
 	}
-	c, err := loadConfig(ctx, id)
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func UpdateSettings(ctx context.Context, id string, payload json.RawMessage) (*S
 		}
 		s.RegionPort = n
 	}
-	err = editSettings(ctx, id, func(current *Settings) error {
+	err = svc.editSettings(ctx, id, func(current *Settings) error {
 		for key := range fields {
 			switch key {
 			case "direct_ruleset":
@@ -132,7 +132,7 @@ func UpdateSettings(ctx context.Context, id string, payload json.RawMessage) (*S
 	if err != nil {
 		return nil, err
 	}
-	return SettingsPayload(ctx, id)
+	return svc.SettingsPayload(ctx, id)
 }
 func uniqueID(prefix string) string {
 	var b [16]byte
@@ -172,7 +172,7 @@ func insertRules(rules []ruleConfig, index int, added ...ruleConfig) []ruleConfi
 }
 
 // InitRulesets creates new discovery libraries and references before MATCH.
-func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy string) (*SettingsView, error) {
+func (svc *Service) InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy string) (*SettingsView, error) {
 	ctx = lifecycle.Detach(ctx)
 	if len(targets) == 0 {
 		targets = []string{"direct", "proxy"}
@@ -189,7 +189,7 @@ func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy 
 		}
 	}
 	targets = selected
-	c, err := loadConfig(ctx, id)
+	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +197,7 @@ func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy 
 		return nil, invalid(msgProxyPolicy)
 	}
 	created := map[string]libraryItem{}
-	err = editLibrary(ctx, func(items *[]libraryItem) error {
+	err = svc.editLibrary(ctx, func(items *[]libraryItem) error {
 		for _, t := range targets {
 			name := msgDirectName
 			if t == "proxy" {
@@ -213,11 +213,11 @@ func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy 
 		return nil, err
 	}
 	for _, t := range targets {
-		if err = saveRule(ctx, created[t]); err != nil {
+		if err = svc.saveRule(ctx, created[t]); err != nil {
 			return nil, err
 		}
 	}
-	err = editProfile(ctx, id, func(c *config) error {
+	err = svc.editProfile(ctx, id, func(c *config) error {
 		pos := len(c.Rules)
 		for i, r := range c.Rules {
 			if r.ItemType == "rule" && r.RuleType == "MATCH" {
@@ -247,7 +247,7 @@ func InitRulesets(ctx context.Context, id string, targets []string, proxyPolicy 
 	if err != nil {
 		return nil, err
 	}
-	return SettingsPayload(ctx, id)
+	return svc.SettingsPayload(ctx, id)
 }
 
 // CleanDomain normalizes a domain and rejects IP addresses and single labels.
@@ -263,7 +263,7 @@ func CleanDomain(value string) string {
 }
 
 // UpdateIgnored adds or removes normalized domains in the bounded ignore list.
-func UpdateIgnored(ctx context.Context, id string, values []string, add bool) ([]string, error) {
+func (svc *Service) UpdateIgnored(ctx context.Context, id string, values []string, add bool) ([]string, error) {
 	ctx = lifecycle.Detach(ctx)
 	if len(values) == 0 {
 		return nil, invalid(msgIgnored)
@@ -275,7 +275,7 @@ func UpdateIgnored(ctx context.Context, id string, values []string, add bool) ([
 		}
 	}
 	out := []string{}
-	err := editSettings(ctx, id, func(s *Settings) error {
+	err := svc.editSettings(ctx, id, func(s *Settings) error {
 		if add {
 			for _, v := range values {
 				if !slices.Contains(s.Ignored, v) {
@@ -301,7 +301,7 @@ func UpdateIgnored(ctx context.Context, id string, values []string, add bool) ([
 }
 
 // SaveWebsiteNote saves or deletes the bounded annotation for a domain.
-func SaveWebsiteNote(ctx context.Context, id string, payload json.RawMessage) (map[string]string, error) {
+func (svc *Service) SaveWebsiteNote(ctx context.Context, id string, payload json.RawMessage) (map[string]string, error) {
 	ctx = lifecycle.Detach(ctx)
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(payload, &fields) != nil || fields == nil {
@@ -318,7 +318,7 @@ func SaveWebsiteNote(ctx context.Context, id string, payload json.RawMessage) (m
 		return nil, invalid(msgNote)
 	}
 	note = strings.TrimSpace(note)
-	err := editSettings(ctx, id, func(s *Settings) error {
+	err := svc.editSettings(ctx, id, func(s *Settings) error {
 		if note == "" {
 			delete(s.WebsiteNotes, domain)
 		} else {

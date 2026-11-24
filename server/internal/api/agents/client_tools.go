@@ -247,7 +247,11 @@ func (t clientTools) ApplyConnection(ctx context.Context, id string, edit connec
 	if err := guard(ctx, nil); err != nil {
 		return nil, err
 	}
-	result, err := discovery.ApplyDomains(ctx, edit.ProfileID, entries, "manual", nil, discovery.ApplyOptions{BeforeWrite: guard})
+	disc, err := t.deps.discoveryService(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result, err := disc.ApplyDomains(ctx, edit.ProfileID, entries, "manual", nil, discovery.ApplyOptions{BeforeWrite: guard})
 	if err != nil {
 		return nil, err
 	}
