@@ -19,20 +19,37 @@ import (
 	"configflow/internal/setupflow"
 )
 
-// Register adds the legacy and explicit-profile editor/provider routes.
-func Register(r *httpx.Router) {
+// Handler serves the Linux gateway editor and provider routes backed by
+// explicit services.
+type Handler struct {
+	Repo       *repo.Repository
+	Agents     *agents.Manager
+	RuleReader gateway.RuleSourceReader
+}
+
+// NewHandler constructs a Linux gateway Handler. Nil dependencies fall back to
+// context/package defaults until W11.
+func NewHandler(r *repo.Repository, m *agents.Manager, ruleReader gateway.RuleSourceReader) *Handler {
+	return &Handler{Repo: r, Agents: m, RuleReader: ruleReader}
+}
+
+// Register adds the legacy and explicit-profile editor/provider routes to r.
+func (h *Handler) Register(r *httpx.Router) {
 	for _, root := range []struct{ editor, provider, endpoint string }{{"/api/custom-config/linux-gateway", "/api/custom-config/linux-gateway", "custom_config"}, {"/api/profiles/<profile_id>/custom-config/linux-gateway", "/api/profiles/<profile_id>/linux-gateway", "profiles"}} {
 		for _, suffix := range []string{"", "/preview", "/restore", "/restore/preview"} {
 			methods := []string{"POST"}
 			if suffix == "" {
 				methods = append(methods, "GET")
 			}
-			r.Handle(methods, root.editor+suffix, root.endpoint+".linux_gateway_settings", auth.Require(editor))
+			r.Handle(methods, root.editor+suffix, root.endpoint+".linux_gateway_settings", auth.Require(h.editor))
 		}
-		r.GET(root.provider+"/rules/<path:rule_id>", root.endpoint+".linux_gateway_rule_provider", provider)
-		r.GET(root.provider+"/source/<path:rule_id>", root.endpoint+".linux_gateway_source_provider", provider)
+		r.GET(root.provider+"/rules/<path:rule_id>", root.endpoint+".linux_gateway_rule_provider", h.provider)
+		r.GET(root.provider+"/source/<path:rule_id>", root.endpoint+".linux_gateway_source_provider", h.provider)
 	}
 }
+
+// Register adds the legacy and explicit-profile editor/provider routes.
+func Register(r *httpx.Router) { NewHandler(nil, nil, nil).Register(r) }
 func responseError(err error, status int) (*httpx.Response, error) {
 	if errors.Is(err, setupflow.ErrReadSession) {
 		return httpx.Message(500, false, setupflow.ErrReadSession.Error()), nil
@@ -51,18 +68,34 @@ func responseError(err error, status int) (*httpx.Response, error) {
 	}
 	return nil, err
 }
-func editor(c *httpx.Ctx) (*httpx.Response, error) {
-	profile, err := repo.ResolveProfileID(c.Context(), c.Param("profile_id"))
+func (h *Handler) editor(c *httpx.Ctx) (*httpx.Response, error) {
+	resolveCtx := c.Context()
+	if h != nil && h.Repo != nil {
+		resolveCtx = repo.WithRepository(resolveCtx, h.Repo)
+	}
+	profile, err := repo.ResolveProfileID(resolveCtx, c.Param("profile_id"))
 	if err != nil {
 		return nil, err
 	}
-	r, err := repo.GetRepository(c.Context())
-	if err != nil {
-		return nil, err
+	var r *repo.Repository
+	if h != nil {
+		r = h.Repo
 	}
-	m, err := agents.Get(c.Context())
-	if err != nil {
-		return nil, err
+	if r == nil {
+		r, err = repo.GetRepository(c.Context())
+		if err != nil {
+			return nil, err
+		}
+	}
+	var m *agents.Manager
+	if h != nil {
+		m = h.Agents
+	}
+	if m == nil {
+		m, err = agents.Get(c.Context())
+		if err != nil {
+			return nil, err
+		}
 	}
 	op := draft.Operation{ProfileID: profile, BaseURL: strings.TrimRight(c.HostURL(), "/"), Write: c.Request.Method == "POST", Preview: strings.HasSuffix(c.Request.URL.Path, "/preview"), Restore: strings.Contains(c.Request.URL.Path, "/linux-gateway/restore")}
 	if op.Write {
@@ -77,16 +110,26 @@ func editor(c *httpx.Ctx) (*httpx.Response, error) {
 	}
 	return httpx.JSON(json.RawMessage(data)).NoStore(), nil
 }
-func provider(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) provider(c *httpx.Ctx) (*httpx.Response, error) {
 	// One committed typed read serves both the credential check and the
 	// rendered provider, so a token rotation can never split them.
-	profileID, err := repo.ResolveProfileID(c.Context(), c.Param("profile_id"))
+	resolveCtx := c.Context()
+	if h != nil && h.Repo != nil {
+		resolveCtx = repo.WithRepository(resolveCtx, h.Repo)
+	}
+	profileID, err := repo.ResolveProfileID(resolveCtx, c.Param("profile_id"))
 	if err != nil {
 		return nil, err
 	}
-	repository, err := repo.GetRepository(c.Context())
-	if err != nil {
-		return nil, err
+	var repository *repo.Repository
+	if h != nil {
+		repository = h.Repo
+	}
+	if repository == nil {
+		repository, err = repo.GetRepository(c.Context())
+		if err != nil {
+			return nil, err
+		}
 	}
 	native, err := repository.Config(c.Context(), profileID, nil)
 	if err != nil {
@@ -100,7 +143,12 @@ func provider(c *httpx.Ctx) (*httpx.Response, error) {
 	if !validation.Valid {
 		return httpx.Message(401, false, validation.Message), nil
 	}
-	gw := gateway.NewConfig(native)
+	var gw *gateway.Config
+	if h != nil && h.RuleReader != nil {
+		gw = gateway.NewConfigWithReader(native, h.RuleReader)
+	} else {
+		gw = gateway.NewConfig(native)
+	}
 	var content string
 	if strings.Contains(c.Request.URL.Path, "/linux-gateway/source/") {
 		content, err = gw.SourceYAML(c.Context(), c.Param("rule_id"), nil)

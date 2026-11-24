@@ -24,16 +24,33 @@ import (
 	"configflow/internal/setupflow"
 )
 
-type handler struct{ cache *clients.DiscoveryCache }
+// Handler serves the /api/client-devices routes backed by an explicit
+// Repository, Agent Manager, and per-handler discovery cache.
+type Handler struct {
+	Repo   *repo.Repository
+	Agents *agents.Manager
+	cache  *clients.DiscoveryCache
+}
 
-// Register creates an app-owned discovery cache and installs five HTTP routes.
-func Register(r *httpx.Router) {
-	h := &handler{cache: clients.NewDiscoveryCache(nil, nil)}
+// NewHandler constructs a Handler with an app-owned discovery cache. Nil
+// dependencies fall back to context/package defaults until W11.
+func NewHandler(r *repo.Repository, m *agents.Manager) *Handler {
+	return &Handler{Repo: r, Agents: m, cache: clients.NewDiscoveryCache(nil, nil)}
+}
+
+// Register installs the five HTTP routes on r.
+func (h *Handler) Register(r *httpx.Router) {
+	if h.cache == nil {
+		h.cache = clients.NewDiscoveryCache(nil, nil)
+	}
 	r.Handle([]string{"GET", "PUT"}, "/api/client-devices", "client_devices.client_devices", auth.Require(h.devices))
 	r.GET("/api/client-devices/discovery", "client_devices.client_device_discovery", auth.Require(h.discovery))
 	r.POST("/api/client-devices/fixed-ip/preview", "client_devices.preview_fixed_ip", auth.Require(h.preview))
 	r.POST("/api/client-devices/fixed-ip/apply", "client_devices.apply_fixed_ip", auth.Require(h.apply))
 }
+
+// Register creates an app-owned discovery cache and installs five HTTP routes.
+func Register(r *httpx.Router) { NewHandler(nil, nil).Register(r) }
 func config(ctx context.Context, db *repo.Repository, profile string) (json.RawMessage, error) {
 	value, err := db.ConfigWithOxiDNSAgents(lifecycle.Detach(ctx), profile, repo.ResourceRoots{})
 	if err != nil {
@@ -41,10 +58,17 @@ func config(ctx context.Context, db *repo.Repository, profile string) (json.RawM
 	}
 	return json.Marshal(value)
 }
-func manager(c *httpx.Ctx) (*repo.Repository, *agents.Manager, error) {
-	db, err := repo.GetRepository(c.Context())
-	if err != nil {
-		return nil, nil, err
+func (h *Handler) manager(c *httpx.Ctx) (*repo.Repository, *agents.Manager, error) {
+	db := h.Repo
+	if db == nil {
+		var err error
+		db, err = repo.GetRepository(c.Context())
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	if h.Agents != nil {
+		return db, h.Agents, nil
 	}
 	m, err := agents.New(c.Context(), db)
 	return db, m, err
@@ -250,8 +274,8 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 		clients.DeviceList
 	}{true, id, name, oxidns.Revision(p.Settings()), rows, list}, nil
 }
-func (h *handler) devices(c *httpx.Ctx) (*httpx.Response, error) {
-	db, m, err := manager(c)
+func (h *Handler) devices(c *httpx.Ctx) (*httpx.Response, error) {
+	db, m, err := h.manager(c)
 	if err != nil {
 		return nil, err
 	}
@@ -354,11 +378,11 @@ func setupGuard(ctx context.Context, db *repo.Repository, id string) error {
 	}
 	return nil
 }
-func (h *handler) fixed(db *repo.Repository) *clients.FixedIPService {
+func (h *Handler) fixed(db *repo.Repository) *clients.FixedIPService {
 	return &clients.FixedIPService{Repo: db, GuardSetup: setupGuard, Cache: h.cache}
 }
-func (h *handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
-	db, m, err := manager(c)
+func (h *Handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
+	db, m, err := h.manager(c)
 	if err != nil {
 		return nil, err
 	}
@@ -424,8 +448,8 @@ func (h *handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
 		clients.Discovery
 	}{true, id, value}, 200)
 }
-func (h *handler) preview(c *httpx.Ctx) (*httpx.Response, error) {
-	db, m, err := manager(c)
+func (h *Handler) preview(c *httpx.Ctx) (*httpx.Response, error) {
+	db, m, err := h.manager(c)
 	if err != nil {
 		return nil, err
 	}
@@ -458,8 +482,8 @@ func (h *handler) preview(c *httpx.Ctx) (*httpx.Response, error) {
 		Actions json.RawMessage `json:"actions"`
 	}{true, value.Token, safe}).NoStore(), nil
 }
-func (h *handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
-	db, m, err := manager(c)
+func (h *Handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
+	db, m, err := h.manager(c)
 	if err != nil {
 		return nil, err
 	}

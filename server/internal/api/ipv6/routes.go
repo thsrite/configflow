@@ -15,14 +15,30 @@ import (
 	"configflow/internal/repo"
 )
 
-// Register installs all five methods of the IPv6 readiness blueprint.
-func Register(r *httpx.Router) {
-	handler := auth.Require(operation)
+// Handler serves the IPv6 readiness blueprint backed by explicit services.
+type Handler struct {
+	Repo    *repo.Repository
+	Agents  *agents.Manager
+	Service *core.Service
+}
+
+// NewHandler constructs an IPv6 readiness Handler. Nil fields fall back to
+// context/package defaults until W11.
+func NewHandler(r *repo.Repository, m *agents.Manager, svc *core.Service) *Handler {
+	return &Handler{Repo: r, Agents: m, Service: svc}
+}
+
+// Register installs all five methods of the IPv6 readiness blueprint on r.
+func (h *Handler) Register(r *httpx.Router) {
+	handler := auth.Require(h.operation)
 	r.GET("/api/agents/<agent_id>/ipv6-readiness", "agents.ipv6_readiness_operation", handler)
 	r.GET("/api/agents/<agent_id>/ipv6-readiness/verify", "agents.ipv6_readiness_operation", handler)
 	r.Handle([]string{"GET", "PUT"}, "/api/agents/<agent_id>/ipv6-readiness/verification-settings", "agents.ipv6_readiness_operation", handler)
 	r.POST("/api/agents/<agent_id>/ipv6-readiness/<operation>", "agents.ipv6_readiness_operation", handler)
 }
+
+// Register installs all five methods of the IPv6 readiness blueprint.
+func Register(r *httpx.Router) { NewHandler(nil, nil, nil).Register(r) }
 
 type failureBody struct {
 	Success bool   `json:"success"`
@@ -33,7 +49,7 @@ type failureBody struct {
 func rejected(code string, status int, message string) (*httpx.Response, error) {
 	return httpx.JSONStatus(status, failureBody{false, code, message}).NoStore(), nil
 }
-func operation(c *httpx.Ctx) (*httpx.Response, error) {
+func (h *Handler) operation(c *httpx.Ctx) (*httpx.Response, error) {
 	op := c.Param("operation")
 	if op == "" {
 		if strings.HasSuffix(c.Request.URL.Path, "/verification-settings") {
@@ -89,15 +105,32 @@ func operation(c *httpx.Ctx) (*httpx.Response, error) {
 			return rejected("PROFILE_REQUIRED", 400, msgProfile)
 		}
 	}
-	profile, e := repo.ResolveProfileID(c.Context(), selected[0])
+	resolveCtx := c.Context()
+	if h != nil && h.Repo != nil {
+		resolveCtx = repo.WithRepository(resolveCtx, h.Repo)
+	}
+	profile, e := repo.ResolveProfileID(resolveCtx, selected[0])
 	if e != nil {
 		return nil, e
 	}
-	m, e := agents.Get(c.Context())
-	if e != nil {
-		return nil, e
+	var m *agents.Manager
+	var service *core.Service
+	if h != nil {
+		m = h.Agents
+		service = h.Service
 	}
-	service := &core.Service{Manager: m, Checker: apiagents.ContentChecker}
+	if m == nil && service != nil {
+		m = service.Manager
+	}
+	if m == nil {
+		m, e = agents.Get(c.Context())
+		if e != nil {
+			return nil, e
+		}
+	}
+	if service == nil {
+		service = &core.Service{Manager: m, Checker: apiagents.ContentChecker}
+	}
 	id := c.Param("agent_id")
 	var data any
 	switch op {

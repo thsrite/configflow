@@ -23,11 +23,25 @@ func Register(r *httpx.Router) {
 	Handler{DNSLoop: onboarding.CheckDNSLoop}.Register(r)
 }
 
-// Handler registers routes with their pure DNS-check and ownership collaborators.
-// Register supplies the shared checker in production.
+// Handler registers routes with their Repository, pure DNS-check and ownership
+// collaborators. Register supplies the shared checker in production.
 type Handler struct {
+	Repo            *repo.Repository
 	DNSLoop         onboarding.DNSLoopChecker
 	AdoptOwnedWrite onboarding.AdoptOwnedWrite
+	explicitAdopter bool
+}
+
+// NewHandler constructs a Handler with explicit collaborators. A nil
+// AdoptOwnedWrite fails closed with ErrSetupUnavailable when a pending setup
+// session exists, without falling back to the package-level hook.
+func NewHandler(r *repo.Repository, dnsLoop onboarding.DNSLoopChecker, adopt onboarding.AdoptOwnedWrite) *Handler {
+	return &Handler{
+		Repo:            r,
+		DNSLoop:         dnsLoop,
+		AdoptOwnedWrite: adopt,
+		explicitAdopter: true,
+	}
 }
 
 // Register adds all onboarding methods with the same authentication policy.
@@ -58,9 +72,13 @@ func body(c *httpx.Ctx) (json.RawMessage, error) {
 	return raw, nil
 }
 func (h Handler) handle(c *httpx.Ctx) (*httpx.Response, error) {
-	r, err := repo.GetRepository(c.Context())
-	if err != nil {
-		return nil, err
+	r := h.Repo
+	var err error
+	if r == nil {
+		r, err = repo.GetRepository(c.Context())
+		if err != nil {
+			return nil, err
+		}
 	}
 	op := onboarding.Operation{ProfileID: c.Param("profile_id"), BaseURL: strings.TrimRight(c.HostURL(), "/"), Write: c.Request.Method == "POST", Preview: strings.HasSuffix(c.Request.URL.Path, "/preview")}
 	if op.Write {
@@ -69,7 +87,12 @@ func (h Handler) handle(c *httpx.Ctx) (*httpx.Response, error) {
 			return httpx.Message(400, false, err.Error()).NoStore(), nil
 		}
 	}
-	service := onboarding.Service{Repository: r, DNSLoop: h.DNSLoop, AdoptOwnedWrite: h.AdoptOwnedWrite}
+	var service *onboarding.Service
+	if h.explicitAdopter {
+		service = onboarding.New(r, onboarding.ServiceOptions{DNSLoop: h.DNSLoop, AdoptOwnedWrite: h.AdoptOwnedWrite})
+	} else {
+		service = &onboarding.Service{Repository: r, DNSLoop: h.DNSLoop, AdoptOwnedWrite: h.AdoptOwnedWrite}
+	}
 	data, err := service.Execute(c.Context(), op)
 	if err != nil {
 		if errors.Is(err, onboarding.ErrSetupUnavailable) {

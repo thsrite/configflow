@@ -16,58 +16,93 @@ import (
 
 const msgDeletedProfile = "该配置空间已删除，请重新开始向导"
 
+// Handler serves the first-use setup wizard routes backed by an explicit
+// Repository and optional ExternalOwners.
+type Handler struct {
+	Repo   *repo.Repository
+	Owners *flow.ExternalOwners
+}
+
+// NewHandler constructs a setup Handler. Nil dependencies fall back to
+// context/package defaults until W11.
+func NewHandler(r *repo.Repository, owners *flow.ExternalOwners) *Handler {
+	return &Handler{Repo: r, Owners: owners}
+}
+
+// Register installs the five authenticated Flask-equivalent wizard methods on
+// router. GET's implicit HEAD is read-only, including collection and item
+// requests.
+func (h *Handler) Register(router *httpx.Router) {
+	router.Handle([]string{"GET", "POST"}, "/api/setup", "settings.setup_sessions", auth.Require(h.sessions))
+	router.Handle([]string{"GET", "PATCH"}, "/api/setup/<session_id>", "settings.setup_session", auth.Require(h.session))
+	router.POST("/api/setup/<session_id>/<operation>", "settings.setup_action", auth.Require(h.action))
+}
+
 // Register installs the five authenticated Flask-equivalent wizard methods.
 // GET's implicit HEAD is read-only, including collection and item requests.
-func Register(router *httpx.Router) {
-	router.Handle([]string{"GET", "POST"}, "/api/setup", "settings.setup_sessions", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		service, err := serviceFor(c)
-		if err != nil {
-			return respond(nil, err)
-		}
-		if c.Method() != "POST" {
-			out, err := service.Index(c.Context())
-			return respond(out, err)
-		}
-		body, err := requestBody(c)
-		if err != nil {
-			return respond(nil, err)
-		}
-		out, err := service.Create(c.Context(), body)
-		return respond(out, err)
-	}))
-	router.Handle([]string{"GET", "PATCH"}, "/api/setup/<session_id>", "settings.setup_session", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		service, err := serviceFor(c)
-		if err != nil {
-			return respond(nil, err)
-		}
-		if c.Method() != "PATCH" {
-			out, err := service.Get(c.Context(), c.Param("session_id"))
-			return respond(out, err)
-		}
-		body, err := requestBody(c)
-		if err != nil {
-			return respond(nil, err)
-		}
-		out, err := service.Patch(c.Context(), c.Param("session_id"), body)
-		return respond(out, err)
-	}))
-	router.POST("/api/setup/<session_id>/<operation>", "settings.setup_action", auth.Require(func(c *httpx.Ctx) (*httpx.Response, error) {
-		service, err := serviceFor(c)
-		if err != nil {
-			return respond(nil, err)
-		}
-		body, err := requestBody(c)
-		if err != nil {
-			return respond(nil, err)
-		}
-		out, err := service.Action(c.Context(), c.Param("session_id"), c.Param("operation"), body, strings.TrimRight(c.URLRoot(), "/"))
-		return respond(out, err)
-	}))
-}
-func serviceFor(c *httpx.Ctx) (*flow.Service, error) {
-	r, err := repo.GetRepository(c.Context())
+func Register(router *httpx.Router) { NewHandler(nil, nil).Register(router) }
+
+func (h *Handler) sessions(c *httpx.Ctx) (*httpx.Response, error) {
+	service, err := h.serviceFor(c)
 	if err != nil {
-		return nil, err
+		return respond(nil, err)
+	}
+	if c.Method() != "POST" {
+		out, err := service.Index(c.Context())
+		return respond(out, err)
+	}
+	body, err := requestBody(c)
+	if err != nil {
+		return respond(nil, err)
+	}
+	out, err := service.Create(c.Context(), body)
+	return respond(out, err)
+}
+
+func (h *Handler) session(c *httpx.Ctx) (*httpx.Response, error) {
+	service, err := h.serviceFor(c)
+	if err != nil {
+		return respond(nil, err)
+	}
+	if c.Method() != "PATCH" {
+		out, err := service.Get(c.Context(), c.Param("session_id"))
+		return respond(out, err)
+	}
+	body, err := requestBody(c)
+	if err != nil {
+		return respond(nil, err)
+	}
+	out, err := service.Patch(c.Context(), c.Param("session_id"), body)
+	return respond(out, err)
+}
+
+func (h *Handler) action(c *httpx.Ctx) (*httpx.Response, error) {
+	service, err := h.serviceFor(c)
+	if err != nil {
+		return respond(nil, err)
+	}
+	body, err := requestBody(c)
+	if err != nil {
+		return respond(nil, err)
+	}
+	out, err := service.Action(c.Context(), c.Param("session_id"), c.Param("operation"), body, strings.TrimRight(c.URLRoot(), "/"))
+	return respond(out, err)
+}
+
+func (h *Handler) serviceFor(c *httpx.Ctx) (*flow.Service, error) {
+	var r *repo.Repository
+	if h != nil {
+		r = h.Repo
+	}
+	if r == nil {
+		var err error
+		r, err = repo.GetRepository(c.Context())
+		if err != nil {
+			return nil, err
+		}
+	}
+	if h != nil && h.Owners != nil {
+		return flow.NewWithOptions(r, flow.Options{Owners: *h.Owners})
 	}
 	return flow.New(r)
 }
