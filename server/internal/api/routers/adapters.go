@@ -46,8 +46,8 @@ func recordNotice(c *httpx.Ctx, cfg json.RawMessage, r *spec.Router, report *cor
 		return notifications.SaveRouter(ctx, c.ProfileID, cfg, &router, nativeReport, raw, "")
 	})
 }
-func workspacePeers(c *httpx.Ctx, db *repo.Repository) ([]core.WorkspaceAgent, string, error) {
-	m, err := manager(c)
+func (h *Handler) workspacePeers(c *httpx.Ctx, db *repo.Repository) ([]core.WorkspaceAgent, string, error) {
+	m, err := h.manager(c.Context())
 	if err != nil {
 		return nil, "", err
 	}

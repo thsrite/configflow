@@ -27,9 +27,19 @@ import (
 	routerrulesync "configflow/internal/routers/rulesync"
 )
 
+// Deps supplies the collaborators for the router HTTP Handler.
+type Deps struct {
+	Repo     *repo.Repository
+	Agents   *agents.Manager
+	Routers  *core.Service
+	RuleSync *routerrulesync.RuleSyncService
+}
+
 // Handler serves authenticated router and upstream-reminder HTTP routes using
 // explicit router orchestration and rule-sync services.
 type Handler struct {
+	repo     *repo.Repository
+	agents   *agents.Manager
 	routers  *core.Service
 	rulesync *routerrulesync.RuleSyncService
 	pending  *core.PendingCache
@@ -37,14 +47,36 @@ type Handler struct {
 
 var logger = logx.Get("backend.routes.routers")
 
+// New constructs a router HTTP Handler with explicit dependencies. Nil fields
+// fall back to transitional process defaults until W11.
+func New(deps Deps) *Handler {
+	return &Handler{
+		repo:     deps.Repo,
+		agents:   deps.Agents,
+		routers:  deps.Routers,
+		rulesync: deps.RuleSync,
+		pending:  core.NewPendingCache(nil, nil),
+	}
+}
+
 // NewHandler constructs a router HTTP Handler with explicit services. Nil
 // services fall back to the transitional process defaults until W10/W11.
 func NewHandler(svc *core.Service, syncSvc *routerrulesync.RuleSyncService) *Handler {
-	return &Handler{
-		routers:  svc,
-		rulesync: syncSvc,
-		pending:  core.NewPendingCache(nil, nil),
+	return New(Deps{Routers: svc, RuleSync: syncSvc})
+}
+
+func (h *Handler) repository(ctx context.Context) (*repo.Repository, error) {
+	if h != nil && h.repo != nil {
+		return h.repo, nil
 	}
+	return repo.GetRepository(ctx)
+}
+
+func (h *Handler) manager(ctx context.Context) (*agents.Manager, error) {
+	if h != nil && h.agents != nil {
+		return h.agents, nil
+	}
+	return agents.Get(ctx)
 }
 
 func (h *Handler) routerService() *core.Service {
@@ -84,10 +116,9 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.GET("/api/agents/<agent_id>/upstream-routers", "agents.upstream_router_pending", h.auth(h.upstream))
 }
 func (h *Handler) service(c *httpx.Ctx) (*core.ManagementService, error) {
-	db, err := repo.GetRepository(c.Context())
+	db, err := h.repository(c.Context())
 	return h.routerService().Management(db), err
 }
-func manager(c *httpx.Ctx) (*agents.Manager, error) { return agents.Get(c.Context()) }
 func body(c *httpx.Ctx) json.RawMessage             { var raw json.RawMessage; _ = c.BindSilent(&raw); return raw }
 func fields(raw json.RawMessage) (map[string]json.RawMessage, bool) {
 	var out map[string]json.RawMessage
@@ -307,7 +338,7 @@ func (h *Handler) probe(c *httpx.Ctx) (*httpx.Response, error) {
 	}{result.OK, result, result.Message}, status, false)
 }
 func (h *Handler) inspectRouter(c *httpx.Ctx, db *repo.Repository, cfg json.RawMessage, r *spec.Router) (core.Driver, *core.Inspection, error) {
-	m, err := manager(c)
+	m, err := h.manager(c.Context())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -393,7 +424,7 @@ func (h *Handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 		}
 	}
 	_ = jsondecode.Unmarshal(raw, &confirmation)
-	m, err := manager(c)
+	m, err := h.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -525,7 +556,7 @@ func (h *Handler) upstream(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, err := manager(c)
+	m, err := h.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -594,7 +625,7 @@ func (h *Handler) sync(c *httpx.Ctx) (*httpx.Response, error) {
 			}
 			return public(c, cfg, map[string]any{"success": false, "message": message}, 409, false)
 		}
-		m, err := manager(c)
+		m, err := h.manager(c.Context())
 		if err != nil {
 			return nil, err
 		}
@@ -625,7 +656,7 @@ func (h *Handler) forwarding(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, err := manager(c)
+	m, err := h.manager(c.Context())
 	if err != nil {
 		return nil, err
 	}

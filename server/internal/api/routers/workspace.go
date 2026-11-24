@@ -76,7 +76,7 @@ func (h *Handler) workspaceBody(c *httpx.Ctx, s *core.ManagementService, cfg *co
 			return notFound()
 		}
 	}
-	peers, defaultProfile, err := workspacePeers(c, s.Repo)
+	peers, defaultProfile, err := h.workspacePeers(c, s.Repo)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +147,7 @@ func (h *Handler) previewWorkspace(c *httpx.Ctx) (*httpx.Response, error) {
 	if expected != actual {
 		return httpx.Message(409, false, messageDraftStale), nil
 	}
-	peers, _, err := workspacePeers(c, s.Repo)
+	peers, _, err := h.workspacePeers(c, s.Repo)
 	if err != nil {
 		return nil, err
 	}
