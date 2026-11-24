@@ -9,8 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -231,66 +229,6 @@ func stepBSaveFailedProbe(t *testing.T, failure *device.RouterError) {
 	}
 	if revision != before+1 || len(rows) != 2 || !testjson.Equal(replacement, rows[0]) || !testjson.Equal(other, rows[1]) {
 		t.Fatal("failed probe not saved in isolation", actual)
-	}
-}
-
-// The one pre-existing broad read-state corpus now has an intentional Python
-// bug difference. Prove the exact two corrected entries, then compare everything
-// else (including requests, tables and every unrelated report field) unchanged.
-func checkIkuaiSuffixState(t *testing.T, py, goResult ikuaiOutcome, pyState, goState routerfake.IkuaiState) {
-	t.Helper()
-	value := jsonComparable(t, goResult.Result).(map[string]any)
-	state := value["state"].(map[string]any)
-	for _, section := range []string{"routes", "active_routes"} {
-		expectedID := "3"
-		if section == "active_routes" {
-			expectedID = "active:3"
-		}
-		rows := state[section].([]any)
-		filtered := []any{}
-		found := 0
-		for _, raw := range rows {
-			row := raw.(map[string]any)
-			if row["id"] == expectedID {
-				if row["dst"] != "198.51.100.0/24" {
-					t.Fatalf("wrong suffix route: %v", row)
-				}
-				found++
-			} else {
-				filtered = append(filtered, raw)
-			}
-		}
-		if found != 1 {
-			t.Fatalf("corrected %s entry count=%d", section, found)
-		}
-		state[section] = filtered
-	}
-	goResult.Result = value
-	compareIkuai(t, "outcome except corrected suffix routes", py, goResult)
-	compareIkuai(t, "requests", pyState.Calls, goState.Calls)
-	compareIkuai(t, "tables", pyState.Tables, goState.Tables)
-	compareIkuai(t, "stale", pyState.Stale, goState.Stale)
-}
-
-func TestR05StepBPythonBugEvidence(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tc := ikuaiCase{action: "release", state: routerfake.IkuaiState{}, input: map[string]any{"ops": []map[string]any{routeAdd("198.51.100.0/24", "cf-stepb")}, "always_rollback": true}}
-	_, fake, endpoint := stepBIkuai(t, tc.state, false)
-	py := runPythonIkuai(t, filepath.Join(home, "cf-test/.venv/bin/python"), filepath.Clean(filepath.Join(wd, "../../..")), filepath.Join(wd, "testdata/r05_reference.py"), endpoint, tc)
-	if py.Error == nil || len(fake.Snapshot().Tables["static_rt"]) != 1 || len(py.Rollback) != 1 || py.Rollback[0]["error"] == nil {
-		t.Fatalf("Python suffix failure not reproduced: %s", outcomeText(py))
-	}
-	fake.Reset(tc.state)
-	result := runGoIkuai(t, tc, endpoint)
-	if result.Error != nil || len(fake.Snapshot().Tables["static_rt"]) != 0 || len(result.Rollback) != 1 || result.Rollback[0]["error"] != nil {
-		t.Fatalf("Go suffix cleanup failed: %s", outcomeText(result))
 	}
 }
 

@@ -3,10 +3,6 @@ package model
 import (
 	"bytes"
 	"encoding/json"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -98,61 +94,6 @@ func TestAgentJournalIssuesHideIdentifiers(t *testing.T) {
 			t.Fatalf("missing schema issue: %v", issues)
 		}
 	}
-}
-
-func TestHRPythonWriters(t *testing.T) {
-	if os.Getenv("CONFIGFLOW_PY") == "" {
-		t.Skip("set CONFIGFLOW_PY for Python HR writers")
-	}
-	path := filepath.Join(t.TempDir(), "synthetic.json")
-	cmd := exec.Command(os.Getenv("CONFIGFLOW_PY"), "testdata/hr_interchange.py", path)
-	cmd.Env = append(os.Environ(), "PYTHONDONTWRITEBYTECODE=1")
-	if cmd.Run() != nil {
-		t.Fatal("Python synthetic HR writers failed (output suppressed)")
-	}
-	data, err := os.ReadFile(path)
-	var rows []interchangeRow
-	if err != nil || json.Unmarshal(data, &rows) != nil {
-		t.Fatal("synthetic rows read failed")
-	}
-	var agent Agent
-	if agent.UnmarshalJSON(rows[0].Value) != nil || agent.OxiDNSHAState == nil || len(agent.OxiDNSHAState.Members) != 2 {
-		t.Fatal("Python leftover member IDs lost")
-	}
-	counts := map[string]int{}
-	for _, row := range rows {
-		var target json.Unmarshaler
-		switch row.Name {
-		case "Agent":
-			target = &Agent{}
-		case "Router":
-			target = &Router{}
-		case "RouterRuleSyncReceipt":
-			target = &RouterRuleSyncReceipt{}
-		default:
-			t.Fatal("unknown synthetic schema")
-		}
-		if target.UnmarshalJSON(row.Value) != nil {
-			t.Fatal("Python HR decode failed")
-		}
-		assertStoredTree(t, row.Value, reflect.ValueOf(target), counts)
-	}
-	// The boundary starts from the Go-written form (as TestTypesPythonRoundTrip
-	// does): plain records drop the nulls the Python writers leave and write
-	// always-written members (dns_follow.upstream_index, O18 T1b), which the
-	// exact Python audit would otherwise report.
-	for i, row := range rows {
-		value := reflect.New(map[string]reflect.Type{"Agent": reflect.TypeFor[Agent](), "Router": reflect.TypeFor[Router](), "RouterRuleSyncReceipt": reflect.TypeFor[RouterRuleSyncReceipt]()}[row.Name])
-		if _, err := DecodeStored(row.Value, value.Interface(), ""); err != nil {
-			t.Fatal("Python HR decode failed")
-		}
-		encoded, err := Marshal(value.Interface())
-		if err != nil {
-			t.Fatal("Go HR encode failed")
-		}
-		rows[i].Value = encoded
-	}
-	runTypesInterchange(t, rows, false)
 }
 
 // TestRouterOwnershipPreservation (O18 T1c): Router is a plain record. A

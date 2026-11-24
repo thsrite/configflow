@@ -1,5 +1,7 @@
 # Module-level workflow (from 2026-11-15)
 
+> **Post-switch Go-only tree (Option C):** Python backend and live Python/Flask differential stages are retired. Verification now uses pure Go tests (`go test -race ./...`, `internal/skipaudit` with empty allowlist, committed `testgolden` golden replays), the Agent module checks, fuzzing, frontend typecheck/vitest, and Go-vs-Go `proddiff` (`PRODDIFF_MODE=go`, `PRODDIFF_COMPARATOR=go`).
+
 Replaces the package-by-package fan-out described earlier in `HANDOFF.md`. Agents that port or review a
 module read `PORTING.md` (rules, API reference) and their domain's `PROGRESS-<domain>.md`; nothing else is
 required to start.

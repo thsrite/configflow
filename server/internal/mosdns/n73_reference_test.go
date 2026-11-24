@@ -162,9 +162,9 @@ func nativeDNSContainer(node *yamlx.Node) bool {
 // in ordinary tests. Live checks use the exact same script and request bytes.
 type goldenOracle struct{ lines *testgolden.Lines }
 
-func newGoldenOracle(t *testing.T, script string) *goldenOracle {
+func newGoldenOracle(t *testing.T) *goldenOracle {
 	t.Helper()
-	return &goldenOracle{lines: testgolden.NewLines(t, script)}
+	return &goldenOracle{lines: testgolden.NewLines(t)}
 }
 func (o *goldenOracle) Call(t *testing.T, request any) *mosObj {
 	t.Helper()

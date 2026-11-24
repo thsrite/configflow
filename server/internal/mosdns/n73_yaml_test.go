@@ -152,7 +152,7 @@ func TestN73SharedUpstreamMetadataMatchesPython(t *testing.T) {
 		t.Fatal("synthetic regression fixture changed")
 	}
 	output, err, _ := callRow("generate", row.GetList("args"))
-	oracle := newGoldenOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	oracle := newGoldenOracle(t)
 	if !nativeR5Outcome(t, oracle, row, output, err) && !nativeMosDNSOutcome(t, oracle, row, output, err) {
 		t.Fatalf("shared metadata output: %v", err)
 	}

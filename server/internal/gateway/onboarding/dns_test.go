@@ -5,14 +5,61 @@ import (
 	"context"
 	"encoding/json"
 	"net/netip"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"reflect"
 	"testing"
-	"time"
 
 	"configflow/internal/yamlx"
 )
+
+func noLoop(*yamlx.Node, []netip.Addr) (bool, error) { return false, nil }
+
+func normalized(t *testing.T, raw json.RawMessage) any {
+	t.Helper()
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatal(err)
+	}
+	var walk func(any) any
+	walk = func(v any) any {
+		switch x := v.(type) {
+		case map[string]any:
+			for key, value := range x {
+				if s, ok := value.(string); ok && (key == "custom_config" || key == "native_config") && s != "" {
+					node, err := yamlx.Parse([]byte(s))
+					if err == nil {
+						b, err := yamlx.ToJSON(node)
+						if err != nil {
+							t.Fatal(err)
+						}
+						var parsed any
+						if err = json.Unmarshal(b, &parsed); err != nil {
+							t.Fatal(err)
+						}
+						x[key] = walk(parsed)
+						continue
+					}
+				}
+				x[key] = walk(value)
+			}
+		case []any:
+			for i, value := range x {
+				x[i] = walk(value)
+			}
+		}
+		return v
+	}
+	return walk(value)
+}
+
+func equalJSON(t *testing.T, label string, got, want json.RawMessage) {
+	t.Helper()
+	a, b := normalized(t, got), normalized(t, want)
+	if !reflect.DeepEqual(a, b) {
+		ga, _ := json.Marshal(a)
+		wa, _ := json.Marshal(b)
+		t.Errorf("%s\ngot  %s\nwant %s", label, ga, wa)
+	}
+}
 
 func TestSharedDNSPreparationPreservesBase(t *testing.T) {
 	for _, source := range []string{"", "future: &future {keep: true}\nreference: *future\ndns: {}\n", "future: keep\ndns:\n  nameserver: [tls://192.0.2.53]\n"} {
@@ -72,37 +119,6 @@ func TestRealDNSLoopPreparation(t *testing.T) {
 			_, err = PrepareMihomoDNS(document, tc.hosts, CheckDNSLoop)
 			if (err != nil) != tc.blocked {
 				t.Fatalf("shared checker blocked=%v err=%v", tc.blocked, err)
-			}
-			if os.Getenv("CONFIGFLOW_DIFF") != "1" {
-				return
-			}
-			input, _ := json.Marshal(struct {
-				Source string       `json:"source"`
-				Hosts  []netip.Addr `json:"hosts"`
-			}{tc.source, tc.hosts})
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-			defer cancel()
-			cmd := exec.CommandContext(ctx, filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), "-c", `import json,sys;from backend.common.gateway_onboarding import _prepare_mihomo_dns,GatewayOnboardingError
-x=json.load(sys.stdin)
-try:
- _prepare_mihomo_dns({'mihomo':{'custom_config':x['source']}},local_addresses=x['hosts'] or []);json.dump({'blocked':False},sys.stdout)
-except GatewayOnboardingError as e: json.dump({'blocked':True,'message':str(e)},sys.stdout,ensure_ascii=False)`)
-			cmd.Dir = "../../../.."
-			cmd.Env = append(os.Environ(), "PYTHONPATH=.")
-			cmd.Stdin = bytes.NewReader(input)
-			out, pyerr := cmd.CombinedOutput()
-			if pyerr != nil {
-				t.Fatalf("Python loop: %v %s", pyerr, out)
-			}
-			var expected struct {
-				Blocked bool   `json:"blocked"`
-				Message string `json:"message"`
-			}
-			if e := json.Unmarshal(out, &expected); e != nil || expected.Blocked != tc.blocked {
-				t.Fatalf("Python boundary %s %v", out, e)
-			}
-			if err != nil && err.Error() != expected.Message {
-				t.Fatalf("Chinese error Go=%v Python=%s", err, expected.Message)
 			}
 		})
 	}

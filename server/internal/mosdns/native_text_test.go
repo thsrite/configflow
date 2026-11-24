@@ -11,7 +11,7 @@ func TestNativeRuleTextAgainstPython(t *testing.T) {
 	// These are domain labels, rule-type keywords and classical rule payloads,
 	// not opaque passwords or IDs. Full Unicode case mapping retains the
 	// existing sharp-s, dotted-I and contextual sigma behavior.
-	oracle := newGoldenOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	oracle := newGoldenOracle(t)
 	tests := []struct {
 		name, fn, input string
 		native, python  any

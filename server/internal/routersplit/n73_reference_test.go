@@ -15,7 +15,7 @@ type nativeOracle struct{ lines *testgolden.Lines }
 
 func newNativeOracle(t *testing.T) *nativeOracle {
 	t.Helper()
-	return &nativeOracle{lines: testgolden.NewLines(t, "server/internal/routersplit/testdata/n73_reference.py")}
+	return &nativeOracle{lines: testgolden.NewLines(t)}
 }
 
 func rowYAML(row recordedRow) (string, bool) {

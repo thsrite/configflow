@@ -24,16 +24,6 @@ func installedOwner() *InstallationOwner {
 		return GatewayStatus{IPv4Forwarding: &ForwardingStatus{Current: "1", Persisted: pointer(true)}, TUN: &TUNStatus{Configured: pointer(true), Present: pointer(true)}, Managed: ManagedStatus{Active: true, Healthy: pointer(true)}}, nil
 	}}
 }
-func TestCoreFingerprintMatchesPython(t *testing.T) {
-	raw := json.RawMessage(`{"proxy_groups":[],"mihomo":{"custom_config":"dns: {}\n"},"rule_configs":[{"id":"synthetic","number":1234567890123456789}],"system_config":{"future":"中文"},"_revision":123,"routers":{"items":[]}}`)
-	want := pythonSetup(t, `import json,sys;from backend.common.setup_completion import core_fingerprint;json.dump(core_fingerprint(json.load(sys.stdin)),sys.stdout)`, raw)
-	got, err := CoreFingerprint(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, _ := json.Marshal(got)
-	equalJSON(t, encoded, want)
-}
 func TestCompletionChecksAndPublicationContentGuards(t *testing.T) {
 	s, ctx := preparedFixture(t, "gateway")
 	body := json.RawMessage(`{"domain_rules":{"direct":[],"proxy":[]},"local_dns":"https://192.0.2.53/dns-query"}`)

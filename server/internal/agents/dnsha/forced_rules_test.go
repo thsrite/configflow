@@ -9,9 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -130,9 +127,6 @@ func TestManualPairRulesForcesUnchangedLibraryMaterialization(t *testing.T) {
 	if fetches.Load() <= previous {
 		t.Fatal("library scheduler did not refresh the remote bytes")
 	}
-	if os.Getenv("CONFIGFLOW_DIFF") == "1" {
-		assertPythonForcedLibrary(t, source, prepared.Bundle)
-	}
 	if _, _, err = f.s.PairRules(f.ctx, "primary", "POST"); err != nil {
 		t.Fatal(err)
 	}
@@ -176,47 +170,5 @@ func TestManualPairRulesForcesUnchangedLibraryMaterialization(t *testing.T) {
 		if !found {
 			t.Fatal("delivered pair bundle lacked the freshly downloaded library")
 		}
-	}
-}
-
-func assertPythonForcedLibrary(t *testing.T, source *deploy.Source, b *deploy.Bundle) {
-	t.Helper()
-	root, err := filepath.Abs("../../../..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := source.Raw()
-	if err != nil {
-		t.Fatal(err)
-	}
-	archive, err := b.Archive()
-	if err != nil {
-		t.Fatal(err)
-	}
-	input, err := json.Marshal(struct {
-		Source   json.RawMessage `json:"source"`
-		Manifest deploy.Manifest `json:"manifest"`
-		Archive  []byte          `json:"archive"`
-		Version  string          `json:"version"`
-	}{raw, b.Manifest(), archive, b.ConfigVersion()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), "server/internal/agents/dnsha/testdata/forced_library.py")
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "PYTHONPATH=.", "DATA_DIR="+t.TempDir())
-	cmd.Stdin = bytes.NewReader(input)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("Python forced library: %v %s", err, stderr.String())
-	}
-	var result struct{ Fresh, Old, Reload bool }
-	if err = json.Unmarshal(out, &result); err != nil {
-		t.Fatal(err, string(out))
-	}
-	if !result.Fresh || result.Old || !result.Reload {
-		t.Fatal("Python forced materialization diverged", string(out))
 	}
 }

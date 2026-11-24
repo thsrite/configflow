@@ -5,12 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
-	"time"
 )
 
 func rawFixture(t testing.TB) *Document {
@@ -134,146 +131,5 @@ func TestOpaqueMetadata(t *testing.T) {
 	}
 	if got := must(s.Meta("future"))(t); !bytes.Equal(got, changed) {
 		t.Fatal("metadata-only write missing")
-	}
-}
-
-// TestStoredRoundTrip never emits documents or SQLite values, even on failure.
-// The private source is opened read-only by Python's SQLite backup API. Only
-// disposable copies are modified, and t.TempDir removes them on success/failure.
-func TestStoredRoundTrip(t *testing.T) {
-	interpreter, root := os.Getenv("CONFIGFLOW_PY"), os.Getenv("CONFIGFLOW_REPO")
-	if interpreter == "" || root == "" {
-		t.Skip("CONFIGFLOW_PY and CONFIGFLOW_REPO are required for live Python interchange")
-	}
-	python := func(t *testing.T, args ...string) {
-		t.Helper()
-		if len(args) > 1 && strings.HasPrefix(args[0], "audit") {
-			pythonView(t, args[1]) // Python reads the version-1 layout (O17)
-		}
-		cmd := exec.Command(interpreter, append([]string{"testdata/raw_crosscheck.py"}, args...)...)
-		cmd.Env = append(os.Environ(), "CONFIGFLOW_REPO="+root, "PYTHONDONTWRITEBYTECODE=1")
-		// Suppress interpreter diagnostics: they can include private row contents.
-		if err := cmd.Run(); err != nil {
-			t.Fatalf("Python storage boundary failed (%T)", err)
-		}
-	}
-	run := func(t *testing.T, path string, repositoryAudit bool) {
-		auditMode := func(mode string) string {
-			if repositoryAudit {
-				return mode + "-repository"
-			}
-			return mode
-		}
-		s := New(path, func() time.Duration { return 5 * time.Second })
-		if err := s.Check(); err != nil {
-			t.Fatal("store check failed")
-		}
-		base, err := s.Load()
-		if err != nil {
-			t.Fatal("store load failed")
-		}
-		before := fieldRows(t, path)
-		stamp, err := s.Fingerprint()
-		if err != nil {
-			t.Fatal("fingerprint failed")
-		}
-		if _, changed, err := s.Commit(t.Context(), base, base.Document, nil); err != nil || changed {
-			t.Fatal("no-op commit changed database")
-		}
-		now, err := s.Fingerprint()
-		if err != nil || now != stamp {
-			t.Fatal("no-op fingerprint changed")
-		}
-		// Marshal only an opaque row envelope to a private temporary expectation.
-		expected := filepath.Join(filepath.Dir(path), "expected.json")
-		data, err := json.Marshal(base.Document)
-		if err != nil {
-			t.Fatal("expectation encode failed")
-		}
-		if err := os.WriteFile(expected, data, 0o600); err != nil {
-			t.Fatal("expectation write failed")
-		}
-		python(t, auditMode("audit"), path, expected)
-		rows := must(documentRows(base.Document))(t)
-		doc, err := buildDocument(rows.rootOrder, rows.sections, rows.fields)
-		if err != nil {
-			t.Fatal("copy rows failed")
-		}
-		doc.Order = append(doc.Order, "n8_2_go_probe")
-		doc.Root = append(doc.Root, Field{Name: "n8_2_go_probe", Value: json.RawMessage(`{"unknown":{"z":1.0,"a":"例 <>&"},"bad_type":"kept"}`)})
-		updated, changed, err := s.Commit(t.Context(), base, doc, nil)
-		if err != nil || !changed {
-			t.Fatal("Go commit failed")
-		}
-		after := fieldRows(t, path)
-		for key, value := range before {
-			if after[key] != value {
-				t.Fatal("Go commit changed an unrelated row")
-			}
-		}
-		if len(after) != len(before)+1 {
-			t.Fatal("Go commit added unexpected rows")
-		}
-		data, err = json.Marshal(updated.Document)
-		if err != nil {
-			t.Fatal("expectation encode failed")
-		}
-		if err := os.WriteFile(expected, data, 0o600); err != nil {
-			t.Fatal("expectation write failed")
-		}
-		python(t, auditMode("audit-edit"), path, expected)
-		final, err := s.Load()
-		if err != nil || final.Head.Generation != updated.Head.Generation+1 {
-			t.Fatal("Go cannot read Python commit")
-		}
-		parsed := false
-		for _, field := range final.Document.Root {
-			if field.Name == "n8_2_python_probe" {
-				parsed = bytes.Equal(field.Value, []byte(`{"written":"Python","number":1.0}`))
-			}
-		}
-		if !parsed {
-			t.Fatal("Python edit missing or changed")
-		}
-		python(t, auditMode("audit-final"), path, expected)
-		t.Logf("rows=%d: no-op unchanged; Go→Python→Go→Python passed; unrelated rows preserved", len(before))
-	}
-	t.Run("committed-go-fixture", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), Filename)
-		s := New(path, seconds(2))
-		if _, err := s.Create(rawFixture(t), nil); err != nil {
-			t.Fatal(err)
-		}
-		pythonView(t, path) // the round trip continues in the version-1 layout Python reads (O17)
-		run(t, path, false)
-	})
-	t.Run("committed-python-fixture", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), Filename)
-		python(t, "fixture", path, "testdata/raw_rows.json")
-		run(t, path, false)
-	})
-	if snapshot := os.Getenv("CONFIGFLOW_SNAPSHOT"); snapshot != "" {
-		t.Run("private-snapshot", func(t *testing.T) {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				t.Fatal("locate private test directory failed")
-			}
-			runs := filepath.Join(home, "cf-prod-snapshot", "runs")
-			if err := os.MkdirAll(runs, 0o700); err != nil {
-				t.Fatal("create private test directory failed")
-			}
-			directory, err := os.MkdirTemp(runs, "n8-2-roundtrip-")
-			if err != nil {
-				t.Fatal("create private copy directory failed")
-			}
-			t.Cleanup(func() {
-				if err := os.RemoveAll(directory); err != nil {
-					t.Error("remove private test copy failed")
-				}
-			})
-			path := filepath.Join(directory, Filename)
-			python(t, "copy", filepath.Join(snapshot, Filename), path)
-			run(t, path, true)
-		})
 	}
 }

@@ -94,13 +94,6 @@ func TestR09ProductionTimeoutAndRawWire(t *testing.T) {
 		f.ServeHTTP(w, r)
 	}))
 	defer srv.Close()
-	// Python uses its real requests transport. Record raw bytes before the fake
-	// decodes them, so no-body and the JSON literal null cannot collapse together.
-	_ = r09Python(t, "r09_reference.py", tc, srv.URL)
-	mu.Lock()
-	pythonWire := append([]r09Wire{}, wire...)
-	wire = nil
-	mu.Unlock()
 	f.Reset(tc.State)
 	client := &r09TimeoutHTTP{DeviceHTTP: devhttp.New(devhttp.Config{BasicAuth: true, Username: "synthetic-user", Password: "synthetic-password"})}
 	d := NewRouterOSWithHTTP(srv.URL, client)
@@ -112,20 +105,18 @@ func TestR09ProductionTimeoutAndRawWire(t *testing.T) {
 	mu.Lock()
 	goWire := append([]r09Wire{}, wire...)
 	mu.Unlock()
-	for _, records := range [][]r09Wire{pythonWire, goWire} {
-		for _, call := range records {
-			if call.Method == "GET" || call.Method == "DELETE" {
-				if call.Body != "" || call.ContentType != "" {
-					t.Fatalf("bodyless request has %q %q", call.Body, call.ContentType)
-				}
-			} else if call.Method == "PUT" {
-				if call.ContentType != "application/json" {
-					t.Fatalf("PUT type %q", call.ContentType)
-				}
+	for _, call := range goWire {
+		if call.Method == "GET" || call.Method == "DELETE" {
+			if call.Body != "" || call.ContentType != "" {
+				t.Fatalf("bodyless request has %q %q", call.Body, call.ContentType)
 			}
-			if call.Authorization != "Basic c3ludGhldGljLXVzZXI6c3ludGhldGljLXBhc3N3b3Jk" {
-				t.Fatal("unexpected auth header")
+		} else if call.Method == "PUT" {
+			if call.ContentType != "application/json" {
+				t.Fatalf("PUT type %q", call.ContentType)
 			}
+		}
+		if call.Authorization != "Basic c3ludGhldGljLXVzZXI6c3ludGhldGljLXBhc3N3b3Jk" {
+			t.Fatal("unexpected auth header")
 		}
 	}
 	firstPut := func(wire []r09Wire) string {
@@ -138,9 +129,6 @@ func TestR09ProductionTimeoutAndRawWire(t *testing.T) {
 	}
 	if got := firstPut(goWire); got != `{"address":"192.0.2.2/32","comment":"cf-dnsguard:bypass","disabled":"false","list":"cf-dnsguard-bypass"}` {
 		t.Fatalf("raw Go PUT %q", got)
-	}
-	if got := firstPut(pythonWire); got != `{"list": "cf-dnsguard-bypass", "address": "192.0.2.2/32", "comment": "cf-dnsguard:bypass", "disabled": "false"}` {
-		t.Fatalf("raw Python PUT %q", got)
 	}
 	client.mu.Lock()
 	defer client.mu.Unlock()
@@ -245,17 +233,6 @@ func TestR09ForeignHijackCommentBlocksPublish(t *testing.T) {
 				f := routerfake.New(tc.State.Tables)
 				srv := httptest.NewServer(f)
 				defer srv.Close()
-				var python struct {
-					Steps []struct {
-						Plan struct{ Blockers []string }
-					}
-				}
-				if err := json.Unmarshal(r09Python(t, "r09_reference.py", tc, srv.URL), &python); err != nil {
-					t.Fatal(err)
-				}
-				if len(python.Steps[0].Plan.Blockers) != 0 {
-					t.Fatalf("Python reference no longer permits collision: %s", r09Raw(python))
-				}
 				result := r09Go(t, tc, f, srv.URL)
 				plan := result.Steps[0].Plan
 				if plan.Status != "unknown" || !reflect.DeepEqual(plan.Blockers, []string{dnsguard.MessageHijackCollision}) || len(plan.Ops) != 0 || len(result.Writes) != 0 {
@@ -529,17 +506,6 @@ func TestR09TableLocalIDsSurviveRestore(t *testing.T) {
 	tc.Previous = r09Raw(manifest)
 	tc.Settings.Enabled = false
 	tc.Steps = []r09Step{{Action: "roundtrip"}}
-	var python struct {
-		Steps []struct {
-			Error *r09Error `json:"error"`
-		} `json:"steps"`
-	}
-	if err = json.Unmarshal(r09Python(t, "r09_reference.py", tc, srv.URL), &python); err != nil {
-		t.Fatal(err)
-	}
-	if len(python.Steps) != 1 || python.Steps[0].Error == nil || python.Steps[0].Error.Class != "RouterError" || !strings.Contains(python.Steps[0].Error.Message, ros.PathAddresses) {
-		t.Fatalf("expected the real Python cross-table remap defect, got %s", r09Raw(python))
-	}
 	got := r09Go(t, tc, f, srv.URL)
 	if len(got.Steps) != 1 || got.Steps[0].Error != nil {
 		t.Fatalf("Go restore: %s", r09Raw(got))

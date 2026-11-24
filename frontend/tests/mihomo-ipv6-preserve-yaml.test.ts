@@ -17,7 +17,7 @@ vi.mock('@/lib/yamlPreserve', async importOriginal => {
 })
 
 
-const template: string = JSON.parse(readFileSync(resolve(process.cwd(), '../backend/config_template.json'), 'utf8')).mihomo.custom_config
+const template: string = JSON.parse(readFileSync(resolve(process.cwd(), '../server/internal/repo/config_template.json'), 'utf8')).mihomo.custom_config
 
 const custom = '# 自定义配置   \n' + `mixed-port: 7890
 allow-lan: true

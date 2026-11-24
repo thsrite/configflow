@@ -157,7 +157,7 @@ func nativeOracle(t *testing.T) *testgolden.Lines {
 	if oracle := nativeOracles.byTest[t]; oracle != nil {
 		return oracle
 	}
-	oracle := testgolden.NewLines(t, "server/internal/oxidns/testdata/n89_reference.py")
+	oracle := testgolden.NewLines(t)
 	nativeOracles.byTest[t] = oracle
 	t.Cleanup(func() { nativeOracles.Lock(); delete(nativeOracles.byTest, t); nativeOracles.Unlock() })
 	return oracle

@@ -5,52 +5,11 @@ import (
 	"configflow/internal/httpx"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
-
-func TestNativeHistoryInterchangeAndExactCounters(t *testing.T) {
-	repository, ctx := statsRepository(t)
-	clock := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
-	h := NewHandler(repository)
-	h.Now = func() time.Time { return clock }
-	if _, err := h.recordHistory(ctx, Counts{Nodes: 2}, true); err != nil {
-		t.Fatal(err)
-	}
-	path, err := repository.ProfilePath("default", HistoryFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := `import json,sys
-p=sys.argv[1];v=json.load(open(p));assert v['samples'][0]['nodes']==2
-v['samples'][0]['nodes']=float('nan');v['samples'][0]['rules']=9007199254740993123456789;v['future']={'keep':1}
-json.dump(v,open(p,'w'))`
-	if out, err := exec.CommandContext(t.Context(), "python3", "-c", script, path).CombinedOutput(); err != nil {
-		t.Fatalf("Python: %s %v", out, err)
-	}
-	clock = clock.Add(SampleInterval)
-	history, err := h.recordHistory(ctx, Counts{Nodes: 3}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if *history["nodes"][0] != "0" || *history["rules"][0] != "9007199254740993123456789" || *history["nodes"][1] != "3" {
-		t.Fatal(history)
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !json.Valid(raw) {
-		t.Fatal("nonfinite output", string(raw))
-	}
-	if out, err := exec.CommandContext(t.Context(), "python3", "-c", `import json,sys
-v=json.load(open(sys.argv[1]));assert v['samples'][0]['nodes'] is None;assert v['samples'][0]['rules']==9007199254740993123456789;assert 'future' not in v`, path).CombinedOutput(); err != nil {
-		t.Fatalf("Python reread: %s %v", out, err)
-	}
-}
 
 func TestNativeOverviewOverflowIsMissingAndPreservesSamples(t *testing.T) {
 	repository, ctx := statsRepository(t)

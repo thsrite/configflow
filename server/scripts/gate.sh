@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
-# Merge gate; run on a test server, never on the Mac. See gate.md.
+# Merge gate (no Python); run on a test server, never on the Mac. See gate.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 pflag=()
 if [[ ${1:-} == -p ]]; then pflag=(-p="${2:?missing -p value}"); shift 2; fi
 stage=${GATE_ONLY:-all}
-case "$stage" in all|core|agent|compare|proddiff|difftest|pyref|frontend) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
-# proddiff reference: python (default until WP11) or go (Go baseline tree vs this tree).
-proddiff_mode=${PRODDIFF_MODE:-python}
+case "$stage" in all|core|agent|compare|proddiff|frontend) ;; *) echo "Unknown GATE_ONLY stage: $stage" >&2; exit 2 ;; esac
+# proddiff: Go baseline tree vs this tree using the Go comparator.
+proddiff_mode=${PRODDIFF_MODE:-go}
 case "$proddiff_mode" in
-  python) ;;
-  go) [[ -d ${PRODDIFF_BASE_TREE:-}/server ]] || { echo 'PRODDIFF_MODE=go needs PRODDIFF_BASE_TREE=<baseline tree>' >&2; exit 2; } ;;
+  go) ;;
   *) echo "Unknown PRODDIFF_MODE: $proddiff_mode" >&2; exit 2 ;;
 esac
-# proddiff comparator: python run.py (default until the switch) or the Go comparator (Go mode only).
-proddiff_comparator=${PRODDIFF_COMPARATOR:-python}
+proddiff_comparator=${PRODDIFF_COMPARATOR:-go}
 case "$proddiff_comparator" in
-  python) ;;
-  go) [[ $proddiff_mode == go ]] || { echo 'PRODDIFF_COMPARATOR=go needs PRODDIFF_MODE=go' >&2; exit 2; } ;;
+  go) ;;
   *) echo "Unknown PRODDIFF_COMPARATOR: $proddiff_comparator" >&2; exit 2 ;;
+esac
+case "$stage" in
+  all|compare|proddiff)
+    [[ -d ${PRODDIFF_BASE_TREE:-}/server ]] || { echo 'PRODDIFF_MODE=go needs PRODDIFF_BASE_TREE=<baseline tree>' >&2; exit 2; }
+    ;;
 esac
 logs=${GATE_LOGS:-$(mktemp -d "${TMPDIR:-/tmp}/gate.XXXXXX")}
 mkdir -p "$logs"
@@ -147,14 +149,6 @@ run_core() {
     go test -tags "$tag" -count=1 ./internal/lifecycle/... >"$logs/tag-$tag.log" 2>&1 \
       || { cat "$logs/tag-$tag.log"; fail "lifecycle tests -tags $tag"; }
   done
-  if [[ -d tools/pyref ]]; then
-    PYREF_INPUT_FINGERPRINT=$(go run ./tools/pyref -fingerprint) || fail 'pyref fingerprint'
-    [[ -n $PYREF_INPUT_FINGERPRINT ]] || fail 'empty pyref fingerprint'
-    export PYREF_INPUT_FINGERPRINT
-    echo "gate: PYREF_INPUT_FINGERPRINT=$PYREF_INPUT_FINGERPRINT"
-  else
-    echo 'gate: pyref fingerprint entry not integrated; not setting PYREF_INPUT_FINGERPRINT'
-  fi
   echo '== race'
   if ((full)); then
     echo 'gate: go clean -testcache (shared host cache; results will be repopulated)'
@@ -182,25 +176,6 @@ run_proddiff() {
   (cd .. && PRODDIFF_MODE=$proddiff_mode PRODDIFF_COMPARATOR=$proddiff_comparator server/scripts/proddiff.sh) >"$logs/proddiff.log" 2>&1 \
     || { tail -30 "$logs/proddiff.log"; fail proddiff; }
   tail -30 "$logs/proddiff.log"
-}
-run_difftest() {
-  echo '== difftest (uncached)'
-  "${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python}" scripts/gate-live.py --difftest "$logs" "${pflag[@]}" || fail difftest
-}
-run_live() {
-  echo '== synthetic live (uncached, required JSON execution manifest)'
-  "${CONFIGFLOW_DIFF_PYTHON:-$HOME/cf-test/.venv/bin/python}" scripts/gate-live.py "$logs" "${pflag[@]}" || fail 'synthetic live'
-}
-# Recorded Python references (tools/pyref/sources.json): check mode verifies every
-# recording still matches its declared sources; a moved helper otherwise goes
-# unnoticed because plain "go test" only replays the recordings.
-run_pyref() {
-  echo '== pyref check (recorded Python references)'
-  local pkgs
-  pkgs=$(python3 -c 'import json; print(" ".join(sorted({"./"+e["package"].removeprefix("server/") for e in json.load(open("tools/pyref/sources.json"))})))') || fail pyref
-  PYREF_MODE=check go test -count=1 "${pflag[@]}" $pkgs >"$logs/pyref.log" 2>&1 \
-    || { grep -vE '^20[0-9]{2}-' "$logs/pyref.log" | grep -A6 -E '^\s*--- FAIL|pyref:' | head -60; fail "pyref (see $logs/pyref.log)"; }
-  echo 'gate: pyref check PASS'
 }
 # Frontend (../frontend): the same commands as cf-test typecheck / cf-test
 # frontend. node_modules is installed once per package-lock.json hash into the
@@ -240,9 +215,6 @@ run_frontend() {
 run_compare() {
   local bad=0
   (run_proddiff) || bad=1
-  (run_difftest) || bad=1
-  (run_live) || bad=1
-  (run_pyref) || bad=1
   (run_frontend) || bad=1
   ((bad == 0)) || fail compare
 }
@@ -255,8 +227,6 @@ case "$stage" in
     run_agent || exit 1 ;;
   compare) run_compare ;;
   proddiff) run_proddiff ;;
-  difftest) run_difftest ;;
-  pyref) run_pyref ;;
   frontend) run_frontend ;;
 esac
 uptime

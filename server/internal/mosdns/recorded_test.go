@@ -13,7 +13,7 @@ import (
 // errors.
 func TestRecordedPythonTests(t *testing.T) {
 	t.Parallel()
-	oracle := newGoldenOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	oracle := newGoldenOracle(t)
 	rows := loadRows(t, "testdata/recorded.jsonl.gz")
 	failures, accepted, unsupported, notExpressible := 0, 0, 0, 0
 	counts := map[string]int{}

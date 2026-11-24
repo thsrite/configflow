@@ -15,7 +15,6 @@ import (
 
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
-	"configflow/internal/routers/routerfake"
 )
 
 func TestR15ForwardingHeadAndMalformedReportIsolation(t *testing.T) {
@@ -100,30 +99,4 @@ func TestR15ForwardingHeadAndMalformedReportIsolation(t *testing.T) {
 	if strings.Contains(result.Text(), "synthetic-healthy-token") || strings.Contains(result.Text(), "synthetic-report-token") {
 		t.Fatal("forwarding response leaked peer or report credentials")
 	}
-}
-
-func TestR15FlaskForwardingSuccessAndFailure(t *testing.T) {
-	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			data, _ := io.ReadAll(r.Body)
-			if string(data) != "{}" || r.URL.Path != "/api/linux-gateway/forwarding" {
-				t.Errorf("unexpected forwarding request %s %s", r.URL.Path, data)
-			}
-		} else if r.URL.Path != "/api/linux-gateway/status" {
-			t.Errorf("unexpected status path %s", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"success":true,"supported":true,"managed":{"active":false},"ipv4_forwarding":{"supported":true,"current":"1","persisted":true}}`)
-	}))
-	defer peer.Close()
-	host, portText, _ := net.SplitHostPort(strings.TrimPrefix(peer.URL, "http://"))
-	port, _ := strconv.Atoi(portText)
-	system := map[string]any{"agents": []any{map[string]any{"id": "gateway", "name": "Gateway", "host": host, "port": port, "service_type": "mihomo", "profile_id": "default", "enabled": true, "status": "online", "last_heartbeat": time.Now().UTC().Format(time.RFC3339Nano), "version": "1.8.43-go", "deployment_method": "shell", "token": "synthetic-forwarding-token"}}}
-	fake := routerfake.New(nil)
-	seed := deviceState()
-	fake.Reset(seed)
-	device := httptest.NewServer(fake)
-	defer device.Close()
-	steps := []boundaryRequest{{Method: "GET", Path: "/api/routers/gateway-forwarding", Status: 200}, {Method: "POST", Path: "/api/routers/gateway-forwarding", Body: map[string]string{"agent_id": "gateway"}, Status: 200}, {Method: "POST", Path: "/api/routers/gateway-forwarding", Body: map[string]string{"agent_id": "unlinked"}, Status: 404}}
-	runHTTPBoundary(t, fake, seed, inputConfig(device.URL), system, steps)
 }

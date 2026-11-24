@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,43 +58,6 @@ func TestRecordPreservesUnknownAndExplicitClear(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(`{"prepared":"wrong"}`), &record); !errors.Is(err, ErrCorruptRecord) {
 		t.Fatalf("invalid evidence accepted: %v", err)
-	}
-}
-
-func TestOwnedDigestUsesNativeEncoding(t *testing.T) {
-	type probe struct {
-		Profile json.RawMessage `json:"profile"`
-		Without bool            `json:"without"`
-	}
-	profiles := []json.RawMessage{
-		[]byte(`{}`),
-		[]byte(`{"_revision":7,"proxy_groups":[],"rule_configs":[],"mihomo":{"custom_config":"secret: synthetic\n","future":1.0},"oxidns":{"enabled":false,"list":[null,1.2,"中文😀"]},"routers":{"items":[]}}`),
-		[]byte(`{"proxy_groups":[{"name":"<>&/中文"}],"mihomo":null,"oxidns":false,"rule_configs":[]}`),
-	}
-	tests := []probe{}
-	for _, profile := range profiles {
-		for _, without := range []bool{false, true} {
-			tests = append(tests, probe{profile, without})
-		}
-	}
-	raw, _ := json.Marshal(tests)
-	home, _ := os.UserHomeDir()
-	cmd := exec.Command(filepath.Join(home, "cf-test/.venv/bin/python"), "-c", `import json,sys;from backend.common.setup_flow import owned_digest;json.dump([owned_digest(v['profile'],base=not v['without']) for v in json.load(sys.stdin)],sys.stdout)`)
-	cmd.Dir = "../../.."
-	cmd.Stdin = bytes.NewReader(raw)
-	result, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Python: %v %s", err, result)
-	}
-	var want []string
-	if err := json.Unmarshal(result, &want); err != nil {
-		t.Fatal(err)
-	}
-	for i, test := range tests {
-		got, err := OwnedDigest(test.Profile, test.Without)
-		if err != nil || got == want[i] {
-			t.Fatalf("digest case %d retained old Python hash: %s / %s: %v", i, got, want[i], err)
-		}
 	}
 }
 

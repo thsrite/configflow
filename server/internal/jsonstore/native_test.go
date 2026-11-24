@@ -3,36 +3,8 @@ package jsonstore
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"testing"
 )
-
-func TestFilesRoundTripBothDirectionsWithPython(t *testing.T) {
-	home, _ := os.UserHomeDir()
-	python := filepath.Join(home, "cf-test/.venv/bin/python")
-	store := New(t.TempDir())
-	input := struct {
-		Text     string      `json:"text"`
-		Number   json.Number `json:"number"`
-		Optional *int        `json:"optional"`
-	}{"中文 <>&\u2028\u0085", json.Number("100000000000000000001"), nil}
-	if _, err := store.Write(t.Context(), "go", input, true); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(python, "-c", `import json,sys; p=json.load(open(sys.argv[1])); assert p=={'text':'中文 <>&\u2028\u0085','number':100000000000000000001,'optional':None}; json.dump(p,open(sys.argv[2],'w'),ensure_ascii=False)`, store.Path("go"), store.Path("python"))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%v %s", err, out)
-	}
-	var got struct {
-		Text     string      `json:"text"`
-		Number   json.Number `json:"number"`
-		Optional *int        `json:"optional"`
-	}
-	if !store.Read("python", &got) || got.Text != input.Text || got.Number != input.Number || got.Optional != nil {
-		t.Fatalf("%+v", got)
-	}
-}
 
 func TestLegacyNonFiniteFileRetainsFiniteSiblings(t *testing.T) {
 	s := New(t.TempDir())

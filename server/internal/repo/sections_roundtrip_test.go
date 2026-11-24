@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -43,31 +40,10 @@ func rowKeyNames(keys map[modelRowKey]bool) []string {
 	return names
 }
 
-// TestSectionWritesStoredRoundTrip is the N8-5b storage differential: the
-// typed section writes and the legacy writers built on them change exactly
-// the rows they own (after the first Go write has stored every row in Go's
-// encoding), refuse without writing, and the real
-// Python ProfileRepository opens every Go-written database with the same
-// document (CONFIGFLOW_PY/CONFIGFLOW_REPO).
+// TestSectionWritesStoredRoundTrip checks that typed and legacy section
+// writers modify exactly their owned rows and leave rows intact on rejection.
 func TestSectionWritesStoredRoundTrip(t *testing.T) {
-	interpreter, root := os.Getenv("CONFIGFLOW_PY"), os.Getenv("CONFIGFLOW_REPO")
-	pythonReady := interpreter != "" && root != ""
 	r := must(OpenDefault(t.TempDir()))(t)
-	audit := func(t *testing.T, mode string) {
-		t.Helper()
-		if !pythonReady {
-			return
-		}
-		entry := must(r.store.Load())(t)
-		expectation := filepath.Join(t.TempDir(), "expected.json")
-		noError(t, os.WriteFile(expectation, must(json.Marshal(entry.Document))(t), 0o600))
-		xcPythonLayout(t, r.DataDir())
-		command := exec.Command(interpreter, "../store/testdata/raw_crosscheck.py", mode+"-repository", r.DatabasePath(), expectation)
-		command.Env = append(os.Environ(), "CONFIGFLOW_REPO="+root, "PYTHONDONTWRITEBYTECODE=1")
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("Python %s: %v\n%s", mode, err, output)
-		}
-	}
 	profile := func(owner, name string) modelRowKey { return modelRowKey{"profile", owner, name} }
 	shared := func(name string) modelRowKey { return modelRowKey{"shared", "", name} }
 	system := func(name string) modelRowKey { return modelRowKey{"system", "", name} }
@@ -91,7 +67,7 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 				t.Fatalf("%s rewrote %v", label, key)
 			}
 		}
-		audit(t, "audit")
+
 	}
 	refused := func(t *testing.T, label string, kind error, write func() error) {
 		t.Helper()
@@ -145,7 +121,7 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 	if err != nil || !written {
 		t.Fatalf("fixture: %v %v", written, err)
 	}
-	audit(t, "audit")
+
 	// The first Go write stores every row in Go's encoding and drops the rows
 	// no record declares (O18 T1a); the values of declared members stay.
 	_, fixtureRows := storedRows(t, r)
@@ -161,7 +137,6 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 			wantJSONEqual(t, json.RawMessage(after), json.RawMessage(value))
 		}
 	}
-	audit(t, "audit")
 
 	step(t, "typed UpdateProfile", []modelRowKey{profile(p, "proxy_groups"), profile(p, "_revision"), profile(p, "updated_at")}, func() error {
 		_, err := r.UpdateProfile(bg, p, func(_ context.Context, profile *model.Profile) error {
@@ -254,20 +229,5 @@ func TestSectionWritesStoredRoundTrip(t *testing.T) {
 		if !strings.Contains(rows[key], part) {
 			t.Fatalf("%v lost %s: %s", key, part, rows[key])
 		}
-	}
-	// Rows whose value did not change keep their stored text, undeclared
-	// members included, until a write changes them (O18 T1a/T1c).
-	if pythonReady {
-		audit(t, "audit-edit")
-		// Python's extra root member is not declared: the next Go write deletes
-		// it (O18 T1a).
-		step(t, "typed edit after Python", []modelRowKey{profile(p, "proxy_groups"), profile(p, "_revision"), profile(p, "updated_at"), {"root", "", "n8_2_python_probe"}}, func() error {
-			_, err := r.UpdateProfile(bg, p, func(_ context.Context, profile *model.Profile) error {
-				profile.ProxyGroups[0].Name = "After Python"
-				return nil
-			})
-			return err
-		})
-		audit(t, "audit")
 	}
 }

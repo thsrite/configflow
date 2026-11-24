@@ -61,30 +61,6 @@ func TestNativeSignaturesAcrossProcessRestarts(t *testing.T) {
 		t.Fatalf("native identity fixture: %s", first)
 	}
 }
-func TestNativeNotificationFileInterchange(t *testing.T) {
-	dir := t.TempDir()
-	item := &Item{State: "pending", Source: NoticeSource, Title: new("synthetic"), Evidence: jsonString("one")}
-	if err := UpdateItems(t.Context(), dir, func(items *Items) error { return ObserveItem(items, "notice:x", item) }); err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "notifications.json")
-	script := `import json,sys
-p=sys.argv[1];v=json.load(open(p));assert v['items']['notice:x']['title']=='synthetic'
-v['items']['notice:x']['future']={'missing':float('nan'),'keep':1}
-json.dump(v,open(p,'w'))`
-	if out, err := exec.CommandContext(t.Context(), "python3", "-c", script, path).CombinedOutput(); err != nil {
-		t.Fatalf("Python: %s %v", out, err)
-	}
-	if err := UpdateItems(t.Context(), dir, func(items *Items) error { item, _ := items.Get("notice:x"); item.Stale = new(true); return nil }); err != nil {
-		t.Fatal(err)
-	}
-	// A member no record declares is dropped on the next write (O18 T1d);
-	// the declared members stay readable for Python.
-	if out, err := exec.CommandContext(t.Context(), "python3", "-c", `import json,sys
-v=json.load(open(sys.argv[1]));i=v['items']['notice:x'];assert 'future' not in i and i['title']=='synthetic' and i['stale'] is True`, path).CombinedOutput(); err != nil {
-		t.Fatalf("Python reread: %s %v", out, err)
-	}
-}
 
 func TestNativeD2DismissalReappearsOnceAndRouterStateIsPreserved(t *testing.T) {
 	items := newItems()
@@ -118,40 +94,6 @@ func TestNativeD2DismissalReappearsOnceAndRouterStateIsPreserved(t *testing.T) {
 	router, _ := items.Get(key)
 	if router.State != "pending" || stringValue(router.Version) != "unchanged-version" || router.Stale == nil || !*router.Stale {
 		t.Fatal("signature update changed incident state", router)
-	}
-}
-
-// A manually corrupted nonfinite occurrence counter reads as null, which Go
-// treats as absent and leaves out when it writes the file (O18 T1d). Python
-// cannot observe such a receipt either way (null += 1 or a missing key).
-func TestNativeNotificationRollbackNullOccurrence(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "notifications.json")
-	if err := os.WriteFile(path, []byte(`{"items":{"notice:x":{"state":"pending","source":"notice","occurrences":NaN,"evidence":"one"}}}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := UpdateItems(t.Context(), dir, func(items *Items) error { item, _ := items.Get("notice:x"); item.Stale = new(true); return nil }); err != nil {
-		t.Fatal(err)
-	}
-	root, err := filepath.Abs("../../..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := `import json,sys
-from backend.utils.notification_store import observe
-p=sys.argv[1];v=json.load(open(p));assert 'occurrences' not in v['items']['notice:x']
-json.dump(v,open(p,'w'));v=json.load(open(p))
-try:
-    observe(v['items'],'notice:x',{'state':'pending','source':'notice','evidence':'two'})
-except KeyError:
-    pass
-else:
-    raise AssertionError('Python null occurrence arithmetic changed')`
-	command := exec.CommandContext(t.Context(), filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), "-c", script, path)
-	command.Dir = root
-	command.Env = append(os.Environ(), "PYTHONPATH="+root)
-	if out, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("Python rollback: %s %v", out, err)
 	}
 }
 

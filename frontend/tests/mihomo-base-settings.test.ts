@@ -7,7 +7,7 @@ import {
   FOREIGN_DOH, DOMESTIC_DOH, fakeIpRangeError, parseSniffPorts, readDnsPreset, readMihomoBase, readSniff, splitHostPort,
 } from '@/lib/mihomoBaseSettings'
 
-const template: string = JSON.parse(readFileSync(resolve(process.cwd(), '../backend/config_template.json'), 'utf8')).mihomo.custom_config
+const template: string = JSON.parse(readFileSync(resolve(process.cwd(), '../server/internal/repo/config_template.json'), 'utf8')).mihomo.custom_config
 // What the server answers as default_config for an empty base (backend _default_mihomo_template).
 const coreDefault = `mixed-port: 7890
 allow-lan: true

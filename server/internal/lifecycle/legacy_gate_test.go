@@ -46,9 +46,7 @@ func testJSONConsumer(name, pkg string) bool {
 		return true
 	}
 	switch dir {
-	case "tools/proddiff/generator", "tools/proddiff/baseline", "tools/faults/fixture",
-		"tools/yamldiagnosticoracle", "tools/yamlreaderoracle", "tools/yamlwriteroracle",
-		"tools/pyref", "tools/jsonaudit":
+	case "tools/proddiff/generator", "tools/jsonaudit":
 		return true
 	}
 	return false
@@ -211,10 +209,8 @@ func TestLegacyGateTestOnlyConsumers(t *testing.T) {
 		{"internal/yamlx/yamlxtest/value.go", "yamlxtest", true},
 		{"internal/httpx/httpxtest/value.go", "httpxtest", true},
 		{"internal/testgolden/value.go", "testgolden", true},
-		{"internal/api/agents/difftest/value.go", "difftest", true},
+		{"internal/server/servertest/value.go", "servertest", true},
 		{"tools/proddiff/generator/main.go", "main", true},
-		{"tools/faults/fixture/main.go", "main", true},
-		{"tools/yamldiagnosticoracle/main.go", "main", true},
 		{"internal/example/value.go", "exampletest", false},
 		{"internal/example/value.go", "example", false},
 		{"cmd/example/main.go", "main", false},

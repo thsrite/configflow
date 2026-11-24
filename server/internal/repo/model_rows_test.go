@@ -349,3 +349,40 @@ func TestModelIssuesLoggedOncePerRevision(t *testing.T) {
 		t.Fatal("stored value leaked into diagnostic")
 	}
 }
+
+func changedModelRowKeys(before, after *store.Document) map[modelRowKey]bool {
+	flatten := func(doc *store.Document) map[modelRowKey][]byte {
+		values := map[modelRowKey][]byte{}
+		add := func(scope, owner string, fields []store.Field) {
+			for _, field := range fields {
+				values[modelRowKey{scope, owner, field.Name}] = field.Value
+			}
+		}
+		add("root", "", doc.Root)
+		if doc.System != nil {
+			add("system", "", doc.System.Fields)
+		}
+		if doc.Shared != nil {
+			add("shared", "", doc.Shared.Fields)
+		}
+		for _, p := range doc.Profiles {
+			add("profile", p.ID, p.Fields)
+		}
+		return values
+	}
+	a, b := flatten(before), flatten(after)
+	changed := map[modelRowKey]bool{}
+	for key, value := range a {
+		other, ok := b[key]
+		if !ok || !bytes.Equal(value, other) {
+			changed[key] = true
+		}
+	}
+	for key, value := range b {
+		other, ok := a[key]
+		if !ok || !bytes.Equal(value, other) {
+			changed[key] = true
+		}
+	}
+	return changed
+}

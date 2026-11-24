@@ -5,10 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
-	"time"
 
 	apionboarding "configflow/internal/api/gatewayonboarding"
 	apisetup "configflow/internal/api/setup"
@@ -133,27 +131,5 @@ func TestSetupServerOwnerRegistrationRemovesUnavailable(t *testing.T) {
 	}
 	if record.DigestVersion == nil || *record.DigestVersion != 1 {
 		t.Fatalf("expected native digest_version=1, got %v", record.DigestVersion)
-	}
-	if os.Getenv("CONFIGFLOW_DIFF") == "1" {
-		assertNativeStoredOwnership(t, raw, full, without)
-	}
-}
-
-func assertNativeStoredOwnership(t *testing.T, profile json.RawMessage, full, without string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), "-c", `import json,sys;from backend.common.setup_flow import owned_digest
-p=json.load(sys.stdin);json.dump([owned_digest(p),owned_digest(p,base=False)],sys.stdout)`)
-	cmd.Dir = "../../.."
-	cmd.Env = append(os.Environ(), "PYTHONPATH=.")
-	cmd.Stdin = bytes.NewReader(profile)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Python stored ownership: %v %s", err, out)
-	}
-	var legacy []string
-	if err := json.Unmarshal(out, &legacy); err != nil || len(legacy) != 2 || legacy[0] == full || legacy[1] == without {
-		t.Fatalf("expected native digest to differ from Python encoding: %s %v", out, err)
 	}
 }

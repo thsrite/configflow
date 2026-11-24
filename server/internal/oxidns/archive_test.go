@@ -62,7 +62,7 @@ func TestC29ArchivePythonBoundary(t *testing.T) {
 	defer upstream.Close()
 	pythonUpstream := httptest.NewServer(http.HandlerFunc(respond))
 	defer pythonUpstream.Close()
-	oracle := testgolden.NewLines(t, "server/internal/oxidns/testdata/c29_archive.py")
+	oracle := testgolden.NewLines(t)
 	referenceFetches := map[string]int{}
 
 	ctx := context.Background()

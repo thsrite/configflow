@@ -1,18 +1,12 @@
 package agents
 
 import (
-	"bufio"
-	"bytes"
-	"configflow/internal/model/modeltest"
-	"configflow/internal/repo/repotest"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -28,13 +22,9 @@ import (
 )
 
 type clientWorld struct {
-	t         *testing.T
-	s         *httpxtest.Server
-	in        interface{ Write([]byte) (int, error) }
-	out       *bufio.Scanner
-	auth      httpxtest.Option
-	headers   http.Header
-	revisions map[string]string
+	t    *testing.T
+	s    *httpxtest.Server
+	auth httpxtest.Option
 }
 
 func a24FixtureWithManager(t *testing.T) (*httpxtest.Server, *registry.Manager) {
@@ -135,63 +125,25 @@ func newClientWorld(t *testing.T) *clientWorld {
 
 func newClientWorldSetup(t *testing.T, setup func(*httpxtest.Server)) *clientWorld {
 	t.Helper()
-	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
-		t.Skip("set CONFIGFLOW_DIFF=1")
-	}
 	s := a24Fixture(t)
 	if setup != nil {
 		setup(s)
 	}
-	pyDir := t.TempDir()
-	if output, err := exec.Command("cp", "-a", s.DataDir+"/.", pyDir).CombinedOutput(); err != nil {
-		t.Fatalf("copy: %v %s", err, output)
-	}
-	root, _ := filepath.Abs("../../../..")
-	python := os.Getenv("CONFIGFLOW_DIFF_PYTHON")
-	if python == "" {
-		home, _ := os.UserHomeDir()
-		python = filepath.Join(home, "cf-test/.venv/bin/python")
-	}
-	cmd := exec.Command(python, filepath.Join(root, "server/internal/api/agents/testdata/client_tools.py"))
-	cmd.Dir = root
-	repotest.PythonLayout(t, pyDir) // Python reads the version-1 layout (O17)
-	cmd.Env = append(os.Environ(), "DATA_DIR="+pyDir, "PYTHONPATH="+root, "PYTHONDONTWRITEBYTECODE=1", "ADMIN_USERNAME=a24-admin", "ADMIN_PASSWORD=a24-password", "JWT_SECRET_KEY=a24-synthetic-secret", "LOG_FILE="+filepath.Join(pyDir, "app.log"))
-	input, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		input.Close()
-		cmd.Process.Kill()
-		cmd.Wait()
-		if t.Failed() {
-			t.Log(stderr.String())
-		}
-	})
-	scanner := bufio.NewScanner(output)
-	scanner.Buffer(make([]byte, 65536), 16<<20)
 	login := parseBodyMap(t, s.Post("/api/auth/login", httpxtest.JSON(map[string]any{"username": "a24-admin", "password": "a24-password"})).WantStatus(200))
 	token := mapStr(login, "token")
 	if token == "" {
 		t.Fatal("no JWT")
 	}
-	return &clientWorld{t, s, input, scanner, httpxtest.Bearer(token), http.Header{"Authorization": []string{"Bearer " + token}}, map[string]string{}}
+	return &clientWorld{t: t, s: s, auth: httpxtest.Bearer(token)}
 }
+
 func a24Normalized(v any) any {
 	raw, _ := json.Marshal(v)
 	var copy any
 	_ = json.Unmarshal(raw, &copy)
 	return a24NormalizeInPlace(copy)
 }
+
 func a24NormalizeInPlace(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
@@ -224,6 +176,7 @@ func a24NormalizeInPlace(v any) any {
 	}
 	return v
 }
+
 func a24State(t *testing.T, s *httpxtest.Server) any {
 	t.Helper()
 	document, err := s.Repo.DiagnosticExportJSON(s.Context())
@@ -267,57 +220,21 @@ func a24State(t *testing.T, s *httpxtest.Server) any {
 	json.Unmarshal(wire, &state)
 	return state
 }
+
 func (w *clientWorld) call(method, path string, body any, status int, authorization string) map[string]any {
 	w.t.Helper()
 	var raw []byte
 	if body != nil {
 		raw, _ = json.Marshal(body)
 	}
-	headers := map[string]string{}
 	options := []httpxtest.Option{}
 	if authorization == "admin" {
-		headers["Authorization"] = w.headers.Get("Authorization")
 		options = append(options, w.auth)
 	} else if authorization != "" {
-		headers["Authorization"] = authorization
 		options = append(options, httpxtest.Header("Authorization", authorization))
 	}
 	if raw != nil {
 		options = append(options, httpxtest.JSON(json.RawMessage(raw)))
-	}
-	pythonBody := string(raw)
-	if fields, ok := body.(map[string]any); ok {
-		if revision, ok := fields["revision"].(string); ok {
-			if replacement, known := w.revisions[revision]; known {
-				clone := map[string]any{}
-				for k, v := range fields {
-					clone[k] = v
-				}
-				clone["revision"] = replacement
-				b, _ := json.Marshal(clone)
-				pythonBody = string(b)
-			}
-		}
-	}
-	request, _ := json.Marshal(map[string]any{"method": method, "path": path, "body": pythonBody, "headers": headers})
-	if _, err := w.in.Write(append(request, '\n')); err != nil {
-		w.t.Fatal(err)
-	}
-	if !w.out.Scan() {
-		w.t.Fatal("Python exited")
-	}
-	var answer struct {
-		Status int
-		Body   any
-		Cache  string
-		State  any
-		Error  string
-	}
-	if err := json.Unmarshal(w.out.Bytes(), &answer); err != nil {
-		w.t.Fatalf("oracle %v: %s", err, w.out.Bytes())
-	}
-	if answer.Error != "" {
-		w.t.Fatal(answer.Error)
 	}
 	got := w.s.Do(method, path, options...)
 	var value any
@@ -325,99 +242,15 @@ func (w *clientWorld) call(method, path string, body any, status int, authorizat
 		if err := json.Unmarshal(got.Body, &value); err != nil {
 			w.t.Fatalf("nonJSON: %s", got.Body)
 		}
-	} else {
-		value = ""
 	}
-	if got.Status != answer.Status || got.Status != status {
-		w.t.Fatalf("%s %s: Go %d %s Python %d %v want%d", method, path, got.Status, got.Body, answer.Status, answer.Body, status)
-	}
-	comparison := a24Normalized(value)
-	expectedBody := a24Normalized(answer.Body)
-	if result, ok := value.(map[string]any); ok {
-		if revision, ok := result["revision"].(string); ok {
-			expected := answer.Body.(map[string]any)["revision"].(string)
-			assertA24Revision(w.t, revision, a24State(w.t, w.s), result["profile_id"].(string))
-			assertA24Revision(w.t, expected, answer.State, result["profile_id"].(string))
-			w.revisions[revision] = expected
-			comparison.(map[string]any)["revision"] = "<verified-settings-revision>"
-			expectedBody.(map[string]any)["revision"] = "<verified-settings-revision>"
-		}
-	}
-	if !reflect.DeepEqual(comparison, expectedBody) {
-		g, _ := json.Marshal(value)
-		p, _ := json.Marshal(answer.Body)
-		w.t.Fatalf("%s %s body:\nGo %s\nPy %s", method, path, g, p)
-	}
-	if got.Header.Get("Cache-Control") != answer.Cache {
-		w.t.Fatalf("cache header: %s != %s", got.Header.Get("Cache-Control"), answer.Cache)
-	}
-	// Stored state as the plain records hold it (O18 T1c): undeclared and
-	// empty optional members are not compared.
-	state := a24Normalized(modeltest.StateThroughModel(a24State(w.t, w.s)))
-	expected := a24Normalized(modeltest.StateThroughModel(answer.State))
-	if !reflect.DeepEqual(state, expected) {
-		w.t.Fatalf("%s %s state: %s", method, path, a24Difference(expected, state, "state"))
+	if got.Status != status {
+		w.t.Fatalf("%s %s: Go %d %s want %d", method, path, got.Status, got.Body, status)
 	}
 	result, _ := value.(map[string]any)
 	return result
 }
 
-// Revisions hash the actual settings (including serialized native YAML). Each
-// side must issue its own correct revision; only native YAML formatting may differ.
-func assertA24Revision(t *testing.T, revision string, state any, id string) {
-	t.Helper()
-	settings := state.(map[string]any)["document"].(map[string]any)["profiles"].(map[string]any)[id].(map[string]any)["oxidns"]
-	raw, _ := json.Marshal(settings)
-	node, err := oxidns.FromJSON(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := oxidns.Revision(node); revision != want {
-		t.Fatalf("revision %s does not identify actual settings %s", revision, want)
-	}
-}
-
-func a24Difference(a, b any, path string) string {
-	if reflect.DeepEqual(a, b) {
-		return ""
-	}
-	switch x := a.(type) {
-	case map[string]any:
-		y, ok := b.(map[string]any)
-		if !ok {
-			return path + " type"
-		}
-		for k, v := range x {
-			other, ok := y[k]
-			if !ok {
-				return path + "." + k + " missing"
-			}
-			if !reflect.DeepEqual(v, other) {
-				return a24Difference(v, other, path+"."+k)
-			}
-		}
-		for k := range y {
-			if _, ok := x[k]; !ok {
-				return path + "." + k + " extra"
-			}
-		}
-	case []any:
-		y, ok := b.([]any)
-		if !ok || len(x) != len(y) {
-			return path + " length/type"
-		}
-		for i, v := range x {
-			if !reflect.DeepEqual(v, y[i]) {
-				return a24Difference(v, y[i], fmt.Sprintf("%s[%d]", path, i))
-			}
-		}
-	default:
-		return fmt.Sprintf("%s Python=%v Go=%v", path, a, b)
-	}
-	return path
-}
-
-func TestA24FlaskBoundaries(t *testing.T) {
+func TestA24ClientToolsBoundaries(t *testing.T) {
 	w := newClientWorld(t)
 	paths := []struct{ method, path string }{{"GET", "m/client-notes"}, {"PUT", "m/client-notes"}, {"GET", "m/mihomo/rule-targets"}, {"POST", "m/mihomo/rule-targets/apply"}, {"PUT", "m/domain-discovery"}, {"POST", "m/domain-discovery/clear"}, {"GET", "d/oxidns/device-policies"}, {"PUT", "d/oxidns/device-policies"}}
 	for _, p := range paths {

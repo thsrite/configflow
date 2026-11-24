@@ -2,10 +2,14 @@ package rulesync
 
 import (
 	"configflow/internal/routers"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,6 +17,45 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/routers/routerfake"
 )
+
+func r14Plan(t *testing.T, ctx context.Context, d *routers.RouterOS, r *spec.Router, desired *spec.Desired) *routers.Plan {
+	t.Helper()
+	desired.ROSPolicy.Previous = slices.Clone(d.PolicyManifest())
+	state, err := r08InspectState(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned, err := rospolicy.OwnedROSPolicyRows(d.PolicyManifest(), state.ROSPolicy)
+	if err != nil {
+		owned = nil
+	}
+	ids := map[string]bool{}
+	for _, v := range owned {
+		if v.Path == ros.PathMangle {
+			ids[v.ID] = true
+		}
+	}
+	state.NatContext.Mangle = []ros.Row{}
+	for _, row := range (*state.ROSPolicy)[ros.PathMangle] {
+		if !ids[row.ID()] {
+			cp := ros.CloneRow(row)
+			delete(cp, "bytes")
+			delete(cp, "packets")
+			state.NatContext.Mangle = append(state.NatContext.Mangle, cp)
+		}
+	}
+	routers.RetirePolicyRoutes(state)
+	report, err := routers.BuildReport(desired, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report.ReturnRouting = &routers.ReturnStatus{Status: "disabled"}
+	plan, err := routers.BuildPlan(ctx, r, &routers.Inspection{Desired: desired, State: state, Report: report}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return plan
+}
 
 func TestR14RuntimeDestinationWriteBoundaries(t *testing.T) {
 	for _, mode := range []string{"disconnect", "shutdown"} {

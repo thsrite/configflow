@@ -1,5 +1,7 @@
 # Go rewrite — handoff for the coordinating session
 
+> **Post-switch Go-only tree (Option C):** The Python backend (`backend/` except `backend/agents/go-agent/` and `backend/node-probe/`), Python-dependent Go tests (`*/difftest`, live Python comparisons), `configdiff`/`routerdiff`, and Python gate stages (`gate-live.py`, `pyref` fingerprint/check) have been removed. `server/scripts/gate.sh` runs Go-only `core` (gofmt, vet, build tags, race + `skipaudit` with 0 allowlist entries + committed pyref golden replays, Agent module, fuzz) and `compare` (`proddiff` defaulting to `PRODDIFF_MODE=go` / `PRODDIFF_COMPARATOR=go` + frontend). Historical Python comparison notes below are kept for provenance only.
+
 **Since 2026-11-15 the work follows `server/WORKFLOW.md` (domains, module split, adversarial review,
 domain differential, `PROGRESS-<domain>.md`). Where this file's "How a package is run" differs, WORKFLOW.md wins.**
 

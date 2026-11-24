@@ -778,7 +778,7 @@ func compareRow(t *testing.T, oracle *goldenOracle, entry *mosObj) (msg string, 
 
 func TestCorpus(t *testing.T) {
 	t.Parallel()
-	oracle := newGoldenOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	oracle := newGoldenOracle(t)
 	rows := loadRows(t, "testdata/corpus.jsonl.gz")
 	failures, accepted, unsupported, pendingToken := 0, 0, 0, 0
 	counts := map[string]int{}

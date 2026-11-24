@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"configflow/internal/devhttp"
 	"configflow/internal/routers"
@@ -259,3 +260,15 @@ func TestIkuaiRequestBytesBoundsTheBody(t *testing.T) {
 		t.Fatal("UndoOf of a non-router error")
 	}
 }
+
+// classHTTP fails every /Action/call with one devhttp failure class.
+type classHTTP struct{ class string }
+
+func (c classHTTP) Do(_ context.Context, _, url string, _ any, _ time.Duration) (*devhttp.Response, error) {
+	if strings.HasSuffix(url, "/Action/login") {
+		return &devhttp.Response{Status: 200, Body: []byte(`{"Result":10000,"code":0}`)}, nil
+	}
+	return nil, &devhttp.Error{Class: c.class, Err: errors.New("synthetic-secret-detail")}
+}
+
+func (classHTTP) Close() {}

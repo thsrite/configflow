@@ -25,7 +25,7 @@ func TestReviewUnholdableYAMLOutsideTheOutputMatchesPython(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oracle := newGoldenOracle(t, "server/internal/mosdns/testdata/n73_reference.py")
+	oracle := newGoldenOracle(t)
 	for key, want := range value.(*mosObj).All() {
 		kind, source, _ := strings.Cut(key, ":")
 		row := newMosObj()

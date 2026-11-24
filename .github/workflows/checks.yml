@@ -12,67 +12,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  backend-tests:
-    name: backend tests (${{ matrix.shard }}/2)
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
-    env:
-      PYTHONDONTWRITEBYTECODE: '1'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
-      - run: python -m pip install -r backend/requirements.txt pytest pytest-subtests pytest-xdist
-      - name: Verify shard tooling
-        run: python -m unittest discover -s scripts/ci -p 'test_*.py'
-      - name: Run complete backend shard
-        run: >-
-          python scripts/ci/shard_tests.py backend
-          --shard ${{ matrix.shard }}/2
-          --durations .github/ci/backend-durations.json
-          --plan .ci-results/backend-${{ matrix.shard }}.json
-          -- -q -n 4 --dist=worksteal --durations=15
-          --junitxml=.ci-results/backend-${{ matrix.shard }}.xml
-        env:
-          DATA_DIR: ${{ runner.temp }}/configflow-test-data
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: backend-results-${{ matrix.shard }}
-          path: .ci-results/backend-*
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 7
-
-  # Keep the existing required check name while requiring every shard to pass.
+  # Keep the existing required check name (`backend`) for branch protection.
   backend:
-    if: ${{ always() }}
-    needs: backend-tests
+    name: backend (Go server)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
     steps:
-      - name: Require all backend shards
-        env:
-          TEST_RESULT: ${{ needs.backend-tests.result }}
-        run: test "$TEST_RESULT" = success
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/setup-go@v5
         with:
-          pattern: backend-results-*
-          path: .ci-results
-          merge-multiple: true
-      - name: Verify complete, non-overlapping test coverage
-        run: >-
-          python scripts/ci/shard_tests.py validate
-          --expected .ci-results/backend-1.json --expected-key all_nodeids
-          --inventory-key all_nodeids
-          --shard-key selected_nodeids
-          .ci-results/backend-1.json .ci-results/backend-2.json
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Check formatting
+        run: |
+          out=$(gofmt -l internal/ tools/ cmd/)
+          if [ -n "$out" ]; then
+            echo "$out"
+            exit 1
+          fi
+      - name: Vet and build tags
+        run: |
+          go vet ./...
+          for tag in configflow_proddiff configflow_difftest; do
+            go build -tags "$tag" ./...
+            go vet -tags "$tag" ./internal/lifecycle/... ./cmd/...
+          done
+      - name: Run Go server tests (race)
+        run: go test -race -timeout=60m ./...
 
   frontend-tests:
     name: frontend tests (${{ matrix.shard }}/2)
@@ -147,14 +115,19 @@ jobs:
           test "$TEST_RESULT" = success
           test "$BUILD_RESULT" = success
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - uses: actions/download-artifact@v4
         with:
           pattern: frontend-*
           path: .ci-results
           merge-multiple: true
+      - name: Verify shard tooling
+        run: node --test scripts/ci/test_shard_tests.mjs
       - name: Verify complete, non-overlapping test coverage
         run: >-
-          python scripts/ci/shard_tests.py validate
+          node scripts/ci/shard_tests.mjs validate
           --expected .ci-results/frontend-all.json --expected-key file
           --shard-key testResults.name
           --path-prefix frontend/tests
@@ -171,7 +144,7 @@ jobs:
         with:
           go-version-file: backend/agents/go-agent/go.mod
           cache-dependency-path: backend/agents/go-agent/go.sum
-      - run: go test ./...
+      - run: go test -race ./...
 
   node-probe:
     runs-on: ubuntu-latest

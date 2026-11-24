@@ -9,9 +9,6 @@
 // Console output and recorded files contain schema only (route templates,
 // public key paths, difference types, counts). Responses, logs and errors stay
 // in the private run directory under ~/cf-prod-snapshot/runs.
-//
-// It does not start Flask or read backend/; the Python reference mode remains
-// in run.py until the switch removes it.
 package main
 
 import (
@@ -45,7 +42,7 @@ func command(args []string) int {
 	cmp := &comparator{keys: keys}
 	switch args[0] {
 	case "run":
-		if mode := os.Getenv("PRODDIFF_MODE"); mode != "go" {
+		if mode := os.Getenv("PRODDIFF_MODE"); mode != "" && mode != "go" {
 			fmt.Println("proddiff: the Go comparator only supports PRODDIFF_MODE=go")
 			return 2
 		}

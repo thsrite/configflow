@@ -3,6 +3,7 @@
 package store
 
 import (
+	"errors"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -35,4 +36,12 @@ func TestBackupWriteFailureMessage(t *testing.T) {
 	if kindOf(err) != ErrStorage || err.Error() != "配置数据库访问失败：disk I/O error" || sqliteCode(err) != 778&0xff {
 		t.Errorf("BackupTo: %v (%v)", err, kindOf(err))
 	}
+}
+
+func kindOf(err error) error {
+	var typed *Error
+	if errors.As(err, &typed) {
+		return typed.Kind
+	}
+	return nil
 }

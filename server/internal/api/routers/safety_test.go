@@ -45,14 +45,10 @@ func TestR15MalformedProbePersistsOnlyProbe(t *testing.T) {
 			r["last_probe"] = map[string]any{"ok": true, "at": "2000-01-01T00:00:00"}
 			r["unrelated"] = map[string]any{"must": "remain"}
 			dir := t.TempDir()
-			steps := []boundaryRequest{{Method: "POST", Path: "/api/routers/router-one/probe"}}
-			oracle := r15Python(t, dir, map[string]any{"config": cfg, "system": map[string]any{}, "requests": steps})
-			if oracle.Responses[0].Status != 500 {
-				t.Fatalf("reference bug changed: %d", oracle.Responses[0].Status)
-			}
 			fake.Reset(seed)
 			s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go")})
 			api.New(api.Deps{Repo: s.Repo, Routers: core.New(s.Repo, core.Options{})}).Register(s.App.Router)
+			saveFixtureConfig(t, s, cfg)
 			before, err := s.Repo.Profile(s.Context(), "default")
 			if err != nil {
 				t.Fatal(err)

@@ -5,10 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"configflow/internal/model"
@@ -128,68 +125,10 @@ func roundTripFields(t *testing.T, raw json.RawMessage) model.Fields {
 	return fields
 }
 
-func changedModelRowKeys(before, after *store.Document) map[modelRowKey]bool {
-	flatten := func(doc *store.Document) map[modelRowKey][]byte {
-		values := map[modelRowKey][]byte{}
-		add := func(scope, owner string, fields []store.Field) {
-			for _, field := range fields {
-				values[modelRowKey{scope, owner, field.Name}] = field.Value
-			}
-		}
-		add("root", "", doc.Root)
-		if doc.System != nil {
-			add("system", "", doc.System.Fields)
-		}
-		if doc.Shared != nil {
-			add("shared", "", doc.Shared.Fields)
-		}
-		for _, p := range doc.Profiles {
-			add("profile", p.ID, p.Fields)
-		}
-		return values
-	}
-	a, b := flatten(before), flatten(after)
-	changed := map[modelRowKey]bool{}
-	for key, value := range a {
-		other, ok := b[key]
-		if !ok || !bytes.Equal(value, other) {
-			changed[key] = true
-		}
-	}
-	for key, value := range b {
-		other, ok := a[key]
-		if !ok || !bytes.Equal(value, other) {
-			changed[key] = true
-		}
-	}
-	return changed
-}
-
 // TestStoredRoundTrip always exercises the committed row fixture and a full
-// synthetic repository. Live Python and the private snapshot are optional env
-// additions, mandatory in the final .32 command. No private value is reported.
+// synthetic repository.
 func TestStoredRoundTrip(t *testing.T) {
-	interpreter, root := os.Getenv("CONFIGFLOW_PY"), os.Getenv("CONFIGFLOW_REPO")
-	pythonReady := interpreter != "" && root != ""
-	python := func(t *testing.T, args ...string) {
-		t.Helper()
-		if !pythonReady {
-			return
-		}
-		// Reuse the existing real-Python storage boundary driver rather than copy it.
-		if len(args) > 1 && strings.HasPrefix(args[0], "audit") && filepath.Base(args[1]) == DatabaseFilename {
-			xcPythonLayout(t, filepath.Dir(args[1]))
-		}
-		command := exec.Command(interpreter, append([]string{"../store/testdata/raw_crosscheck.py"}, args...)...)
-		command.Env = append(os.Environ(), "CONFIGFLOW_REPO="+root, "PYTHONDONTWRITEBYTECODE=1")
-		if err := command.Run(); err != nil {
-			t.Fatalf("Python interchange failed (%T)", err)
-		}
-	}
-	run := func(t *testing.T, path string, repositoryAudit bool) {
-		if pythonReady {
-			xcPythonLayout(t, filepath.Dir(path)) // the round trip runs in the version-1 layout Python reads (O17)
-		}
+	run := func(t *testing.T, path string) {
 		target := store.New(path, LockTimeout)
 		entry, err := target.Load()
 		if err != nil {
@@ -236,27 +175,6 @@ func TestStoredRoundTrip(t *testing.T) {
 			t.Fatal("fixture needs a profile")
 		}
 		owner := before.Profiles[0].ID
-		auditMode := func(mode string) string {
-			if repositoryAudit {
-				return mode + "-repository"
-			}
-			return mode
-		}
-		expectation := filepath.Join(filepath.Dir(path), "model-expected.json")
-		audit := func(mode string) {
-			if !pythonReady {
-				return
-			}
-			data, err := json.Marshal(entry.Document)
-			if err != nil {
-				t.Fatal("expectation encode failed")
-			}
-			if os.WriteFile(expectation, data, 0o600) != nil {
-				t.Fatal("expectation write failed")
-			}
-			python(t, auditMode(mode), path, expectation)
-		}
-		audit("audit")
 		commit := func(label string, allowed []modelRowKey, edit func(*model.Document)) {
 			t.Helper()
 			document, _, err := decodeModelRows(entry.Document)
@@ -308,7 +226,7 @@ func TestStoredRoundTrip(t *testing.T) {
 			result.Close()
 			db.Close()
 			entry = next
-			audit("audit")
+
 		}
 		profileKey := func(name string) modelRowKey { return modelRowKey{"profile", owner, name} }
 		marker := json.RawMessage(` { "z":1.0,"a":"\u4f8b <>&","nested": { "future": true } } `)
@@ -446,24 +364,16 @@ func TestStoredRoundTrip(t *testing.T) {
 		// repository commits keep them (keepUnchangedRows).
 		commit("R5 unrelated edit", []modelRowKey{profileKey("name"), profileKey("description"), {"system", "", "_revision"}, {"shared", "", "_revision"}},
 			func(d *model.Document) { d.Profiles[0].Name = "N8 R5 repaired" })
-		audit("audit-edit")
-		afterPython, err := target.Load()
+		loaded, err := target.Load()
 		if err != nil {
-			t.Fatal("Go read after Python edit failed")
+			t.Fatal(err)
 		}
-		if pythonReady {
-			if afterPython.Head.Generation != entry.Head.Generation+1 {
-				t.Fatal("Python edit generation differs")
-			}
-			entry = afterPython
-			audit("audit-final")
-		}
-		reloaded, _, err := decodeModelRows(afterPython.Document)
+		reloaded, _, err := decodeModelRows(loaded.Document)
 		if err != nil {
-			t.Fatal("model read after Python edit failed")
+			t.Fatal(err)
 		}
-		assertModelRows(t, must(encodeModelRows(reloaded, afterPython.Document))(t), afterPython.Document)
-		t.Logf("rows=%d profiles=%d: value round trip/no-op, typed edits, lenient types and Python↔Go passed", len(before.Root)+len(before.System.Fields)+len(before.Shared.Fields)+func() int {
+		assertModelRows(t, must(encodeModelRows(reloaded, loaded.Document))(t), loaded.Document)
+		t.Logf("rows=%d profiles=%d: value round trip/no-op, typed edits, and lenient types passed", len(before.Root)+len(before.System.Fields)+len(before.Shared.Fields)+func() int {
 			n := 0
 			for _, p := range before.Profiles {
 				n += len(p.Fields)
@@ -477,43 +387,9 @@ func TestStoredRoundTrip(t *testing.T) {
 		if _, err := target.Create(modelRowFixture(t), nil); err != nil {
 			t.Fatal("fixture create failed")
 		}
-		run(t, path, false)
+		run(t, path)
 	})
-	t.Run("full-go-repository", func(t *testing.T) { r := newRepo(t); run(t, r.DatabasePath(), true) })
-	if pythonReady {
-		t.Run("python-written-rows", func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), store.Filename)
-			python(t, "fixture", path, "../store/testdata/raw_rows.json")
-			run(t, path, false)
-		})
-	}
-	if snapshot := os.Getenv("CONFIGFLOW_SNAPSHOT"); snapshot != "" {
-		if !pythonReady {
-			t.Fatal("snapshot audit requires CONFIGFLOW_PY and CONFIGFLOW_REPO")
-		}
-		t.Run("private-snapshot", func(t *testing.T) {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				t.Fatal("private home unavailable")
-			}
-			runs := filepath.Join(home, "cf-prod-snapshot", "runs")
-			if os.MkdirAll(runs, 0o700) != nil {
-				t.Fatal("private runs unavailable")
-			}
-			directory, err := os.MkdirTemp(runs, "n8-3-roundtrip-")
-			if err != nil {
-				t.Fatal("private copy create failed")
-			}
-			t.Cleanup(func() {
-				if os.RemoveAll(directory) != nil {
-					t.Error("private copy cleanup failed")
-				}
-			})
-			path := filepath.Join(directory, store.Filename)
-			python(t, "copy", filepath.Join(snapshot, store.Filename), path)
-			run(t, path, true)
-		})
-	}
+	t.Run("full-go-repository", func(t *testing.T) { r := newRepo(t); run(t, r.DatabasePath()) })
 }
 
 func roundTripDecode[T any](t *testing.T, value any) T {

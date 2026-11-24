@@ -12,7 +12,7 @@ on:
     branches:
       - main
     paths:
-      - 'backend/agents/**'
+      - 'backend/agents/go-agent/**'
       - 'docker/Dockerfile.agent'
       - 'docker/docker-agent-entrypoint*.sh'
       - '.github/workflows/docker-agent.yml'

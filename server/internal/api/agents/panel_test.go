@@ -226,7 +226,7 @@ func TestCacheRouteRejectsInjectedOrInvalidPayloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rejected := s.Post("/api/agents/dns/oxidns/cache/flush", httpxtest.Body([]byte(`{"tags":[{}]}`), "application/json"), admin).WantStatus(nativeCacheTagStatus(t, `{"tags":[{}]}`, 500))
+	rejected := s.Post("/api/agents/dns/oxidns/cache/flush", httpxtest.Body([]byte(`{"tags":[{}]}`), "application/json"), admin).WantStatus(400)
 	if rejected.Header.Get("Cache-Control") != "no-store" || mapStr(parseBodyMap(t, rejected), "code") != "INVALID_REQUEST" {
 		t.Fatal("cache refusal envelope changed")
 	}

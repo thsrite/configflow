@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -186,12 +185,7 @@ func TestReviewDeflateAndZipMatchPython(t *testing.T) {
 	}
 	hash.Write(manifest)
 	out := testgolden.New(t, testgolden.Spec{
-		Sources: testgolden.Sources(t, "backend", "server/internal/installer/testdata/review_a10_deflate.py"),
-		Input:   hash.Sum(nil),
-		Run: func() ([]byte, error) {
-			cmd := exec.Command(testgolden.Python(), "testdata/review_a10_deflate.py", dir)
-			return cmd.Output()
-		},
+		Input: hash.Sum(nil),
 	}).Output(t)
 
 	deflates, zips, alts := 0, 0, 0

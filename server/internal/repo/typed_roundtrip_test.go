@@ -4,9 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,31 +12,12 @@ import (
 
 // TestTypedUpdateStoredRoundTrip is design 5.2 through the repository's typed
 // write API (N8-5a): every edit runs as Repository.Update (validation, router
-// guard, commit), changes exactly the rows it touched, and the real Python
-// ProfileRepository opens each Go-written database and exports the same
-// document (CONFIGFLOW_PY/CONFIGFLOW_REPO; skipped parts without them). It
-// covers the three write intents of a stored member: untouched (null and
+// guard, commit), changes exactly the rows it touched.
+// It covers the three write intents of a stored member: untouched (null and
 // wrong-typed bytes survive edits of the same row), replace and Clear.
 func TestTypedUpdateStoredRoundTrip(t *testing.T) {
-	interpreter, root := os.Getenv("CONFIGFLOW_PY"), os.Getenv("CONFIGFLOW_REPO")
-	pythonReady := interpreter != "" && root != ""
 	r := must(OpenDefault(t.TempDir()))(t)
 	path := r.DatabasePath()
-	audit := func(t *testing.T, mode string) {
-		t.Helper()
-		if !pythonReady {
-			return
-		}
-		entry := must(r.store.Load())(t)
-		expectation := filepath.Join(t.TempDir(), "expected.json")
-		noError(t, os.WriteFile(expectation, must(json.Marshal(entry.Document))(t), 0o600))
-		xcPythonLayout(t, filepath.Dir(path))
-		command := exec.Command(interpreter, "../store/testdata/raw_crosscheck.py", mode+"-repository", path, expectation)
-		command.Env = append(os.Environ(), "CONFIGFLOW_REPO="+root, "PYTHONDONTWRITEBYTECODE=1")
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("Python %s: %v\n%s", mode, err, output)
-		}
-	}
 	row := func(t *testing.T, key modelRowKey) string {
 		t.Helper()
 		entry := must(r.store.Load())(t)
@@ -93,12 +71,11 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 			}
 		}
 		noError(t, result.Err())
-		audit(t, "audit")
+
 	}
 	profile := func(name string) modelRowKey { return modelRowKey{"profile", DefaultProfileID, name} }
 	defaultProfile := func(d *model.Document) *model.Profile { return profileByKey(d, DefaultProfileID) }
 
-	audit(t, "audit")
 	before := must(r.store.Load())(t)
 	noError(t, r.Update(bg, func(context.Context, *model.Document) error { return nil }))
 	if after := must(r.store.Load())(t); after.Head != before.Head {
@@ -150,7 +127,7 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 	if err != nil || !written {
 		t.Fatalf("raw injection: %v %v", written, err)
 	}
-	audit(t, "audit")
+
 	noError(t, r.View(bg, func(d *model.Document) error {
 		// auto_backup pushes on its own: a wrong type reads as off (O18 T1c).
 		if model.Flag(d.System.Backup.AutoBackup, false) || defaultProfile(d).Description != "" || d.System.SystemConfig.DefaultProfileID != nil {
@@ -179,20 +156,4 @@ func TestTypedUpdateStoredRoundTrip(t *testing.T) {
 	}
 	update(t, "description replace", []modelRowKey{profile("description")}, func(d *model.Document) { defaultProfile(d).Description = "replaced" })
 
-	// Python edits the Go-written copy; Go reads it.
-	if pythonReady {
-		audit(t, "audit-edit")
-		probe := modelRowKey{"root", "", "n8_2_python_probe"}
-		pythonBytes := row(t, probe)
-		if pythonBytes == "" {
-			t.Fatal("Python edit missing")
-		}
-		// Python's extra root member is not declared: Go drops it with the
-		// next write (O18 T1a).
-		update(t, "edit after Python", []modelRowKey{profile("name"), probe}, func(d *model.Document) { defaultProfile(d).Name = "after Python" })
-		if row(t, probe) != "" {
-			t.Fatal("undeclared Python member kept")
-		}
-		audit(t, "audit")
-	}
 }

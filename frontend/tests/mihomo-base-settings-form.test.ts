@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input'
 import { ADVANCED_FIELDS, PORT_FIELDS, logLevelField } from '@/lib/mihomoBaseCopy'
 import { readDnsPreset, readMihomoBase } from '@/lib/mihomoBaseSettings'
 
-const template: string = JSON.parse(readFileSync(resolve(process.cwd(), '../backend/config_template.json'), 'utf8')).mihomo.custom_config
+const template: string = JSON.parse(readFileSync(resolve(process.cwd(), '../server/internal/repo/config_template.json'), 'utf8')).mihomo.custom_config
 const wrappers: VueWrapper[] = []
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
 

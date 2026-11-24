@@ -14,8 +14,9 @@
 
 ## 测试
 
-- 后端全量：`scripts/test-backend.sh`（pytest-xdist 并行；单个文件或调试仍可直接 `python -m pytest backend/test_x.py`）。
-- 前端全量：`cd frontend && npm test`。
+- Go 后端全量（在测试服务器通过 `rt` 执行）：`cd server && go vet ./... && go test -race ./...`；门禁：`PRODDIFF_BASE_TREE=<基线树> server/scripts/gate.sh`（含 `core` + `agent` + `fuzz` + `proddiff` Go-vs-Go + `frontend`）。
+- Go Agent：`cd backend/agents/go-agent && go test -race ./...`。
+- 前端全量：`cd frontend && npm run typecheck && npm test`。
 
 ## Go 后端（`server/`）代码风格
 

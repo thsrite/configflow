@@ -50,22 +50,23 @@ jobs:
         env:
           PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
         run: |
-          python3 - <<'PY'
-          import os
-          base = os.environ['PAGES_BASE_PATH']
-          if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
-              repo = os.environ['GITHUB_REPOSITORY'].split('/', 1)[1]
-              base = '' if repo.lower().endswith('.github.io') else repo
-          base = '/' + base.strip('/') + '/' if base.strip('/') else '/'
-          with open(os.environ['GITHUB_ENV'], 'a') as env:
-              env.write(f'DOCS_BASE={base}\n')
-          PY
+          node -e '
+            const fs = require("node:fs");
+            let base = process.env.PAGES_BASE_PATH || "";
+            if (process.env.GITHUB_EVENT_NAME === "pull_request") {
+              const repo = (process.env.GITHUB_REPOSITORY || "").split("/")[1] || "";
+              base = repo.toLowerCase().endsWith(".github.io") ? "" : repo;
+            }
+            const trimmed = base.replace(/^\/+|\/+$/g, "");
+            const normalized = trimmed ? `/${trimmed}/` : "/";
+            fs.appendFileSync(process.env.GITHUB_ENV, `DOCS_BASE=${normalized}\n`);
+          '
       - name: Install documentation dependencies
         run: npm --prefix doc ci --ignore-scripts --no-audit --no-fund
       - name: Build documentation
         run: npm --prefix doc run build
       - name: Check page, image and fragment links
-        run: python3 scripts/docs/check-site.py --base "$DOCS_BASE"
+        run: node scripts/docs/check-site.mjs --base "$DOCS_BASE"
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v4

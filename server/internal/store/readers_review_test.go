@@ -2,62 +2,9 @@ package store
 
 import (
 	"os"
-	"os/exec"
-	"strings"
 	"testing"
 	"time"
 )
-
-// pythonSQLite runs a short script with the cross-check interpreter (another
-// process, so its locks are real POSIX locks against ours); argv[1] is path.
-func pythonSQLite(t *testing.T, path, script string) (string, error) {
-	t.Helper()
-	interpreter := os.Getenv("CONFIGFLOW_PY")
-	if interpreter == "" {
-		t.Skip("CONFIGFLOW_PY is not set")
-	}
-	output, err := exec.Command(interpreter, "-I", "-c", script, path).CombinedOutput()
-	return strings.TrimSpace(string(output)), err
-}
-
-const exclusiveScript = `
-import sqlite3, sys
-c = sqlite3.connect(sys.argv[1], timeout=0, isolation_level=None)
-try:
-    c.execute("BEGIN EXCLUSIVE")
-    c.execute("ROLLBACK")
-    print("ok")
-except sqlite3.OperationalError as e:
-    print(e)
-`
-
-// An idle reader holds no lock between reads (rollback journal): another
-// process takes an EXCLUSIVE lock without waiting. Control: inside a read
-// transaction the same lock is refused, so the probe does detect a lock.
-func TestIdleReaderHoldsNoLockAcrossProcesses(t *testing.T) {
-	target := newStore(t)
-	must(target.Create(sampleDocument(t), nil))(t)
-	head(t, target.Store)
-	if len(idleReaders(target.Store)) != 1 {
-		t.Fatal("precondition: no idle reader")
-	}
-	if out, err := pythonSQLite(t, target.Path(), exclusiveScript); err != nil || out != "ok" {
-		t.Fatalf("exclusive lock with an idle reader: %q %v", out, err)
-	}
-	err := target.Reading(func(c *Conn) error {
-		if _, err := c.Head(); err != nil {
-			return err
-		}
-		out, err := pythonSQLite(t, target.Path(), exclusiveScript)
-		if err != nil || out != "database is locked" {
-			t.Errorf("control: exclusive lock during a read: %q %v", out, err)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
 
 // A file renamed over the path with the same size and modification time
 // (two restores within one mtime tick) is still noticed through its inode.

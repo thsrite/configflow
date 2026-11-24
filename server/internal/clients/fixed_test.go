@@ -12,9 +12,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -26,31 +23,7 @@ import (
 	"configflow/internal/routers/routerfake"
 )
 
-func tokenPython(t *testing.T, input any) struct {
-	Token    string          `json:"token"`
-	Decoded  json.RawMessage `json:"decoded"`
-	Rejected bool            `json:"rejected"`
-} {
-	t.Helper()
-	home, _ := os.UserHomeDir()
-	wd, _ := os.Getwd()
-	cmd := exec.CommandContext(t.Context(), filepath.Join(home, "cf-test/.venv/bin/python"), filepath.Join(wd, "testdata/r17_token_reference.py"))
-	cmd.Stdin = bytes.NewReader(raw(input))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Python token %v %s", err, output)
-	}
-	var result struct {
-		Token    string          `json:"token"`
-		Decoded  json.RawMessage `json:"decoded"`
-		Rejected bool            `json:"rejected"`
-	}
-	if err = json.Unmarshal(output, &result); err != nil {
-		t.Fatal(err, string(output))
-	}
-	return result
-}
-func TestR17TokenBothDirections(t *testing.T) {
+func TestR17TokenRoundTripAndExpiry(t *testing.T) {
 	now := time.Unix(1800000000, 0)
 	signer := FixedIPToken{Secret: "synthetic-fixed-secret", Now: func() time.Time { return now }}
 	for _, payload := range []json.RawMessage{json.RawMessage(`{"a":"x"}`), raw(map[string]string{"name": "中文 🧪", "proof": strings.Repeat("bounded evidence", 50)})} {
@@ -58,24 +31,18 @@ func TestR17TokenBothDirections(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		python := tokenPython(t, map[string]any{"secret": signer.Secret, "now": now.Unix(), "payload": payload, "token": token})
-		if python.Rejected {
-			t.Fatal("Python rejected Go token")
-		}
-		equalJSON(t, "Python verifies Go", payload, python.Decoded)
-		decoded, err := signer.Verify(python.Token)
+		decoded, err := signer.Verify(token)
 		if err != nil {
-			t.Fatal("Go rejected Python", err)
+			t.Fatal("Go rejected own token", err)
 		}
-		equalJSON(t, "Go verifies Python", payload, decoded)
+		equalJSON(t, "Go verifies Go", payload, decoded)
 		for _, offset := range []int64{-1, 600, 601} {
 			verifier := signer
 			verifier.Now = func() time.Time { return now.Add(time.Duration(offset) * time.Second) }
 			_, err = verifier.Verify(token)
 			rejected := err != nil
-			oracle := tokenPython(t, map[string]any{"secret": signer.Secret, "now": now.Unix() + offset, "payload": payload, "token": token})
-			if rejected != oracle.Rejected || rejected != (offset < 0 || offset > 600) {
-				t.Fatalf("expiry %d Go=%v Python=%v", offset, rejected, oracle.Rejected)
+			if rejected != (offset < 0 || offset > 600) {
+				t.Fatalf("expiry %d rejected=%v", offset, rejected)
 			}
 		}
 	}

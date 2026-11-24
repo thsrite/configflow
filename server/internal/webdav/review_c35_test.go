@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -181,43 +180,13 @@ func TestDefaultTransportRejectsCrossOriginRedirect(t *testing.T) {
 	assertNoDAVSecrets(t, []byte(err.Error()))
 }
 
-func TestTLSVerificationMatchesPythonDefault(t *testing.T) {
+func TestTLSVerificationDefault(t *testing.T) {
 	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
 	defer remote.Close()
 	_, err := NewService(nil).Test(context.Background(), fixtureSettings(remote))
 	var untrusted x509.UnknownAuthorityError
 	if !errors.As(err, &untrusted) {
 		t.Fatalf("default DAV client did not verify certificate: %v", err)
-	}
-	if os.Getenv("CONFIGFLOW_DIFF") != "1" {
-		return
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	script := `import sys
-from webdav3.client import Client
-try:
- Client({'webdav_hostname':sys.argv[1], 'webdav_login':'fixture-user', 'webdav_password':'fixture-secret', 'webdav_timeout':2}).check('/')
-except Exception as error:
- seen=set()
- while error is not None and id(error) not in seen:
-  seen.add(id(error))
-  if 'CERTIFICATE_VERIFY_FAILED' in str(error):
-   print('TLS_REJECTED')
-   break
-  error=error.__cause__ or error.__context__
- else:
-  raise AssertionError('not a certificate verification failure')
-else:
- raise AssertionError('untrusted WebDAV TLS accepted')
-`
-	out, err := exec.CommandContext(ctx, filepath.Join(home, "cf-test/.venv/bin/python"), "-c", script, remote.URL).CombinedOutput()
-	if err != nil || strings.TrimSpace(string(out)) != "TLS_REJECTED" {
-		t.Fatalf("Python TLS verification probe failed: %v %.250s", err, out)
 	}
 }
 

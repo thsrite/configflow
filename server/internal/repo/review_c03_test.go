@@ -173,21 +173,6 @@ func TestTwoThreadsOnOneInstanceLoseNoUpdate(t *testing.T) {
 	wantJSONEqual(t, reopenedRaw, 20)
 }
 
-// test_config_storage_migration.py::test_write_from_another_process_is_seen
-// (the other process is the Python repository).
-func TestWriteFromAnotherProcessIsSeen(t *testing.T) {
-	r := newRepo(t)
-	if must(r.Profile(bg, "default"))(t).Name == "From another process" {
-		t.Fatal("precondition")
-	}
-	script := filepath.Join(t.TempDir(), "ops.json")
-	noError(t, os.WriteFile(script, []byte(`[{"op":"update_profile","id":"default","updates":{"name":"From another process"}}]`), 0o600))
-	xcPython(t, "run", r.DataDir(), "plain", script)
-	if got := must(r.Profile(bg, "default"))(t).Name; got != "From another process" {
-		t.Fatalf("got %q", got)
-	}
-}
-
 // test_config_storage_migration.py::test_cache_follows_the_generation and
 // the reopening half of test_restart_is_idempotent (without legacy files).
 func TestCacheFollowsTheGeneration(t *testing.T) {

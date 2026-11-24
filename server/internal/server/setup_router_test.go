@@ -1,18 +1,12 @@
 package server
 
 import (
-	"bytes"
 	"configflow/internal/routers/spec"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"slices"
 	"testing"
-	"time"
 
 	"configflow/internal/agents"
 	"configflow/internal/httpx/httpxtest"
@@ -112,13 +106,6 @@ func TestVerifySetupRouterUsesRouterPlan(t *testing.T) {
 					t.Fatalf("verification wrote to the device: %+v", call)
 				}
 			}
-			if os.Getenv("CONFIGFLOW_DIFF") == "1" {
-				fake.Reset(tt.device)
-				want := pythonRouterVerification(t, raw, gatewayAgent)
-				if got.Empty != want.Empty || !slices.Equal(got.Blockers, want.Blockers) || got.Status != want.Status || got.Message != want.Message {
-					t.Fatalf("Go %+v, Python %+v", got, want)
-				}
-			}
 		})
 	}
 }
@@ -134,48 +121,4 @@ func outcome(t *testing.T, verify func() (setup.RouterVerification, error)) veri
 		t.Fatal(err)
 	}
 	return verificationOutcome{Blockers: v.Blockers, Empty: v.Empty}
-}
-
-// pythonRouterVerification runs the Python setup completion's router check
-// (backend/common/setup_completion.py finish, mode "managed") on the same
-// configuration and device.
-func pythonRouterVerification(t *testing.T, config []byte, agent map[string]any) verificationOutcome {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
-	defer cancel()
-	const script = `import json,sys
-import backend.routes.routers as routes
-from backend.routes.routers import _driver,_inspect
-from backend.routers.plan import build_plan
-from backend.routers.base import RouterError
-given=json.load(sys.stdin);config=given['config'];agent=given['agent']
-routes._agent=lambda agent_id:dict(agent) if agent_id==agent['id'] else None
-router=config['routers']['items'][0];driver=_driver(router)
-try:
-    _,desired,state,report=_inspect(config,router,driver)
-    plan=build_plan(router,desired,state,report,report['return_routing'],driver)
-    out={'blockers':plan['blockers'],'empty':plan['empty']}
-except RouterError as error:
-    out={'status':502,'message':str(error),'empty':False}
-finally:
-    driver.close()
-json.dump(out,sys.stdout,ensure_ascii=False)`
-	cmd := exec.CommandContext(ctx, filepath.Join(os.Getenv("HOME"), "cf-test/.venv/bin/python"), "-c", script)
-	cmd.Dir = "../../.."
-	cmd.Env = append(os.Environ(), "PYTHONPATH=.", "DATA_DIR="+t.TempDir())
-	input, err := json.Marshal(map[string]any{"config": json.RawMessage(config), "agent": agent})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd.Stdin = bytes.NewReader(input)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Python router verification: %v %s", err, stderr.Bytes())
-	}
-	var out verificationOutcome
-	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil {
-		t.Fatalf("Python router verification output: %v %s", err, stdout.Bytes())
-	}
-	return out
 }

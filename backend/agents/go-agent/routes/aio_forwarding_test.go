@@ -279,7 +279,7 @@ func (f *aioFixture) assertPersisted(t *testing.T) {
 }
 
 func TestAIOForwardingHookMatchesInstallerScript(t *testing.T) {
-	data, err := os.ReadFile("../../scripts/aio-ipv4-forwarding.sh")
+	data, err := os.ReadFile("../../../../server/internal/installer/scripts/aio-ipv4-forwarding.sh")
 	if err != nil {
 		t.Fatal(err)
 	}

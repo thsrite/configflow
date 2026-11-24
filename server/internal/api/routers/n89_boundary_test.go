@@ -18,29 +18,24 @@ import (
 // request integers retain their strict JSON type contract.
 func TestN89NativeRequestBoundary(t *testing.T) {
 	tests := []struct {
-		name, key        string
-		value            any
-		python, goStatus int
-		message          string
+		name, key string
+		value     any
+		goStatus  int
+		message   string
 	}{
-		{"numeric-user", "username", 12, 200, 400, "路由器身份和凭据字段必须是文本"},
-		{"numeric-agent", "proxy_gateway_agent_id", 12, 200, 400, "路由器身份和凭据字段必须是文本"},
-		{"container-password", "password", []string{"x"}, 400, 400, "路由器身份和凭据字段必须是文本"},
-		{"null-tls", "verify_tls", nil, 200, 400, "路由器身份和凭据字段必须是文本"},
-		{"bool-name", "name", true, 200, 400, "请填写名称"},
-		{"false-selection", "ip_rule_sets", false, 200, 400, "IP 路由规则集必须是规则集 ID 列表"},
-		{"ascii-interval", "rule_sync_interval", "60", 400, 400, "请选择有效的规则检查间隔"},
+		{"numeric-user", "username", 12, 400, "路由器身份和凭据字段必须是文本"},
+		{"numeric-agent", "proxy_gateway_agent_id", 12, 400, "路由器身份和凭据字段必须是文本"},
+		{"container-password", "password", []string{"x"}, 400, "路由器身份和凭据字段必须是文本"},
+		{"null-tls", "verify_tls", nil, 400, "路由器身份和凭据字段必须是文本"},
+		{"bool-name", "name", true, 400, "请填写名称"},
+		{"false-selection", "ip_rule_sets", false, 400, "IP 路由规则集必须是规则集 ID 列表"},
+		{"ascii-interval", "rule_sync_interval", "60", 400, "请选择有效的规则检查间隔"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			body := routerBody("http://127.0.0.1:9")
 			body[tt.key] = tt.value
-			config := map[string]any{"routers": map[string]any{"items": []any{}}}
 			dir := t.TempDir()
-			oracle := r15Python(t, dir, map[string]any{"config": config, "system": map[string]any{}, "requests": []boundaryRequest{{Method: "POST", Path: "/api/routers", Body: body}}})
-			if len(oracle.Responses) != 1 || oracle.Responses[0].Status != tt.python {
-				t.Fatalf("Flask boundary changed: %+v", oracle.Responses)
-			}
 			s := httpxtest.New(t, httpxtest.Options{DataDir: filepath.Join(dir, "go"), RepoOptions: repo.Options{RouterJobLock: core.JobLockRecord}})
 			api.New(api.Deps{Repo: s.Repo}).Register(s.App.Router)
 			before, err := s.Repo.Profile(s.Context(), "default")

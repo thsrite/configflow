@@ -74,7 +74,6 @@ var r2OwnedReads = map[string]string{
 	"internal/setup/completion.go:checkInstallation":         "setup completion fingerprint of the published profile",
 	"internal/setup/completion.go:finish":                    "setup completion fingerprint of the published profile",
 	"internal/setup/prepare.go:prepare":                      "setup preparation builds an edit from the published profile",
-	"tools/proddiff/baseline/main.go:run":                    "offline proddiff tool: owned System with Agents",
 	"tools/proddiff/generator/main.go:generate":              "offline proddiff tool: owned System with Agents",
 	"tools/proddiff/generator/bundle.go:deploymentBundle":    "offline proddiff tool: owned System with Agents",
 }
