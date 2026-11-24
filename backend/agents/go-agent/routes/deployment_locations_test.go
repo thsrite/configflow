@@ -258,6 +258,6 @@ func TestDiagnosticFileReadIsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	if size := len(readDiagnosticFile(name)); size != 2<<20 {
-		t.Fatal(fmt.Sprintf("unexpected diagnostic read size %d", size))
+		t.Fatalf("unexpected diagnostic read size %d", size)
 	}
 }

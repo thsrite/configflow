@@ -12,12 +12,6 @@ import (
 	"testing"
 )
 
-func TestCommandForLogAlwaysRedactsNonURLCommand(t *testing.T) {
-	if got := commandForLog("printf command-text-secret; false"); got != "[COMMAND REDACTED]" {
-		t.Fatalf("commandForLog() = %q", got)
-	}
-}
-
 func TestFailedSecretCommandDoesNotLeakLogsOutputOrError(t *testing.T) {
 	const commandSecret = "command-text-secret"
 	const outputSecret = "output-stream-secret"

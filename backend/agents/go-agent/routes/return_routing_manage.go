@@ -166,11 +166,6 @@ type mihomoRouting struct {
 	ruleIndex  int
 }
 
-func readMihomoRouting(configPath string) mihomoRouting {
-	result, _ := readMihomoRoutingStrict(configPath)
-	return result
-}
-
 func readMihomoRoutingStrict(configPath string) (mihomoRouting, error) {
 	result := mihomoRouting{marks: map[string]uint32{}, tunDevice: "Meta", tableIndex: 2022, ruleIndex: 9000}
 	data, err := os.ReadFile(configPath)

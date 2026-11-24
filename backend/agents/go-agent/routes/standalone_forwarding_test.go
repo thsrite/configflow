@@ -142,9 +142,9 @@ func TestAIOForwardingStandaloneHookLines(t *testing.T) {
 	if target.SystemdHookLine() != "ExecStartPre=/bin/sh "+hook || target.OpenRCHookLine() != "    /bin/sh "+hook+" || return 1" {
 		t.Fatalf("wrong hook lines: %q %q", target.SystemdHookLine(), target.OpenRCHookLine())
 	}
-	// The zero-argument helpers keep describing the native AIO Mihomo Agent.
-	if aioForwardingHookPath() != filepath.Join(aioAgentRoot, "mihomo", "enable-ipv4-forwarding.sh") {
-		t.Fatalf("default hook path changed: %s", aioForwardingHookPath())
+	// Check the native AIO Mihomo Agent default too.
+	if aioDefaultTarget().Hook() != filepath.Join(aioAgentRoot, "mihomo", "enable-ipv4-forwarding.sh") {
+		t.Fatalf("default hook path changed: %s", aioDefaultTarget().Hook())
 	}
 }
 

@@ -70,13 +70,6 @@ func (cache *oxSourceCache) clearLocked() {
 	cache.streams = make(map[string]*oxSourceStream)
 }
 
-func (cache *oxSourceCache) close() {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	cache.closed = true
-	cache.clearLocked()
-}
-
 func (cache *oxSourceCache) reset() {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()

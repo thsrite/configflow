@@ -1,6 +1,7 @@
 package preflight
 
 import (
+	"agent/clioutput"
 	"bytes"
 	"fmt"
 	"os"
@@ -313,7 +314,7 @@ func TestCoreTUNRuntimeReportPrintsObservedResult(t *testing.T) {
 	fixture := newTUNRuntimeFixture()
 	check := inspectCoreTUNRuntime(fixture.probe(t), 42)
 	var out bytes.Buffer
-	Report{check}.Print(&out)
+	Report{check}.PrintWithOptions(&out, clioutput.Options{Verbose: true}, false)
 	printed := out.String()
 	if check.Level != "pass" || !strings.Contains(printed, "[通过]") || !strings.Contains(printed, "42") || !strings.Contains(printed, "Meta") {
 		t.Fatalf("report did not print the actual runtime result: %q", printed)

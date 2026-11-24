@@ -239,11 +239,6 @@ func getConfigDir(configPath string) string {
 	return configPath[:lastSlash]
 }
 
-// getLogData 获取指定服务的日志数据
-func getLogData(serviceType string, configPath string, lines int, serviceUnits ...string) (string, string) {
-	return getLogDataWithAgentLog(serviceType, configPath, lines, "/var/log/configflow-agent.log", serviceUnits...)
-}
-
 func getLogDataWithAgentLog(serviceType string, configPath string, lines int, agentLogPath string, serviceUnits ...string) (string, string) {
 	if serviceType == "oxidns" {
 		return getOxiDNSLogs(configPath, lines, serviceUnits...)

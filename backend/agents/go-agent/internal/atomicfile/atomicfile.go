@@ -49,14 +49,6 @@ type Options struct {
 	SyncDir func(dir string) error
 }
 
-// Write atomically writes data to path with perm: it creates a temporary file
-// in path's directory, sets perm, writes data, fsyncs and closes the file,
-// renames it over path, and fsyncs the parent directory. On any failure the
-// temporary file is removed.
-func Write(path string, data []byte, perm os.FileMode) error {
-	return WriteWith(path, data, perm, Options{})
-}
-
 // WriteWith atomically writes data to path with perm and opts.
 func WriteWith(path string, data []byte, perm os.FileMode, opts Options) error {
 	return WriteFrom(path, bytes.NewReader(data), perm, opts)

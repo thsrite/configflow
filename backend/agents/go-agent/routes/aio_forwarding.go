@@ -182,11 +182,6 @@ func aioForwardingTargetFor(cfg *Config) (aioForwardingTarget, error) {
 	}, nil
 }
 
-// The zero-argument forms describe the native AIO Mihomo Agent.
-func aioForwardingHookPath() string { return aioDefaultTarget().Hook() }
-func aioSystemdHookLine() string    { return aioDefaultTarget().SystemdHookLine() }
-func aioOpenRCHookLine() string     { return aioDefaultTarget().OpenRCHookLine() }
-
 // The first line of start_pre() in OpenRC scripts written before the installer
 // reserved a hook line; the hook is inserted above it, as the installer does now.
 const aioOpenRCLegacyFirstLine = "    checkpath --directory --mode 0755 /var/log"

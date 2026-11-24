@@ -129,7 +129,7 @@ func TestWriteOptions(t *testing.T) {
 	t.Run("before commit aborts and cleans temp", func(t *testing.T) {
 		dir := t.TempDir()
 		target := filepath.Join(dir, "tun.conf")
-		if err := Write(target, []byte("original\n"), 0o644); err != nil {
+		if err := WriteWith(target, []byte("original\n"), 0o644, Options{}); err != nil {
 			t.Fatalf("seed write: %v", err)
 		}
 		sentinel := errors.New("changed concurrently")
@@ -226,7 +226,7 @@ func TestWriteFailuresCleanTemp(t *testing.T) {
 
 	t.Run("missing parent directory", func(t *testing.T) {
 		target := filepath.Join(t.TempDir(), "missing", "file")
-		if err := Write(target, []byte("x"), 0o600); err == nil {
+		if err := WriteWith(target, []byte("x"), 0o600, Options{}); err == nil {
 			t.Fatal("expected error for missing parent directory")
 		}
 	})

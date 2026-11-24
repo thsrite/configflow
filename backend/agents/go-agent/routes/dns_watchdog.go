@@ -243,16 +243,6 @@ func controllerAnswers(address, secret string) error {
 	return nil
 }
 
-// watchdogDNSAddress never trusts a health address independently of the core's
-// actual local UDP listeners and the entry sequence that handles their queries.
-func watchdogDNSAddress(cfg *Config) (string, error) {
-	target, err := watchdogTargetFor(cfg)
-	if err == nil && target.kind != "dns" {
-		return "", fmt.Errorf("no guarded DNS target")
-	}
-	return target.address, err
-}
-
 func guardedWatchdogDNSAddress(cfg *Config, doc map[string]any) (string, error) {
 	if include := doc["include"]; include != nil {
 		values, ok := include.([]any)

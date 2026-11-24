@@ -3,10 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -135,47 +132,4 @@ func getServiceStatus(serviceName string) string {
 	// 如果所有方法都失败，返回 inactive
 	logger.Warnf("Service %s is not running", serviceName)
 	return "inactive"
-}
-
-// executeCommand 执行一个shell命令
-func executeCommand(command string) ([]byte, error) {
-	logger.Infof("Executing shell command: %s", command)
-
-	cmd := exec.Command("sh", "-c", command)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logger.Infof("Command failed: %v, output: %s", err, string(output))
-		// 返回错误信息和输出，而不是直接返回错误
-		return output, fmt.Errorf("command failed: %v, output: %s", err, string(output))
-	}
-	logger.Infof("Command executed successfully")
-	return output, nil
-}
-
-// writeLogToFile 将日志写入指定文件
-func writeLogToFile(message, logFile string) {
-	logger.Infof("Writing log message to file: %s", logFile)
-
-	// 确保日志目录存在
-	logDir := filepath.Dir(logFile)
-	logger.Infof("Ensuring log directory exists: %s", logDir)
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		logger.Errorf("Failed to create log directory %s: %v", logDir, err)
-		return
-	}
-
-	// 打开或创建日志文件（追加模式）
-	logger.Infof("Opening log file: %s", logFile)
-	file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		logger.Errorf("Failed to open log file %s: %v", logFile, err)
-		return
-	}
-	defer file.Close()
-
-	// 写入日志消息
-	logger.Infof("Writing message to log file")
-	if _, err := file.WriteString(message + "\n"); err != nil {
-		logger.Errorf("Failed to write to log file %s: %v", logFile, err)
-	}
 }

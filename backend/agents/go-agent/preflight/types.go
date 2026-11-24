@@ -67,18 +67,6 @@ func (r Report) HasErrors() bool {
 	return false
 }
 
-// Print keeps values on one line, so a filename cannot forge another result or
-// inject terminal control sequences. Repair instructions are explanatory only.
-func (r Report) Print(out io.Writer) {
-	r.print(out, false)
-}
-
-// PrintPreparation deliberately distinguishes the opt-in installer mutation
-// from the read-only environment report.
-func (r Report) PrintPreparation(out io.Writer) {
-	r.print(out, true)
-}
-
 // PrintWithOptions separates complete evidence from the short operator-facing
 // report. It does not run checks, mutate their outcomes, or change exit status.
 func (r Report) PrintWithOptions(out io.Writer, options clioutput.Options, preparation bool) {

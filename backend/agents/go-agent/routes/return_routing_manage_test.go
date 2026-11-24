@@ -428,7 +428,10 @@ func TestReturnSafetyStatusListsProtocols(t *testing.T) {
 }
 func TestMihomoConflicts(t *testing.T) {
 	cfg := testConfig(t, tunConfig+"routing-mark: 6666\n")
-	routing := readMihomoRouting(cfg.ConfigPath)
+	routing, err := readMihomoRoutingStrict(cfg.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !routing.tunEnabled || routing.tunDevice != "Meta" {
 		t.Fatalf("routing = %+v", routing)
 	}

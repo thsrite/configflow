@@ -110,12 +110,13 @@ func TestWatchdogDNSAddress(t *testing.T) {
 			t.Run(service+"/"+test.name, func(t *testing.T) {
 				cfg := &Config{ServiceType: service, ConfigPath: filepath.Join(t.TempDir(), "config.yaml"), HealthDNSAddress: test.health}
 				writeWatchdogConfig(t, cfg, test.config)
-				got, err := watchdogDNSAddress(cfg)
+				target, err := watchdogTargetFor(cfg)
+				got := target.address
 				if test.want == "" {
-					if err == nil {
+					if err == nil && target.kind == "dns" {
 						t.Fatalf("unsafe configuration accepted: %q", got)
 					}
-				} else if err != nil || got != test.want {
+				} else if err != nil || target.kind != "dns" || got != test.want {
 					t.Fatalf("got %q, %v; want %q", got, err, test.want)
 				}
 			})

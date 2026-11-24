@@ -12,7 +12,6 @@ import (
 // 1.8.2-1.8.4 return routing (routes/rule without protocol, table as string).
 func legacyHost() *fakeHost {
 	var host fakeHost
-	_ = json.Unmarshal([]byte(`{}`), &host)
 	host.routes = jsonMaps([]map[string]any{
 		{"dst": "default", "gateway": "192.168.1.1", "dev": "eth0", "flags": []any{}},
 		{"dst": "default", "gateway": "192.168.1.1", "dev": "eth0", "table": "104", "flags": []any{}},

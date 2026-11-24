@@ -96,44 +96,6 @@ func SetOutput(w io.Writer) io.Writer {
 	return prev
 }
 
-// Writer returns the current process-wide log destination.
-func Writer() io.Writer {
-	stateMu.Lock()
-	defer stateMu.Unlock()
-	return out
-}
-
-// SetLevel swaps the process-wide minimum log level and returns the previous
-// level.
-func SetLevel(l Level) Level {
-	stateMu.Lock()
-	defer stateMu.Unlock()
-	prev := minLvl
-	minLvl = l
-	return prev
-}
-
-// CurrentLevel returns the current process-wide minimum log level.
-func CurrentLevel() Level {
-	stateMu.Lock()
-	defer stateMu.Unlock()
-	return minLvl
-}
-
-// SetClock replaces the timestamp source (primarily for tests) and returns the
-// previous clock. Passing nil restores time.Now.
-func SetClock(fn func() time.Time) func() time.Time {
-	stateMu.Lock()
-	defer stateMu.Unlock()
-	prev := clockFn
-	if fn == nil {
-		clockFn = time.Now
-	} else {
-		clockFn = fn
-	}
-	return prev
-}
-
 // Logger emits leveled, redacted log lines under a fixed package-path name.
 type Logger struct {
 	name string
@@ -147,11 +109,6 @@ func Get(name string) *Logger {
 		name = "agent"
 	}
 	return &Logger{name: name}
-}
-
-// Name returns the logger's package-path name.
-func (l *Logger) Name() string {
-	return l.name
 }
 
 // Enabled reports whether records at level will be emitted.
@@ -218,7 +175,6 @@ func FormatLine(t time.Time, name string, level Level, message string) string {
 	)
 }
 
-func (l *Logger) Debug(msg string, kv ...any) { l.Log(Debug, msg, kv...) }
 func (l *Logger) Info(msg string, kv ...any)  { l.Log(Info, msg, kv...) }
 func (l *Logger) Warn(msg string, kv ...any)  { l.Log(Warn, msg, kv...) }
 func (l *Logger) Error(msg string, kv ...any) { l.Log(Error, msg, kv...) }

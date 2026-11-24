@@ -307,10 +307,10 @@ func TestAIOForwardingHookMatchesInstallerScript(t *testing.T) {
 	}
 	systemd := regexp.MustCompile(`(?m)^\s+IPV4_SYSTEMD_PRE="([^"]+)"$`).FindStringSubmatch(script)
 	openrc := regexp.MustCompile(`(?m)^\s+IPV4_OPENRC_PRE="([^"]+)"$`).FindStringSubmatch(script)
-	if systemd == nil || expand(systemd[1]) != aioSystemdHookLine() || openrc == nil || "    "+expand(openrc[1]) != aioOpenRCHookLine() {
+	if systemd == nil || expand(systemd[1]) != aioDefaultTarget().SystemdHookLine() || openrc == nil || "    "+expand(openrc[1]) != aioDefaultTarget().OpenRCHookLine() {
 		t.Fatalf("service hook lines differ: %v %v", systemd, openrc)
 	}
-	if !strings.Contains(script, `cp "$STAGE_DIR/enable-ipv4-forwarding.sh" "$AGENT_DIR/enable-ipv4-forwarding.sh"`) || filepath.Base(aioForwardingHookPath()) != "enable-ipv4-forwarding.sh" {
+	if !strings.Contains(script, `cp "$STAGE_DIR/enable-ipv4-forwarding.sh" "$AGENT_DIR/enable-ipv4-forwarding.sh"`) || filepath.Base(aioDefaultTarget().Hook()) != "enable-ipv4-forwarding.sh" {
 		t.Fatal("hook path differs")
 	}
 }

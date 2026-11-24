@@ -22,7 +22,7 @@ func TestLoggerFormattingAndLevels(t *testing.T) {
 	})
 
 	logger := Get("agent/routes")
-	logger.Debug("hidden debug")
+	logger.Log(Debug, "hidden debug")
 	logger.Infof("request handled %d", 200)
 	logger.Warn("slow upstream", "host", "example.test")
 	logger.Error("failed", "token", "top-secret-value")
@@ -197,4 +197,28 @@ func TestConcurrentLoggingAndSetOutput(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+// SetLevel swaps the process-wide minimum log level and returns the previous
+// level.
+func SetLevel(l Level) Level {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	prev := minLvl
+	minLvl = l
+	return prev
+}
+
+// SetClock replaces the timestamp source (primarily for tests) and returns the
+// previous clock. Passing nil restores time.Now.
+func SetClock(fn func() time.Time) func() time.Time {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	prev := clockFn
+	if fn == nil {
+		clockFn = time.Now
+	} else {
+		clockFn = fn
+	}
+	return prev
 }

@@ -405,3 +405,10 @@ func TestOxSourceCacheIPv4SuppressionSummary(t *testing.T) {
 		t.Fatalf("expected compact IPv4 policy summary, got %v", response.Records)
 	}
 }
+
+func (cache *oxSourceCache) close() {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	cache.closed = true
+	cache.clearLocked()
+}
