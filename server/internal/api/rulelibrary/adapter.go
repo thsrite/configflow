@@ -496,13 +496,18 @@ func (s *Service) cacheOne(ctx context.Context, item model.RuleLibraryItem) (str
 		if err != nil {
 			return "", err
 		}
-		// A manual refresh resolves global fetch settings, just like the
-		// scheduler. Passing a shared catalog here would erase proxy settings.
+		r, err := s.repository(ctx)
+		if err != nil {
+			return "", err
+		}
+		// A manual refresh resolves global fetch settings from the repository,
+		// just like the scheduler. Passing a shared catalog here would erase
+		// proxy settings.
 		_, _, err = rf.RefreshRemote(ctx, item, "manual", refresh.RuleReadOptions{Fetch: func(ctx context.Context, url string) (rulefetch.Content, error) {
 			if err := ctx.Err(); err != nil {
 				return rulefetch.Content{}, err
 			}
-			response, err := s.client.Download(ctx, url, rulefetch.DownloadRequest{ConnectTimeout: 30 * time.Second, ReadTimeout: 30 * time.Second})
+			response, err := s.client.Download(ctx, url, rulefetch.DownloadRequest{Repo: r, ConnectTimeout: 30 * time.Second, ReadTimeout: 30 * time.Second})
 			if err != nil {
 				return rulefetch.Content{}, err
 			}

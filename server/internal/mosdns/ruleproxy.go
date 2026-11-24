@@ -325,7 +325,9 @@ func ruleProxy(ctx context.Context, r *repo.Repository, request RuleProxyRequest
 			}
 		} else {
 			var raw []byte
-			raw, fetchErr = fetch(ctx, fetchURL, nil, request.HostURL)
+			// An undeclared URL uses only the global fetch settings (no rule
+			// catalog), as rulefetch would load them from the repository.
+			raw, fetchErr = fetch(ctx, fetchURL, globalFetchSettings(config), request.HostURL)
 			content = strings.ToValidUTF8(string(raw), "�")
 		}
 		if fetchErr != nil {
@@ -347,6 +349,15 @@ func ruleProxy(ctx context.Context, r *repo.Repository, request RuleProxyRequest
 		return nil, err
 	}
 	return &RuleProxyResponse{Status: 200, Text: converted, NoStore: true, Stale: stale}, nil
+}
+
+// globalFetchSettings is the rulefetch view of config's system settings
+// alone, the same fields rulefetch reads from the repository for a request
+// without a source configuration.
+func globalFetchSettings(config *model.Config) *model.Config {
+	settings := config.SystemConfig
+	return &model.Config{SystemConfig: model.SystemConfig{ServerDomain: settings.ServerDomain,
+		GitHubProxyDomain: settings.GitHubProxyDomain, RuleFetchProxy: settings.RuleFetchProxy}}
 }
 
 func sameCredential(a, b string) bool {
