@@ -197,7 +197,7 @@ design). Gates: .64 FULL core on 8aa0000d2 PASS (race cache-hits=0, agent+cross-
 Running: PVE CT 240 Plan B verification on 8aa0000d2 ∥ go-switch-rehearsal rebase/sync to post-Plan-B go (previously
 c462c64d6 passed 2× consecutive full no-Python gates on .64). Next: L6 final candidate images + switch rehearsal + 24h
 soak → final 2× consecutive no-Python gate → switch commit + v3.0.0-rc.1.
-2026-11-25 (late): ALL pre-switch technical gates & L6 drills DONE; L6 24h soak RUNNING:
+2026-11-25 (final pre-switch): ALL pre-switch technical gates & L6 drills + soak DONE; READY FOR MAINTAINER v3.0.0-rc.1 SWITCH APPROVAL:
 - PVE CT 240 Plan B acceptance (8aa0000d2, pve-20261124-174028, archived in server/parity/o10-pve-baseline.md): idle CPU
   0.369% vs Py 1.507%, 10s med 0.10% vs 0.90%, idle RSS 54.0 vs 90.1 MB, after-load RSS 81.9 vs 117.0 MB, settled RSS
   76.6 vs 118.3 MB, GC live heap +5.97 MB (<=10 MB), 19/19 routes faster than Python (1.46×–24.66×) and 19/19 routes
@@ -209,15 +209,19 @@ soak → final 2× consecutive no-Python gate → switch commit + v3.0.0-rc.1.
   proddiff Go-vs-Go 2831 cases new=0 stale=0, frontend 3469/3469).
 - O14 P9d DONE: final configdiff --groups all on .32 (10,651 variants, archived in server/parity/o14-configdiff-final.md,
   0 unexplained regressions).
-- L6 lab rehearsal ALL PASS (server/parity/lab/L6.md, final images 3.0.0-rc.l6-6c77892c7 293 MB & s6 Agent
+- L6 lab rehearsal & soak ALL PASS (server/parity/lab/L6.md, final images 3.0.0-rc.l6-6c77892c7 293 MB & s6 Agent
   1.9.3-go-6c77892c7): 1.0h py-baseline (RSS med 117 MB, CPU 2.17%, 0 probe fails) → Go switch downtime 4.6s, O17 v1→v2
   migration + mandatory backup integrity=ok (storage_version=2, agent_state=82), D11 ordered re-push 6/6 synced (0 probe
   fails across switch), SIGTERM restart 1.8s ExitCode=0, F5 rollback, F6 SIGKILL mid-HA-handoff recovery, F9/F12 cold
   restore (downtime 3.0s, 0 auto-writes), O17 restored import fail-closed (409 + cleared on push), P13 image injection,
   §5.6 s6 Docker HA in-place upgrade (PID 1 s6-svscan, 0 python/supervisor, kill-9 oxidns recovery, docker stop VIP
   failover), §5.5 HA member-lost recovery delivering frozen X=10242 (not Y=10243) with identical SHA256.
-- L6 24h soak (go-24h) started ~04:28 +08:00; 6h Paseo heartbeat e145ab54 (l6-go-24h-soak-watch) monitors until 2026-11-26
-  04:30 +08:00, then finalizes L6.md / O14-CHECKLIST.md for maintainer v3.0.0-rc.1 switch window approval.
+- L6 soak (go-24h) stopped early at 14.4h (04:28–18:54 +08:00, 805 samples, incl. 10.4h realistic user-sim.py workload)
+  by maintainer decision: CPU avg 2.45% / med 0.1% (idle segment 0.94%), RSS med 69.8 MB / max 147.3 MB / last 78.3 MB,
+  threads constant 9, fds 16–20 (last 16), error=0, cf-panel restarts=0, 847,160 live probes (0 fail), 201/201 user-sim
+  ops OK (0 fail), final DB integrity_check=ok, 6/6 Agents online & succeeded with matching HA SHA256. Heartbeat
+  e145ab54 deleted; .32 ~/.cache/cf-l6/snap cleaned. ALL O14 P1–P13 satisfied; awaiting maintainer approval to merge
+  go-switch-rehearsal into main and tag v3.0.0-rc.1.
 
 batch-42 MERGED 2026-11-23 (O18 T1d: DATA_DIR/device-reply records plain structs, model Raw machinery deleted
 (record/map/member/fields/json/switch/content.go), encode.go/object.go/truth.go/DecodeLenient, _revision int64;
