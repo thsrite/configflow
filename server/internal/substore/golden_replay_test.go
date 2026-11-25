@@ -59,6 +59,12 @@ func normalizeSSGolden(v any, bundleDir string) any {
 					continue
 				}
 			}
+			if k == "runtime" {
+				if s, ok := val.(string); ok && s != "" {
+					out[k] = "<runtime>"
+					continue
+				}
+			}
 			out[k] = normalizeSSGolden(val, bundleDir)
 		}
 		return out

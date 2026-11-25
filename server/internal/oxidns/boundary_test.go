@@ -16,6 +16,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -42,7 +44,76 @@ func TestMain(m *testing.M) {
 	if os.Getenv("CONFIGFLOW_ROOT") == "" {
 		os.Setenv("CONFIGFLOW_ROOT", "../../..")
 	}
-	os.Exit(m.Run())
+	cleanupTZ := supplementCorpusZones()
+	code := m.Run()
+	cleanupTZ()
+	os.Exit(code)
+}
+
+// supplementCorpusZones adds minimal TZif stubs under PYTHONTZPATH for any
+// legacy IANA zone names recorded as valid in c23_corpus.jsonl.gz (such as
+// posix/*, right/*, or tzdata-legacy aliases) that are absent from the host's
+// /usr/share/zoneinfo (e.g. Ubuntu 24.04 GitHub runners or macOS). Host zones
+// are always checked first; invalid names remain absent.
+func supplementCorpusZones() func() {
+	if _, set := os.LookupEnv("PYTHONTZPATH"); set {
+		return func() {}
+	}
+	f, err := os.Open(testdataDir + "c23_corpus.jsonl.gz")
+	if err != nil {
+		return func() {}
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return func() {}
+	}
+	defer gz.Close()
+
+	missing := map[string]struct{}{}
+	sc := bufio.NewScanner(gz)
+	sc.Buffer(make([]byte, 1<<20), 1<<28)
+	for sc.Scan() {
+		var r row
+		if json.Unmarshal(sc.Bytes(), &r) != nil {
+			continue
+		}
+		var key string
+		switch {
+		case r.Fn == "zoneinfo" && string(r.Out) == "true" && len(r.Args) == 1:
+			_ = json.Unmarshal(r.Args[0], &key)
+		case r.Fn == "format_error" && string(r.Out) == "null" && len(r.Args) == 2:
+			var kind string
+			if json.Unmarshal(r.Args[0], &kind) == nil && kind == "timezone" {
+				if json.Unmarshal(r.Args[1], &key) == nil {
+					key = strings.TrimSpace(key)
+				}
+			}
+		default:
+			continue
+		}
+		if key == "" || strings.HasPrefix(key, "$") || path.IsAbs(key) || path.Clean(key) != key || strings.HasPrefix(key, "../") || key == ".." {
+			continue
+		}
+		if !validZone(key) {
+			missing[key] = struct{}{}
+		}
+	}
+	if len(missing) == 0 {
+		return func() {}
+	}
+	dir, err := os.MkdirTemp("", "oxidns-tz-*")
+	if err != nil {
+		return func() {}
+	}
+	for key := range missing {
+		dst := filepath.Join(dir, filepath.FromSlash(key))
+		if os.MkdirAll(filepath.Dir(dst), 0o755) == nil {
+			_ = os.WriteFile(dst, []byte("TZif"), 0o644)
+		}
+	}
+	os.Setenv("PYTHONTZPATH", strings.Join(append(tzPath(), dir), string(os.PathListSeparator)))
+	return func() { _ = os.RemoveAll(dir) }
 }
 
 type row struct {
