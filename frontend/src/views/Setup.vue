@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, ArrowRight, Check, CircleCheck, Eye, EyeOff, LoaderCircle, Network, Router as RouterIcon } from '@lucide/vue'
+import { ArrowLeft, ArrowRight, ChevronDown, Check, CircleCheck, Eye, EyeOff, LoaderCircle, Network, Router as RouterIcon } from '@lucide/vue'
 import { profileApi } from '@/api'
 import { setupApi, type SetupDomainRule, type SetupGoal, type SetupIndex, type SetupSession } from '@/api/setup'
 import { SETUP_GOALS, SETUP_STEPS, abandonSetup, setupControllerSecretWarning, setupError, setupLocalDnsWarning, setupRuleConflicts, setupRuleOptions, useLibraryNamesake } from '@/lib/setupFlow'
@@ -307,7 +307,7 @@ onUnmounted(() => { disposed = true })
           <li v-for="(label, index) in steps" :key="index" class="shrink-0"><button type="button" :disabled="working || !session || (index > session.max_step && !(index === 4 && canPreviewRouting))" :aria-current="step === index ? 'step' : undefined" class="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13px] disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-accent" :class="step === index ? 'bg-primary-soft font-medium text-primary-accent' : index < (session?.step ?? 0) ? 'text-foreground' : 'text-muted-foreground'" @click="move(index)"><span class="grid size-6 shrink-0 place-items-center rounded-full border border-border-strong font-mono text-xs"><Check v-if="session?.completed || index < (session?.step ?? 0)" class="size-3.5" /><template v-else>{{ index + 1 }}</template></span>{{ label }}<span v-if="index === 4 && canPreviewRouting" class="ml-auto text-xs text-muted-foreground">{{ goal === 'router' ? '可先配置' : '预览' }}</span></button></li>
         </ol></nav>
         <SectionCard :title="step === 5 ? 'Mihomo + OxiDNS 已准备好' : steps[step]" :help="help[step]" class="min-w-0">
-          <div v-if="session" class="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border pb-4 text-xs text-muted-foreground"><span class="break-words font-medium text-foreground">{{ session.name }}</span><span>{{ SETUP_GOALS.find(item => item.id === session?.goal)?.title }}</span></div>
+          <div v-if="session && step !== 5" class="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border pb-4 text-xs text-muted-foreground"><span class="break-words font-medium text-foreground">{{ session.name }}</span><span>{{ SETUP_GOALS.find(item => item.id === session?.goal)?.title }}</span></div>
           <p v-if="session?.legacy_takeover && (step === 3 || step === 4)" role="status" class="mt-0 mb-5 rounded-lg border border-primary-accent/30 bg-primary-soft px-3 py-2.5 text-sm leading-relaxed text-foreground" data-legacy-takeover>此配置空间使用旧版 Linux 网关接管，保持不变。</p>
           <div v-if="session?.mihomo_changes?.length && step === 3" role="status" class="mt-0 mb-5 space-y-1 rounded-lg bg-muted px-3 py-2.5 text-sm leading-relaxed" data-mihomo-changes><p class="m-0 font-medium">已调整 Mihomo 基础配置的以下项，其余设置原样保留：</p><ul class="m-0 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground"><li v-for="item in session.mihomo_changes" :key="item" class="break-words">{{ item }}</li></ul></div>
           <div v-if="step === 0" class="space-y-5">
@@ -417,28 +417,27 @@ onUnmounted(() => { disposed = true })
             <Button v-if="goal !== 'router' || routerMode !== 'managed'" :disabled="previewRouting || working || (goal === 'gateway' && !clientReady) || (goal === 'router' && (!ackRoutes || !ackDNS || routesIncomplete))" class="min-h-11" @click="finish"><LoaderCircle v-if="working" class="size-4 animate-spin" />{{ previewRouting ? '完成安装后继续' : '确认设置并继续' }}<ArrowRight class="size-4" /></Button>
           </div>
           <div v-if="step === 5 && session" class="grid gap-5">
-            <ul class="m-0 grid list-none gap-2 p-0 text-sm" aria-label="安装结果">
+            <div>
+              <Button class="min-h-11 max-w-full whitespace-normal" :disabled="working" @click="manage('/dashboard')">进入「{{ session.name }}」<ArrowRight class="size-4 shrink-0" /></Button>
+            </div>
+            <ul class="m-0 grid list-none gap-x-4 gap-y-2 sm:grid-cols-2 p-0 text-sm" aria-label="安装结果">
               <li v-for="item in ['Mihomo 配置已发布', 'OxiDNS 配置已发布', 'IPv4 转发与 TUN 已检查']" :key="item" class="flex items-start gap-2"><CircleCheck class="size-4 shrink-0 text-success-accent" />{{ item }}</li>
               <li v-if="session.router_verification === 'verified'" class="flex items-start gap-2"><CircleCheck class="size-4 shrink-0 text-success-accent" />主路由的路由与 DHCP DNS 已核对同步。</li>
-              <li v-if="session.router_verification === 'routes_verified'" class="text-sm">主路由静态路由已核对；请在实际 DHCP 服务器下发 OxiDNS 地址。</li>
-              <li v-if="session.router_verification === 'manual'" class="text-warning-accent">主路由为手动配置，尚未自动核验。</li>
+              <li v-if="session.router_verification === 'routes_verified'" class="text-sm sm:col-span-2">主路由静态路由已核对；请在实际 DHCP 服务器下发 OxiDNS 地址。</li>
+              <li v-if="session.router_verification === 'manual'" class="text-warning-accent sm:col-span-2">主路由为手动配置，尚未自动核验。</li>
             </ul>
-            <details class="space-y-2 border-t border-border pt-4">
-              <summary class="cursor-pointer text-sm font-semibold">用一台手机或电脑验证分流</summary>
-              <p class="m-0 text-sm leading-relaxed">{{ goal === 'router' ? '重新连接局域网，确认设备使用 OxiDNS 作为 DNS。' : '将测试设备的网关和 DNS 指向这台 Linux。' }}分别打开一个国内直连网站和一个应走代理的网站，确认都能访问。</p>
-              <p class="m-0 text-xs text-muted-foreground">客户端连通性尚未由本向导确认。</p>
-            </details>
-            <div class="flex flex-wrap items-center gap-3">
-              <Button class="min-h-11" :disabled="working" @click="manage('/dashboard')">进入「{{ session.name }}」<ArrowRight class="size-4" /></Button>
-              <details><summary class="cursor-pointer text-sm text-muted-foreground">管理设备与路由</summary>
-                <div class="mt-2 flex flex-wrap gap-1">
-                  <Button variant="ghost" :disabled="working" @click="manage('/agents')">查看 Agent 状态</Button>
-                  <Button variant="ghost" :disabled="working" @click="manage('/client-devices')">查看客户端设备</Button>
-                  <Button v-if="goal === 'router'" variant="ghost" :disabled="working" @click="manage('/routers')">管理主路由规则</Button>
-                </div>
+            <div class="border-y border-border">
+              <details class="group">
+                <summary class="flex min-h-11 cursor-pointer items-center justify-between gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">用一台手机或电脑验证分流<ChevronDown aria-hidden="true" class="size-4 text-muted-foreground group-open:rotate-180" /></summary>
+                <p class="m-0 pb-3 text-sm leading-relaxed text-muted-foreground">{{ goal === 'router' ? '重新连接局域网，确认设备使用 OxiDNS 作为 DNS。' : '将测试设备的网关和 DNS 指向这台 Linux。' }}分别打开一个国内直连网站和一个应走代理的网站，确认都能访问。</p>
               </details>
+              <nav aria-label="管理设备与路由" class="flex flex-wrap gap-x-5 border-t border-border">
+                <Button variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/agents')">查看 Agent 状态</Button>
+                <Button variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/client-devices')">查看客户端设备</Button>
+                <Button v-if="goal === 'router'" variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/routers')">管理主路由规则</Button>
+              </nav>
             </div>
-            <section v-if="session.completed && session.default_profile" class="border-t border-border pt-3 text-sm">
+            <section v-if="session.completed && session.default_profile" class="text-sm">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="text-muted-foreground">当前默认配置空间</span><strong>{{ session.default_profile.current.name }}</strong>
                 <Button v-if="!editingDefault" variant="ghost" class="ml-auto min-h-11" @click="editDefaultSpace">更改</Button>
