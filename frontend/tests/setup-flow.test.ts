@@ -417,7 +417,7 @@ describe('首次使用分流向导', () => {
     await click('确认设置并继续')
     expect(setupApi.finish).toHaveBeenCalledWith('a'.repeat(32), { router_mode: 'manual', router_id: '', ack_routes: true, ack_dns: true })
     expect(wrapper!.text()).toContain('主路由为手动配置，尚未自动核验')
-    expect(wrapper!.text()).toContain('客户端连通性尚未由本向导确认')
+    expect(wrapper!.get('details').text()).toContain('分别打开一个国内直连网站和一个应走代理的网站')
   })
 
   it('完成路由接入后单独保存默认空间，普通完成保留原先的默认值', async () => {
