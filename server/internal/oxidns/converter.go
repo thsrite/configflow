@@ -33,6 +33,21 @@ func TagFor(prefix string, identity *Node) string {
 
 func tagForString(prefix, identity string) string { return TagFor(prefix, S(identity)) }
 
+// RuleFileNames returns display names keyed by the generated relative path.
+func RuleFileNames(config *model.Config) map[string]string {
+	p := &Profile{source: config}
+	names := map[string]string{}
+	for _, item := range p.activeItems() {
+		if item.ItemType != "ruleset" || item.Name == "" {
+			continue
+		}
+		for _, part := range rulesetParts(behaviorOf(item)) {
+			names[strings.TrimPrefix(rulePath(item.ID, part), "./")] = item.Name
+		}
+	}
+	return names
+}
+
 // RulePath is the generated resource of one ruleset part, for a stored rule
 // object whose id may be of any JSON type.
 func RulePath(item *Node, part string) string {

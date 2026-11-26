@@ -480,7 +480,7 @@ describe('首次使用分流向导', () => {
     vi.mocked(setupApi.get).mockResolvedValue({ data: installed({ step: 5, max_step: 5, completed: true }) } as never)
     await open('/setup?session=' + 'a'.repeat(32))
     expect(wrapper!.text()).not.toContain('进入设备管理')
-    await click('客户端设备')
+    await click('查看客户端设备')
     expect(setActiveProfileId).toHaveBeenCalledWith('setup_test')
     expect(wrapper!.text()).toContain('客户端设备页')
   })

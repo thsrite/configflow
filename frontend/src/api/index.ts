@@ -416,6 +416,7 @@ export const customConfigApi = {
 
 // Agent 管理
 export interface GeneratedConfig {
+  rule_file_names?: Record<string, string>
   id: string
   deployment_id: string
   agent_id: string

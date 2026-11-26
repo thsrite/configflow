@@ -291,6 +291,29 @@ func TestRouterDraftAttachmentAndManualManagedFinish(t *testing.T) {
 	if text(record.RouterVerification) != "verified" {
 		t.Fatal("managed completion did not record proof")
 	}
+	for _, dnsID := range []string{"other-oxidns", ""} {
+		attached.DNSAgentID = dnsID
+		updated, _ := json.Marshal(map[string]any{"items": []*routers.Router{attached}})
+		if _, err := s.repository.UpdateProfile(ctx, record.ProfileID, func(_ context.Context, profile *model.Profile) error {
+			return profile.SetJSON("routers", updated)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		_, err := s.Action(ctx, testSessionID, "finish", finish, "")
+		if dnsID != "" {
+			if err == nil || err.Error() != msgRouterPair {
+				t.Fatalf("unexpected result for unrelated OxiDNS: %v", err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		record, _ = storeFor(s.repository).read(ctx, testSessionID)
+		if text(record.RouterVerification) != "routes_verified" {
+			t.Fatal("external DHCP recorded an incorrect verification result")
+		}
+	}
 }
 
 func TestCheckPreservesAbandonedSessionAndRequiresFreshRouteAcknowledgement(t *testing.T) {

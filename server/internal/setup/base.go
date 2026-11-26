@@ -136,6 +136,8 @@ func (s *Service) mihomoBase(source string, fullTUN bool, reserved map[string]st
 			return "", nil, ownerValidation(err)
 		}
 		document = next
+		// The setup pair uses OxiDNS for local DNS and Mihomo for proxy DNS.
+		yamlx.Set(yamlx.Get(document, "tun"), "dns-hijack", yamlx.Seq())
 		if !yamlx.Equal(tun, yamlx.Get(document, "tun")) {
 			change := msgFullTUN
 			removed := []string{}

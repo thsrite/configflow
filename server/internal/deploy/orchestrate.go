@@ -486,7 +486,7 @@ func (s *Service) GenerateFinal(ctx context.Context, m *agents.Manager, id strin
 		if e = s.PreviewsFor(m).RequireCurrent(ctx, m, pv); e != nil {
 			return fail(e)
 		}
-		public := pv.Public()
+		public := pv.publicFor(src)
 		body := map[string]any{}
 		raw, _ := json.Marshal(public)
 		_ = json.Unmarshal(raw, &body)

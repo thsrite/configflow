@@ -9,11 +9,13 @@ import { Switch } from '@/components/ui/switch'
 import FormField from '@/components/common/FormField.vue'
 import InstallerDownloaderPicker from '@/components/agents/InstallerDownloaderPicker.vue'
 import { buildInstallCommand } from '@/lib/coreInstallCommand'
+import { serverDomainApi } from '@/api'
 import { gatewayOnboardingApi } from '@/api/gatewayOnboarding'
 import { linuxGatewayApi } from '@/api/linuxGateway'
 import { gatewayEnvironmentErrors, installationMatches } from '@/lib/gatewayOnboarding'
 import { confirm, confirmDanger, notify } from '@/lib/feedback'
 import { DOCKER_COMMANDS, DOCKER_HINT, mayDrop, quiet } from './fixtures/forward-filter'
+vi.mock('@/api', () => ({ serverDomainApi: { get: vi.fn() } }))
 vi.mock('@/api/gatewayOnboarding', () => ({ gatewayOnboardingApi: { get: vi.fn(), preview: vi.fn(), save: vi.fn(), create: vi.fn(), sessions: vi.fn(), session: vi.fn(), publish: vi.fn(), network: vi.fn() } }))
 vi.mock('@/api/linuxGateway', () => ({ linuxGatewayApi: { status: vi.fn(), preview: vi.fn(), apply: vi.fn(), remove: vi.fn(), persistForwarding: vi.fn() } }))
 vi.mock('@/lib/feedback', () => ({ confirm: vi.fn(), confirmDanger: vi.fn(), notify: { success: vi.fn(), error: vi.fn() } }))
@@ -69,6 +71,7 @@ async function prepare(wrapper: ReturnType<typeof shallowMount>) {
 function deferred<T>() { let resolve!: (data: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { resolve, promise } }
 beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear()
+  vi.mocked(serverDomainApi.get).mockResolvedValue(response({ server_domain: "" }))
   writeText.mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
   vi.mocked(gatewayOnboardingApi.get).mockResolvedValue(response(config()))
@@ -93,6 +96,11 @@ afterEach(() => {
   else delete (document as any).execCommand
 })
 describe('gateway installation wizard', () => {
+  it('prefers the configured server address behind a port forward', async () => {
+    vi.mocked(serverDomainApi.get).mockResolvedValue(response({ server_domain: 'http://192.0.2.10' }))
+    const wrapper = await render()
+    expect(wrapper.get('#onboarding-server').element).toHaveProperty('value', 'http://192.0.2.10')
+  })
   it('defaults ConfigFlow to the current browser origin instead of a saved loopback address', async () => {
     localStorage.setItem('serverDomain', 'http://127.0.0.1:5001')
     const wrapper = await render()

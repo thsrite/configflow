@@ -112,7 +112,7 @@ Mihomo DNS 的监听、fake-IP 和上游由向导自动配置。向导以配置�
 | `dns.listen` | 设为 `127.0.0.1:1053`，与 OxiDNS 的代理上游对应；原来监听 `53` 等其他地址时会改掉，避免与 OxiDNS 抢端口 |
 | `dns.nameserver` | 只在为空时补入 IP 地址的 DoH `https://223.5.5.5/dns-query` 和 `https://1.12.12.12/dns-query`（阿里、腾讯，均为国内服务；与 Linux 网关安装默认一致，不依赖引导 DNS，也不怕普通 53 端口被劫持）；已有的上游不改 |
 | `mode` | 不是 `rule` 时改为 `rule` |
-| `tun`（Mihomo + OxiDNS 分流） | 设为完整 TUN：开启 `auto-route`、`auto-redirect`、`auto-detect-interface`，`dns-hijack` 统一为 `any:53`，移除 `route-address-set` 等只接管部分地址的设置；`stack`、`mtu`、`route-exclude-address` 等其他设置保留。同机 OxiDNS 的明文上游由 Agent 发布时自动加入 `route-exclude-address`，不会被劫持 |
+| `tun`（Mihomo + OxiDNS 分流） | 设为完整 TUN：开启 `auto-route`、`auto-redirect`、`auto-detect-interface`，新建一体配置显式使用 `dns-hijack: []`，让同机 OxiDNS 按自己的上游解析，移除 `route-address-set` 等只接管部分地址的设置；`stack`、`mtu`、`route-exclude-address` 等其他设置保留。同机 OxiDNS 的明文上游由 Agent 发布时自动加入 `route-exclude-address`，不会被劫持 |
 | `tun`（网关分流） | 已开启时改为停用，由 Linux 网关启用时按选择性接管打开 |
 
 生成后，安装步骤顶部会列出本次实际调整的项。以下情况不会自动改，而是直接提示，需先在基础配置中修正：基础配置无法解析；DNS 上游指向本机或 `system`（会形成解析循环）；`tun` 带 `include-interface` 等过滤；入站端口、`listeners` 或 `external-controller` 占用 `53`、`1053` 或 OxiDNS 管理 API 的 `9199`。安装时填写的 Agent 端口也不能与基础配置中的端口相同。OxiDNS 的代理上游指向同机 `127.0.0.1:1053`，本页无需再手填。
@@ -129,7 +129,7 @@ Linux 网关方案中，所选规则含 Telegram、Google 推送（FCM）时，�
 | 字段 | 默认与填写方法 | 会不会改变设备网络 |
 | --- | --- | --- |
 | 主机 IP（可选） | 默认留空，由 Agent 自动识别；有多张网卡或识别不准确时填目标 Linux 的固定局域网 IPv4 | 这里只记录现有地址，不替你给 Linux 设置 IP |
-| ConfigFlow 服务地址 | 默认使用浏览器当前访问的协议、主机和端口；换成 Linux 能访问的实际地址，不能用 `localhost` | 不改面板监听；必须与系统设置里的可达服务地址核对一致 |
+| ConfigFlow 服务地址 | 优先使用系统设置中的服务地址，未设置时使用浏览器当前地址；换成 Linux 能访问的实际地址，不能用 `localhost` | 不改面板监听；必须与系统设置里的可达服务地址核对一致 |
 | 高级选项：手动指定网络 | 默认不填，安装登记后自动读取。确实需要时填主路由 IPv4、LAN 网卡名、LAN 网段 | 核对现有网络，不修改 Linux 的 IP 或默认路由；不确定时先自动识别 |
 
 已有标准安装可以接入：程序在 `/usr/local/bin/`，配置在 `/etc/mihomo/config.yaml`、`/etc/oxidns/config.yaml`，系统服务同名。安装阶段先检查并保留已有核心、配置，缺失的部分才补装；后面的发布步骤才应用本次方案。自定义目录应走 [接管已有服务](agent-install.md#shell-existing)。
@@ -149,7 +149,7 @@ Linux 网关方案中，所选规则含 Telegram、Google 推送（FCM）时，�
 
 ### 3. 发布两项配置
 
-点击「按顺序发布两项配置」。页面先发布并检查 Mihomo，再发布 OxiDNS；第一项失败时会停止，不会把失败显示为完成。
+点击「按顺序发布两项配置」。页面先发布并检查 Mihomo，再发布 OxiDNS；第一项失败时会停止，在失败的核心一行查看具体原因，例如哪个规则集下载失败。
 
 - 成功：查看两项发布结果及 DNS 检查，再进入后续网络检查。
 - 规则下载失败：使用页面给出的「规则下载代理」或「GitHub 代理域名」处理后，点击「保存并重试发布」；这些代理是供 ConfigFlow 服务器下载用的。
@@ -257,9 +257,11 @@ Fake-IP 是 Mihomo 为分流使用的临时地址。主路由需要把发往这�
 #### 自动配置
 
 1. 选择「自动配置主路由」，添加主路由管理地址和账号。
-2. 按页面先「检查连接」，确认识别的是目标主路由。
+2. 选择实际路由器类型（iKuai 或 RouterOS），保存后点「检查连接」。需要更正类型或证书设置时，点路由器操作区的「编辑」。如果由其他设备提供 DHCP，将「DHCP DNS 服务器」设为「不关联」，并到实际 DHCP 服务器下发 OxiDNS 地址。
 3. 查看差异报告，核对要添加或修改的路由、DHCP DNS 和所用设备，再确认发布。
 4. 成功后点击「检查路由器并完成」。在此之前，添加账号或保存连接信息不会自行改主路由。
+
+![向导中 RouterOS 路由器的检查、发布、编辑与删除入口](../img/guide/first-run-router-actions.png)
 
 安装还没结束时可以先填写主路由信息，但实际发布要等安装、核心发布与检查完成。更多字段和撤销方法见 [上游路由设置](../manual/routers.md)；其他品牌按手动流程处理。
 
@@ -302,6 +304,8 @@ Fake-IP 是 Mihomo 为分流使用的临时地址。主路由需要把发往这�
 
 <a id="verify"></a>
 ## 第 6 步：确认结果
+
+![完成页按项列出检查结果，并提示在客户端验证分流](../img/guide/first-run-complete.jpg)
 
 向导显示「Mihomo + OxiDNS 已准备好」之后，再在真实测试设备上检查：
 

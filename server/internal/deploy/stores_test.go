@@ -495,7 +495,7 @@ func TestFinalizeBundleUsesFrozenDeviceBytes(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(struct {
 			Success bool   `json:"success"`
 			Content string `json:"content"`
-		}{true, body.Content + "x-device-rendered: true\n"})
+		}{true, body.Content + "x-device-rendered: \"\\U0001F680 手动切换\"\n"})
 	}))
 	defer srv.Close()
 	parts := strings.Split(strings.TrimPrefix(srv.URL, "http://"), ":")
@@ -517,7 +517,7 @@ func TestFinalizeBundleUsesFrozenDeviceBytes(t *testing.T) {
 		t.Fatal(fp, original, err)
 	}
 	files, _ := final.Files()
-	if !bytes.Contains(files["installed.yaml"], []byte("x-device-rendered")) {
+	if !bytes.Contains(files["installed.yaml"], []byte("🚀 手动切换")) {
 		t.Fatal(files)
 	}
 }

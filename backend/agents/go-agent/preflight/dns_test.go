@@ -171,7 +171,7 @@ func TestDNSWildcardDoesNotMakeRemoteUpstreamSelf(t *testing.T) {
 	}
 }
 
-func TestDNSHijackOnlyAIOActiveTUNIncludingPeer(t *testing.T) {
+func TestDNSHijackOnlyReportedOnOwningAIOCore(t *testing.T) {
 	for _, test := range []struct {
 		name, content string
 		aio, warn     bool
@@ -192,8 +192,8 @@ func TestDNSHijackOnlyAIOActiveTUNIncludingPeer(t *testing.T) {
 			}
 			if test.aio && test.warn {
 				oxi := dnsTestCandidate("oxidns", dnsOxiConfig(":5353", "1.1.1.1", false), true)
-				if report = dnsTestCheck(oxi, &candidate); !dnsHas(report, "warn", "劫持范围") {
-					t.Fatalf("peer hijack missed: %+v", report)
+				if report = dnsTestCheck(oxi, &candidate); dnsHas(report, "warn", "劫持范围") {
+					t.Fatalf("duplicate peer hijack warning: %+v", report)
 				}
 			}
 		})

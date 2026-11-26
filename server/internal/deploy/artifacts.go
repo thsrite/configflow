@@ -108,7 +108,7 @@ func (s *Service) GenerateArtifact(ctx context.Context, m *agents.Manager, profi
 		if err != nil {
 			return err
 		}
-		out = Artifact{pv.Public(), true, candidate.SubscriptionHosts, candidate.SubscriptionDialers}
+		out = Artifact{pv.publicFor(source), true, candidate.SubscriptionHosts, candidate.SubscriptionDialers}
 		return nil
 	})
 	return out, err

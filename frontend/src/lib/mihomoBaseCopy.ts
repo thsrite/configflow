@@ -362,7 +362,7 @@ export const MANAGED_FIELDS: Array<{ path: BasePath; label: string; help: string
   { path: ['tun', 'auto-route'], label: '自动路由（tun.auto-route）', help: '自动添加把流量送进 TUN 的路由。由向导和 Linux 网关设定。' },
   { path: ['tun', 'auto-detect-interface'], label: '自动识别出口（tun.auto-detect-interface）', coreDefault: true, help: '自动找到真正连外网的网卡，让 Mihomo 自己的出站连接不再进入 TUN，避免回环。完整 TUN 和 Linux 网关都要求开启。' },
   { path: ['tun', 'auto-redirect'], label: '自动重定向（tun.auto-redirect）', help: '在 Linux 上用 nftables 把转发来的 TCP 交给 Mihomo，网关和主路由分流需要它。' },
-  { path: ['tun', 'dns-hijack'], label: 'DNS 劫持（tun.dns-hijack）', help: '把发往 53 端口的 DNS 查询交给 Mihomo。完整 TUN 方案要求包含 any:53；Linux 网关改为空，由 OxiDNS 负责 DNS。' },
+  { path: ['tun', 'dns-hijack'], label: 'DNS 劫持（tun.dns-hijack）', help: '把发往 53 端口的 DNS 查询交给 Mihomo。新建的一体主路由分流方案和 Linux 网关将此项设为空，由 OxiDNS 负责 DNS。' },
 ]
 export const MANAGED_NOTES: Record<'linux_gateway' | 'full_tun' | 'none', string> = {
   linux_gateway: '此配置空间启用了 Linux 网关：发布时这些值会被自动改写为接管所需的值，在这里修改不会生效。',

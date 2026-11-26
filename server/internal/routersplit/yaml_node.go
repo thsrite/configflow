@@ -104,7 +104,8 @@ func fullTunNodeShape(document *yamlx.Node) bool {
 	if hijack == nil || hijack.Kind != yaml.SequenceNode {
 		return false
 	}
-	found := false
+	// New AIO setups explicitly disable hijacking; existing full-TUN profiles use any:53.
+	found := len(hijack.Content) == 0
 	for _, node := range hijack.Content {
 		node = yamlx.Resolve(node)
 		if node != nil && node.ShortTag() == "!!str" && node.Value == "any:53" {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { Check, Copy, LoaderCircle, RefreshCw } from '@lucide/vue'
+import { serverDomainApi } from '@/api'
 import { gatewayOnboardingApi, type GatewayConfigurationPreview, type GatewayInstallation, type GatewayOnboardingConfig, type GatewayOnboardingSettings } from '@/api/gatewayOnboarding'
 import { linuxGatewayApi, type LinuxGatewayCandidate, type LinuxGatewayPreview, type LinuxGatewayStatus } from '@/api/linuxGateway'
 import { cleanGatewaySpec, emptyGatewaySpec, gatewayErrorMessage, gatewaySpecErrors, gatewaySpecKey } from '@/lib/linuxGateway'
@@ -235,10 +236,13 @@ async function load() {
   const captured = token()
   loading.value = true
   error.value = ''
-  const [configResponse, sessionsResponse] = await Promise.allSettled([
-    gatewayOnboardingApi.get(captured.profileId), gatewayOnboardingApi.sessions(captured.profileId),
+  const [configResponse, sessionsResponse, domainResponse] = await Promise.allSettled([
+    gatewayOnboardingApi.get(captured.profileId), gatewayOnboardingApi.sessions(captured.profileId), serverDomainApi.get(),
   ])
   if (!current(captured)) return
+  if (domainResponse.status === 'fulfilled' && serverUrl.value === window.location.origin) {
+    serverUrl.value = domainResponse.value.data.server_domain?.trim() || window.location.origin
+  }
   if (configResponse.status === 'fulfilled') {
     config.value = configResponse.value.data
     Object.assign(settings, config.value.settings)
@@ -521,7 +525,7 @@ onBeforeUnmount(() => { disposed = true; generation++; stopPolling(); emit('busy
           <div class="grid min-w-0 gap-3 sm:grid-cols-2">
             <FormField v-if="!embedded" label="设备名称" html-for="onboarding-name" help="用于命名这台 Linux 上的 Mihomo 和 OxiDNS Agent，不会修改 Linux 的主机名。"><Input id="onboarding-name" v-model="name" class="min-h-11" placeholder="home-gateway" :disabled="busy" /></FormField>
             <FormField label="主机 IP（可选）" :html-for="embedded ? 'setup-agent-ip' : 'onboarding-address'" help="留空由 Agent 自动识别 LAN IPv4。安装登记后自动读取网卡、网段和默认网关；需要手动指定时再展开高级选项。"><Input :id="embedded ? 'setup-agent-ip' : 'onboarding-address'" v-model="network.address" :disabled="busy" class="min-h-11 font-mono" placeholder="留空则自动获取" /></FormField>
-            <FormField label="ConfigFlow 服务地址" html-for="onboarding-server" help="默认取浏览器当前访问的协议、主机和端口。目标 Linux 必须能访问此地址；从本机回环地址访问时，请改为局域网 IP 或域名。核心持续下载规则使用系统设置中的服务地址，两者需要一致。"><Input id="onboarding-server" v-model="serverUrl" class="min-h-11 font-mono text-xs" placeholder="http://192.0.2.10:5010" :disabled="locked" /></FormField>
+            <FormField label="ConfigFlow 服务地址" html-for="onboarding-server" help="优先使用系统设置中的服务地址，未设置时使用浏览器当前地址。目标 Linux 必须能访问此地址；从本机回环地址访问时，请改为局域网 IP 或域名。核心持续下载规则使用系统设置中的服务地址，两者需要一致。"><Input id="onboarding-server" v-model="serverUrl" class="min-h-11 font-mono text-xs" placeholder="http://192.0.2.10:5010" :disabled="locked" /></FormField>
           </div>
           <details class="border-b border-border text-sm">
             <summary class="min-h-11 cursor-pointer content-center py-2 font-medium outline-none focus-visible:ring-2 focus-visible:ring-primary-accent">高级选项：手动指定网络</summary>

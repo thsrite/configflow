@@ -99,3 +99,20 @@ func TestMihomoBaseRejectsAmplifyingAndRecursiveAliasesWithinBudget(t *testing.T
 		})
 	}
 }
+
+func TestRouterWizardKeepsOxiDNSPlainUpstreamOutsideMihomoDNS(t *testing.T) {
+	s := &Service{owners: ExternalOwners{DNS: identityDNS()}}
+	source := "secret: synthetic-controller\ndns: {nameserver: [https://dns.example.com/dns-query]}\ntun: {dns-hijack: ['any:53']}\n"
+	text, _, err := s.mihomoBase(source, true, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := yamlx.Parse([]byte(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hijack := yamlx.Get(yamlx.Get(doc, "tun"), "dns-hijack")
+	if hijack == nil || hijack.Kind != yaml.SequenceNode || len(hijack.Content) != 0 {
+		t.Fatal("expected explicit empty dns-hijack", hijack)
+	}
+}

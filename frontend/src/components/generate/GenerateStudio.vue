@@ -422,6 +422,13 @@ const highlight = (raw: string): string => {
   s = s.replace(/^([\w .-]+?)(\s=\s)/, '<span class="y-k">$1</span><span class="y-d">$2</span>')
   s = s.replace(/(:\s|=\s|,\s?)(-?\d+(?:\.\d+)?|true|false|null)(?=\s*(?:,|$|\}))/g, '$1<span class="y-n">$2</span>')
   s = s.replace(/\b(DIRECT|REJECT|MATCH|FINAL)\b/g, '<span class="y-n">$1</span>')
+  if (active.value === 'oxidns' && selectedFile.value === generation.value?.config_path) {
+    const file = /^\s*filename:\s*["']?(rule_[0-9a-f]{16}_(domain|ip)\.txt)["']?\s*$/.exec(raw)
+    const name = file && generation.value?.rule_file_names?.['rules/' + file[1]]
+    if (file && name) {
+      s += '  <span class="select-none text-muted-foreground">' + esc(name) + ' · ' + (file[2] === 'domain' ? '域名规则' : 'IP 规则') + '</span>'
+    }
+  }
   return s
 }
 

@@ -53,6 +53,10 @@
 
 ![默认静止外观下，步骤依次回放，配置逐行展开；可立即显示完整结果](../img/guide/generate-result-replay.png)
 
+Mihomo 配置中的旗帜等图标可直接阅读。OxiDNS 的主配置预览在规则文件名旁显示规则集名称和类型；旁注仅在预览中显示，复制、下载和推送仍使用原始文件。
+
+![OxiDNS 主配置里的规则集名称旁注](../img/guide/oxidns-rule-file-label.png)
+
 ## 各软件入口
 
 | 软件 | 可见入口 | 适用方式 |

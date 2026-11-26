@@ -151,9 +151,14 @@ func FullTunYAML(text string) (string, error) {
 	if root.Kind != yaml.MappingNode {
 		return "", gatewayError(messageBaseObject)
 	}
+	hijack := yamlx.Resolve(yamlx.Get(yamlx.Resolve(yamlx.Get(root, "tun")), "dns-hijack"))
+	keepDNS := hijack != nil && hijack.Kind == yaml.SequenceNode && len(hijack.Content) == 0
 	root, err = fullTunNode(root)
 	if err != nil {
 		return "", err
+	}
+	if keepDNS {
+		yamlx.Set(yamlx.Get(root, "tun"), "dns-hijack", yamlx.Seq())
 	}
 	data, err := yamlx.Edit([]byte(source), func(n *yamlx.Node) error { *n = *root; return nil })
 	return string(data), err
