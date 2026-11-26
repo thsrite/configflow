@@ -763,7 +763,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
       <DialogContent class="max-h-[90dvh] max-w-[480px] overflow-y-auto max-md:[&_[data-slot=button]]:min-h-11 max-md:[&_[role=combobox]]:min-h-11 max-md:[&_[data-slot=dialog-close]]:min-h-11 max-md:[&_[data-slot=dialog-close]]:min-w-11">
         <DialogHeader>
           <DialogTitle>{{ editingId ? '编辑路由器' : '添加路由器' }}</DialogTitle>
-          <DialogDescription>{{ embedded ? '选择路由器类型，填写管理地址、用户名和密码。其余选项可保留默认值。' : '保存仅更新 ConfigFlow 设置，确认发布后才会写入路由器。' }}</DialogDescription>
+          <DialogDescription :class="{ 'sr-only': embedded }">{{ embedded ? '选择路由器类型，填写管理地址、用户名和密码。其余选项可保留默认值。' : '保存仅更新 ConfigFlow 设置，确认发布后才会写入路由器。' }}</DialogDescription>
         </DialogHeader>
 
         <form class="flex min-w-0 flex-col gap-4" @submit.prevent="submit">
@@ -781,7 +781,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
               </SelectContent>
             </Select>
           </div>
-          <FormField :label="embedded ? '管理地址（必填）' : '管理地址'" html-for="router-endpoint" v-bind="form.type === 'routeros' ? routerCopy.endpointROS : routerCopy.endpointIkuai">
+          <FormField :label="embedded ? '管理地址（必填）' : '管理地址'" html-for="router-endpoint" :help="form.type === 'routeros' ? routerCopy.endpointROS.help : routerCopy.endpointIkuai.help">
             <Input
               id="router-endpoint"
               v-model="form.endpoint"
@@ -811,7 +811,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
             <Label for="router-verify-tls">校验 HTTPS 证书</Label>
             <FieldHelp label="校验 HTTPS 证书" :text="routerCopy.tls.help" />
           </div>
-          <FormField v-if="!setupDraftSession" label="代理网关（Mihomo Agent）" html-for="router-gateway" v-bind="form.type === 'routeros' ? routerCopy.gatewayROS : routerCopy.gateway">
+          <FormField v-if="!setupDraftSession" label="代理网关（Mihomo Agent）" html-for="router-gateway" :help="form.type === 'routeros' ? routerCopy.gatewayROS.help : routerCopy.gateway.help">
             <Select v-model="form.proxy_gateway_agent_id">
               <SelectTrigger id="router-gateway" class="w-full bg-background/50"><SelectValue placeholder="不关联" /></SelectTrigger>
               <SelectContent>
@@ -824,7 +824,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
           </FormField>
           <FormField v-else label="安装设备" help="安装并检查完成后，向导会把代理网关设为本次 Mihomo Agent，把 DHCP DNS 设为本次 OxiDNS Agent，无需预先选择其他设备。"><p class="m-0 text-sm text-muted-foreground">安装后自动关联本次 Mihomo + OxiDNS</p></FormField>
           <component :is="embedded ? 'details' : 'div'" :class="embedded ? 'space-y-4 border-t border-border pt-3' : 'contents'">
-          <summary v-if="embedded" class="min-h-11 cursor-pointer text-sm font-medium">高级路由选项<span class="ml-2 text-xs font-normal text-muted-foreground">可选，默认无需修改</span></summary>
+          <summary v-if="embedded" class="min-h-11 cursor-pointer text-sm font-medium">高级路由选项</summary>
           <div class="flex flex-col gap-1.5">
             <div class="flex min-h-11 items-center justify-between gap-3">
               <div class="flex min-w-0 items-center gap-1">
@@ -851,7 +851,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
           </FormField>
           <p v-if="form.type === 'routeros'" class="m-0 text-xs leading-relaxed text-muted-foreground">取消规则集后，需保存、预览并确认发布，才会清理对应的受管规则。</p>
           </component>
-          <FormField v-if="!setupDraftSession" label="DHCP DNS 服务器（OxiDNS Agent）" html-for="router-dns" v-bind="form.type === 'routeros' ? routerCopy.dnsROS : routerCopy.dns">
+          <FormField v-if="!setupDraftSession" label="DHCP DNS 服务器（OxiDNS Agent）" html-for="router-dns" :help="form.type === 'routeros' ? routerCopy.dnsROS.help : routerCopy.dns.help">
             <Select v-model="form.dns_agent_id">
               <SelectTrigger id="router-dns" class="w-full bg-background/50"><SelectValue placeholder="不关联" /></SelectTrigger>
               <SelectContent class="max-w-[calc(100vw-2rem)]">
@@ -861,7 +861,6 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
                 </SelectItem>
               </SelectContent>
             </Select>
-            <p v-if="embedded" class="m-0 text-xs text-muted-foreground">DHCP 在其他设备上时，选择「不关联」后继续发布静态路由，并在实际 DHCP 服务器中下发 OxiDNS 地址。</p>
             <p v-if="dnsHaVip" class="m-0 text-xs leading-relaxed text-muted-foreground" data-dns-ha-vip>所选 OxiDNS 已开启 DNS 高可用，将下发虚拟 IP <span class="font-mono">{{ dnsHaVip }}</span>。</p>
           </FormField>
           <template v-if="form.type === 'routeros' && !setupDraftSession">
@@ -878,9 +877,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
                   @update:model-value="value => (form.dns_guard.enabled = Boolean(value))"
                 />
               </div>
-              <p class="m-0 text-xs leading-relaxed text-muted-foreground">
-                {{ form.dns_agent_id === NONE ? '先选择上方的 DHCP DNS 服务器才能开启。' : routerCopy.dnsGuard.hint }}
-              </p>
+              <p v-if="form.dns_agent_id === NONE" class="m-0 text-xs leading-relaxed text-muted-foreground">先选择上方的 DHCP DNS 服务器才能开启。</p>
             </div>
             <template v-if="form.dns_guard.enabled">
               <div v-for="option in guardOptions" :key="option.key" class="flex min-h-11 items-center justify-between gap-3 pl-3">
@@ -910,7 +907,6 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
                   @update:model-value="value => (form.ipv6_pd_guard.enabled = Boolean(value))"
                 />
               </div>
-              <p class="m-0 text-xs leading-relaxed text-muted-foreground">{{ routerCopy.ipv6PdGuard.hint }}</p>
             </div>
           </template>
         </form>
