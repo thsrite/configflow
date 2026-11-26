@@ -189,10 +189,15 @@ async function selectRouter(id: string) {
   const current = session.value
   if (!current) return
   routerId.value = id
+  error.value = ''
   try {
     const { data } = await setupApi.progress(current.id, { router_id: id, router_mode: 'managed' })
     if (!disposed && session.value?.id === current.id) session.value = { ...session.value, router_id: data.router_id, router_mode: data.router_mode }
   } catch (failure) { if (!disposed) error.value = setupError(failure) }
+}
+function finishRouter(id: string) {
+  routerId.value = id
+  return finish()
 }
 async function finish() {
   const current = session.value
@@ -400,7 +405,7 @@ onUnmounted(() => { disposed = true })
                 <p class="m-0 text-xs text-muted-foreground">手动设置由你确认，向导无法自动核验这台主路由。</p>
               </template>
               <template v-else>
-                <Routers :key="previewRouting ? 'draft-' + session.id : 'installed-' + session.id" embedded :profile-id="session.profile_id" :setup-agents="routerAgents" :setup-draft-session="previewRouting ? session.id : undefined" @selected="selectRouter" @busy="childBusy = $event" />
+                <Routers :key="previewRouting ? 'draft-' + session.id : 'installed-' + session.id" embedded :profile-id="session.profile_id" :setup-agents="routerAgents" :setup-draft-session="previewRouting ? session.id : undefined" @verified="finishRouter" @selected="selectRouter" @busy="childBusy = $event" />
               </template>
             </template>
             <template v-else>
@@ -409,7 +414,7 @@ onUnmounted(() => { disposed = true })
               <GatewayClientInstructions v-if="clientReady && routeInstructions" :address="routeInstructions.gateway" />
               <Button variant="outline" :disabled="working" @click="move(3)">管理网络与撤销转发</Button>
             </template>
-            <Button :disabled="previewRouting || working || (goal === 'gateway' && !clientReady) || (goal === 'router' && (routerMode === 'manual' ? !ackRoutes || !ackDNS || routesIncomplete : !routerId))" class="min-h-11" @click="finish"><LoaderCircle v-if="working" class="size-4 animate-spin" />{{ previewRouting ? '完成安装后继续' : goal === 'router' && routerMode === 'managed' ? '检查路由器并完成' : '确认设置并继续' }}<ArrowRight class="size-4" /></Button>
+            <Button v-if="goal !== 'router' || routerMode !== 'managed'" :disabled="previewRouting || working || (goal === 'gateway' && !clientReady) || (goal === 'router' && (!ackRoutes || !ackDNS || routesIncomplete))" class="min-h-11" @click="finish"><LoaderCircle v-if="working" class="size-4 animate-spin" />{{ previewRouting ? '完成安装后继续' : '确认设置并继续' }}<ArrowRight class="size-4" /></Button>
           </div>
           <div v-if="step === 5 && session" class="grid gap-5">
             <ul class="m-0 grid list-none gap-2 p-0 text-sm" aria-label="安装结果">

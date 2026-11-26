@@ -35,18 +35,19 @@
         </div>
         <div class="ml-auto flex items-center gap-1">
           <Button v-if="setupDraftSession" variant="outline" aria-label="编辑" class="min-h-11" @click="openEdit(router)">编辑</Button>
+          <Button v-else-if="needsSetupAgents(router)" class="min-h-11" @click="openEdit(router)">关联本次设备</Button>
           <Button v-else-if="!router.last_probe?.ok" class="min-h-11" :disabled="busyId === router.id" @click="probe(router)">
             <Loader2 v-if="busyId === router.id && busyAction === 'probe'" class="size-4 animate-spin" />检查连接
           </Button>
-          <Button v-else class="min-h-11" :disabled="busyId === router.id || routeBusy || applying || policyLocked" @click="openReport(router)">
-            <Loader2 v-if="busyId === router.id && busyAction === 'report'" class="size-4 animate-spin" />查看改动
+          <Button v-else class="min-h-11" :disabled="planLoading || routeBusy || applying || policyLocked" @click="openReport(router, true)">
+            <Loader2 v-if="planLoading && reportRouter?.id === router.id" class="size-4 animate-spin" />预览发布
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger as-child><Button size="icon" variant="ghost" class="size-11" :aria-label="router.name + ' 的更多操作'"><MoreHorizontal class="size-4" /></Button></DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <template v-if="!setupDraftSession">
                 <DropdownMenuItem v-if="router.last_probe?.ok" :disabled="busyId === router.id" @select="probe(router)">重新检查连接</DropdownMenuItem>
-                <DropdownMenuItem v-else :disabled="busyId === router.id || routeBusy || applying || policyLocked" @select="openReport(router)">查看改动</DropdownMenuItem>
+                <DropdownMenuItem :disabled="busyId === router.id || routeBusy || applying || policyLocked" @select="openReport(router)">差异报告</DropdownMenuItem>
                 <DropdownMenuItem :disabled="routeBusy || applying || policyLocked" @select="openRouteManager(router)">静态路由</DropdownMenuItem>
                 <DropdownMenuItem v-if="router.type === 'routeros' && router.ros_policy_rule_sets?.length" :disabled="routeBusy || applying || policyLocked" @select="openPolicyManager(router)">策略路由</DropdownMenuItem>
                 <DropdownMenuItem v-if="router.type === 'routeros'" :disabled="routeBusy || applying || policyLocked" @select="openRuleSync(router)">规则同步</DropdownMenuItem>
@@ -220,7 +221,7 @@
       </DialogContent>
     </Dialog>
 
-    <SectionCard v-if="reportRouter && !report" class="mt-4 scroll-mt-20" data-router-report :title="`差异报告 · ${reportRouter.name}`">
+    <SectionCard v-if="reportRouter && !report && (reportLoading || reportError)" class="mt-4 scroll-mt-20" data-router-report :title="`差异报告 · ${reportRouter.name}`">
       <p v-if="reportLoading" role="status" class="m-0 flex items-center gap-2 text-muted-foreground"><Loader2 class="size-4 animate-spin" />正在生成差异报告…</p>
       <template v-else-if="reportError">
         <p role="alert" class="mt-0 break-words text-destructive-accent">{{ reportError }}</p>
@@ -751,7 +752,8 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
 
         <DialogFooter>
           <Button variant="outline" @click="planVisible = false">{{ releaseResult ? '关闭' : '取消' }}</Button>
-          <Button v-if="!releaseResult" :disabled="!canApply || applying" @click="applyPlan">
+          <Button v-if="embedded && !setupDraftSession && reportRouter && !needsSetupAgents(reportRouter) && !applying && (releaseResult?.ok || (!releaseResult && plan?.empty && !plan.blockers.length && !plan.sync_baseline))" @click="finishVerifiedRouter">完成向导</Button>
+          <Button v-else-if="!releaseResult" :disabled="!canApply || applying" @click="applyPlan">
             <Loader2 v-if="applying" class="size-4 animate-spin" />
             {{ plan?.empty && plan.sync_baseline ? '重新建立同步基准' : '确认发布' }}
           </Button>
@@ -983,7 +985,11 @@ import { routerForwardingWarning, type GatewayForwardingEntry, type RouterForwar
 import { usePageReloadGuard, withPageReloadBlocked } from '@/lib/pageReloadGuard'
 
 const props = defineProps<{ embedded?: boolean; profileId?: string; setupAgents?: { mihomo: string; oxidns: string }; setupDraftSession?: string }>()
-const emit = defineEmits<{ selected: [id: string]; busy: [value: boolean] }>()
+const emit = defineEmits<{ selected: [id: string]; busy: [value: boolean]; verified: [id: string] }>()
+const needsSetupAgents = (router: RouterItem) => props.setupAgents && (
+  router.proxy_gateway_agent_id !== props.setupAgents.mihomo ||
+  (router.dns_agent_id && router.dns_agent_id !== props.setupAgents.oxidns)
+)
 const activeProfileId = computed(() => props.profileId || selectedProfileId.value)
 const getActiveProfileId = () => activeProfileId.value
 // Embedded setup stays pinned to its new profile, including delayed confirmations.
@@ -1760,7 +1766,7 @@ const probe = async (router: RouterItem) => {
 
 // Changing panels invalidates pending inspection/preview responses. The refresh
 // after publishing keeps the current plan and its result available for review.
-const openReport = async (router: RouterItem) => {
+const openReport = async (router: RouterItem, previewOnly = false) => {
   if (routeBusy.value || applying.value) return
   if (!await canLeavePolicy()) return
   policyRouter.value = null
@@ -1769,6 +1775,10 @@ const openReport = async (router: RouterItem) => {
   clearInspection()
   reportRouter.value = router
   emit('selected', router.id)
+  if (previewOnly) {
+    await openPlan()
+    return
+  }
   await loadReport(router)
 }
 
@@ -1819,6 +1829,14 @@ const openPlan = async () => {
   }
 }
 
+const finishVerifiedRouter = async () => {
+  const id = reportRouter.value?.id
+  if (!id) return
+  planVisible.value = false
+  await nextTick()
+  emit('verified', id)
+}
+
 const applyPlan = async () => {
   const router = reportRouter.value
   if (!router || !plan.value || applying.value) return
@@ -1839,7 +1857,7 @@ const applyPlan = async () => {
     notify.error(errorMessage(error, '发布失败'))
   } finally {
     applying.value = false
-    if (revision === inspectionRevision) await loadReport(router)
+    if (revision === inspectionRevision && (!props.embedded || report.value)) await loadReport(router)
   }
 }
 

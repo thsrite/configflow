@@ -36,7 +36,7 @@ async function open(path = '/setup') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/setup', component: Setup }, { path: '/dashboard', component: { template: '<div />' } },
     { path: '/client-devices', component: { template: '<div>客户端设备页</div>' } }, { path: '/agents', component: { template: '<div>Agent 页</div>' } }] })
   await router.push(path); await router.isReady()
-  wrapper = mount(RouterView, { global: { plugins: [router], stubs: { SetupInstallation: true, Routers: { name: 'Routers', props: ['profileId', 'setupAgents', 'setupDraftSession'], emits: ['selected', 'busy'], template: '<button @click="$emit(\'selected\', \'router-1\')">选择路由器</button>' } } } })
+  wrapper = mount(RouterView, { global: { plugins: [router], stubs: { SetupInstallation: true, Routers: { name: 'Routers', props: ['profileId', 'setupAgents', 'setupDraftSession'], emits: ['selected', 'busy', 'verified'], template: '<button @click="$emit(\'selected\', \'router-1\')">选择路由器</button>' } } } })
   await flushPromises()
   return wrapper
 }
@@ -506,7 +506,9 @@ describe('首次使用分流向导', () => {
     expect(routers.props('setupAgents')).toEqual({ mihomo: 'm', oxidns: 'o' })
     await click('选择路由器')
     vi.mocked(setupApi.finish).mockRejectedValue(new Error('路由器配置尚未同步'))
-    await click('检查路由器并完成')
+    expect(wrapper!.text()).not.toContain('检查路由器并完成')
+    routers.vm.$emit('verified', 'router-1')
+    await flushPromises()
     expect(setupApi.finish).toHaveBeenCalledWith('a'.repeat(32), expect.objectContaining({ router_mode: 'managed', router_id: 'router-1' }))
     expect(wrapper!.get('[role="alert"]').text()).toContain('路由器配置尚未同步')
   })
