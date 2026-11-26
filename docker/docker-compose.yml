@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   config-flow:
-    image: thsrite/config-flow:latest
+    image: thsrite/config-flow:3
     # 如果要使用本地构建，请注释上一行并取消下面的注释
     # build:
     #   context: ..

@@ -24,8 +24,10 @@ var Version = "dev"
 var AgentImage = ""
 
 // DefaultAgentImage is the floating Docker Agent image used when the build did
-// not name a paired one.
-const DefaultAgentImage = "thsrite/config-flow-agent:latest"
+// not name a paired one: the major-version tag, which follows every 3.x Agent
+// release. `latest` stays on the last Python-era Agent until the maintainer
+// moves it (PUBLISH_LATEST), so a Go panel must not fall back to it.
+const DefaultAgentImage = "thsrite/config-flow-agent:3"
 
 // imageReference accepts the Docker image references the installers emit
 // unquoted: optional registry host[:port], repository path, optional tag or digest, no shell syntax.
@@ -41,10 +43,12 @@ func DockerAgentImage() string {
 	return DefaultAgentImage
 }
 
-// Information is the public build metadata.
+// Information is the public build metadata. AgentImage is the Docker Agent
+// image this panel pairs with; the Docker Agent update dialog defaults to it.
 type Information struct {
-	Version string `json:"version"`
+	Version    string `json:"version"`
+	AgentImage string `json:"agent_image"`
 }
 
 // Info returns the current release metadata.
-func Info() Information { return Information{Version: Version} }
+func Info() Information { return Information{Version: Version, AgentImage: DockerAgentImage()} }

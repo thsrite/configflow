@@ -2,7 +2,7 @@
 # Change SERVER_URL, AGENT_IP and names for each host. AGENT_IP is not the VIP.
 services:
   agent:
-    image: thsrite/config-flow-agent:latest
+    image: thsrite/config-flow-agent:3
     container_name: configflow-oxidns
     restart: unless-stopped
     network_mode: host
@@ -34,7 +34,7 @@ services:
         bind: {create_host_path: false}
 
   ha-companion:
-    image: thsrite/config-flow-agent:latest
+    image: thsrite/config-flow-agent:3
     container_name: configflow-oxidns-ha
     restart: unless-stopped
     network_mode: host

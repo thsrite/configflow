@@ -8,8 +8,13 @@ import (
 
 func TestInfo(t *testing.T) {
 	body, _ := json.Marshal(Info())
-	if string(body) != `{"version":"dev"}` {
+	if string(body) != `{"version":"dev","agent_image":"thsrite/config-flow-agent:3"}` {
 		t.Errorf("got %s", body)
+	}
+	AgentImage = "thsrite/config-flow-agent:3.0.0"
+	defer func() { AgentImage = "" }()
+	if Info().AgentImage != "thsrite/config-flow-agent:3.0.0" {
+		t.Error("Info does not report the paired Agent image")
 	}
 	Version = "1.2.3"
 	defer func() { Version = "dev" }()
