@@ -12,7 +12,7 @@ import (
 )
 
 func identityDNS() *DNSOwner {
-	return &DNSOwner{DefaultLocalDNS: "https://dns.example.com/dns-query", DNSTarget: "127.0.0.1:1053", Nameservers: func() []string { return []string{"https://dns.example.com/dns-query"} }, LocalUpstreams: func(string) (*yamlx.Node, error) { return yamlx.Seq(), nil }, PrepareMihomoDNS: func(document *yamlx.Node) (*yamlx.Node, error) { return document, nil }}
+	return &DNSOwner{DefaultLocalDNS: "https://dns.example.com/dns-query", DNSTarget: "127.0.0.1:1053", Nameservers: func() []string { return []string{"https://dns.example.com/dns-query"} }, LocalUpstreams: func(string, bool) (*yamlx.Node, error) { return yamlx.Seq(), nil }, PrepareMihomoDNS: func(document *yamlx.Node) (*yamlx.Node, error) { return document, nil }}
 }
 func TestMihomoBaseValidation(t *testing.T) {
 	s, _ := serviceFixture(t, "router")

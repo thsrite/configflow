@@ -359,6 +359,7 @@ func Build(ctx context.Context, in BuildInput) (*Bundle, error) {
 	}
 	// The collector mutates files and reports completion on the caller goroutine.
 	var firstErr error
+	prepared := 0
 	for done := 1; done <= len(downloads); done++ {
 		result := <-results
 		if result.err != nil {
@@ -375,10 +376,12 @@ func Build(ctx context.Context, in BuildInput) (*Bundle, error) {
 			}
 		}
 		if in.Progress.Detail != nil {
-			n := done
+			prepared++
+			n := prepared
 			in.Progress.Detail(&n, len(downloads), displayName(item.rule.Name), "prepared")
 		} else if in.Progress.Rules != nil {
-			in.Progress.Rules(done, len(downloads))
+			prepared++
+			in.Progress.Rules(prepared, len(downloads))
 		}
 	}
 	wg.Wait()
@@ -524,6 +527,11 @@ func emptyRule(rawURL string) []byte {
 func downloadRule(ctx context.Context, in BuildInput, service string, ruleTypes map[string]string, item ruleDownload, fetch func(context.Context, string) ([]byte, error), total int) ([]byte, error) {
 	if in.Progress.Detail != nil {
 		in.Progress.Detail(nil, total, displayName(item.rule.Name), "preparing")
+	}
+	if in.Progress.Message != nil {
+		ctx = rulefetch.WithRetryObserver(ctx, func(attempt int) {
+			in.Progress.Message(fmt.Sprintf("正在重试下载规则「%s」（第 %d 次）", displayName(item.rule.Name), attempt))
+		})
 	}
 	p, err := RelativePath(item.path)
 	if err != nil {

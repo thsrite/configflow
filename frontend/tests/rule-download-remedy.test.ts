@@ -36,12 +36,22 @@ describe('RuleDownloadRemedy', () => {
   it('saves only the changed setting, then asks to retry', async () => {
     const wrapper = await render()
     expect((wrapper.get('#remedy-rule-proxy').element as HTMLInputElement).value).toBe('http://192.0.2.2:7890')
+    expect(wrapper.get('#remedy-rule-proxy').attributes('type')).toBe('text')
     expect(saveButton(wrapper).attributes('disabled')).toBeDefined()
     await wrapper.get('#remedy-github-proxy').setValue(' https://mirror.example.com ')
     await saveButton(wrapper).trigger('click'); await flushPromises()
     expect(githubProxyDomainApi.update).toHaveBeenCalledWith('https://mirror.example.com')
     expect(ruleFetchProxyApi.update).not.toHaveBeenCalled()
     expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+
+  it('masks proxy credentials and lets the user reveal the address', async () => {
+    const wrapper = await render()
+    const field = wrapper.get('#remedy-rule-proxy')
+    await field.setValue('http://user:secret@192.0.2.2:7890')
+    expect(field.attributes('type')).toBe('password')
+    await wrapper.get('[aria-label="显示规则下载代理"]').trigger('click')
+    expect(field.attributes('type')).toBe('text')
   })
 
   it('keeps the form and does not retry when the proxy is rejected', async () => {

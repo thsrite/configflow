@@ -26,7 +26,7 @@ func TestReviewA14UnforcedProgressIsThrottled(t *testing.T) {
 	runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Clock: clock, Mode: lifecycle.ModeManual})
 	runtime.Start(f.ctx)
 	defer runtime.Shutdown(context.Background())
-	p := publishProgress(runtime.BindRequest(f.ctx), f.m, "publish-agent", "throttle", "")
+	p := PublishProgress(runtime.BindRequest(f.ctx), f.m, "publish-agent", "throttle", "")
 	p.Message("正在准备节点来源「A」")
 	p.Message("节点来源「A」已准备")
 	p.Message("正在准备节点来源「B」")

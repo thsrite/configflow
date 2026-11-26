@@ -112,8 +112,11 @@ func ReadState(config Document, revision int64, options Options) (State, error) 
 			out.Warnings = append(out.Warnings, msgServerLoopback)
 		}
 	}
-	if _, err := LocalUpstreams(local); err != nil {
+	if _, err := LocalUpstreams(local, options.Takeover == "full_tun"); err != nil {
 		out.FieldWarnings["local_dns"] = msgLocalWarning
+		if options.Takeover == "full_tun" {
+			out.FieldWarnings["local_dns"] = err.Error()
+		}
 	}
 	// Python settings.get('config_mode', 'template'): an unreadable stored mode,
 	// including null, is projected as stored rather than as a valid default.
@@ -232,7 +235,7 @@ func assertReady(ctx context.Context, config Document, options Options) (Readine
 	if defaultForward != "forward_local" && defaultForward != "forward_remote" {
 		return out, invalid(msgReadyDefault)
 	}
-	if _, err = LocalUpstreams(text(field(values, "local_dns"))); err != nil {
+	if _, err = localUpstreams(text(field(values, "local_dns")), marker == "valid", options.LocalAddresses); err != nil {
 		return out, err
 	}
 	for _, key := range []string{"remote_dns", "fallback_dns"} {

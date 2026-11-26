@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Check, CircleCheck, Eye, EyeOff, LoaderCircle, Network, Router as RouterIcon } from '@lucide/vue'
+import { profileApi } from '@/api'
 import { setupApi, type SetupDomainRule, type SetupGoal, type SetupIndex, type SetupSession } from '@/api/setup'
 import { SETUP_GOALS, SETUP_STEPS, abandonSetup, setupControllerSecretWarning, setupError, setupLocalDnsWarning, setupRuleConflicts, setupRuleOptions, useLibraryNamesake } from '@/lib/setupFlow'
 import { confirm } from '@/lib/feedback'
@@ -43,7 +44,7 @@ const proxyRules = ref(['builtin:proxy'])
 // Kept in step with IP_TAKEOVER_RULES in backend/common/setup_presets.py.
 const ipTakeoverRules = ['builtin:telegram', 'builtin:googlefcm']
 const ipTakeover = computed(() => proxyRules.value.some(id => ipTakeoverRules.includes(id)))
-const localDnsWarning = computed(() => setupLocalDnsWarning(localDns.value))
+const localDnsWarning = computed(() => setupLocalDnsWarning(localDns.value, goal.value))
 // Typed by the user only; a saved password is never sent back to the page.
 const controllerSecret = ref('')
 const showControllerSecret = ref(false)
@@ -72,7 +73,16 @@ const loading = ref(true)
 const ready = ref(false)
 const error = ref('')
 const routerMode = ref<'manual' | 'managed'>('manual')
-const makeDefault = ref(false)
+const editingDefault = ref(false)
+const selectedDefault = ref('')
+const defaultChoices = computed(() => {
+  const current = session.value
+  if (!current?.default_profile) return []
+  const choices = new Map(profileStore.profiles.value.map(profile => [profile.id, profile.name]))
+  choices.set(current.default_profile.current.id, current.default_profile.current.name)
+  if (!choices.has(current.profile_id)) choices.set(current.profile_id, current.name)
+  return [...choices].map(([id, label]) => ({ id, label }))
+})
 const routerId = ref('')
 const ackRoutes = ref(false)
 const ackDNS = ref(false)
@@ -117,8 +127,7 @@ const help = [
 async function accept(value: SetupSession) {
   if (disposed) return
   if (!SETUP_GOALS.some(item => item.id === value.goal)) throw new Error('试用方案已调整，请新建一次配置，选择主路由分流或 Linux 网关')
-  // Start from the suggestion once per wizard; later responses keep the choice.
-  if (value.id !== session.value?.id) makeDefault.value = value.default_profile?.suggested ?? false
+  if (value.id !== session.value?.id) editingDefault.value = false
   session.value = value; goal.value = value.goal; name.value = value.name
   previewRouting.value = false
   dnsFallback.value = value.dns_fallback || 'mihomo'
@@ -180,21 +189,41 @@ async function selectRouter(id: string) {
   const current = session.value
   if (!current) return
   routerId.value = id
+  error.value = ''
   try {
     const { data } = await setupApi.progress(current.id, { router_id: id, router_mode: 'managed' })
     if (!disposed && session.value?.id === current.id) session.value = { ...session.value, router_id: data.router_id, router_mode: data.router_mode }
   } catch (failure) { if (!disposed) error.value = setupError(failure) }
 }
+function finishRouter(id: string) {
+  routerId.value = id
+  return finish()
+}
 async function finish() {
   const current = session.value
   if (!current || previewRouting.value || (current.goal === 'gateway' && !clientReady.value)) return
   await run(async () => {
-    const { data } = await setupApi.finish(current.id, {
-      ...(current.goal === 'router'
-        ? { router_mode: routerMode.value, router_id: routerId.value, ack_routes: ackRoutes.value, ack_dns: ackDNS.value } : {}),
-      ...(current.default_profile && !current.default_profile.is_default ? { make_default: makeDefault.value } : {}) })
+    const { data } = await setupApi.finish(current.id, current.goal === 'router'
+      ? { router_mode: routerMode.value, router_id: routerId.value, ack_routes: ackRoutes.value, ack_dns: ackDNS.value } : {})
     await accept(data)
     if (data.default_profile?.is_default) await profileStore.refreshProfiles()
+  })
+}
+function editDefaultSpace() {
+  selectedDefault.value = session.value?.default_profile?.current.id ?? ''
+  editingDefault.value = true
+}
+async function saveDefaultSpace() {
+  const current = session.value
+  if (!current?.completed || !selectedDefault.value) return
+  await run(async () => {
+    if (selectedDefault.value !== current.default_profile?.current.id) {
+      await profileApi.setDefault(selectedDefault.value)
+      const { data } = await setupApi.get(current.id)
+      await accept(data)
+      await profileStore.refreshProfiles()
+    }
+    editingDefault.value = false
   })
 }
 async function checkClientReadiness() {
@@ -219,7 +248,7 @@ watch(() => session.value?.goal === 'gateway' && step.value === 4 ? session.valu
   if (id && freshlyCheckedClient === id) { freshlyCheckedClient = ''; clientReady.value = true }
   else if (id) void checkClientReadiness()
 })
-async function manage(target: '/agents' | '/routers' | '/profiles' | '/subscriptions' | '/client-devices') {
+async function manage(target: '/dashboard' | '/agents' | '/routers' | '/profiles' | '/subscriptions' | '/client-devices') {
   if (!session.value) return
   await profileStore.refreshProfiles(); setActiveProfileId(session.value.profile_id); await router.push(target)
 }
@@ -278,7 +307,7 @@ onUnmounted(() => { disposed = true })
           <li v-for="(label, index) in steps" :key="index" class="shrink-0"><button type="button" :disabled="working || !session || (index > session.max_step && !(index === 4 && canPreviewRouting))" :aria-current="step === index ? 'step' : undefined" class="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13px] disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-accent" :class="step === index ? 'bg-primary-soft font-medium text-primary-accent' : index < (session?.step ?? 0) ? 'text-foreground' : 'text-muted-foreground'" @click="move(index)"><span class="grid size-6 shrink-0 place-items-center rounded-full border border-border-strong font-mono text-xs"><Check v-if="session?.completed || index < (session?.step ?? 0)" class="size-3.5" /><template v-else>{{ index + 1 }}</template></span>{{ label }}<span v-if="index === 4 && canPreviewRouting" class="ml-auto text-xs text-muted-foreground">{{ goal === 'router' ? '可先配置' : '预览' }}</span></button></li>
         </ol></nav>
         <SectionCard :title="step === 5 ? 'Mihomo + OxiDNS 已准备好' : steps[step]" :help="help[step]" class="min-w-0">
-          <div v-if="session" class="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border pb-4 text-xs text-muted-foreground"><span class="break-words font-medium text-foreground">{{ session.name }}</span><span>{{ SETUP_GOALS.find(item => item.id === session?.goal)?.title }}</span></div>
+          <div v-if="session && step !== 5" class="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border pb-4 text-xs text-muted-foreground"><span class="break-words font-medium text-foreground">{{ session.name }}</span><span>{{ SETUP_GOALS.find(item => item.id === session?.goal)?.title }}</span></div>
           <p v-if="session?.legacy_takeover && (step === 3 || step === 4)" role="status" class="mt-0 mb-5 rounded-lg border border-primary-accent/30 bg-primary-soft px-3 py-2.5 text-sm leading-relaxed text-foreground" data-legacy-takeover>此配置空间使用旧版 Linux 网关接管，保持不变。</p>
           <div v-if="session?.mihomo_changes?.length && step === 3" role="status" class="mt-0 mb-5 space-y-1 rounded-lg bg-muted px-3 py-2.5 text-sm leading-relaxed" data-mihomo-changes><p class="m-0 font-medium">已调整 Mihomo 基础配置的以下项，其余设置原样保留：</p><ul class="m-0 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground"><li v-for="item in session.mihomo_changes" :key="item" class="break-words">{{ item }}</li></ul></div>
           <div v-if="step === 0" class="space-y-5">
@@ -316,7 +345,7 @@ onUnmounted(() => { disposed = true })
               <p v-if="goal === 'gateway' && ipTakeover" class="m-0 text-xs leading-relaxed text-muted-foreground">Telegram、Google 推送（FCM）会直接连 IP，它们的 IP 网段也会交给 Mihomo。安装后可在「配置生成 → Linux 网关」的「IP 接管」里调整。</p>
             </section>
             <section class="space-y-3 border-t border-border pt-4" aria-label="DNS 上游">
-              <FormField label="直连 DNS 上游" html-for="setup-local-dns" hint="IP 地址的 DoH / DoT，每行一个。" persistent-hint help="用于查询直连域名的真实 IP。默认地址可直接使用，例如 https://223.5.5.5/dns-query；也支持 tls://223.5.5.5:853，最多 16 个，无需 YAML 前缀。为避免 Linux DNS 接管回环，不支持普通 53 端口、本机地址或代理出口。后续安装自动带入，之后可在 OxiDNS 设置中修改。">
+              <FormField label="直连 DNS 上游" html-for="setup-local-dns" persistent-hint :hint="goal === 'router' ? 'IPv4 地址的普通 DNS、DoH 或 DoT，每行一个。' : 'IPv4 地址的 DoH 或 DoT，每行一个。'" :help="goal === 'router' ? '最多 16 个直连上游。例如 223.5.5.5、udp://223.5.5.5:53、tcp://223.5.5.5:53 或 https://223.5.5.5/dns-query。请填写上游解析器的地址，避免指向这台 Linux 自己。' : '最多 16 个直连上游，例如 https://223.5.5.5/dns-query 或 tls://223.5.5.5:853。Linux 网关使用加密 DNS，避免普通 53 端口被再次接管。'">
                 <Textarea id="setup-local-dns" v-model="localDns" :disabled="working || session?.completed" :rows="2" :spellcheck="false" :aria-invalid="!!localDnsWarning" :aria-describedby="localDnsWarning ? 'setup-local-dns-warning' : undefined" class="min-h-16 font-mono text-xs" :placeholder="defaultLocalDns" />
                 <p v-if="localDnsWarning" id="setup-local-dns-warning" role="alert" class="m-0 text-xs leading-relaxed text-destructive-accent">{{ localDnsWarning }}</p>
               </FormField>
@@ -354,7 +383,7 @@ onUnmounted(() => { disposed = true })
           </div>
           <div v-if="step === 4 && session" class="flex flex-col gap-5">
             <p v-if="previewRouting" role="status" class="m-0 rounded-lg bg-info-soft px-3 py-2 text-sm text-info-accent">{{ goal === 'router' ? '安装尚未完成。可先填写主路由信息，安装后再发布设置。' : '安装尚未完成。可先查看客户端设置，实际地址在安装检查后显示。' }}</p>
-            <div v-else-if="goal === 'router' || clientReady" class="flex items-center gap-2 text-sm"><CircleCheck class="size-4 text-success-accent" />{{ goal === 'router' && !session.legacy_takeover ? 'Mihomo、OxiDNS 已发布，IPv4 转发与 TUN 已检查' : 'Mihomo、OxiDNS 已发布，Linux 转发已检查' }}</div>
+            <div v-else-if="(goal === 'router' && routerMode === 'manual') || clientReady" class="flex items-center gap-2 text-sm"><CircleCheck class="size-4 text-success-accent" />{{ goal === 'router' && !session.legacy_takeover ? 'Mihomo、OxiDNS 已发布，IPv4 转发与 TUN 已检查' : 'Mihomo、OxiDNS 已发布，Linux 转发已检查' }}</div>
             <template v-if="goal === 'router'">
               <Segmented v-model="routerMode" :options="[{value:'manual',label:'手动配置主路由'},{value:'managed',label:'自动配置主路由'}]" label="主路由配置方式" />
               <template v-if="routerMode === 'manual'">
@@ -376,9 +405,7 @@ onUnmounted(() => { disposed = true })
                 <p class="m-0 text-xs text-muted-foreground">手动设置由你确认，向导无法自动核验这台主路由。</p>
               </template>
               <template v-else>
-                <FormField label="连接主路由" help="自动配置支持 iKuai 4.x / RouterOS 7.1+；其他品牌使用手动配置。添加管理地址和账号后，ConfigFlow 可读取主路由设置。安装完成后自动关联本次设备；先探测，再打开差异报告，预览具体变更后确认发布。保存连接信息本身不会修改路由器。"><p class="m-0 text-sm">先添加主路由的管理地址和账号。安装完成后可查看并发布静态路由。若由其他设备提供 DHCP，可在编辑路由器时将 DHCP DNS 服务器设为「不关联」。</p></FormField>
-                <ol aria-label="主路由自动配置步骤" class="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-xs text-muted-foreground"><li>1 添加主路由</li><li>2 检查连接</li><li>3 查看改动并发布</li></ol>
-                <Routers :key="previewRouting ? 'draft-' + session.id : 'installed-' + session.id" embedded :profile-id="session.profile_id" :setup-agents="routerAgents" :setup-draft-session="previewRouting ? session.id : undefined" @selected="selectRouter" @busy="childBusy = $event" />
+                <Routers :key="previewRouting ? 'draft-' + session.id : 'installed-' + session.id" embedded :profile-id="session.profile_id" :setup-agents="routerAgents" :setup-draft-session="previewRouting ? session.id : undefined" @verified="finishRouter" @selected="selectRouter" @busy="childBusy = $event" />
               </template>
             </template>
             <template v-else>
@@ -387,27 +414,38 @@ onUnmounted(() => { disposed = true })
               <GatewayClientInstructions v-if="clientReady && routeInstructions" :address="routeInstructions.gateway" />
               <Button variant="outline" :disabled="working" @click="move(3)">管理网络与撤销转发</Button>
             </template>
-            <label v-if="session.default_profile && !session.default_profile.is_default" class="flex items-start gap-2 text-sm"><Checkbox v-model="makeDefault" :disabled="working" class="mt-0.5" /><span><span class="font-medium">设为默认配置空间</span><span class="mt-1 block text-xs leading-relaxed text-muted-foreground">新打开的页面、未指定配置空间的配置链接和新注册的 Agent 都会使用它。现在的默认是「{{ session.default_profile.current.name }}」，已绑定的设备不受影响，之后也可以在配置空间里更改。「{{ session.default_profile.current.name }}」中的客户端设备名称和 DNS 策略不会带过来，需要时在客户端设备中重新设置。</span></span></label>
-            <Button :disabled="previewRouting || working || (goal === 'gateway' && !clientReady) || (goal === 'router' && (routerMode === 'manual' ? !ackRoutes || !ackDNS || routesIncomplete : !routerId))" class="min-h-11" @click="finish"><LoaderCircle v-if="working" class="size-4 animate-spin" />{{ previewRouting ? '完成安装后继续' : goal === 'router' && routerMode === 'managed' ? '检查路由器并完成' : '确认设置并继续' }}<ArrowRight class="size-4" /></Button>
+            <Button v-if="goal !== 'router' || routerMode !== 'managed'" :disabled="previewRouting || working || (goal === 'gateway' && !clientReady) || (goal === 'router' && (!ackRoutes || !ackDNS || routesIncomplete))" class="min-h-11" @click="finish"><LoaderCircle v-if="working" class="size-4 animate-spin" />{{ previewRouting ? '完成安装后继续' : '确认设置并继续' }}<ArrowRight class="size-4" /></Button>
           </div>
           <div v-if="step === 5 && session" class="grid gap-5">
-            <ul class="m-0 grid list-none gap-2 p-0 text-sm" aria-label="安装结果">
+            <div>
+              <Button class="min-h-11 max-w-full whitespace-normal" :disabled="working" @click="manage('/dashboard')">进入「{{ session.name }}」<ArrowRight class="size-4 shrink-0" /></Button>
+            </div>
+            <ul class="m-0 grid list-none gap-x-4 gap-y-2 sm:grid-cols-2 p-0 text-sm" aria-label="安装结果">
               <li v-for="item in ['Mihomo 配置已发布', 'OxiDNS 配置已发布', 'IPv4 转发与 TUN 已检查']" :key="item" class="flex items-start gap-2"><CircleCheck class="size-4 shrink-0 text-success-accent" />{{ item }}</li>
               <li v-if="session.router_verification === 'verified'" class="flex items-start gap-2"><CircleCheck class="size-4 shrink-0 text-success-accent" />主路由的路由与 DHCP DNS 已核对同步。</li>
-              <li v-if="session.router_verification === 'routes_verified'" class="text-sm">主路由静态路由已核对；请在实际 DHCP 服务器下发 OxiDNS 地址。</li>
-              <li v-if="session.router_verification === 'manual'" class="text-warning-accent">主路由为手动配置，尚未自动核验。</li>
+              <li v-if="session.router_verification === 'routes_verified'" class="text-sm sm:col-span-2">主路由静态路由已核对；请在实际 DHCP 服务器下发 OxiDNS 地址。</li>
+              <li v-if="session.router_verification === 'manual'" class="text-warning-accent sm:col-span-2">主路由为手动配置，尚未自动核验。</li>
             </ul>
-            <section class="grid gap-2 border-t border-border pt-4">
-              <h3 class="m-0 text-sm font-semibold">用一台手机或电脑验证分流</h3>
-              <p class="m-0 text-sm leading-relaxed">{{ goal === 'router' ? '重新连接局域网，确认设备使用 OxiDNS 作为 DNS。' : '将测试设备的网关和 DNS 指向这台 Linux。' }}分别打开一个国内直连网站和一个应走代理的网站，确认都能访问。</p>
-              <p class="m-0 text-xs text-muted-foreground">客户端连通性尚未由本向导确认。</p>
+            <nav aria-label="管理设备与路由" class="flex flex-wrap gap-x-5 border-y border-border">
+              <Button variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/agents')">查看 Agent 状态</Button>
+              <Button variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/client-devices')">查看客户端设备</Button>
+              <Button v-if="goal === 'router'" variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/routers')">管理主路由规则</Button>
+            </nav>
+            <section v-if="session.completed && session.default_profile" class="text-sm">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-muted-foreground">当前默认配置空间</span><strong>{{ session.default_profile.current.name }}</strong>
+                <Button v-if="!editingDefault" variant="ghost" class="ml-auto min-h-11" @click="editDefaultSpace">更改</Button>
+              </div>
+              <form v-if="editingDefault" class="mt-2 grid gap-3" @submit.prevent="saveDefaultSpace">
+                <label class="grid gap-1.5">默认配置空间
+                  <select v-model="selectedDefault" :disabled="working" class="min-h-11 rounded-md border border-border-strong bg-background px-3">
+                    <option v-for="item in defaultChoices" :key="item.id" :value="item.id">{{ item.label }}</option>
+                  </select>
+                </label>
+                <p class="m-0 text-xs text-muted-foreground">新打开的页面、未指定空间的配置链接和新注册的 Agent 会使用所选空间。已有客户端名称和 DNS 策略保留在原空间。</p>
+                <div class="flex gap-2"><Button type="submit" :disabled="working">保存选择</Button><Button type="button" variant="ghost" :disabled="working" @click="editingDefault = false">取消</Button></div>
+              </form>
             </section>
-            <div v-if="session.default_profile?.is_default && session.previous_default" class="space-y-1 rounded-lg bg-muted px-3 py-2 text-sm">
-              <p class="m-0">已设为默认配置空间，新打开的页面会直接进入它。</p>
-              <p v-if="session.default_profile.leftovers?.profile" class="m-0 text-muted-foreground">原来的「{{ session.default_profile.leftovers.profile.name }}」没有设备在用，不需要的话可以在<button type="button" class="text-primary-accent underline-offset-2 hover:underline" @click="manage('/profiles')">配置空间</button>里删除。</p>
-              <p v-if="session.default_profile.leftovers?.subscriptions.length" class="m-0 text-muted-foreground">示例订阅「{{ session.default_profile.leftovers.subscriptions.map(item => item.name).join('、') }}」只被原来的默认配置使用，不需要的话可以在<button type="button" class="text-primary-accent underline-offset-2 hover:underline" @click="manage('/subscriptions')">订阅来源</button>里删除。</p>
-            </div>
-            <div class="flex flex-wrap gap-2"><Button class="min-h-11" :disabled="working" @click="manage('/agents')">查看 Agent 状态<ArrowRight class="size-4" /></Button><Button variant="outline" class="min-h-11" :disabled="working" @click="manage('/client-devices')">查看客户端设备</Button><Button v-if="goal === 'router'" variant="outline" class="min-h-11" @click="manage('/routers')">管理主路由规则</Button></div>
           </div>
           <footer v-if="session && step > 0 && step < 5" class="mt-6 flex items-center gap-2 border-t border-border pt-4"><Button variant="ghost" :disabled="working" @click="move(previewRouting ? session.step : step - 1)"><ArrowLeft class="size-3.5" />{{ previewRouting ? '返回安装与检查' : '上一步' }}</Button><span class="ml-auto text-xs text-muted-foreground">{{ previewRouting ? '安装进度未改变' : '进度已保存' }}</span></footer>
         </SectionCard>

@@ -582,7 +582,7 @@ onBeforeUnmount(() => { disposed = true; generation++; stopPolling(); emit('busy
             </TabsContent>
           </Tabs>
           <div class="border-t border-border pt-3">
-            <FormField label="直连网站使用的 DNS" html-for="onboarding-dns" :hint="gatewayCopy.localDNS.hint" :help="gatewayCopy.localDNS.help" persistent-hint>
+            <FormField label="直连网站使用的 DNS" html-for="onboarding-dns" :hint="gatewayCopy.localDNS.hint" :help="fullTun ? '可填普通 IPv4 DNS（例如 223.5.5.5、tcp://223.5.5.5:53）或 IP 形式的 DoH / DoT，每行一个。请勿指向本机 DNS。' : gatewayCopy.localDNS.help" persistent-hint>
               <Textarea id="onboarding-dns" v-model="settings.local_dns" :disabled="busy" :aria-describedby="localDnsWarning ? 'onboarding-dns-warning' : undefined" class="min-h-16 font-mono text-xs" :rows="2" placeholder="https://223.5.5.5/dns-query" />
               <p v-if="localDnsWarning" id="onboarding-dns-warning" class="m-0 text-xs leading-relaxed text-warning-accent" role="status">{{ localDnsWarning }}</p>
             </FormField>
@@ -611,7 +611,8 @@ onBeforeUnmount(() => { disposed = true; generation++; stopPolling(); emit('busy
                 <li>Mihomo 使用 rule / fake-IP 模式和选择性 TUN；实际出口由规则顺序及策略组当前选择决定。</li>
               </template>
               <li>OxiDNS 在 53 端口服务局域网，代理和后备 DNS 交给 Mihomo；未匹配域名使用已保存的默认 DNS，Mihomo 地址为（<code class="break-all font-mono">127.0.0.1:1053</code>）。</li>
-              <li>直连 DNS 使用 IP 地址的 DoH / DoT；普通 53 端口可能被自动接管，形成回环。</li>
+              <li v-if="fullTun">直连 DNS 可使用独立解析器的普通 IPv4 DNS 或加密 DNS。</li>
+              <li v-else>直连 DNS 使用 IP 地址的 DoH / DoT；普通 53 端口可能被自动接管，形成回环。</li>
             </ul>
           </details>
           <div v-if="config?.warnings?.length || config?.blockers?.length" class="space-y-3 text-xs leading-relaxed">
@@ -671,7 +672,8 @@ onBeforeUnmount(() => { disposed = true; generation++; stopPolling(); emit('busy
           <div><h2 class="m-0 text-lg font-semibold">发布配置</h2><p class="mt-1 mb-0 text-sm text-muted-foreground">先发布并检查 Mihomo，再发布 OxiDNS；失败时会停止。</p></div>
           <div class="divide-y divide-border border-y border-border">
             <div v-for="service in (['mihomo', 'oxidns'] as const)" :key="service" class="min-w-0">
-              <AgentDeploymentStatus v-if="installation?.deployments[service]" :task="installation.deployments[service]!" :label="service === 'mihomo' ? 'Mihomo' : 'OxiDNS'" compact>
+              <AgentStatusRow v-if="service === 'oxidns' && installation?.deployments.mihomo?.status !== 'succeeded' && (!installation?.deployments.oxidns || installation.deployments.oxidns.status === 'preparing')" label="OxiDNS" :status="installation?.phase === 'publish_failed' ? '未执行' : '等待 Mihomo 检查通过'" tone="neutral" />
+              <AgentDeploymentStatus v-else-if="installation?.deployments[service]" :task="installation.deployments[service]!" :label="service === 'mihomo' ? 'Mihomo' : 'OxiDNS'" compact>
                 <template #notice><AgentFailureDetails :task="installation.deployments[service]!" :show-progress-message="installation.deployments[service]?.status !== 'succeeded'" :showDNSChecks="false" /></template>
                 <template #details><p class="m-0">设备：{{ installation.agents[service]?.name }}</p><p v-if="installation.deployments[service]?.status === 'succeeded' && installation.deployments[service]?.message" class="m-0">{{ installation.deployments[service]?.message }}</p></template>
               </AgentDeploymentStatus>

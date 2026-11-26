@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"strings"
 	"testing"
 
@@ -106,6 +107,15 @@ func TestMalformedStoredMihomoIsNotRepaired(t *testing.T) {
 		}
 		if before != string(encode(config)) {
 			t.Fatal("source changed")
+		}
+	}
+}
+
+func TestRouterPlainDNSRejectsLocalListeners(t *testing.T) {
+	local := []netip.Addr{netip.MustParseAddr("192.0.2.10")}
+	for _, input := range []string{"udp://127.0.0.1:53", "tcp://192.0.2.10:53", "192.0.2.53:1053", "tcp://192.0.2.53:70000", "addr: udp://192.0.2.53\ndial_addr: 192.0.2.10"} {
+		if _, err := localUpstreams(input, true, local); err == nil {
+			t.Errorf("accepted %q", input)
 		}
 	}
 }

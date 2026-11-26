@@ -9,12 +9,58 @@
       </template>
     </PageHeader>
 
-    <div v-if="embedded && !(setupDraftSession && routers.length)" class="mb-3 flex items-center justify-end"><Button class="min-h-11" @click="openCreate"><Plus class="size-4" />添加路由器</Button></div>
     <p v-if="!embedded" class="mt-0 mb-4 hidden text-[12.5px] leading-relaxed text-muted-foreground md:block">
       {{ routerPageHelp }}
     </p>
 
     <LoadingRows v-if="loading && !routers.length" :rows="3" />
+
+    <div v-else-if="embedded && !routers.length" class="py-3">
+      <Button class="min-h-11" @click="openCreate"><Plus class="size-4" />添加路由器</Button>
+    </div>
+
+    <ul v-else-if="embedded" aria-label="主路由" class="m-0 list-none divide-y divide-border border-y border-border p-0">
+      <li v-for="router in routers" :key="router.id" class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-4">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-x-3">
+            <strong class="break-all font-semibold">{{ router.name }}</strong>
+            <StatusDot :tone="setupDraftSession || !router.last_probe ? 'muted' : router.last_probe.ok ? 'success' : 'danger'"
+              :label="setupDraftSession ? '已保存，待安装' : !router.last_probe ? '未探测' : router.last_probe.ok ? '可连接' : '连接失败'" />
+          </div>
+          <p class="m-0 mt-1 break-all text-xs text-muted-foreground">
+            {{ typeLabel(router.type) }}<template v-if="router.last_probe?.ok"> {{ router.last_probe.version }}</template>
+            · <span class="font-mono">{{ router.endpoint }}</span>
+          </p>
+          <p v-if="router.last_probe && !router.last_probe.ok" class="m-0 mt-1 break-words text-xs text-destructive-accent">{{ router.last_probe.message }}</p>
+        </div>
+        <div class="ml-auto flex items-center gap-1">
+          <Button v-if="setupDraftSession" variant="outline" aria-label="编辑" class="min-h-11" @click="openEdit(router)">编辑</Button>
+          <Button v-else-if="needsSetupAgents(router)" class="min-h-11" @click="openEdit(router)">关联本次设备</Button>
+          <Button v-else-if="!router.last_probe?.ok" class="min-h-11" :disabled="busyId === router.id" @click="probe(router)">
+            <Loader2 v-if="busyId === router.id && busyAction === 'probe'" class="size-4 animate-spin" />检查连接
+          </Button>
+          <Button v-else class="min-h-11" :disabled="planLoading || routeBusy || applying || policyLocked" @click="openReport(router, true)">
+            <Loader2 v-if="planLoading && reportRouter?.id === router.id" class="size-4 animate-spin" />预览发布
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child><Button size="icon" variant="ghost" class="size-11" :aria-label="router.name + ' 的更多操作'"><MoreHorizontal class="size-4" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <template v-if="!setupDraftSession">
+                <DropdownMenuItem v-if="router.last_probe?.ok" :disabled="busyId === router.id" @select="probe(router)">重新检查连接</DropdownMenuItem>
+                <DropdownMenuItem :disabled="busyId === router.id || routeBusy || applying || policyLocked" @select="openReport(router)">差异报告</DropdownMenuItem>
+                <DropdownMenuItem :disabled="routeBusy || applying || policyLocked" @select="openRouteManager(router)">静态路由</DropdownMenuItem>
+                <DropdownMenuItem v-if="router.type === 'routeros' && router.ros_policy_rule_sets?.length" :disabled="routeBusy || applying || policyLocked" @select="openPolicyManager(router)">策略路由</DropdownMenuItem>
+                <DropdownMenuItem v-if="router.type === 'routeros'" :disabled="routeBusy || applying || policyLocked" @select="openRuleSync(router)">规则同步</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem @select="openEdit(router)">编辑</DropdownMenuItem>
+                <DropdownMenuItem @select="openCreate">添加路由器</DropdownMenuItem>
+              </template>
+              <DropdownMenuItem variant="destructive" @select="remove(router)">删除</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </li>
+    </ul>
 
     <SectionCard v-else-if="!routers.length" :padded="false">
       <EmptyState
@@ -31,7 +77,7 @@
 
     <SectionCard v-else :padded="false" title="路由器">
       <div class="cf-table-wrap">
-        <table class="cf-table cf-mobile-records router-records" :class="embedded ? 'router-wizard-records' : 'min-w-[880px]'" role="table">
+        <table class="cf-table cf-mobile-records router-records min-w-[880px]" role="table">
           <thead role="rowgroup">
             <tr role="row">
               <th role="columnheader">名称</th>
@@ -70,7 +116,7 @@
                   <Button size="sm" variant="outline" :disabled="busyId === router.id" @click="probe(router)">
                     <Loader2 v-if="busyId === router.id && busyAction === 'probe'" class="size-3.5 animate-spin" />
                     <Activity v-else class="size-3.5" />
-                    {{ embedded ? '检查连接' : '探测' }}
+                    探测
                   </Button>
                   <Button size="sm" variant="outline" class="max-md:min-h-11" :disabled="routeBusy || applying || policyLocked" @click="openRouteManager(router)">
                     静态路由
@@ -82,7 +128,7 @@
                   <Button size="sm" :disabled="busyId === router.id || routeBusy || applying || policyLocked" @click="openReport(router)">
                     <Loader2 v-if="busyId === router.id && busyAction === 'report'" class="size-3.5 animate-spin" />
                     <GitCompare v-else class="size-3.5" />
-                    {{ embedded ? '查看改动' : '差异报告' }}
+                    差异报告
                   </Button>
                   </template>
                   <Button variant="ghost" size="icon-sm" title="编辑" aria-label="编辑" @click="openEdit(router)">
@@ -175,7 +221,7 @@
       </DialogContent>
     </Dialog>
 
-    <SectionCard v-if="reportRouter && !report" class="mt-4 scroll-mt-20" data-router-report :title="`差异报告 · ${reportRouter.name}`">
+    <SectionCard v-if="reportRouter && !report && (reportLoading || reportError)" class="mt-4 scroll-mt-20" data-router-report :title="`差异报告 · ${reportRouter.name}`">
       <p v-if="reportLoading" role="status" class="m-0 flex items-center gap-2 text-muted-foreground"><Loader2 class="size-4 animate-spin" />正在生成差异报告…</p>
       <template v-else-if="reportError">
         <p role="alert" class="mt-0 break-words text-destructive-accent">{{ reportError }}</p>
@@ -706,7 +752,8 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
 
         <DialogFooter>
           <Button variant="outline" @click="planVisible = false">{{ releaseResult ? '关闭' : '取消' }}</Button>
-          <Button v-if="!releaseResult" :disabled="!canApply || applying" @click="applyPlan">
+          <Button v-if="embedded && !setupDraftSession && reportRouter && !needsSetupAgents(reportRouter) && !applying && (releaseResult?.ok || (!releaseResult && plan?.empty && !plan.blockers.length && !plan.sync_baseline))" @click="finishVerifiedRouter">完成向导</Button>
+          <Button v-else-if="!releaseResult" :disabled="!canApply || applying" @click="applyPlan">
             <Loader2 v-if="applying" class="size-4 animate-spin" />
             {{ plan?.empty && plan.sync_baseline ? '重新建立同步基准' : '确认发布' }}
           </Button>
@@ -718,7 +765,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
       <DialogContent class="max-h-[90dvh] max-w-[480px] overflow-y-auto max-md:[&_[data-slot=button]]:min-h-11 max-md:[&_[role=combobox]]:min-h-11 max-md:[&_[data-slot=dialog-close]]:min-h-11 max-md:[&_[data-slot=dialog-close]]:min-w-11">
         <DialogHeader>
           <DialogTitle>{{ editingId ? '编辑路由器' : '添加路由器' }}</DialogTitle>
-          <DialogDescription>{{ embedded ? '选择路由器类型，填写管理地址、用户名和密码。其余选项可保留默认值。' : '保存仅更新 ConfigFlow 设置，确认发布后才会写入路由器。' }}</DialogDescription>
+          <DialogDescription :class="{ 'sr-only': embedded }">{{ embedded ? '选择路由器类型，填写管理地址、用户名和密码。其余选项可保留默认值。' : '保存仅更新 ConfigFlow 设置，确认发布后才会写入路由器。' }}</DialogDescription>
         </DialogHeader>
 
         <form class="flex min-w-0 flex-col gap-4" @submit.prevent="submit">
@@ -736,7 +783,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
               </SelectContent>
             </Select>
           </div>
-          <FormField :label="embedded ? '管理地址（必填）' : '管理地址'" html-for="router-endpoint" v-bind="form.type === 'routeros' ? routerCopy.endpointROS : routerCopy.endpointIkuai">
+          <FormField :label="embedded ? '管理地址（必填）' : '管理地址'" html-for="router-endpoint" :help="form.type === 'routeros' ? routerCopy.endpointROS.help : routerCopy.endpointIkuai.help">
             <Input
               id="router-endpoint"
               v-model="form.endpoint"
@@ -766,7 +813,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
             <Label for="router-verify-tls">校验 HTTPS 证书</Label>
             <FieldHelp label="校验 HTTPS 证书" :text="routerCopy.tls.help" />
           </div>
-          <FormField v-if="!setupDraftSession" label="代理网关（Mihomo Agent）" html-for="router-gateway" v-bind="form.type === 'routeros' ? routerCopy.gatewayROS : routerCopy.gateway">
+          <FormField v-if="!setupDraftSession" label="代理网关（Mihomo Agent）" html-for="router-gateway" :help="form.type === 'routeros' ? routerCopy.gatewayROS.help : routerCopy.gateway.help">
             <Select v-model="form.proxy_gateway_agent_id">
               <SelectTrigger id="router-gateway" class="w-full bg-background/50"><SelectValue placeholder="不关联" /></SelectTrigger>
               <SelectContent>
@@ -778,35 +825,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
             </Select>
           </FormField>
           <FormField v-else label="安装设备" help="安装并检查完成后，向导会把代理网关设为本次 Mihomo Agent，把 DHCP DNS 设为本次 OxiDNS Agent，无需预先选择其他设备。"><p class="m-0 text-sm text-muted-foreground">安装后自动关联本次 Mihomo + OxiDNS</p></FormField>
-          <component :is="embedded ? 'details' : 'div'" :class="embedded ? 'space-y-4 border-t border-border pt-3' : 'contents'">
-          <summary v-if="embedded" class="min-h-11 cursor-pointer text-sm font-medium">高级路由选项<span class="ml-2 text-xs font-normal text-muted-foreground">可选，默认无需修改</span></summary>
-          <div class="flex flex-col gap-1.5">
-            <div class="flex min-h-11 items-center justify-between gap-3">
-              <div class="flex min-w-0 items-center gap-1">
-                <Label for="router-return-routing">自动配置回流</Label>
-                <FieldHelp label="自动配置回流" :text="routerCopy.returnRouting.help" />
-              </div>
-              <Switch
-                id="router-return-routing"
-                :model-value="form.manage_return_routing"
-                @update:model-value="value => (form.manage_return_routing = Boolean(value))"
-              />
-            </div>
-          </div>
-          <FormField :label="form.type === 'routeros' ? '使用静态路由的 IP 规则集' : '按 IP 路由给 Mihomo 的规则集'" html-for="router-ip-rule-sets" v-bind="routerCopy.staticRules">
-            <div class="[&_[role=combobox]]:min-h-11">
-              <MultiSelect :model-value="form.ip_rule_sets" trigger-id="router-ip-rule-sets" :options="ruleSetOptions" placeholder="仅 fake-ip 网段" @update:model-value="selectStaticRuleSets" />
-            </div>
-            <p v-if="form.type === 'ikuai'" class="m-0 mt-1.5 text-[12px] leading-relaxed text-muted-foreground" data-router-ikuai-ipv6-note>iKuai 只发布 IPv4 网段，规则集中的 IPv6 网段不会处理。</p>
-          </FormField>
-          <FormField v-if="showPolicyOption" label="使用策略路由的 IP 规则集" html-for="router-policy-rule-sets" v-bind="routerCopy.policyRules">
-            <div class="[&_[role=combobox]]:min-h-11">
-              <MultiSelect :model-value="form.ros_policy_rule_sets" trigger-id="router-policy-rule-sets" :options="ruleSetOptions" placeholder="不使用策略路由" @update:model-value="selectPolicyRuleSets" />
-            </div>
-          </FormField>
-          <p v-if="form.type === 'routeros'" class="m-0 text-xs leading-relaxed text-muted-foreground">取消规则集后，需保存、预览并确认发布，才会清理对应的受管规则。</p>
-          </component>
-          <FormField v-if="!setupDraftSession" label="DHCP DNS 服务器（OxiDNS Agent）" html-for="router-dns" v-bind="form.type === 'routeros' ? routerCopy.dnsROS : routerCopy.dns">
+          <FormField v-if="!setupDraftSession" label="DHCP DNS 服务器（OxiDNS Agent）" html-for="router-dns" :help="form.type === 'routeros' ? routerCopy.dnsROS.help : routerCopy.dns.help">
             <Select v-model="form.dns_agent_id">
               <SelectTrigger id="router-dns" class="w-full bg-background/50"><SelectValue placeholder="不关联" /></SelectTrigger>
               <SelectContent class="max-w-[calc(100vw-2rem)]">
@@ -816,7 +835,6 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
                 </SelectItem>
               </SelectContent>
             </Select>
-            <p v-if="embedded" class="m-0 text-xs text-muted-foreground">DHCP 在其他设备上时，选择「不关联」后继续发布静态路由，并在实际 DHCP 服务器中下发 OxiDNS 地址。</p>
             <p v-if="dnsHaVip" class="m-0 text-xs leading-relaxed text-muted-foreground" data-dns-ha-vip>所选 OxiDNS 已开启 DNS 高可用，将下发虚拟 IP <span class="font-mono">{{ dnsHaVip }}</span>。</p>
           </FormField>
           <template v-if="form.type === 'routeros' && !setupDraftSession">
@@ -833,9 +851,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
                   @update:model-value="value => (form.dns_guard.enabled = Boolean(value))"
                 />
               </div>
-              <p class="m-0 text-xs leading-relaxed text-muted-foreground">
-                {{ form.dns_agent_id === NONE ? '先选择上方的 DHCP DNS 服务器才能开启。' : routerCopy.dnsGuard.hint }}
-              </p>
+              <p v-if="form.dns_agent_id === NONE" class="m-0 text-xs leading-relaxed text-muted-foreground">先选择上方的 DHCP DNS 服务器才能开启。</p>
             </div>
             <template v-if="form.dns_guard.enabled">
               <div v-for="option in guardOptions" :key="option.key" class="flex min-h-11 items-center justify-between gap-3 pl-3">
@@ -865,16 +881,45 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
                   @update:model-value="value => (form.ipv6_pd_guard.enabled = Boolean(value))"
                 />
               </div>
-              <p class="m-0 text-xs leading-relaxed text-muted-foreground">{{ routerCopy.ipv6PdGuard.hint }}</p>
             </div>
           </template>
+          <component :is="embedded ? 'details' : 'div'" :class="embedded ? 'group border-y border-border' : 'contents'">
+          <summary v-if="embedded" class="flex min-h-11 cursor-pointer items-center justify-between text-sm font-medium [&::-webkit-details-marker]:hidden">高级路由选项<ChevronDown aria-hidden="true" class="size-4 text-muted-foreground group-open:rotate-180" /></summary>
+          <div :class="embedded ? 'space-y-4 pb-3' : 'contents'">
+          <div class="flex flex-col gap-1.5">
+            <div class="flex min-h-11 items-center justify-between gap-3">
+              <div class="flex min-w-0 items-center gap-1">
+                <Label for="router-return-routing">自动配置回流</Label>
+                <FieldHelp label="自动配置回流" :text="routerCopy.returnRouting.help" />
+              </div>
+              <Switch
+                id="router-return-routing"
+                :model-value="form.manage_return_routing"
+                @update:model-value="value => (form.manage_return_routing = Boolean(value))"
+              />
+            </div>
+          </div>
+          <FormField :label="form.type === 'routeros' ? '使用静态路由的 IP 规则集' : '按 IP 路由给 Mihomo 的规则集'" html-for="router-ip-rule-sets" v-bind="routerCopy.staticRules">
+            <div class="[&_[role=combobox]]:min-h-11">
+              <MultiSelect :model-value="form.ip_rule_sets" trigger-id="router-ip-rule-sets" :options="ruleSetOptions" placeholder="仅 fake-ip 网段" @update:model-value="selectStaticRuleSets" />
+            </div>
+            <p v-if="form.type === 'ikuai'" class="m-0 mt-1.5 text-[12px] leading-relaxed text-muted-foreground" data-router-ikuai-ipv6-note>iKuai 只发布 IPv4 网段，规则集中的 IPv6 网段不会处理。</p>
+          </FormField>
+          <FormField v-if="showPolicyOption" label="使用策略路由的 IP 规则集" html-for="router-policy-rule-sets" v-bind="routerCopy.policyRules">
+            <div class="[&_[role=combobox]]:min-h-11">
+              <MultiSelect :model-value="form.ros_policy_rule_sets" trigger-id="router-policy-rule-sets" :options="ruleSetOptions" placeholder="不使用策略路由" @update:model-value="selectPolicyRuleSets" />
+            </div>
+          </FormField>
+          <p v-if="form.type === 'routeros'" class="m-0 text-xs leading-relaxed text-muted-foreground">取消规则集后，需保存、预览并确认发布，才会清理对应的受管规则。</p>
+          </div>
+          </component>
         </form>
 
         <DialogFooter>
           <Button variant="outline" :disabled="saving" @click="dialogVisible = false">取消</Button>
           <Button :disabled="saving || !form.type" @click="submit">
             <Loader2 v-if="saving" class="size-4 animate-spin" />
-            {{ setupDraftSession ? '保存到向导' : '保存' }}
+            {{ setupDraftSession ? '保存到向导' : embedded ? '保存路由器配置' : '保存' }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -887,6 +932,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, 
 import { RouterLink, matchedRouteKey, onBeforeRouteLeave, routeLocationKey, routerKey } from 'vue-router'
 import {
   Activity,
+  ChevronDown, MoreHorizontal,
   CircleX,
   Copy,
   GitCompare,
@@ -898,6 +944,7 @@ import {
   Trash2,
   TriangleAlert
 } from '@lucide/vue'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -938,7 +985,11 @@ import { routerForwardingWarning, type GatewayForwardingEntry, type RouterForwar
 import { usePageReloadGuard, withPageReloadBlocked } from '@/lib/pageReloadGuard'
 
 const props = defineProps<{ embedded?: boolean; profileId?: string; setupAgents?: { mihomo: string; oxidns: string }; setupDraftSession?: string }>()
-const emit = defineEmits<{ selected: [id: string]; busy: [value: boolean] }>()
+const emit = defineEmits<{ selected: [id: string]; busy: [value: boolean]; verified: [id: string] }>()
+const needsSetupAgents = (router: RouterItem) => props.setupAgents && (
+  router.proxy_gateway_agent_id !== props.setupAgents.mihomo ||
+  (router.dns_agent_id && router.dns_agent_id !== props.setupAgents.oxidns)
+)
 const activeProfileId = computed(() => props.profileId || selectedProfileId.value)
 const getActiveProfileId = () => activeProfileId.value
 // Embedded setup stays pinned to its new profile, including delayed confirmations.
@@ -1715,7 +1766,7 @@ const probe = async (router: RouterItem) => {
 
 // Changing panels invalidates pending inspection/preview responses. The refresh
 // after publishing keeps the current plan and its result available for review.
-const openReport = async (router: RouterItem) => {
+const openReport = async (router: RouterItem, previewOnly = false) => {
   if (routeBusy.value || applying.value) return
   if (!await canLeavePolicy()) return
   policyRouter.value = null
@@ -1724,6 +1775,10 @@ const openReport = async (router: RouterItem) => {
   clearInspection()
   reportRouter.value = router
   emit('selected', router.id)
+  if (previewOnly) {
+    await openPlan()
+    return
+  }
   await loadReport(router)
 }
 
@@ -1774,6 +1829,14 @@ const openPlan = async () => {
   }
 }
 
+const finishVerifiedRouter = async () => {
+  const id = reportRouter.value?.id
+  if (!id) return
+  planVisible.value = false
+  await nextTick()
+  emit('verified', id)
+}
+
 const applyPlan = async () => {
   const router = reportRouter.value
   if (!router || !plan.value || applying.value) return
@@ -1794,7 +1857,7 @@ const applyPlan = async () => {
     notify.error(errorMessage(error, '发布失败'))
   } finally {
     applying.value = false
-    if (revision === inspectionRevision) await loadReport(router)
+    if (revision === inspectionRevision && (!props.embedded || report.value)) await loadReport(router)
   }
 }
 
@@ -1897,16 +1960,3 @@ watch(() => JSON.stringify(deepLinkOf()), () => {
   if (link && !deepLinkBusy && !loading.value) void handleDeepLink(link, true)
 })
 </script>
-
-
-<style scoped>
-@media (min-width: 640px) {
-  .router-wizard-records, .router-wizard-records tbody { display: block; }
-  .router-wizard-records thead { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
-  .router-wizard-records tr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); gap: .75rem; padding: 1rem; }
-  .router-wizard-records td { min-width: 0; padding: 0; border: 0; overflow-wrap: anywhere; }
-  .router-wizard-records td[data-label]::before { content: attr(data-label); display: block; color: var(--muted-foreground); font-size: 12px; }
-  .router-wizard-records td:last-child { grid-column: 1 / -1; }
-  .router-wizard-records .router-record-actions { justify-content: flex-start; flex-wrap: wrap; }
-}
-</style>
