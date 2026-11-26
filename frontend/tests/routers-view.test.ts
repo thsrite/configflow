@@ -69,6 +69,11 @@ const DHCP_DNS_PENDING = {
 
 const buttonInDocument = (label: string) => Array.from(document.body.querySelectorAll('button'))
   .find(button => button.textContent?.trim() === label)!
+const wizardMenu = async (wrapper: VueWrapper) => {
+  await wrapper.get('button[aria-label$="的更多操作"]').trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+}
 const toggleHelp = async (label: string) => {
   document.querySelector<HTMLButtonElement>(`button[aria-label="${label}说明"]`)!.click()
   await flushPromises()
@@ -133,8 +138,9 @@ describe('routers view', () => {
     vi.mocked(routerApi.update).mockResolvedValue({ data: { success: true } } as any)
     const SETUP = { embedded: true, profileId: 'setup-profile', setupAgents: { mihomo: 'new-m', oxidns: 'new-o' } }
     const wrapper = await mountRouter({ ...ROUTER, type: 'routeros', ip_rule_sets: [], ros_policy_rule_sets: [] }, [], SETUP)
-    expect(wrapper.findAll('button').some(button => button.text() === '策略路由')).toBe(false)
-    await wrapper.get('button[aria-label="编辑"]').trigger('click'); await flushPromises()
+    const menu = await wizardMenu(wrapper)
+    expect(menu.some(item => item.textContent === '策略路由')).toBe(false)
+    menu.find(item => item.textContent === '编辑')!.click(); await flushPromises()
     expect(document.body.querySelector('#router-ip-rule-sets')).not.toBeNull()
     expect(document.body.querySelector('#router-policy-rule-sets')).toBeNull()
     buttonInDocument('保存').click(); await flushPromises()
@@ -142,8 +148,9 @@ describe('routers view', () => {
     wrapper.unmount()
     // A router that already uses policy routing keeps the option so it can be cleared.
     const existing = await mountRouter({ ...ROUTER, type: 'routeros', ip_rule_sets: [], ros_policy_rule_sets: ['telegram'] }, [], SETUP)
-    expect(existing.findAll('button').some(button => button.text() === '策略路由')).toBe(true)
-    await existing.get('button[aria-label="编辑"]').trigger('click'); await flushPromises()
+    const existingMenu = await wizardMenu(existing)
+    expect(existingMenu.some(item => item.textContent === '策略路由')).toBe(true)
+    existingMenu.find(item => item.textContent === '编辑')!.click(); await flushPromises()
     expect(document.body.querySelector('#router-policy-rule-sets')).not.toBeNull()
   })
 

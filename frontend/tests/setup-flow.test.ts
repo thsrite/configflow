@@ -4,17 +4,17 @@ import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import Setup from '@/views/Setup.vue'
 import MultiSelect from '@/components/common/MultiSelect.vue'
 import SetupInstallation from '@/components/setup/SetupInstallation.vue'
-import { subscriptionApi } from '@/api'
+import { profileApi, subscriptionApi } from '@/api'
 import { setupApi, type SetupSession } from '@/api/setup'
 import { SETUP_GOALS, useLibraryNamesake } from '@/lib/setupFlow'
 import { setActiveProfileId } from '@/profileContext'
 
 vi.mock('@/api', () => ({
   default: { get: vi.fn() }, agentApi: {}, routerApi: {}, ruleApi: {},
-  subscriptionApi: { fetch: vi.fn() }
+  profileApi: { setDefault: vi.fn() }, subscriptionApi: { fetch: vi.fn() }
 }))
 vi.mock('@/api/setup', () => ({ setupApi: { index: vi.fn(), create: vi.fn(), get: vi.fn(), source: vi.fn(), progress: vi.fn(), prepare: vi.fn(), check: vi.fn(), saveRouterDraft: vi.fn(), finish: vi.fn(), abandon: vi.fn() } }))
-vi.mock('@/stores/profile', () => ({ useProfileStore: () => ({ refreshProfiles: vi.fn().mockResolvedValue([]) }) }))
+vi.mock('@/stores/profile', () => ({ useProfileStore: () => ({ profiles: { value: [{ id: 'default', name: '默认配置' }, { id: 'setup_test', name: '我的分流配置' }] }, refreshProfiles: vi.fn().mockResolvedValue([]) }) }))
 vi.mock('@/profileContext', () => ({ setActiveProfileId: vi.fn() }))
 vi.mock('@/lib/feedback', () => ({ confirm: vi.fn().mockResolvedValue(false), confirmDanger: vi.fn().mockResolvedValue(true), notify: { error: vi.fn(), success: vi.fn() } }))
 
@@ -114,7 +114,7 @@ describe('首次使用分流向导', () => {
     expect(wrapper!.text()).toContain('可直接照填的网段和 Linux IP')
     expect(wrapper!.text()).toContain('安装检查完成后自动显示 DNS 地址')
     await click('自动配置主路由')
-    expect(wrapper!.text()).toContain('先添加主路由的管理地址和账号')
+    expect(wrapper!.text()).not.toContain('先添加主路由的管理地址和账号')
     expect(wrapper!.getComponent({ name: 'Routers' }).props('setupDraftSession')).toBe('a'.repeat(32))
     await click('完成安装后继续')
     expect(setupApi.finish).not.toHaveBeenCalled()
@@ -420,23 +420,25 @@ describe('首次使用分流向导', () => {
     expect(wrapper!.text()).toContain('客户端连通性尚未由本向导确认')
   })
 
-  it('完成时可设为默认配置空间，并提示原来的默认配置和示例订阅可以删除', async () => {
-    const current = { id: 'default', name: '默认配置' }
-    vi.mocked(setupApi.get).mockResolvedValue({ data: installed({ default_profile: { is_default: false, suggested: true, current } }) } as never)
+  it('完成路由接入后单独保存默认空间，普通完成保留原先的默认值', async () => {
+    const oldDefault = { is_default: false, suggested: true, current: { id: 'default', name: '默认配置' } }
+    vi.mocked(setupApi.get).mockResolvedValue({ data: installed({ default_profile: oldDefault }) } as never)
     await open('/setup?session=' + 'a'.repeat(32))
-    expect(wrapper!.text()).toContain('设为默认配置空间')
-    expect(wrapper!.text()).toContain('现在的默认是「默认配置」')
-    const checkboxes = wrapper!.findAll('[role="checkbox"]')
-    expect(checkboxes.at(-1)!.attributes('aria-checked')).toBe('true')
-    for (const checkbox of checkboxes.slice(0, -1)) await checkbox.trigger('click')
-    vi.mocked(setupApi.finish).mockResolvedValue({ data: installed({ step: 5, max_step: 5, completed: true, router_verification: 'manual', previous_default: 'default',
-      default_profile: { is_default: true, suggested: false, current: { id: 'setup_test', name: '我的分流配置' },
-        leftovers: { profile: current, subscriptions: [{ id: 'sub', name: 'subscribe' }] } } }) } as never)
+    expect(wrapper!.text()).not.toContain('默认配置空间')
+    for (const checkbox of wrapper!.findAll('[role="checkbox"]')) await checkbox.trigger('click')
+    const completed = installed({ step: 5, max_step: 5, completed: true, router_verification: 'manual', default_profile: oldDefault })
+    vi.mocked(setupApi.finish).mockResolvedValue({ data: completed } as never)
     await click('确认设置并继续')
-    expect(setupApi.finish).toHaveBeenCalledWith('a'.repeat(32), { router_mode: 'manual', router_id: '', ack_routes: true, ack_dns: true, make_default: true })
-    expect(wrapper!.text()).toContain('已设为默认配置空间')
-    expect(wrapper!.text()).toContain('原来的「默认配置」没有设备在用')
-    expect(wrapper!.text()).toContain('示例订阅「subscribe」只被原来的默认配置使用')
+    expect(setupApi.finish).toHaveBeenCalledWith('a'.repeat(32), { router_mode: 'manual', router_id: '', ack_routes: true, ack_dns: true })
+    expect(profileApi.setDefault).not.toHaveBeenCalled()
+    expect(wrapper!.find('form select').exists()).toBe(false)
+    await click('更改')
+    await wrapper!.get('form select').setValue('setup_test')
+    vi.mocked(setupApi.get).mockResolvedValue({ data: { ...completed, default_profile: { is_default: true, current: { id: 'setup_test', name: '我的分流配置' } } } } as never)
+    await wrapper!.get('form').trigger('submit'); await flushPromises()
+    expect(profileApi.setDefault).toHaveBeenCalledWith('setup_test')
+    expect(wrapper!.text()).toContain('当前默认配置空间我的分流配置')
+    expect(wrapper!.find('form select').exists()).toBe(false)
   })
 
   it('手动接入时可先到客户端设备给测试设备命名，再返回本向导', async () => {
@@ -485,22 +487,15 @@ describe('首次使用分流向导', () => {
     expect(wrapper!.text()).toContain('客户端设备页')
   })
 
-  it('设为默认时说明原配置空间的客户端设备名称和 DNS 策略不会带过来', async () => {
-    vi.mocked(setupApi.get).mockResolvedValue({ data: installed({ default_profile: { is_default: false, suggested: true, current: { id: 'default', name: '默认配置' } } }) } as never)
+  it('完成页取消默认空间编辑时保留原选择', async () => {
+    vi.mocked(setupApi.get).mockResolvedValue({ data: installed({ completed: true, step: 5, max_step: 5, default_profile: { is_default: false, suggested: false, current: { id: 'default', name: '默认配置' } } }) } as never)
     await open('/setup?session=' + 'a'.repeat(32))
-    expect(wrapper!.text()).toContain('「默认配置」中的客户端设备名称和 DNS 策略不会带过来')
-  })
-
-  it('默认配置空间有设备在用时不预先勾选', async () => {
-    vi.mocked(setupApi.get).mockResolvedValue({ data: installed({ default_profile: { is_default: false, suggested: false, current: { id: 'default', name: '默认配置' } } }) } as never)
-    await open('/setup?session=' + 'a'.repeat(32))
-    const checkboxes = wrapper!.findAll('[role="checkbox"]')
-    expect(checkboxes.at(-1)!.attributes('aria-checked')).toBe('false')
-    for (const checkbox of checkboxes.slice(0, -1)) await checkbox.trigger('click')
-    vi.mocked(setupApi.finish).mockResolvedValue({ data: installed({ step: 5, max_step: 5, completed: true, router_verification: 'manual' }) } as never)
-    await click('确认设置并继续')
-    expect(setupApi.finish).toHaveBeenCalledWith('a'.repeat(32), expect.objectContaining({ make_default: false }))
-    expect(wrapper!.text()).not.toContain('已设为默认配置空间')
+    await click('更改')
+    await wrapper!.get('form select').setValue('setup_test')
+    await click('取消')
+    expect(profileApi.setDefault).not.toHaveBeenCalled()
+    await click('更改')
+    expect((wrapper!.get('form select').element as HTMLSelectElement).value).toBe('default')
   })
 
   it('自动入口固定配置空间和本次 Agent，完成前调用服务端核验', async () => {

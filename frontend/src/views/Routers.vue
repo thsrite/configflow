@@ -9,12 +9,57 @@
       </template>
     </PageHeader>
 
-    <div v-if="embedded && !(setupDraftSession && routers.length)" class="mb-3 flex items-center justify-end"><Button class="min-h-11" @click="openCreate"><Plus class="size-4" />添加路由器</Button></div>
     <p v-if="!embedded" class="mt-0 mb-4 hidden text-[12.5px] leading-relaxed text-muted-foreground md:block">
       {{ routerPageHelp }}
     </p>
 
     <LoadingRows v-if="loading && !routers.length" :rows="3" />
+
+    <div v-else-if="embedded && !routers.length" class="py-3">
+      <Button class="min-h-11" @click="openCreate"><Plus class="size-4" />添加路由器</Button>
+    </div>
+
+    <ul v-else-if="embedded" aria-label="主路由" class="m-0 list-none divide-y divide-border border-y border-border p-0">
+      <li v-for="router in routers" :key="router.id" class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-4">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-x-3">
+            <strong class="break-all font-semibold">{{ router.name }}</strong>
+            <StatusDot :tone="setupDraftSession || !router.last_probe ? 'muted' : router.last_probe.ok ? 'success' : 'danger'"
+              :label="setupDraftSession ? '已保存，待安装' : !router.last_probe ? '未探测' : router.last_probe.ok ? '可连接' : '连接失败'" />
+          </div>
+          <p class="m-0 mt-1 break-all text-xs text-muted-foreground">
+            {{ typeLabel(router.type) }}<template v-if="router.last_probe?.ok"> {{ router.last_probe.version }}</template>
+            · <span class="font-mono">{{ router.endpoint }}</span>
+          </p>
+          <p v-if="router.last_probe && !router.last_probe.ok" class="m-0 mt-1 break-words text-xs text-destructive-accent">{{ router.last_probe.message }}</p>
+        </div>
+        <div class="ml-auto flex items-center gap-1">
+          <Button v-if="setupDraftSession" variant="outline" aria-label="编辑" class="min-h-11" @click="openEdit(router)">编辑</Button>
+          <Button v-else-if="!router.last_probe?.ok" class="min-h-11" :disabled="busyId === router.id" @click="probe(router)">
+            <Loader2 v-if="busyId === router.id && busyAction === 'probe'" class="size-4 animate-spin" />检查连接
+          </Button>
+          <Button v-else class="min-h-11" :disabled="busyId === router.id || routeBusy || applying || policyLocked" @click="openReport(router)">
+            <Loader2 v-if="busyId === router.id && busyAction === 'report'" class="size-4 animate-spin" />查看改动
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child><Button size="icon" variant="ghost" class="size-11" :aria-label="router.name + ' 的更多操作'"><MoreHorizontal class="size-4" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <template v-if="!setupDraftSession">
+                <DropdownMenuItem v-if="router.last_probe?.ok" :disabled="busyId === router.id" @select="probe(router)">重新检查连接</DropdownMenuItem>
+                <DropdownMenuItem v-else :disabled="busyId === router.id || routeBusy || applying || policyLocked" @select="openReport(router)">查看改动</DropdownMenuItem>
+                <DropdownMenuItem :disabled="routeBusy || applying || policyLocked" @select="openRouteManager(router)">静态路由</DropdownMenuItem>
+                <DropdownMenuItem v-if="router.type === 'routeros' && router.ros_policy_rule_sets?.length" :disabled="routeBusy || applying || policyLocked" @select="openPolicyManager(router)">策略路由</DropdownMenuItem>
+                <DropdownMenuItem v-if="router.type === 'routeros'" :disabled="routeBusy || applying || policyLocked" @select="openRuleSync(router)">规则同步</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem @select="openEdit(router)">编辑</DropdownMenuItem>
+                <DropdownMenuItem @select="openCreate">添加路由器</DropdownMenuItem>
+              </template>
+              <DropdownMenuItem variant="destructive" @select="remove(router)">删除</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </li>
+    </ul>
 
     <SectionCard v-else-if="!routers.length" :padded="false">
       <EmptyState
@@ -31,7 +76,7 @@
 
     <SectionCard v-else :padded="false" title="路由器">
       <div class="cf-table-wrap">
-        <table class="cf-table cf-mobile-records router-records" :class="embedded ? 'router-wizard-records' : 'min-w-[880px]'" role="table">
+        <table class="cf-table cf-mobile-records router-records min-w-[880px]" role="table">
           <thead role="rowgroup">
             <tr role="row">
               <th role="columnheader">名称</th>
@@ -70,7 +115,7 @@
                   <Button size="sm" variant="outline" :disabled="busyId === router.id" @click="probe(router)">
                     <Loader2 v-if="busyId === router.id && busyAction === 'probe'" class="size-3.5 animate-spin" />
                     <Activity v-else class="size-3.5" />
-                    {{ embedded ? '检查连接' : '探测' }}
+                    探测
                   </Button>
                   <Button size="sm" variant="outline" class="max-md:min-h-11" :disabled="routeBusy || applying || policyLocked" @click="openRouteManager(router)">
                     静态路由
@@ -82,7 +127,7 @@
                   <Button size="sm" :disabled="busyId === router.id || routeBusy || applying || policyLocked" @click="openReport(router)">
                     <Loader2 v-if="busyId === router.id && busyAction === 'report'" class="size-3.5 animate-spin" />
                     <GitCompare v-else class="size-3.5" />
-                    {{ embedded ? '查看改动' : '差异报告' }}
+                    差异报告
                   </Button>
                   </template>
                   <Button variant="ghost" size="icon-sm" title="编辑" aria-label="编辑" @click="openEdit(router)">
@@ -887,6 +932,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, 
 import { RouterLink, matchedRouteKey, onBeforeRouteLeave, routeLocationKey, routerKey } from 'vue-router'
 import {
   Activity,
+  MoreHorizontal,
   CircleX,
   Copy,
   GitCompare,
@@ -898,6 +944,7 @@ import {
   Trash2,
   TriangleAlert
 } from '@lucide/vue'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -1897,16 +1944,3 @@ watch(() => JSON.stringify(deepLinkOf()), () => {
   if (link && !deepLinkBusy && !loading.value) void handleDeepLink(link, true)
 })
 </script>
-
-
-<style scoped>
-@media (min-width: 640px) {
-  .router-wizard-records, .router-wizard-records tbody { display: block; }
-  .router-wizard-records thead { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
-  .router-wizard-records tr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); gap: .75rem; padding: 1rem; }
-  .router-wizard-records td { min-width: 0; padding: 0; border: 0; overflow-wrap: anywhere; }
-  .router-wizard-records td[data-label]::before { content: attr(data-label); display: block; color: var(--muted-foreground); font-size: 12px; }
-  .router-wizard-records td:last-child { grid-column: 1 / -1; }
-  .router-wizard-records .router-record-actions { justify-content: flex-start; flex-wrap: wrap; }
-}
-</style>
