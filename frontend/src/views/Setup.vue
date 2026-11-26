@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, ArrowRight, ChevronDown, Check, CircleCheck, Eye, EyeOff, LoaderCircle, Network, Router as RouterIcon } from '@lucide/vue'
+import { ArrowLeft, ArrowRight, Check, CircleCheck, Eye, EyeOff, LoaderCircle, Network, Router as RouterIcon } from '@lucide/vue'
 import { profileApi } from '@/api'
 import { setupApi, type SetupDomainRule, type SetupGoal, type SetupIndex, type SetupSession } from '@/api/setup'
 import { SETUP_GOALS, SETUP_STEPS, abandonSetup, setupControllerSecretWarning, setupError, setupLocalDnsWarning, setupRuleConflicts, setupRuleOptions, useLibraryNamesake } from '@/lib/setupFlow'
@@ -426,17 +426,11 @@ onUnmounted(() => { disposed = true })
               <li v-if="session.router_verification === 'routes_verified'" class="text-sm sm:col-span-2">主路由静态路由已核对；请在实际 DHCP 服务器下发 OxiDNS 地址。</li>
               <li v-if="session.router_verification === 'manual'" class="text-warning-accent sm:col-span-2">主路由为手动配置，尚未自动核验。</li>
             </ul>
-            <div class="border-y border-border">
-              <details class="group">
-                <summary class="flex min-h-11 cursor-pointer items-center justify-between gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">用一台手机或电脑验证分流<ChevronDown aria-hidden="true" class="size-4 text-muted-foreground group-open:rotate-180" /></summary>
-                <p class="m-0 pb-3 text-sm leading-relaxed text-muted-foreground">{{ goal === 'router' ? '重新连接局域网，确认设备使用 OxiDNS 作为 DNS。' : '将测试设备的网关和 DNS 指向这台 Linux。' }}分别打开一个国内直连网站和一个应走代理的网站，确认都能访问。</p>
-              </details>
-              <nav aria-label="管理设备与路由" class="flex flex-wrap gap-x-5 border-t border-border">
-                <Button variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/agents')">查看 Agent 状态</Button>
-                <Button variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/client-devices')">查看客户端设备</Button>
-                <Button v-if="goal === 'router'" variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/routers')">管理主路由规则</Button>
-              </nav>
-            </div>
+            <nav aria-label="管理设备与路由" class="flex flex-wrap gap-x-5 border-y border-border">
+              <Button variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/agents')">查看 Agent 状态</Button>
+              <Button variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/client-devices')">查看客户端设备</Button>
+              <Button v-if="goal === 'router'" variant="link" class="min-h-11 px-0" :disabled="working" @click="manage('/routers')">管理主路由规则</Button>
+            </nav>
             <section v-if="session.completed && session.default_profile" class="text-sm">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="text-muted-foreground">当前默认配置空间</span><strong>{{ session.default_profile.current.name }}</strong>
