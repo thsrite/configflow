@@ -46,8 +46,18 @@ jobs:
 
       - name: Check upstream images
         id: check
+        env:
+          PUBLISH_LATEST: ${{ vars.PUBLISH_LATEST }}
         run: |
           set -eu
+
+          # 没有版本标签的构建（main 推送、定时、手动）只发布浮动的 `latest`。
+          # 观察期内 `latest` 冻结在 Python 时期的 Agent（PUBLISH_LATEST 不是 true），这些构建直接跳过。
+          if [[ "$GITHUB_REF" != refs/tags/v* ]] && [ "${PUBLISH_LATEST:-}" != "true" ]; then
+            echo "PUBLISH_LATEST is not true: config-flow-agent:latest stays frozen, nothing to publish for ${GITHUB_REF}."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [ "${{ github.event_name }}" != "schedule" ]; then
             echo "should_build=true" >> "$GITHUB_OUTPUT"
@@ -158,8 +168,20 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       # 标签规则：
-      # - 版本标签（含预发布）推 `<版本>`（semver，与 docker.yml 同一规则，例如 `3.0.0-rc.1`），不动 `latest`；
-      # - 其余触发（main 推送、定时、手动）保持原规则，只推 `latest`。
+      # - 版本标签（含预发布）推 `<版本>`（semver，与 docker.yml 同一规则，例如 `3.0.0-rc.1`）和主版本号 `3`。
+      #   Agent 的 `3` 也跟预发布走：本地、分支和 autoupdate 构建的面板没有配套版本，生成的命令用
+      #   `config-flow-agent:3`（version.DefaultAgentImage），3.0.0 正式版之前它也必须存在。
+      # - `latest` 与 docker.yml 同一开关：PUBLISH_LATEST=true 时随正式版标签和 main 推送、定时、手动构建移动；
+      #   开关关闭时没有版本标签的构建直接跳过（见 check-upstream），`latest` 冻结在 Python 时期。
+      - name: Major version
+        id: major
+        run: |
+          major=""
+          if [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9]+)\.[0-9]+\.[0-9]+ ]]; then
+            major="${BASH_REMATCH[1]}"
+          fi
+          echo "major=${major}" >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -169,7 +191,8 @@ jobs:
             latest=false
           tags: |
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=latest,enable=${{ !startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=${{ steps.major.outputs.major }},enable=${{ steps.major.outputs.major != '' }}
+            type=raw,value=latest,enable=${{ vars.PUBLISH_LATEST == 'true' && !contains(github.ref_name, '-') }}
 
       - name: Create manifest list and push
         working-directory: /tmp/digests

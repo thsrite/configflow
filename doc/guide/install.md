@@ -63,7 +63,7 @@ cd "$HOME/configflow"
 ```yaml [Bridge 模式（推荐）]
 services:
   config-flow:
-    image: thsrite/config-flow:latest
+    image: thsrite/config-flow:3
     container_name: config-flow
     ports:
       - "5010:80"
@@ -82,7 +82,7 @@ services:
 ```yaml [Host 模式]
 services:
   config-flow:
-    image: thsrite/config-flow:latest
+    image: thsrite/config-flow:3
     container_name: config-flow
     network_mode: host
     volumes:
@@ -163,7 +163,7 @@ docker run -d \
   -e ADMIN_USERNAME='your-admin-name' \
   -e ADMIN_PASSWORD='replace-with-your-own-password' \
   -e JWT_SECRET_KEY='replace-with-at-least-32-random-characters' \
-  thsrite/config-flow:latest
+  thsrite/config-flow:3
 ```
 
 ```bash [Host 模式]
@@ -183,7 +183,7 @@ docker run -d \
   -e ADMIN_USERNAME='your-admin-name' \
   -e ADMIN_PASSWORD='replace-with-your-own-password' \
   -e JWT_SECRET_KEY='replace-with-at-least-32-random-characters' \
-  thsrite/config-flow:latest
+  thsrite/config-flow:3
 ```
 
 :::
@@ -219,7 +219,7 @@ NAS 不同系统的按钮名称不完全相同，按功能找到对应入口即�
 
 | 容器管理器字段 | Bridge 模式 | Host 模式 |
 | --- | --- | --- |
-| 镜像 | `thsrite/config-flow:latest` | `thsrite/config-flow:latest` |
+| 镜像 | `thsrite/config-flow:3` | `thsrite/config-flow:3` |
 | 网络 | bridge／桥接 | host／主机网络；NAS 不支持时用 Bridge |
 | 端口映射 | 主机 TCP `5010` → 容器 TCP `80` | 不填写映射 |
 | 目录挂载 | NAS 的实际数据目录 → `/data`，可读写 | 同左 |
@@ -295,7 +295,7 @@ npm run dev -- --host 127.0.0.1 --port 15800 --strictPort
 
 | 设置 | 本例值／默认行为 | 什么时候修改 | 修改后的结果与生效时间 |
 | --- | --- | --- | --- |
-| `image` | `thsrite/config-flow:latest` | 普通安装使用这个官方面板镜像；需要固定版本时使用已发布的具体标签或摘要 | 拉取镜像、重新创建容器后生效。它不是 Agent 镜像。 |
+| `image` | `thsrite/config-flow:3` | 普通安装使用这个官方面板镜像，`3` 跟随 3.x 正式版；需要固定版本时使用已发布的具体标签（如 `3.0.0`）或摘要。`latest` 暂时仍是最后一个 Python 版本（v2.2.0），不要用它安装新面板 | 拉取镜像、重新创建容器后生效。它不是 Agent 镜像。 |
 | `ports`（Bridge） | `5010:80` | 访问端口冲突时，只把左边 `5010` 改成其他空闲端口 | 左边是设备对外端口，右边是容器内端口。重新创建后按新端口打开浏览器。Host 版不填写此项。 |
 | `network_mode`（Host） | `host` | 选择 Host 版时保留 | 共用宿主机网络；不是额外创建一个独立 IP。Bridge 版无需填写此项。 |
 | `CONFIGFLOW_WEB_PORT`（Host） | 本例为 `8088` | `8088` 已被占用时改成其他空闲端口 | 明确指定实际 Web 端口，优先于网页保存值；网页端口只读。重建容器后生效。 |
@@ -418,7 +418,7 @@ IPv6 访问地址需加方括号，例如 `http://[2001:db8::10]:8088`，示例�
 2. 下载新版镜像。此时还不会替换正在使用的容器：
 
    ```bash
-   docker pull thsrite/config-flow:latest
+   docker pull thsrite/config-flow:3
    ```
 
 3. 确认下载成功后，停止并移除旧容器：
@@ -442,7 +442,7 @@ IPv6 访问地址需加方括号，例如 `http://[2001:db8::10]:8088`，示例�
 
 更新后配置看似丢失时，先检查是否挂载了另一个空目录，保留原文件，不要立即重置。如果原数据目录中只有 SQLite 之前的旧版配置文件（如 `config.json` 或 `system.json`）而没有 `configflow.sqlite3`，Go 镜像会拒绝启动并给出中文提示，不会改动其中的配置数据（只会新建日志文件 `app.log`）：请先使用最后一个 Python 版本（`v2.2.0`，镜像 `thsrite/config-flow:2.2.0`）启动一次完成旧格式迁移，再升级到 v3.0.0。v3.0.0 首次打开旧版数据库前会自动备份到 `DATA_DIR/backups/configflow-v1-<时间>.sqlite3`，升级为存储 v2 后不能再退回 `v2.2.0` 及以前版本；完整说明见 [v3.0.0 升级说明](upgrade-v3.md)。
 
-如使用自动更新标签镜像（`autoupdate`），容器启动时会按 `CONFIGFLOW_UPDATE_REPO` / `CONFIGFLOW_UPDATE_BRANCH` 检查源码，并按源码指纹仅重建有变动的组件（Go 服务、前端、Agent、独立测速组件），构建缓存保存在 `/data/.auto-update`（旧版镜像留下的构建可以继续沿用，换到本版镜像不会因此全部重建）。若网络不可达或构建失败，会自动回退到上一次可用构建或镜像自带版本，不会阻塞服务启动；若检测到数据目录中只有 SQLite 之前的旧版配置文件而没有 `configflow.sqlite3`，自动更新会跳过切换并保持镜像自带版本且给出中文提示，避免跳过最后一个 Python 版本（`v2.2.0`）的迁移。
+如使用自动更新标签镜像（`3-autoupdate`），容器启动时会按 `CONFIGFLOW_UPDATE_REPO` / `CONFIGFLOW_UPDATE_BRANCH` 检查源码，并按源码指纹仅重建有变动的组件（Go 服务、前端、Agent、独立测速组件），构建缓存保存在 `/data/.auto-update`（旧版镜像留下的构建可以继续沿用，换到本版镜像不会因此全部重建）。若网络不可达或构建失败，会自动回退到上一次可用构建或镜像自带版本，不会阻塞服务启动；若检测到数据目录中只有 SQLite 之前的旧版配置文件而没有 `configflow.sqlite3`，自动更新会跳过切换并保持镜像自带版本且给出中文提示，避免跳过最后一个 Python 版本（`v2.2.0`）的迁移。
 
 <a id="next"></a>
 ## 下一步

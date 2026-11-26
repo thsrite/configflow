@@ -364,7 +364,7 @@ Docker 的按钮打开 **Docker Agent 更新步骤**。网页只生成说明，�
 | 原安装方式 | 默认“Docker Compose”；用 `docker run` 或容器管理器装的，选“Docker Run / 容器管理器”。 |
 | Compose 服务名 | 默认 `agent`，应以原 Compose 文件中的服务名为准，**不是容器名**。可用页面提示的命令查看。 |
 | 复制 Compose 命令 | 在原项目目录、沿用原项目名/环境文件执行拉取并重建。如果原命令有 `-f`、`-p`、`--env-file`，每条都保留相同参数。 |
-| 目标镜像 | Docker Run 路径默认官方 `thsrite/config-flow-agent:latest`；升级到 v3.0.0 及以上版本时，请改为与当前面板相同的版本号标签（例如 `thsrite/config-flow-agent:3.0.0`），避免拉取旧版 `latest`；私有镜像或固定版本也按自己实际目标填写。 |
+| 目标镜像 | Docker Run 路径默认填与当前面板配套的 Agent 镜像（例如 `thsrite/config-flow-agent:3.0.0`；本地或分支构建的面板填主版本号标签 `thsrite/config-flow-agent:3`）。不要改回 `latest`：它暂时冻结在 Python 时期的 Agent。私有镜像或固定版本按自己实际目标填写。 |
 | 复制拉取命令 | 只拉取镜像，还需要按原参数重建容器。 |
 | 刷新 Agent 列表 | 远端完成后回来核对版本与在线状态；它本身不更新容器。 |
 

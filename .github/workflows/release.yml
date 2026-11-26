@@ -72,11 +72,20 @@ jobs:
             echo ""
             echo "# 配套 Docker Agent 镜像（与面板同版本）"
             echo "docker pull ${IMAGE_NAMESPACE}/config-flow-agent:${VERSION_NUM}"
+            if [ "${IS_PRERELEASE}" != "true" ]; then
+              VERSION_MAJOR="${VERSION_NUM%%.*}"
+              echo ""
+              echo "# 主版本浮动标签（跟随 ${VERSION_MAJOR}.x 正式版）"
+              echo "docker pull ${IMAGE_NAMESPACE}/config-flow:${VERSION_MAJOR}"
+              echo "docker pull ${IMAGE_NAMESPACE}/config-flow:${VERSION_MAJOR}-autoupdate"
+              echo "docker pull ${IMAGE_NAMESPACE}/config-flow-agent:${VERSION_MAJOR}"
+            fi
             if [ "${PUBLISH_LATEST_TAG}" = "true" ]; then
               echo ""
-              echo "# 浮动标签（正式版）"
+              echo "# 浮动标签 latest（正式版）"
               echo "docker pull ${IMAGE_NAMESPACE}/config-flow:latest"
               echo "docker pull ${IMAGE_NAMESPACE}/config-flow:autoupdate"
+              echo "docker pull ${IMAGE_NAMESPACE}/config-flow-agent:latest"
             fi
             echo ""
             echo "# 快速启动"

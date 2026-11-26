@@ -2,7 +2,7 @@
 # The container IP must be unused and distinct from the host and the future VIP.
 services:
   agent:
-    image: thsrite/config-flow-agent:latest
+    image: thsrite/config-flow-agent:3
     container_name: configflow-oxidns
     restart: unless-stopped
     stop_grace_period: 30s

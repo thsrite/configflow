@@ -9,7 +9,7 @@ outline: 2
 `v3.0.0`（预发布 `v3.0.0-rc.1`）将 ConfigFlow 后端从 Python 重写为 Go，发行镜像彻底移除了 Python、Nginx 与 `supervisord`。已有 SQLite 数据继续使用，前端功能、Agent 日常功能和全部 API 均保留。
 
 - **最后一个 Python 版本**：`v2.2.0`（镜像 `thsrite/config-flow:2.2.0`，长期保留）。
-- **版本标签策略**：预发布与观察期间，浮动标签 `latest` 与 `autoupdate` 仍指向 `v2.2.0`；体验或升级到 Go 版本请拉取具体版本号标签（如 `3.0.0-rc.1` / `3.0.0`、`3.0.0-autoupdate`）。
+- **版本标签策略**：Go 版本使用具体版本号（如 `3.0.0-rc.1` / `3.0.0`、`3.0.0-autoupdate`）和跟随 3.x 正式版的主版本号标签 `3`（`3-autoupdate`；Agent 镜像为 `thsrite/config-flow-agent:3`）。面板与 Agent 的浮动标签 `latest`、`autoupdate` 暂时冻结在 Python 时期（面板 `v2.2.0`），Go 版本稳定一段时间后才会切换过去；在此之前跟随 `latest` 的部署（包括 Watchtower 等自动更新）不会被升级到 v3。升级到 Go 版本请把镜像改为 `3` 或具体版本号。
 
 <a id="requirements"></a>
 ## 最低环境要求与架构支持
@@ -91,7 +91,7 @@ v3.0.0 起，面板镜像与 Docker Agent 镜像按**同一版本号**同步发�
 使用时请注意：
 
 1. **新装 Docker Agent**：请使用 v3.0.0 面板重新生成部署命令。面板生成的 `docker run`、Compose 与 OxiDNS 高可用文件会自动填入与面板同版本的 `thsrite/config-flow-agent:<版本>`。手写 Compose 请同步修改为同一版本号；开启登录后，旧版 `latest` 镜像不识别一次性注册凭据，新装会被 403 拒绝。
-2. **更新已有 Docker Agent（重要）**：当前「Docker Agent 更新步骤」对话框默认仍显示 `thsrite/config-flow-agent:latest`（将在后续版本改为自动跟随面板版本）。升级到 v3.0.0 时（尤其在观察期内 `latest` 尚未切换前），**请手动将目标镜像改为与面板相同的版本标签**，例如 `thsrite/config-flow-agent:3.0.0`（或 `3.0.0-rc.1`）。
+2. **更新已有 Docker Agent（重要）**：「Docker Agent 更新步骤」对话框的目标镜像默认填与面板配套的版本（例如 `thsrite/config-flow-agent:3.0.0`）。已有 Compose 文件或命令里写的是 `latest` 的，**请改为 `3` 或与面板相同的版本号**再拉取重建：`latest` 在冻结期内仍是 Python 时期的 Agent。
 3. **无 Python 与 s6-overlay 变化**：Agent `1.9.3-go` 镜像已移除 Python 与 `supervisord`，改用 `s6-overlay` 管理进程；核心标准输出与错误输出合并写入 `/var/log/configflow/<核心>/current`（Agent 日志来源不再单列“错误输出”）。Host 模式 OxiDNS 高可用的辅助容器须与主容器使用**同一镜像**一起重建。
 
 <a id="steps"></a>

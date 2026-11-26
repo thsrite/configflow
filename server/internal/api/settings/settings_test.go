@@ -261,7 +261,7 @@ func TestServerDomainAndAggregationAndVersion(t *testing.T) {
 	assertJSON(t, srv.Get("/api/settings/subscription-aggregation"), map[string]any{"enabled": false})
 	assertJSON(t, srv.Post("/api/settings/subscription-aggregation", httpxtest.JSON(map[string]any{"enabled": "yes"})),
 		map[string]any{"success": true, "enabled": "yes"})
-	assertJSON(t, srv.Get("/api/version"), map[string]any{"version": "dev"})
+	assertJSON(t, srv.Get("/api/version"), map[string]any{"version": "dev", "agent_image": "thsrite/config-flow-agent:3"})
 }
 
 func TestBackupConfigMasksPasswordAndValidates(t *testing.T) {

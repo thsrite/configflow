@@ -61,7 +61,7 @@ AIO 就是把多个程序装在同一个容器里。以上两种都只有一份 
 | x86 / x86_64 | `linux/amd64` |
 | ARM64 | `linux/arm64` |
 
-下面按 x86 举例；ARM64 要把**两条命令**中的平台都改成 `linux/arm64`。导出使用的 `--platform` 选项需要 Docker API 1.48 或以上；旧版 Docker 需先升级。使用 ConfigFlow `v3.0.0` 及以上版本时，请将下面示例中的 `latest` 替换为与当前面板相同的版本号标签（例如 `thsrite/config-flow-agent:3.0.0`），确保内置 Agent 版本与面板配套；若面板已开启登录，新装容器还需在环境变量中配置与面板一致的 `AGENT_REGISTRATION_KEY`（或使用面板生成的注册凭据）。
+下面按 x86 举例；ARM64 要把**两条命令**中的平台都改成 `linux/arm64`。导出使用的 `--platform` 选项需要 Docker API 1.48 或以上；旧版 Docker 需先升级。示例中的 `3.0.0` 请换成与当前面板相同的版本号，确保内置 Agent 版本与面板配套（不要用 `latest`：它暂时仍是 Python 时期的 Agent）；若面板已开启登录，新装容器还需在环境变量中配置与面板一致的 `AGENT_REGISTRATION_KEY`（或使用面板生成的注册凭据）。
 
 ```sh
 docker pull --platform linux/amd64 thsrite/config-flow-agent:3.0.0
