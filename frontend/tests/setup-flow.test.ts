@@ -116,7 +116,7 @@ describe('首次使用分流向导', () => {
     await click('自动配置主路由')
     expect(wrapper!.text()).not.toContain('先添加主路由的管理地址和账号')
     expect(wrapper!.getComponent({ name: 'Routers' }).props('setupDraftSession')).toBe('a'.repeat(32))
-    await click('完成安装后继续')
+    expect(wrapper!.text()).not.toContain('完成安装后继续')
     expect(setupApi.finish).not.toHaveBeenCalled()
     expect(setupApi.progress).not.toHaveBeenCalled()
   })
