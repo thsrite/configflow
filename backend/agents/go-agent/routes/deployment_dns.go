@@ -105,7 +105,7 @@ func deploymentDNSPeer(cfg *Config, read func(string) ([]byte, error)) (*preflig
 	if err != nil {
 		return nil, unknown
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if yaml.Unmarshal(content, &doc) != nil || len(doc) == 0 {
 		return nil, unknown
 	}
@@ -131,7 +131,7 @@ func validateDeploymentDNS(cfg *Config, state *DeploymentState) error {
 		}
 		return nil
 	}()} {
-		var doc map[string]interface{}
+		var doc map[string]any
 		if yaml.Unmarshal(data, &doc) == nil {
 			secrets = append(secrets, configurationDiagnosticSecrets(doc)...)
 		}

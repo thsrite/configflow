@@ -1,0 +1,2941 @@
+{
+ "parse_userinfo": [
+  {
+   "input": "upload=1KB; download=2GB; total=3TB",
+   "output": {
+    "upload": 1,
+    "download": 2,
+    "total": 3
+   }
+  },
+  {
+   "input": "total=1.5e3MB",
+   "output": {
+    "total": 1500
+   }
+  },
+  {
+   "input": "expire=0",
+   "output": {
+    "expire": 0
+   }
+  },
+  {
+   "input": "expire=-1",
+   "output": null
+  },
+  {
+   "input": "expire=1.7e9",
+   "output": {
+    "expire": 1700000000
+   }
+  },
+  {
+   "input": "total=١٢٣",
+   "output": null
+  },
+  {
+   "input": "total=1e",
+   "output": null
+  },
+  {
+   "input": "total=E",
+   "output": null
+  },
+  {
+   "input": "upload=1e+5",
+   "output": {
+    "upload": 100000
+   }
+  },
+  {
+   "input": "total=1e+",
+   "output": null
+  },
+  {
+   "input": "total=1.",
+   "output": {
+    "total": 1
+   }
+  },
+  {
+   "input": "total=..1",
+   "output": null
+  },
+  {
+   "input": "Upload=1",
+   "output": {
+    "upload": 1
+   }
+  },
+  {
+   "input": "total=NaN",
+   "output": null
+  },
+  {
+   "input": "total=inf",
+   "output": null
+  },
+  {
+   "input": "total=1_000",
+   "output": {
+    "total": 1
+   }
+  },
+  {
+   "input": "total=0x10",
+   "output": {
+    "total": 0
+   }
+  },
+  {
+   "input": "total=1e309",
+   "error": "OverflowError",
+   "message": "cannot convert float infinity to integer"
+  },
+  {
+   "input": "total=9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+   "error": "OverflowError",
+   "message": "cannot convert float infinity to integer"
+  },
+  {
+   "input": "total=999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+   "output": {
+    "total": 1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+   }
+  },
+  {
+   "input": "total= 5",
+   "output": {
+    "total": 5
+   }
+  },
+  {
+   "input": "total = 5",
+   "output": {
+    "total": 5
+   }
+  },
+  {
+   "input": "e=1",
+   "output": null
+  },
+  {
+   "input": "_=1",
+   "output": null
+  },
+  {
+   "input": "total=5, total=6",
+   "output": {
+    "total": 6
+   }
+  },
+  {
+   "input": "total=1; name=café",
+   "output": {
+    "total": 1
+   }
+  },
+  {
+   "input": "expire=1893456000.999",
+   "output": {
+    "expire": 1893456000
+   }
+  },
+  {
+   "input": "upload=1;download=2;total=3;expire=4;extra=5",
+   "output": {
+    "upload": 1,
+    "download": 2,
+    "total": 3,
+    "expire": 4
+   }
+  },
+  {
+   "input": "total=+1.5E+2",
+   "output": {
+    "total": 150
+   }
+  },
+  {
+   "input": "total=1e-5",
+   "output": null
+  },
+  {
+   "input": "download=3.99",
+   "output": {
+    "download": 3
+   }
+  },
+  {
+   "input": "total=007",
+   "output": {
+    "total": 7
+   }
+  },
+  {
+   "input": "total: 5",
+   "output": null
+  },
+  {
+   "input": "total=5%",
+   "output": {
+    "total": 5
+   }
+  },
+  {
+   "input": "=5",
+   "output": null
+  },
+  {
+   "input": " total=5 ",
+   "output": {
+    "total": 5
+   }
+  },
+  {
+   "input": "totalupload=5",
+   "output": null
+  },
+  {
+   "input": "upload=1\u0000total=2",
+   "output": {
+    "upload": 1,
+    "total": 2
+   }
+  },
+  {
+   "input": "TOTAL=1E2",
+   "output": {
+    "total": 100
+   }
+  },
+  {
+   "input": "expire=1e10",
+   "output": {
+    "expire": 10000000000
+   }
+  },
+  {
+   "input": "total=²",
+   "output": null
+  },
+  {
+   "input": "total​=5",
+   "output": null
+  },
+  {
+   "input": "x=1 upload =\t2",
+   "output": {
+    "upload": 2
+   }
+  }
+ ],
+ "is_yaml_response": [
+  {
+   "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxproxies:",
+   "output": true
+  },
+  {
+   "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxproxies:",
+   "output": true
+  },
+  {
+   "input": "　proxies: []",
+   "output": true
+  },
+  {
+   "input": "x: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n1: a\nproxies: []\n",
+   "output": true
+  },
+  {
+   "input": "x: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\nproxies: &a [*a]\n",
+   "output": true
+  },
+  {
+   "input": "<HTML><head>",
+   "output": false
+  },
+  {
+   "input": "<HTML>\nproxies: []",
+   "output": true
+  },
+  {
+   "input": "c3M6Ly9hYmNAaDoxIzE=",
+   "output": false
+  },
+  {
+   "input": "{\"x\": \"yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\", \"proxies\": []}",
+   "output": true
+  },
+  {
+   "input": "x: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n\tproxies: []",
+   "output": false
+  },
+  {
+   "input": "---\na: 1\n---\nproxies: []",
+   "output": true
+  },
+  {
+   "input": "---\nx: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n---\nproxies: []",
+   "output": false
+  },
+  {
+   "input": "x: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\nproxies:\n",
+   "output": true
+  },
+  {
+   "input": "x: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\nProxies: []",
+   "output": false
+  },
+  {
+   "input": "x: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n? [1]\n: a\nproxies: []\n",
+   "output": false
+  },
+  {
+   "input": "x: yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\nproxies: !!set {a, b}\n",
+   "output": true
+  },
+  {
+   "input": "  <!doctype html>",
+   "output": false
+  },
+  {
+   "input": "﻿<html>",
+   "output": false
+  },
+  {
+   "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx<head>",
+   "output": false
+  },
+  {
+   "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx<head>",
+   "output": false
+  }
+ ],
+ "parse_proxies_from_yaml": [
+  {
+   "input": "proxies:\n  - 1: a\n    name: A\n",
+   "output": [
+    {
+     "1": "a",
+     "name": "A"
+    }
+   ]
+  },
+  {
+   "input": "1: a\nproxies: []\n",
+   "output": []
+  },
+  {
+   "input": "proxies:\n  - {name: A, true: x, null: y, 1.5: z}\n",
+   "output": [
+    {
+     "name": "A",
+     "true": "x",
+     "null": "y",
+     "1.5": "z"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: V, type: vless, reality-opts: {1: a}}\n",
+   "output": [
+    {
+     "name": "V",
+     "type": "vless",
+     "reality-opts": {
+      "1": "a",
+      "short-id": ""
+     },
+     "encryption": "none"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, ws-opts: {headers: {1: x}}}\n",
+   "output": [
+    {
+     "name": "A",
+     "ws-opts": {
+      "headers": {
+       "1": "x"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies: {1: a}",
+   "error": "AttributeError",
+   "message": "'int' object has no attribute 'get'"
+  },
+  {
+   "input": "proxies:\n  - !!binary aGk=\n",
+   "error": "AttributeError",
+   "message": "'bytes' object has no attribute 'get'"
+  },
+  {
+   "input": "proxies:\n  - {1: a, \"1\": b, name: A}\n",
+   "output": [
+    {
+     "1": "a",
+     "1": "b",
+     "name": "A"
+    }
+   ]
+  },
+  {
+   "input": "{\"proxies\": [{\"name\": \"A\", \"type\": \"ss\", \"port\": 1}]}",
+   "output": [
+    {
+     "name": "A",
+     "type": "ss",
+     "port": 1
+    }
+   ]
+  },
+  {
+   "input": "c3M6Ly9hYmNAaDoxIzE=",
+   "output": []
+  },
+  {
+   "input": "base: &b {type: ss, port: 1}\nproxies:\n  - <<: *b\n    name: A\n",
+   "output": [
+    {
+     "type": "ss",
+     "port": 1,
+     "name": "A"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - name: A\n    type: VLESS\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "VLESS"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, encryption: \"\"}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "encryption": "none"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, encryption: null}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "encryption": "none"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, encryption: 0}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "encryption": 0
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, encryption: false}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "encryption": false
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, reality-opts: {short-id: x}}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "reality-opts": {
+      "short-id": "x"
+     },
+     "encryption": "none"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, reality-opts: []}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "reality-opts": [],
+     "encryption": "none"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: 1, type: ss, server: 2, port: \"x\"}\n",
+   "output": [
+    {
+     "name": 1,
+     "type": "ss",
+     "server": 2,
+     "port": "x"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: null}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": null
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A}\n  - [1]\n",
+   "error": "AttributeError",
+   "message": "'list' object has no attribute 'get'"
+  },
+  {
+   "input": "proxies: [0, {name: A}]",
+   "output": [
+    0,
+    {
+     "name": "A"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, port: 0x1F, x: 1_000, y: 1e3, z: .inf}\n",
+   "output": [
+    {
+     "name": "A",
+     "port": 31,
+     "x": 1000,
+     "y": "1e3",
+     "z": Infinity
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: \"中文 🇭🇰\", type: Trojan, server: 例子.test, port: 443}\n",
+   "output": [
+    {
+     "name": "中文 🇭🇰",
+     "type": "Trojan",
+     "server": "例子.test",
+     "port": 443
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, 2026-01-01: d}\n",
+   "unserializable": "keys must be str, int, float, bool or None, not datetime.date"
+  },
+  {
+   "input": "%YAML 1.1\n---\nproxies: []\n",
+   "output": []
+  },
+  {
+   "input": "proxies:\n- {name: A}\n...\n",
+   "output": [
+    {
+     "name": "A"
+    }
+   ]
+  },
+  {
+   "input": "proxies: [{name: A}]\n---\nproxies: []\n",
+   "error": "ComposerError",
+   "message": "expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    proxies: [{name: A}]\n    ^\nbut found another document\n  in \"<unicode string>\", line 2, column 1:\n    ---\n    ^"
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: SS}\n  - {name: A, type: SS}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "SS"
+    },
+    {
+     "name": "A",
+     "type": "SS"
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, null: ~}\n",
+   "output": [
+    {
+     "name": "A",
+     "null": null
+    }
+   ]
+  }
+ ],
+ "proxies_to_nodes": [
+  {
+   "input": "proxies:\n  - 1: a\n    name: A\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "",
+     "server": "",
+     "port": 0,
+     "params": {
+      "1": "a"
+     }
+    }
+   ]
+  },
+  {
+   "input": "1: a\nproxies: []\n",
+   "output": []
+  },
+  {
+   "input": "proxies:\n  - {name: A, true: x, null: y, 1.5: z}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "",
+     "server": "",
+     "port": 0,
+     "params": {
+      "true": "x",
+      "null": "y",
+      "1.5": "z"
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: V, type: vless, reality-opts: {1: a}}\n",
+   "output": [
+    {
+     "name": "V",
+     "type": "vless",
+     "server": "",
+     "port": 0,
+     "params": {
+      "reality-opts": {
+       "1": "a",
+       "short-id": ""
+      },
+      "encryption": "none"
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, ws-opts: {headers: {1: x}}}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "",
+     "server": "",
+     "port": 0,
+     "params": {
+      "ws-opts": {
+       "headers": {
+        "1": "x"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies: {1: a}",
+   "error": "AttributeError",
+   "message": "'int' object has no attribute 'get'"
+  },
+  {
+   "input": "proxies:\n  - !!binary aGk=\n",
+   "error": "AttributeError",
+   "message": "'bytes' object has no attribute 'get'"
+  },
+  {
+   "input": "proxies:\n  - {1: a, \"1\": b, name: A}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "",
+     "server": "",
+     "port": 0,
+     "params": {
+      "1": "a",
+      "1": "b"
+     }
+    }
+   ]
+  },
+  {
+   "input": "{\"proxies\": [{\"name\": \"A\", \"type\": \"ss\", \"port\": 1}]}",
+   "output": [
+    {
+     "name": "A",
+     "type": "ss",
+     "server": "",
+     "port": 1,
+     "params": {}
+    }
+   ]
+  },
+  {
+   "input": "c3M6Ly9hYmNAaDoxIzE=",
+   "output": []
+  },
+  {
+   "input": "base: &b {type: ss, port: 1}\nproxies:\n  - <<: *b\n    name: A\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "ss",
+     "server": "",
+     "port": 1,
+     "params": {}
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - name: A\n    type: VLESS\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "server": "",
+     "port": 0,
+     "params": {}
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, encryption: \"\"}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "server": "",
+     "port": 0,
+     "params": {
+      "encryption": "none"
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, encryption: null}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "server": "",
+     "port": 0,
+     "params": {
+      "encryption": "none"
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, encryption: 0}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "server": "",
+     "port": 0,
+     "params": {
+      "encryption": 0
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, encryption: false}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "server": "",
+     "port": 0,
+     "params": {
+      "encryption": false
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, reality-opts: {short-id: x}}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "server": "",
+     "port": 0,
+     "params": {
+      "reality-opts": {
+       "short-id": "x"
+      },
+      "encryption": "none"
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: vless, reality-opts: []}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "vless",
+     "server": "",
+     "port": 0,
+     "params": {
+      "reality-opts": [],
+      "encryption": "none"
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: 1, type: ss, server: 2, port: \"x\"}\n",
+   "output": [
+    {
+     "name": 1,
+     "type": "ss",
+     "server": 2,
+     "port": "x",
+     "params": {}
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: null}\n",
+   "error": "AttributeError",
+   "message": "'NoneType' object has no attribute 'lower'"
+  },
+  {
+   "input": "proxies:\n  - {name: A}\n  - [1]\n",
+   "error": "AttributeError",
+   "message": "'list' object has no attribute 'get'"
+  },
+  {
+   "input": "proxies: [0, {name: A}]",
+   "error": "AttributeError",
+   "message": "'int' object has no attribute 'get'"
+  },
+  {
+   "input": "proxies:\n  - {name: A, port: 0x1F, x: 1_000, y: 1e3, z: .inf}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "",
+     "server": "",
+     "port": 31,
+     "params": {
+      "x": 1000,
+      "y": "1e3",
+      "z": Infinity
+     }
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: \"中文 🇭🇰\", type: Trojan, server: 例子.test, port: 443}\n",
+   "output": [
+    {
+     "name": "中文 🇭🇰",
+     "type": "trojan",
+     "server": "例子.test",
+     "port": 443,
+     "params": {}
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, 2026-01-01: d}\n",
+   "unserializable": "keys must be str, int, float, bool or None, not datetime.date"
+  },
+  {
+   "input": "%YAML 1.1\n---\nproxies: []\n",
+   "output": []
+  },
+  {
+   "input": "proxies:\n- {name: A}\n...\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "",
+     "server": "",
+     "port": 0,
+     "params": {}
+    }
+   ]
+  },
+  {
+   "input": "proxies: [{name: A}]\n---\nproxies: []\n",
+   "error": "ComposerError",
+   "message": "expected a single document in the stream\n  in \"<unicode string>\", line 1, column 1:\n    proxies: [{name: A}]\n    ^\nbut found another document\n  in \"<unicode string>\", line 2, column 1:\n    ---\n    ^"
+  },
+  {
+   "input": "proxies:\n  - {name: A, type: SS}\n  - {name: A, type: SS}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "ss",
+     "server": "",
+     "port": 0,
+     "params": {}
+    },
+    {
+     "name": "A",
+     "type": "ss",
+     "server": "",
+     "port": 0,
+     "params": {}
+    }
+   ]
+  },
+  {
+   "input": "proxies:\n  - {name: A, null: ~}\n",
+   "output": [
+    {
+     "name": "A",
+     "type": "",
+     "server": "",
+     "port": 0,
+     "params": {
+      "null": null
+     }
+    }
+   ]
+  }
+ ],
+ "response_text": [
+  {
+   "input": [
+    "text/plain; charset=gbk; charset=utf-8",
+    [
+     97,
+     58,
+     32,
+     228,
+     184,
+     173
+    ]
+   ],
+   "output": "a: 中"
+  },
+  {
+   "input": [
+    "text/plain;charset=\"utf-8\"",
+    [
+     97,
+     58,
+     32,
+     228,
+     184,
+     173
+    ]
+   ],
+   "output": "a: 中"
+  },
+  {
+   "input": [
+    "text/plain; CHARSET='utf-8'",
+    [
+     97,
+     58,
+     32,
+     228,
+     184,
+     173
+    ]
+   ],
+   "output": "a: 中"
+  },
+  {
+   "input": [
+    "TEXT/PLAIN",
+    [
+     97,
+     98,
+     99
+    ]
+   ],
+   "output": "abc"
+  },
+  {
+   "input": [
+    "application/json; charset=latin-1",
+    [
+     99,
+     97,
+     102,
+     233
+    ]
+   ],
+   "output": "café"
+  },
+  {
+   "input": [
+    "text/plain; charset=utf-8-sig",
+    [
+     239,
+     187,
+     191,
+     97,
+     58,
+     32,
+     49
+    ]
+   ],
+   "output": "a: 1"
+  },
+  {
+   "input": [
+    "text/plain; foo=bar; charset = utf-8",
+    [
+     97,
+     58,
+     32,
+     228,
+     184,
+     173
+    ]
+   ],
+   "output": "a: 中"
+  },
+  {
+   "input": [
+    "text/plain; charset=utf-16",
+    [
+     255,
+     254,
+     97,
+     0
+    ]
+   ],
+   "output": "a"
+  },
+  {
+   "input": [
+    "text/plain; charset=UTF8",
+    [
+     195,
+     169
+    ]
+   ],
+   "output": "é"
+  },
+  {
+   "input": [
+    "text/plain; charset=latin1; x",
+    [
+     99,
+     97,
+     102,
+     233
+    ]
+   ],
+   "output": "café"
+  },
+  {
+   "input": [
+    "text/plain; charset=nonsense",
+    [
+     195,
+     169
+    ]
+   ],
+   "output": "é"
+  },
+  {
+   "input": [
+    "application/yaml",
+    [
+     112,
+     114,
+     111,
+     120,
+     105,
+     101,
+     115,
+     58,
+     32,
+     91,
+     93
+    ]
+   ],
+   "output": "proxies: []"
+  },
+  {
+   "input": [
+    "text/yaml",
+    [
+     195,
+     169
+    ]
+   ],
+   "output": "Ã©"
+  },
+  {
+   "input": [
+    "text/plain; charset= utf-8 ",
+    [
+     195,
+     169
+    ]
+   ],
+   "output": "é"
+  }
+ ],
+ "runtime": [
+  {
+   "state": "",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status"
+   ],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "sleeping",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": ""
+  },
+  {
+   "state": "",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": ""
+  },
+  {
+   "state": "",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "[]",
+   "action": "tick",
+   "running": false,
+   "error": "TypeError",
+   "message": "'list' object is not a mapping",
+   "commands": [
+    "status"
+   ],
+   "after": "[]"
+  },
+  {
+   "state": "[]",
+   "action": "status",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'list' object has no attribute 'get'",
+   "commands": [],
+   "after": "[]"
+  },
+  {
+   "state": "[]",
+   "action": "status",
+   "running": true,
+   "error": "AttributeError",
+   "message": "'list' object has no attribute 'get'",
+   "commands": [],
+   "after": "[]"
+  },
+  {
+   "state": "[]",
+   "action": "use",
+   "running": true,
+   "error": "TypeError",
+   "message": "'list' object is not a mapping",
+   "commands": [],
+   "after": "[]"
+  },
+  {
+   "state": "[1]",
+   "action": "tick",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'list' object has no attribute 'get'",
+   "commands": [],
+   "after": "[1]"
+  },
+  {
+   "state": "[1]",
+   "action": "status",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'list' object has no attribute 'get'",
+   "commands": [],
+   "after": "[1]"
+  },
+  {
+   "state": "[1]",
+   "action": "status",
+   "running": true,
+   "error": "AttributeError",
+   "message": "'list' object has no attribute 'get'",
+   "commands": [],
+   "after": "[1]"
+  },
+  {
+   "state": "[1]",
+   "action": "use",
+   "running": true,
+   "error": "TypeError",
+   "message": "'list' object is not a mapping",
+   "commands": [],
+   "after": "[1]"
+  },
+  {
+   "state": "{}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status"
+   ],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "{}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "sleeping",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{}"
+  },
+  {
+   "state": "{}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{}"
+  },
+  {
+   "state": "{}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "null",
+   "action": "tick",
+   "running": false,
+   "error": "TypeError",
+   "message": "'NoneType' object is not a mapping",
+   "commands": [
+    "status"
+   ],
+   "after": "null"
+  },
+  {
+   "state": "null",
+   "action": "status",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'NoneType' object has no attribute 'get'",
+   "commands": [],
+   "after": "null"
+  },
+  {
+   "state": "null",
+   "action": "status",
+   "running": true,
+   "error": "AttributeError",
+   "message": "'NoneType' object has no attribute 'get'",
+   "commands": [],
+   "after": "null"
+  },
+  {
+   "state": "null",
+   "action": "use",
+   "running": true,
+   "error": "TypeError",
+   "message": "'NoneType' object is not a mapping",
+   "commands": [],
+   "after": "null"
+  },
+  {
+   "state": "0",
+   "action": "tick",
+   "running": false,
+   "error": "TypeError",
+   "message": "'int' object is not a mapping",
+   "commands": [
+    "status"
+   ],
+   "after": "0"
+  },
+  {
+   "state": "0",
+   "action": "status",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'int' object has no attribute 'get'",
+   "commands": [],
+   "after": "0"
+  },
+  {
+   "state": "0",
+   "action": "status",
+   "running": true,
+   "error": "AttributeError",
+   "message": "'int' object has no attribute 'get'",
+   "commands": [],
+   "after": "0"
+  },
+  {
+   "state": "0",
+   "action": "use",
+   "running": true,
+   "error": "TypeError",
+   "message": "'int' object is not a mapping",
+   "commands": [],
+   "after": "0"
+  },
+  {
+   "state": "1",
+   "action": "tick",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'int' object has no attribute 'get'",
+   "commands": [],
+   "after": "1"
+  },
+  {
+   "state": "1",
+   "action": "status",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'int' object has no attribute 'get'",
+   "commands": [],
+   "after": "1"
+  },
+  {
+   "state": "1",
+   "action": "status",
+   "running": true,
+   "error": "AttributeError",
+   "message": "'int' object has no attribute 'get'",
+   "commands": [],
+   "after": "1"
+  },
+  {
+   "state": "1",
+   "action": "use",
+   "running": true,
+   "error": "TypeError",
+   "message": "'int' object is not a mapping",
+   "commands": [],
+   "after": "1"
+  },
+  {
+   "state": "\"x\"",
+   "action": "tick",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'str' object has no attribute 'get'",
+   "commands": [],
+   "after": "\"x\""
+  },
+  {
+   "state": "\"x\"",
+   "action": "status",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'str' object has no attribute 'get'",
+   "commands": [],
+   "after": "\"x\""
+  },
+  {
+   "state": "\"x\"",
+   "action": "status",
+   "running": true,
+   "error": "AttributeError",
+   "message": "'str' object has no attribute 'get'",
+   "commands": [],
+   "after": "\"x\""
+  },
+  {
+   "state": "\"x\"",
+   "action": "use",
+   "running": true,
+   "error": "TypeError",
+   "message": "'str' object is not a mapping",
+   "commands": [],
+   "after": "\"x\""
+  },
+  {
+   "state": "\"\"",
+   "action": "tick",
+   "running": false,
+   "error": "TypeError",
+   "message": "'str' object is not a mapping",
+   "commands": [
+    "status"
+   ],
+   "after": "\"\""
+  },
+  {
+   "state": "\"\"",
+   "action": "status",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'str' object has no attribute 'get'",
+   "commands": [],
+   "after": "\"\""
+  },
+  {
+   "state": "\"\"",
+   "action": "status",
+   "running": true,
+   "error": "AttributeError",
+   "message": "'str' object has no attribute 'get'",
+   "commands": [],
+   "after": "\"\""
+  },
+  {
+   "state": "\"\"",
+   "action": "use",
+   "running": true,
+   "error": "TypeError",
+   "message": "'str' object is not a mapping",
+   "commands": [],
+   "after": "\"\""
+  },
+  {
+   "state": "true",
+   "action": "tick",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'bool' object has no attribute 'get'",
+   "commands": [],
+   "after": "true"
+  },
+  {
+   "state": "true",
+   "action": "status",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'bool' object has no attribute 'get'",
+   "commands": [],
+   "after": "true"
+  },
+  {
+   "state": "true",
+   "action": "status",
+   "running": true,
+   "error": "AttributeError",
+   "message": "'bool' object has no attribute 'get'",
+   "commands": [],
+   "after": "true"
+  },
+  {
+   "state": "true",
+   "action": "use",
+   "running": true,
+   "error": "TypeError",
+   "message": "'bool' object is not a mapping",
+   "commands": [],
+   "after": "true"
+  },
+  {
+   "state": "false",
+   "action": "tick",
+   "running": false,
+   "error": "TypeError",
+   "message": "'bool' object is not a mapping",
+   "commands": [
+    "status"
+   ],
+   "after": "false"
+  },
+  {
+   "state": "false",
+   "action": "status",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'bool' object has no attribute 'get'",
+   "commands": [],
+   "after": "false"
+  },
+  {
+   "state": "false",
+   "action": "status",
+   "running": true,
+   "error": "AttributeError",
+   "message": "'bool' object has no attribute 'get'",
+   "commands": [],
+   "after": "false"
+  },
+  {
+   "state": "false",
+   "action": "use",
+   "running": true,
+   "error": "TypeError",
+   "message": "'bool' object is not a mapping",
+   "commands": [],
+   "after": "false"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": \"x\"}",
+   "action": "tick",
+   "running": false,
+   "error": "TypeError",
+   "message": "unsupported operand type(s) for -: 'float' and 'str'",
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": \"x\"}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": \"x\"}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": \"x\"}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": \"x\"}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": \"x\"}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": \"x\"}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": null}",
+   "action": "tick",
+   "running": false,
+   "error": "TypeError",
+   "message": "unsupported operand type(s) for -: 'float' and 'NoneType'",
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": null}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": null}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": null}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": null}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": null}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": null}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 1e400}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1e400}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 1e400}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1e400}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 1e400}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1e400}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 1e400}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}",
+   "action": "tick",
+   "running": false,
+   "error": "OverflowError",
+   "message": "int too large to convert to float",
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": true}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"state\": \"sleeping\", \"last_used\": true}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": true}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": true}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": true}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": true}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": true}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\": \"sleeping\", \"last_used\": \"x\"}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"sleeping\", \"last_used\": \"x\"}"
+  },
+  {
+   "state": "{\"state\": \"sleeping\", \"last_used\": \"x\"}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "sleeping",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"sleeping\", \"last_used\": \"x\"}"
+  },
+  {
+   "state": "{\"state\": \"sleeping\", \"last_used\": \"x\"}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"sleeping\", \"last_used\": \"x\"}"
+  },
+  {
+   "state": "{\"state\": \"sleeping\", \"last_used\": \"x\"}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\": \"running\"}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"state\": \"sleeping\"}"
+  },
+  {
+   "state": "{\"state\": \"running\"}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\"}"
+  },
+  {
+   "state": "{\"state\": \"running\"}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\"}"
+  },
+  {
+   "state": "{\"state\": \"running\"}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "{\"state\": \"failed\", \"error\": \"e\", \"last_used\": 0}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"state\": \"failed\", \"error\": \"e\", \"last_used\": 0}"
+  },
+  {
+   "state": "{\"state\": \"failed\", \"error\": \"e\", \"last_used\": 0}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": "e"
+   },
+   "commands": [],
+   "after": "{\"state\": \"failed\", \"error\": \"e\", \"last_used\": 0}"
+  },
+  {
+   "state": "{\"state\": \"failed\", \"error\": \"e\", \"last_used\": 0}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"failed\", \"error\": \"e\", \"last_used\": 0}"
+  },
+  {
+   "state": "{\"state\": \"failed\", \"error\": \"e\", \"last_used\": 0}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "NaN",
+   "action": "tick",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'float' object has no attribute 'get'",
+   "commands": [],
+   "after": "NaN"
+  },
+  {
+   "state": "NaN",
+   "action": "status",
+   "running": false,
+   "error": "AttributeError",
+   "message": "'float' object has no attribute 'get'",
+   "commands": [],
+   "after": "NaN"
+  },
+  {
+   "state": "NaN",
+   "action": "status",
+   "running": true,
+   "error": "AttributeError",
+   "message": "'float' object has no attribute 'get'",
+   "commands": [],
+   "after": "NaN"
+  },
+  {
+   "state": "NaN",
+   "action": "use",
+   "running": true,
+   "error": "TypeError",
+   "message": "'float' object is not a mapping",
+   "commands": [],
+   "after": "NaN"
+  },
+  {
+   "state": "{\"last_used\": NaN, \"state\": \"running\"}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [],
+   "after": "{\"last_used\": NaN, \"state\": \"running\"}"
+  },
+  {
+   "state": "{\"last_used\": NaN, \"state\": \"running\"}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"last_used\": NaN, \"state\": \"running\"}"
+  },
+  {
+   "state": "{\"last_used\": NaN, \"state\": \"running\"}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"last_used\": NaN, \"state\": \"running\"}"
+  },
+  {
+   "state": "{\"last_used\": NaN, \"state\": \"running\"}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"last_used\": 1000.0, \"state\": \"running\", \"error\": \"\"}"
+  },
+  {
+   "state": "ÿ",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status"
+   ],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "ÿ",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "sleeping",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "ÿ"
+  },
+  {
+   "state": "ÿ",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "ÿ"
+  },
+  {
+   "state": "ÿ",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "{\"state\": 5, \"last_used\": 0}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"state\": \"sleeping\", \"last_used\": 0}"
+  },
+  {
+   "state": "{\"state\": 5, \"last_used\": 0}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": 5, \"last_used\": 0}"
+  },
+  {
+   "state": "{\"state\": 5, \"last_used\": 0}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": 5, \"last_used\": 0}"
+  },
+  {
+   "state": "{\"state\": 5, \"last_used\": 0}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 0, \"error\": [\"x\"]}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"state\": \"failed\", \"last_used\": 0, \"error\": [\"x\"]}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 0, \"error\": [\"x\"]}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": [
+     "x"
+    ]
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 0, \"error\": [\"x\"]}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 0, \"error\": [\"x\"]}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 0, \"error\": [\"x\"]}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 0, \"error\": [\"x\"]}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 999.5}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 999.5}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 999.5}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 999.5}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 999.5}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 999.5}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 999.5}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 700}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"state\": \"sleeping\", \"last_used\": 700}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 700}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 700}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 700}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 700}"
+  },
+  {
+   "state": "{\"state\": \"running\", \"last_used\": 700}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\": \"updating\", \"error\": \"u\"}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"state\": \"failed\", \"error\": \"u\"}"
+  },
+  {
+   "state": "{\"state\": \"updating\", \"error\": \"u\"}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "updating",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"updating\", \"error\": \"u\"}"
+  },
+  {
+   "state": "{\"state\": \"updating\", \"error\": \"u\"}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "updating",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"updating\", \"error\": \"u\"}"
+  },
+  {
+   "state": "{\"state\": \"updating\", \"error\": \"u\"}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "{\"state\": \"starting\", \"error\": 7}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"state\": \"failed\", \"error\": 7}"
+  },
+  {
+   "state": "{\"state\": \"starting\", \"error\": 7}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "starting",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"starting\", \"error\": 7}"
+  },
+  {
+   "state": "{\"state\": \"starting\", \"error\": 7}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": \"starting\", \"error\": 7}"
+  },
+  {
+   "state": "{\"state\": \"starting\", \"error\": 7}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "{\"state\": null}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"state\": \"sleeping\"}"
+  },
+  {
+   "state": "{\"state\": null}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "sleeping",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": null}"
+  },
+  {
+   "state": "{\"state\": null}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\": null}"
+  },
+  {
+   "state": "{\"state\": null}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"error\": \"\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "{\"error\": \"x\", \"state\": \"failed\"}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"error\": \"x\", \"state\": \"failed\"}"
+  },
+  {
+   "state": "{\"error\": \"x\", \"state\": \"failed\"}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": "x"
+   },
+   "commands": [],
+   "after": "{\"error\": \"x\", \"state\": \"failed\"}"
+  },
+  {
+   "state": "{\"error\": \"x\", \"state\": \"failed\"}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"error\": \"x\", \"state\": \"failed\"}"
+  },
+  {
+   "state": "{\"error\": \"x\", \"state\": \"failed\"}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"error\": \"\", \"state\": \"running\", \"last_used\": 1000.0}"
+  },
+  {
+   "state": "{\"a\": 1, \"state\": \"running\", \"last_used\": 0}",
+   "action": "tick",
+   "running": false,
+   "output": null,
+   "commands": [
+    "status",
+    "stop"
+   ],
+   "after": "{\"a\": 1, \"state\": \"sleeping\", \"last_used\": 0}"
+  },
+  {
+   "state": "{\"a\": 1, \"state\": \"running\", \"last_used\": 0}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"a\": 1, \"state\": \"running\", \"last_used\": 0}"
+  },
+  {
+   "state": "{\"a\": 1, \"state\": \"running\", \"last_used\": 0}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"a\": 1, \"state\": \"running\", \"last_used\": 0}"
+  },
+  {
+   "state": "{\"a\": 1, \"state\": \"running\", \"last_used\": 0}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"a\": 1, \"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  },
+  {
+   "state": "{\"state\":\"running\",\"last_used\":[1]}",
+   "action": "tick",
+   "running": false,
+   "error": "TypeError",
+   "message": "unsupported operand type(s) for -: 'float' and 'list'",
+   "commands": [],
+   "after": "{\"state\":\"running\",\"last_used\":[1]}"
+  },
+  {
+   "state": "{\"state\":\"running\",\"last_used\":[1]}",
+   "action": "status",
+   "running": false,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "failed",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\":\"running\",\"last_used\":[1]}"
+  },
+  {
+   "state": "{\"state\":\"running\",\"last_used\":[1]}",
+   "action": "status",
+   "running": true,
+   "output": {
+    "managed": true,
+    "mode": "on_demand",
+    "state": "running",
+    "idle_seconds": 300,
+    "error": ""
+   },
+   "commands": [],
+   "after": "{\"state\":\"running\",\"last_used\":[1]}"
+  },
+  {
+   "state": "{\"state\":\"running\",\"last_used\":[1]}",
+   "action": "use",
+   "running": true,
+   "output": null,
+   "commands": [],
+   "after": "{\"state\": \"running\", \"last_used\": 1000.0, \"error\": \"\"}"
+  }
+ ],
+ "coalescing": {
+  "normal reuse edge": [
+   {
+    "fetched": true,
+    "got": "r1",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": false,
+    "got": "r1",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": true,
+    "got": "r2",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": false,
+    "got": "r2",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": true,
+    "got": "r3",
+    "results": 1,
+    "failures": 0
+   }
+  ],
+  "refresh edge": [
+   {
+    "fetched": true,
+    "got": "r1",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": false,
+    "got": "r1",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": true,
+    "got": "r2",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": false,
+    "got": "r2",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": true,
+    "got": "r3",
+    "results": 1,
+    "failures": 0
+   }
+  ],
+  "background edge": [
+   {
+    "fetched": true,
+    "got": "r1",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": false,
+    "got": "r1",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": true,
+    "got": "r2",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": true,
+    "got": "r3",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": false,
+    "got": "r3",
+    "results": 1,
+    "failures": 0
+   }
+  ],
+  "retention cleanup": [
+   {
+    "fetched": true,
+    "got": "r1",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": false,
+    "got": "r1",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": true,
+    "got": "r2",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": true,
+    "got": "r3",
+    "results": 2,
+    "failures": 0
+   }
+  ],
+  "failure doubling": [
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": false,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": false,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": false,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r10",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": false,
+    "got": "r10",
+    "results": 1,
+    "failures": 0
+   }
+  ],
+  "blocked cooldown": [
+   {
+    "fetched": true,
+    "got": "error 403",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": false,
+    "got": "error 403",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error 429",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": false,
+    "got": "error 429",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error 500",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": false,
+    "got": "error 500",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r4",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": false,
+    "got": "r4",
+    "results": 1,
+    "failures": 0
+   }
+  ],
+  "success resets failures": [
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r3",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": false,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r5",
+    "results": 1,
+    "failures": 0
+   }
+  ],
+  "failure purge after an hour": [
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": false,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r4",
+    "results": 1,
+    "failures": 0
+   }
+  ],
+  "other url independent": [
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r2",
+    "results": 2,
+    "failures": 1
+   },
+   {
+    "fetched": false,
+    "got": "r2",
+    "results": 2,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r3",
+    "results": 1,
+    "failures": 1
+   }
+  ],
+  "bound 3": [
+   {
+    "fetched": true,
+    "got": "r1",
+    "results": 1,
+    "failures": 0
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 2,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r3",
+    "results": 3,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r4",
+    "results": 3,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r5",
+    "results": 3,
+    "failures": 1
+   },
+   {
+    "fetched": false,
+    "got": "r3",
+    "results": 3,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "r6",
+    "results": 3,
+    "failures": 0
+   },
+   {
+    "fetched": false,
+    "got": "r4",
+    "results": 3,
+    "failures": 0
+   }
+  ],
+  "failure bound 3": [
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 1
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 2
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 3
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 3
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 3
+   },
+   {
+    "fetched": true,
+    "got": "error None",
+    "results": 1,
+    "failures": 3
+   }
+  ]
+ },
+ "inflight": {
+  "calls": 1,
+  "got": [
+   "shared",
+   "shared",
+   "shared",
+   "shared"
+  ]
+ }
+}

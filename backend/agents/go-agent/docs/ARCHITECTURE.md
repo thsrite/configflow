@@ -7,8 +7,8 @@ Sublink Agent 采用模块化设计，各组件职责明确，便于维护和扩
 ```mermaid
 graph TB
     A[中心服务器] <-- HTTP/HTTPS --> B[Sublink Agent]
-    B <-- Supervisor --> C[Mihomo Service]
-    B <-- Supervisor --> D[MosDNS Service]
+    B <-- s6 --> C[Mihomo Service]
+    B <-- s6 --> D[MosDNS Service]
     B <-- 文件系统 --> E[配置文件]
     B <-- 文件系统 --> F[日志文件]
 ```
@@ -164,7 +164,7 @@ graph LR
 
 ### 运行时环境
 - Linux 系统
-- Supervisor 进程管理器
+- Docker 镜像中由 s6-overlay 管理进程（Shell 安装用 systemd/OpenRC）
 - Docker（可选，推荐）
 
 ### 构建工具
@@ -211,12 +211,8 @@ graph LR
 ├── heartbeat.go        # 心跳循环实现
 ├── main.go             # 程序入口
 ├── system.go           # 系统相关工具函数
-├── supervisord.conf    # Supervisor 主配置文件
-├── supervisor/         # Supervisor 服务配置文件
-│   ├── agent-mihomo.conf
-│   ├── agent-mosdns.conf
-│   ├── mihomo.conf
-│   └── mosdns.conf
+├── svc/                # Docker 镜像的进程控制（s6）与服务定义
+├── dockerimage/        # 容器启动准备（docker-config）
 └── docs/               # 文档目录
     ├── API.md          # API 接口文档
     ├── ARCHITECTURE.md # 架构文档
@@ -234,7 +230,7 @@ graph LR
 1. 在配置文件中添加相应的服务类型配置
 2. 在 API 服务中添加特殊处理逻辑（如果需要）
 3. 在系统工具中添加服务状态检查逻辑
-4. 创建对应的 Supervisor 配置文件
+4. 在 `svc.Specs` 中登记对应的程序（Docker 镜像）
 
 ### 添加新 API 接口
 

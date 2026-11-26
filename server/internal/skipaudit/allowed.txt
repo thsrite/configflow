@@ -1,0 +1,5 @@
+# Tests allowed to skip when an interpreter or tool is missing (file:function,
+# relative to server/). This list must remain empty: make a missing tool fail
+# the test (t.Fatal) or implement the dependency in Go.
+# Regenerate any findings with:
+#   SKIPAUDIT_PRINT=1 go test -count=1 -run TestNoNewToolMissingSkips -v ./internal/skipaudit

@@ -1,0 +1,258 @@
+# O3-6b — routers JobLock 与工作取消
+
+状态：batch-4集成与定向检查完成，待协调者复验/合并。分支go-o3-6b最初从协调者指定的go-opus-review-r10@f368fa1b9建立；
+已按正式通知变基go@c939a5f61（R10/R11与O3-6c已在其中）。不push、不派子agent、本机不测试。
+
+## 范围与契约
+
+- routers拥有唯一L1 Keyed[string]，Wire接入repo.Hooks.JobLock，保持非阻塞、无repo回调。
+  存在的连接按type+换行+去尾斜线endpoint；缺记录按profileID+换行+routerID。
+- 当前repo对未接线JobLock默认fail-closed不放宽。接线后空闲连接可修改，发布期间仍409。
+  SaveRouterSettings/SaveRouterPublication继续由调用方已持锁，不能在repo重复尝试同一L1。
+- 剩余write/rollback的WithoutCancel迁到owner的lifecycle.Detach，保留请求断开完成，
+  Runtime关机能取消；入口和最终设备写/本地状态提交前检查ctx，原生产I/O timeout不变。
+- 不移植尚未落地的R12–R17，也不在底层driver方法重复取L1。
+
+## R11 协调（开工前已联系694df9d0）
+
+R11确认无临时Keyed/JobLock，无签名偏好。统一RouterJobLock(ctx,profileID,routerID,*Router)
+返回held ctx/release/error，内部Detach与立即尝试；repo hook与该入口共用锁表。
+R11底层PD/DNS/readiness方法已经ctxx.Detach+ctx.Err，每次设备I/O及manifest前检查；
+它们没有profile/router上下文，不自行拿L1，由R12 Publish/StartPublish或A23上层取L1→L2并传ctx。
+R11对RouterOS.Apply另加入口取消检查，后续rebase保留；不改R11私有产品文件。
+
+## 步骤
+
+1. 公共JobLock与Wire：类型/endpoint等价、缺记录fallback、冲突立即返回、释放后可用、
+   L3下try无违规、旧锁文件哨兵、真实Runtime取消/断开；repo集成验证已持锁豁免与并发保护。
+2. R04–R10现存write/rollback owner清除WithoutCancel，补真实Runtime回归；
+   复用回环fake和生产参数，验证停止不写/不改proof、断开仍完成、L2等待可取消。
+3. R10/6c合入后rebase，验证repo的真实BeforeCommit取消及并发发布互斥，保留R11集成约定。
+4. 按更新后的AGENT-BRIEF（go@215ab6b04）：.32或.64只跑gofmt、全仓vet、改动包及直接调用方race、相关difftest；新增fuzz才跑60秒。
+   agent不跑完整gate，定向通过即交回，由协调者按批次跑cf-gate。
+
+## 当前进度
+
+已实现RouterJobLock与Wire的JobLock适配，所有入口共享唯一L1表。未改repo的已持锁豁免。
+测试证明：未Wire仍fail-closed；Wire后空闲连接修改、初次manifest、删除可提交；
+同设备不同profile/router别名互斥，释放后可提交；持L1→L2调用SaveRouterSettings/Publication/withdraw/delete不重复取锁。
+L3内部try不报反序；fallback键独立；Runtime停止拒绝/客户端断开可取；真实repo DATA_DIR里的旧锁哨兵内容/inode/mtime不变且不新增锁文件。
+
+.32命令（含远端gofmt，取回格式化后的测试文件）：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/joblock_test.go --back server/internal/routers/joblock_repo_test.go -- bash -lc 'cd server && gofmt -w internal/routers/joblock_test.go internal/routers/joblock_repo_test.go && go vet ./internal/routers/ && go test -race -count=3 -run "^TestO36b" ./internal/routers/'
+```
+退出0：`ok configflow/internal/routers 24.301s`。更早纯JobLock组race3通过1.150s。
+下一步迁移旧driver的WithoutCancel并加真实Runtime I/O/rollback/lock-wait回归。
+
+## 旧写入/回滚取消边界
+
+已移除routers剩余WithoutCancel（iKuai Write/Apply/Batch、两vendor手工route编辑、ExecuteRoutePlan、
+RouterOperationLock写模式），入口Detach并检查ctx。iKuai每次post前与返回后保留原生取消，设备timeout未变。
+R07地址/NAT入口在清理read evidence或设置touched之前检查；RouterOS.Apply补入口检查，与R11同一修复后续保留一次。
+R08 apply与restore在最终SetPolicyManifest前检查，取消不得提交proof。
+
+协调者批准Clarified in O3-6b并登记behaviour-changes：ApplyMany批次间原ctx改work ctx，
+旧review测试有意改为断开后150/150，符合O3 §2.5 / PORTING4b；新增真实Runtime第100个已证明记录回调后
+Shutdown仍为100/100、后续批次不写。没有改batchMin/routeBatch或网络timeout。
+
+真实Runtime回归TestO36bLegacyWriteRuntimeBoundary覆盖两vendor apply/restore/edit/plan/empty-plan及iKuai Write/Batch，
+停止后零I/O/零device变化（空batch不执行callback），断开后全部完成。
+TestO36bPolicyRestoreCommitRuntimeBoundary在最后snapshot响应后关机，旧proof不变；断开仍能完成manifest-only恢复。
+
+- 红（产品修复前，.32）：`go test -count=1 -run "^TestO36b(LegacyWrite|ApplyMany|PolicyRestore)" ./internal/routers/`
+  退出1，0.161s。10个旧owner在停止后仍成功执行/发请求；ApplyMany断开后停批次；R08取消后manifest=null。
+- 初轮编译抓到一处范围过宽的ctx替换和删除旧断言后的unused import，已修正；不记为红证据。
+- 绿（.32）：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers -- bash -lc 'cd server && gofmt -w internal/routers/route_editor.go internal/routers/ikuai_apply.go internal/routers/ikuai.go internal/routers/ikuai_routes.go internal/routers/routeros_routes.go internal/routers/routeros_batch.go internal/routers/rospolicy_write.go internal/routers/r04_review_test.go internal/routers/natlist_write.go internal/routers/addresswrite.go internal/routers/routeros.go && go vet ./internal/routers/ && go test -race -count=3 -run "TestO36b|TestApplyManyFinishesAfterRequestCancellation|TestApplyFinishesNATBatchAfterCancellation|TestRestoreManyIgnoresCancellation|TestR06ConnectionLock|TestR09RuntimeShutdownAndRequestDisconnect" ./internal/routers/'
+```
+  退出0，`ok configflow/internal/routers 30.676s`。
+下一步：真实I/O中途取消、L2等待、repo caller-held提交与并发发布压力；R10/6c合入后rebase及最终门禁。
+
+## 实际I/O、等待和并发集成
+
+- TestO36bIkuaiWriteInFlightRuntimeBoundary：真实devhttp与回环HTTP；设备收到delete后阻塞但未处理。
+  Runtime关机取消抵达服务端request，返回原生context.Canceled，device不变；只断开客户端时I/O仍等待，放行回复后完整删除。
+  未缩短生产10秒timeout。TestO36bOperationWaitRuntimeBoundary：实际L2持锁等待，停止不等释放就取消，
+  断开后仍等待并在释放后完成，不将context.Canceled误映射成busy。
+- TestO36bConcurrentPublicationsShareJobLock：真实Runtime中首个owner持L1→L2，设备Apply证明后在DB BeforeCommit阻塞；
+  24个其他profile/router别名同时try，全部立即冲突、零额外设备I/O；首个提交后锁释放，下一owner可完成device补偿与DB撤回。
+  结果channel在持锁函数的所有defer执行后发送，避免把测试唤醒与解锁顺序做成竞态。
+- TestO36bNATAndEmptyOwnerRuntimeBoundary：R07地址/NAT更新与恢复、R04空restore/ApplyMany，真实Runtime停止后
+  零I/O/零journal/零touched；断开后更新+恢复完整完成。正常路径明确断言lockx.Violations()==0。
+- .32 新I/O/等待/并发组race3通过7.164s、vet通过；随后全部TestO36b组合race3通过33.644s、vet通过。
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/joblock_test.go --back server/internal/routers/joblock_repo_test.go --back server/internal/routers/o36b_io_test.go --back server/internal/routers/o36b_fastpath_test.go -- bash -lc 'cd server && gofmt -w internal/routers/joblock_test.go internal/routers/joblock_repo_test.go internal/routers/o36b_io_test.go internal/routers/o36b_fastpath_test.go && go vet ./internal/routers/ && go test -race -count=3 -run "^TestO36b" ./internal/routers/'
+```
+更新PROGRESS-routers中已过时的R14 flock/JobLock默认放行、旧签名及handler WithoutCancel指引，防止后续重复造锁。
+
+既定关机边界仍保留（review-r09 F6）：已经发送到设备的写入可能留下部分状态，关机后补偿也是写入，不能绕过取消；
+后续R12恢复/人工核验负责该状态，不把本步取消闸门宣称为完整发布事务原子性。
+接下来跑当前合并树routers/devhttp/routersplit完整相关包race，等待R10与6c正式合入通知后rebase。
+
+## 长任务检查点
+
+产品/测试提交：b8f34ccc7（共享JobLock）、c2b3e9991（owner取消与已批准旧测试语义）、
+a80e49197（实际I/O/等待/并发/空路径）。当前完整相关包命令已前台执行完成（退出0）：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'cd server && export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD"); test -z "$(gofmt -l internal tools cmd)" && go vet ./... && go test -race -p=4 -count=1 -timeout=60m ./internal/routers/ ./internal/devhttp/ ./internal/routersplit/'
+```
+前台exec session75973已退出0：gofmt全目录无输出、全仓vet通过；
+`ok configflow/internal/routers 845.104s`、`ok configflow/internal/devhttp 4.092s`、
+`ok configflow/internal/routersplit 36.519s`。包括当前R04–R10的共享驱动测试与真实Python参照；
+基线仍为指定R10复核分支f368fa1b9，不冒称已经过R10/6c合入后的最终gate。
+
+`/tmp/o36b-repo-runtime-draft.go`是后续集成测试草稿，尚未放进正式树：
+TestO36bRepositoryRuntimeCommitBoundary对generic-password/manifest/delete、caller-held settings/settings-delete/publication/withdrawal，
+分别在实际L3等待或BeforeCommit回调关机/断开（28子例），核对完整SQLite Fingerprint及非DB文件清单。
+待O3-6c正式合入再应用为internal/routers/o36b_repo_runtime_test.go并远端gofmt、race3/vet；
+缺6c的旧树已知仍在普通BeforeCommit后COMMIT，不能把依赖未接通当成本步产品回归，也不提交失败测试。
+R10与6c未收到正式合入通知前不rebase；go新添的a9d6ce86c仅WORKFLOW批次合并/风险分层说明已读，未误当成R10合入。
+
+### R11 最终共享路径提醒（d214fb515）
+
+已只读核对go-port-r11相对R10的共享routeros.go差异，尚未合并进本分支：
+Apply入口ctx.Err与本步相同，保留一次；RESTORE递归perform须继续转发beforeCreate；
+IPv6 PD address-list加入rosSingleRowPaths，scoped/inScope按list限定，与IPv4一致；
+ND最终payload沿用R11的ipv6DNSFlag严格拒绝未知/null及dynamic/invalid标志，不回退rosTruthy宽松判断。
+这些改动依赖R11私有pdLists/ipv6DNSFlag等定义，后续整分支集成，不能只复制共享文件补丁。
+R11 owner回报完整共享包race/Python/mutation已通过；此处仅登记其报告和差异审阅，不冒称本分支已跑R11。
+
+### 流程更新（协调者，go@215ab6b04）
+
+已读更新后的AGENT-BRIEF。后续不再发送中途进度消息；只有需裁定、交回或阻塞时联系协调者。
+长测试以一条阻塞前台命令等待结果，不进行模型回合中的日志轮询。
+O3-6b仍等待R10和O3-6c正式合入通知；之后rebase go、应用28子例草稿，跑定向验证即交回，
+不运行gate.sh/proddiff/全仓race。当前尚无新fuzz目标，不为本步凭空增加解析器fuzz。
+以上覆盖本文前面旧的最终gate/15分钟排队计划；已完成的历史定向结果保留。
+
+### R12 开工接口确认
+
+R12 owner694df9d0从go-opus-review-r11建立go-port-r12；已再次确认RouterJobLock现签名稳定，
+不需要提前改基到未集成6b，也不复制公共文件或另new Keyed。其设计中的typed lock collaborator
+默认fail-closed过渡，6b正式合入后rebase直接接唯一公共入口，并移除临时默认stub。
+Publish先Detach/检查，读取快照选key但在404/参数错误返回前try L1（缺记录传nil fallback），
+再取L2并下传held ctx；driver/ReturnAgent/rollback不重入L1，SaveRouterPublication沿用caller-held约定。
+忙为KindConflict/messageEditBusy，Runtime取消保留原生ctx.Err，不能改成busy或继续补偿写。
+6c的合并复验旧preparation测试已在独立分支go-o3-6c@426f6edd0 test-only修正交回；不把它误当成正式go合入。
+
+### R12 D-R12-3 获批本地提交例外
+
+R12 owner转达协调者裁定：已至少一次设备写入后drain取消，Execute Aborted不补偿，Publish保留Result；
+仅一次本地publication（失败记录+manifest+revision）显式ctxx.Uninterruptible，写设备前取消仍零提交。
+该裁定覆盖此前针对普通取消路径“不再提交”的笼统表述，不允许恢复设备写/补偿或整个Publish不可中断。
+
+已回复现有AST稳定来源为go-o3-6c@426f6edd0的repo/batch_paths_test.go。当前测试只扫描repo里的
+beginCommitBatch三处，不能直接往map加Publish而谎称覆盖routers SelectorExpr。R12正式集成时沿用同一canonical测试，
+扩为package:FuncDecl:callee精确条目（各恰好一次），保留三个repo marker并扫描routers所有ctxx.Uninterruptible，
+第四项登记实际本地Aborted publication私有函数，记录Clarified in R12；未登记调用失败。
+R12负责将条件/结果/零补偿I/O/单次提交/锁释放的真实Runtime回归与AST扩展一起交回，6b后续整合保留。
+
+
+## Batch-4 正式集成（2026-11-18）
+
+协调者f8801d39通知go@c939a5f61包含R10与O3-6c，继续本步，固定.32，只做定向检查。
+从指定的原R10复核tip f368fa1b9开始，用`git rebase --onto go f368fa1b9 go-o3-6b`
+只重放6b自己的10条提交，避免把已由cherry-pick集成、报告又修订过的R10提交重复带回。
+唯一自身冲突是设计中相邻的Clarified in O3-6b/6c：两段全部保留。
+RouterOS.Apply入口取消检查已在go的R11中，不重复添加；RESTORE递归guard、PD scoped表、
+ND严格flag均沿用最新go，不改R10/R11私有实现。本分支当前未包含未合入的R12。
+
+已落地`o36b_repo_runtime_test.go::TestO36bRepositoryRuntimeCommitBoundary`，
+7条入口（generic password/manifest/delete，caller-held settings/settings-delete/publication/withdrawal）
+×2个真实屏障（实际L3等待、Store.BeforeCommit）×2种事件（Runtime关机、仅客户端断开）=28子例。
+每例检查：关机原生context.Canceled、完整SQLite fingerprint/revision与所有非DB文件不变；
+断开仍完成对应字段/删除/manifest效果，且generation只加1；之后同设备L1能再取，Violations严格为0。
+保持SaveRouterSettings/SaveRouterPublication调用方持L1→L2、repo不重入L1的约定。
+
+首轮新增矩阵已在.32通过：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/o36b_repo_runtime_test.go -- bash -lc 'cd server && gofmt -w internal/routers/o36b_repo_runtime_test.go && go test -race -count=3 -run "^TestO36bRepositoryRuntimeCommitBoundary$" -timeout=10m ./internal/routers/'
+```
+退出0，`ok configflow/internal/routers 62.272s`（28叶例各执行3轮）。
+下一步：全目录gofmt-l、全仓vet；routers及直接调用方/相关repo-devhttp集成race；
+相关api/rules、api/rulelibrary difftest，全部固定.32，不跑gate/proddiff/全仓race；无新fuzz目标。
+
+
+## 最终交回（batch-4 后，固定 .32）
+
+本节是当前结果；前面的等待R10/6c和旧gate计划都是历史记录，已由本节覆盖。
+分支go-o3-6b，基于go@c939a5f61。产品改动保持唯一routers L1表+Wire与剩余owner取消边界；
+没有复制R10/R11的产品提交，也不提前引入R12。新增28子例与语义/单次generation/释放/零违规断言
+已在86714de27提交。无新依赖、无新fuzz、无新goroutine/flock或循环开关。
+
+### 结果
+
+- 新矩阵 `-race -count=3`：routers62.272s，通过（28子例×3）。
+- 全目录gofmt-l无输出、全仓go vet通过。
+- 相关包全包race/count1：routers548.208s、devhttp3.486s、routersplit13.167s、
+  server2.300s、api/rules84.766s，全部通过。包含R04–R11实际Python边界、生产timeout/raw-wire、
+  Runtime停止/断开、L2等待、24竞争发布、旧锁哨兵以及本步全部O36b测试。
+- repo相关O36c/R10/router guard/批次marker回归：race/count1通过154.882s。
+  按明确测试名单执行；不启用尚待batch-5修复的repo crosscheck布局组，也不冒称跑过它。
+- CONFIGFLOW_DIFF=1的实际Flask差分：api/rules/difftest75.079s、
+  api/rulelibrary/difftest34.479s，2包通过；JSON事件核验零skip/零fail。
+- 合并后的正常L1→L2→L3路径明确Violations==0；各次关机后同设备租约可再取。
+  关机不提交、断开完成、发布竞争互斥的语义均保持。没有放宽时限、记录数量或文件断言。
+- 按新流程没有跑gate、全仓race、proddiff；完整批次门禁留协调者。
+
+### 完整定向命令
+
+从本worktree调用（RT_HOST固定.32），前台单条阻塞等待，退出0：
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt -- bash -lc 'set -e; cd server; export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD") CONFIGFLOW_DIFF_PYTHON=$HOME/cf-test/.venv/bin/python PYTHONDONTWRITEBYTECODE=1; unset CONFIGFLOW_SNAPSHOT CONFIGFLOW_DIFF; task_logs=$(mktemp -d "${TMPDIR:-/tmp}/o36b-final.XXXXXX"); echo "O36B_LOGS=$task_logs"; test -z "$(gofmt -l internal tools cmd)"; go vet ./...; go test -race -p=4 -count=1 -timeout=60m ./internal/routers/ ./internal/devhttp/ ./internal/routersplit/ ./internal/server/ ./internal/api/rules/ >"$task_logs/race.log" 2>&1 || { cat "$task_logs/race.log"; exit 1; }; cat "$task_logs/race.log"; go test -race -count=1 -timeout=15m -run "^Test(O36c.*|R10.*|EveryWriter.*|CredentialRepair.*|LivePublication.*|DeleteAndReset.*|DuplicateIds.*|VerifiedPublication.*|PublicationCannot.*|SettingsCommit.*|OrdinaryWriter.*|BatchRemoval.*|FirstPublication.*|ReplacementHolds.*|CommitBatchMarkersMatchDesign)$" ./internal/repo/ >"$task_logs/repo.log" 2>&1 || { cat "$task_logs/repo.log"; exit 1; }; cat "$task_logs/repo.log"; CONFIGFLOW_DIFF=1 go test -json -p=2 -count=1 -timeout=30m ./internal/api/rules/difftest/ ./internal/api/rulelibrary/difftest/ >"$task_logs/diff.json" 2>&1 || { tail -70 "$task_logs/diff.json"; exit 1; }; "$CONFIGFLOW_PY" -c '"'"'import json,sys; events=[json.loads(line) for line in open(sys.argv[1])]; bad=[e for e in events if e["Action"] in ("skip","fail")]; assert not bad, bad; packages=[e for e in events if e["Action"]=="pass" and "Test" not in e]; assert len(packages)==2, packages; print("DIFF PASS: 2 packages, 0 skip"); [print(e["Package"],e.get("Elapsed")) for e in packages]'"'"' "$task_logs/diff.json"; echo "O36B TARGETED PASS"'
+```
+最终输出：`DIFF PASS: 2 packages, 0 skip`、`O36B TARGETED PASS`。
+日志在.32 `/home/sunbroke/.cache/rt-tmp/o36b-final.BQZRJp/{race.log,repo.log,diff.json}`。
+
+### 下游接线
+
+`RouterJobLock(ctx, profileID, routerID, *Router) (held, release, error)`签名保持稳定，
+同一张L1表已通过repo hook与发布owner真实并发验证。R12合并时直接使用本入口，不再保留临时stub，
+不在设备底层重入L1；其Aborted&&Wrote获批本地publication例外和canonical AST patch由R12集成处理，
+本步不把普通提交改为不可中断。交回前rebase最新go，工作区干净，不push。
+
+最终已变基go@fbbe382ec。c939a5f61→fbbe382ec只有routerdiff Python工具/报告与HANDOFF增量，
+没有server内部或cmd的Go源码变化；已验证的应用/库和本步可执行改动未变，不重复定向测试。
+当前新矩阵提交因变基重写为e8840f23f（原86714de27），完整交回结果随最后文档提交提供。
+
+## Batch-5 / R12 最终接线（2026-11-18）
+
+已 rebase 到 go@c5f5ff349（含 R12/R13、N8-5c）。冲突处理保留 R13 的
+pendingSummaryHook/recordPendingNotice，同时 Wire 注册唯一 JobLock；R11 的
+RouterOperationLock 入口取消检查保留。首轮编译定位到一次漏删的冲突标记，已修正并
+合回原提交，最终检查全绿，无未解决的产品发现。
+
+**临时 stub 核实：** R12 作者 694df9d0 已只读核对并确认，早期 typed collaborator
+只是计划，最终 R12 没有实现它，也没有第二张 Keyed 表可删。保留其 caller-held L1
+契约：调用方 RouterJobLock → Publish 的 L2 → repo L3，StartPublish 转移 release。
+不在 Publish 内重入 L1，也不删除仍属于 R14 的 CaptureManual fail-closed hook。
+
+新增/加强回归：
+- TestO36bR12TrackedPublicationUsesSharedJobLock：真实 Runtime + StartPublish +
+  loopback RouterOS；发布持 L2 时 24 次同设备别名发布被立即拒绝，repo 改密码被
+  ErrInUse 拒绝；发布只增加一次 revision，交付结果时 L1/L2 都已释放。
+- TestR12RuntimePublicationBoundaries：原断开、写前关机、写后关机三例现在真正持
+  同一张 RouterJobLock 的 held ctx，新增 BeforeCommit 内关机/断开两例。关机时
+  普通 COMMIT 被拒、仅一次获批的 Aborted&&Wrote 本地事务提交，revision 只加1；
+  写前关机零提交；断开正常完成。五类 manifest 的 Set/unset 与存储一一核对；
+  失败记录、结果、零补偿/零关机后设备 I/O、锁释放和 Violations==0 全保留。
+- 合并树上的 TestCommitBatchMarkersMatchDesign 已通过：三个 repo marker +
+  routers:saveAbortedPublication:ctxx.Uninterruptible 正好四项，无重复应用旧 patch。
+  该例外仍只包一个本地 SaveRouterPublicationJSON，不扩大普通事务不可中断范围。
+
+### 定向验证（固定 .32）
+
+首轮小集合：race/count1 的 O36bR12、R12RuntimePublicationBoundaries、canonical AST
+通过：routers4.693s，repo1.319s。随后加强五类 manifest 断言后执行最终命令：
+
+```sh
+RT_HOST=sunbroke@192.168.0.32 rt --back server/internal/routers/r12_runtime_test.go -- bash -lc 'set -e; cd server; gofmt -w internal/routers/r12_runtime_test.go; test -z "$(gofmt -l internal tools cmd)"; go vet ./...; export CONFIGFLOW_PY=$HOME/cf-test/.venv/bin/python CONFIGFLOW_REPO=$(dirname "$PWD") CONFIGFLOW_DIFF_PYTHON=$HOME/cf-test/.venv/bin/python PYTHONDONTWRITEBYTECODE=1; unset CONFIGFLOW_SNAPSHOT CONFIGFLOW_DIFF; task_logs=$(mktemp -d "$HOME/.cache/o36b-r12.XXXXXX"); echo "O36B_R12_LOGS=$task_logs"; go test -race -p=4 -count=1 -timeout=45m ./internal/routers/ ./internal/devhttp/ ./internal/routersplit/ ./internal/server/ ./internal/api/rules/ >"$task_logs/race.log" 2>&1 || { tail -100 "$task_logs/race.log"; exit 1; }; cat "$task_logs/race.log"; go test -race -count=1 -run "^Test(O36c.*|R10.*|R11.*|CommitBatchMarkersMatchDesign|.*Router.*|.*Publication.*|.*SettingsCommit.*)$" -timeout=15m ./internal/repo/ >"$task_logs/repo.log" 2>&1 || { tail -80 "$task_logs/repo.log"; exit 1; }; cat "$task_logs/repo.log"; CONFIGFLOW_DIFF=1 go test -json -p=2 -count=1 -timeout=20m ./internal/api/rules/difftest/ ./internal/api/rulelibrary/difftest/ >"$task_logs/diff.json" 2>&1 || { tail -50 "$task_logs/diff.json"; exit 1; }; "$CONFIGFLOW_PY" -c '\''import json,sys; es=[json.loads(l) for l in open(sys.argv[1])]; assert not [e for e in es if e["Action"] in ("skip","fail")]; ps=[e for e in es if e["Action"]=="pass" and "Test" not in e]; assert len(ps)==2; print("DIFF PASS: 2 packages, 0 skip"); [print(e["Package"],e.get("Elapsed")) for e in ps]'\'' "$task_logs/diff.json"; echo "O36B R12 TARGETED PASS"'
+```
+
+最终退出0；gofmt 无输出、全仓 vet 通过。race：routers567.057s、devhttp3.515s、
+routersplit12.321s、server4.955s、api/rules83.031s；repo160.749s。
+两组实际 Flask difftest：rules91.655s、rulelibrary38.400s；JSON 核验2包全通过、零skip。
+末行 `O36B R12 TARGETED PASS`。日志 `.32:~/.cache/o36b-r12.esnJRN/`。
+无新 fuzz 目标，不跑 full gate/proddiff。工作区提交干净，不 push；交回进 batch-6。

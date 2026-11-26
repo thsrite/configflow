@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"agent/internal/atomicfile"
 )
 
 const migrationSchema = 2
@@ -17,12 +19,7 @@ func removeFile(path string) error {
 		}
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return atomicfile.SyncDir(filepath.Dir(path))
 }
 
 func restoreSymlink(s Snapshot) error {
@@ -50,12 +47,7 @@ func restoreSymlink(s Snapshot) error {
 	if err := os.Rename(path, s.Path); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(s.Path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return atomicfile.SyncDir(filepath.Dir(s.Path))
 }
 
 func recoveryCleanupPlan(c *Config, root string) ([]FileChange, error) {

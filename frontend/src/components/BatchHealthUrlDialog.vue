@@ -14,7 +14,7 @@
       <form class="grid min-w-0 gap-4" novalidate @submit.prevent="save">
         <div class="grid min-w-0 gap-1.5">
           <Label for="batch-health-url">测试 URL</Label>
-          <Input id="batch-health-url" v-model="url" type="url" class="min-h-11 font-mono text-xs" :disabled="loading || saving" placeholder="https://www.gstatic.com/generate_204" />
+          <Input id="batch-health-url" v-model="url" type="url" class="min-h-11 font-mono text-xs" :disabled="loading || saving" placeholder="https://health.example.com/generate_204" />
         </div>
 
         <fieldset class="min-w-0" :disabled="saving">

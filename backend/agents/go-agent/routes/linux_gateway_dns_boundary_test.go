@@ -57,14 +57,14 @@ func TestGatewayDNSStagingDoesNotEnableOrdinaryDNSOrTUN(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var doc map[string]interface{}
+			var doc map[string]any
 			if err := yaml.Unmarshal(data, &doc); err != nil {
 				t.Fatal(err)
 			}
-			dns := doc["dns"].(map[string]interface{})
-			tun := doc["tun"].(map[string]interface{})
+			dns := doc["dns"].(map[string]any)
+			tun := doc["tun"].(map[string]any)
 			if dns["enable"] != false || tun["enable"] != false || doc["mode"] != "direct" ||
-				!reflect.DeepEqual(tun["route-exclude-address"], []interface{}{"10.0.0.0/8"}) {
+				!reflect.DeepEqual(tun["route-exclude-address"], []any{"10.0.0.0/8"}) {
 				t.Fatalf("ordinary DNS/TUN behavior changed: %s", data)
 			}
 			wantListen := "127.0.0.1:5454"
@@ -133,18 +133,18 @@ x-configflow-linux-gateway: {enabled: true, version: 1, profile_id: gateway-test
 				if err != nil {
 					t.Fatal(err)
 				}
-				var doc map[string]interface{}
+				var doc map[string]any
 				if err := yaml.Unmarshal(data, &doc); err != nil {
 					t.Fatal(err)
 				}
-				wantExcluded := []interface{}{"127.0.0.0/8"}
+				wantExcluded := []any{"127.0.0.0/8"}
 				for _, ip := range currentIPs {
 					wantExcluded = append(wantExcluded, ip+"/32")
 				}
 				if !gateway {
-					wantExcluded = append([]interface{}{"10.0.0.0/8"}, wantExcluded...)
+					wantExcluded = append([]any{"10.0.0.0/8"}, wantExcluded...)
 				}
-				if !reflect.DeepEqual(doc["tun"].(map[string]interface{})["route-exclude-address"], wantExcluded) || cfg.AgentIP != "" {
+				if !reflect.DeepEqual(doc["tun"].(map[string]any)["route-exclude-address"], wantExcluded) || cfg.AgentIP != "" {
 					t.Fatalf("automatic address was lost, stale or persisted: %s; agent_ip=%q", data, cfg.AgentIP)
 				}
 			}
@@ -178,17 +178,17 @@ x-configflow-linux-gateway: {enabled: true, version: 1, profile_id: gateway-test
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		t.Fatal(err)
 	}
-	tun := doc["tun"].(map[string]interface{})
-	dns := doc["dns"].(map[string]interface{})
+	tun := doc["tun"].(map[string]any)
+	dns := doc["dns"].(map[string]any)
 	if dns["listen"] != "127.0.0.1:1053" ||
-		!reflect.DeepEqual(tun["dns-hijack"], []interface{}{}) ||
-		!reflect.DeepEqual(tun["route-exclude-address"], []interface{}{"127.0.0.0/8", "192.0.2.2/32"}) ||
-		!reflect.DeepEqual(tun["route-address-set"], []interface{}{"cf_gateway_fake_ip"}) ||
-		!reflect.DeepEqual(dns["nameserver"], []interface{}{"https://223.5.5.5/dns-query"}) {
+		!reflect.DeepEqual(tun["dns-hijack"], []any{}) ||
+		!reflect.DeepEqual(tun["route-exclude-address"], []any{"127.0.0.0/8", "192.0.2.2/32"}) ||
+		!reflect.DeepEqual(tun["route-address-set"], []any{"cf_gateway_fake_ip"}) ||
+		!reflect.DeepEqual(dns["nameserver"], []any{"https://223.5.5.5/dns-query"}) {
 		t.Fatalf("native AIO overrode gateway DNS protection or routing: %s", data)
 	}
 	if _, err := os.Stat(cfg.ConfigPath); !os.IsNotExist(err) {

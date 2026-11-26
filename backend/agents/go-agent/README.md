@@ -53,12 +53,8 @@ configflow-agent -config /opt/configflow-agent/config-mihomo.json -cleanup
 ├── main.go             # 程序入口
 ├── Makefile            # 构建和管理脚本
 ├── system.go           # 系统相关工具函数
-├── supervisord.conf    # Supervisor 主配置文件
-├── supervisor/         # Supervisor 服务配置文件
-│   ├── agent-mihomo.conf
-│   ├── agent-mosdns.conf
-│   ├── mihomo.conf
-│   └── mosdns.conf
+├── svc/                # Docker 镜像的进程控制（s6）与服务定义
+├── dockerimage/        # 容器启动准备（docker-config）
 ├── ARCHITECTURE.md     # 架构设计文档
 ├── CONFIG.md           # 配置说明文档
 ├── API.md              # API 接口文档
@@ -101,7 +97,7 @@ Sublink Agent 作为一个独立的服务运行，主要完成以下任务：
   "service_type": "mihomo",                // 服务类型（mihomo 或 mosdns）
   "service_name": "mihomo",                // 服务名称
   "config_path": "/etc/mihomo/config.yaml",// 服务配置文件路径
-  "restart_command": "supervisorctl restart mihomo", // 重启命令
+  "restart_command": "/usr/local/bin/configflow-agent svc restart mihomo", // 重启命令（Docker 镜像）
   "heartbeat_interval": 60                 // 心跳间隔（秒）
 }
 ```

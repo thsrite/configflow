@@ -1,0 +1,79 @@
+[
+  {
+    "label": "node subscription zero",
+    "record": {
+      "label": "node subscription zero",
+      "patch": [
+        {
+          "path": [
+            "shared",
+            "nodes",
+            0,
+            "subscription_id"
+          ],
+          "set": 0
+        }
+      ],
+      "result": null
+    },
+    "native_error": "nodes 类型不正确",
+    "native_class": "ProfileValidationError"
+  },
+  {
+    "label": "group manual int",
+    "record": {
+      "label": "group manual int",
+      "patch": [
+        {
+          "path": [
+            "profiles",
+            "default",
+            "proxy_groups",
+            0,
+            "manual_nodes"
+          ],
+          "set": [
+            5
+          ]
+        }
+      ],
+      "error": {
+        "class": "ProfileValidationError",
+        "message": "策略组 manual_nodes 必须是字符串数组",
+        "usages": null
+      }
+    },
+    "native_error": "manual_nodes 只能包含资源 ID，不能设置资源覆盖",
+    "native_class": "ProfileValidationError"
+  },
+  {
+    "label": "order id int",
+    "record": {
+      "label": "order id int",
+      "patch": [
+        {
+          "path": [
+            "profiles",
+            "default",
+            "proxy_groups",
+            0,
+            "proxies_order"
+          ],
+          "set": [
+            {
+              "type": "node",
+              "id": 5
+            }
+          ]
+        }
+      ],
+      "error": {
+        "class": "ProfileValidationError",
+        "message": "策略组 proxies_order 必须是含 type/id 字符串的对象数组",
+        "usages": null
+      }
+    },
+    "native_error": "资源引用必须是非空 ID",
+    "native_class": "ProfileValidationError"
+  }
+]

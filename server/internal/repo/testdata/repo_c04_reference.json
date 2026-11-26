@@ -1,0 +1,6127 @@
+{
+ "read_json": [
+  {
+   "hex": "",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7b7d",
+   "outcome": {
+    "value": {}
+   }
+  },
+  {
+   "hex": "efbbbf7b7d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7b0d0a2261223a207d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 2 column 6 (char 7)"
+   }
+  },
+  {
+   "hex": "7b0d2261223a0d0a7d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 3 column 1 (char 7)"
+   }
+  },
+  {
+   "hex": "5b315d",
+   "outcome": {
+    "class": "ProfileValidationError",
+    "message": "JSON object expected in case.json"
+   }
+  },
+  {
+   "hex": "6e756c6c",
+   "outcome": {
+    "class": "ProfileValidationError",
+    "message": "JSON object expected in case.json"
+   }
+  },
+  {
+   "hex": "7b2261223a204e614e7d",
+   "outcome": {
+    "value": {
+     "a": NaN
+    }
+   }
+  },
+  {
+   "hex": "7b2261223a312c2261223a327d",
+   "outcome": {
+    "value": {
+     "a": 2
+    }
+   }
+  },
+  {
+   "hex": "7b22e4b8ad223a2022f09f9a80227d",
+   "outcome": {
+    "value": {
+     "中": "🚀"
+    }
+   }
+  },
+  {
+   "hex": "7b2261223a20220d227d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Invalid control character at: line 1 column 8 (char 7)"
+   }
+  },
+  {
+   "hex": "0d0a0d0a7b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting property name enclosed in double quotes: line 3 column 2 (char 3)"
+   }
+  },
+  {
+   "hex": "7b2261223a20317d0d0a78",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Extra data: line 2 column 1 (char 9)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022efa0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a20220d00a0df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 9: invalid start byte"
+   }
+  },
+  {
+   "hex": "f00a7f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "80f07bf322",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ff00f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f1807d7b8f8f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f4f4f59f0df4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a0c27f7b7f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022fff3f4df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ff8fe0eef58ff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "bfbfe18fbfc07b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f3f1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "c2dfecc1ee90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7d0d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "ececc080",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022efe0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7df590",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e0e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202290ff7b8fc0000a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f58fef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "00908f9031f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f4e1edf30d8f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c08f3180a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "90e0009f0a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f1f19f8f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227dbfff7d22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "31e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 1: unexpected end of data"
+   }
+  },
+  {
+   "hex": "e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a20220a22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Invalid control character at: line 1 column 8 (char 7)"
+   }
+  },
+  {
+   "hex": "f0bfec7dc17d7f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220a7fbfc0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 9: invalid start byte"
+   }
+  },
+  {
+   "hex": "bff3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220a0a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Invalid control character at: line 1 column 8 (char 7)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c27df0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20228031",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ff90e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "f1eeef0ac1a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "ff7b908fedc1f1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022bfc27decf1ed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ffa0c10df480ec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a0f5e131f080",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f47beeecc0e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "ffa07df1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unterminated string starting at: line 1 column 7 (char 6)"
+   }
+  },
+  {
+   "hex": "80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a20227fdf0af57d7bed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f5dff0f1c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220d0aeee122",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 9: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "80e1f031",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "8ff39ff30d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20228fa07ff0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "a0220d22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "9fc2bfbff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "0decf57dec8f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202222f1df7b9ff47b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "90c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022dff500ee7b00ec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202222c1f1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "c20dc27fbff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f07bf4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220ae1ff90dfff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "e08ffff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "e1e1c0a031",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "9fed90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e131",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b8ff59f7de0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e1f50d0da0ecff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20229f90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202200e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 8: unexpected end of data"
+   }
+  },
+  {
+   "hex": "f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a20229ff1f3227b7be0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "0df0ff22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "edf5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f1f3ed8ff4ff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e17ff5c1ee7f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ef90df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c0f5f1a0c2a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c0bfe000807bf5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022dfe1f39fa0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "31c20dc0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "e1f18fff0df0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ecffc1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "31ff7f0d8f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7ba0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "e1dfeedf8000c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022227d",
+   "outcome": {
+    "value": {
+     "k": ""
+    }
+   }
+  },
+  {
+   "hex": "0d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 2 column 1 (char 1)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f5ecee7bef31",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202231f5eeef0ddf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "eff5df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "317d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Extra data: line 1 column 2 (char 1)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c20da07b7bf4f5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "dfed8f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227ba00abf0080f5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f1310d7b22f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7f7fdf00c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 2: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f5f3c0efeef4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "a090f47bf3c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c1e1f5ff9f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f3f5bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f3ec7d80e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "e08ff1f5c1ecf3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "0df57f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "edee0a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c19fff0d7b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c2dff3e1ee7f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Invalid control character at: line 1 column 8 (char 7)"
+   }
+  },
+  {
+   "hex": "ff31ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f5f3f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "0df47fe180",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f5ef0a00c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20229f7ff5efef9f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f4a0ece1a00a7b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220df0c2f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ee8ff17dee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227b7d00c1f5bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 10: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ffbfec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f0e17d8080c20d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "ec31e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022fff17be10dee7d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f5ecc1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20229000c0e07d7b0d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "2222",
+   "outcome": {
+    "class": "ProfileValidationError",
+    "message": "JSON object expected in case.json"
+   }
+  },
+  {
+   "hex": "8ff4e0e0ed31ff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f47bf5eeef00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7bed7d800ae090",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f0e1f49f7b7b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220a7bedff0aedf5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 9: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "ededf3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227df131a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c1df909f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "f30af0ff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20229f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20229fe0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e1ed9fa09fdfee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022df7d00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20228f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "90dfc10a8ff1ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202231a0e1c09f9f00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "c000eff1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7d22908fe1df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 2: invalid start byte"
+   }
+  },
+  {
+   "hex": "c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "c20a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7fe1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 1: unexpected end of data"
+   }
+  },
+  {
+   "hex": "efed00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f1e031e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ef90df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ef9fffedf3df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "ff9f80e190df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "9f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7dc1c1f322",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "31df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 1: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f30adff39ff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "0a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 2 column 1 (char 1)"
+   }
+  },
+  {
+   "hex": "31df7b80e10a8f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "807decc1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022eef00af5318fff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20229fc2e1f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227dbfed0df1bff1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "f37b7deeffef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "0d0dc2ec90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 2: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227dc2eedf0aee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f0c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "ed8031",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "e0ece10de1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "bff08f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f031c29fdf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e1c07bc1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "00e0dfe07d80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "efe1eec090",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022908f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227ddfc1e18f809f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "9022f47ff1f590",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7bc0228f0ac2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202200",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Invalid control character at: line 1 column 8 (char 7)"
+   }
+  },
+  {
+   "hex": "7b7fff7f9fec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 2: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ecc0efbf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "90f10a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unterminated string starting at: line 1 column 7 (char 6)"
+   }
+  },
+  {
+   "hex": "0adf7f9f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f5ed31",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202222",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting ',' delimiter: line 1 column 9 (char 8)"
+   }
+  },
+  {
+   "hex": "7b226b223a20227dc19fffe0bfdf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227b0dc0a0c27d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 9: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20228f223131c0c0ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f5bf90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "f5f1a0f5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ff90f5a0c2f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227fe0f4e17bff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202290df0ac2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "eded7fe17bf0c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "9fff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022dff4ed22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "00f3eebf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f5efef807d3190",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022dfeee0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c1f0e1f131c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "9fe1c2f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "f50aeff1edbf80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7bf5ecdf7b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022edf4e08f310a00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022903190f390f3c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f10aed0d0a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022efec7f7f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "0ddfe17b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f47d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7f00c2c190",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 2: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a0e031",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "ff90edecee22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022220af490f5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 9: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f0a00d7dee7f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f4f0ec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f431eff5f3c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c2f3a0ffee22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227bec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 8: unexpected end of data"
+   }
+  },
+  {
+   "hex": "ffc2c1f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e0bf7ff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e00080a0eee0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "8ff1ff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7bc2f07dffff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "a0ed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227be1f17ddf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "0d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 2 column 1 (char 1)"
+   }
+  },
+  {
+   "hex": "7b226b223a20220dc2c0ed22ecc2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7d22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a080c2ff800022",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f17befc1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "90eeef7df4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7bf07b90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227d7defdfc0c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 9: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227bf39f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 8-9: unexpected end of data"
+   }
+  },
+  {
+   "hex": "f3efc09f90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "0df1c0c18080",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ed80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ffe1c2ecc1ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20229fefdf22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022007ba0c2f5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 9: invalid start byte"
+   }
+  },
+  {
+   "hex": "c17b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a20227b7d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unterminated string starting at: line 1 column 7 (char 6)"
+   }
+  },
+  {
+   "hex": "c08fa080",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022eeec0a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "0af0f5df7def",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c2c19080f0f0f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Invalid control character at: line 1 column 8 (char 7)"
+   }
+  },
+  {
+   "hex": "bff19f7f9fc0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202200a0ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022bf80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022efffc0c29f9ff1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f07b318fe1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "310dc1edee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 2: invalid start byte"
+   }
+  },
+  {
+   "hex": "f5edee80e1ef7d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022bf80c17bf3ff00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "80dfc0fff3f0f5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "eef5ffc07b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022900ae0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f480e0227f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c1f4e180bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a0bff0c0c2ec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7bedf4c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f49ff580ed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022edc2e1eceff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "8fedeeeedf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022dfc0f0c2900a90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "9fdff4f49f317f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "e10d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "bff4c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "c27be0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f4a0f58ff190",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f380c07d7dc1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e100",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022909f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "0de1c20ac09f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "ef9f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e1eec17b31ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f4f4f131f3df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f1f3ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7bff7b7fefff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022bf31df00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022dff17f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "31c2ed7ff5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "ffeff3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "0a9fc28f7bc022",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f37dec7be10d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f3900d0031",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f40d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f5f5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f490",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c0c131",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "c2908fe180ed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 2: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c200dfc0ed80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c29f0dee80ece1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 10-11: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "f1ed0dc1bfc0c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f4efc190",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227dedede07b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f4e19fc1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202231bf7ddfbff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227defbf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 8-9: unexpected end of data"
+   }
+  },
+  {
+   "hex": "e0efe0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f422edef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f1ef0defc1f5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022227f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting ',' delimiter: line 1 column 9 (char 8)"
+   }
+  },
+  {
+   "hex": "7bef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 1: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a20220d8031f0ee807d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f4e0ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f5f40dbfa0c0f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "ffa0ff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c0c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "c2c1eef5808f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227d807df3c17f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "f4c190bf319f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022807ff5c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c20ae1ec9fc0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c2e000eee18f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f331",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unterminated string starting at: line 1 column 7 (char 6)"
+   }
+  },
+  {
+   "hex": "22c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "310af1f4f431f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 2: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "9feeece0a080f1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "a08f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227b8f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unterminated string starting at: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a0a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7d7b90ef0df480",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 2: invalid start byte"
+   }
+  },
+  {
+   "hex": "ecc2e1eff5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c2f07fefa0ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022edbfc1900dbf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f3f5ecec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "00f03100f3c1df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202231e1e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20229fc1dff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "a00d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f3df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "2231",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unterminated string starting at: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "efc17b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7b226b223a202222",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting ',' delimiter: line 1 column 9 (char 8)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022edef317df48fbf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "31",
+   "outcome": {
+    "class": "ProfileValidationError",
+    "message": "JSON object expected in case.json"
+   }
+  },
+  {
+   "hex": "7beeee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "00e0c1e08f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227bf4e1ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c1c200ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "8080",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "c1e07b220af10d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7ff1c2ffe0f1f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022bff0dfed31",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022edf1bff5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "229031c1edf0ed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227b7d22a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 10: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ef80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022220a9fc0f4ec00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 9: invalid start byte"
+   }
+  },
+  {
+   "hex": "f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ede0f1bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "ef7b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "31ed9ff0ffc2c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 1-2: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20228ff1f5e1ede1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f0a0ecef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227bed7b227dc0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022edee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c0f500",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f49fc2bfef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f0ede1f3ffa0c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f100f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "31f3f3f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c1ec0a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c28fbfdfc0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 9: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202200f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 8: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e07d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f1f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20228f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "ece0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "e0df7fc20a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022907fe0f50aed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "9031",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202290ed8f0ac1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227bc1809f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f37fc27bf4f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e1f1f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220d0a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Invalid control character at: line 1 column 8 (char 7)"
+   }
+  },
+  {
+   "hex": "f031efc08f9fee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "dfe0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220abff17dffefed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "f4908090f10a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f3eef3a0f422",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f400df7b90f4f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227de0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 8: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ffa080bfc1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a0efc20a8f7d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f4ecffa0c10dc2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c0eec031",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7d800d9f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c07bf0c2f4c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f49f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "edf3ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "80ff80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "00e0ed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7b226b223a20227feff5ed31",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ee31bf7b0d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e0f531",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f1a00af4e0ff7d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "0ded7d00a09031",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "9fe022",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "0a31f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 2: unexpected end of data"
+   }
+  },
+  {
+   "hex": "0de0f3e1c10aee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "df80ee0def",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 2: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022bf7b7b7ff5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f0a0c122e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 7-8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a0a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "9f7bdff5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20223180",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "f0f50df431eeed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "8ff1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c2c090e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "e1ff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c0c27be07d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227bffeef3eff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 8: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f5ffc27fe190",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "efec90dff4e0e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "90e1bfc2a0ff0d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227b0aefff7b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 9: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f3bf00c2809f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202231ecbf22f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 8-9: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7ff0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 1: unexpected end of data"
+   }
+  },
+  {
+   "hex": "00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "f30080",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a20227df1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 8: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022eff30a31f4c1f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "dff3bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "df900a7b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7b226b223a202280f1ef0af3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "8f8f9022c0c090",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f3f0f0c000",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227ded",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 8: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7fbf90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202222f3e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f5ecc0227d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "c1c1ff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "e0bff5e1e0f090",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "9ff100c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202222",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting ',' delimiter: line 1 column 9 (char 8)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f0e0c2ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022eff18fc2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f1df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022edf5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f40d22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a202280a0f3e1ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7f7fefe0fff07d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 2: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7f7be0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 2: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "319f80e080ec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e080f0a0c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c031f0c2",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a090ff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "e10a7bffc1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c2c1c1a00d0a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "ee7d8fe1ef90ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f100",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "e0808fff9fe0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022809fe0f3ed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "f390",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: unexpected end of data"
+   }
+  },
+  {
+   "hex": "0a22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unterminated string starting at: line 2 column 1 (char 1)"
+   }
+  },
+  {
+   "hex": "bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "0de1c1a0bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022edf1efeff322",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f10abfed0d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f4c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f531ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "ffc20a0de1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ff908f0a7b7f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "c100df80",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202200f07bef0d00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "00ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 1: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a202200f37d8f31",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ee22f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202280e1df8f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7be1f3f0efedf1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e10d31f18f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "22ecdff10d90",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ec22f1f5f5eca0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c2f3eceeeea0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f0807ff0f1a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a0c0f38f22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022bfe0ffa07f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "ff7bbfdf7ff5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "317b7dee00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 3: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ef220a8ff0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20228ff57f7fe0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "9feec0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "9feef0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202280",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "22df0ac0e1ff",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "c0f49f90e1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "f08f310d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7dbf0a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unterminated string starting at: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "7b226b223a2022eded9fff9f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "ec7bf3ef0aeef0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20229022ec7ff10a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f5dfe1bf7d22",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ee220d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "80000090",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "f50d31",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "fff5ecf57d22c0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a07b31f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "ecf47df3ee31",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "0a80c1f3220a",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ee",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "f3df80ef7b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf3 in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c07bf080c2f1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xdf in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "7b226b223a2022900000ec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202200",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Invalid control character at: line 1 column 8 (char 7)"
+   }
+  },
+  {
+   "hex": "8fffe1e19fc0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x8f in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c0eff4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "31f0f1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "f5bfeef531c080",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022f4ee8f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e1c27b31e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe1 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20220af07f8fbf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf0 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202231",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unterminated string starting at: line 1 column 7 (char 6)"
+   }
+  },
+  {
+   "hex": "ef0af0907f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 0: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ecf5f5f522c1df",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xec in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7fbf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xbf in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 7: unexpected end of data"
+   }
+  },
+  {
+   "hex": "22f5ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ee7ddff0f0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xee in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20227ff4ed7d0d7da0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "31eda0bfeeed",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xed in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c2bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Unterminated string starting at: line 1 column 7 (char 6)"
+   }
+  },
+  {
+   "hex": "00f49fc10d22f4",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf4 in position 1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202231e0e09f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 8: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "ee8f3131",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a202290800ac08f0a00",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a20229f",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x9f in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "9031f3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x90 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "c2bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "eca000c222",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7dfff3e100",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xff in position 1: invalid start byte"
+   }
+  },
+  {
+   "hex": "7d",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: Expecting value: line 1 column 1 (char 0)"
+   }
+  },
+  {
+   "hex": "f5a031f0f1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "a0c08090",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c0c0bf",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "e0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 0: unexpected end of data"
+   }
+  },
+  {
+   "hex": "c1eebf22c1ef",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c0c1ed90dfff7b",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "31",
+   "outcome": {
+    "class": "ProfileValidationError",
+    "message": "JSON object expected in case.json"
+   }
+  },
+  {
+   "hex": "80c1",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022e0f0f37fedec",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xe0 in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022a0",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xa0 in position 7: invalid start byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022ef0a90f5",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xef in position 7: invalid continuation byte"
+   }
+  },
+  {
+   "hex": "7b226b223a2022c0f4edeff3",
+   "outcome": {
+    "class": "ProfileRepositoryError",
+    "message": "Cannot read configuration case.json: 'utf-8' codec can't decode byte 0xc0 in position 7: invalid start byte"
+   }
+  }
+ ],
+ "defaults": {
+  "default_config": {
+   "subscriptions": [],
+   "nodes": [],
+   "rule_configs": [],
+   "proxy_groups": [],
+   "rule_library": [],
+   "system_config": {
+    "server_domain": "",
+    "github_proxy_domain": "",
+    "rule_fetch_proxy": ""
+   },
+   "subscription_aggregations": [],
+   "mihomo": {
+    "custom_config": ""
+   },
+   "oxidns": {
+    "config_mode": "template",
+    "native_config": "",
+    "additional_files": [],
+    "direct_rulesets": [],
+    "proxy_rulesets": [],
+    "direct_rules": [],
+    "proxy_rules": [],
+    "local_dns": "",
+    "remote_dns": "",
+    "fallback_dns": "",
+    "default_forward": "forward_remote",
+    "custom_hosts": "",
+    "custom_config": "",
+    "custom_matches": [],
+    "custom_match_position": "tail",
+    "device_policies": [],
+    "worker_threads": 2,
+    "listen": "0.0.0.0:53",
+    "tcp_enabled": true,
+    "prefer_ipv4": true,
+    "block_qtypes": [
+     65,
+     255
+    ],
+    "metrics_enabled": true,
+    "aggregate_rules": true,
+    "local_concurrent": 2,
+    "remote_concurrent": 1,
+    "fallback_concurrent": 2,
+    "fallback_threshold": 500,
+    "always_standby": false,
+    "remote_ttl": 1,
+    "cache_enabled": true,
+    "cache_size": 10240,
+    "cache_lazy_ttl": 3600,
+    "cache_dump_enabled": false,
+    "cache_dump_file": "./state/cache.dump",
+    "cache_dump_interval": 300,
+    "probe_cache_enabled": true,
+    "probe_cache_size": 2048,
+    "api": {
+     "enabled": true,
+     "listen": "127.0.0.1:9199",
+     "username": "",
+     "password": "",
+     "webui_root": "",
+     "ssl": {}
+    },
+    "log": {
+     "level": "info",
+     "file": "",
+     "rotation": "daily",
+     "max_files": 7
+    },
+    "query_recorder": {
+     "enabled": false,
+     "args": {
+      "path": "./state/queries.db",
+      "queue_size": 8192,
+      "batch_size": 256,
+      "flush_interval_ms": 200,
+      "memory_tail": 1024,
+      "retention_days": 7,
+      "cleanup_interval_hours": 1,
+      "reader_concurrency": 2
+     }
+    },
+    "ip_selector": {
+     "enabled": false,
+     "args": {
+      "selection_mode": "background",
+      "probe_methods": [
+       "tcp:443",
+       "tcp:80"
+      ],
+      "probe_stagger": 200,
+      "probe_timeout": 600,
+      "max_wait": 1000,
+      "top_n": 0,
+      "dnssec_policy": "reorder_only",
+      "max_parallel_probes": 64,
+      "cache": {
+       "enabled": true,
+       "size": 4096,
+       "ttl": 3600,
+       "failure_ttl": 60
+      }
+     }
+    },
+    "dynamic_domain_set": {
+     "enabled": false,
+     "route": "direct",
+     "learn": false,
+     "args": {
+      "path": "./state/learned-domains.txt",
+      "bootstrap_rules": [],
+      "queue_size": 1024,
+      "batch_size": 256,
+      "flush_interval_ms": 200
+     },
+     "learn_args": {
+      "phase": "after",
+      "questions": "first",
+      "qtypes": [
+       "A",
+       "AAAA"
+      ],
+      "success_only": true,
+      "answer_required": true,
+      "rule_kind": "full",
+      "async": true,
+      "error_mode": "continue",
+      "timeout": "1s"
+     }
+    },
+    "adguard": {
+     "enabled": false,
+     "content": "",
+     "urls": [],
+     "mode": "nxdomain"
+    },
+    "ros_address_list": {
+     "enabled": false,
+     "args": {
+      "address": "",
+      "username": "",
+      "password": "",
+      "async": true,
+      "address_list4": "oxidns",
+      "address_list6": "oxidns",
+      "min_ttl": 60,
+      "max_ttl": 3600,
+      "queue_capacity": 16384,
+      "comment_prefix": "configflow",
+      "cleanup_on_shutdown": true
+     }
+    },
+    "ros_route": {
+     "enabled": false,
+     "args": {
+      "address": "",
+      "username": "",
+      "password": "",
+      "async": true,
+      "routing_table": "",
+      "gateway4": "",
+      "gateway6": "",
+      "distance": 100,
+      "min_ttl": 60,
+      "max_ttl": 3600,
+      "queue_capacity": 16384,
+      "comment_prefix": "configflow",
+      "cleanup_on_shutdown": true
+     }
+    },
+    "rule_update": {
+     "enabled": false,
+     "args": {
+      "schedule": "30 3 * * *",
+      "timezone": "Asia/Shanghai",
+      "timeout": "60s",
+      "outbound": "",
+      "socks5": ""
+     }
+    },
+    "rule_actions": {},
+    "rule_dns_follow": [],
+    "rule_dns_parked": {}
+   },
+   "mosdns": {
+    "direct_rulesets": [],
+    "proxy_rulesets": [],
+    "direct_rules": [],
+    "proxy_rules": [],
+    "local_dns": "",
+    "remote_dns": "",
+    "fallback_dns": "",
+    "default_forward": "forward_remote",
+    "custom_hosts": "",
+    "custom_config": "",
+    "custom_matches": [],
+    "custom_match_position": "tail",
+    "cache_enabled": true,
+    "cache_size": 10240,
+    "cache_lazy_ttl": 21600,
+    "cache_dump_enabled": true,
+    "cache_dump_file": "./cache.dump",
+    "cache_dump_interval": 300
+   }
+  },
+  "initial_config": {
+   "subscriptions": [
+    {
+     "enabled": true,
+     "id": "sub_1760688109177",
+     "interval": 86400,
+     "name": "subscribe",
+     "type": "universal",
+     "url": "订阅链接"
+    }
+   ],
+   "nodes": [],
+   "rule_configs": [
+    {
+     "enabled": true,
+     "id": "rule_lan_0",
+     "itemType": "rule",
+     "no_resolve": true,
+     "policy": "DIRECT",
+     "rule_type": "IP-CIDR",
+     "value": "127.0.0.0/8"
+    },
+    {
+     "enabled": true,
+     "id": "rule_lan_1",
+     "itemType": "rule",
+     "no_resolve": true,
+     "policy": "DIRECT",
+     "rule_type": "IP-CIDR",
+     "value": "10.0.0.0/8"
+    },
+    {
+     "enabled": true,
+     "id": "rule_lan_2",
+     "itemType": "rule",
+     "no_resolve": true,
+     "policy": "DIRECT",
+     "rule_type": "IP-CIDR",
+     "value": "172.16.0.0/12"
+    },
+    {
+     "enabled": true,
+     "id": "rule_lan_3",
+     "itemType": "rule",
+     "no_resolve": true,
+     "policy": "DIRECT",
+     "rule_type": "IP-CIDR",
+     "value": "192.168.0.0/16"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760433378053",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760433349957",
+     "name": "Tracker",
+     "policy": "🎯 全球直连",
+     "url": "/api/rule-library/content/lib_1760433349957"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760431931322",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760317332488",
+     "name": "PrivateTracker",
+     "policy": "🎯 全球直连",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/PrivateTracker/PrivateTracker.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760086901784",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320991_1",
+     "name": "GoogleFCM",
+     "policy": "📢 谷歌FCM",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/GoogleFCM/GoogleFCM.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089433204",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320991_3",
+     "name": "Speedtest",
+     "policy": "📈 网络测试",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/Speedtest/Speedtest.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089440899",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320991_4",
+     "name": "Apple",
+     "policy": "🍎 苹果服务",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Apple/Apple.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089411859",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320991_2",
+     "name": "Direct",
+     "policy": "🎯 全球直连",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Direct/Direct.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760426568771",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760089568834",
+     "name": "Grok",
+     "policy": "🤖 人工智能",
+     "uniqueId": "ruleset-ruleset_1760426568771",
+     "url": "/api/rule-library/content/lib_1760089568834"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089611786",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320991_5",
+     "name": "AI",
+     "policy": "🤖 人工智能",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/OpenAI/OpenAI.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089718347",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_11",
+     "name": "OneDrive",
+     "policy": "Ⓜ️ 微软云盘",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/OneDrive/OneDrive.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089728547",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_12",
+     "name": "Microsoft",
+     "policy": "Ⓜ️ 微软服务",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Microsoft/Microsoft.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760412868162",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_13",
+     "name": "Amazon",
+     "policy": "🛒 亚马逊",
+     "url": "/api/rule-library/content/lib_1760086320992_13"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089746112",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_14",
+     "name": "Telegram",
+     "policy": "📲 Telegram",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/Telegram/Telegram.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089786591",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_15",
+     "name": "Epic",
+     "policy": "🎮 游戏平台",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Epic/Epic.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089799393",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_16",
+     "name": "Sony",
+     "policy": "🎮 游戏平台",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Sony/Sony.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089807522",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_17",
+     "name": "Steam",
+     "policy": "🎮 游戏平台",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Steam/Steam.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760089813950",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_18",
+     "name": "Nintendo",
+     "policy": "🎮 游戏平台",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Nintendo/Nintendo.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760090028667",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_24",
+     "name": "GitHub",
+     "policy": "⌨️ GitHub",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/GitHub/GitHub.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760090035200",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_19",
+     "name": "BiliBili",
+     "policy": "📺 哔哩哔哩",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/BiliBili/BiliBili.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760090048527",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_20",
+     "name": "ChinaMedia",
+     "policy": "🎬 国内媒体",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaMedia/ChinaMedia.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760090061375",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_21",
+     "name": "TikTok",
+     "policy": "🎵 TikTok",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/TikTok/TikTok.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760090070389",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_22",
+     "name": "GlobalMedia",
+     "policy": "🎞️ 国外媒体",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/GlobalMedia/GlobalMedia.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760090098845",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_23",
+     "name": "Docker",
+     "policy": "✈️ 节点选择",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Docker/Docker.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760090109429",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_25",
+     "name": "Proxy",
+     "policy": "✈️ 节点选择",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Proxy/Proxy.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760317416697",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320991_0",
+     "name": "Lan",
+     "policy": "DIRECT",
+     "uniqueId": "ruleset-ruleset_1760317416697",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Lan/Lan.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "ruleset_1760090164882",
+     "itemType": "ruleset",
+     "library_rule_id": "lib_1760086320992_26",
+     "name": "ChinaMax",
+     "policy": "🎯 全球直连",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/ChinaMax/ChinaMax.list",
+     "uniqueId": "ruleset-ruleset_1760090164882"
+    },
+    {
+     "enabled": true,
+     "id": "rule_1760090172712",
+     "itemType": "rule",
+     "policy": "🐟 漏网之鱼",
+     "rule_type": "MATCH",
+     "value": ""
+    }
+   ],
+   "proxy_groups": [
+    {
+     "enabled": true,
+     "id": "group_b68937ec",
+     "include_groups": [
+      "group_0e2da85c",
+      "group_74d0364a",
+      "group_e537cc3f",
+      "group_9c6a6c3b",
+      "group_2740708d",
+      "group_bcf10e0a",
+      "group_1760080391905_3",
+      "group_c121613d"
+     ],
+     "manual_nodes": [],
+     "name": "✈️ 节点选择",
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148227318",
+     "id": "group_1760080391905_1",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "🐟 漏网之鱼",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148227318",
+     "id": "group_1760080391905_2",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "📈 网络测试",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "id": "group_1760080391905_3",
+     "name": "🚀 手动切换",
+     "type": "select",
+     "enabled": true,
+     "subscriptions": [],
+     "regex": "",
+     "manual_nodes": [],
+     "include_groups": [],
+     "proxies_order": [],
+     "follow_group": "group_1760248559077"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760147923979",
+     "id": "group_1760080391905_4",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "🎮 游戏平台",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148330550",
+     "id": "group_1760080391905_5",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "⌨️ GitHub",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148330550",
+     "id": "group_1760080391905_6",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "🎞️ 国外媒体",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760147923979",
+     "id": "group_1760080391905_7",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "🎵 TikTok",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148227318",
+     "id": "group_1760080391905_8",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "📺 哔哩哔哩",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148045742",
+     "id": "group_1760080391905_9",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "🤖 人工智能",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148227318",
+     "id": "group_1760080391905_10",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "🎬 国内媒体",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148227318",
+     "id": "group_1760080391905_11",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "Ⓜ️ 微软云盘",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148227318",
+     "id": "group_1760080391905_12",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "Ⓜ️ 微软服务",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148227318",
+     "id": "group_1760080391905_13",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "🛒 亚马逊",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148330550",
+     "id": "group_1760080391905_14",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "📢 谷歌FCM",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148227318",
+     "id": "group_1760080391905_15",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "🍎 苹果服务",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "follow_group": "group_1760148330550",
+     "id": "group_1760080391905_16",
+     "include_groups": [],
+     "manual_nodes": [],
+     "name": "📲 Telegram",
+     "proxies_order": [],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": false,
+     "id": "group_1760080391905_17",
+     "include_groups": [
+      "group_c121613d"
+     ],
+     "manual_nodes": [],
+     "name": "🔒 私有网络",
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "id": "group_c121613d",
+     "include_groups": [],
+     "manual_nodes": [
+      "DIRECT"
+     ],
+     "name": "🎯 全球直连",
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": true,
+     "id": "group_8c07652b",
+     "include_groups": [],
+     "manual_nodes": [
+      "REJECT"
+     ],
+     "name": "🚫 拒绝访问",
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "id": "group_1760154959237",
+     "name": "🎯 广告屏蔽",
+     "type": "select",
+     "enabled": true,
+     "subscriptions": [],
+     "regex": "",
+     "manual_nodes": [
+      "DIRECT",
+      "REJECT"
+     ],
+     "include_groups": [],
+     "proxies_order": [
+      {
+       "id": "DIRECT",
+       "type": "node"
+      },
+      {
+       "id": "REJECT",
+       "type": "node"
+      }
+     ]
+    },
+    {
+     "id": "group_0e2da85c",
+     "name": "🇭🇰 香港节点",
+     "type": "url-test",
+     "enabled": true,
+     "subscriptions": [
+      "sub_1760688109177"
+     ],
+     "regex": "(?=.*?(香港|港|hk|hong\\s?kong))香港|港|hk|hong\\s?kong",
+     "aggregation_regex": "",
+     "manual_nodes": [],
+     "aggregations": [],
+     "include_groups": [],
+     "proxies_order": [],
+     "url": "https://www.gstatic.com/generate_204",
+     "interval": 300
+    },
+    {
+     "id": "group_74d0364a",
+     "name": "🇹🇼 台湾节点",
+     "type": "url-test",
+     "enabled": true,
+     "subscriptions": [
+      "sub_1760688109177"
+     ],
+     "regex": "(?=.*?(台|tw|taiwan))台|tw|taiwan",
+     "aggregation_regex": "",
+     "manual_nodes": [],
+     "aggregations": [],
+     "include_groups": [],
+     "proxies_order": [],
+     "url": "https://www.gstatic.com/generate_204",
+     "interval": 300
+    },
+    {
+     "id": "group_e537cc3f",
+     "name": "🇯🇵 日本节点",
+     "type": "url-test",
+     "enabled": true,
+     "subscriptions": [
+      "sub_1760688109177"
+     ],
+     "regex": "(?=.*?(日本|jp|japan))日本|jp|japan",
+     "aggregation_regex": "",
+     "manual_nodes": [],
+     "aggregations": [],
+     "include_groups": [],
+     "proxies_order": [],
+     "url": "https://www.gstatic.com/generate_204",
+     "interval": 300
+    },
+    {
+     "id": "group_9c6a6c3b",
+     "name": "🇸🇬 新加坡节点",
+     "type": "url-test",
+     "enabled": true,
+     "subscriptions": [
+      "sub_1760688109177"
+     ],
+     "regex": "(?=.*?(新加坡|(?<![.])sg|singapore))新加坡|(?<![.])sg|singapore",
+     "aggregation_regex": "",
+     "manual_nodes": [],
+     "aggregations": [],
+     "include_groups": [],
+     "proxies_order": [],
+     "url": "https://www.gstatic.com/generate_204",
+     "interval": 300
+    },
+    {
+     "id": "group_2740708d",
+     "name": "🇺🇸 美国节点",
+     "type": "url-test",
+     "enabled": true,
+     "subscriptions": [
+      "sub_1760688109177"
+     ],
+     "regex": "(?i)美(?:国|西|洲)|北美|united\\s?states|usa|us|america|north\\s?america",
+     "aggregation_regex": "",
+     "manual_nodes": [],
+     "aggregations": [],
+     "include_groups": [],
+     "proxies_order": [],
+     "url": "https://www.gstatic.com/generate_204",
+     "interval": 300
+    },
+    {
+     "id": "group_bcf10e0a",
+     "name": "🇰🇷 韩国节点",
+     "type": "url-test",
+     "enabled": true,
+     "subscriptions": [
+      "sub_1760688109177"
+     ],
+     "regex": "(?=.*?(韩|kr|korea))韩|kr|korea",
+     "aggregation_regex": "",
+     "manual_nodes": [],
+     "aggregations": [],
+     "include_groups": [],
+     "proxies_order": [],
+     "url": "https://www.gstatic.com/generate_204",
+     "interval": 300
+    },
+    {
+     "id": "group_1760075954008_7",
+     "name": "🇭🇰 香港负载均衡",
+     "type": "load-balance",
+     "enabled": true,
+     "subscriptions": [
+      "sub_1760688109177"
+     ],
+     "regex": "(?=.*?(香港|港|hk|hong\\s?kong))香港|港|hk|hong\\s?kong",
+     "aggregation_regex": "",
+     "manual_nodes": [],
+     "aggregations": [],
+     "include_groups": [],
+     "proxies_order": [],
+     "url": "https://www.gstatic.com/generate_204",
+     "interval": 300,
+     "strategy": "round-robin",
+     "lazy": true
+    },
+    {
+     "id": "group_1760075954008_8",
+     "name": "🇺🇸 美国负载均衡",
+     "type": "load-balance",
+     "enabled": true,
+     "subscriptions": [
+      "sub_1760688109177"
+     ],
+     "regex": "(?i)美(?:国|西|洲)|北美|united\\s?states|usa|us|america|north\\s?america",
+     "aggregation_regex": "",
+     "manual_nodes": [],
+     "aggregations": [],
+     "include_groups": [],
+     "proxies_order": [],
+     "url": "https://www.gstatic.com/generate_204",
+     "interval": 300,
+     "strategy": "round-robin",
+     "lazy": true
+    },
+    {
+     "id": "group_1760075954008_9",
+     "name": "🇯🇵 日本负载均衡",
+     "type": "load-balance",
+     "enabled": true,
+     "subscriptions": [
+      "sub_1760688109177"
+     ],
+     "regex": "(?=.*?(日本|jp|japan))日本|jp|japan",
+     "aggregation_regex": "",
+     "manual_nodes": [],
+     "aggregations": [],
+     "include_groups": [],
+     "proxies_order": [],
+     "url": "https://www.gstatic.com/generate_204",
+     "interval": 300,
+     "strategy": "round-robin",
+     "lazy": true
+    },
+    {
+     "enabled": false,
+     "id": "group_1760147923979",
+     "include_groups": [
+      "group_0e2da85c",
+      "group_74d0364a",
+      "group_e537cc3f",
+      "group_9c6a6c3b",
+      "group_2740708d",
+      "group_bcf10e0a",
+      "group_1760080391905_3",
+      "group_b68937ec",
+      "group_c121613d"
+     ],
+     "manual_nodes": [],
+     "name": "香港优先策略",
+     "proxies_order": [
+      {
+       "id": "group_0e2da85c",
+       "type": "strategy"
+      },
+      {
+       "id": "group_74d0364a",
+       "type": "strategy"
+      },
+      {
+       "id": "group_e537cc3f",
+       "type": "strategy"
+      },
+      {
+       "id": "group_9c6a6c3b",
+       "type": "strategy"
+      },
+      {
+       "id": "group_2740708d",
+       "type": "strategy"
+      },
+      {
+       "id": "group_bcf10e0a",
+       "type": "strategy"
+      },
+      {
+       "id": "group_1760080391905_3",
+       "type": "strategy"
+      },
+      {
+       "id": "group_b68937ec",
+       "type": "strategy"
+      },
+      {
+       "id": "group_c121613d",
+       "type": "strategy"
+      }
+     ],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": false,
+     "id": "group_1760148045742",
+     "include_groups": [
+      "group_2740708d",
+      "group_74d0364a",
+      "group_e537cc3f",
+      "group_9c6a6c3b",
+      "group_bcf10e0a",
+      "group_0e2da85c",
+      "group_1760080391905_3",
+      "group_b68937ec",
+      "group_c121613d"
+     ],
+     "manual_nodes": [],
+     "name": "美国优先策略",
+     "proxies_order": [
+      {
+       "id": "group_2740708d",
+       "type": "strategy"
+      },
+      {
+       "id": "group_74d0364a",
+       "type": "strategy"
+      },
+      {
+       "id": "group_e537cc3f",
+       "type": "strategy"
+      },
+      {
+       "id": "group_9c6a6c3b",
+       "type": "strategy"
+      },
+      {
+       "id": "group_bcf10e0a",
+       "type": "strategy"
+      },
+      {
+       "id": "group_0e2da85c",
+       "type": "strategy"
+      },
+      {
+       "id": "group_1760080391905_3",
+       "type": "strategy"
+      },
+      {
+       "id": "group_b68937ec",
+       "type": "strategy"
+      },
+      {
+       "id": "group_c121613d",
+       "type": "strategy"
+      }
+     ],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": false,
+     "id": "group_1760148227318",
+     "include_groups": [
+      "group_c121613d",
+      "group_b68937ec",
+      "group_0e2da85c",
+      "group_74d0364a",
+      "group_e537cc3f",
+      "group_9c6a6c3b",
+      "group_2740708d",
+      "group_bcf10e0a",
+      "group_1760080391905_3"
+     ],
+     "manual_nodes": [],
+     "name": "优先直连",
+     "proxies_order": [
+      {
+       "id": "group_c121613d",
+       "type": "strategy"
+      },
+      {
+       "id": "group_b68937ec",
+       "type": "strategy"
+      },
+      {
+       "id": "group_0e2da85c",
+       "type": "strategy"
+      },
+      {
+       "id": "group_74d0364a",
+       "type": "strategy"
+      },
+      {
+       "id": "group_e537cc3f",
+       "type": "strategy"
+      },
+      {
+       "id": "group_9c6a6c3b",
+       "type": "strategy"
+      },
+      {
+       "id": "group_2740708d",
+       "type": "strategy"
+      },
+      {
+       "id": "group_bcf10e0a",
+       "type": "strategy"
+      },
+      {
+       "id": "group_1760080391905_3",
+       "type": "strategy"
+      }
+     ],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "enabled": false,
+     "id": "group_1760148330550",
+     "include_groups": [
+      "group_b68937ec",
+      "group_0e2da85c",
+      "group_74d0364a",
+      "group_e537cc3f",
+      "group_9c6a6c3b",
+      "group_2740708d",
+      "group_bcf10e0a",
+      "group_1760080391905_3",
+      "group_c121613d"
+     ],
+     "manual_nodes": [],
+     "name": "优先代理",
+     "proxies_order": [
+      {
+       "id": "group_b68937ec",
+       "type": "strategy"
+      },
+      {
+       "id": "group_0e2da85c",
+       "type": "strategy"
+      },
+      {
+       "id": "group_74d0364a",
+       "type": "strategy"
+      },
+      {
+       "id": "group_e537cc3f",
+       "type": "strategy"
+      },
+      {
+       "id": "group_9c6a6c3b",
+       "type": "strategy"
+      },
+      {
+       "id": "group_2740708d",
+       "type": "strategy"
+      },
+      {
+       "id": "group_bcf10e0a",
+       "type": "strategy"
+      },
+      {
+       "id": "group_1760080391905_3",
+       "type": "strategy"
+      },
+      {
+       "id": "group_c121613d",
+       "type": "strategy"
+      }
+     ],
+     "regex": "",
+     "subscriptions": [],
+     "type": "select"
+    },
+    {
+     "id": "group_1760248559077",
+     "name": "ALL",
+     "type": "select",
+     "enabled": true,
+     "subscriptions": [
+      "sub_1760688109177"
+     ],
+     "regex": "",
+     "aggregation_regex": "",
+     "manual_nodes": [],
+     "aggregations": [],
+     "include_groups": [],
+     "proxies_order": []
+    }
+   ],
+   "rule_library": [
+    {
+     "behavior": "classical",
+     "content": "#DOMAIN-REGEX,tracker.*\nDOMAIN,pandapt.net\nDOMAIN,panda.pt\nDOMAIN,hdvideo.one\nDOMAIN,t.ourhelp.club\nDOMAIN,tracker.hhanclub.top\nDOMAIN,tracker.hhan.club\nDOMAIN,tracker.cyanbug.net\nDOMAIN,tracker.hdtime.org\nDOMAIN,tracker.piggo.me\nDOMAIN,tracker.hdarea.club\nDOMAIN,please.passthepopcorn.me\nDOMAIN,tracker.sjtu.edu.cn\nDOMAIN,tracker.beyond-hd.me\nDOMAIN,tracker.pterclub.com\nDOMAIN,t.audiences.me\nDOMAIN,tracker.cinefiles.info\nDOMAIN,tracker.m-team.cc\n#彩虹岛域名与tracker同属\nDOMAIN,chdbits.xyz\nDOMAIN,tracker.ptchdbits.co\nDOMAIN,tracker.rainbowisland.co\nDOMAIN,t.hdhome.org\n#我堡域名、tracker同属\nDOMAIN,tracker01.ilovelemonhd.me\nDOMAIN,tracker-public.tjupt.org\n#学校域名、tracker同属\nDOMAIN,pt.btschool.club\nDOMAIN,tracker.totheglory.im\nDOMAIN,t.pthome.org\nDOMAIN,on.springsunday.net\n#ultrahd域名、tracker同属\nDOMAIN,ultrahd.net\nDOMAIN,tracker.keepfrds.com\nDOMAIN,tracker.leaves.red\nDOMAIN,tracker2.leaves.red\nDOMAIN,tracker3.leaves.red\n#明教域名、tracker同属\nDOMAIN,hdpt.xyz\n#PT时间域名、tracker同属\nDOMAIN,www.pttime.online\nDOMAIN,t.hddolby.com\nDOMAIN,tracker.agsvpt.work\nDOMAIN,tracker.zhuque.in\nDOMAIN,announce.haidan.video\nDOMAIN,tracker.hdsky.me\n#海棠域名、tracker同属\nDOMAIN,www.htpt.cc\nDOMAIN,tracker.ilolicon.cc\nDOMAIN,sunnytk.top\nDOMAIN,t.ubits.club\nDOMAIN,connects.icu\nDOMAIN,nextpt.net\nDOMAIN,tracker.azusa.wiki\nDOMAIN,zimiao.icu\nDOMAIN,t.acg.rip\nDOMAIN,hdfans.org",
+     "enabled": true,
+     "id": "lib_1760433349957",
+     "name": "Tracker",
+     "source_type": "content"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320991_1",
+     "name": "GoogleFCM",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/GoogleFCM/GoogleFCM.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320991_2",
+     "name": "Direct",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Direct/Direct.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320991_3",
+     "name": "Speedtest",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/Speedtest/Speedtest.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320991_4",
+     "name": "Apple",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Apple/Apple.list"
+    },
+    {
+     "behavior": "classical",
+     "content": "DOMAIN-SUFFIX,x.ai\nDOMAIN-SUFFIX,grok.com",
+     "enabled": true,
+     "id": "lib_1760089568834",
+     "name": "Grok",
+     "source_type": "content"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320991_5",
+     "name": "AI",
+     "source_type": "url",
+     "url": "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/refs/heads/master/Clash/Ruleset/AI.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_11",
+     "name": "OneDrive",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/OneDrive/OneDrive.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_12",
+     "name": "Microsoft",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Microsoft/Microsoft.list"
+    },
+    {
+     "behavior": "classical",
+     "content": "# 亚马逊全球购物规则组\nDOMAIN-SUFFIX,amazon.com\nDOMAIN-SUFFIX,amazon.ca\nDOMAIN-SUFFIX,amazon.com.mx\nDOMAIN-SUFFIX,amazon.co.uk\nDOMAIN-SUFFIX,amazon.de\nDOMAIN-SUFFIX,amazon.fr\nDOMAIN-SUFFIX,amazon.it\nDOMAIN-SUFFIX,amazon.es\nDOMAIN-SUFFIX,amazon.nl\nDOMAIN-SUFFIX,amazon.pl\nDOMAIN-SUFFIX,amazon.se\nDOMAIN-SUFFIX,amazon.com.tr\nDOMAIN-SUFFIX,amazon.in\nDOMAIN-SUFFIX,amazon.co.jp\nDOMAIN-SUFFIX,amazon.com.au\nDOMAIN-SUFFIX,amazon.com.br\nDOMAIN-SUFFIX,amazon.ae\nDOMAIN-SUFFIX,amazon.sa\nDOMAIN-SUFFIX,amazon.sg\n  # 通用子域名和 CDN\n# AWS CDN\nDOMAIN-SUFFIX,amazonaws.com\nDOMAIN-SUFFIX,ssl-images-amazon.com\n  # 广告\nDOMAIN-SUFFIX,amazon-adsystem.com\nDOMAIN,m.media-amazon.com\nDOMAIN,unagi-na.amazon.com",
+     "enabled": true,
+     "id": "lib_1760086320992_13",
+     "name": "Amazon",
+     "source_type": "content"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_14",
+     "name": "Telegram",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/Telegram/Telegram.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_15",
+     "name": "Epic",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Epic/Epic.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_16",
+     "name": "Sony",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Sony/Sony.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_17",
+     "name": "Steam",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Steam/Steam.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_18",
+     "name": "Nintendo",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Nintendo/Nintendo.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_24",
+     "name": "GitHub",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/GitHub/GitHub.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_19",
+     "name": "BiliBili",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/BiliBili/BiliBili.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_20",
+     "name": "ChinaMedia",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaMedia/ChinaMedia.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_21",
+     "name": "TikTok",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/TikTok/TikTok.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_22",
+     "name": "GlobalMedia",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/GlobalMedia/GlobalMedia.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_23",
+     "name": "Docker",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Docker/Docker.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_25",
+     "name": "Proxy",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Proxy/Proxy.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320991_0",
+     "name": "Lan",
+     "source_type": "url",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Lan/Lan.list"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760086320992_26",
+     "name": "ChinaMax",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/ChinaMax/ChinaMax.list",
+     "source_type": "url"
+    },
+    {
+     "behavior": "classical",
+     "enabled": true,
+     "id": "lib_1760317332488",
+     "name": "PrivateTracker",
+     "source_type": "url",
+     "url": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/refs/heads/master/rule/Clash/PrivateTracker/PrivateTracker.list"
+    }
+   ],
+   "system_config": {
+    "server_domain": "",
+    "github_proxy_domain": "",
+    "rule_fetch_proxy": ""
+   },
+   "subscription_aggregations": [],
+   "mihomo": {
+    "custom_config": "  # 全局配置 \nport: 7890\nsocks-port: 7891\nredir-port: 7892\nmixed-port: 7893\ntproxy-port: 7894\nallow-lan: true\nbind-address: \"*\"\nipv6: false\nunified-delay: true\ntcp-concurrent: true\nlog-level: warning\nfind-process-mode: 'strict'   #进程匹配 always/strict/off\n# interface-name: en0\nkeep-alive-idle: 600\nkeep-alive-interval: 15\ndisable-keep-alive: false\nprofile:\n  store-selected: true\n  store-fake-ip: true\n\n# 控制面板\nexternal-controller: 0.0.0.0:9090\nsecret: \"123456\"\nexternal-ui: \"ui\"\n#external-ui-name: metacubexd\n#external-ui-url: \"https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip\"\nexternal-ui-url: \"https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages.zip\"\n\n# 嗅探\nsniffer:\n  enable: true\n  sniff:\n    HTTP:\n      ports: [80, 8080-8880]\n      override-destination: true\n    TLS:\n      ports: [443, 8443]\n    QUIC:\n      ports: [443, 8443]\n  force-domain:\n    - \"+.v2ex.com\"\n  skip-domain:\n #   - \"rule-set:Private,Direct\"\n    - \"dlg.io.mi.com\"\n    - \"+.push.apple.com\"\n    - \"+.apple.com\"\n    - \"+.wechat.com\"\n    - \"+.qpic.cn\"\n    - \"+.qq.com\"\n    - \"+.wechatapp.com\"\n    - \"+.vivox.com\"\n    - \"+.oray.com\"\n    - \"+.sunlogin.net\"\n    - \"+.msftconnecttest.com\"\n    - \"+.msftncsi.com\"\n\n# 入站  \ntun:\n  enable: true\n  # system/gvisor/mixed\n  stack: mixed\n  dns-hijack: [\"any:53\", \"tcp://any:53\"]\n  auto-route: true\n  auto-redirect: true\n  auto-detect-interface: true\n  #中国IP绕过内核\n # route-exclude-address-set:\n#     - \"rule-set:ChinaMaxNoIP,Custom_Direct\"\n\n# DNS模块\ndns:\n  enable: true\n  listen: 0.0.0.0:1053\n  ipv6: false\n  respect-rules: true\n  enhanced-mode: fake-ip\n  fake-ip-range: 198.18.0.1/16\n  fake-ip-filter-mode: blacklist\n  fake-ip-filter:\n#    - \"rule-set:Private,Direct\"\n    - '*.lan'\n    - '*.local'\n    - '*.arpa'\n    - 'time.*.com'\n    - 'ntp.*.com'\n    - '+.pool.ntp.org'\n    - \"+.ntp.ntsc.ac.cn\"\n    - \"+.cn.ntp.org.cn\"\n    - '+.market.xiaomi.com'\n    - 'localhost.ptlogin2.qq.com'\n    - '*.msftncsi.com'\n    - 'www.msftconnecttest.com'\n  default-nameserver:\n    - https://223.5.5.5/dns-query\n    - https://1.12.12.12/dns-query\n\n  # 直连 DNS 服务器，用于解析不需要代理的域名（通常为国内域名）\n  # 使用 DoH（DNS over HTTPS）以保护隐私，防止 DNS 污染\n  direct-nameserver:\n    - https://223.5.5.5/dns-query\n    - https://1.12.12.12/dns-query\n\n  # 控制直连 DNS 是否遵循 nameserver-policy 的策略\n  # 设置为 false，确保直连域名始终使用 direct-nameserver 中的服务器\n  direct-nameserver-follow-policy: false\n\n  # 代理节点域名解析，只用于解析机场节点服务器自己的域名，不解析其他网站\n  # 使用国内 DoH，确保节点域名能解析、能连上\n  proxy-server-nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query\n\n  # DNS 解析策略，针对特定域名或规则集指定专用的 DNS 服务器\n  # 优化规则以覆盖常见国内服务，降低延迟\n  nameserver-policy:\n    '+.115.com': '223.5.5.5'          # 115.com 及其子域名使用阿里 DNS\n    # 'rule-set:gfw_domain': '8.8.8.8'     # GFW 屏蔽域名使用 Google DNS，绕过限制\n\n  # 全局 DNS 服务器，作为默认解析的最终备用\n  # 优先使用 DoH 服务器以增强隐私保护\n  nameserver:\n    - https://doh.pub/dns-query\n    - https://dns.alidns.com/dns-query "
+   },
+   "oxidns": {
+    "config_mode": "template",
+    "native_config": "",
+    "additional_files": [],
+    "direct_rulesets": [],
+    "proxy_rulesets": [],
+    "direct_rules": [],
+    "proxy_rules": [],
+    "local_dns": "",
+    "remote_dns": "",
+    "fallback_dns": "",
+    "default_forward": "forward_remote",
+    "custom_hosts": "",
+    "custom_config": "",
+    "custom_matches": [],
+    "custom_match_position": "tail",
+    "device_policies": [],
+    "worker_threads": 2,
+    "listen": "0.0.0.0:53",
+    "tcp_enabled": true,
+    "prefer_ipv4": true,
+    "block_qtypes": [
+     65,
+     255
+    ],
+    "metrics_enabled": true,
+    "aggregate_rules": true,
+    "local_concurrent": 2,
+    "remote_concurrent": 1,
+    "fallback_concurrent": 2,
+    "fallback_threshold": 500,
+    "always_standby": false,
+    "remote_ttl": 1,
+    "cache_enabled": true,
+    "cache_size": 10240,
+    "cache_lazy_ttl": 3600,
+    "cache_dump_enabled": false,
+    "cache_dump_file": "./state/cache.dump",
+    "cache_dump_interval": 300,
+    "probe_cache_enabled": true,
+    "probe_cache_size": 2048,
+    "api": {
+     "enabled": true,
+     "listen": "127.0.0.1:9199",
+     "username": "",
+     "password": "",
+     "webui_root": "",
+     "ssl": {}
+    },
+    "log": {
+     "level": "info",
+     "file": "",
+     "rotation": "daily",
+     "max_files": 7
+    },
+    "query_recorder": {
+     "enabled": false,
+     "args": {
+      "path": "./state/queries.db",
+      "queue_size": 8192,
+      "batch_size": 256,
+      "flush_interval_ms": 200,
+      "memory_tail": 1024,
+      "retention_days": 7,
+      "cleanup_interval_hours": 1,
+      "reader_concurrency": 2
+     }
+    },
+    "ip_selector": {
+     "enabled": false,
+     "args": {
+      "selection_mode": "background",
+      "probe_methods": [
+       "tcp:443",
+       "tcp:80"
+      ],
+      "probe_stagger": 200,
+      "probe_timeout": 600,
+      "max_wait": 1000,
+      "top_n": 0,
+      "dnssec_policy": "reorder_only",
+      "max_parallel_probes": 64,
+      "cache": {
+       "enabled": true,
+       "size": 4096,
+       "ttl": 3600,
+       "failure_ttl": 60
+      }
+     }
+    },
+    "dynamic_domain_set": {
+     "enabled": false,
+     "route": "direct",
+     "learn": false,
+     "args": {
+      "path": "./state/learned-domains.txt",
+      "bootstrap_rules": [],
+      "queue_size": 1024,
+      "batch_size": 256,
+      "flush_interval_ms": 200
+     },
+     "learn_args": {
+      "phase": "after",
+      "questions": "first",
+      "qtypes": [
+       "A",
+       "AAAA"
+      ],
+      "success_only": true,
+      "answer_required": true,
+      "rule_kind": "full",
+      "async": true,
+      "error_mode": "continue",
+      "timeout": "1s"
+     }
+    },
+    "adguard": {
+     "enabled": false,
+     "content": "",
+     "urls": [],
+     "mode": "nxdomain"
+    },
+    "ros_address_list": {
+     "enabled": false,
+     "args": {
+      "address": "",
+      "username": "",
+      "password": "",
+      "async": true,
+      "address_list4": "oxidns",
+      "address_list6": "oxidns",
+      "min_ttl": 60,
+      "max_ttl": 3600,
+      "queue_capacity": 16384,
+      "comment_prefix": "configflow",
+      "cleanup_on_shutdown": true
+     }
+    },
+    "ros_route": {
+     "enabled": false,
+     "args": {
+      "address": "",
+      "username": "",
+      "password": "",
+      "async": true,
+      "routing_table": "",
+      "gateway4": "",
+      "gateway6": "",
+      "distance": 100,
+      "min_ttl": 60,
+      "max_ttl": 3600,
+      "queue_capacity": 16384,
+      "comment_prefix": "configflow",
+      "cleanup_on_shutdown": true
+     }
+    },
+    "rule_update": {
+     "enabled": false,
+     "args": {
+      "schedule": "30 3 * * *",
+      "timezone": "Asia/Shanghai",
+      "timeout": "60s",
+      "outbound": "",
+      "socks5": ""
+     }
+    },
+    "rule_actions": {},
+    "rule_dns_follow": [],
+    "rule_dns_parked": {}
+   },
+   "mosdns": {
+    "direct_rulesets": [
+     "ruleset_1760089411859",
+     "ruleset_1760090035200",
+     "ruleset_1760090048527",
+     "ruleset_1760317416697",
+     "ruleset_1760090164882",
+     "ruleset_1760431931322",
+     "ruleset_1760433378053"
+    ],
+    "proxy_rulesets": [
+     "ruleset_1760086901784",
+     "ruleset_1760089433204",
+     "ruleset_1760089440899",
+     "ruleset_1760426568771",
+     "ruleset_1760089611786",
+     "ruleset_1760089718347",
+     "ruleset_1760089728547",
+     "ruleset_1760412868162",
+     "ruleset_1760089746112",
+     "ruleset_1760089786591",
+     "ruleset_1760089799393",
+     "ruleset_1760089807522",
+     "ruleset_1760089813950",
+     "ruleset_1760090028667",
+     "ruleset_1760090061375",
+     "ruleset_1760090070389",
+     "ruleset_1760090098845",
+     "ruleset_1760090109429"
+    ],
+    "direct_rules": [],
+    "proxy_rules": [],
+    "local_dns": "",
+    "remote_dns": "",
+    "fallback_dns": "",
+    "default_forward": "forward_remote",
+    "custom_hosts": "",
+    "custom_config": "log:\n  level: debug\n  file: ./mosdns.log",
+    "custom_matches": [],
+    "custom_match_position": "tail",
+    "cache_enabled": true,
+    "cache_size": 10240,
+    "cache_lazy_ttl": 21600,
+    "cache_dump_enabled": true,
+    "cache_dump_file": "./cache.dump",
+    "cache_dump_interval": 300,
+    "log_enabled": true,
+    "log_level": "info",
+    "log_file": "./mosdns.log",
+    "api_enabled": true,
+    "api_address": "0.0.0.0:8338"
+   }
+  },
+  "empty_profile": {
+   "proxy_groups": [],
+   "rule_configs": [],
+   "mihomo": {
+    "custom_config": ""
+   },
+   "surge": {
+    "custom_config": "",
+    "smart_groups": []
+   },
+   "mosdns": {
+    "direct_rulesets": [],
+    "proxy_rulesets": [],
+    "direct_rules": [],
+    "proxy_rules": [],
+    "local_dns": "",
+    "remote_dns": "",
+    "fallback_dns": "",
+    "default_forward": "forward_remote",
+    "custom_hosts": "",
+    "custom_config": "",
+    "custom_matches": [],
+    "custom_match_position": "tail",
+    "cache_enabled": true,
+    "cache_size": 10240,
+    "cache_lazy_ttl": 21600,
+    "cache_dump_enabled": true,
+    "cache_dump_file": "./cache.dump",
+    "cache_dump_interval": 300
+   },
+   "oxidns": {
+    "config_mode": "template",
+    "native_config": "",
+    "additional_files": [],
+    "direct_rulesets": [],
+    "proxy_rulesets": [],
+    "direct_rules": [],
+    "proxy_rules": [],
+    "local_dns": "",
+    "remote_dns": "",
+    "fallback_dns": "",
+    "default_forward": "forward_remote",
+    "custom_hosts": "",
+    "custom_config": "",
+    "custom_matches": [],
+    "custom_match_position": "tail",
+    "device_policies": [],
+    "worker_threads": 2,
+    "listen": "0.0.0.0:53",
+    "tcp_enabled": true,
+    "prefer_ipv4": true,
+    "block_qtypes": [
+     65,
+     255
+    ],
+    "metrics_enabled": true,
+    "aggregate_rules": true,
+    "local_concurrent": 2,
+    "remote_concurrent": 1,
+    "fallback_concurrent": 2,
+    "fallback_threshold": 500,
+    "always_standby": false,
+    "remote_ttl": 1,
+    "cache_enabled": true,
+    "cache_size": 10240,
+    "cache_lazy_ttl": 3600,
+    "cache_dump_enabled": false,
+    "cache_dump_file": "./state/cache.dump",
+    "cache_dump_interval": 300,
+    "probe_cache_enabled": true,
+    "probe_cache_size": 2048,
+    "api": {
+     "enabled": true,
+     "listen": "127.0.0.1:9199",
+     "username": "",
+     "password": "",
+     "webui_root": "",
+     "ssl": {}
+    },
+    "log": {
+     "level": "info",
+     "file": "",
+     "rotation": "daily",
+     "max_files": 7
+    },
+    "query_recorder": {
+     "enabled": false,
+     "args": {
+      "path": "./state/queries.db",
+      "queue_size": 8192,
+      "batch_size": 256,
+      "flush_interval_ms": 200,
+      "memory_tail": 1024,
+      "retention_days": 7,
+      "cleanup_interval_hours": 1,
+      "reader_concurrency": 2
+     }
+    },
+    "ip_selector": {
+     "enabled": false,
+     "args": {
+      "selection_mode": "background",
+      "probe_methods": [
+       "tcp:443",
+       "tcp:80"
+      ],
+      "probe_stagger": 200,
+      "probe_timeout": 600,
+      "max_wait": 1000,
+      "top_n": 0,
+      "dnssec_policy": "reorder_only",
+      "max_parallel_probes": 64,
+      "cache": {
+       "enabled": true,
+       "size": 4096,
+       "ttl": 3600,
+       "failure_ttl": 60
+      }
+     }
+    },
+    "dynamic_domain_set": {
+     "enabled": false,
+     "route": "direct",
+     "learn": false,
+     "args": {
+      "path": "./state/learned-domains.txt",
+      "bootstrap_rules": [],
+      "queue_size": 1024,
+      "batch_size": 256,
+      "flush_interval_ms": 200
+     },
+     "learn_args": {
+      "phase": "after",
+      "questions": "first",
+      "qtypes": [
+       "A",
+       "AAAA"
+      ],
+      "success_only": true,
+      "answer_required": true,
+      "rule_kind": "full",
+      "async": true,
+      "error_mode": "continue",
+      "timeout": "1s"
+     }
+    },
+    "adguard": {
+     "enabled": false,
+     "content": "",
+     "urls": [],
+     "mode": "nxdomain"
+    },
+    "ros_address_list": {
+     "enabled": false,
+     "args": {
+      "address": "",
+      "username": "",
+      "password": "",
+      "async": true,
+      "address_list4": "oxidns",
+      "address_list6": "oxidns",
+      "min_ttl": 60,
+      "max_ttl": 3600,
+      "queue_capacity": 16384,
+      "comment_prefix": "configflow",
+      "cleanup_on_shutdown": true
+     }
+    },
+    "ros_route": {
+     "enabled": false,
+     "args": {
+      "address": "",
+      "username": "",
+      "password": "",
+      "async": true,
+      "routing_table": "",
+      "gateway4": "",
+      "gateway6": "",
+      "distance": 100,
+      "min_ttl": 60,
+      "max_ttl": 3600,
+      "queue_capacity": 16384,
+      "comment_prefix": "configflow",
+      "cleanup_on_shutdown": true
+     }
+    },
+    "rule_update": {
+     "enabled": false,
+     "args": {
+      "schedule": "30 3 * * *",
+      "timezone": "Asia/Shanghai",
+      "timeout": "60s",
+      "outbound": "",
+      "socks5": ""
+     }
+    },
+    "rule_actions": {},
+    "rule_dns_follow": [],
+    "rule_dns_parked": {}
+   },
+   "loon": {
+    "custom_config": ""
+   },
+   "domain_discovery": {},
+   "routers": {
+    "items": []
+   },
+   "device_notes": {},
+   "client_fixed_ips": {},
+   "id": "p1",
+   "name": " Name ",
+   "description": "",
+   "_revision": 0,
+   "created_at": "<time>",
+   "updated_at": "<time>"
+  }
+ }
+}

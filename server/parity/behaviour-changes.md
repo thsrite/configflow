@@ -1,0 +1,3178 @@
+# Deliberate behaviour changes
+
+## nopy-panel-image — 面板镜像去掉 Python 与 supervisord（2026-11-23）
+
+维护者同意先试（`server/parity/progress/nopy-panel-image.md`）。与旧镜像（supervisord 管 Go server + 按需启停的 Sub-Store，
+`auto_update.py`）相比，对外可见的差异：
+
+- **进程模型**：1 号进程是 tini（`-g`），启动脚本 exec Go 服务；Go 服务自己启动/停止 Sub-Store 子进程（独立进程组）。
+  Go 服务退出时容器随之退出，由 Docker 重启策略重新拉起（旧镜像由 supervisord 原地重启 Go 服务，容器不退出）。
+- **Sub-Store 崩溃重启**：意外退出后按 1 s、2 s、4 s…最长 30 s 退避重启，稳定运行 30 s 后退避复位，不会像 supervisord
+  `startretries=3` 那样进入 FATAL 后不再拉起；退避期间状态词为 `BACKOFF`，「启动」不会跳过退避。停止：SIGTERM 发给整个
+  进程组，5 s 后 SIGKILL（与原 `stopwaitsecs=5`、`killasgroup` 相同）。
+- **关停顺序**：`docker stop` 时 Sub-Store 在面板请求收尾（drain）之后才停止（旧镜像 supervisord 先停 Go 服务再停 Sub-Store，结果相同）。
+- **Sub-Store 输出**：写进服务日志（`app.log`，日志页可见，来源 `sub-store`，stdout 为 INFO、stderr 为 WARNING），脱敏后写入：
+  http(s) 地址只保留协议和主机（路径、查询、账号、片段一律去掉，机场常把令牌放在路径里），其他协议的链接（`ss://`、`vmess://` 等节点）
+  只保留协议名，`password=`/`uuid`/`token` 等键值去掉值（batch-36 复核加强）；旧镜像只进容器标准输出。容器标准输出里仍能看到（logx 同时写控制台），但行格式带时间与来源前缀。
+- **进程控制失败的文案**：`无法管理内置 Sub-Store，请检查容器服务状态` 只在没有进程控制器或面板正在关停时出现；启动/停止失败
+  （例如找不到 `node`）一律为 `Sub-Store 服务操作失败，请检查容器日志`，详细原因写日志。在线更新后重启失败的回滚文案里，
+  `exception_type` 为 Go 错误类型（以前是 supervisorctl 输出包装的 `errors.errorString`）。
+- **autoupdate**：`configflow-autoupdate`（Go）与 `auto_update.py` 行为一致，源码指纹逐字节相同（旧容器的构建缓存继续复用）。
+  差异：日志行改为 logx 格式（`… - auto-update - INFO - …`，原为 `[auto-update] …`）；预压缩用 Go 的 gzip（同为 level 9、
+  无文件名、mtime 0，字节与 Python zlib 输出不同，内容相同）；源码包解压按 tarfile `data` 过滤规则实现（拒绝越界路径/链接与设备文件，
+  去掉 setuid/setgid/sticky 与组/其他写权限）；在「源不可达 / 已是最新」分支里安装记录的构建失败时，回退到镜像自带版本（Python 会抛异常，
+  由启动脚本吞掉后继续用当前文件）。
+
+## batch-36 复核 — 订阅地址是占位文字时不刷新、不唤醒 Sub-Store（Python 遗留问题修正）
+
+新数据目录自带的模板订阅「subscribe」地址是占位文字 `订阅链接`。Python 照样按计划刷新：每次失败后约 5 分钟重试，每次都经过
+Sub-Store，使按需模式的 Sub-Store 永不休眠，并每 5 分钟写一条警告。Go 改为：订阅地址里没有一行是带主机的完整 URL 时视为未配置——
+
+- 定时刷新不调度它（和空地址一样），因此不重试、不唤醒 Sub-Store；
+- 任务页这一行 `can_run`/`editable`/`enabled`/`notifications_enabled` 为 false、没有下次运行时间，`run_hint` 为
+  「地址无效，请检查是否为完整的 http(s) 地址」（空地址仍是「没有订阅地址」）；`POST /api/tasks/run` 返回同一句 400；
+- 其他拉取入口（订阅页手动更新、配置生成/聚合拉取）在发给 Sub-Store 之前直接失败，失败原因同上。
+
+## O13 #2 — 不存在的 Agent 在日志、日志配置与服务操作路由返回 404（Python bug 修正）
+
+协调者批准修正 Python 遗留缺陷（2026-11-21，见 `server/parity/o13-completeness.md`「需要维护者决定」第 2 条）：以下 8 条路由在请求不存在的 `<agent_id>` 时，Python 的 `AgentManager` 返回不含 `http_status` 的 `{'success': False, 'message': 'Agent not found'}`，路由层按 `200 if result.get('success') else 500` 统一变成 HTTP 500。Go 改为返回 HTTP 404，保留原有 JSON 响应体 `{"success": false, "message": "Agent not found"}` 与响应头：
+
+- `GET /api/agents/<agent_id>/logs`
+- `GET /api/agents/<agent_id>/logs/sources`
+- `POST /api/agents/<agent_id>/logs/clear`
+- `POST /api/agents/<agent_id>/logs/validate`
+- `GET /api/agents/<agent_id>/config/logging`
+- `POST /api/agents/<agent_id>/config/logging`
+- `POST /api/agents/<agent_id>/restart`
+- `POST /api/agents/<agent_id>/uninstall`
+
+前置参数校验（例如 `logs/clear`、`logs/validate` 缺少路径返回 400「日志路径不能为空」）和已存在 Agent 返回非成功响应时的 500 行为保持不变；前端已逐处核对（`frontend/src`）未依赖 500 状态码。覆盖：`api/agents::TestMissingAgentOperationRoutesReturn404`（含已存在 Agent 返回相同文案仍保持 500 的负控）与 `api/agents/difftest::TestUpgradesDifferentialAgainstFlask`（8 条显式断言 Python 500 → Go 404，其余严格对比）。
+
+## N8-8d — typed provider delivery and response identity
+
+- Provider快照持有只读Node图；stored group的错型enabled按共享R5读为缺省值，错型group数组
+  读为空列表。缺失或无效的必需名称仍明确拒绝。85条snapshot逐行独立预期执行真实Python拓扑
+  业务，仅注入批准的stored read view与native输入校验；另4条退役内部异常保留拒绝，改用
+  typed InputError／net/url.Error。原archive、业务中文和正常产物／缓存副作用保持原期待。
+- provider flight摘要使用共享jsonresp.Canonical与SHA-256，保留数字token、排序对象键；
+  这是瞬时single-flight key，无持久化身份迁移或离线兜底失效。独立精确JSON字节与负控验证。
+- 修复Go迁移遗留的关机绕过：浏览器断开仍完成已接管工作，但Runtime关机在每个写入点停止
+  后续缓存／聚合artifact／last-good发布，不再用Uninterruptible跨过shutdown。真实Runtime、
+  repo叶锁和两次缓存写之间关机的回归证明已完成前缀保留、后续不写、不补偿。
+- DNS辅助出口改为typed query pairs、规则文件行切分、标准regexp quoting、netip/netipx；
+  仅测试在原HTTP corpus入口投影退休的动态query参数，原输入和期望不动。没有新依赖。
+
+## N8-8a provider fix review — strict identity discriminators
+
+- `proxies_order.type` and a strategy group's `type` must be JSON strings at
+  the converter shape boundary. Wrong types report the field and original JSON
+  value instead of becoming unknown enum strings or R5 zero values that silently
+  remove references/bypass chain classification. Resource IDs retain the shared
+  numeric-text compatibility and unchanged stored tokens. This applies the
+  maintainer's strict identity-field rule without narrowing the shared codec.
+
+## R09 — 强制 DNS 的归属保护（Python bug 修正）
+
+- 路由器上存在未登记归属、注释为 `cf-dnsguard:hijack` 的 NAT（不论 chain、端口、是否 disabled，
+  也不论是否开启「OxiDNS 故障时自动暂停」）时，启用或更新强制 DNS 的预览变为「未知」并说明原因，
+  不生成写入；撤销不受影响。Python 不阻断，Netwatch 会按注释一并启停这些规则。**用户可见：**
+  由 Python 发布过、且路由器上已有这类规则的设备，升级后第一次检查会从「一致」变为该提示，
+  需要先修改那条规则的注释。
+- 预览后出现的保留名称对象、同注释 NAT、更靠前的 53 规则，或受管对象被改动，发布时写前拒绝并要求
+  重新预览；删除前按发布记录的证明比较，被改过的对象保留现场（Python 会删除或吸收中途修改）。
+- 回滚按「表 + ID」重映射恢复后的新 ID（Python 只按 ID，可能跨表混淆）；内部回滚只完成一部分时，
+  已成功恢复的对象仍登记为 ConfigFlow 所有（Python 会把它们变成无归属对象，阻断之后的每次预览）。
+- 见 [R09 复核](review-r09.md) 与 [R09 移植报告](progress/R09-dns-guard.md)。
+
+## A14 review — 手动回滚预留不再因丢失提交而卡死（Python bug 修正）
+
+手动回滚先把任务写成 `rolling_back` + `manual_rollback`，再向 Agent 提交。若面板在两者之间退出
+（kill -9，或关机取消在 Agent 读到请求前断开连接），Python 只在状态为 `unknown` 时重发回滚，
+之后每次查询都停在「回滚请求正在等待 Agent 确认」，新的发布、回滚、恢复全部被拒绝，只能改数据库。
+Go 记录本进程是否仍持有这次提交：持有期间行为不变；没有持有者时，查询与 `unknown` 一样重发同一个
+幂等、受 Agent 保护的回滚请求，然后按 Agent 结果记录。见 [A14 复核](review-a14.md) M1，回归
+`agents.TestReviewA14ManualRollbackWithoutLiveOwnerIsReissued`（真实 Runtime 关机 + 重启）。
+
+## A24 review — public Agent/deployment credential safety
+
+复核按任务要求修复 Python 原版同样存在的泄露：旧/导入 Agent 与部署记录中的
+password、private key、API key、registration key 等字段，以及 host 的 Basic-auth
+userinfo、HA/部署诊断中的凭据原本会透传。公共 Agent helper 和共享
+`deploy.PublicDeployment` 现在复用 `redact.SanitizeCredentials`，掩码凭据字段、
+含凭据的文本、已知 Agent token / 环境注册密钥及旧凭据在其他字段中的 URL 编码引用。
+磁盘记录和实际请求凭据保持完整，非敏感未来字段继续保留。全局 response token
+redactor 的既有策略不变。无新接口或 UI 操作变化。
+
+覆盖：`TestReviewA24PublicCredentials`、`TestReviewA24PublicHTTPDoesNotExposeLegacyCredentials`、
+`redact.TestPublicMetadataCredentials`。24 组非泄露类真实 Python 参照继续逐字段相等；
+泄露类单独断言安全结果，不放宽差分比较。见 [A24 复核](review-a24.md)。
+
+## L1 D6 — HA 验证命令选择可用的 DNS 工具
+
+不再无条件依赖 nslookup。生成命令按 dig、nslookup、BusyBox nslookup 的顺序
+选择当前可用工具，始终查询指定的已校验 IPv4 VIP；不使用无法指定 DNS 服务器的
+getent。缺少工具时以 127 退出，明确提示 Debian/Ubuntu 的 dnsutils 与 Alpine 的
+bind-tools；查询本身失败保留非零状态，不偷偷改用系统默认 DNS。固定批准的命令
+模板用于历史语料/Flask 差分，其余字段与非法 VIP 校验继续严格比较。
+
+## L1 D5 — HA 安装检查端口和核心状态
+
+修复 Python 遗留缺陷：新 HA Host 安装在启动容器前通过临时 Python socket 探针
+检查 Docker daemon 网络空间的 UDP/TCP 53；已证明归属且正在运行的本次主容器
+续装时跳过该探针，避免误判自己的监听。新安装和迁移脚本均在输出成功前等待
+OxiDNS 的 Supervisor RUNNING；FATAL/EXITED/STOPPED 或 30 次等待仍失败时非零退出。
+不因外层容器 Running 就报成功。既有数据、CID 和迁移备份保留，便于明确续装/回滚。
+固定 `installertest/l1-ha-deltas.json` 只反向应用批准的函数和调用点；其余语料、
+Compose、注册凭据和撤销命令严格比较。真实 socket/Supervisor 测试仅使用自有容器网络空间。
+
+## L1 D7 — 无法满足的二进制下载 Range 返回 416
+
+协调者批准修复：Agent 二进制下载中 Werkzeug 原本抛出的范围错误被 Python 的
+catch-all 转成 500；Go 返回正确的 416 和 `Content-Range: bytes */<实际长度>`。
+保持 JSON 错误消息、GET/HEAD 语义，不带附件头，不记为服务器 ERROR。
+正常 200/206/304、非法文件名和不存在文件的 404 不改变。差分只认可准确的同一
+范围错误的 500→416 及长度头变化，其余响应严格比较。
+
+## L1 D4 — 注册锁定提示
+
+Python 原来就要求普通注册提交 `registration_key`，而现有 Agent/普通安装器没有
+传入该字段的功能；HA enrollment 使用独立 capability。这是既有注册策略，保留
+403、错误密钥的旧提示、密钥校验及已有身份 token 校验。仅在缺少/空密钥时把
+`Invalid registration key` 扩充为 `api/agents.RegistrationLocked` 的明确中文操作提示。
+不把全局密钥写入链接、脚本、响应或持久数据。文档说明锁定与 HA enrollment 的区别。
+
+## L1 D3 — 覆盖安装失败恢复原 Agent
+
+协调者批准修复 Python 遗留缺陷（2026-11-17）：单服务和 AIO 安装在停止旧服务后、
+覆盖文件前保存旧程序、配置（包括身份和 token）、服务定义及启用/运行状态。失败时先
+停止并禁用本次服务，再原子恢复文件，最后恢复安装前的服务状态；后续信号不会中断
+补偿。未能停止新服务或完整恢复时保留私有备份并明确报错，不宣称恢复成功。
+不修改核心配置或已发布数据。新生成器指纹使旧版不安全安装链接失效，须重新生成。
+A08 的历史逐字节基线只反向应用 `installertest/l1-rollback-deltas.json` 中的固定
+批准差异；模板、模块完整内容和指纹均有漂移检查，其余字节继续严格比较。
+
+同一修复带来的其他可见变化（独立复核补记，[review-l1-installer.md](review-l1-installer.md)）：
+
+- 单服务安装停止旧 Agent 失败且服务仍在运行时，报「无法停止原 Agent；未替换程序和配置。」
+  并退出（Python 是 `|| true` 后继续覆盖）；AIO 原来停止失败即退出，现在服务确已停止时继续。
+- 全新安装失败时删除本次写入的程序、配置、服务定义、logrotate 与 IPv4 转发启动脚本；
+  AIO 还删除本次新建的 `/opt/configflow-agent/mihomo|oxidns` 目录（含新 Agent 在其中写入的
+  文件）。原已存在的目录和其他文件不删除。Python 会把这些都留下。
+- 单服务和 AIO 安装脚本的外层输出壳增加 `trap ':' HUP INT TERM`：Ctrl-C、SSH 断开或
+  对整组发送 TERM 时，等内层补偿结束后再输出失败摘要和日志位置并以原状态码退出；
+  Python 的外层壳会立即退出，补偿在后台继续且结果只写入日志。核心安装、网关安装不变。
+  对应 Python 基线比较的固定 rendered delta 记录在同一 JSON 的 `rendered` 字段。
+- OpenRC 补偿时用 `setsid` 启动恢复的旧服务，使其 supervise-daemon 不再位于安装器的
+  进程组，避免整组 TERM 再次停止它。
+- 发现以前中断（如断电）或恢复失败留下的 `.agent-install-backup.*` 时输出提醒并列出目录；
+  不自动套用、不删除。
+
+## L1 D1 — compact Compose 拒绝冒号数据目录
+
+协调者批准修复 Python 遗留缺陷（2026-11-17）：`compose_compact` 与其他安装方式
+统一拒绝数据目录中的 `:`，返回 400「持久数据根目录须为规范的绝对路径，不能包含
+逗号、冒号或换行」，在生成内容和签发安装凭据前停止。已有非法路径的校验提示也
+统一使用这条文案。Compose 的 `create_host_path: true` 会使用 Docker 的旧 Binds
+字符串格式，长格式 YAML 仍不能使冒号源路径可用；compact 又没有 prepare 阶段。
+
+五份原始录制语料保持不变，在比较器中仅显式认可这项路径拒绝及准确文案变化：
+`docker_ha_compose_recorded.jsonl.gz`、`docker_ha_compose.jsonl.gz`、
+`docker_ha_compose_review.jsonl.gz`、`docker_ha_recorded.jsonl.gz`、旧 A09 的
+`docker_ha.jsonl.gz`（额外 1 条冒号拒绝、12 条旧路径提示）。其余输出继续严格
+比较。在线 Flask 差分明确断言 Python 200/生成失效挂载并写入 capability，与 Go
+400/不写入 capability 的差异。真实 Docker Compose 挂载测试见
+[L1 修复记录](progress/l1-installer-fixes.md)。
+
+## N8-1 — non-finite JSON response numbers (Python bug fix)
+
+Coordinator decision, 2026-11-17; design/n7-n8.md §2.6 clarification.
+All ordinary JSON responses encode NaN and positive/negative infinity as `null`.
+Python emitted bare `NaN`/`Infinity`/`-Infinity`, which are not JSON and made
+browser JSON.parse fail. Go returns valid JSON; charts can treat null as a
+missing point. Status codes, finite numbers, strings and other fields stay the
+same. File/stream passthrough exemptions are unchanged.
+
+Coverage: httpx TestN8NonFiniteResponsesAreValidJSON and
+TestN8RawNonFiniteResponses; api/agents/difftest explicitly checks only the
+NaN history CPU field and the NaN/Infinity summary average fields seeded by
+oddMetrics. The panel fake reply also asserts only data.a (NaN) and data.b (Infinity) → null.
+Remaining fields are compared strictly. Request parsing is a
+separate N8-6 contract; this decision does not change requests or persisted data.
+
+Follow-up: A04/A05 should reject or discard a non-finite metric point at
+report ingestion, so it cannot enter newly stored history. Not part of N8-1.
+
+本表记录维护者明确接受、需要在切换说明中告知用户的行为。设计决定见
+[N7/N8 第 6 节](../design/n7-n8.md)。不以兼容层模拟 Python 的编码。
+
+## N7-4 — 原生 YAML writer 与 Python 类型输出 bug 修正
+
+生成配置改由 yaml.v3 输出，统一两空格缩进、LF、不折行；引号、显式标签、
+锚点和 Unicode 的字节形式会变化一次。切换时按 D2/O14 既定安排全量推送一次，
+并先预热规则缓存。后续相同输入的输出保持确定。
+
+修复 Python bug：旧 PyYAML writer 按自己的隐式类型规则输出文本，Mihomo 使用
+yaml.v3 读取时会误解其中部分类型。例如字符串 `0o17` 被读成整数 15，字符串
+`1e3` 被读成浮点数 1000；超大整数被隐式读成浮点数；带空格和时区的 timestamp
+被读成字符串。新 writer 加上必要的引号或显式类型，保留原本的字符串、整数精度
+和 timestamp 类型。这类节点或字段以前可能失效，现在能够按正确类型工作。
+
+生成时若 alias 展开超过 yamlx/Mihomo 的统一预算，会明确返回带中文诊断的错误，
+不再输出 Mihomo 本身无法加载的配置。小型共享图继续保留 alias，不按出现次数复制。
+
+Mihomo 旧语料中逐行确认 111 项：字符串误读 56、超大整数误读 22、timestamp
+误读 33。期望图只由真实 Python `safe_load` 旧输出生成，旧 golden 不改；其余
+输出仍直接解析后比较。来源、生成命令和全部行号见
+[writer oracle](../internal/convert/testdata/mihomo_writer_oracle.md)。
+
+修复 Python bug：Docker HA 的 PyYAML 输出经过注释、`splitlines` 或中间重读时，
+会在 U+0085（NEL）、U+2028、U+2029 处断开，破坏路径等字段。原生 writer 转义
+这三个字符，Compose（同样使用 yaml.v3）重新解析后保留输入值。这类路径以前可能
+无法使用，现在按原值工作；镜像字段的原有业务校验不变。8,623 行 writer oracle
+中，字符串类型修复 21 行，Unicode 修复 436 行；分别涉及 NEL 345 行、U+2028
+53 行、U+2029 47 行（有交叠）。其余 8,127 行仅布局变化，39 行输出未变，
+unknown=0。每行来源、完整类型图和分类见
+[installer writer oracle](../internal/installer/testdata/n74_writer_oracle.md)。
+旧 golden 未改；配置字节变化合并在上述一次切换推送中。另有 HTTP fuzz 的 4 个
+Compose 请求逐行确认相同的 NEL 修复（7 个字段、7 次字符恢复），以真实 Flask
+writer-only 夹具显式断言；其余 HTTP 行严格比较。
+
+## D2 — 上游持久化标识的 Go 原生编码
+
+**C33 编辑 revision 的一次性影响**：`/api/rule-library/<id>/draft-content` 的乐观锁 token 改为 Go 原生 `encoding/json` 递归排序后 SHA-256，不模拟 ASCII 转义、Python 数字拼写。token 不持久化。切换前打开的页面可能第一次保存得到原有 409「规则集已在其他页面更新，请重新读取后再编辑。」；刷新重新读取即可。`TestDraftNativeRevisionContract` 分别验证 Python/Go token 稳定、内容变化后过期；`TestBothSidesRejectConcurrentDraftSubmissions` 在真实 Flask/Go 两侧分别并发提交并断言一条 200、一条 409，其他响应字段、DB 和文件仍严格比较。
+
+生产差分只在精确路由 `/api/rule-library/<rule_id>/draft-content` 的顶层 `revision` 使用 `^[0-9a-f]{64}$` 归一化（协调者同意）。错误格式/类型、字段缺失仍报差异，其他响应字段、存储 revision 和其他路由仍严格比较；harness 有对应正负控。仅改 normalize 配置，baseline 不改。
+
+C27：上游 `tag` 等字符串元数据包含真实 U+2028/U+2029 时，Go `encoding/json` 的
+转义会使 `EntryKey` 与 Python 的旧标识不同。字面反斜杠文本 `\u2028` / `\u2029`
+不属于此项。Go 保持原生 JSON 哈希，不增加 `canonjson` 或局部旧编码 adapter。
+
+- **template 模式**：原来的 choice key 按过期选择处理，返回现有 400 设置错误；刷新后
+  按新的上游列表重新选择。
+- **native 模式**：如果旧 helper 的 hash 无法匹配任何 Go 原生 source hash，则停止
+  依形状猜测 local/remote/fallback。尤其不能把 fallback 悄悄变成 remote。
+  原图保持锁定；严格写入返回现有 409 routing conflict，宽松写入给 warning，
+  保留原设置、source 和 YAML。旧 choice key 仍可返回 400 过期选择错误，不是 500。
+  恢复需用户在编辑器里按当前上游**重新生成分流**，不支持在锁定图上直接单次重选。
+- 提示：`上游标识已更新，请刷新后重新选择；已有完整配置请在编辑器按当前上游重新生成分流`。
+- 新生成、能匹配 Go 原生 hash 的 helper 继续正常工作。已有 native 配置的交付结构不被
+  自动改源；这里限制的是含过期标识的自动编辑/重建。
+
+验证见 [C27 复核报告](review-c27.md)：36 条显式 D2 结果断言（精确键变化、400、
+锁定读模型、409、宽松 warning/不改 YAML），其余 469 条严格比较。
+## C35：WebDAV 凭据安全与表单密码保留
+
+协调者在 C35 复核中明确要求（2026-11-17）：
+
+- 安全修正：受 JWT 保护的 `GET /api/backup/config` 继续返回用户名和地址供编辑，密码继续掩码；地址剥除 URL userinfo。Python 原样返回 URL，可能泄露嵌入密码。
+- 安全修正：WebDAV 目录诊断、日志、任务回执和通知中的 URL userinfo 凭据、百分号编码凭据一并脱敏；Python 未覆盖这些路径。实际远端请求仍使用独立的用户名/密码字段，完整备份仍包含恢复所需的完整配置。
+- 防止凭据丢失：`POST /api/backup/config` 的密码为 `******` 或空字符串时均保留已保存密码。Python 仅对 `******` 复用，空字符串会清空。提交真实的新密码仍会替换旧密码；未增加清空密码入口。`backup/test`、`backup/now` 的空密码验证合同保留。
+
+证据与最终提交见 [review-c35.md](review-c35.md)。
+
+## C35：拒绝 WebDAV 点路径段
+
+安全修正，经协调者裁定（2026-11-17）：WebDAV 地址和备份路径中的 `.`、`..` 路径段（含 `%2e`、`%2E%2E`、多层编码及编码分隔符变体）在保存设置、测试连接、执行备份入口统一返回 400，且不发送网络请求。中文提示统一为「WebDAV 地址和备份路径不能包含 . 或 .. 路径段，请改用不含 . 或 .. 的普通目录」。Python webdav3 会展开这些路径，可能创建 `/a/`、`/a/b/` 等意外目录；Go 不模拟该行为。
+
+用户应将地址和备份路径改为不含 `.`、`..` 的普通目录，例如 `/backups/configflow/`。旧设置不会被静默改写；自动备份遇到这种路径时，任务状态记录同一条提示，配置提交仍然保留。重复斜杠仍归一为单斜杠，例如 `one//two` 对应 `one/two`，与 Python 一致。
+## Config Step B — coordinator decisions
+
+本表记录维护者明确决定的行为；Python 的崩溃不作为 Go 的接口契约。
+
+| 条目 | Python | Go 决定及验证 |
+|---|---|---|
+| Step B #1，nodes/reorder、subscriptions/reorder、subscriptions/<id>/fetch 非对象/非法排序字段 | truthy非法类型500，falsy非对象被当成空对象，或错误信息混入缺失ID | 400 JSON、准确中文；包括null/空数组/false/0/空字符串。排序形状在提交前校验；fetch在资源查找前拒绝，不访问上游、不写状态。`api/subscriptions/input_shape_test.go`。合法对象中的真实未知ID保持404。 |
+| Step B #2，server-domain/config-token 的孤立 UTF-16 JSON 转义 | Python 500；旧 Go 静默替换 U+FFFD 并提交 | 400 JSON「请求内容包含无效的 Unicode 字符」，提交前拒绝。合法代理对、显式 U+FFFD 与字面反斜杠不拒绝。`api/settings/unicode_test.go`。 |
+| Step B #3，/api 错误出口（下列显式例外除外） | Werkzeug HTML 错误页（含400/404/405/500及文件失败） | 同状态 JSON `{success:false,message}`；不回显内部诊断，保留 Allow 等头，HEAD 不返回正文。原JSON错误的字段与语义继续保留。非API HTML/重定向不改变。`httpx/error_boundary_test.go`。 |
+| R058-B03，domain-discovery 未知遗留字段 | 更新设置时删除未知字段 | 按N8保留未知字段并原样往返，包含false与空数组。`api/domaindiscovery/legacy_settings_test.go`。 |
+| Step B #12a，Docker HA server_url 末尾换行 | Python200（正则$接受末尾换行） | 保留既定A09决定：400「请填写完整的 ConfigFlow HTTP(S) 地址」。用例明确断言该差异。 |
+| Step B #12a，Docker HA非法IPv6 URL | urllib错误「Invalid IPv6 URL」 | 同为400、success=false，使用net/url原生英文诊断。只对该命名向量声明文本差异，其余字段/头严格比较。 |
+| Step B #12b，安装器非法UTF-8 query | Werkzeug保留非法字节为%XX | Go使用U+FFFD，引用/转义经过bash语法和隔离赋值测试。仅把非法字节规范化后的有效UTF-8请求交给真实Flask生成完整预期，与Go严格比较；不mask脚本片段。 |
+
+Step B #3 的面向 shell 下载例外（L1 D8，路由级 `PreservePlainErrors`）：
+
+- `GET/HEAD /api/agents/i/<token>`，`agents.download_install_command`：不存在、
+  过期或非法 token 的 404、读取存储失败的 503，保留原中文正文及末尾换行、
+  `text/plain; charset=utf-8`、状态码、no-store/nosniff。**与 Python 一致，不属于变化**。
+  按协调者先前的明确要求，错误额外移除 `Content-Disposition: attachment`；
+  此头在 Python 中存在，是单独声明的头部修正，差分显式断言两端取值。
+
+只标记上述确实返回纯文本错误的路由，不按 URL 猜测。审计的 Agent 二进制下载
+`/api/agents/download/<filename>`（缺失文件/非法文件名）、core-install-script、
+gateway-network-probe.sh、install-script、docker-agent-run/compose，以及已生成配置
+的文件/归档下载，原来明确返回的 JSON 错误继续为 JSON；不因成功时下载文件就豁免。
+新增 Flask 差分分别检查安装链接和二进制下载的 404/非法名称；正常 API 错误仍有
+全局 JSON 边界断言，并有真实 curl -fsSL、curl | sh 回归。
+
+## N2 — Go 原生环境代理规则（2026-11-17）
+
+协调者决定：共享选择器使用 `golang.org/x/net/http/httpproxy`，覆盖 A07 决定 5
+和早期 N2 的 loopback 经代理例外。Agent HTTPClient、Sub-Store 使用同一选择器。
+
+- `localhost` / loopback 始终直连；内置 Sub-Store 不被环境代理绕路。需要走代理的
+  Agent 请配置可路由地址。显式指定的下载代理仍生效，不受环境 bypass 影响。
+- 小写 HTTP(S)_PROXY / NO_PROXY 优先；空的小写值回退大写。Python 空小写变量会
+  屏蔽大写，依赖该方式禁用代理的部署应移除大写变量或使用合适的 NO_PROXY。
+- HTTP(S)_PROXY 为空时继续回退 `all_proxy` / `ALL_PROXY`（小写非空优先），避免已有
+  全局代理配置失效。scheme 代理优先。SOCKS5 使用 Go 原生 transport，不模拟 PySocks。
+- NO_PROXY `:port` 不匹配任何 host；请写 `host:port`。`.example.com` 只匹配子域，
+  要同时 bypass apex 请写 `example.com`。
+- CGI（设置 REQUEST_METHOD）拒绝 HTTP 环境代理并返回错误，包括 ALL_PROXY 回退；
+  不发送请求、不泄露认证。Python 忽略大写 HTTP_PROXY 后直连，两端显式断言这项
+  安全差异。面板不作为 CGI 运行；不能把 httpoxy 保护回归当作预期差异。
+- 环境代理 URL 按原生 net/url 语法解析；userinfo 中的保留字符应百分号编码。
+  显式配置代理继续沿用 weburl.ParseProxy 的用户输入清理。
+
+验证：`agents.TestProxyDifferentialAgainstRequests` 对真实 requests 与 Go 的逐次
+录制请求分别精确断言（14 个环境 × 3 个目标）；另有 Agent/Sub-Store 的 loopback、
+ALL_PROXY、优先级、CGI 零请求、显式代理和 redirect 边界。A15 的6条真实路由
+额外精确断言4条 loopback 的 Python代理/Go直连 trace，升级直连和可路由 follow
+仍保持完整严格比较。详情见
+[N8-2 复核报告](review-n8-2.md)。
+
+## N7-2 — native Mihomo base diagnostics and safe edits
+
+Coordinator decision, 2026-11-17; design/n7-n8.md §2.2.
+Relink parse errors retain their existing Chinese context and append yaml.v3's
+native reason. Duplicate keys match ErrDuplicateKey/ErrSyntax, expose Key/Line,
+and are rejected with the key and line shown; the source and transaction stay
+unchanged. Other listener validation messages stay unchanged.
+
+D3: a safe scalar/pair splice preserves all other bytes; ambiguous layouts
+rewrite the document, retaining comments and all values while normalising layout.
+CRLF documents with comments no longer have the old C11 refusal. Folded scalars
+are emitted in literal style by the shared Marshal API to preserve their actual
+value, avoiding yaml.v3's extra-newline emitter bug. Sequence/mapping-key line
+comments move above their pair so yaml.v3 cannot emit an invalid colon layout;
+scalar-key comments keep their position. Tab-containing strings use double quotes
+(with explicit tags retained), since literal/folded Tab lines can be unparsable. Native YAML schema policies
+from N7-1 remain in force. No new application route is added in N7-2; actual
+proxy-groups route differential is deferred to C33.
+
+Opus review of N7-2 (2026-11-17, parity/review-n7-2.md): a base config with more than one YAML
+document is still refused with the same context (Python: context only); the appended reason is now
+Chinese, e.g. `YAML 只能包含一个文档（第 2 行开始第二个文档）`. Whole-document rewrites keep merge keys
+as `<<`, place notes of a removed pair before its listener (as Python did), and never expand aliases. A tag with no type name (`!%21`)
+is refused with `YAML 标签 !! 缺少类型名（第 N 行）` (Python refused it as well, without that text).
+
+## O12 — retired startup migrations
+
+Go 不接受 legacy 存储，不再执行 `node_test_dns_cleanup.migrate` 等一次性旧数据迁移。
+用户必须先升级到最后一个 Python 版本并启动一次，再切换到 Go；这些迁移已在 Python
+启动时完成。O3-3 保留此既定边界，在有序 Startup 中省略 `node-test-dns-migrate`。
+来源：PORTING 的不移植清单、Config Step B 的 O12 决定，以及 O3-3 协调者确认。
+
+### O12 锁文件（O3-6a）
+
+服务端资源互斥改为进程内锁：**Python 遗留的锁文件不再创建，已有的不删除**。
+这包括下列文件（`<sha256>` 表示 64 位小写十六进制摘要）：
+
+- `task-status.json.lock`。
+- `notifications.lock`。
+- `web-listener.lock`。
+- `.agent-deployment-locks/<sha256(agent_id/deployment_id)>`。
+- `docker-ha-installations/.issue.lock`。
+- `dns-monitor/<sha256(agent_id)>.lock`（本轮差分涉及三个 Agent 的三把锁）。
+- `shared/rules/by-source/<sha256>.list.lock`。
+- 其他共享缓存、生成文件和配置空间文件旁的 `<file>.lock`。
+- `profiles/.<profile_id>.operation.lock`。
+- Sub-Store runtime 目录里的 `work.lock`、`control.lock`。
+
+已有锁文件的内容、inode、mtime 保持不变；订阅缓存删除与孤立缓存清理也不删除旁边的旧锁。
+差分只排除明确退休的锁文件或精确的摘要文件名 glob，继续逐项比较响应、配置和实际数据文件，
+并额外断言 Go 没有新建对应资源锁。实例锁（含兼容 Python 的生命周期锁）和 `.config.lock`
+仍保留；目标机 `bootstrap.py` 使用的 `.compose-enrollment.lock` 不属于服务端资源锁，保持不变。
+
+## O3 — 单实例与有界关机
+
+设计 D1/D5 与维护者 M1：每个 DATA_DIR 只允许一个 Go 服务进程；启动时同时持有 Python
+四把调度器生命周期锁，忙时最多等 30 秒后退出 1。Go 不再依靠多个服务进程间的这些
+调度锁分配工作。路径别名使用同一份仓库路径解析，不能绕过实例锁。
+
+SIGTERM/SIGINT 先保存历史，再在默认 8 秒宽限期内收尾，在截止前 2 秒取消剩余工作，
+最后保存新增历史并关闭资源；空闲提前结束。Python 原来在保存后直接退出，Go 在镜像
+既有 10 秒停止预算内等待已有工作。第二次信号立即退出；镜像停止时限没有提高。
+
+### O3-6b — RouterOS 批次间的请求断开
+
+按 O3 §2.5 的 owner Detach 契约与 PORTING 4b，ApplyMany 批次间检查工作 ctx，保留
+Runtime 关机取消，但不再因浏览器断开停止后续批次。旧 R04 review 回归有意从断开后
+100/150 改为完成 150/150，所有写入仍必须有证明和记录；新增真实 Runtime 控制在
+第100条已证明记录回调后关机，保持100/100且后续批次零写入。生产batch上限和设备timeout不变。
+
+## A11：归档编码与 OxiDNS 校验证明
+
+按 A14 设计 2.3/7.1 及 A11 澄清：Go 使用原生 tar/gzip，归档字节与 SHA256 会变；已由真实 Agent 解包验证。
+内容漂移的 v1 Fingerprint 保持 Python 紧凑 UTF-8 JSON 编码：文件内容未变时不因编码迁移产生变更。
+生成主 YAML 的字节变化仍属于 N7 已接受的一次性重新发布。
+OxiDNS RulesFingerprint 则专用于校验证明，绑定 Go 嵌入 schema 和构建版本；Python 下 ready 的旧候选需要重新推送。
+旧候选激活返回「候选配置缺少当前规则的校验证明，已停止激活。请重新推送配置并完成校验。」且不发出激活请求。
+此外修正 Python 对缺少 profile_id 的 Agent 固定使用 default 字面量的问题：回执按当前仓库解析后的默认配置空间匹配。
+
+## C31：聚合预览使用本次校验后的快照
+
+可靠性修正：Python 的聚合预览在生成、发布后再次读取 provider 文件。另一个请求在这两个步骤之间替换文件时，预览节点可能来自另一次发布，与本次的订阅统计不一致。Go 直接使用生成器返回的已校验节点快照；发布文件后发生的替换不会改变这次预览。接口字段和普通场景的结果不变。`TestPublishedSnapshotSurvivesArtifactReplacement` 验证发布结果不会随随后替换的文件而改变。
+
+C31 生成器的输入校验修正：聚合的 `subscriptions` 必须为字符串数组，缺省为空数组；Go 不把字符串拆成字符 ID。Python 的干运行生成器会把 `"s"` 当成选择订阅 `s`，而某些 null/布尔值又会在更晚的步骤崩溃。Go 在生成前拒绝这些错误类型，保持已有公共保存接口的数组合同。用户应把 `"subscriptions":"s"` 改为 `"subscriptions":["s"]`。公共路由的正常状态码、字段和中文提示不变。
+
+C31 同时拒绝损坏的非数组节点缓存。Python 在拉取失败、缓存 `nodes` 为布尔值等错误类型时，会吞掉工作线程异常并返回成功的空 provider；Go 返回错误并保留旧发布内容，避免静默丢节点。真实 Python 差分 `TestCorruptNodeCacheCannotProducePartialProvider` 明确验证此修正，干运行两端均不写状态。
+
+## N7-3d — 统一 reader 的诊断位置
+
+Mihomo 导入原先拒绝多文档时只显示“YAML 解析失败”和无位置的内部原因，
+现在由共享 Parse 指出第二份文档的起始行；拒绝状态与原中文上下文不变。
+真实导入语料中单列“诊断位置”1 条。provider→A11 的接口改为原生 error 和
+一基行列号，235 个冻结旧输出逐字核对，193 个错误和147个带位置的提示均不变，
+位置差异0。生成、发布指纹和网关行为保持原有约束。
+
+A19 网关编辑器与启用校验也受统一 alias 预算约束：超预算基础 YAML 在编辑器显示
+原有中文 warning，启用校验拒绝；小型共享链继续可用。A19 四条语料的原生 loader
+变化（递归1、隐式类型1、Tab2）由真实 Python 仅替换 loader 得到完整新期望，
+旧 golden 不改，changed=classified4、unknown0。
+
+C31 聚合输出的 JSON→Node 桥改用标准 JSON 解码，合法代理对转义不再被当作
+YAML 转义拒绝；数字样/布尔样字符串、大整数精度和特殊字符保留原值与类型。
+这是标准 JSON 语义与共享 writer 的修正，输出字段仍由原 typed struct 决定。
+
+## N7-3 — native YAML readers (subs/substore)
+
+Approved by the maintainer/coordinator; design §2.2/5.7. YAML 1.1 implicit spellings follow yaml.v3
+(strings for yes/on/sexagesimal forms). Explicit scalar tags must parse natively; integer tags additionally
+accept arbitrary-length signed decimal text, preserving precision. Duplicate keys, invalid tag shapes,
+invalid merge sources and recursive/excessive aliases are rejected. All native syntax errors have a
+Chinese prefix and an available line; policy/alias errors retain their Chinese diagnostics. D1 now
+matches ErrPolicy plus ErrDuplicateKey, not ErrSyntax.
+
+Timestamp/binary/nonfinite scalar JSON values preserve original text. Unknown/non-JSON tags retain
+native nodes/text rather than Python constructors. Tabs in native-valid separators/scalars/URIs may
+now be accepted. Native syntax range A (`\/`, `%YAML 1.2`, some double BOMs) is refused; B (repeated
+anchors, deeper ordinary sequences) is accepted; C (both leading BOMs skipped) fixes BOM key text.
+A cases occur only in synthetic core corpora, not actual consumer sources. No parser fork or text rewrite.
+
+Generated YAML style follows D3. Shared Marshal retains scalar tags even when the flow emitter quotes
+an implicitly typed value; Parse→Marshal→Parse must be Equal. JSON-boundary key policies remain
+caller-specific (parser rejects, dialers discard, substore converts number/bool/null); one shared
+projector preserves alias sharing and refuses over-budget output without truncation or null fallback.
+API statuses/fields and non-YAML behavior remain unchanged. Exact input counts, expected-change
+classification and final gates: [N7-3a report](progress/n7-3a.md).
+
+N7-3a follow-up (coordinator): standard JSON with paired UTF-16 escapes is decoded first through
+encoding/json (FromJSON), so pasted/stored JSON emoji nodes remain valid. Non-JSON YAML flow with
+surrogate escapes is refused by yaml.v3 with Chinese ErrSyntax; no text repair is added. Read-only
+snapshot scan: 43 stored fields, 55 JSON, 14 YAML and 522 other stored/subscription text files, zero
+high-surrogate escape occurrences in every category (therefore JSON=0, non-JSON YAML flow=0).
+Surge/Loon's 29 changed synthetic corpus outputs use complete real-Python expected configurations,
+not omissions or normalization. The original 34697-row old oracle is checked before native injection.
+
+
+## N7-3b — rule YAML and structured proxy readers
+
+D1 / §5.4 / HANDOFF 3d: rulefetch, refresh cache admission and convert's
+structured-proxy reader use the shared Node reader. Duplicate keys, malformed
+explicit standard tags/merge sources, recursive aliases and alias amplification
+are refused explicitly. A proxy policy/alias failure is a validation error; it
+is not retried through Sub-Store. A failed subscription policy check replaces
+neither its transport cache nor its validated-node cache; an unsafe historical
+transport cache is refused on reuse while its original bytes are retained. Alias diagnostics name
+physical occurrences, without repeatedly validating the alias target as another
+rule; some redundant errors/positions therefore differ from Python.
+
+§5.7/D3: rule edits use the shared splice-first editor. Unchanged documents and
+no-op edits keep every byte, including BOM/CRLF/comments/quotes. A changed scalar
+keeps all other bytes; sequence insertion/removal and flow-to-block normalization
+may require a whole-document rewrite. Comments and rule order/values survive;
+blank lines/quotes/indentation of stored text may normalize once when the user
+actually edits that rule. Delivery-only flow-to-block formatting remains a
+generated-output concern (§5.7); it does not rewrite source/cache bytes. Read-only/device reads of an already supported block layout do not
+rewrite stored content or change its fingerprint.
+
+Clarified in N7-3 (coordinator, 2026-11-17): Python refused physically multiline
+quoted rule scalars; Go accepts and folds them according to native YAML semantics.
+A folded value containing a space is still rejected by domain-rule validation.
+A valid escaped-line continuation has the same rule matching behavior as its
+single-line value. Native scalar typing, timestamp/binary text, tagged collection
+shape and preservation of non-string Node keys follow §5.7; a complex mapping key
+cannot cross the structured-proxy JSON boundary and is an explicit validation
+error. Scalar-key projection uses shared `ProjectJSONKeys(StringifyScalarKeys)`;
+converted-name collisions keep the last value at the first position, as the
+existing JSON boundary did. Native map member order/JSON number spellings may differ.
+
+Python bugs fixed: clearing an unindented payload sequence emitted invalid YAML
+(`payload:` followed by unindented `[]`); it now emits a valid empty list. Appending
+to a flow list containing an alias previously inserted ahead of an existing rule;
+new rules now follow every existing rule in order. Neither fix changes other
+rules' values.
+
+N7-3b format-hint bug (same origin in Python and old Go): leading blank lines,
+`#` comments or a standalone `---` hid a flow-root `payload` mapping from format
+inference. Such sources could be treated as plain text, return empty DNS rule
+sets, or acquire invalid YAML on append. The shared hint now recognizes the flow
+mapping after those leading lines; nil-payload append re-reads and validates it.
+The visible change is correct rule recognition and valid appended YAML. Plaintext
+remains opaque; no YAML mapping policy is applied to ordinary Classical text.
+This also fixes A11's MosDNS/OxiDNS rule-source conversion; no production
+baseline is changed to conceal a difference.
+
+## N7-3c — native YAML reader policies
+
+Coordinator decisions, 2026-11-17; `design/n7-n8.md` §§5.4/5.7.
+
+- MosDNS keeps the existing default-template/line-format fallback for ordinary parser syntax
+  errors. D1 duplicates, invalid tags/merges/explicit scalar contents and recursive or excessive
+  aliases now use its existing rejection path with the facade's Chinese line-number diagnostic;
+  these errors are never hidden by a fallback or replaced with null.
+- Unknown and `!!python/*` tags are kept as Nodes (no Python constructors execute): scalar text and
+  collection structure pass through. Typed fields still validate their native destination type;
+  invalid tagged discovery ports return a Chinese validation error, never an empty/zero port.
+- Composite keys remain Nodes; string-key schemas ignore irrelevant keys, while JSON proxy
+  objects reject composite keys through the existing “Provider YAML 内容无效” path. Scalar
+  int/bool/null/float keys use the single shared JSON key projection. HR desired plans are tested
+  against the same input with opaque keys removed.
+- Ordinary deep nesting follows yaml.v3's limit rather than Python's recursion limit. Native
+  parser grammar (TAB, anchors, directives, BOM/escapes) and unlimited decimal integers follow
+  the approved shared policy; native syntax diagnostics carry Chinese context and positions
+  when available. Counts are in progress/n7-3c-gate.md.
+- Router desired reading and router-split base documents use the shared policies. Ordinary generated
+  output remains semantically equivalent; native YAML typing, timestamp text and the approved
+  rejection classes are counted individually in the N7-3c migration gate. No router-write logic changes.
+
+### N7-3c HR desired-plan refusal (coordinator decision)
+
+Router desired reading previously substituted the default fake-IP network when
+YAML was refused. It now stops on D1/other ErrPolicy, recursive aliases and alias
+budget errors, returning a typed Chinese validation error identifying the profile
+and Mihomo base configuration, plus the native key/line/reason. No desired plan is
+returned and no caller-supplied work/device request starts. Only true ErrSyntax
+keeps the old default fallback. No router-writing code changes. Three D1/budget/
+self-reference loopback RouterOS regressions assert zero requests, with a live
+ordinary-syntax fallback control. R01 corpus: 3 D1 + 1 other policy refusal.
+
+## N8-6 — native request binding and correct bad-request statuses
+
+Coordinator-approved local migration: only `POST /api/auth/login` and R226
+`PUT /api/tasks/interval` use the new native binders in this step. Login malformed/empty/trailing or
+non-object JSON previously became Python's caught 500; Go returns the native bad-request 400 envelope.
+Wrong/missing JSON Content-Type becomes 415 (Python login caught it as 500). Valid JSON with/without
+charset, +json, BOM/UTF-16, login success, wrong credentials and wrong credential field types retain
+behavior; wrong credential types still produce the original Chinese 401.
+
+These two migrated callers reject NaN/Infinity/-Infinity as malformed JSON. Python login used to
+return 401 on those credential forms; Python R226 reached its interval validator and returned its
+numeric-validation 400, while Go's silent binding returns the existing malformed-body Chinese 400.
+17 named vectors independently record both the real Python handler response and Go's expected full
+error body from real Flask strict/malformed controls; no broad normalization or field exclusion.
+Native responses still convert non-finite Go numbers to null through N8-1's sole response exit.
+
+Legacy JSON helpers stay unchanged until their callers migrate. Every N8-7+ consumer records its own
+non-finite request →400 transition explicitly; Agent metric/traffic ingestion and stored NaN seeds
+remain A04/A05 follow-up. No query/int-string lexical rules change (N3 owns them).
+
+## C32 — HEAD 规则接口只读（Python bug 修正）
+
+Python 的 `GET/PUT /api/rules/dns` handler 用「不是 GET」选择写分支，因此带合法 JSON body 的授权 HEAD 请求会提交 DNS 设置。Go 明确按 PUT 才写，HEAD 走 GET 并保持数据不变。规则列表和规则集列表的 HEAD 也走读取分支，修复 Python 未返回响应而报500的问题。用户需要修改 DNS 时继续使用 PUT；无需迁移存量数据。
+
+证据：真实 Flask `TestPythonHEADWriteIsFixed` 断言旧行为实际写出 blackhole action，同时断言 Go 完整 SQLite/文件状态不变；`TestHEADCollectionsAndDNSStayReadOnly` 覆盖四个列表/DNS入口。其他方法继续严格差分。
+## A24 shared publicAgent — credential references before projection (A13 review)
+
+Security correction, independently reproduced against real Python: a public Agent's journal or
+HA message could expose a credential defined in an old deployment. Projecting or sanitizing that
+deployment first removed the defining field before the outer sanitizer could learn its value.
+The shared helper now collects named credentials from the raw record before projection and applies
+the existing shared sanitizer to the public result. Full, detail, summary=1 and history=0 reads all
+retain that protection. Summary collects in the same repository read view before omitting history;
+it constructs no history copy and returns no raw history reference. The collector reuses the sole
+bounded/cycle-safe visitor and never logs values. No global JSON-hook policy or revealable user
+configuration credential policy changes.
+
+## A13 — registration credentials in content diffs
+
+Security correction, reproduced through real Python preparation and Flask routes: the environment
+AGENT_REGISTRATION_KEY, including URL-encoded forms, could leave through push-diff, paged entries
+and search matches. StoredSecretFinder now includes an independent snapshot of that key. The sole
+A12 WithoutStored walker retains partial redaction for display texts and masks any remaining known
+credential in metadata strings/keys (including row paths and file paths). Search uses the same finder.
+Plain user configuration passwords remain revealable only in their existing marked credential pieces;
+their hidden view stays secret-free. Global ExternalPayloadSecrets / JSON-hook policy is unchanged.
+
+
+
+## HEAD 只读（C07 / C29 / C31 / C32 / C34）
+
+协调者确认的共同类别：HEAD 按 GET 的只读语义处理，沿用 GET 的状态和 headers，不返回 body。
+C29 的 Python settings 路由自动接受 HEAD，但把非 GET 请求都当作保存；携带 JSON 的 HEAD
+因而会保存设置并递增 revision。Go 的两个 OxiDNS settings 前缀统一进入只读 owner，忽略 HEAD
+请求体，不改变 DB、文件或 revision。`api/oxidns/difftest.TestC29ExpectedDifferenceHEADReadOnly`
+在隔离的 Python 副本上明确复现旧写入，再验证 Go HEAD 与 GET 的一致性及完整存储不变；
+`api/oxidns.TestC29HEADReturnsGETHeadersWithoutSaving` 逐个比较 GET/HEAD 的全部 headers。
+
+## N7-3d share — OxiDNS readers
+
+`parseYAML` 与 `safeLoad` 迁到共享 `yamlx.Parse`；复用 §5.7 已有 D1、reader-policy、unsafe-alias
+等类别。只有 ErrSyntax 保留原来的 native syntax / template fallback 契约；重复键、错误标签与
+形状、无效 merge 源、自引用和超预算 alias 不回退。native 的原 builder 与所有业务校验不变，
+include 的 source/path 诊断保留 reader cause。真实输入逐行旧/新对照 unknown=0，计数与安全回归
+见 [reader 迁移报告](progress/n7-3d-oxidns.md)。普通接受输入与 C29 行为严格比较，无额外差异。
+
+
+C29 / N8-6 非有限 JSON 请求：两个 OxiDNS 前缀的 16 个 POST method/path pair 使用 BindSilent，
+在绑定阶段拒绝 NaN、Infinity、-Infinity，返回对应路由现有的 malformed-body 400 完整响应。
+Python 对 worker_threads 的非有限数原本进入整数校验（仍400，但错误消息不同）；草稿请求中
+未使用的顶层成员含非有限数时原本可返回200。`TestC29ExpectedDifferenceNonFinite` 为每个 POST
+各列三条显式预期差异（48条），真实 Flask malformed-body 作为完整 Go 响应控制，并严格比较
+headers、完整 DB 和所有文件不变。合法 JSON、普通数字和原有业务错误继续严格差分。
+
+
+- N7-3d convert readers apply the approved native scalar/text policy at their
+  temporary JSON boundary (N8-8 replaces it). Real caller corpus audit:278
+  classified expected changes, unknown0; non-JSON scalar metadata has no Mihomo
+  numeric/time field occurrence. Custom YAML failures keep their Chinese context
+  and report native reasons;34 diagnostic rows change displayed positions
+  (32 primary lines,34 unavailable columns omitted), recorded in
+  `internal/convert/testdata/n73d_diagnostic_positions.json` under5.7「诊断位置」.
+
+## Go 取代 Nginx：Web 监听端口的验收边界
+
+维护者在 Config Step B 中明确决定（2026-11-17）：Go 通过公开入口的 `CONFIGFLOW_FRONTEND_DIR` 启用原生 HTTP listener，取代 Python 部署中的 Nginx。API-only 模式没有 Web listener，不能拿它与带 Nginx 的完整 Python 部署比较并据此报缺失功能。
+
+- R206-F17/F18/F19 的 Nginx 配置检查、重载、回滚专属故障列为部分覆盖；Go 验证对应的原生监听失败。用户可见结果应等价：换端口失败时配置不被改动，响应有清楚的中文提示，原端口仍可继续访问。不要求 Go 模拟 Nginx 的进程、配置文件或错误文本。
+- Step B 继续比较完整部署的公开状态、成功换端口、占用拒绝、无变化重试、数据库/保存的端口文件与失败后的旧监听可达性。不同实现的临时端口必须按各自实际分配值验证，不能任意忽略端口字段。
+- O6 中“真实 Nginx + Flask 整体”的叠加验证归入 .32 容器实验和 O9/O14，不在 Step B 内执行。Step B 的 Python前端HTTP peer可以为fake，须明确其边界；Go 端仍从公开入口真正启动原生前端。
+
+之前以 API-only Go 对比完整 Python 部署得到的13个web变体证据已撤回，不能计作业务差异或覆盖通过；原始无效报告仅保留在测试者的临时目录。
+## C33 — 规则库缓存和连通性测试可靠性修正
+
+- **DB 已提交而内容缓存写入失败时，禁止继续交付旧缓存**。Python draft/内容 PUT 在提交后才改稳定缓存，磁盘错误会留下「新 DB + 旧文件」。Go 先暂存并同步内容，在 DB 提交前留下持久失效标记，提交后原子替换并 fsync 目录，最后清除标记。替换失败返回 500，旧稳定和 legacy 缓存均不可回退；交付从当前 DB/inline 重建或直接交付。未知提交故障保留失效标记，避免误判回滚后恢复旧文件；手动缓存可修复标记。事务内明确拒绝时清理暂存文件，配置不变。未新增 repo 更新原语；N8-5 正式事务 API 落地后重写这条 DB+cache 协议。
+- **连通性检查不覆盖并发编辑**。Python 批量 HEAD 后保存旧共享快照，可能覆盖测试期间的库修改；同时没有按 PUT 重建 native DNS。Go 检查结束后重新开启事务，只有 ID 和完整声明仍与测试快照一致才关闭失败源，并复用 PUT 的 native profile rebuild/parking。检查期间的其他编辑保留，已关闭源的 DNS 状态同步提交。
+- **HEAD 只读**。Python draft handler 会把带合法 JSON 的授权 HEAD 当 PUT 保存；Go 只有 PUT 才写。规则库、策略组和代理域名集合的 HEAD 按 GET 处理，修复 Python 无返回值而 500 的分支。正常 GET/POST/PUT/DELETE 的功能不变。
+- **缓存选择必须是数组**。Python 把非空字符串/对象当容器筛选 ID；例如 `rule_ids: "manual"` 会同时缓存 ID `a` 和 `manual`。Go 拒绝这类非数组选择并返回现有 400，请调用方传 `rule_ids: ["manual"]`。前端已使用数组。真实 Flask 回归复现误选两条，Go 拒绝并保持 DB/文件不变；数组中的未知值仍按 Python 忽略，完全未匹配时返回原有 404。
+
+证据：`internal/api/rulelibrary/fault_test.go`、`draft_test.go`、`mutate_test.go`；真实 Flask/Go 的 `TestDraftHEADCannotWrite`、native DNS/parking、全部 25 方法 HTTP/SQLite/文件差分。D1 的 YAML 引号/缩进和 English 内部异常诊断按既有标准比较；监听入口用户注释另有保存断言。
+
+## C33 独立复核 — inline 缓存发布的读侧约束
+
+失效标记只有明确不存在时才允许稳定/legacy 回退；权限或 I/O 错误一律按失效处理。inline 交付在编辑标记存在期间不补写文件，防止旧请求快照在 draft rename 后覆盖新缓存。普通冷缓存仍会补写当前 DB 声明；共用 rulefetch 的 inline writer 在现有 repo 事务锁内核对当前声明及字节，过期/已删除/已变 remote 的迟到调用不发布。只做缓存副作用后中止未修改的 DB 候选，不改变 revision 或配置 hooks。交付保持 cache→inline 顺序，返回状态/内容和普通冷缓存文件与 Python 相同。没有新增后台恢复；失败/中断编辑的标记由下次编辑或手动缓存修复。
+
+## C33 / N8 原生 JSON 绑定
+
+C33 请求 adapter 使用现有 Bind/BindSilent，拒绝 Python json.loads 独有的 NaN、Infinity、-Infinity。
+严格绑定入口按 malformed JSON 返回400，batch-health-url 的 silent 入口返回原有 malformed400；
+明确捕获 JSON 解码异常的 cache/reorder/proxy-domains/preview-regex 保留各自 malformed500合同。
+这是既有 N8 原生 JSON 类别，不影响合法 JSON、Content-Type、精确大小写成员或未知字段保留。
+真实 Flask 正控证明 check-content 原来可接受 unused:NaN；三种非有限字面量在14入口的响应/无写入
+均按真实 Flask malformed 控制比较，不放宽 normalizer。
+
+## C33 预览来源选择的输入验证
+
+preview-regex 的 subscriptions/aggregations 空值继续按空选择处理；数组内无法命中来源的非字符串成员
+继续忽略，不阻止其余字符串ID。真值非数组现在400拒绝，避免 Python 把字符串逐字符、对象逐键当作
+来源ID遍历；调用方应传ID数组。这与规则库 cache 的非数组 rule_ids 属于同一验证纠错类别；无数据迁移，
+合法数组和预览结果不变。`TestReviewPreviewSelectionShapes` 对照真实Python并明确断言双方无写入。
+
+## C33 缓存协议的跨 owner 串行化
+
+发布暂存缓存和撤销新建失效标记时，都在现有repo锁内核对来源声明：旧暂存文件不能覆盖另一owner已提交
+的新来源，旧失败请求也不能清除新来源仍需要的失效状态。来源已变时保留marker，交付使用当前DB inline，
+手动缓存或新编辑可修复；名称、interval等非来源编辑不受影响，预备raw字节不重写。Create的实际提交加入
+同ID编辑/清理lease，下载仍在lease前。文件副作用后不提交DB候选，不新增revision/hook/接口或后台恢复。
+这些是已登记DB/cache可靠性修正的并发闭合，不代表其他模块自身DB-first修改来源的整条协议已完成。
+
+
+## C06 — HEAD 设置接口只读（与 C31/C32 同类，Python bug 修正）
+
+`rule-fetch-proxy`、`web-port`、`server-domain`、`config-token`、`backup/config`、`subscription-aggregation` 的 HEAD 一律走 GET，状态码和 headers 相同、无 body。修复 Python 将 HEAD 当写请求以及未返回响应的问题。每条路径用合法 JSON、畸形 JSON、非对象 body 断言完整 DB 指纹（含 revision）和所有文件不变；web-port 使用已启动的真实测试 listener，只改 HTTP 分派。真实 Flask 差分显式复现 rule-fetch-proxy HEAD 写入，作为已批准的预期差异。
+
+设置路由同时沿用 N8-6 `Bind`/`BindSilent`：严格读取的畸形 JSON、非对象/null body 返回 400，错误 MIME 返回 415，替代 Python 捕获异常后的 500；silent 读取仍返回原业务校验消息。其他字段值验证及持久化语义保持 Python 一致。见 `design/c06-http-settings.md`、`TestC06SettingsFlaskStorageBoundary`。
+
+C06 的 9 个 body reader 另有 27 条真实 Flask 对照，显式记录 NaN/Infinity/-Infinity → 原有严格或 silent 畸形请求响应的 N8-6 迁移差异；其中 Python 原来会保存非有限 aggregation enabled 值，Go 现在拒绝且 DB、文件及 revision 不变。其他有限数值及字段校验不变。
+
+C06 独立复核安全修正：服务域名和 subscription-aggregation 更新日志只记事件，
+不再拼接完整用户输入。Python 与原 Go 都会把包含 URL 密码、query token 或换行的
+new_domain / 宽松 enabled 值直接写入 INFO 日志。请求校验、响应和持久化值保持原语义；
+`TestReviewSettingsLogsDoNotEchoValues` 经真实 HTTP 保存验证日志无凭据/伪造行、DB 值不变。
+
+## CFG-01：内部规则 API 下载边界
+
+内部API原始分类不再因dot-normalization丢失；规范化后及每次redirect前共用origin/API
+前缀检查，边界在整条链中保留。歧义的初始穿越地址会在任何I/O前更早400（Python可能
+先请求一次源再拒绝redirect），禁止目标请求数必须始终0。正常内部重定向和外部源不变。
+20组真实Python合成loopback对照另证明：编码API前缀的dot初始路径可被Python当外部并
+访问跨origin目标；encoded-dot、double-encoded-dot、backslash redirect目标也可被
+Python接受。Go按本次安全修复要求统一拒绝这些歧义，保留Invalid remote URL的400出口，
+不复制Python的边界缺陷。具体向量和原始路径见rulefetch/testdata/cfg01.json；待独立
+安全复核，不用此条泛化豁免其他URL/响应/存储差异。
+安全复核补充（review-cfg-c14-security.md）：带主机的重定向Location按原始写法判断是否进入内部API，
+外部源跳到`/api/../`后再逃逸与Python同样拒绝（Go在请求该跳前即400）；非ASCII主机名按IDNA lookup形式比较，
+因此punycode/全角写法的面板地址也按内部处理（Python当外部）。反斜杠只在作分隔符读会离开API时拒绝，
+含`\`的规则名称内部地址与Python一样可用；`Location: http:ok`这类无主机的绝对引用按原生net/url返回400。
+
+## CFG-06 / C37 — 初始化 targets 的单次调用内稳定去重
+
+协调者裁定（2026-11-18）：`POST /api/domain-discovery/rulesets/init` 的 `targets` 按首次出现顺序去重，重复项返回200，每个目标只创建一套规则库、引用及空缓存。Python 会创建孤立库项和重复引用；旧 Go 还会重复写同一缓存，产生空 `.list.bak`。Go 修复这两个共同冗余问题，不复制旧结果；无效目标仍400且无写入，空 targets 仍默认 direct、proxy。
+
+去重限定在一次请求内。不同调用之间保持 Python 合同：继续创建新资源及名称后缀，保留之前的资源。`TestCFG06DuplicateTargetDifference` 用真实 Flask 对重复/非相邻混合目标的两次调用分别断言 Python 冗余与 Go 去重的库项、引用、首见顺序和缓存数量；普通输入仍严格比较。后续是否复用已有绑定另行裁定。
+
+## A20 — gateway bridge and recoverable drafts
+
+- Agent gateway replies and diagnostics now use shared credential redaction,
+  including multiline/encoded passwords, legacy registration keys and Agent
+  tokens. Usernames alone remain visible. Python forwarded these fields.
+- Draft previews collect named credentials from complete current/candidate and
+  generated documents before projecting fields. Plain/encoded references in
+  other change texts, change paths and nested added/removed object keys are hidden; Python leaks
+  them. The original Chinese field mask stays `[已隐藏]`, and stored documents
+  remain untouched. Exact Python leaks are asserted in the HTTP differential.
+- Malformed host `managed` evidence is an unreadable record, never proof of no
+  gateway record. Wrong-typed wizard routing evidence fails closed with a
+  Chinese diagnostic and zero writes. The shared A14/C36 reader refuses a
+  session over 16 MiB rather than treating it as absent.
+- A malformed Agent `forward_filter` report affects only that gateway's list
+  item: wrong-typed `state`, source `kind` or remedy `source` yields `error`,
+  a fixed diagnostic and `can_persist:false`. Healthy gateways remain visible.
+  Python's set membership could raise TypeError and fail the whole list; the
+  previous Go sanitizer instead silently discarded the malformed evidence.
+  `TestStepBA20MalformedReportOnlyAffectsItsGateway` checks all three fields
+  with arrays/objects through the authenticated HTTP boundary and two Agents.
+- Wrong-typed Mihomo/OxiDNS draft sections refuse with Chinese 400 rather than
+  becoming empty recovery snapshots (Python could crash or create an unusable
+  snapshot). The original stored value is preserved.
+- Native request binding rejects non-finite JSON with 400; the A20 HTTP
+  differential explicitly asserts the different diagnostic for `enabled:NaN`.
+  Non-standard JSON from an Agent is refused as invalid response (502).
+- Preview tokens use native JSON/SHA-256; they are ephemeral and regenerated
+  after switching implementations. Persisted restore documents retain their
+  unknown members; restoration explicitly replaces both service sections.
+  Stored snapshot version uses model.Int (1, 1.0, 1e0 accepted; bool refused).
+- HEAD `/api/agents/gateway-forwarding` is read-only (A20 review, Python bug
+  fix, same class as C32). Flask's handler took every method but GET as the
+  POST branch, so an authorised HEAD with `{"agent_id":…}` persisted IPv4
+  forwarding on the device. Go serves HEAD from the GET branch; POST is
+  unchanged. Real Flask `TestA20PythonHEADForwardingWriteIsFixed` asserts the
+  Python device write and Go's zero writes and unchanged storage. Step B
+  strengthens `TestReviewA20HeadGatewayForwardingIsReadOnly`: empty/valid/
+  malformed/non-object bodies retain all GET headers and status, have no body,
+  never enter a save transaction, and leave SQLite fingerprint, revision,
+  ordinary file bytes/modes/mtimes and Agent state unchanged (POST control writes).
+
+See PROGRESS-agents A20 for per-class checks, commands and the L4 boundary.
+
+## C26 — URI 协议名不再误报为插件引用（Python bug 修正）
+
+当主监听插件 tag 为 `udp` 时，Python 把独立旁路上游 `udp://…` 中的协议名当成插件引用，
+错误推导该旁路会调用 sequence_main，导致 ReadPolicies 不可编辑、ApplyPolicies 拒绝合法配置。
+Go 的共享引用扫描通过 `net/url` 识别紧接 `://` 的 scheme，只排除协议 token，继续扫描后面的
+真实引用。`$udp`、`jump udp`、URI 后的 `$udp` 和真实的主链依赖仍会阻止不安全的编辑；
+不是全局忽略名为 udp 的插件，也不改 YAML 内容。
+
+证据：`TestStepBC26ProtocolSchemeIsNotReference` 的协议/真实引用对照，及
+`TestStepBC26IndependentSidePolicyLifecycle` 的公开编辑边界全流程。主监听 tag=udp、独立旁路
+使用 udp 上游时，添加/修改/撤销设备策略均成功，保留 side_entries、旁路配置和注释。
+加入真实 `$udp` 引用的负控仍不允许编辑和保存。Python 源码和原比较规则不变。
+
+## C36 — 完整向导响应保护私有会话凭据
+
+Go 的私有 router draft 和未知凭据字段继续只保存在 session 文件里。公开响应在完整组装后，
+还使用共享 `redact` 和原始会话凭据清洗字符串引用，包括默认配置摘要、集合的来源/规则名称和
+放弃计划。Python 只投影 router draft；原 Go 也漏掉了这些在会话投影之外组装的元数据。
+公开失败消息同样清洗私有会话凭据引用，保留原状态码和错误链；固定的 owner 就绪 503 文案不变。
+普通用户名和 `has_password` 布尔值保留，存储中的可恢复密码不变。
+证据：`setup.TestReviewC36ResponsesRedactPrivateSessionCredentials` 的 GET、PATCH、集合和
+abandon dry-run 四条回归，以及 `TestReviewC36PublicOwnerFailureRedactsSessionCredential` 的
+公开 409 失败回归，均先失败、修复后通过。不会修改 Python 或差分比较规则。
+
+## C07 — 状态列表就绪与只读 HEAD
+
+协调者批准：tasks 和 notifications 的四条入口立即注册。真实 task slot 尚未齐备时，
+两个列表 GET 返回 503、中文说明与 missing_slots；不会把缺失行当作空任务列表。后台刷新仍更新
+已经观察到的失败，保留尚未观察到的 router/agent 旧通知。已就绪 owner 的运行/间隔修改仍可用，
+已知未移植 owner 返回 503，未知 key 返回 400；已提交的间隔不会因展示查询失败再报 500。
+R14、A16/A17 提供真实行后列表自然恢复成功，不安装空占位。
+
+同属上面的「HEAD 只读」类别：stats HEAD 不写 stats_history.json；notifications HEAD 不刷新、
+迁移或替换 notifications.json，沿用 GET 的状态码及 headers，不返回正文。真实 Flask 差分
+TestC07ExpectedHEADReadOnlyDifference 明确证明 Python 原写入和 Go 完整 DB/revision 不变。
+
+run/read 使用 N8-6 BindSilent，只有合法且有限的 JSON 能进入 owner。Python 允许忽略成员中的
+NaN/Infinity 并继续执行；Go 返回 400，差分 TestC07ExpectedNonFiniteBindingDifference 明确列出。
+其余畸形及非对象 body 的状态码和中文信息逐个与真实 Flask 比较。关机后的写入拒绝保留原
+Runtime；请求断开继续完成。共享提交点仍由已分派的 O3-6c 补齐。
+
+proddiff 只识别这两个精确列表入口、原 Python 成功形状及精确 Go 503 body/缺失的
+router_rule_sync、agent 两项，不放宽其他 503；content type 和全部原 headers 仍严格比较。
+对应的合成变异回归会拒绝错消息、错 slot、多字段、其他路由和丢失 no-store。
+
+### N8-7 — native early-consumer codecs
+
+- JWT: legal Python/Go HS256 sessions remain interchangeable, including tokens
+  without exp and fractional numeric dates. Illegal base64url alphabet is now
+  rejected with 401; Python's permissive decoder sometimes ignored junk. Unknown
+  claims remain opaque. Parser diagnostic details use native JSON errors.
+- Internal log formatting uses Go fmt for generic values (`nil` displays `<nil>`
+  instead of `None`); visible text and anti-log-forging filtering remain intact.
+  localhttp URL errors use Go quoted strings instead of Python repr.
+- Existing metrics JSON/JSONL and JSON stores (traffic, probe and region) read
+  NaN/Infinity/-Infinity as null only at the individual value. Finite fields and
+  complete points survive; strings containing those words are unchanged. Rewriting
+  produces valid JSON; repaired metrics JSONL is queued for rewrite on the next flush. This fixes invalid Python JSON that browsers could not read.
+  New migrated request callers reject non-finite JSON with 400.
+- Metrics summaries omit missing/null samples; an all-null sample set returns null.
+  Traffic derived projections skip missing-counter points; raw points remain.
+  Explicit HTTP differential changes are enumerated in progress/n8-7.md.
+
+O14 emergency rollback caution (N8-7): Python can load and save the null-bearing
+metrics files but its calc_stats/get_traffic_stats arithmetic can throw TypeError.
+Summary and traffic endpoints can return 500 until affected points expire from the
+24-hour metrics history. Remove null-bearing points from the corresponding Agent
+metrics JSON/JSONL file or wait for retention; no migration tool is needed for this
+emergency path. Go handles the missing values directly.
+
+N8-7 native number range: persisted JSON retains valid number lexemes, including
+4301-digit integers and exponents outside float64 (1e400/1e-400), rather than applying
+Python's 4300-digit limit or rounding while loading. Derived metrics skip values
+that cannot be represented by float64; raw history and files keep the exact value.
+The synthetic metrics summary CPU average becomes 2.5625 from its four valid
+samples after the seeded NaN becomes missing. No broad response normalization is
+used; HTTP differential assertions name each changed field.
+
+Python's default 4300-digit integer input limit still applies on an emergency
+rollback: such a new synthetic oversized-integer JSONL point is skipped by the
+Python reader. No real caller input or production snapshot contained these values;
+this is the explicitly accepted native JSON range, not a common stored-file rewrite.
+
+N8-7 Unicode log filtering (PORTING's accepted “CPython 专有 Unicode 范围” rule):
+Go retains newly assigned printable U+31350 (CJK Ext-H) and U+11F00 (Kawi), where
+Python3.11's Unicode14 table removed them. The two original golden rows remain as
+Python evidence; the new full logfields are asserted explicitly and other rows
+remain strict. Unicode15 Cf controls U+13439–U+1343F are still excluded, as are
+existing controls/newlines/bidi overrides. See the authoritative
+[Unicode15 category data](https://www.unicode.org/Public/15.0.0/ucd/UnicodeData.txt).
+
+## R10 — IPv6 路由归属与回滚安全修正
+
+Python 的 IPv6 规则集批量删除只核对 ID/目标地址，Go 在每个批次提交前核对完整 stable config，
+拒绝预览后外部修改/ID 复用；创建也在最后 scoped/console 读表拒绝新出现的同目标外部路由。
+Python `_rebuild` 可按相同配置猜测新的 owner ID，Go 只接受本次恢复响应证明的新 ID，
+部分成功也重映射；若初次 apply 已创建对象但补偿 DELETE 拒绝或回读失败，
+保留创建响应/console 证明时的完整 config 与可信新 ID，登记恢复 receipt，
+下一次预览逐项核对，避免已知归属对象成为孤儿；不会在失败后按当前相似配置补认领。
+保持原配置证明，避免重映射时把外部编辑刷新为“自己的配置”。
+规则集整体回滚不完整时保存两代原始证明；Fake-IP 旧对象未恢复时保留当前已发布证明；
+失败恢复后不继续删除仍能保护流量的替代路由。见 R10 部分回滚/外部同配置/重映射回归。
+
+错误类型/空 ID/重复 ID/错误版本/缺失 resources、Fake-IP spec 与 resource 不一致的 manifest，
+即使该 ID 已不见也拒绝作为空 ownership。已带 zone 的 Agent 候选不再被拼成双 `%` 下一跳；
+路由前缀解析拒绝 scope-id，避免复用 matcher 的去 zone 处理误把 /64 截成 /128；
+接口地址 stable evidence 仍保留 zone/host bits，规范化 /064。
+无有效唯一候选时保持既有 blocker/skip。无效/缺失 range 的 Python 内部 ipaddress 异常文本
+改为明确中文（业务错误文案不改）。model 的 custom_config R5 fallback 也拒绝作“已关闭”处理。
+
+host 错误沿用共享 agents/diag 脱敏，隐藏已知 Agent token/router password 及标注凭据，
+普通 username/api/权限诊断保留。设备所有写/回滚 owner 在 Detach 后与提交前遵循 shutdown 检查，
+关机取消后禁止继续写；请求断开仍完成。不可证明的丢失写回复保留现场，不猜测、不删除。
+R10 不生成/重写 YAML；原保存 YAML（含 CRLF/注释/引号/alias）逐字节保留，读取政策沿用 N7。
+
+R10 rule-set 的 borrowed 回读也要求路由仍然 active：Python 仅比较排除了 active 的 stable config，
+会把发布期间失活但配置未变的借用路由报为验证成功；Go 返回既有 borrowed verification 错误。
+`TestR10BorrowedRouteMustRemainActive` 同时固定 fake/rules 的只读回读边界。
+
+R10 复核 F1：IPv6 路由补偿 DELETE 报错（回复丢失、回读失败）后，若重新 `GET` 证明该 ID 已不存在，
+按补偿成功处理并继续后续恢复。Python 把它记为回滚失败（`RouterRollbackError`）但仍继续恢复；
+Go 移植版原本把它当失败并跳过 Fake-IP 旧路由恢复，使网段失去路由。现在设备结果与 Python 相同，
+旧路由的新 ID 按恢复响应重映射进 manifest，错误类别为原始失败而非回滚失败。
+`TestR10ReviewLostDeleteDeviceMatchesPython`、`TestR10ReviewFakeRollbackRestoresAfterLostDelete`。
+
+## R11 — PD 归属、部分补偿与 readiness 原生证据
+
+Python 的 PD guard 只保存 role/path/ID；Go 新写记录追加完整 stable config，后续外改和 ID 复用不再
+按同名或「像 cf-pd」覆盖。旧 ID-only 记录继续读取，但存量脚本/定时任务必须能确认为原模板，
+而非只含保留名称；重复保留名称、错型/重复角色、错误表或 ID 均拒绝。完全匹配的手动安装仍沿用，
+不登记；确认的部分更新仍按 Python 规则管理整套安装，共用 hook 不接管。记录的未知顶层、spec、
+resource 成员在正常更新、重映射和部分恢复中保留。
+完整配置证明只用于 ConfigFlow 自己的脚本和定时任务；hook 所在的 dhcp-client 属于用户，仍按 Python
+只认 ID，钩子内容由 hook 状态把关（R11 复核 F1）：改 use-peer-dns、改池名、把前缀换到另一个客户端
+都照常更新或撤回，不会把整个保护卡死。
+
+Python 只在整个 PD 回滚成功后更新旧 ID，且按 ID、不含表名映射。Go 对每个已证恢复即时收集新 ID，
+即使其他步骤失败也按 (path, ID) 重映射，保留原配置证明；补偿删除失败时保留已证的新对象创建配置，
+整个 stage 的恢复失败也不丢掉当前记录。不会按当前相似配置猜测/刷新证明，不收养恢复期间出现的
+同名外部对象。补偿 DELETE 回复丢失，用一次 GET 的 404 证明已不存在才按成功继续（R10 复核 F1）；
+拒绝、外改或读失败继续报告回滚未完成。已有未知 PUT 仍保留现场，不凭相同配置猜新 ID。
+
+IPv6 DNS 的 ND payload 在最后事务读取也严格验证 disabled/dynamic/invalid；null 或未知状态不再
+作为可写对象。新增 readiness route undo 在保留随机尝试标识的同时核对完整 stable config，
+因此外部更改非目的/下一跳字段也会阻止删除；丢失 DELETE 回复同样只在 GET 证明确已删除后成功。
+关机后的补偿受同一取消约束，无法补偿的残留仍需 O14 drain 和 L5 验证；请求断开继续完成。
+
+原生格式差异：ND 的 DNS 列表在内部 stable 快照中用 JSON 文本，替代 Python repr；服务器列表、
+操作值及设备表本身不变。readiness fingerprint 使用 Go 原生、稳定排序后的 JSON 摘要，首次切换
+需要重新检查后再 prepare；只依赖稳定路由字段，路由顺序和 lease timer 变化不影响摘要。
+摘要输入里的路由器记录不含设备密码（Python 含），前端拿到的摘要不能用来离线猜密码；改密码不再改变摘要（R11 复核 F2）。
+复制用 CLI 复用 ScriptString，对控制字符也转义。业务中文、所有有效操作、设备最终状态与真实
+Python 对照；PD 脚本 source 逐字节对照三组参数。readiness 不自动写入路由，仍引导用户走上游路由发布。
+
+R11 撤回回读也检查第二次 sweep 后新出现的 `cf-pd-last`/静态弃用前缀：Python 只比原先删除的 ID，
+进行中的 hook/script 若晚写出新 ID 会被误报为已撤回。Go 在本次确实删除受管 script 时报告既有
+撤回校验错误，不额外删除新对象；`TestR11PDWithdrawalDetectsLateRuntimeState` 固定此边界，L5继续验证实际时序。
+
+PD runtime 地址列表事务沿用已有 IPv4 single-row 模式：按 ID 核验/删除，只按 `list=cf-pd-last`
+取创建范围。Python 对每个 state DELETE 全读 IPv6 地址列表，会连同大型 GeoIP 表反复读取；Go
+扩展共享 single-row/scoped 分类到 IPv6 地址列表，完整配置证明和未知 PUT 的保留政策不变。
+
+PD 恢复 PUT 回复已经证明新 ID、但紧接着的 GET 失败时，Go 仍保留这个新 ID 与原配置证明，
+返回回滚未完成；下一次独立读取可以重新确认实际成功的恢复。对整 stage 部分 undo，只保留
+尚未成功补偿的当前证明，已成功清掉的 hook 不继续登记为新安装，允许下次安全修复；保留的
+新 ID 可替代该 role 原先已缺失的旧 ID。均不从现有相似配置推测归属。
+
+## N8-5a — repository typed core
+
+- 独立复核补齐 R5 加载边界：存储业务值无效时，启动不再尝试可选 token 写入；
+  保留原 DB 和文件供 UI/typed API 修复。修复事务恢复正常 token 维护。
+  Python 在这些畸形场景仍可能拒绝启动；这是 N8-5 加载/写入校验拆分的明确变化。
+
+- **加载不再按业务规则拒绝。** 打开数据库时只检查结构：存储版本、三个配置节、配置空间 ID 合法且与节键一致、
+  默认配置存在。名称、修订号、引用、Agent 绑定等规则改在每次写入时检查。Python 遇到这类存储值会整体拒绝加载
+  （界面无法打开）；Go 照常读取（类型错误的成员按 R5 读作零值并保留原字节），修复它的那次写入通过，
+  其他写入在修复前返回原来的校验消息。只有手工改库或旧版本写坏的数据会遇到。
+- **三方合并按 JSON 类型比较。** `SaveConfig`/共享/系统设置带基线保存时，`1`、`1.0` 与 `true` 不再视为同一个值
+  （Python 用 `==`）。参照集 30 例中 3 例结果改变（`reference_test.go` 列出）；正常界面数据不会混用这些类型。
+- **修订号写入规则按 R8。** 整数值的浮点写法（如 `60.0`）是有效修订号；Python 写入校验拒绝它。负数、字符串、
+  null、缺失仍拒绝，布尔仍按 Python 接受。
+
+## N8-5b — typed profile/shared writes
+
+- **共享资源写入保留 shared 节的未知成员。** Python 每次 `update_shared_transaction` 只写回四类资源和 `_revision`，
+  会丢掉 shared 节里其他成员；Go 按 R1 保留。
+- **按类型读取的名称。** 资源被引用时的提示与 usages 中，名称存为 `null` 或错误类型时显示资源 ID（Python 原样返回该值）。
+
+### R12 — release ownership and negotiated return routing
+
+- Canonical native JSON (sorted keys at every depth, no HTML escaping) gives the
+  opaque release fingerprint. It is stable across processes and retains exact
+  integer evidence, but intentionally differs from Python JSON whitespace hashes.
+- F-R12-1: a transport failure after Agent apply/remove retains compensation for
+  the potentially committed write. Reverse compensation runs through the same
+  ownership-aware safety handshake. A lost compensation reply is accepted only
+  after a GET proves removal or the complete expected raw spec (including unknown
+  fields); unavailable readback does not prove success. A definite A01 RemoteError
+  remains a rejection, without speculative compensation.
+- F-R12-2: return cleanup excludes the explicit (profileID, routerID) pair while
+  searching all profiles. A background inspection no longer accidentally excludes
+  a same-ID router in the default profile or marks its own router as shared.
+- F-R12-3: all Verify failures use native errors/RouterError so callers, including
+  R14, can compensate uniformly; no Python ReleaseError exception category is
+  needed. R14's delta owner must handle every error (its own acceptance).
+- D-R12-3 / Clarified in R12: after Runtime shutdown interrupts a release with a
+  started (R12 review F2: attempted, not only proven) device or Agent write, stop device I/O and compensation, retain Result, and record
+  one local failure+manifest+revision transaction using the explicitly approved
+  ctxx.Uninterruptible boundary. Before the first write, cancellation commits
+  nothing. R04–R11 interruption before a lower owner records its manifest remains
+  an O14 follow-up; R12 does not guess ownership of an unproven create.
+- New iKuai NAT group checks now include the Python contract's explicit `id:null`;
+  policy group checks continue to omit `id`. Public desired reports omit internal
+  DNS guard inputs, as Python does. Skipped IPv6 DNS retains `checks.ipv6_dns:{}`.
+- Agent errors use shared diag credential redaction without hiding the username;
+  raw successful Agent status preserves unknown fields and numeric literals.
+- R12 review F4 (Python bug fixed): a forward return-routing apply/remove first
+  re-proves that the Agent still holds the managed spec the plan was built from
+  (unknown fields by value, `proxy_dst` as a set). If another router sharing the
+  Agent changed or removed it after the preview, the stage fails with Python's
+  `回流资源分配在预览后发生变化，请重新预览后发布` and rolls back; Python removed or
+  overwrote the other router's rule. Compensation during rollback is unchanged.
+
+### R13 — pending reminders
+
+- Pending reads reuse R12's explicit-profile inspection (F-R12-2 / T27), including
+  cloned router IDs across profiles; invalid or nonexistent explicit profiles never fall
+  back to a different profile. The inspection/advisory implementation remains R12-owned.
+- Cache identity uses native canonical JSON and an internal SHA-256 digest. It
+  intentionally differs from Python's ephemeral cache hash; router credentials
+  never appear in reminder payloads or cached result DTOs. There is no on-disk
+  cache migration and no TTL. Unknown reads are retried.
+- Unexpected reader errors/panics produce the clear native message
+  `读取失败：内部错误` instead of exposing Python exception class names. RouterError
+  diagnostics use shared credential redaction; panic payloads are never logged.
+- Shared reads survive request disconnection through tracked lifecycle workers.
+  Runtime shutdown cancels device reads and rejects cache/notification admission;
+  C07 batch-1 owns the final cancellation checks under the notification leaf lock
+  and before Rename. R13 does not duplicate that transaction implementation.
+- (R13 review F1 / X1) Stored router records follow Python's `routers_of` and the
+  repository's R5 rule everywhere in `internal/routers` (`routersOf`, used by R12
+  `returnCleanup`/`Publish` and R13 pending): a missing or non-object `routers`/non-list
+  `items` means no routers, `null` and non-object items are skipped, and a member of the
+  wrong type reads as absent (its default) instead of failing the record. One such
+  record no longer fails the reminder of every Agent, another router's release, or the
+  return-cleanup check; the stored bytes are kept for publication CAS and write-back.
+- (R13 review F2) An empty Agent ID links nothing. Python's `== agent_id` would have
+  matched routers stored with an empty gateway (unreachable through Flask's route).
+- (R13 review F3) Timing at the read boundary: the first caller also waits at most 35 s
+  for the shared read (Python's owner had no bound; the read itself still ends at
+  25 s), and reads still running at the 25 s budget are cancelled instead of
+  continuing unobserved in background threads. An unsupported router type is logged.
+- (R13 review F4) The C07 Summarize hook decodes the public report/plan JSON with
+  typed fields; data it cannot decode yields an `unknown` change receipt
+  (`无法解析上游路由差异报告，请重新检查。`) where Python's `summarize` either
+  tolerated the shape or raised and `safely` skipped the receipt. Only Go's own
+  marshalled Report/Plan reach the hook, so this path is not reachable in practice.
+
+C34 同类修复：`/api/profiles` 的 HEAD 不再创建 profile，`/api/profiles/<profile_id>` 的 HEAD 不再删除；全部 profile GET 路径走读取分支。回归 `api/profiles.TestProfileHEADIsReadOnly` 比较 GET headers，并断言 DB、revision、业务文件和生成缓存不变。真实 Flask 预期差异另见 C34 差分测试。
+
+C34 自定义配置五条路径同样将 HEAD 分派给 GET：Mihomo、Surge、MosDNS 不再因无返回值而 500；Loon/OxiDNS 不再落入保存分支。`api/config.TestCustomHEADAndBodyBinding` 逐条验证全部 GET headers、无 body，以及 DB、revision、业务文件和生成缓存不变。严格请求绑定的畸形 JSON/媒体类型沿用 N8-6 的 400/415 修正；不把捕获后的 Python 内部 500 作为合法输入契约。
+
+## C34 custom-config JSON 对象契约
+
+协调者裁定（2026-11-18），只适用于五条 `/api/custom-config/{mihomo,surge,loon,mosdns,oxidns}`：
+
+- **Python 200 的无字段非对象请求**：Surge/Loon 将部分字符串、数组、数字、布尔（包括 `""`、`0`、`false`、`[]`）误当无字段补丁，未改业务字段却递增 revision。Go 一律 400，DB、文件、revision 不变。
+- **Python 500 的非对象请求**：Mihomo/MosDNS 的属性访问，以及 Surge/Loon 的不可迭代值或含字段名的字符串/数组，会抛内部异常。Go 一律 400，DB、文件、revision 不变。OxiDNS 原已 400，继续拒绝；消息明确要求 JSON 对象。
+- **null / 缺失 body**：独立复核时维护者撤销统一空更新裁定，要求逐引擎严格匹配真实 Flask。Surge/Loon 的 JSON null 返回200、业务字段不变、revision+1；Mihomo/MosDNS 的 JSON null 返回500、无写入；四者缺失 body（带 JSON Content-Type 或不带）均500、无写入。OxiDNS 的 null/缺失均400、无写入。显式 `{}` 是另一输入：Mihomo/MosDNS 清空 custom_config 并 revision+1；Surge/Loon 空更新并 revision+1；OxiDNS 400。null/缺失不再登记为 Python 功能差异，错误内部诊断文字不模拟。
+- 普通对象的每个字段值仍交给现有业务 validator；不把 Python 容器成员关系移植为新 helper。profile create/generate 不采用本项新 schema。
+
+`api/config/difftest.TestC34ExpectedDifferenceCustomJSONShapes` 对五个引擎逐项断言十二种 shape 的 Python/Go 状态码，以及两边各自的 DB、完整字段、revision、文件效果。`TestC34ObjectFieldValues` 单独对照对象里的 null/false/0/空数组/空对象/true/数字，避免 DTO 意外收窄业务输入。严格畸形 JSON 400 / 非 JSON 媒体类型 415 沿用 N8-6 的迁移决策。YAML `yes` 为字符串、重复键和 alias 预算沿用 N7 §5.7，不作为未知差异。
+
+## C34 base_url 字段 schema
+
+协调者裁定（2026-11-18）：缺失/null 不覆盖，字符串（含空串）照常使用，其他 JSON 类型统一 400，且不提交 DB、业务文件、生成缓存。仅限 `base_url` 字段，不改变其他字段，也不扩大 custom-config 的 body schema 到 profile create/generate 的空 body 默认行为。
+
+Python 的 Surge 等生成器将 null/false/数字/容器隐式转成文本，可生成 `None/api/…`、`False/api/…`、`3/api/…` 之类的无效 URL；OxiDNS 的同类预览请求因字符串属性访问返回 500。Go 用共享的 `configgen.RequestBaseURL` 读取精确字段名并校验类型，不移植这些 Python 文本转换。`TestC34BaseURLInputAlternatives` 明确断言五个引擎十种输入的 Python/Go 状态、Surge 的 None URL 证据、Go null 等同缺失、合法字符串输出一致、预览及两个下载前缀均无非法输入提交。
+
+
+## C34 独立复核 — profile 绑定元数据凭据
+
+profile 列表、Agent绑定列表和改绑结果的 host 可能是旧的 Basic-auth userinfo 形式，
+Python及原Go投影均原样显示；改绑冲突名称中的 password=... 也会进入错误JSON。
+这四个公共出口现在复用 redact.SanitizeCredentials；原存储/完整管理员备份仍保留连接信息。
+这是凭据安全修正，单独回归 TestReviewC34BindingCredentials，不放宽普通Flask差分。
+custom null/缺失裁定见上文最新逐引擎合同，dry_run及profile默认/校验修复均恢复Python行为。
+
+C34 rebase 到 N8-5 后补充实证：custom-config 先保存 `config:false`，再显式保存
+`config:0` 时，Python 的三方合并把 false/0 视为相等而保留 false；Go 按已裁定的
+JSON 类型比较保存 0。`TestC34ObjectFieldValues` 对四个宽松引擎分别断言这个差异，
+仅替换这一字段建立预期快照后继续比较完整 DB/files；OxiDNS 仍按其文本合同拒绝。
+这沿用 N8-5 的类型裁定，不放宽其他请求或状态差分。
+
+### R05 Step B — iKuai response presentation and failed probes (Python bugs fixed)
+
+- `IKUAI_NETMASK_SUFFIX_ROLLBACK` (medium): static_rt network reads, add
+  confirmation and compensation compare the mask token without the UI display
+  suffix, matching the existing edit-form convention. Plain-mask replies remain
+  supported. Compensation still requires the unique tag and every recorded
+  configuration field, and deletes the ID read from that matching device row;
+  external changes are not adopted. The default suffix fake is retained.
+  Python's confirmation and undo both failed on the suffixed reply and left the
+  newly created route. Real-firmware presentation and cleanup remain L5 items.
+- `IKUAI_PROBE_NESTED_SCHEMA_CRASH` (low): a non-object, non-null verinfo is
+  rejected as `*RouterError{Kind: KindInvalidResponse}` with
+  `iKuai 版本信息格式无法识别，请检查固件版本和管理接口。`, rather than Python's
+  AttributeError/HTML 500. Missing/null verinfo keeps the unsupported-version
+  diagnostic. No untrusted value is echoed.
+- `IKUAI_PROBE_REDIRECT_PARSE_CRASH` (low): malformed Location is a
+  `KindInvalidResponse` RouterError with
+  `iKuai 重定向地址格式无法识别，请在浏览器核对管理地址、协议和端口。`. Go already
+  returned malformed redirects without following them; the explicit response
+  error also covers a malformed port. Python requests could throw ValueError
+  before its RouterError handler and skip recording last_probe. R15 must catch
+  all RouterError variants, persist the failed probe, then map its HTTP status.
+  A repository-consumer contract test proves this error can be saved as the
+  sole last_probe replacement with exactly one revision increment; R15 HTTP
+  remains unported and is not claimed verified here.
+
+## R16 review — isolated client evidence and private credential references
+
+- RouterOS discovery skips non-object members of a valid table array and keeps
+  its healthy rows. It marks the reading incomplete, so absent saved devices
+  remain unknown. Python rejects the whole mixed table: a malformed ARP or DHCP
+  server row can hide all clients, and optional tables lose their healthy rows.
+  A non-array table still fails; this does not turn invalid replies into empty
+  successful scans or change the shared write/ownership driver paths.
+- Discovery applies shared credential redaction after joining saved identities,
+  live readings and refresh diagnostics. A device's text cannot echo a peer's
+  stored password or a known Agent credential from the profile. Encoded
+  references and unsupported/cached responses are covered; usernames stay
+  visible. Private configuration and cached evidence are not rewritten.
+  Production HTTP authorization and its repository-wide token hook remain R17.
+
+## N8-5c — typed validation, router guard, imports
+
+- **写入校验的类型错误消息。** 名称不是字符串时，提示里显示其 JSON 文本（`null`、`true`、`{"a":1}`），Python 显示 repr（`None`、`True`）。
+  Python 因内部异常返回 500 的输入（例如 `system_config` 不是对象、路由器 ID 是对象、旧备份里用对象作名称）改为 400 校验错误，或（旧格式导入）正常转换。
+- **路由器保护按 JSON 类型比较。** `verify_tls` 从 `true` 改为 `1` 等类型变化视为连接变化，会先取发布锁；格式错误的发布记录仍视为存在（不允许删除或改地址）。
+- **名称去除首尾控制字符。** 配置空间名称去掉首尾空白与控制字符（含 U+001C–U+001F，与 Python 的 strip 一致）。
+- **停用标志按存储值判断。** `enabled` 存为 `0` 等非布尔值时按其真假判断（与 Python 相同），不按缺省“启用”处理。
+
+## C34 proddiff — N7-4 / D2 与 deferred owner 的精确映射
+
+- N7-4（D3）：`GET /api/custom-config/mihomo` 的 `default_config` 是默认模板的
+  原生 YAML 文本；文档结构不变，writer 布局可变。只登记这个字段。
+- D2/N7-4：proddiff 既有 baseline-format 证明在私有 Go 副本迁移主配置 YAML 的
+  字节表示。`GET /api/config/export` 仍导出副本中的可恢复真实状态，因此 Agents 的
+  applied_content.fingerprint、主文件 config.yaml 的文件摘要和存在时的
+  deployed_config_sha256 随之不同；只登记实际证明涉及的精确结构字段，不忽略整段 Agent。
+- C34 Clarified：两个 artifact POST 模板和 artifact GET 暂缺 frozen release owner
+  时明确 503，未知 service 仍400、未知 action 仍404。差分登记 deferred → A14/A21，
+  这些 owner 正式接线后条目必须 stale 并删除，不能作为永久豁免。
+- logs 路由 owner 是 C06；既有 A18 F1 产生的异常日志后果随 A18 延期，未批准忽略
+  普通日志内容。
+
+## A16 — 自动规则同步的提交与日志安全修正
+
+- Python `_publish` 在异常时无条件记录 failed；Go 使用已有 A01 OnlyUnsubmitted，已提交的部署交由原轮询确认，避免将可能已生效的部署误标终态。
+- A16 的状态、任务记录及调用共享 presence owner 的日志字段先经过共享凭据快照/diagnostics/weburl；不保留 Python 将 URL userinfo、token 或密码写进设备名称日志的行为。正常文字保留，URI userinfo 按共享日志策略移除，原 Agent 数据不变。
+- 按既定 D2，rule_sync.state.key 使用 Go 原生 CanonicalDigest；切换时一次重建防抖键。旧 accepted native task 仍先查询确认，键不同只触发重新检查/刷新，不提前接受来源，也不回滚已提交工作。
+- 按 O12 不再创建 worker.lock 或仅供加锁的目录；实际 receipt/归档路径仍兼容。batch-5 集成后任务记录已使用 RecordContext(owner ctx)，共享 SQLite/taskstatus 最终取消检查与真实 Runtime 锁等待取消回归均通过。
+
+A16 收尾的两条并发可靠性修正：HA enable 在初次检查之后才提交时，settings 事务仍会拒绝并整批回滚；OxiDNS GET 状态期间绑定/设置变化时，首次及回退 POST 前重新校验，不继续发起旧来源下载。Python 的这两个检查只在较早位置，分别有修复前失败的 SQLite/loopback 回归，见 A16-handoff-zh.md。
+
+## A17 — DNS-follow 摘要与写归属
+
+按设计最终裁定 **D-A17-1 → B（2026-11-17）**，DNS binding/私有 job 使用 A14 的 Go-native
+CanonicalDigest/SettingsDigest。切换后旧 binding 需重新选择一次（O12/O14 发布说明项）；不仿真
+CPython JSON 编码。配置与 Agent 归档按解析后语义相等验证，排版不追平。
+
+R05-3 的非空证明要求应用到 DNS follow：空 binding/child/job proof、错类型或 null 索引不授权对
+upstream 0 的写入。finalization 在同一 profile 事务内重新核对来源、目标及 binding，封住 Python
+核验后再写的归属变化窗口；用户在发布期间编辑的新草稿仍保留，报告成功但 draft_synced=false。
+公共 options、状态、事件、任务错误和日志 label 扩展使用 A24 的共享凭据脱敏合同，磁盘私有 job
+保留。见 [A17 交回](progress/A17-handoff-zh.md)。
+
+A17 复核（2026-11-18，[review-a17.md](review-a17.md)）补充：
+
+- 草稿已写入后的签名重绑只认 binding id（与 Python 相同）；草稿事务内的归属重查保留。重复 finalize 正确识别
+  已写入的候选草稿，不再误报「草稿有新修改」。
+- 失败 child 的 `error_details` 先用全部 Agent 凭据脱敏再交给 A01（Python 只用目标自己的 token，属 Python 漏洞）。
+- DNS 接口回复逐成员解码：类型不对的成员按缺失处理，给出与 Python 相同的具体拒绝文本；非字符串的 `message`
+  按缺失处理（落到「请升级 Agent…」默认文本），不复刻 Python 的 `str()` 表示。
+
+## N8-8a — 畸形存储值改为类型校验
+
+规则集格式推断的 typed 入口不再模拟 Python 的 truthiness 或动态 ID 相等。
+URL 为 0、false、空数组/对象等非字符串值时明确拒绝（5 等原有错误仍保留 URL 类型错误类别）；
+引用 ID/name 为非字符串、规则库元素为非 object 时按 R5 或明确类型校验处理。
+legacy 边界先解码整份规则库，因此匹配项之后的非 object 也会拒绝。正常输入的格式输出不变。
+
+- common 的错误类型字段按 R5 读零值：如畸形 rule_configs/规则库列表读为空列表，
+  非字符串规则值/策略在注释中读为空串，错误类型的 enabled 读默认启用；原存储字节仍由 model 保留。
+- `SetGeneralOption` 只用 Unicode 空白集合清理段落末尾；U+001C/U+001D 不再被当作空白删除。
+  5 条旧语料显式断言原生输出，属于 PORTING 已批准的 CPython 专有范围；正常 INI 字节不变。
+  大写转换改用原生 `x/text/cases`，10 条完整 Unicode 一对多映射结果保持原样。
+
+## N8-8a — 生成不再改动输入副本
+
+节点转换只读 typed Node/Params，在独立输出图中补齐 VLESS 的 encryption 和 reality short-id。
+不再重现 Python 浅拷贝导致的输入工作副本被偷偷加上 `short-id: ""` 的副作用。
+31 条原始语料用独立行号/路径夹具明确断言输入保持原文，其他 mutated 字段仍严格比较；
+正常生成配置字节不变，也没有存储或 API 响应变化。
+
+- 节点名、server 等错误类型字段按 R5 读取；非对象 params、非字符串的结构化 type 明确校验失败。
+  原生整数端口集合不接收布尔、浮点字面量、溢出的端口，也不保留 CPython 集合迭代顺序。
+- 非法 JSON 中的 NaN/Infinity 裸词经原生 YAML 解析为字符串；合法 JSON 仍优先使用 JSON 解析，
+  包括 surrogate pair。不恢复 Python 的非标准 JSON 扩展。
+
+## N7 shared writer — 拒绝无法读回的显式标量
+
+JSON 的超大指数（如 1e400）仍按原文保留并能 JSON 读回，但 yaml.v3 无法按 float 标签解析它。
+Marshal 会返回中文 ErrPolicy，不再成功输出一份自己 Parse 不了的 YAML。
+正常有限 float、下溢数和大整数的读写闭合不变。
+
+## N8-8a — EasyTier typed settings
+
+正常设置的默认值、选项顺序、生成字节和中文验证消息保持不变。
+畸形根值、非数组生成节、非字符串版本改为明确类型校验；typed Config 里无法解码的
+EasyTier 字段按 R5 缺省，避免重建 Python truthiness 和容器遍历异常。
+整数选项和保活 interval 按 R8 接受整数字面量的浮点写法（如 1500.0、6e1）。
+保留标准 IPv4 net/host mask 和带前导零的前缀长度支持；不会替换成私有 IP 解析器。
+导出时 secret 成员即使存成错误类型也会脱敏（非 null、非空字符串），不再按动态 truthiness 决定。
+
+## N8-8a — typed dialer validation
+
+拨号资源只使用字符串 ID 和 typed 引用。畸形存储字段按 R5 或明确中文类型校验处理，
+不重建数字/布尔 ID 相等、Python truthiness、StopIteration/KeyError 等内部异常。
+缺失目标或目标名称返回明确验证错误；错误类型的 enabled（包括 null）按 typed 默认值读取。
+整份资源数组和策略组列表的既有中文校验仍保留，避免把坏类型传进尚未迁移的生成器。
+非法或超出原生正则能力的过滤/改名规则统一走原有中文业务验证通道。
+
+Provider 改名规则里的非 ASCII 分组序号（如 `<$١>`、`<$１>`）保留为字面量，
+属于 PORTING 已批准的 CPython 专有 Unicode 范围。旧 golden 不改；两条 review 行和
+含 `$1$0$١` 的八条旧语料各有完整 native 期望。ASCII `$1`、`$01`、`$0` 及越界仍按原业务验证。
+override 和改名规则按精确大小写键读取，未知大小写拼法继续忽略。
+
+### N8-8a review — displaced YAML anchor repair
+
+MaterializeAliases now also handles a definition moved after its first consumer,
+rather than deleted. The first consumer remains the definition and the old
+physical occurrence loses its duplicate Anchor; later aliases keep their exact
+binding. This restores valid Edit behavior without weakening Marshal policy or
+adding a production Parse/Equal pass. Normal converter byte expectations and the
+31 explicit input-immutability paths are unchanged.
+
+## N8-7 second batch — native early consumers
+
+- Web listener environment values use native Unicode whitespace: U+001C/U+001D
+  surrounding a port no longer count as spaces (PORTING CPython-only scope).
+  Normal integer ports and saved files are unchanged.
+- Log I/O failures retain the Chinese context, status and selected path; the
+  OS detail uses Go's native error text rather than Python's errno/repr format.
+
+- Task status counters use the same native decimal reader as task history.
+  CPython-only Unicode decimal strings now return a validation error instead of
+  emulating int(); the original file remains untouched on failure. Persisted
+  NaN/Infinity in task-status.json becomes null on read; a later counter update
+  counts on from zero, while unrelated fields and receipts remain present.
+  Counter errors use ordinary Go error chains rather than Python class names.
+
+### N8-7 second batch — D2 and file readers
+
+- **D2 / 一次性身份变化**：notification fingerprint 和 RouterSignature 改用
+  encoding/json 的原生编码（对象键由标准库排序，数字保留 json.Number）。
+  不保留 Python 编码器。升级后仍存在的问题会使已忽略通知重新出现一次；
+  在 Go 中再次确认后，相同问题不会反复出现。路由器旧检查通知可能标为 stale，
+  下次检查/预览会刷新它。该签名仅服务于通知，不进入规则同步或发布的任务、
+  baseline、状态机；不会因此触发同步、发布或新增 pending/waiting 任务。
+  无需为了编码变化手动同步或重新发布。独立进程重启测试锁住两个新签名。
+- **持久化 nonfinite**：task-status.json 的计数/时长及其他成员、notifications.json
+  的 occurrences/failure_count/evidence 及未知成员、各配置空间 stats_history.json
+  的 samples[].subscriptions/nodes/proxyGroups/rules 及未知成员，读取时将裸
+  NaN/Infinity/-Infinity 转为 null，有限数据和数字原文保留，首次重写变为合法 JSON。
+  字符串里的这些单词不变。请求绑定不调用此修复入口。
+- 统计历史的超大数（例如 1e400 或 4301 位整数）仍原样存储；超出有限绘图范围
+  的投影点为 null，不再让 /api/stats/overview 因浮点溢出返回 500。正常计数仍与
+  Python 严格对照；坏的十进制计数字符串仍给出明确验证错误。
+- R5：错型任务/报告/统计历史成员用类型化读取或明确错误处理，不再模拟
+  Python 的 len/str/truthiness 或异常类。任务计数器的原 168 行语料不改，
+  8 行 CPython Unicode 数字改为显式拒绝；12 行 nonfinite 使用显式原生预期。
+  其余字段继续严格比较。通知的非 object 单项仍是 500，非法 store 容器仍是 503。
+- task-status、通知、统计历史文件的空白和键顺序可以改变；读回结构与普通字段
+  值保持一致，未知成员保留。统计历史重写现在也保留根的未知成员（R1），
+  Python 原实现会丢掉它们。通知 store 或无效计数的校验错误不覆盖原文件；
+  task-status/可选 stats 的损坏文件沿用原先的静默默认策略。
+
+紧急回滚补充：task-status 和 stats 的 null 计数可由 Python 的 `int(value or 0)`
+消费；真实 Python 互通测试覆盖读取和保存。notifications 的正常生产 occurrences
+始终是整数；若手工/损坏文件原来含 nonfinite，Go 重写后该值为 null，Python
+`observe` 的 `occurrences += 1` 在下一次不同 evidence 时会抛 TypeError，可能使
+通知列表返回 500 或后台通知刷新失败。此类未解决通知没有统一的自动保留期，
+需要删除 notifications.json 中对应坏项后重新观察；无需删除任务状态或配置。
+真实 Python 回归固定“能加载保存、递增时 TypeError”。O14 清单见
+[progress/o14-switch.md](progress/o14-switch.md)。第一批 metrics/traffic 的 24 小时
+回滚注意事项仍适用。
+
+### N8-7 second-batch review corrections
+
+Invalid root/items notification containers retain ErrInvalidStore and HTTP 503
+with the native decode cause; invalid individual items retain their existing
+classification. Nullable legacy Agent inputs now reach the native owners'
+existing no-op/default-registration paths instead of failing during transcoding.
+Notification occurrences use arbitrary-precision JSON integer counts, fixing an
+inherited Go int64 wrap/reset at large finite values; Python integer increments
+already preserve these counts. Unchanged numeric notation, invalid-field R5
+provenance and finite/unknown siblings remain intact. These corrections add no
+new D2 signature transition and do not change the documented null rollback risk.
+
+## N8-9 discovery — typed boundaries
+
+- Python bug 修正：apply/probe 的非 object 根请求不再触发 AttributeError/500，而是返回明确的中文 400；原有两个 `[1]` HTTP 用例显式断言 Python 500、Go 400。忽略域名的存储列表使用共享 model.String 解码后按域名规则过滤，避免错型或无效主机名变成忽略规则；正常域名原文不变。
+- 畸形存储值改为类型校验：discovery 的布尔开关只接受 bool，错型使用 R5 缺省值。合成差分夹具的 `auto_probe: 1` 从 Python 的 true 变为 false，下次保存设置时写回 false；普通 true/false 不变。HTTP 差分只对这个字段逐项断言，其余响应、Agent 请求和落盘数据严格比较。
+- 规则库 id/name/source_type/behavior/content、规则 id/itemType/rule_type/value/library_rule_id/policy、策略组 id/name 和参与操作的 Agent 标识字段，只有 model 记录错型时才拒绝，错误为「<资源> <id> 的 <字段> 必须是字符串，当前值：<存储 JSON>」。数字文本和整数字符串使用 model 的共享解码规则；合法空值、缺失和 null 不额外收紧。
+- discovery 的 11 个写请求使用 native BindSilent：畸形、空 body 和任何位置的 NaN/±Infinity 均在写入前返回中文 400「请求必须是 JSON 对象」。33 个逐词 HTTP 断言保留真实 Flask 的 200/400 证据，Go 全部返回 400。其他 legacy 请求调用方不受影响。
+
+## A21 — gateway onboarding
+
+- 同属「HEAD 只读」类别。Python `gateway_onboarding` 只区分 GET 与其他方法，带合法 JSON 的 HEAD 会保存 Mihomo/OxiDNS 草稿并增加 revision。Go HEAD 走 GET，只返回相同状态与 headers，不返回 body，DB、业务文件、revision 不变。`api/gatewayonboarding.TestHEADIsReadOnlyAndMatchesGET` 与真实 Flask 的 `TestFlaskHEADExpectedReadOnlyDifference` 显式验证。
+
+- Python bug（复核 A21 F2）：原生 OxiDNS 的备用链已停用、`_prepare_native_gateway_fallback` 已恢复成功，但随后 `apply_common_settings` 仍拒绝（例如监听入口缺失）且用户明确确认转换模板时，Python 在 `settings` 被重新赋值为「已恢复」投影之后才写 `gateway_onboarding_native_backup`，备份里是被改过的 native_config（补回 fallback 插件、改写 proxy_dns_seq），并非用户原始文档，与提示「原生配置……保存在 backup 中，可从配置导出恢复」不符。Go 的恢复结果只在 apply 成功时替换 settings，备份始终是原始原生文档。`gateway/onboarding.TestConversionBackupKeepsOriginalNative` 固定此修复；真实 Python 复现见 review-a21.md。
+
+A21 的临时 C36 依赖缺失503豁免已撤销：batch-5 合入后 server 注册真实 DNS/adopt owner，真实 Flask 保存与 revision 条件一致。独立未注册的 package 防线不列为生产差分。
+### N8-8a provider 调用方 — 畸形 definition / override 明确拒绝
+
+Provider snapshot 调用 typed `ValidateTopology` 时，非对象的 Provider definition 或
+`override` 不再泄漏 Python `AttributeError`，改为现有 `DialerReferenceError` 通道，
+中文消息为「拨号拓扑字段类型无效」。这属于已批准的 N8-8 明确类型校验边界，不能返回成功。
+修复 typed 迁移漏检：`yamlx.Get` 对非对象返回 nil，曾把这种坏数据静默当成没有 override。
+保留先发生的名称冲突、缺失 dialer 目标、重复名称等业务校验及其消息，正常输出不变。
+
+原始 Python corpus 保持不变。`internal/provider/testdata/n88a-snapshot-native.json`
+固定下列四行的完整输入及全部 152 个 outcome；索引均从 0 起，唯一变更为
+`{"error":"AttributeError"}` →
+`{"error":"DialerReferenceError","message":"拨号拓扑字段类型无效"}`：
+
+| row | 显式变更的 outcome 索引（闭区间） | 项数 |
+|---|---|---|
+| 366 | 2–21、32–41、82–101、132–151 | 70 |
+| 369 | 2–41、82–101、132–151 | 80 |
+| 375 | 2–21、32–41、82–101、132–151 | 70 |
+| 378 | 2–41、82–101、132–151 | 80 |
+
+其余 300 个业务拒绝逐项严格比较，包括 366/375 的 outcome 22–31
+「Provider 节点名称与代理链出口冲突」及四行的 outcome 42–71、122–131
+「生成的 dialer-proxy 引用了不存在的代理或策略组」；8 个头部结果也不变。
+测试验证每一项变更的原始/原生完整结果、每行输入和变更项数，禁止把其他错误改成成功。
+
+### N8-8a provider dialer-proxy — 诊断保留畸形原值
+
+非字符串的 Provider `dialer-proxy` 仍拒绝；错误消息不再把列表、对象、数字或布尔显示成
+空字符串。使用 yamlx 的紧凑 JSON 表示原值（大整数保留精度），字符串保持原样。
+例如 Python 的 `dialer-proxy「['relay']」` 在 Go 中显示为 `dialer-proxy「["relay"]」`，
+其余中文、节点名、HTTP 400、响应字段和持久化效果不变。这是已批准的原生诊断边界，
+不是允许畸形引用。
+
+`api/subscriptions/difftest.TestProviderDeliveryGraphs` 只在
+`{none,managed,raw,uri}/single/malformed` 四个用例指定完整的 Python/native body，
+两边分别严格匹配；没有改 normalize，也没有对其他消息做替换或放宽比较。
+
+### N8-8a 通用 R5 标量兼容（协调者最终裁定）
+
+共享入口为 `model.String.UnmarshalJSON`、`model.Int.UnmarshalJSON`；
+`model.DecodeRecord` / `model.SetMemberJSON` 使用同一解码规则，普通 string、指针、
+字符串/整数列表及 Map 值一致。移除了先前 Node 专用的 number-text 标记。
+
+- 所有声明字符串的 typed 字段接受 int/float：姓名、标签、server、密码、资源/引用 ID、
+  URL 和状态等均读为无损 JSON 数值文本。`123` → `"123"`、`1.25` → `"1.25"`、
+  `1e3` → `"1e3"`；大整数/高精度小数不经 float64。null 按缺失文本处理，bool 不变成文本。
+- 所有 `model.Int` 字段接受严格 ASCII 十进制整数字符串：节点 port `"443"` → 443、
+  策略组 interval `"300"` → 300；可有一个前导负号及前导零。带空格、加号、小数点、指数、
+  Unicode 数字或超出 int64 范围仍按 R5/验证错误处理。`json.Number` 仍不接受引号数字。
+- 原始字节、未知字段、未修改成员继续按 R2 保留；没有把这些兼容读取写回存储。
+  JSON 请求绑定仍遵守各路由自己的契约，后续业务检查不会因标量兼容而被跳过。
+- 开放的 Mihomo Params / proxy_string YAML 继续保留原值和 tag，不强制把密码数字转字符串。
+  数字 password 两条来源仍输出 `password: 123`；存储的引号 port 保留原始存储字节，
+  生成时按整数输出（下述 batch-6 修复更正了最初保留引号的输出）。
+  原冻结字节门的 quoted-port 类型边界仍单独用 native 回归。
+
+回归：`model.TestGenericNumericTextAndQuotedIntegers`、
+`model.TestScalarTextBoundariesAndPreservation`、`model.TestNodeNumericText`、
+`convert.TestMihomoNumericServer`、`convert.TestMihomoNumericPasswordPreservesTag`、
+`convert.TestMihomoQuotedPort`、`convert.TestTypedNumericResourceText`。
+
+浮点字符串化按协调者确认保留 token 写法，不把数值等价的拼法合并：
+`123.0` → `"123.0"`、`1e3` → `"1e3"`、`123.50` → `"123.50"`。
+这与 Python 的 `str(float)` 有意不同（如 `1e3` 在 Python 成为 `"1000.0"`），
+避免密码等文本字段丢掉用户给出的数值拼法。
+
+通用标量规则带来两条系统设置差异：convert 原冻结 corpus row 2021、2103 中
+GitHub 代理域名的数值 `5` 现在读成 `"5"`，不再忽略，因此启用相应代理前缀。
+`convert/testdata/n88_scalar_native.json` 逐行固定 fn、完整输入、Python 输出和完整 native
+输出的 SHA-256；不复制归档 URL，不做字符串替换或通用比较器放宽。
+
+### N8-8a 调用方补查 — 明确类型拒绝及 unknown 保留
+
+- 类型错误的 `dialer_ref` 不再因 R5 读作 nil 而从拓扑消失；ConfigDialers、NodeDialer、
+  NodeDialerTarget 和 ResolveNodeDialer 在使用前拒绝，消息带原存储 JSON：
+  `dialer_ref 必须是 {type: node|group, id: 非空字符串}，当前值："b"`。
+  原业务错误类型仍为 DialerReferenceError；repo compat row 57 固定此完整结果。
+- ippresence 的显式 null/无法解析的 rule_library 不能建立缓存声明的归属，返回
+  unknown(null)，不借 R5 零值继续读缓存。空字符串/空对象保持 legacy 空库语义；
+  已匹配声明之后的损坏尾项不影响有效前缀，保留已选格式和正常缓存结果。URL/引用 ID/名称的原生校验错误通过 errors.Is
+  接入原来的“无法判断”分类。正常有据的缓存仍照常返回 true/false。
+- 原 Python AttributeError 的兼容读取在此 advisory 层改为 unknown。精确白名单为
+  `ippresence/testdata/n88a-native.json`，每项固定完整原行 SHA-256、Python 错误和 native null。
+  corpus 行号：287、537、697、965、1010、1013、1239、1288、1302、1527、1596、1611、1773、1975；
+  edge 行号：2385、2387、2393、2505、2507、2509、2511、2512。其余结果不豁免。
+- repo 的已批准 native 结果固定在 `compat_native_yaml.json`：11/18/23/30/139/155 为
+  标量文本读取；13 为 CPython U+001C 空白差异；64 为 include-all:1 按严格 bool 的边界；
+  91/92/93 为无关畸形来源 metadata；145/146 为 params null/[]。
+  structured type 的数值拒绝逐项为 175、198、199、200、201、202、203、204、207、208、209、210、
+  211、212、213、218、219、220、222、223，完整中文消息/ValueError 均固定。
+- `repo/testdata/reference_native_scalars.json` 逐项固定完整 Python record 和 native 结果：
+  node name int、node proxy_string int、node subscription zero、group name int、group manual int、
+  order id int。兼容解码不会绕过后续的来源归属、legacy 结构约束和资源存在性验证。
+
+
+### N8-8a 修复换到 N8-5(c) 之后
+
+旧 compat_dialers/native golden 测试已删除，以上旧行号留作原基线历史证据；不恢复旧文件，
+也不继续改动未被执行的 compat_native_yaml 归档。typed repo 的 nodeRawDialer/legacy import
+改用共享 NodeDialer；checkDialers 直接调用 ConfigDialers。通用标量和业务校验本身不变。
+reference_native_scalars 的 schema str 明确接受严格整数字符串版本号；subscription zero
+由新 resolver 报 ProfileInUse「引用的共享资源不存在：subscriptions/0」，保留完整 profile 上下文。
+
+
+### batch-6 R5 全包断言收口（协调者裁定）
+
+- 节点 Name 不属于严格身份字段：`name:5` 读为 `"5"`，节点输出和转换日志都保留这个名称；
+  profile name `7` 也读为 `"7"`，不再出现 model 类型诊断。更新旧的空串断言，未改 codec。
+- Node.Type 也是严格身份字段：实际走存储节点转换时拒绝数字等非字符串，消息如
+  `节点 type 必须是字符串，当前值：5`。proxy_string 已提供节点时不读取存储 Type，
+  保持原覆盖路径；Node.Name 的数字文本兼容不变。
+- RuleConfig 的 `value` 和 `rule_type` 是严格身份字段。Mihomo、Surge、Loon 的生成入口
+  检查保留的原始 JSON，数字、bool、null、容器不能被 R5 兼容或回退悄悄放行；
+  诊断如 `规则 value 必须是字符串，当前值：5`。底层 RuleComment 仍是纯格式化：
+  独立调用时会把已经解码的 value `"5"` 格式化成 `MATCH,5,`，不负责业务拒绝。
+- 存储节点 port `"80"`、`"00443"` 分别生成整数 `80`、`443`，修复 typed 读取后又复用原始
+  字符串 tag 的遗漏；生成不修改存储，引号原值依旧按 R2 保留。已有数值 `80.0` 保留其合法
+  数值写法，Mihomo 开放 Params 和 proxy_string 的原始值与 tag 不受此修改影响。
+- EasyTier MTU `"1500"` 按共享 Int 规则有效，`"1500.0"` 仍无效；通知 occurrences `"7"`
+  有效读取为 7，改无关字段后仍原样存储 `"7"`。bool 和非整数仍保持原拒绝/回退规则。
+- URL `0` 按共享 String 规则读为 `"0"`，规则格式为 text，文件为 `Rules.list`，不再报告
+  URL 类型错误；bool、数组、对象仍按原 URL 类型错误拒绝。
+- `_revision:"60"` 的 typed 读取为 60、无类型诊断，修复事务将 revision 增加为 61；
+  这不取消 N8-5 的独立原始写入校验，尚未修复的字符串 revision 和数字 profile name
+  仍会阻止无关写入。保留其错误断言，继续覆盖“读兼容、写验证、原样往返、修复”四个边界。
+
+回归：`convert.TestBatch6R5GenerationRejectsRuleIdentityTypes`、
+`convert.TestBatch6R5RuleIdentityValidationPreservesStorage`、`convert.TestBatch6R5StoredNodeType`、
+`convert.TestBatch6R5UnusedStoredNodeType`、`convert.TestMihomoQuotedPort`、
+`convert.TestTypedEasyTierQuotedMTU`，以及本轮更新的 Common、Node、日志、URL、通知、repo 旧断言。
+
+## batch-6 — 客户端取消的日志边界
+
+HTTP handler 返回的错误若与该 HTTP 请求已结束的 context cause 匹配，不再误记为应用 `Exception`。subscriptions 的专用失败日志同样使用工作 ctx；活请求中的内部 cancellation、断连后的无关故障和 detached owner 的真实失败仍记录。状态码/JSON/中文消息、后台 owner 的生命周期均不变。真实 TCP 断连回归证明修复前误报、修复后不误报；原先把 proddiff 的相关日志差异归为可放过的“负载噪声”的判断已撤回，另修生成器重复解码造成的超时回退。详见 progress/batch6-logs-zh.md。
+
+
+batch-6 codec 窄化：格式查询只解规则库，继续使用 model.Shared 的原 R5 解码和原 RuleFormat；其余 metadata codec 同样只解 native helper 消费的字段。不再保留“无关字段里非 JSON 瞬态 Go 值碰巧让 Marshal 失败”的旧行为（协调者裁定）；有效持久化 JSON 的 R5 校验、ID/name/URL 和首匹配语义不变。窄 codec 及同快照单请求/分配基准见 progress/batch6-logs-zh.md。
+
+
+## A22 — gateway installation
+
+- Capability credential recovery proves the installation marker and full
+  Agent identity inside the registry transaction. Python read the proof before
+  entering that transaction; a concurrent rebind could invalidate it. Ordinary
+  owned replays and explicit existing-Agent bearer proofs remain compatible.
+- Malformed or wrong-typed private installation sessions fail closed with 409
+  and bounded 2 MiB reads instead of some Python JSON/KeyError 500 paths.
+  Latest ignores unsafe records; abandon still treats a parseable profile_id
+  as occupied. Unknown valid session members survive updates.
+- A21 F4's two-level redaction applies here too: system credentials are masked
+  across the response, while discovered user credentials are masked only in
+  diagnostics. This also protects references to another Agent's private
+  credentials without corrupting structural fields for short passwords.
+- The existing O3 in-process lock and shutdown rules apply to installation
+  workers. Cancellation after the drain deadline preserves the recorded
+  publishing IDs, makes no further commit, and resumes only on an explicit
+  later publication request; no new recovery action is added.
+- Python bug（复核 A22 F3）：setup check 读取 Agent 状态时，`managed` 是真值但不是对象（不可读的转发记录），
+  Python `managed.get` 抛 AttributeError → 500。Go 按 A20 `HasRecord` 的 fail-closed 规则视为仍有转发记录，
+  返回对应的 409。其余成员类型不符时与 Python 的真值 / `is True` / `== '1'` 判定一致。见 review-a22.md。
+
+## R14 — 自动规则同步
+
+- `controls` 按 D2 使用 Go canonical JSON + SHA-256，不仿真 Python 编码；旧回执仍可读取，若旧 control 不匹配则暂停并要求手动「预览发布」重新建立基准。合法 profile/router ID 的回执文件 key 保持兼容。
+- 修复 F-R12-3：Python `rule_sync_write._apply_delta` 未捕获最终 `_verify` 的 `ReleaseError`，设备目的更新可能残留；Go 对所有回读错误补偿自己的增删，并保留外部编辑。`TestR14DeltaPython/verify_failure` 同时证明 Python 残留与 Go 补偿。
+- 30 秒下载总预算从请求前开始，包含连接、共享客户端重试和响应读取；Python 在收到响应后才开始该总预算。连接/单次读取仍分别为 5 秒/10 秒，超时或超限不成为空路由意图。收到响应前预算用完（含重试）与 Python 的连接/读超时一样记为下载失败（failed，按间隔重试）；只有读响应体时超时或超过 4 MiB 才是「超过大小或时间限制」并暂停（R14 复核 M2）。
+- 使用 O3 的进程内单实例/L1/L2，不创建每设备 flock。关机取消停止设备和本地提交；已保存的 running 回执在重启后按既有规则暂停人工确认，不新增不可中断提交。
+
+
+## R17 — 客户端固定 IP 与 HTTP
+
+- HEAD `/api/client-devices?agent=...` 与 GET 使用同一 Agent 绑定空间，保持只读；Python HEAD 原先按全局空间读取。
+- 完整公开 HTTP 投影复用共享 redact，设备名称/发现/错误中引用其他路由器密码或已知 Agent 凭据时脱敏。私有存储与 CAS 证据保留原值。沿用 R16 坏行隔离，不把无效整张表当作空表。
+- signed preview token 的签名、压缩、时钟仍与 itsdangerous 双向互验，但 payload 中的完整设备操作改成 Go 原生 JSON + SHA-256 摘要。签名不是加密：Python 把 DHCP before-image 写入可解码 token，可能泄露 client-id/备注等私有字段；Go 在服务端重新读取并按完整摘要比较。旧 Python preview token 在切换后需要重做（本来仅存活 600 秒；连接指纹也按 D2 改用原生编码）。解压上限 8 MiB，token 上限 1 MB。
+- DHCP 归属证明要求 RouterOS server、iKuai interface/gateway 非空，且补偿 receipt 的完整 expected 存在。Python 的空 scope 相等不能作为 Go 删除外部对象的证明。异常设备响应仍可能使固定 IP 控件 fail closed，但健康发现设备保留。
+- R17 iKuai 新路径保留 Runtime 关机取消，通过共用 writeForm 编码/错误分类发请求；浏览器断连由 owner Detach 后完成。旧公共 Write 单操作完成语义不变。关机后不补偿/不提交本地 metadata；中止前设备可能已落下的独特 marker 保留，需重新发现确认。未增加不可中断提交或套用仅 R12 获批的 D-R12-3 例外。
+- JSON/YAML 原生表示与 D2 摘要不追逐 Python 字节。短随机 tag/nonce、validated updated_at/checked_at 是差分的精确归一化项，其余响应、revision、完整 profile 和设备表逐值比较。
+
+## R15 — 路由器 HTTP 与策略工作区
+
+- HEAD collection/forwarding 明确进入 GET 语义，修复 Python HEAD body 创建 router/持久化转发的缺陷。报告/提醒沿用 GET 的只读设备检查和观察记录语义。
+- R05 已明确分类的坏 verinfo / 损坏 Location 在 probe HTTP 中变为结构化502，失败 last_probe 保存且只增一次配置修订；Python 内部异常会 HTML500并丢掉本次探测。没有把坏回应当成成功或空表。
+- 延用 A20 的坏报告隔离：异常 forward_filter 只使本条网关 error，其他条目继续显示。公开最终投影（包括跨空间 upstream）、新 Management 日志/诊断使用共享 credential redactor，用户名保留。同名 has_password 布尔 presence flag 保持布尔，同名字符串仍按凭据字段脱敏，修复 Go 过度脱敏导致的类型变化。
+- 策略工作区 revision 按 D2 使用 Go native JSON；router 的 last_probe 不影响 draft revision，名字由独立 C31 revision 保护。旧 preview/draft 在切换后需重新载入。C22 生成/保存的 native_config、template_base_config 和 dns_content 按 YAML 结构兼容，格式及其派生 opaque revision 可不同。
+- R15 的规则同步 HTTP 差分也验证了已有 R14 私有 receipt 的表示差异：Go _rule_order 是对规则集合的顺序索引，公开 rules 数组仍按序严格比较；成功 delta 后 Python 省略的零值 Desired/added/removed/log，按明确缺省值核对，不丢弃非缺省数据。202 返回可以处于 queued/running/synced 的合法阶段；每个阶段中文消息须匹配，任务结束后完整 DB/文件/公开状态仍严格比较。
+- 设备锁沿用 R06 的有界 write wait，mutation preflight 与 owner 都保持 Runtime cancellation；仅 R12 已获批 publication 例外在设备尝试写入后记录中止。未增加不可中断区或新的后台调度器。
+
+## N8-8b — typed Mihomo base settings
+
+- 原生监听地址/端口解析不模拟 CPython 数字字符：sniffer 的全角数字范围和
+  上标数字返回明确的 BaseSettingsError；旧 reference 保留，两条差异单独断言。
+  这是 PORTING 已批准的 CPython-only Unicode 边界。正常 ASCII 端口不变。
+- Agent 上下文只读取 typed Agent 字段；错型/无效的 Agent 端口与地址按 R5
+  处理，不再模拟 Python 的“整数作为 IP 地址”等动态调用语义。
+
+## N8-8b — typed Mihomo generation and downloads
+
+正常存储输入的 Mihomo 生成、订阅与规则集下载顺序、URL 和字节不变。畸形存储字段
+按 R5 使用 typed 缺省并保留原存储字节：非数值的组 interval、非对象 health_check、
+非文本 health_check_url/custom_config/custom_hosts、错误类型的区域检测端口不再进入
+Python 动态类型逻辑。旧 rules/rule_sets 开放列表中的非对象项按 R5 忽略，其余项保留。
+R8 接受整数字值的浮点表示（Agent port、provider_update_interval），不复制 int() 的
+字符串转换规则。下载项 URL/path 明确要求文本，错误类型返回验证错误。
+
+端口解析使用 net.SplitHostPort 和 ASCII 整数：全角/阿拉伯数字及上标数字不再作为
+端口，非法的 `a]:1` 不再作为监听地址。16 条基础设置及5 条 helper 归档显式断言
+原生结果（旧 golden 不改）；基础设置仍返回既有中文提示，未改字段的校验规则不变。
+
+共享的 typed URL/rules 边界也覆盖两条 Surge helper 畸形值：非数组 rule_sets
+返回明确中文类型错误；非字符串 profile_id 按 R5 缺省，生成 URL 不再拼进 Python 的
+列表 repr。各有一条原始 source row 的显式 native 期望；其他输出字节保持严格比较。
+
+## N8-8b 复核 — 生成键/规则文本的错型存储字段明确拒绝
+
+以下存储字段在 Mihomo 输出中成为 provider 键、策略组类型或规则行文本。错型时 R5 会读成
+空串/缺省，typed 生成器曾静默输出 `""` provider（`./providers/.yaml`，与策略组按原值渲染的
+`use` 不一致，多个错型名称互相覆盖）、`type: ""`、`RULE-SET,,G`、`DOMAIN,,G`，或把规则集
+`behavior` 换成 `domain`、把跟随组当普通组输出。现在统一返回
+「<资源> <id> 的 <字段> 必须是字符串，当前值：<存储 JSON>」：订阅/订阅聚合 `name`、规则集
+`name`/`behavior`、规则 `rule_type`/`value`（MATCH 不检查 value）、策略组 `type`/`follow_group`；
+规则集下载入口同样拒绝。Python 对这些值或写出非字符串键、或跳过跟随组、或输出 `7` 这样的文本，
+迁移前 Go 对 provider 名称已明确报错；正常字符串输入字节不变（字节门 4548/4548）。
+
+同一节补登 8b 已有、但先前未逐项列出的 R5/显式差异：`system_config.config_token` 错型时
+provider URL 不带 token；策略组引擎选项（`timeout`/`lazy`/`strategy` 等）错型时不写入输出；
+`region_probe_port` 为超出 1–65535 的整数时返回「区域检测端口必须为 1–65535 的整数」
+（Python 原样注入，Mihomo 加载时失败）。
+
+## N8-8(c) — Surge/Loon typed option and health boundaries
+
+- 节点文本协议字段的数字字面量无损读成文本，数字密码保留；null 按字段缺失处理。
+  只有 bool 才作为 udp/tls/skip-cert-verify 等布尔参数，错型值按 R5 使用缺省值并警告；
+  不再把字符串 `"false"` 当 true。Mihomo 开放 Params 仍原样透传。
+- **修复 Python bug**：Surge WireGuard 数字列表 reserved 输出官方的 `1/2/3`
+  client-id，不再输出 Python 列表 repr；字符串 reserved/client-id 保留原文。
+- **修复 Python bug**：Surge TUIC 的字符串 ALPN 保留；单字符串列表展开；多元素或含
+  非字符串元素的列表省略 alpn 并记录带节点名、原列表的生成警告，让 Surge 使用默认值。
+  不再输出 Python 列表 repr。Loon 的列表 ALPN 格式不变。
+- **修复 Python bug**：Surge 策略组 url/interval 为 null，或 follow_group 继承时缺失，
+  使用默认测速 URL 和300秒，不再生成 Surge 无法使用的 `None`。
+- 已批准的 CPython-only Unicode 范围：down 的非 ASCII 数字前缀不识别、不输出带宽。
+- 和8b复核 F1一致，会变成输出标识或规则文本的存储字段错型时明确拒绝；诊断包含资源、
+  id、字段和存储 JSON，只有模型记录了类型问题才触发。正常字段保留旧字节。
+
+冻结字节门仍执行2353份Mihomo、1064份Loon、1131份Surge。107条已批准差异在独立的
+`internal/convert/testdata/n88c_byte_exceptions.json` 中逐行记录；旧 golden/manifest 未改。
+
+8a 共享标量修复接入后，8c 的名字、server、协议文本及 custom_config 都使用 model.String，
+port/interval 使用 model.Int；不再保留私有数字文本解码或待接入例外。正常数字文本继续严格
+比较旧输出。helper 的六条原 Python 类型异常输入（6630、13526、16441、16555、18393、20243）
+按已批准的无损文本规则读取，逐行 source SHA 和字段保存在输入分类索引中；6630 随后仍由
+正常业务校验拒绝其不存在的策略，未把错误配置改为成功。数值协议 type 是判别枚举，明确
+返回包含节点、id、字段和原 JSON 的类型错误，不再静默省略该节点；原 Python 也因类型错误
+失败（15488/15489）。遗留 rule_sets=false（5230）按已有类型化规则列表校验拒绝，保留中文
+「规则列表必须为规则对象数组」上下文。上述 malformed/native 边界均不修改旧 golden。
+
+## N8-9 health/check — typed 边界与原生诊断
+
+- health/check 的存储消费按共享 model R5/R8 解码：numeric text 无损，Int 使用共享的
+  数值/严格十进制字符串规则，wrong bool/容器按 schema fallback；身份字段和写入时间戳
+  另作业务校验。错误不再伪装成 Python TypeError/KeyError。请求健康检查仍执行严格的
+  JSON token 类型校验，worker version/latency 仍作协议验证，不能借存储宽容规则通过。
+- 评分的 delay 是 float64，超范围值按 R5；不再保留 Python 任意精度运算。节点 worker
+  的正整数 latency 仍以 json.Number 保留大数精度。具体 typed 差异均在独立合成参考中
+  逐条断言，原三份 corpus 不改；见 progress/n8-9-health.md。
+- 非法 worker UTF-8 仍失败（HTTP 400），消息由 Python codec 字节异常改成固定中文
+  “测速组件输出不是有效 UTF-8”，不显示 worker 内容。Flask 差分分别断言双方完整错误体。
+- 环境变量 CONFIGFLOW_NODE_TEST_TIMEOUT_MS 使用 strconv 的十进制语法，不再接受
+  Python 的下划线或 Unicode 数字写法。非法值仍用原中文设置错误和503。
+- worker 的失败 error 字段按协议要求为非空字符串；非字符串 truthy 容器不再被当作
+  有效失败记录接受。版本缺失/不匹配的原中文区分保留；非有限 JSON 明确拒绝。
+- node-probe JSON stdin 使用 D2 的 Go 原生编码；空白和 Unicode 转义可不同，JSON 字段、
+  数值、argv、预算、环境、结果和持久化仍严格比较。目录删除保留 errno 与“不删除目录”的
+  约束，使用 N8-7 jsonstore 的原生错误，不拼装 Python OSError 文本。
+
+## A23 — IPv6 readiness and verification
+
+- `check_token`、检查缓存 key、验收 target/settings/client/applied fingerprints 按 D2 复用 Go canonical digest，不仿真 Python JSON 编码。旧缓存/历史报告仍可读取；旧 token 或 fingerprints 不匹配时需要重新检查/验收，不把旧证据用于当前配置。
+- 连接表混合坏行由 R16 受限 reader 隔离；不完整或超过 256 行的基线不证明某连接是新增的。无效、负数、超出 uint64 的包计数保留为未知，不把解析失败或溢出算作正包数。Python 的混合坏行会使整表失败；网络包计数的格式错误不影响其他健康记录。
+- 已保存节点中的空服务器、非空但类型错误的 dialer-proxy 不占直接 TCP probe 的三个候选名额。Python 可能把这些坏节点作为直接候选发给 Agent；Go 保留健康候选。
+- 系统密钥整份脱敏；用户凭据只影响诊断及明确凭据字段，保留状态、ID、作用范围和 check_token 等协议值。种子覆盖完整 peer 配置与捕获快照，包含在请求期间被替换的旧凭据；主机和 ROS 的诊断不能引用另一台设备的密码/token。
+- 真实 Runtime 关机取消停止设备请求、缓存/报告提交，正在运行的旧报告按既有五分钟期限显示中断；浏览器断连不取消已开始的写操作。HEAD 保持 Python 的 404，零写入、零设备请求。
+- 主机持久化证据和转发/RA 详情中的非字符串值按 JSON 字面量显示（`null`、`true`），不仿真 Python 的 `None`/`True`/字典 repr；字符串和整数值与 Python 相同（A23 复核登记）。
+- A23 复核 F2：主机 prepare 失败时 Agent 返回的文字也使用捕获的凭据种子脱敏（Python 不脱敏这条消息里的用户凭据）。
+
+## batch-7 D2 — IPv6 验收与已忽略通知的一次性迁移
+
+协调者确认：切换后需重新做一次 IPv6 验收。旧报告的 Python 摘要与 Go-native digest 不同，
+旧报告保留并显示陈旧；新 Go 报告在输入未变时继续有效，读取不会改写旧记录。
+切换后已忽略的通知会重新出现一次；以 Go 原生指纹再次忽略后，同一事件不再出现。
+这两项必须进入 **O12 发布说明**，提醒用户重新验收并确认一次重新出现的通知。
+精确 baseline 仅登记旧验收报告的 message、checks[0].details 长度/首项，以及通知 items 长度；
+没有扩大到其他字段。回归见 `TestD2VerificationReportMigration`、
+`TestNativeD2DismissalReappearsOnceAndRouterStateIsPreserved` 和 subscription 专项迁移用例。
+### N8-9 rules — R5 / D2（协调者，2026-11-18）
+
+规则匹配、policy验证和缓存声明使用model typed读取。错误类型字段按R5回退，
+不再仿真Python的容器truthiness、None/True等显示文本；正常输入的输出继续逐字比较。
+规则远端缓存摘要改用D2原生JSON；600条原始缓存名档案及114条policy档案保持不变，
+另有真实Python typed-input投影和逐行独立D2预期，未空跳过差异类别。
+
+O12发布说明：远端规则缓存参与生成时的离线兜底。切换不能仅丢弃旧摘要文件；
+旧摘要只作一次性兼容读取地址，在当前声明认领且内容通过校验后迁入native名称。
+拟议编辑、旧声明或invalid receipt均不得借用该旧文件。实现及回归闭环见
+`progress/n8-9-rules.md`（本项实施中，最终交回需补齐验证）。
+
+N8-9规则缓存O12闭环：`rulefetch.ReadCache`对当前声明下的旧摘要文件校验内容，
+repo事务里再次核对声明及旧/新invalid receipt，保存native文件且不提交DB/revision；
+旧文件保留供回滚。离线刷新可继续使用迁移后的有效旧内容。
+`TestNativeCacheMigrationPreservesOfflineFallback`、拒绝旧声明/坏内容/receipt的负控，
+以及真实Runtime下载后关机/请求断开测试覆盖发布切换风险。
+
+N8-9下载诊断R8：重定向Location为非UTF-8时仍拒绝，不再创建Python
+UnicodeDecodeError，改为原生ErrRedirectEncoding（`redirect Location is not valid UTF-8`）。
+只改变内部英文异常类别/文本，响应拒绝及loopback请求transcript不变；原Python完整诊断另有断言。
+
+N8-9候选读取R5/D2：候选源列表及排序的读取按model schema回退，排序消费DTO的缺失type/id
+为字符串零值；数字文本使用已批准的model.String codec。新写请求仍严格验证数组、ID和排序项，
+不能借回退绕过校验。provider私有副本的path由Python repr(tuple)摘要切换为原生JSON摘要，
+不改变命名冲突处理、URL、过滤表达式、引用顺序或其他provider字段。真实Python的1500条
+候选读取及688条lower完整文档对照有独立R5/D2预期，原输入/原档案保留。
+
+N8-9 refresh收口（R5/R8/D2）：interval与health count统一使用共享model.Int；非对象任务回执、
+非列表或混入非对象的health history按schema回退。调度继续复用taskstatus.Count，拒绝非ASCII
+计数文本及非空容器；非有限JSON不能成为有效回执。31条R5差异由真实Python对typed输入
+重录，另有2条原生诊断（fs.PathError、repo.Error）逐条固定预期。原1210条refresh档案和
+3150条记录不改，未变化的行仍用原期望。超大interval的无上次运行/失败退避短路、空URL
+注入回调、受控Dialer错误类别等实际回归已修代码，没有登记为有意差异。
+
+D2写入的subscription health、transport与nodes缓存仅JSON成员顺序/空白可以变化，
+完整JSON值继续相等；比较器负控包括URL、node ID、数字类型、字段删除及非owner文件。
+
+O12规则缓存迁移补充：原生文件必须保留旧cache mtime，迁移不能延长 freshness；在目标
+file锁内确认不存在才安装，已有新文件不覆盖。readonly snapshot中仍可使用通过内容和
+声明校验的旧缓存，暂缓迁移至下一次可写读取；迁移写失败不会破坏离线读取，真实关机
+取消仍传播且不得继续写入。不会修改DB/revision，也不会删除旧文件，便于回滚。
+
+N8-9 D2 provider私有路径的跨包对照：convert的独立真实Python参考只替换49条archive行
+中的精确provider path；39条当前正常生成/下载行直接验证，原有N7/R5错误路径继续完整比较。
+生成文件内容、URL、过滤表达式、顺序、host与节点语义均不得借D2豁免。首次Go生成/推送会
+引用新的私有provider文件名，与既定D2一次性重新发布计划一致。
+
+
+## N8-9 DNS — 原生字段消费与 OxiDNS 动态设置
+
+- MosDNS 读取 typed model 的 R5 字段，不再使用 Python truthiness、任意类型 ID 相等或私有整数/字符串转换。正常配置的生成语义、文件名、规则顺序和 provider 鉴权不变。空/非字符串能力 token 不能经数字转字符串获得权限；退休 token 只作为重建已知生成链接的证据，不新增公开入口权限。
+- MosDNS profile URL 路径段用 `url.PathEscape` 编码；畸形非 slug 的历史 ID 不再原样插进 URL。URL query 仍保留协议字段及顺序。数值/错误形状的旧元数据按共享 R5 消费；原录制不改，以独立 typed 输入投影调用真实 Python、比较完整输出。
+- OxiDNS 原有私有 YAML 标量解析器被共享 yamlx 替代。`0123` 是八进制 83，timestamp/binary/未知标量的 JSON 边界是原文本；所有读取仍执行共享别名预算、安全字段名及 native 文档大小/深度/有限数校验。源 YAML 原文不因读取而回写。新原生结果单独登记，N7 的冻结历史语料不修改。
+- 协调者裁定：OxiDNS API 写入时，`custom_matches[].enabled` 必须是 bool；`ros_route.args.routing_table/gateway4/gateway6` 必须是文本。错误返回 400 和集中中文消息，不提交 DB 或文件。原 Python 接受的非原生类型按精确输入指纹单独登记在 `internal/oxidns/testdata/native-request-expectations.json`；原 C05/随机录制不改。
+- 已存储的上述值按兼容投影读取，不使整份 DNS 生成失败、不改原始字节：enabled 的数字 0/1 分别取 false/true；数字路由表/网关取原数字 token 文本；无效容器关闭这条 RouterOS 路由功能。其他非布尔 enabled 无效并停用该匹配。每个问题产生不含值的 `model.FieldIssue` 和路径告警。数字转文本会使生成 YAML 从数字变为字符串；无效 RouterOS 容器从 Python 的错误类型参数变为不交付该功能，其余输出由真实 Python 投影逐字段对照。用户编辑保存时应提交 bool 和文本以修复旧值。
+- 补充原生诊断：布尔 false 不再作为数值零触发第二条 range 错误，错误形状的日期列表只由 schema 报类型错误；完整其他诊断和顺序不变，52 条精确输入结果另存 `native-validation-expectations.json`。UDP 的非文本 entry 不再被用于自动创建 TCP，2 条完整结果另存 capability 索引，并有真实 Python 的错误可编辑状态及正确文本正控。
+
+### N8-9 MosDNS：原生规则文本空白与大小写
+
+MosDNS 的经典规则关键字、域名模式、规则内容不再导入 pystr；首尾空白用 strings.TrimSpace，大小写用 x/text/cases 的语言无关完整映射。真实 Python 对照确认 ß 关键字大写、土耳其 i/ı/İ、域名中的 İ 和最终 sigma、NBSP、普通域名规则输出不变。
+
+明确差异逐项登记：ParseClashRuleValue 的 U+001C、U+001D、U+001E、U+001F 首尾字符在 Go 中保留，Python strip 会删除。例如每个控制字符 c 的输入 c+"DOMAIN,example.com"+c，Go 返回 [c+"DOMAIN", "example.com"+c]，Python 返回 ["DOMAIN", "example.com"]。完整转换里 U+001C/U+001D/U+001E 原本就是共享换行语法，输出仍相同；U+001F 不是换行，输入 "DOMAIN,example.com\x1f" 在 Go 输出 "full:example.com\x1f"，Python 输出 "full:example.com"。15 个真实 Python 精确正负控覆盖上述每项；冻结语料不改。用户应移除规则首尾控制字符，普通空格、制表符和 Unicode 空白按原合同处理。
+
+### N8-9 MosDNS 请求边界（协调者裁定）
+
+前端 Generate.vue 的 cache-size/cache-ttl/cache-dump-interval 使用 v-model.number，加载时 Number(...)，Switch 绑定 bool；保存 /mosdns/settings 时直接传 draft 的数字/布尔。严格 ASCII 十进制整数字符串仍由共享 model.Int 接受（HTTP 正控使用 "128" / "60" / "20"）。整数的 60.9、true、超 int64 值、" 1_000 "、"+60"、"60.9"，以及 bool 字段的 0，Go 400、不写 DB 行/revision/业务文件；Python 的缓存接口会自动转换或回退默认并返回200。每个向量使用独立合成夹具，真实 Flask/Go 逐项断言，避免拒绝写入造成后续 revision 级联差异。
+
+媒体类型非 JSON、畸形 JSON、JSON 数组以及非 cache 接口的 null，Python 旧路由内部异常500；Go 返回明确的400，无写入。cache-settings 的 JSON null 特例继续与 Python 一致：恢复默认、200、正常递增 revision。rulesets 的不存在引用由 Python500改为Go409，保留同一中文说明，增加 usages；两边均不写入。比较器和 proddiff baseline 不改。
+
+原接口允许 custom_matches 中的字符串元素原样保存、显示，生成时忽略；现由 model.MosDNSMatch 的字符串/对象 union 保留该合同。DeviceNotes 的 R5 消费值不能充当写入合法性的证据：写入前使用原字段类型诊断和单独备注字段的原始成员验证，无效 null/[]/bool 继续与 Python 同样拒绝；不使无关 OxiDNS 生成失败。
+
+上述 MosDNS 缓存 bool 严格校验包含显式字段 null：cache_enabled/cache_dump_enabled 的 null 和 whole-editor 的 cache_enabled:null 均为 Python200、Go400、无写入。它们与整个 cache-settings 请求体为 JSON null 的有效默认重置（两侧200）分别测试，不能混用。
+
+## MCP #39 — typed 请求和凭据权限边界
+
+- 管理凭据必须是原始JSON字符串，不能由model的R5零值/数字文本推导授权；损坏的
+  config_token拒绝配置令牌认证，仍可在启用登录时使用有效JWT。0/false/空容器不被视为匿名配置。
+- MCP arguments/params及工具字段采用原生DTO，非法false/0/空数组不模拟Python的 `or {}`；
+  非有限JSON拒绝为400，内部异常返回固定中文，不复刻Python异常文本。
+- 路由段ID拒绝分隔符和点目录；Oxi对象递归merge最多128层。正常工具、profile、权限、
+  partial/reorder/事务和内部凭据脱敏合同不变。详细边界与真实Flask证据见
+  [MCP交回](progress/mcp.md)，待Opus HR复核。
+
+
+## O9 第一轮安全修复（O12 发布说明）
+
+- **O9-H1**：跨域请求不再被接受（不提供 CORS 许可头），同源前端不变。只对 Origin 与请求自身 scheme、host、端口一致的请求添加 CORS 头；没有 Origin 时也不再发送 `*`。这只改变响应头，不拒绝请求、不改变状态码或响应体。反代终止 TLS/改写 Host 时，面板继续正常处理请求；不信任 `X-Forwarded-*` 来放宽 CORS。
+- **O9-M3**：`JWT_SECRET_KEY` 未设置、等于 compose/安装文档示例占位值或少于 32 字节时，启动生成随机密钥；仅在用户名和密码都已设置、开启登录时记录不含密钥的 WARNING（复核 R5）。开启登录的部署使用占位值或过短密钥时，每次重启都需要重新登录；至少 32 字节的正式密钥行为不变。安装说明要求生成并保留正式随机密钥。
+- **O9-M3 复核 R6（固定 IP）**：`JWT_SECRET_KEY` 还签名固定 IP 操作的 10 分钟预览确认令牌。原短密钥或示例占位值升级后被替换，升级及此后每次重启都会使此前待确认的令牌失效（未设置密钥也有此重启影响）。提交尚未确认的固定/取消固定操作返回 409「固定 IP 预览无效或已过期，请重新预览确认。」，验证失败发生在路由器写入之前；已生效 DHCP 静态绑定、设备记录和客户端联网不受影响。即使未开启登录，也应生成并保留至少 32 字节的正式随机密钥；首次换密钥后，如开启登录则重新登录，重新载入来源设备，再重新预览、确认所需操作。
+- **O9-L6**：开启登录的受保护请求先认证，再解析 profile；未登录时一律 401，无 `X-ConfigFlow-Profile`。Python 对不存在/非法 profile 原先先返回 404/400；已登录、公开入口和关闭登录时仍按原规则校验 profile。
+- **O9-L5**：Edge 响应与 App 的文本响应统一增加精确的 `X-Content-Type-Options: nosniff`，防止浏览器把文本下载猜成可执行内容。差分仅允许该头从缺失变为 `nosniff`；其他头和内容继续比较。
+- **O9-M1/L1/L3**：后端监听保留默认地址，共用 Edge 的 1 MiB/96 MiB 请求体上限；已知长度和 chunked 超限均 413。访问日志 URL/Referer 脱敏；内部调用头改用常量时间比较。
+
+
+
+## O9-H2 / O12 — 开启登录后的 Agent 首次注册授权
+
+开启登录后，手工拼接的安装命令不能再注册，需要用面板生成的命令或设置注册密钥。
+首次注册必须带注册密钥、面板 JWT 或面板生成的一次性注册凭据。普通 Shell、AIO、Docker
+安装 API 自动生成每个服务独立的 24h 凭据，绑定名称、服务、端口、部署方式、profile；
+指定 Agent IP 时还绑定 host。成功注册与消费在同一 repo system 事务提交，重启、并发、
+删除 Agent 后都不能再次兑现；最多 100 个未消费身份，生成/成功注册时清过期项；
+名额仍不足时淘汰最早签发的未用凭据，新命令仍能生成。失效命令返回中文重新生成／注册密钥提示。
+缺少、错误、过期、重放或身份不匹配均明确提示“请在面板重新生成安装命令或设置注册密钥”。
+已有 Agent 仍须出示自己的 token；JWT/注册密钥不能接管已有身份。未开登录且未设注册密钥时
+保留匿名首次注册。网关与 HA 的现有独立安装会话保持各自身份校验。
+
+D2：`system.agent_registration_sessions` 是 Go 原生新字段，Python 没有；使用 typed
+`model.AgentRegistrationSession`，仅存 SHA-256 hash、绑定身份和 expires，不存明文凭据。
+按协调者裁定复用仓库事务，替代网关会话的独立 JSON 文件，以消除跨文件消费/注册窗口。
+不改变既有数据 schema version；旧数据无该字段可读，备份导入不恢复一次性注册会话。
+安装预览/下载脚本含明文凭据，响应 no-store；日志和通知只记录字段白名单与固定拒绝原因。
+未指定 IP 时仍属于一次性 bearer capability，不能防止首次使用前凭据被盗且身份被完整冒用；
+文档要求保密并尽快使用。指定 IP 的不同地址和首次成功后第二台机器均拒绝。
+
+Flask 差分只为安装脚本 JSON 的 `registration_token` 与 Docker 的
+`AGENT_<SERVICE>_REGISTRATION_TOKEN` 字段增加严格 43 字符 base64url 精确规则；
+注册差分的旧匿名成功样例改为两侧都带 JWT，匿名拒绝单独回归，不宽泛忽略状态或响应。
+
+发布要求：面板必须同时提供由本次源码重建的 Agent 二进制和 Docker 镜像。旧二进制不识别
+`registration_token` / `registration_key`，不能执行登录开启后的新首次注册流程；已有 Agent
+持有自身 token 的运行协议不变，无须仅为此强制升级。
+
+### O9-H2 复核补充 — 匿名注册不再暴露已有 name/host
+
+开启登录（或未开登录但设置了 `AGENT_REGISTRATION_KEY`）时，没有注册密钥、面板 JWT、也没有与该身份匹配的一次性凭据的请求，
+遇到同名同地址的已有 Agent 时返回与未知身份相同的 403（`RegistrationLocked`），不再返回 Python 的 401 归属提示；
+否则公开的注册路由会告诉匿名调用者哪些 name/host 已注册。带面板 JWT、正确注册密钥或该身份有效凭据的请求仍得到原 401 提示，
+且该凭据不被消费。未开登录且未设注册密钥时行为不变。差分只对 4 个具名重复身份样例断言精确的 Python 401 / Go 403 完整 JSON，
+回归见 `TestO9AnonymousRefusalDoesNotRevealExistingIdentity`。
+
+### O9-H2 复核补充 — Docker 成对输出、容量和凭据可见范围（R2–R4）
+
+前端只请求一次 `GET /api/agents/docker-agent-compose?format=both`，返回 typed
+`dockerInstallCommands` JSON 的 `compose`、`run` 字段。这是 Go 原生可选扩展（Python 没有）；
+不带该参数的既有文本 API 不变。两种格式共享每个服务的一次性凭据，AIO 每次只占两个名额。
+仅登录管理员可签发；100 个名额满后，在同一写事务内先清过期，再淘汰最早签发的未用项，
+同秒按签发顺序淘汰；旧命令失效返回 403，最新命令可注册。匿名拒绝不暴露身份存在性。
+
+未开登录但设置注册密钥时：已有 Agent 凭自身 token 重注册无需再提供密钥；错误密钥改为中文
+重新生成／设置密钥提示；新 Agent 可通过 JSON 的 `registration_key` 完成注册。
+“只存 hash”限定为主库会话字段：installer store 的 24h 脚本快照含明文凭据，下载链接属于
+持有者链接；Docker run 参数、`docker inspect` 环境中也可看到明文。首次成功注册后凭据失效，
+这些载体必须按临时密码保管，日志和通知仍不记录明文。见安装指南及截图说明。
+
+### batch-8 O9-M2 — 规则响应解压大小限制
+
+规则下载及缓存刷新的共享 rulefetch 解码边界现在统一限制每个解压层及最终正文最多 64 MiB。
+Content-Length、gzip/deflate 压缩大小及调用者的 streaming 选择均不能绕过；更小的
+部署文件限制仍生效。超限关闭响应，返回 typed size refusal，不把部分内容写进缓存，
+保留上一份已验证内容。O12 发布说明需列出这个上限；Sub-Store 专属路径另由 subs 组处理。
+
+### batch-8 D2 — 历史 profile-local URL 缓存归属
+
+当前 SQLite 中已保存的 profile-local URL 来源也可认领与其声明完全一致的旧规则缓存，
+包括旧 rule_sets 存储形式。归属只来自当前 stored document，不能来自 captured args、
+拟议编辑、已删除来源、未解析的 library 引用或不同 ID 的同名替代来源。纯生成走 Peek，
+不迁移；正常 reader 在带来源 ctx 的写事务内再次核对归属，保存新文件并保留旧文件及
+mtime，不改 DB/revision。O12 发布说明应与既有规则缓存迁移说明一起列出。
+
+C28 的两个原冻结 world 不含 captured 来源的当前声明，按协调者裁定精确断言离线
+拒绝（Timeout）、无 ZIP 和无缓存改动；另七条 D2 写入/迁移仅改变原生缓存地址并按原
+world 保留旧文件。原 archive 不改；独立 Python 参考绑定完整 archive 和每条原行摘要，
+正常 ZIP 的完整内容和全部 cache bytes 仍比较，没有通配 baseline。
+
+### N8-9 subs/substore — 缓存边界（协调者裁定）
+
+- 数字订阅 ID `5` 经共享 model.String/record codec 读作 `"5"`，清理时归属文件为
+  `5.json`；移除仅为了复刻 CPython `AttributeError` 的旧断言。原始存储值不改写。
+  `substore/testdata/n89_cache_reference.py` 对精确 model 消费投影调用真实 Python
+  `prune_orphan_caches`，生成完整删除列表与剩余文件内容；实际入口负控改变一个期望文件名
+  必须失败。不是从 Go 输出反推期望，也没有修改原 corpus/比较器。
+- 损坏缓存 JSON 使用原生解析器；日志固定业务前缀 `读取订阅缓存失败 (<id>): ` 不变，
+  后面的 CPython parser 内部原文改为共享原生 DecodeStored 的错误。原来“返回无缓存、文件
+  保留”的行为不变。订阅列表/ID 损坏仍以 `检查订阅缓存失败，跳过清理: ` 开头，
+  不从 R5 的 nil 列表推断“全部缓存都是孤立文件”。
+- 缓存保存、删除、清理在真实 Runtime 关机后拒绝副作用；请求断开仍完成。新共享删除入口
+  使用 repo 现有文件叶锁，取得锁后/最后 unlink 前检查取消；不删除 Python 遗留 lock 文件。
+  主文件、备份、未知字段和有效原始缓存字节的既有测试保持。作废内容核对的 panic 日志
+  只输出固定业务文本，避免回显任意 panic 值中的节点凭据。
+
+
+### N8-9 subs/substore — 私有 runtime 状态文件（协调者裁定）
+
+- 私有 `<tempdir>/configflow-sub-store-<DATA_DIR sha256前12位>/state.json` 改用共享 model
+  记录和原生 UTF-8 JSON framing，不再复刻 Python json.dumps 的单行空格/ASCII 转义。
+  业务字段、值、成员顺序、有效 supervisorctl 命令和副作用不变；未知成员和原数字文本
+  继续按 R1/R2 保存。显式写入的字段通过 SetMemberJSON 修复，不能因值恰好为零而保留损坏值。
+- 生产读取方审计：旧 `backend/utils/sub_store_runtime.py::_read` 用 json.loads；新
+  `substore.loadState` 用共享 DecodeStored + model。`docker/sub-store-start.sh` 只选 bundle/VERSION，
+  Node 数据目录由 `docker/Dockerfile` 的 SUB_STORE_DATA_BASE_PATH=/data/sub-store 指定；
+  启动/安装脚本没有定位上述 hashed scratch state 文件，没有发现其他按字节匹配该文件的进程。
+- `n89_runtime_reference.py` 由真实 Python 原样写出旧格式（包括空格、Unicode ASCII 转义及
+  超过 2^53 的未知整数）；Go 读取测试检查字段/未知整数并确认读取不改写文件。
+- 非对象 state 根以 RuntimeStateError 明确拒绝，不再构造 CPython AttributeError/TypeError。
+  该无效根在任何服务控制前拒绝，文件保持原样。last_used 的 null/非有限数/错误类型
+  不能作为可停止服务的空闲证据；被真正消费时拒绝，未消费的读取/被覆盖路径仍可工作。
+  其他 R5 字符串/指针字段遵守共享 codec，而不是 Python truthiness。
+- 原 review_reference.json 及 checkOutcome 比较器未变。128条逐行 native 参照由原文件哈希锁定，
+  真正的 Python生命周期函数读取 model 消费视图；真实 Python writer 继续操作原文件，
+  避免无关字段被投影规范化。精确期望改变一个 mode 的负控能使实际测试失败。
+
+
+### N8-9 subs/substore：原生客户端边界（2026-11-19）
+
+- 下载结果、转换缓存直接保存 typed Traffic / yamlx.Node，legacy API 仅转码。订阅临时对象
+  POST 改用共享 jsonresp DTO 编码：字段、值、顺序、URL、noFlow、下载/删除命令不变，JSON
+  framing 为原生紧凑 UTF-8；新测试逐字节检查 POST 和无 body 的 DELETE。
+- 删除 CPython OverflowError：非有限流量计数器现在是 `*substore.TrafficError`，明确指出
+  upload/total 字段，原有限数字的 float→整数协议和精度保持。精确 native fixture 覆盖
+  corpus 的 `upload=1e400`、review 的两条 total 溢出；只变错误类型/引擎文字。
+- CPython 特有 U+001C 不再当 Unicode 空白：`total\x1c=1` 无合法流量字段，返回 null。
+  标准 Unicode 空白、有限计数器和其他 sibling 字段不变。精确 fixture 列明该唯一 corpus 项。
+- typed proxies 是对象数组。旧引擎把空字符串/空映射当空结果、把 null 节点跳过的私有
+  动态行为不再保留；显式拒绝并在中文消息带原值。native fixture 逐项固定 corpus
+  147/148/151/152/155；其余 corpus 和 N7 原始 YAML 参考及比较器不修改。proxy type 仍为
+  严格身份字段；name/server 使用共享 String，port 使用共享 Int，开放 Params 不改原 tag。
+- 关机取消不再形成共享下载的上游失败 cooldown，不再写入转换结果；等待同一 flight 的
+  请求可立即响应 Runtime 关机。请求断开仍完成原工作。真实 Runtime 回归覆盖 fetch/convert。
+
+
+### N8-9 subs/substore：原生环境、HTTP JSON 和在线更新（2026-11-19）
+
+- 删除 product 中的 pystr/pyInt、模拟异常类、CPython UTF-8 错误位置、os.makedirs / shutil
+  异常原文及动态 release 字段操作。原生进程错误保留 `%w`，关机取消可 errors.Is；非法
+  UTF-8 输出是 ErrCommandEncoding，非法 VERSION 是 ErrVersionEncoding。正常 argv、
+  超时、返回码、换行转换、文件和重启/回滚断言不变。只改旧引擎错误文字/类别断言。
+- 标准 Unicode 空白不包含 U+001C：原 `NBSP+3001+U+001C` 与 corpus 的 `3001+U+001C`
+  明确拒绝为 PortError。其他合法 ASCII 数字、前导零、标准前后空白和端口范围不变。
+- version 是原生十进制 dotted 协议，使用 big.Int.SetString，不再复制 Python int 的 Unicode
+  数字/underscore/分段空白和4300位限制。精确 corpus 边界逐行登记：`２.４２`、`2. 3`、
+  `2.NBSP3`、`2.U+00853`、`2.1_0`、`𝟘.1`、`٣.٤`、`U+001C2.1` 无有效版本；对应
+  `is_newer([２.43,2.42])` 为 false。4301位十进制分量保留原精度；fixture 用完整十进制文本
+  比较每个 native 分量，避免旧 jsonx parser 自身的 CPython 位数限制。其余版本字节/比较不变。
+- Release/asset 使用共享 model codec。错误 root/assets/body 形状是 ReleaseError，检查更新
+  的固定中文业务前缀、最后一次成功结果、正常字段/值/顺序/TTL 不变。数字 digest:5 按已定
+  String 规则读为文本 "5"，没有 sha256 前缀，SHA256 为空，精确测试固定完整 Release 零值。
+  更新内部 panic 不回显内容，保留“更新失败：”并给固定中文内部错误；原重启失败诊断类别
+  从 RuntimeError 改成 native errors.errorString，回滚效果及后缀不变。
+- 原 malformed node 参考三项精确列入 native fixture：review parse row21 的0节点明确拒绝，
+  不再把空对象当成功结果缓存；review nodes row18 的 name:1/server:2→文本，port:"x" 的 typed 读值为0但保留原始类型证据；
+  row19 的 type:null 按字段不存在处理，输出空 type。有效输出五个字段及 Params 不改。
+- 取消闸门覆盖写下载文件、复制备份、替换 bundle、写 VERSION、文件 mode/time、重启、
+  回滚。关机后停止后续修改，不扩大不可中断范围；仅清理本次临时下载文件并更新进程内
+  terminal observation。已经替换 bundle 但还没写 VERSION 时保留旧 VERSION 和完整备份，
+  不再重启或破坏恢复证据；请求断开仍完成全部更新。真实 Runtime 的三提交点×两种取消
+  及入口关机回归验证这些状态和最终锁释放。
+
+
+### N8-9 subs — 监听器、筛选与订阅 Base64（2026-11-19）
+
+- 监听器核心使用 model.Profile / yamlx.Node；保留原有 yamlx.Edit、alias/anchor 分离、
+  原文与注释、错误定位、路径顺序及不安全编辑拒绝规则，旧入口只转码并回写唯一拥有的
+  custom_config 字段，不重写其他字段。
+- 订阅筛选按 model.Subscription 读取，一批只编译一次正则。节点名的数字文本兼容保留；
+  bool/容器/null 名称按 R5 的空文本消费，不再用 Python repr 构造节点名。返回的是选中的
+  原始节点（未知字段、原值、顺序不改）；numeric regex_filter 通过共享文本规则消费。
+  `n89_filter_reference.py` 在精确消费投影上调用真实 Python，然后把选择位置映射回原始
+  记录；9条变化有 source/row SHA 和完整期待，原 corpus/比较器不改。严格请求 token 校验
+  `节点筛选正则必须是字符串` 和固定中文日志前缀不变。
+- **有意保留兼容规则，非行为变化**（协调者明确裁定）：外部订阅源的 Base64 必须继续
+  宽松读取。decodeSubscriptionBase64 忽略非字母表 ASCII（空格/换行/垃圾）、忽略尚不能
+  完成末尾量子的多余 padding，完整 padding 后停止；非 ASCII 和不完整末尾仍失败。
+  前置清洗后由 encoding/base64 完成解码，删除旧手写 bit decoder。2500条原 helper 语料
+  及3714条实际 URI 语料保持原期待，不改为 strict、不扩展无 padding 编码的接受范围。
+
+
+### N8-9 subs — typed 订阅解析及类型证据（2026-11-19）
+
+- 新 ParseList/ParsedProxy：URI 导出 model.Node；结构化对象保留 yamlx 图及 typed 读视图。
+  Base64 保持明确批准的宽松兼容，原2500条 helper 语料不变。订阅不读任何全局配置；
+  VMess 只用标准 JSON 选取十个协议字段，再进共享 model codec，重复字段继续取最后一个，
+  原始 null 根不是对象、不生成节点。未知的开放参数不因 typed 迁移变成空值。
+- VMess port/aid 是外部协议整数：标准数字、共享严格带引号整数和整数字值的浮点数可用；
+  bool、fraction、overflow、错误容器/文本均拒绝该条 URI，不把坏端口悄悄当0成功。字段缺失
+  使用原来的0。原始 URI 的端口使用 strconv 十进制，保留原有正负号、前后标准空白和前导0；
+  CPython 下划线/Unicode 数字以及超过int64的端口不再接受。整数范围外的端口也无法用于网络。
+- Node 的 name/server 使用共享文本读法：有效数字无损转文本，null 按字段不存在处理。
+  **错型 bool/容器的原 token 和 FieldIssue 保留**，让 Surge/Loon 继续按所属 Node ID 明确拒绝，
+  不把已有业务错误改成生成空 server 的“成功”。开放 Params 中 uuid/cipher/network/path/host
+  等值不在解析器里强制转字符串或替换 null；下游 typed option owner 使用自己的 schema。
+- 同样修复 substore.ProxyNodes 的重构问题：原来新建记录会丢掉 server:[] 的 FieldIssue，
+  让已有 `skip-failing-node` 分类和拒绝失效。现在 name/server/port 的错误 token 保留；
+  有效 name/server 兼容文本及 port:"443"→443仍保持，Params 原 tag 不变。既有8c的306条
+  boundary reference及其分类索引原样通过，未修改任何8c期待或比较器。
+- `n89_parser_reference.py` 对冻结输入调用真实 Python 业务，仅注入已审核的共享整数/文本
+  消费和原生 URI 数字规则；YAML复用原N7独立 loader值，不取Go业务结果。795条已有输入的
+  变化有逐行SHA、具体field/class、完整输出，21条旧私有 int helper 转为实际 URI 整数边界。
+  这不是扩充输入矩阵。冻结 corpus、N7资料和比较器未改；一次完整输出负控确实失败。
+- 开放 JSON 的 `1e400` 和大整数 token 仍保留，typed Port 溢出为0并保留问题证据；
+  JSON不接受的 NaN 文本按既有开放 YAML 原生规则成为字符串“NaN”。独立回归固定完整原文。
+
+### N8-9 subs — native DNS 图与协议文本（2026-11-19）
+
+- ApplyDNS 消费固定 typed DNS 字段，开放 hosts/policy/filter 保留 YAML 图。DNS listener 端口、
+  semantic version 使用 ASCII 协议数字，不再接受 CPython 的 Unicode Nd：冻结 DNS row919
+  `1.2.3.4:٥٣` 明确返回 listen_unparsed，row955 `v١.١٩.٢٠` 是未知版本。两条期待由真实
+  Python 确认旧值并逐行绑定 SHA；其余4767条原期待及比较器不变。
+- 固定 String/Int/bool 的已定 R5 边界同样用于 DNS 与 discovery 状态；无配置/缓存的每节点
+  转码。rule 模式的 fake-ip-filter 必须为列表，false/0/空字符串/映射不能证明是空名单，
+  因此保留整个配置并给现有 filter_not_list 中文提示，不再覆盖这些用户错误值。
+- DNS 写入先完成计划与验证，再克隆拥有的 DNS 子树；不通过共享 alias 改动用户其他字段。
+  hosts 索引每次生成构建一次，null 的末尾 host 值维持原“目标域名尚未解析”语义。
+
+### N8-9 subs — typed hosts 元数据、合并与 D2（2026-11-19）
+
+- ExtractHosts 直接读 YAML 节点并生成 HostsData，保留 entries/total/skipped_count/skipped
+  四个输出字段，包括显式0、空映射/空列表、空 domain。只提取顶层 hosts，不被订阅其他坏段影响。
+  合法 YAML 的 CR/LF/NEL/U+2028/U+2029 行边界保持；CPython splitlines 特有的 VT/FF/
+  U+001C/U+001D/U+001E 不再把控制字符悄悄删成新行，交给原生 YAML 拒绝。冻结语料中
+  19条这种已有输入由真实 Python业务加原生区块选择独立生成完整 parse_error 期待；正常字段/
+  值/顺序/文件和副作用不放宽，原 archive/N7资料/比较函数不改。
+- 按 design/n7-n8.md §2.7 的 D2，现在启用原生 HostDigest：共享 jsonresp.Canonical 编码，
+  标准 UTF-8/紧凑 JSON，而非 Python json.dumps 的 spacing/ASCII。69条既有 digest 输入逐项
+  固定原生 SHA；HTTP共享入口的单条 hosts identity期待同步更新，并保留历史hash注释。该值
+  是订阅 hosts 内容身份，切换后允许报告一次变化；不是设备生成文档或命令的字节签名。
+- SourceMetadata/SubscriptionCache 是 subs 的只读消费 DTO，持久化 owner 仍为 substore.Cache。
+  一批缓存节点逐个进入共享 model.Node codec，坏的非对象 sibling 保持跳过，不把整批有效节点
+  丢掉；没有重写/清理缓存文件。HostIndex 保留 absent/null/错型 entries 的“无可用索引”区别，
+  不制造可用的空集合。URL一致性、共享 String/Int/bool规则、未知字段原始存储均保持。
+- MergeHosts 直接消费 model.Config、typed source index 和开放 YAML 图；每个订阅只取一次索引，
+  不在节点/订阅循环重解整个配置。只克隆并替换拥有的 hosts 容器，不修改其他 alias。缺失
+  必需 owner 明确报 CollaborationError，而非把没检查的数据当成不需要合并。
+
+### N8-9 subs — 外部 dialer 元数据与交付（2026-11-19）
+
+- **有意保留兼容规则，非行为变化**（协调者明确裁定）：外部机场 proxy-groups.type 只接受
+  select/url-test/fallback/load-balance，其他值（含数字/未知类型）通过 airportGroupType 回退
+  select，确保可用中转仍能选择；这不放宽用户存储的 model.ProxyGroup.Type 或 Node.Type。
+  新回归同时证明机场数字 type 可用、用户存储数字 type 仍被唯一共享校验器明确拒绝。
+- ExtractDialers 直接读取 YAML 图，节点名称使用共享 model.String。proxies/proxy-groups 及
+  实际访问的组成员必须为列表/null，不再把错误字符串逐字符、错误映射按键迭代。11条原有
+  畸形输入由真实 Python 业务+已审核 N7 loader值的 typed 消费投影生成精确原生期待，绑定
+  source/row/loader SHA；明确 SubscriptionShapeError 类型和中文字段路径，不回显整份含
+  凭据的订阅。原语料及比较函数不变；独立回归逐条核对原生类型和完整错误消息。
+- 实际组遍历每个 target 只访问各子组一次；重复 DAG 边不再造成指数展开，保留首次叶节点
+  发现顺序、去重、50 targets/100 members 上限及 unresolved。30层重复子组回归通过。
+- AdaptProxies 返回原始开放图节点，只在需要拥有 dialer-proxy 替换时克隆该节点。使用共享
+  yamlx.Encode 检查图/alias预算而非把整个开放参数强制转 JSON，保留合法非字符串 YAML键。
+  同样调整已迁移 hosts/DNS 克隆前的图验证；新增非字符串开放参数和原记录不变回归。
+
+### N8-9 subs — typed 中转组生成（2026-11-19）
+
+- AddGroups / DialerInputs / DialerReport / SourceDialers 直接消费 typed 配置及缓存，引用解析走
+  convert 唯一实现。metadata.dialers 的缺失与显式 null/错误值保持区别：后两者不回头读取
+  downloaded 缓存。记录存在但没有可确认成员（空、错型 members 或错型 target）时，不再
+  生成空中转组；保留该节点 missing 提示并暂不交付。这修复 Python 在损坏 metadata 上构造
+  空 group 的问题。有效源/成员/顺序不变；未知数据不被当作有效空集合。
+- 缓存健康字段按声明的 String/Int/bool消费后写入生成图，metadata原始字节由 model保留；
+  开放节点 Params 不做标量强制改写。Provider 名称字面量过滤使用 regexp.QuoteMeta 加
+  既有 portable punctuation 转义，保持生成 filter 的字节和反引号排序语法。
+- 业务名称冲突仍保留已经生成的代理前缀；本次未生成的 group 不伪造成功。Source cache 与
+  model.Config 不修改。Runtime关机在读缓存返回后立即阻止继续转换和图提交，取消保持原样。
+
+### N8-9 subs — 唯一 typed 链 owner 与旧私有 helper 删除（2026-11-19）
+
+- LowerChains/ChainProviders 只消费 model.Config/yamlx，dialer 校验、图、成员解析、过滤和结构化
+  proxy_string 使用 convert 唯一共享实现。删除 subs 的私有 compat.go、pyconv.go、旧 chains.go、
+  yaml_reader.go；legacy*.go 仅在旧入口转码。固定业务错误及正常生成字节不变，不再复刻
+  CPython repr/AttributeError/动态 ID 相等。缺少 shared collaborator 明确失败。
+- 既有 shared R5 边界现在同样适用于旧 subs 入口：数字 proxy_string/ResourceRef.ID/组列表文本
+  用共享 String；错型整体 nodes/subscriptions/aggregations、列表、follow_group 消费零值但不改
+  原存储；params:null 按缺失；include-all 只收 bool。坏 dialer_ref 不得因 R5 变 nil 后漏掉业务
+  校验，仍由共享 owner fail-closed；错误保留实际原 JSON。结构化 type 为非字符串不可用，
+  YAML 标量键及非有限 JSON 后转 YAML 的规则跟唯一共享 owner 一致，不保留私有旧解析分支。
+- n89_chain_reference.py 读取冻结输入、调用真实 Python 业务并应用已批准的 shared R5 读视图，
+  对656条已有输入逐项记录类别、原输入 SHA 和完整 native 输出；原 archives、N7 oracle、比较
+  函数均不变。具体类别逐项列在 fixture.classes（19类，含正常 ID 数字文本及明确错误）。
+  泛化的历史 Python 内部异常仍沿用原先“必须报错”的约束，不把真实 DialerReferenceError 放宽。
+- URI query 解析使用明确的 ParseQueryOptions：保持重复参数顺序、空值忽略和分号作为值；PSL
+  输入使用 strings.TrimSpace，不复刻 CPython C0 空白。既有 URI/base64/registrable 语料继续验证。
+- 新增 ProxyGroup.SetJSON 复用共享 SetMemberJSON；只替换拥有成员，保留显式 null/空列表和新增
+  成员顺序，不改未知大整数及输入副本。链私有 ID/名称/排序/provider 复制及中途错误的成功前缀
+  均保持。与未迁移 rules/provider 的边界不复制业务；convert 仅新增订阅 typed 接线文件。
+
+### N8-9 substore — 原生临时根目录选择（2026-11-19）
+
+- 删除残留的 tempfile.gettempdir 仿真及写“blat”探测文件。runtimeTempRoot 保持显式
+  TMPDIR/TEMP/TMP 优先级、绝对路径和既有有效 state.json 的位置；无显式配置使用 os.TempDir。
+  不可用的显式目录由实际写入返回错误，不再悄悄退到其他目录并启动第二份 runtime。
+  目录选择本身不写文件。旧 Python 原样 state.json 仍由读取回归验证；正常命令/副作用不改。
+
+### N8-9 subs — 跨包调用边界收口（2026-11-19）
+
+- （已被 O12 M16 撤销，见文末「O12 M16 — 无法识别的 Mihomo 内核版本按未知处理」）
+- Python bug 修复（协调者裁定）：EasyTier 的 Agent 门禁对非空但无法解析的 coreVersion
+  fail-closed，固定中文消息“Agent 上报的内核版本无法识别：<原值>，请升级或重启 Agent”。
+  不恢复非ASCII机器版本数字；空/未上报/null仍走既有unknown路径，非Agent路径不扩大限制。
+  冻结 review_c12 row2125（v１.19.30）绑定完整原输入、真实Python旧错误和明确native错误；
+  正常ASCII版本和生成字节不变。新增回归检查拒绝发生在修改文档之前。
+- 已批准的私有引擎错误替换：Surge/Loon的22条既有 proxies_* 数字type输入，Python原为
+  AttributeError，Go明确 ProxyShapeError：“节点 type 必须是字符串，当前值：5”。
+  由真实Python重跑确认旧错误，逐行输入SHA及完整native错误固定在独立caller fixture；
+  原archive/比较器/8c分类索引均不改，其他错误类别不放宽。4条版本项与其共26条精确参照。
+- 修复本次迁移引入的两处调用遗漏：ParseProxyNodes只投影实际消费的proxies子树，保持
+  无proxies但有无关复杂YAML键时的原空列表行为；DescribeFailure对无cause的
+  SubscriptionFetchError保持“更新失败（SubscriptionFetchError）”，不泄露Go包名到固定业务文案。
+  两项均有修复前失败的原跨包语料和专门回归，未改其业务期待。
+
+- 上述Agent版本新裁定还覆盖冻结corpus/34045、35971与review_c12/2121的alpha-*版本；
+  和row2125共4条，明确在任何图修改前拒绝，完整未修改图进入独立native期待。
+  MosDNS三份Python参考只刷新已删除/新增代码的依赖元数据；2863/0/5个既有exact entries、
+  声明输入hash及venv依赖hash均与git原文件相同，未修改Python业务答案。
+
+### N8-9 subs — Agent未知版本生成边界与原生生产接线（2026-11-19）
+
+- 协调者批准的版本门禁同时影响Mihomo生成：mihomo_corpus的12条既有输入、review_mihomo/471。
+  使用真实Python完整生成器，仅注入已批准的“非空未知Agent版本拒绝”守卫，捕获完整错误、
+  部分report与逻辑profile状态；逐行/source/原字节清单SHA绑定。正常版本不变。
+- 原4548项字节manifest完全不改。其中9项含alpha-abc机器版本，现在单独逐项断言完整
+  EasyTierSettingsError、原baseline SHA和空输出；其余4539项仍逐字节比较。Mihomo仍保留
+  原2353项覆盖计数（2344字节比较+9明确拒绝），Loon1064、Surge1131及既有8c例外不变。
+  没有全局比较器豁免，没有从失败的Go输出重录字节期待。
+- 临时目录原生环境边界已获协调者明确批准：首个非空TMPDIR/TEMP/TMP选定后不回退、不写
+  探测文件。首次实际使用检查目录存在/类型/写入与遍历权限（含内核ACL/只读挂载检查），
+  RuntimeDirectoryError明确显示变量名、绝对路径和中文原因，并保留原IO错误链。内置运行时
+  启动接线即发告警；未启动/关机后的写入仍按原取消闸门拒绝，不因诊断创建新目录或state。
+- 生产mihomoenv.NativeEnv直接接substore.LoadCache与NativeConverter，移除这两条已迁移owner
+  的JSONx往返。活跃Default仍按调用时解析；Runtime关机错误不会在旧无error转换签名中丢失。
+  provider/refresh未迁移的回调仍只走原owner薄codec，不复制其业务。
+
+- N8-9 最终HTTP对照修复迁移回归：旧筛选facade曾把选中节点重新编码成副本，打断聚合待
+  提交缓存与所选节点的引用，导致后加的enabled字段未落入缓存。现在只映射native选择结果
+  回原始对象，保留重复引用、原顺序与未知字段；原聚合缓存字段/副作用期待不改。
+  专用身份/未知字段回归与原聚合HTTP用例修复前失败、修复后通过；六组最终HTTP全绿。
+
+## N8-9 subs/substore independent review: response and subtree budgets (2026-11-19)
+
+- Close the substore portion of O9-M2: the production subscription/Sub-Store HTTP client now
+  refuses wire bodies and every decoded gzip/deflate layer above **64 MiB**. This also bounds
+  intermediary decoded layers before another decoder consumes them. The failure is a
+  `ContentDecodingError` wrapping `substore.ErrResponseTooLarge`, with the Chinese diagnostic
+  `订阅或 Sub-Store 响应内容超过 64 MiB 上限`; it never returns a partial successful response.
+  Python's formerly unbounded fetch is intentionally restricted. Exact-limit bodies remain valid.
+- A parent graph passing yamlx's alias ratio budget does not establish that a copied child passes
+  the same policy in isolation. Provider proxy records, DNS policy and rebuilt fake-ip-filter now
+  validate the exact subtree before Clone. Excessive aliases return the shared `ErrAliasBudget`
+  rather than silently substituting null and reporting success. DNS rejection leaves its source
+  document unchanged. The shared alias budget and all ordinary generation expectations stay intact.
+- Evidence, failures before each fix and targeted checks: `review-n8-9-subs.md`.
+
+### N8-9 routers / routersplit typed boundary
+
+- 用户写入的 type/endpoint/username/password/Agent引用必须为文本，verify_tls 必须为 bool；name 使用共享 model.String（数值保真文本，bool/容器按 R5 缺省），存储检查间隔使用 model.Int，HTTP 请求仍严格要求 JSON 整数（字符串或60.0均拒绝）。规则选择是身份列表，不能用数值自动造出规则 ID。原 R01 冻结输入/答案不改，另列725条完整逐行SHA绑定的独立 Python 期望；原生变化不复用 Go 输出。
+- 请求中的 `ip_rule_sets` / `ros_policy_rule_sets` 为 `false`、`0` 或 `""` 时返回400；Python原先按空列表处理。存储同类错型也必须显式修复，避免无关编辑清空设备路由选择。坏守卫配置存在原启用开关或所有权 state 时，probe/routes/fixed-IP/IPv6 等设备操作也会提示修复后再执行（保守拒绝）。
+- 存储读取使用共享 model；坏选择列表在无关改名时明确400而不是写空，校正后的PUT和DELETE仍可用；损坏守卫有所有权记录或原启用开关时阻止设备操作，不能退化为撤除。运行时默认不将无关的缺失字段物化，显式赋默认仍写入。旧未知字段、错型成员和大整数在无关编辑后保留，Extra 删除显式使用 Clear/Fields.Delete。已发布 manifest 的坏值仍作为不透明所有权证据，不能用 R5 默认去掉保护。
+- routersplit 不再生成 Python AttributeError/TypeError 或做 str/list/hashable 仿真；错型 record/list/bool 遵循 shared model，原始标记仍严格验证 version 的整数 token1 和所有字符串身份。实际使用的拓扑/绑定数值、容器、空必需身份 fail-closed，用 RouterSplitError/ROUTER_SPLIT_INVALID/409；可选非文本/null链接视为没有链接，不阻塞无关路由器；marker路径不读取旧拓扑证明。Python 的 None/空 ID、数值/bool相等不再制造关系。
+- 会话 completed=1 不再被 Python truthiness 当成 true；仅 bool true 表示完成。旧 hook 单测仍使用同一数字输入，独立 fixture 同时固定真实 Python 旧答案和 R5 投影后的完整答案。没有把输入改成 true 来躲过差异。
+- RouterOS/iKuai 回包属于外部输入：既有 Row.text/flag/number 的厂商字符串/数值兼容保留，设备请求编码、顺序、超时及 raw body/header 断言不改；日志/错误凭据继续用 internal/redact。导出脱敏沿既有出口合同。
+- 本组没有新增 D2 设备身份/缓存签名变更；通知继续使用 N8-7 已切换的 native RouterDigest，规则同步控制摘要沿 R14 已批准 canonicalReleaseJSON。YAML 的原 N7 oracle 与列出的差异类别不变。
+### N8-10 core-2 — registration profile optional DTO
+
+按协调者 2026-11-19 的裁定，机器注册请求的 `profile_id` 仅接受字符串、null 或不传；
+空串仍表示默认配置。非字符串的 boolean、number、array、object 返回 400
+`{"success":false,"message":"Invalid profile id"}`，不插入 Agent、不消费一次性 proof。
+旧实现把 false、0、[]、{} 静默当作默认配置，其余非字符串通常落入 500；这些无效形状
+现在统一拒绝。存储的原始 R5 字段仍保留，不能把其字符串投影当所有权证明。
+
+受支持调用方核实（没有发现要兼容的 false/0 发包方）：
+
+- `backend/agents/go-agent/client.go:28` 的 `RegisterRequest` 及 `RegisterAgent` 的构造
+  没有 `profile_id` 成员；`Config` 也没有该字段。`git log --all -G 'ProfileID|profile_id'
+  -- backend/agents/go-agent/client.go` 无记录，仓库保留的历史版本没有该请求字段。
+- shell 单服务/AIO：`backend/agents/go_install_script.py`、`backend/agents/scripts/install-go*.sh`、
+  Go 端 `internal/installer/goagent.go` / `aio.go` 及对应 scripts 不写 profile 配置；
+  O9-H2 只向已有配置添加 string `registration_token` / `registration_key`。
+- Docker 单服务/AIO/HA compose 和 `docker/docker-agent-entrypoint-service.sh` 生成 Go Agent
+  Config，再由上述固定结构体发包；没有 profile env/JSON 注入口。`internal/installer/docker.go`
+  的 O9-H2 环境项也是 string credential。compose/入口脚本历史中没有 profile 注入记录。
+- 网关独立安装会话由 `gateway_installation.py` 验证 profile 字符串后注入；Go 端同样由
+  安装会话提供已验证 profile。Docker HA enrollment 的 Python / Go issue、注册入口均先
+  ValidateProfileID，Go `IssueEnrollment` 的 profile 参数本身是 string；不会发 false/0。
+
+逐行绑定原始 JSON 的独立 HTTP 回归：`TestN810RegistrationProfileOptionalMachineValues`
+（8 个拒绝形状，null/空串/default 三个成功）；另验证 null profile 的真实一次性 proof
+仍与 Agent 注册原子消费。原差分、corpus 和已提交的旧期望不改。
+
+### N8-10 core-2 — explicit profile repairs a malformed stored binding
+
+Agent 已存的 `profile_id` 为错误类型（R5，非 string/null）时，Python 和迁移前的 Go 在
+计算当前 profile 时报错。现在只要没有进行中的发布或升级，带显式 profile 的请求就可以
+直接写入新的合法绑定：
+
+- 管理编辑入口（EditAgents）；
+- 注册入口：已有 Agent 携带正确 token 重注册且请求给出 `profile_id` 时同样适用
+  （HR 复核 L2 补登记）。
+
+有进行中的发布或升级时仍以“Agent has an unfinished deployment or upgrade; recover it before
+changing profile”拒绝；未给出 profile 的重注册仍报告原 validation 错误，不会把 R5 投影当作
+当前绑定。
+
+### N8-10 core-2 — malformed deployment status replies
+
+按协调者裁定，Agent 部署回包的 `status` 为 array/object 时，Go 原生状态机拒绝该
+上游格式错误，HTTP 返回结构化 502（`code: INVALID_RESPONSE`，中文原因
+“Agent 返回的发布状态格式不正确，请检查 Agent 版本和日志。”）；不再暴露 CPython 内部
+TypeError 文本或裸 500，也不把该形状静默投影为 pending。拒绝不写数据库、不改变
+revision、prepared content 或配置确认记录。已有 terminal/stale receipt 的忽略顺序保留。
+
+原 `a01_reference.json` 原文及 SHA 完全保留。只有八条已有 TypeError 行用完整 archive
+SHA 和各自 compact row SHA 精确绑定，分别核验 Python 错误类别、Go 拒绝、事务不写入；
+其余正常行和标量行继续原期望比较。真实 HTTP 两条回归分别发送 list/object status，
+比较设备实际收到的 method、request URI、Bearer header 和空 body 原字节，断言结构化
+502、脱敏与数据库 fingerprint 不变。
+
+部署操作在原始 journal 的 `deployment_id`、`profile_id`、`service_type` 不匹配时拒绝
+跨绑定的查询/激活/回滚；数字文本投影、大写别名不能作为该证明。损坏的非空 HA marker
+不能放开成员单独回滚。原先并发删除 Agent 之后触发的 CPython NoneType 内部异常，
+现在使用原生 endpoint refusal；原 nil 调用及 Python TypeError 原文另以完整单行 SHA
+绑定，继续验证拒绝、非 transport error 和事务不写入。
+
+成功的部署 HTTP 回包在非 object、非 JSON 或带重复 member 时同样返回上述结构化 502，
+不再静默变为 pending；未知大小写别名不认作已知协议字段。注册／编辑／deployment patch
+的原生 RawMessage 入口拒绝真实重复键（含 escaped 同名与嵌套重复）；旧 API facade 自身的
+JSON materialization 属其后续 S 步骤，本块没有改写其 parser 或扩张准入。
+
+### N8-10 core-2 — machine version numbers
+
+按协调者裁定，Agent 版本来自 go-agent/client.go 的固定 AgentVersion（upgrade.Version），
+当前 migration.go 常量及 Python version.py 的 LATEST/changelog 均为 ASCII dotted 机器值；
+注册/心跳结构体没有版本表达式或 Unicode 数字入口。去掉 `-suffix`、不足位补 0、任一
+分量无法解析时按原文本比较的业务规则保留。整数分量统一使用 taskstatus.Count，不再
+模拟 Unicode Nd 或 CPython 4300 位限制。冻结 a02 的九条人为 Unicode/超长分量行因此
+改变比较方向；原档案、输入输出及 SHA 不变。gen_n810_version_native.py 的独立字面期望
+通过档案 SHA 和每条完整原行 SHA 绑定，其他行继续使用原 Python want。空分量仍走
+文本比较，不被共享 counter 的空值语义当作 0。
+
+### N8-10 core-2 — native legacy-state diagnostics
+
+旧心跳库读取、坏 UTF-8 TEXT 和 unlink 失败的诊断不再重放 CPython sqlite3/OSError
+English 文本。SQLite driver 错误保留原生链；无效 TEXT 仅报告列名，不回显存储原文。
+原始 a02 档案与日志原文不变，七条读取失败行及两条删除警告逐行 SHA 绑定，核验原
+Python 类别/errno、Go 拒绝、无部分行、事务不写入和目录不被删除。一次性扫描、主文件
+必须成功删除才导入、仅更新较新 heartbeat、失败版本写入等原规则保留。
+
+原生 MIME/IANA 文本 codec 取代私有 Python alias 与 Unicode decoder；受支持 Agent 的
+UTF-8 JSON/text 及旧 UTF-16/32 BLOB 原始语料保持不变。额外 IANA charset 由原生注册表
+处理，MIME 大小写按标准解析，不再局限手写的旧 codec 列表。
+
+### N8-10 core-2 — direct Agent protocol and preparation errors
+
+原生 RemoteRequest/CallAgent、RemoteCall、SetLoggingModel、AgentRequestModel、direct service
+operation 和 legacy config owner 取代动态业务。成功的 Agent 回复如果不是所需 object、
+不是 JSON、含真实重复键或 success 为非 boolean，拒绝为 INVALID_RESPONSE 中文 502；
+状态/日志原本允许的其他合法 JSON 值仍透明保留。HA state 本来不要求 success，仍允许
+省略；原先把 list 回复悄悄变成空成功 state 的异常路径现在同样拒绝。
+
+原 remote_ref.py 未修改；真实 Python 原输出单独冻结为 n810_remote_python.json。
+九条变动用完整 archive SHA、原完整 result/error row SHA、实际 body/status 逐项绑定。
+AttributeError/TypeError/JSONDecodeError 的原文和类别保留在 oracle；仅比较 native
+拒绝、错误类与事务无写入。损坏的已存 logging_config=null/list 继续拒绝且不写入，
+改为明确中文原生 validation reason；未把它当作上游错误或静默修复。
+
+CallError/PythonClass、KeyError 和 UnicodeEncodeError 的文本仿真删除。缺失/非字符串
+凭据按 ErrAgentEndpoint 拒绝；Latin-1 编码用 x/text ISO-8859-1，不能编码的 header 用
+ErrHeaderEncoding 拒绝。CR/LF 诊断不回显 header 凭据。原 Latin-1 字节契约保留，新增
+37 条原 A15 输入/输出完整行 SHA；upgrades 仅接原生 sentinel 到它已有的延后分类层，
+其四条原 encode error 行和原 archive SHA 精确绑定，其余 wire/class 期望不动。
+
+日志设置等写操作保留请求值但脱离浏览器断线，仍跟随 Runtime shutdown；真实日志配置
+HTTP 检查实际 method/path/Authorization/Content-Type/body 字节，并验证 502 脱敏和
+全库 fingerprint 不变。断线可完成、回包时关机不得提交、旧 generation 不得发新请求。
+
+## N8-10 core-2 — traffic machine domains and native IDNA validation
+
+- 流量统计域名以 x/text cases.Lower（Unicode 17）小写，保留 final-sigma；删除私有
+  Unicode14 表。相比原 A05 的 Python14：55 条 lowercase、307 条 final-sigma 行变化，
+  实际域名大多为 ASCII/punycode，只有涉及这些码点的统计键变化。原 A05 输入、输出、
+  archive SHA 完全保留；官方 UCD17 独立 fixture 逐行绑定，包含每条旧值反例和伪造绑定
+  反例，测试硬断言 cases.UnicodeVersion == 17.0.0。工具链/发行镜像由 batch-11 独立
+  升级，本分支不改 go.mod/Dockerfile。没有生产兼容表或新模块。
+- Agent HTTP 非 ASCII hostname 用 x/net/idna.Registration 验证，删除私有 urllib3 码点
+  范围拒绝表及英文解释器错误文本；无效 IDNA 返回不带 hostname/凭据的中文原因。
+  ASCII 本地标签的既有地址契约保留。IP 统计键复用 rules/netip，不维护私有 IP parser。
+
+- Legacy push/restart 的 HTTP200 非对象 JSON、坏 JSON/plain-text 回包也归入统一的
+  中文 INVALID_RESPONSE/502，不再以旧英文失败对象走内部500。十条真实 Python reply
+  行（method/body/status/result 全文 SHA）独立冻结，原测试的失败对象与脱敏 details
+  断言原文保留，比较层逐条检查旧 Python 结果、Go 拒绝和事务无写入；真实 HTTP restart
+  另核对 method/path/header/body 原字节、502 和全库 fingerprint。
+
+### N8-10 monitor — malformed HA publication guards
+
+协调者 2026-11-19 批准：已存 `oxidns_ha_publication` 若 present、非 null、非 object，
+规则更新 POST 一律拒绝，不发设备请求、不写入。原 Python 对空串、0 当作没有任务的路径
+收紧；沿当前无同类中文 409 的约定保持 native 500，明确提示“OxiDNS HA 发布记录损坏，
+请先停用或修复主备配置。”非对象非空值、object.status 为容器仍拒绝，删除 CPython
+异常文本仿真。a07_review 原档案和期望不变，六条完整原行/source SHA 绑定 native 拒绝；
+现有 HA 停用清除损坏字段后规则更新恢复的回归覆盖空串、0、string、array。
+
+Mihomo Agent 回包继续遵循 N8-1 的逐值 NaN/Infinity → null 响应约定，复用共享
+jsonresp.NormalizeNonFinite；字符串和有限字段不改。原 a07/135 完整 archive/row/设备请求
+SHA 绑定提前归一化后的 native 结果；HTTP 差分仍沿原 N8-1 比较，无新增 NaN 拒绝规则。
+
+### N8-10 monitor — pending publication checkpoints and native JSON
+
+协调者批准：pending dashboard checkpoint 对应的 deployments/latest_deployment/entry 为
+非对象，或原始 status 为非字符串时，保持检查点、拒绝统计边界写入，并通过既有
+DASHBOARD_STATE_ERROR/500 显示；不以 R5 零值或 Python falsy 值作为丢弃 checkpoint 的
+证明。a06 原 archive/88 条原始行不变，完整 row SHA 精确绑定 native refusal。用户可以
+使用已有的“重置统计”操作明确开始新周期；回归验证四类坏记录不会写入，手动重置后
+面板与后续统计恢复正常。早于 checkpoint 的采样仍遵循原先 PublicationPending 顺序。
+复核补充（review-n8-10-monitor M1）：判断检查点是否被新部署取代时，pending 部署的
+status、以及被参考的 latest_deployment.status 若为非字符串，同样按损坏返回
+DASHBOARD_STATE_ERROR，不再以 Python 的“不在列表中”视为已取代而丢弃检查点；null 与缺失
+等同；时间早于 checkpoint 的采样仍先返回 PublicationPending。
+
+状态文件中的真实重复 member（包括 escaped 同名）现在明确按损坏文件拒绝，避免不同
+消费者选中不同统计起点；a06_review 的三条重复字段成功行完整保留并单独 SHA 绑定。
+Agent 回包采用精确键名和严格 boolean 协议标志；a06 的三条 responses 重复 member/
+数字 boolean 行绑定 INVALID_RESPONSE/502。另一个 responses NaN 行只绑定 N8-1 允许的
+逐值 null 修复，有限字段及原始档案不变；queries 中未使用的 NaN 字段照原合同丢弃。
+普通未知 JSON 字段仍按各 DTO 的原合同过滤或保留。
+
+统计接续同样拒绝原始 profile/service/deployment 身份为非字符串、或 manual_rollback 为
+非 boolean 的损坏证明；unknown 大小写别名不能覆盖它。五条独立回归核验原始 number
+及 alias、checkpoint 文件字节不变，并验证显式重置可以恢复。现有 UI 仅在已加载统计时
+显示重置按钮；首次加载错误时的管理员恢复 API 已补入 doc/manual/oxidns-panel.md。
+
+### N8-10 monitor — native machine release versions
+
+Mihomo release 分量使用共享 taskstatus.Count，不再复刻 CPython 的 4300 位限制或 ValueError
+文本。机器版本只认 ASCII；公开 core/update 对当前版本沿用 version.txt 的同一字母表和
+64 字节上限，错误返回 INVALID_RESPONSE/502，且不会读取/覆盖远端版本缓存。受支持
+Mihomo 的短 release/alpha 版本不变。原 a07 的 1 条 Unicode helper、3 条超长分量和8条
+公开 current-version 行完整保留；独立 Python ASCII/任意精度 policy generator 逐项绑定
+archive/完整 row SHA 和 native 结果，不读取 Go 输出。用户测速/日志参数原兼容路径留待 N10。
+
+指标整数也不再使用解释器的 4300 位位数上限；原 a06_reference 的 2 条及 a06_review
+的 13 条超长前导零样本现在得到精确计数。真实 Python 业务仅关闭 sys int digit cap 后重跑，完整 parsed/
+summary 与 archive/row SHA 独立绑定；同一计数规则传播到 1 条 overview_snapshot，
+也用真实 Python 结果和完整行 SHA 单独绑定。原语料不改。metrics 仍受原响应、行长、样本数及
+有限数值上限约束，不接受溢出/负值计数。
+
+存储身份摘要只接受标准 JSON；a06_review 的 17 条含裸 NaN/Infinity 的旧私有 target
+helper 行不再生成摘要，完整行和 archive SHA 单独绑定拒绝。该输入不是有效的存储 JSON；
+设备 HTTP 回包仍采用 N8-1 的逐值 null 归一化，未扩大设备端拒绝范围。
+
+### N8-10 installer — installation session ownership
+
+协调者批准的 Python bug 修正（路径注入 + null 会话指针）：安装会话的 index 与
+session.id 必须都是 32 位小写 hex 且相同。损坏记录（含 null、父目录、绝对路径、
+不一致 ID）在 issue 返回 409 `安装记录无法读取，请保留现场并检查服务端数据。`，
+enroll 返回 401 `安装凭据无效，请重新生成安装命令。`，均拒绝且无写入。
+Python `backend/agents/docker_ha_enrollment.py:58` 唯一合法生成入口为 `uuid.uuid4().hex`。
+测试服务器离线快照统计：会话数 0，非规范 ID 数 0；没有复制任何快照内容。
+
+### N8-10 installer — native machine text and scalar admission
+
+按协调者裁定，网卡序号、ss 计数、版本分量只认 ASCII 数字，空白使用 Go
+strings.Fields/TrimSpace；非规范探测值为 unknown，不能放行 preflight。安装端口和
+timeout 复用 taskstatus.Count，保留 ASCII 有符号/下划线十进制，拒绝非 ASCII 数字，
+不模拟 CPython 4300 位限制。timeout 超出 int64 或 time.Duration 秒数承载范围
+（±9223372036）明确拒绝，绝不回绕。Go Agent 端口为 1..65535，HA 保留 1024..65535。
+脚本尾空白使用 strings.TrimRightFunc(unicode.IsSpace)；1c–1f 不再模拟 Python 空白。
+HR 复核 L1（协调者裁定，裁定 3 优先）：ss 端口证据中只有 ASCII 空格/制表符组成的行
+算空行；含 NBSP、U+3000、U+0085、\v、\f 等其他空白且无法解析为监听行的行判 unknown，
+不能再被当作空行而判定 53 端口空闲/pass（Python `line.strip()` 曾丢弃这些行）。
+现有 preflight 语料无受影响行，无新增绑定。
+机器采集记录只按固定模板的 LF/CRLF 分行，base64 使用 encoding/base64 的标准语法；
+非规范 padding 与其他行分隔不再复刻 binascii/str.splitlines。固定采集模板只输出
+标准 base64 和 LF；人工旧行保留并以完整 archive/row SHA 绑定新 report/拒绝。
+这些差异仅以人工旧行的完整 archive/row SHA 绑定，保留原 Python 输出；独立参考保存
+完整新字节/错误，shell 其余字节严格比较。真实脚本模板固定 LF 结尾。
+
+### N8-10 installer — corrupt registry and early capability admission
+
+与 core-2 repo 的坏成员 fail-closed 规则一致：Agent registry 含非对象成员时拒绝
+500、无写入，不复刻 Python 找到前方 owned Agent 后忽略坏尾部的短路行为。
+IssueCapability 在创建目录前拒绝 name/host/port 错型；四条旧 helper 人工行的原输出
+和目录副作用完整 SHA 绑定，新行为为原生错误且无目录写入。HTTP guide 原本先验证，
+合法请求行为不变。
+
+### N8-10 installer — normalized dangerous directory checks
+
+Python bug 修正：拒绝危险目录前用 path.Clean 归一化，仅用于比较；`//etc`、`//opt`、
+`/etc/`、`/./etc`、`/opt/../etc`、`//` 等别名不能绕过系统/共享根目录保护。
+身份文件与数据目录、迁移目录之间的重叠检查同样归一化，防止双斜线别名绕过。
+拒绝使用已有中文提示，发生在生成与持久化之前。合法请求保留原始路径和既有 D2
+owner/hash，`//srv/native` 的合法安装身份没有重发。回归只用合成路径。
+
+HR 复核补充（R1）：所有 guide 路径（数据目录、身份文件、HA 目录、备份目录、bind
+挂载源）原先只用原文 `== "/"` 拒绝根目录，`//` 能绕过，脚本/安装包模式会把数据
+写到根目录下，安装包的身份文件重叠检查也随之失效。现在按 path.Clean 后是否为 `/`
+判断，`//` 与 `/` 一样返回该路径的既有中文 400；精简/直接 Compose 中 `//` 因此先
+命中路径规则，而不是系统目录提示。`//srv/native` 等合法双斜线路径不变。
+
+### N8-10 installer — string IPv4 identities and finite session JSON
+
+协调者批准：HTTP guide 的 agent_ip 只接收 JSON string；Python 曾接受整数 IPv4 并
+保存 numeric host，Go 在创建凭据前用现有 IPv4 中文提示拒绝 400，无目录或 Agent
+写入。前端只发送字符串，整数形式不是受支持输入。四种安装方法保留旧请求与原 200
+断言，并与新 400 精确对应；旧纯 renderer 的人工 numeric 兼容限于 legacy codec，
+N8-11 删除。
+
+损坏已存会话的 expires=NaN 不再由 Python json.loads 放行或使凭据永不过期；原生
+标准 JSON fail closed：enroll 401 / issue 409、无写入。原 NaN 行和 Python 输出
+完整保留在 SHA 绑定参考中，不保留非标准 JSON parser。
+
+### N8-10 upgrades — native operation evidence and Python upgrade fixes
+
+- 协调者批准：已存 `latest_upgrade` / `latest_deployment` / HA 守卫 present、非 null、
+  类型不正确时以 `CorruptStateError`/500 拒绝，不自动清除、不写数据库。原来部分 Python
+  falsy 错型被当成空记录、pair-list 被 dict() 接受；Go 不再把这些值变成任务所有权证明。
+  单Agent Poll 的 string 坏记录由原404、pair-list由原200统一改500；int原500保持，
+  其他Agent列表条目仍正常返回。原始 string 身份才可授权，numeric/null token 不再经 str() 发到设备。机器版本复用
+  ASCII 64 字节白名单；时间数值拒绝布尔值、非有限值和溢出。原旧 A15 archive 保留，
+  `n810_native.json` 完整行 SHA 绑定新拒绝（含旧异常文本），有修改输入不命中负控。
+- Python bug 修正（协调者明确批准）：protocol-2 成功必须由**同一个** worker 回包同时证明
+  update_id、agent_id、status=succeeded，再配合正确的 executable identity/version/
+  migration_ready。错 agent_id 即使另一条 upgrade-info 完全正确也保留 pending，不写成功。
+- Python bug 修正（协调者明确批准）：非空 upgrade-info 缺失/空/错型 architecture 在 reservation
+  前以现有“更新文件未准备就绪”409 拒绝，不遗留 queued。原 Python 对空/缺失/空数组先写
+  queued 再 KeyError500；truthy numeric 原本已409。五条真实 Python 原输入、回包、错误、
+  calls、存储副作用冻结在 `n810_boundary_python.json`，逐行 SHA 校验，Go 只提供拒绝回归。
+- 人工语料中的非字符串 error 对象用 native JSON 诊断文本，保留原中文包装和共享 redact
+  脱敏；七条实际 HTTP 原/新完整期望及两棵完整存储差异逐行绑定，新期望由真实 Python
+  的原 HTTP 输出、正常更新对照及独立 policy 产生，不读取 Go 输出。
+- 原生地址文本使用 strings.TrimSpace/netip，不保留私有 CPython whitespace/IP parser。
+  protocol-1、durable ID、fresh heartbeat 回滚确认、未知结果继续查询保持。坏记录恢复步骤
+  见 `doc/manual/agents.md`，本轮不新增 HTTP/UI 恢复入口。
+- HR 复核修正：Agent 记录的 `version` 为显式 null（注册原样保存 Agent 发来的 null）时，
+  Start 按缺失处理（previous_version 为空串）继续升级，不再报“操作记录损坏（version）”；
+  Python 以 None 继续。数字、数组等其他非字符串仍按损坏拒绝。回归
+  `TestReviewN810NullAgentVersionStillStartsUpgrade`。
+- HR 复核 L1（协调者裁定 b）：心跳上报新地址而 HA 字段损坏（`oxidns_ha` / `oxidns_ha.enabled` /
+  `oxidns_ha_publication.status` 错型）时，不跟随新地址、不写任何字段、不接触设备，按 Agent+损坏字段
+  每 10 分钟记一条 warning（经 redact）；心跳照常 200，功能开关等回包不受影响。地址对话框 GET/PUT
+  仍 500 带中文损坏说明。相对 Python：`{"enabled":1}` 等 Python 会继续跟随（非 True 视为非成员），
+  truthy 非 dict 的 `oxidns_ha` Python 心跳 500；Go 两类都改为“不跟随 + 告警”。回归
+  `TestReviewN810CorruptHAFollowKeepsHeartbeat`、`TestReviewN810CorruptFollowWarningInterval`。
+
+### N8-10 api/agents — native HTTP bindings and machine numbers
+
+- 协调者批准：下载条件日期改为 `net/http.ParseTime` 的三种 HTTP 日期；无效日期
+  （包括旧 CPython 超长整数异常）不作条件证据，通常返回200。标准条件下载、HEAD
+  与既有无效/不可满足 Range 的416规则保留。396条完整原日期/条件请求与旧结果 SHA
+  绑定到独立 Python policy；原 pyref entries/input/venv 哈希不变，只更新 source metadata。
+- 人工心跳语料的超出 float 范围/CPython 4300位整数异常，改为协议数值范围校验400，
+  不模拟解释器异常、不静默溢出。四条真实 Python HTTP 原输入、旧500完整结果逐行
+  SHA绑定到新400；拒绝后无数据库写入。心跳机器版本采用64字节ASCII白名单。
+- 协调者批准：注册和手动创建共用 core RegisterIdentity 的原始版本校验。
+  先授权，再版本校验，最后消费一次性proof/写入；匿名无proof仍403，合法proof+
+  非字符串/非白名单/超长版本400且proof不消费。缺失/null使用默认1.0.0。
+- 注册 Docker 地址识别使用原生 netip，机器地址只认 ASCII，不保留 CPython 的
+  Unicode数字、私有空白、下划线或带前导零的IPv4数字解析。
+- 人工非对象请求和损坏对象的内部英文异常改为原生 JSON 诊断，保留各入口的HTTP类；
+  中文业务提示和redact凭据脱敏不变。坏单对象守卫拒绝写入；列表不因坏版本一条整页失败。
+
+- 协调者批准：cache flush 的 `tags` 含非字符串（原人工输入 `[{}]`）时，
+  原 Python set() 的 TypeError/500 改为400 `INVALID_REQUEST`，`Cache-Control: no-store`，
+  不请求 Agent、不写入。完整原 HTTP 输入、500结果、设备调用序列逐行 SHA 绑定，
+  错键名与其他输入不命中新规则。
+- 查询整数只接收原生 ASCII 十进制规则；Unicode 数字使用各入口默认值，不模拟
+  CPython 的4300位整数上限。旧人工超长整数正常进入现有范围/owner校验；尚未迁移的
+  A05 engine 溢出仍500，不静默截断。完整旧HTTP行与独立 Flask 对照请求绑定；
+  不改原请求表。人工 panel 回包的标准 JSON `1e400` 作为不透明原始数字保留，
+  不经过 IEEE754 变成 Infinity/null；真正 NaN 仍按既有规则变 null。
+- traffic-report 在任何文件写入前通过现有 `ResolveAgentProfile` 检查存储绑定；
+  present、非null、非string 的 profile_id 以既有 owner 校验错误400拒绝，无数据库/
+  traffic文件写入，列表仍200。`trafficstore.AddReport`/metrics AddReport 无ctx的旧缺口
+  留给协调者已另排的 metrics-native owner任务，本轮不增加第二份引擎。
+
+- 协调者批准：client-notes、rule apply、device-policies 以及其事务重读使用现有
+  ResolveAgentProfile 验证原始绑定，不再将非string投影为空串后落到默认配置空间。
+  损坏绑定400/NoStore，无DB/设备/文件写；policies peers 中坏绑定逐条跳过，
+  每Agent十分钟至多一条脱敏warning，健康同空间设备和列表保持200。API内其余
+  ProfileID写入位置扫描已完成：均来自已验证clientDevice/编辑参数，content/deploy
+  入口沿loadContentSource的既有ResolveAgentProfile守卫。
+
+- 安装 HTTP 适配器同样采用 strings.TrimSpace 的 Go whitespace，C0 1c–1f 不再仿真
+  Python strip；c.Bind 后对象成员采用稳定原生顺序，因此同时含多个错型字段的人工
+  请求可能先报告另一个字段（仍400且不签发凭据）。272条完整旧HTTP行逐行SHA绑定，
+  第二个独立Flask服务注入明确原生规则后比较完整脚本/错误，不修改旧随机矩阵。
+  discovery clear 和 traffic-history 删除改调已有 DeleteContext，保留 shutdown lifetime；
+  无新 owner/状态机，正常响应和断线完成行为保持。
+- （HR 复核补登）Agent 二进制下载在文件缺失、是目录或无权限时仍是500、字段不变，但 message
+  从 Python 的 `[Errno N] …: '<path>'` 改为 Go 原生 OS 错误文本（如 `stat <path>: no such file
+  or directory`）；difftest `nativeFileDiagnostic` 按错误类别归一比较。
+
+## N8-10 metrics / trafficstore native 服务（2026-11-19）
+
+协调者明确接受的存量损坏处理：A04 summary/traffic stats/trend 逐字段/点忽略坏组件和坏数值，返回可用的 HTTP 200（此前部分人工坏文件触发 Python 500）；`data_points` 的原始点数语义保留。每个对象/字段 5 分钟至多一条 redact 告警，限流表最多 4096 项。原始 JSONL 不改写。已获准的非有限/float64 转换溢出缺失值策略继续沿用。
+
+A05 domain-discovery traffic 文件的 present wrong-type `days`、当日 `hosts`、被访问的 host/route/counter、metadata 错型均拒写，原文件不动；因此旧 Python 对 `days:[]`、无 items 的 `hosts:[]/"abc"`、坏 status 被新版本字段绕过以及数字 mihomo_version 的成功写入现在为 HTTP 500。只影响当前 Agent/日期的上报，其他日期和 Agent 可以继续；不发起重试、不改变周期或心跳。写拒绝同一文件/日期 5 分钟至多一条 redact 告警。读取列表隔离坏桶/host/route。恢复使用既有 `POST /api/agents/<id>/domain-discovery/clear`，或由其他日期的成功上报执行七天过期清理；没有新增 HTTP 入口。
+
+参考绑定：`metrics/testdata/n810_metrics_native.json`（23 项）和 `n810_store_native.json`（5 项）保存原 fixture 原文及逐行 SHA256；旧 A04/A05 corpus、Python oracle 与 pyref entries 保持不变。存储 JSON 的空白、对象字段顺序和等值浮点格式按既有 native 序列化许可做结构比较；持久字段和 SQLite schema 未变。
+
+同一 native owner 对人工损坏 SQLite 计数器也 fail closed：冲突更新不允许把 TEXT/BLOB/null 静默当作数字；hour→day 聚合在原 SQL 扫描中验证输入类型和有限性，并拒绝 REAL SUM 溢出。原事务回滚、pending 恢复，查询仍逐条隔离坏值。可通过现有 per-Agent 流量历史清空恢复；不改 schema 或正常 INTEGER→REAL 累加语义。这些非有限级数/错型只来自人工数据，Agent 单项上报本就限制在 2**62 以下。
+
+N8-10 batch-13 后 API 收束：`traffic.go` 已改用 native `DecodeTrafficReport/AddTraffic/QueryTraffic/TrafficRetention/SetTrafficRetention` 与 `trafficstore.DecodeReport/GetNative/Add`；`service_type` 缺失→mihomo，present null/错型仍 400 的 guard 保留。`metrics.go` 改用原始样本与 typed summary，无新业务语义差异。`TestDifferentialAgainstFlask` 前四项批准差异由 `difftest/testdata/n810_metrics_http_native.jsonl` 的四行 original 原文 SHA256 绑定请求、fixture 源码和 Python 结果，分别检查 native 结果；live seed 同时验证。`agent-traffic.json` 仅改为结构比较，对象顺序可变，数组顺序、所有计数器和字段仍严格比较。无旧 corpus 或 pyref entries 变更。Agent 报告入口通过 jsondecode 的 native JSON last-member 规则接受重复 port 等字段；存量文件仍使用严格 Fields 校验，此项恢复原正常行为，不是新增损坏豁免。
+
+人工 SQLite 极值补充：有限 REAL 聚合可溢出为 Inf，或使用于排序的 up+down 成为 NaN。查询继续沿用非有限结果→JSON null 的 native 策略，节流告警；NaN 总值排在数值总值后，再按原 key 排序，不传给 big.Float 触发 panic。查询不写文件/数据库。Agent 单项计数限制使这些极值只能由人工数据构造；无旧期望修改。
+
+（HR 复核补登，review-n8-10-metrics-native R2/R3）`GET /api/agents/<id>/traffic/stats` 跳过坏样本后，`data_points` 只计可用样本（Python 的 total/hours_24 只读首尾样本，中间损坏样本也计入）；summary 的 `data_points` 仍是原始点数。HTTP 中非整数浮点（summary avg、stats avg_speed、trend speed、traffic-history REAL 计数器）用 Go 最短 `'g'` 文本：|x| ≥ 1e6 时为指数形式（如 `1.2345675e+06`，Python 为 `1234567.5`），数值相同；整数和存储字段不受影响。
+
+
+### N8-10 HR L2 协调裁定：整个 traffic 文件损坏拒写
+
+traffic/<agent>.json 已存在但不是合法 JSON（含空文件、截断、非标准 NaN/Infinity），或顶层不是对象（含 null/list/string/number/bool）时，Go 与 present wrong-type days 一样 fail closed：上报返回同一 500 错误响应，内部同一 TypeError，中文限流告警仍为「流量统计写入失败，请检查上报或统计桶；重复告警已限频。」；不覆盖、不自动清理原文件。Python/旧 Go 会把不可读内容当空文件并覆盖，这是协调者明确接受的新差异。文件真正不存在仍可写入；读取列表/metadata 与 days 损坏一样返回空记录/无 metadata，不因该 Agent 令整页失败，且不改原文件。整文件已不可解析，保留天数不能恢复；恢复使用现有 domain-discovery/clear 重置，已测真实 HTTP reset 后上报成功，无新入口。
+
+R3 确认沿用 HR 已补登的 HTTP 最短浮点文本，≥1e6 用指数形式，JSON 数值相等；本轮不改数值序列化。
+
+## N8-11 W1 — repository native JSON boundaries
+
+- 导入/导出、默认配置、档案元数据与规则库创建改用共享 model codec 和 encoding/json。新建/实际改写的 JSON 对象可采用 Go 的成员顺序、空白和转义；SQLite 字段 position 保持存储成员顺序：新成员追加到末尾，更新已有成员不移动位置；字段被重新编码后的内部 rewrite counter 可随之变化。文档/档案/共享的业务 revision、数组顺序、字段和值保持原语义。未变化的既存行与未知成员仍保留原始字节，含大整数、指数小数和 Unicode escape；raw_crosscheck.py 双向 audit/rewrite 和导入导出负控单独验证，不以结构比较替代这些字节约束。
+- schema-2 导入为 profile-local 原始拨号链重建的 proxy_string 采用 native JSON 文本，对其解析后的结构、拨号目标和名称冲突处理仍严格比较。ID 只在真正缺失/冲突时生成，不再为了 Python setdefault 的 eager 参数计算丢弃随机值；冻结回放只归一化生成 ID 的随机后缀，并同时比较所有引用和目录顺序，没有修改原语料或期望文件。
+- 文件读取保留原拒绝类别和配置文件名，OS/UTF-8 内部错误后缀使用 Go 原生诊断；写 JSON 文件使用 encoding/json 缩进。中文业务错误、HTTP 状态和正常文件内容含义不变；不仿 Python 异常文本。旧 file-reader 的非标准 NaN 兼容仅留在 legacy.go，W9 删除旧入口时收束，native API 不扩展 JSON 语法。
+
+W1 边界核对另外确认一项**既有差异，未在本包修改**：全局 import/reset 的设备归属冲突，Python 409 只返回 success/message，Go 409 还带 usages。在 P0 `212aeac09` 的独立基底也能复现，W5 已在 api/config/global.go 去掉该附加成员；边界测试现与 Flask 完整错误体严格相等，同时比较拒绝后的无写入状态。这不是获准保留的 API 差异。见 progress/n8-11-w5.md。
+
+- （W1 HR 复核 L4，协调者登记）typed 保存入口比较 `_revision` 改为按存储字面量比较：请求里手写成 `3.0` 的 revision 不再等于存储的 `3`，返回 409（冲突）。前端只发送整数 revision，正常使用无影响。
+
+## N8-11 W2：Agent monitor 数字只接受 ASCII
+
+- 依据 `design/n8-11-plan.md` §3.3 裁定 2（Agent 自有 Go 二进制只发送 ASCII 数字）。删除 monitor 的 Unicode decimal/digit 表和转换。
+- panel `logs.after`、delay `timeout` 中的全角/阿拉伯/上标/圈号数字按同字段其他无效值返回 `INVALID_REQUEST` / 400；不向 Agent 发请求。ASCII 十进制、符号、原有单下划线分隔不变。
+- Prometheus metrics 的非 ASCII 数字值按原无效数值处理为未知（null）；含非 ASCII 时间戳的样本按原无效行跳过。合法同组样本保留。
+- 冻结 a06/a07 语料不改：`TestReferenceMetrics` / `TestReferencePanelCalls` 对受影响原始行显式断言上述 native 结果；`TestMonitorMachineNumbersRejectNonASCII` 独立回归。
+### N8-11 W3 — 资源请求的非有限 JSON 数字
+
+subscriptions 的创建、更新、排序、抓取，aggregations 的创建、更新、排序，以及 nodes 的 CRUD、行解析、排序、删除/预览、测速、DNS 设置/检测，改用 native Bind。JSON 任意位置的裸 NaN、Infinity、-Infinity 在进入写 owner、订阅抓取或探测 worker 前返回 400，不写数据库、缓存或任务记录。字符串中的同名字样保持有效。沿用 N8-6 的标准 JSON 请求规则；没有放宽存储兼容读取。普通畸形 JSON 仍保留各路由既有策略（包括 nodes 测速的 silent 默认全选，以及 aggregation PUT/reorder 的既有 500）。
+
+证据：`api/subscriptions/native_boundary_test.go::TestNativeResourceRequestsRejectNonfiniteBeforeEffects` 覆盖资源写入口并检查 repository head 不变，有限 JSON 对照确实提交；`api/subscriptions/difftest/native_request_test.go::TestNativeReorderNonfiniteBoundary` 对真实 Flask 逐词固定 200→400 的批准差异，不改冻结语料。
+
+协调者已明确批准：W3 的 typed token 校验对损坏存储中被 model 标记类型错误的 `config_token` 采取 fail closed：即使全局登录关闭，也不把类型错误误当成空凭据而放行（返回既有 401/认证失败消息）；Python 对 false/0/空集合等假值可能当作未配置令牌。正常字符串凭据、内部能力优先拒绝顺序、JWT/公开 token 及轮换语义保持原状。有效的 retired token 即使邻居成员类型错误也仍会被识别并拒绝；对应 native 回归固定混合列表，不容许坏邻居造成内部能力公开。TestNativeMalformedConfigTokenFailsClosed 验证 false/0/[]/{} 拒绝，修复为空字符串后恢复未配置凭据的放行；TestGlobalGateAndProfileToken 覆盖正常凭据与轮换。此损坏凭据边界连同 provider/token 路径交 Opus 抽查。
+
+Opus 复核 L1 后协调者裁定收紧（2026-11-20）：判断依据改为存储的原始 JSON 类型，而不是 model 的 issue。只有 JSON 字符串是凭据；null 或缺失视为未配置。其他类型一律按损坏凭据 fail closed，包括数字、布尔、数组、对象。数字也在其中，虽然 model 的 R5 标量规则会把它读成文本，`?token=<同值>` 也不再通过。与 Python 的差异：Python 关闭登录时，假值（`false`、`0`、`[]`、`{}`）当作未配置，全部放行；Go 只放行内部调用和有效 JWT，其余返回 401。真值（`12345`、`true`）在 Python 里本来就无法用 `?token=` 匹配（字符串和数字不相等），只能用 JWT，Go 现在与之一致；收紧前，Go 会把 `?token=12345` 当作有效凭据。正常字符串 token、轮换、内部能力拒绝顺序不变。证据：`api/subscriptions/native_boundary_test.go::TestNativeMalformedConfigTokenFailsClosed` 对每种非字符串存储值都带上同值 token 请求，期望 401；字符串和空串、null 作为对照，期望 404，错误 token 期望 401。
+
+## N8-11 W4 — 原生 HTML 与规则输入提示（第一阶段）
+
+- 控制码实体：网站识别实体解码改为标准库 `html.UnescapeString`，如 `&#1;` 保留 U+0001，
+  不再按 CPython 的实体过滤表删除。
+- 非法数字实体：无效 `&#x;` 遵循标准库成为 U+FFFD，不再保留原始实体文本。
+- 重复属性：meta 分词改用 `golang.org/x/net/html`，同一 meta 的重复 content 属性取原生分词器
+  保留的首值；仍读取源文档中最后一个 meta。正常实体、注释与 script/style 内容的规则保持。
+- 畸形 markup：不完整属性分隔等输入按原生 HTML 分词器解释，例如 `<meta content="x"content="y">`
+  的 content 为 `x`，不再模拟 HTMLParser 的容错扫描。
+
+冻结的 C14 语料/pyref 不改；`rulefetch/testdata/n811_native_html_differences.json` 精确锁定 2161 条
+已知差异的输入键与输出摘要（unescape 1061、meta_content 653、clean_text 441，另含 page_identity
+的 6 条派生 metadata 差异），仅 exact match 分类；输出变化不会被宽泛分类吞掉。
+
+- 固定中文重排提示仍用单引号字符串列表；单引号、反斜杠与换行显式转义。该函数只接受 `[]string`，
+  不提供通用 Python repr。非法规则类型/DNS 选择中的非字符串值用 JSON 文本表示
+  （null、true、数字、对象），HTTP 状态和中文模板不变；缺失 ID 混合列表使用完整 JSON 文本。
+  差分明确验证 Python `[None, 'missing']` 与 Go `[null,"missing"]` 两侧原文，并继续比较存储和其他头。
+- HTTP Basic 凭据仍要求可编码为 ISO-8859-1；不可编码凭据和无效 CA 文件改为普通 Go typed 错误，
+  不再仿造 CPython 异常文本。原来的诊断标签（RuleFetchError、ReadTimeout、OSError 等）保持。
+  Content-Encoding 使用原生 strings，响应 charset 声明用 mime.ParseMediaType；规则缓存仍保留源字节。
+- 请求改用 Bind/BindSilent。严格绑定拒绝非有限数并返回 400；既有 silent/caught 入口继续走原来的
+  malformed-body 错误边界（如 match-test 无可用对象返回 500）。没有另造请求 JSON 解析器。
+
+## N8-11 W5 — 配置 HTTP 原生边界
+
+- 协调者 2026-11-20 裁定：新建、克隆、导入客户端配置的 `description` 只接受字符串；省略或 null 仍为空说明。数字、布尔值、数组和对象返回 400「配置名称和说明必须是字符串，名称不能为空」。Python 原来把非字符串转换成 Python 文本后存储；Go 不仿真该文本。三个入口分别用真实 Flask 差分固定 Python 201 / Go 400，确认 Go 无写入；正常文本和 metadata PUT 仍严格对齐。
+- 同日裁定：profiles 的 create/PUT/clone 在 JSON Content-Type 下收到非法 JSON 或 NaN/Infinity，统一用 `httpx.Bind` 的原生 400；保留有效 null/false/0/空数组的原空值替代。新差分固定各入口原状态和 Go 完整错误体、拒绝后存储不变。不接纳非标准 JSON 数字。
+  （W5 复核 M2 补登）`DELETE /api/profiles/<id>` 同样适用：非法 JSON 与 NaN 返回 400 且不删除（Flask 分别为静默按 {} 删除、500）；但 JSON Content-Type 下的**空请求体**仍按 Flask 静默回退为 {} 并正常删除。见 `TestReviewN811W5DeleteProfileBody`。
+- 路由器发布确认的非标准 NaN/Infinity 也在读取确认 JSON 时由 Bind 拒绝为 400，避免把无效 JSON 当作空 fingerprint 进入业务分支；缺失确认体和合法但无 fingerprint 的输入仍沿原业务分支。真实 Flask 差分固定 Python 500 / Go 400、两侧存储不变。
+- settings 的文本裁剪改用 Go `strings.TrimSpace`，不再模拟 Python 额外认作空白的 U+001C–U+001F；普通空格、Unicode 空白和前端输入不受影响，属于既有 native 字符分类裁定。
+- settings 的错型文本仍返回原 500，内部诊断改为 `setting must be a string`，不再构造 Python AttributeError 文本；中文消息和所有状态/持久化结果不变。差分仅对这项明确的非中文内部文本分别断言双方完整 envelope，不放宽其他错误。
+- 全局 import/reset 的设备归属 409 现只返回 success/message，与 Flask 相同；repo.Error 的完整 usages 保留给其他消费者。这是修正 W1 记录的既有差异，没有新增 API 差异。
+- `internal/auth` 去掉对 `httpx.PyParseInt`/`httpx.PyTypeName` 的转发：JWT 数值声明的字符串形式（`exp`/`iat`/`nbf`）按原生 ASCII 十进制解析（`strings.TrimSpace` + `big.Int.SetString(..., 10)`），拒绝非 ASCII 数字；非字符串/非数值类型声明仍返回 `*ClaimTypeError`（500），诊断消息改为原生 `numeric JWT claim must be an integer or numeric string`，不再拼接 Python `int()` TypeError 文本。
+- `GET /api/backup/config` 保留已存储非字符串字段（`webdav_username`/`webdav_path`/`auto_backup`/`keep_latest`/`keep_daily`）与密码真值的原始 JSON 呈现，避免 R5 标量投影改写类型；`webdav_url` 维持既有 `backupEditorURL` 脱敏/校验策略（非字符串或无效 URI 返回 `""`），`TestN811W5StoredBackupTypes` 显式固定该既有差异。
+
+## N8-11 W6：设置向导的原生持久化哈希与规则策略显式 null 提示
+
+- 按 D2 和协调者 2026-11-20 裁定，OwnedDigest/CoreFingerprint 使用 encoding/json：递归解码后按字符串 map 键排序，保留 json.Number 的数字字面量；默认原生 JSON 转义。会话新增 digest_version；没有版本的正在进行会话按现有“配置已被其他页面修改”冲突路径拒绝继续提交，不以 revision 推断相等。用户可以放弃并重新开始向导，旧 profile 的依赖保留规则不变。
+- 旧哈希允许一次性失配；不仿 Python 的空白或 ensure_ascii 编码。新会话同内容前后一致，对象键顺序不影响哈希，大整数值变化仍影响哈希。
+- 规则 `policy` 显式为 `null`（或非字符串值）时不再按缺失键套用默认 `PROXY`/`Proxy`，而是继续拒绝引用并在中文提示中以 JSON 文本呈现（如 `'null'`，与 Python 的 `'None'` 属已登记的“非字符串值用 JSON 文本”类差异，HTTP 状态与 `ready=false` 不变）。`gateway/onboarding` 的 `TestPythonPreparation/null-policy` 与 `rules` 单测显式覆盖。
+- `gateway.NewConfig` 彻底切至 typed `*model.Config` 并删除 `ApplyJSONX` 后，`nodes` 字段遵循 `[]model.Node` 类型边界：合法节点对象（含未知成员与嵌套 `routing-mark`）仍全部拦截；非数组 `nodes`（如对象）或非对象节点元素（如嵌套数组）无法进入 `model.Config.Nodes` 或 Mihomo 生成输出，在冻结语料 `a19_corpus` 中仅对应 2 行畸形 `nodes` 样例，其余 7492/7494 行完全一致。
+- （协调者裁定，W6 复核 L2）gateway 校验时，config 的 `nodes` 为对象或嵌套数组且带 `routing-mark` 的错型存储，Python 拒绝、Go 放行；错型 `nodes` 不进入 `model.Config.Nodes`，也不进入生成的 Mihomo 输出，故接受。
+
+## N8-11 W7 — 存储布尔开关 JSON 真值统一与 ippresence typed 边界
+
+- 协调者裁定（任务 B，对应 N8-5c）：全仓未获准采用其他规则的存储布尔开关（`enabled`、`library_enabled`、`log_enabled`、`api_enabled`、`cache_enabled`、`cache_dump_enabled`、`region_check_enabled` 等）统一改用共享函数 `model.JSONSwitchEnabled` / `model.SwitchEnabled`。规则：键缺失沿用该字段原默认值；显式 `false`、`null`、数值零（`0`、`-0`、`0.0`、`0e0` 等）、空串 `""`、空数组 `[]`、空对象 `{}` 判为假；其余任何 JSON 值判为真。
+  此项是恢复与 Python 一致的 bug 修复，撤回此前 `rules`/`provider`/`refresh`/`convert`/`mosdns`/`oxidns`/`discovery`/`notifications`/`routers`/`aggregations`/`api/aggregations`/`api/subscriptions`/`subs`/`repo`/`gateway/onboarding`/`setup` 中将非布尔开关回退默认真或仅认字面 `true`（`oxidns`/`gateway/onboarding`）或按原始字节误判 `0.0`/`-0`/`0e0` 为真（`aggregations`/`setup`）的偏差；并同步移除 `rules`/`provider`/`refresh` 独立 Python 参考及 `mosdns/r5_reference_test.go` 中旧的非布尔开关 R5 投影豁免（冻结语料本身不改）。已批准采用不同规则的位置（`agents/registry.go`、`agents/ha_model.go`、`oxidns/stored_projection.go`、`mosdns/archive.go`、`setup/record.go`、`convert/easytier.go`、`convert/common.go:DirectNTP`、`server/setup.go:137` 及 Python 原用 `is False`/`is not False` 的字段）保持不变。
+- `ippresence` 移除 `jsonx`/`pystr` 遗留实现与 `ClassicalIPLines`/`PyError` 兼容层，统一由 `TypedClassicalIPLines` 消费 `model.Config`。对存储中非字符串的 `library_rule_id`、`rule_library[].id` 与 `content`（例如数字 `1`/`1.0`/`5` 或布尔值），按原始 JSON 字符串类型检查 fail closed 返回未知 `nil`，不再通过 R5 标量强转或模拟 Python `True == 1` / `1.0 == 1` 跨类型匹配；正常字符串标识与既有回放语料保持一致。
+
+## N8-11 W9 — 查询参数整数（复核补登）
+
+- （W9 复核 L1）`httpx.Ctx.ArgInt` 不再经 `PyParseInt` 解析，改为原生 ASCII 十进制（`strings.TrimSpace`、可选 `+`/`-`、`0-9`）。Python `int()` 另外接受的数字间下划线（`1_000`）、非 ASCII 十进制数字（如全角 `１００`）以及 U+001C–U+001F 前后空白，现在按非法值回落到默认值。只影响 `GET /api/logs?lines=`（默认 100）与域名发现 `days`（默认 7）两个查询参数；前端只发送 ASCII 数字。与 3.3 裁定 2（机器文本/数字用原生 ASCII 规则）一致。
+
+## O9 第二轮 low — 远程调用总时长上限、禁止 Agent 重定向、客户端手工节点控制字符边界
+
+协调者裁定（2026-11-21），见 [review-o9-round2.md](review-o9-round2.md)：
+
+- **O9R2-L1（远程调用总时长上限）**：Python `requests` 只限制单次 socket 读超时，不限整次请求总耗时，慢速滴水应答方可以长期占住 goroutine 与设备锁。Go 保留单次读超时语义，同时为整次请求增加总时长上限，并继续遵守 PORTING 规则 4b（客户端断开不取消非 GET 调用）：
+  - **Agent 远程调用**（`internal/agents/client.go` `HTTPClient.Do`）：未显式指定 `Timeout.Total` 时，总时长上限为 `Connect + 5 × Read`（`TotalTimeoutMultiplier = 5`；无正超时时兜底 `DefaultTotalTimeout = 10m`）。各类现有调用对应上限：地址探测 4s→24s、状态/日志/升级控制 5s→30s、重启/卸载/旧推送 10s→60s、OxiDNS 监控 (3,12)→63s、HA 状态/目标/回流查询 15s→80–90s、发布激活/回滚/恢复 (5,30)→155s、IPv6/Linux 网关 (3,45)→228s、回流规则变更 60s→360s、Mihomo 重载 (3,70)→353s、HA 配置/快照下载 (3..5,90)→453–455s、大配置发布上传 (10,120)→610s、区域检测 120s→720s、Mihomo 核心升级 (3,200)→1003s、域名探测 200s→1200s，均远大于正常最慢操作耗时。超时返回 `*TransportError`（包装 `ErrTotalTimeout`，`Timeout() == true`），复用现有连接失败/不可达错误类与中文提示。
+  - **路由器远程调用**（`internal/devhttp/devhttp.go` `Client.Do`）：总时长上限为 `6 × timeout`（`TotalTimeoutMultiplier = 6`；`timeout <= 0` 时兜底 `10m`）。各类现有调用对应上限：RouterOS Ping 4s→24s、RouterOS REST 10s→60s、iKuai 常规 10s→60s、iKuai 大规则回滚写入 `10s + 0.003s × 条数`（如 28s→168s），均远大于正常单次设备操作耗时。超时返回 `*devhttp.Error{Class: ReadTimeout, Err: ErrTotalTimeout}`，RouterOS/iKuai 复用现有超时错误类与中文提示。
+  - 回归：`agents.TestO9R2TotalTimeout`、`agents.TestO9R2NonGETSurvivesClientDisconnect`、`devhttp.TestO9R2TotalTimeout`（均含正常多块传输负控与 Rule 4b 断线负控）。
+- **O9R2-L2（`CallAgent` 禁止跟随重定向）**：已核实 `backend/agents/go-agent` 全部正常协议端点从不返回 3xx。`agents.Manager.CallAgent` 统一设置 `NoRedirects: true`（与 monitor/gateway/rulesync/ipv6 保持一致），阻止被攻破的 Agent 通过 3xx 驱动面板发起 SSRF。Agent 返回 3xx 时按既有非 200 错误类处理（`RemoteCall` 返回 `HTTP 3xx`、`AgentRequestModel` 返回 `*RemoteError`、`DeploymentRequestModel` 将所有 `>= 300` 状态记为 `success: false` 与 `http_status: 3xx`）。回归：`agents.TestO9R2CallAgentNoRedirects`（含 200 负控）。
+- **O9R2-L3（Surge/Loon 手工节点控制字符拒绝与生成防御）**：Python 保存和生成 Surge/Loon 手工节点时不做换行/控制字符检查，节点名称、密码等字段中的 `\r`/`\n`（或分享链接 `%0A` 解码结果）可向 INI 文本注入额外 `[Rule]`/`FINAL` 等行。Go 在两处防护：
+  - **保存校验**（`POST /api/nodes`、`PUT /api/nodes/<node_id>`）：拒绝 `name`/`type`/`server`/`port`、URI 分享链接及其解码字段中的控制字符与行分隔符（C0 U+0000–U+001F、DEL U+007F、C1 U+0080–U+009F 含 U+0085 NEL、U+2028、U+2029；合法多行 YAML `proxy_string` 的结构换行仍允许）。`params` 递归字符串值和 YAML/JSON `proxy_string` 的参数值允许 TAB/LF/CR（Mihomo 的 `ca-str`、内联证书/私钥 PEM 合法多行），只拒绝其余控制字符与行分隔符；这些换行在 Surge/Loon 生成时被替换为空格（batch-20 复核修正：最初一律拒绝会让含 PEM 的合法 Mihomo 节点无法保存），返回 400「节点字段「<字段>」不能包含换行、回车或控制字符」且不修改存储。
+  - **生成防御**（`internal/convert` `SurgeNode`/`LoonNode`/`SurgeGroup`/`SurgeConfig`/`LoonConfig`）：对存量或导入节点渲染前将 CRLF 及所有上述控制字符替换为空格，确保不输出注入行且 `[Proxy]` 与 `[Proxy Group]` 名称一致。
+  - 回归与 Flask 差分：`api/nodes.TestO9R2NodeControlCharValidation`、`convert.TestO9R2ClientNodeLineInjectionDefense`、`api/subscriptions/difftest.TestO9R2NodeControlCharBoundaryAgainstFlask`、`api/config/difftest.TestO9R2ClientGenerationLineDefenseAgainstFlask`（均显式断言 Flask 放行/注入与 Go 拒绝/净化的新边界，并含正常节点严格相等负控）。
+
+## M18 — 域名发现流量文件损坏状态与界面恢复入口
+
+- 维护者切换前裁定（对应 `o12-release-notes.md` M18）：`GET /api/domain-discovery/agents`（以及同用 `AgentStatus` 的 `GET /api/domain-discovery/domains` 中的 `agents[]`）在 Go 侧为每个 Agent 新增两个只读字段：
+  - `store_state`：`"ok"` | `"damaged"`，表示该 Agent 的流量数据文件（`DATA_DIR/traffic/<agent_id>.json`）是否处于「损坏、写入被拒」状态。文件不存在或健康时为 `"ok"`；整文件损坏（空文件、截断、非法 JSON/UTF-8、非标准 `NaN`、顶层非对象）、`days`/`status` 错型或当日统计桶头损坏导致上报被拒时为 `"damaged"`。
+  - `store_message`：健康时为空字符串 `""`，损坏时为中文提示（`discovery.MsgStoreDamaged`：「域名数据文件已损坏，上报已暂停。清除后可恢复采集（已采集数据将丢失）。」）。
+- 检测严格只读，复用文件签名缓存（健康复用 `statusCache`，损坏由独立的签名/日期有界 LRU `damagedCache` 记住），重复轮询只需 `stat`，不每次全量解析大文件，且不改变已批准的 fail-closed 行为（仍拒写 500、原文件字节不动）。前端之外无外部调用方依赖；用户在域名发现页直接看到该设备的告警并可点击「清除并恢复」（复用既有 `POST /api/agents/<id>/domain-discovery/clear`）。
+- Flask 对比测试显式例外：`internal/discovery/difftest` 与 `tools/proddiff` 仅在 `/api/domain-discovery/agents`、`/api/domain-discovery/domains` 200 响应上断言 Python 不含这两个键且 Go 为健康基线（`store_state == "ok"`、`store_message == ""`）后剥离这两字段，其余所有字段仍严格逐项比较；Go 报 `damaged` 时保留为差异，由人工判断是真实损坏还是误报（batch-20 复核收紧 proddiff）；`tools/configdiff/config_finding_resolutions.py` 登记同一精确例外。后端回归 `api/agents.TestDomainDiscoveryDamagedStoreStatusClearAndRecovery` 与 `trafficstore.TestInspectStatusDetectsDamageCachesSignatureAndRecovers` 覆盖完整「损坏→显示 damaged→清除→恢复 ok 并可写入」闭环。
+## O12 M16 — 无法识别的 Mihomo 内核版本按未知处理（实验网 L2 实测，2026-11-21）
+
+- 撤销 N8-9 subs「跨包调用边界收口 / Agent 未知版本生成边界」中对非空但无法识别的 Mihomo 内核版本 fail-closed（400「Agent 上报的内核版本无法识别：…，请升级或重启 Agent」）的裁定。
+- 背景（实验网 L2 实测）：Mihomo alpha 内核真实上报 `alpha-100ff73`（无 `v` 前缀、非数字版本）；开启 EasyTier 出站后，`POST /api/agents/<id>/generate-config` 与 `POST /api/agents/<id>/push-config` 均返回 400 拒绝，而正式版 `v1.19.32` 正常。
+- 协调者裁定（O12 M16）：所有按 Mihomo/内核版本开关或拒绝的功能（EasyTier 出站、`subs.ApplyDNS`、`subs.OldCoreAgents` 等）统一按同一规则处理——**非空但无法识别的内核版本视为"未知"，与空版本走同一路径**（EasyTier 假定支持并照常生成；ProxyServerDNS 不判为旧内核并附未知版本提示），不再拒绝生成或发布；通过 `subs.WarnUnrecognizedCoreVersion` 按 Agent 限流（10 分钟）记一条脱敏 Warning 日志；删除误导提示文案 `msgETAgentVersionUnknown`（「请升级或重启 Agent」）。已知可识别但低于最低要求的正式版（如 EasyTier `< v1.19.31`、ProxyServerDNS `< v1.19.20`）仍按原规则处理。
+- 测试与参照调整：
+  - 此前 N8-9 为拒绝 `alpha-*` / `unknown` 新增的 13 条 `mihomo_corpus`/`review_mihomo`、1 条 `mihomo_recorded`、3 条 `corpus`/`review_c12` 拒绝覆写全部撤销并删除对应夹具，恢复为直接匹配原始 Python 语料及原始 4548 项字节清单（`n88_generation_bytes.json` 2353 条 Mihomo 零例外全匹配）。
+  - `review_c12/2125`（输入 `v１.19.30`，含全角数字 `１`）：Python 因正则 `\d` 匹配 Unicode 全角数字将其判为旧版本拒绝；Go 保持 ASCII 机器版本解析（`subs.CoreVersion` 只认 `[0-9]`），按 O12 M16 规则将其视为无法识别/未知版本而正常应用 EasyTier，并在 `n89_subs_callers_reference.json` 中显式固定该新行为。
+
+
+## O9-H2 发布补充 — Docker Agent 安装使用与面板配套的镜像标签（实验网 L2 发现，2026-11-21）
+
+- **问题**：O9-H2 后，开启登录时新 Docker Agent 首次注册依赖 `AGENT_<SVC>_REGISTRATION_TOKEN` 写入 Agent 配置（新入口脚本）和 Agent 发送
+  `registration_token`（Agent 1.8.61-go）。Python 与 Go 面板此前都把生成命令写死为浮动的 `thsrite/config-flow-agent:latest`；
+  Docker Hub 上的 latest 是旧入口脚本，新装必然 403「安装命令已失效…」。已注册 Agent、Shell 安装不受影响。
+- **变化**：`docker-agent-run`、`docker-agent-compose`（含 `format=both`、HA host/macvlan 的 run 与 compose）、`docker-ha-guide`
+  未指定 `image` 时的默认值，改为 `version.DockerAgentImage()`：发布镜像构建时由 `-ldflags -X configflow/internal/version.AgentImage=`
+  注入「与面板同一提交构建」的 Agent 镜像（版本标签构建 = `<命名空间>/config-flow-agent:<semver>`，例如 `2.0.0-rc.1`）；
+  未注入（本地、`go test`、分支/手动 CI 构建、autoupdate 运行时重建）或注入值不是合法镜像引用时，仍为 `thsrite/config-flow-agent:latest`，
+  输出与 Python 逐字节一致。CI：`docker-agent.yml` 在 `v*` 标签上按与 `docker.yml` 相同的 semver 规则推 `<版本>`（含预发布，不动 latest），
+  其余触发仍只推 latest（原规则）；`docker.yml` 只在本次面板确实推送了同名 semver 标签时注入配套 Agent 镜像，否则注入 latest。
+- **前端**：Docker HA 安装向导的镜像输入默认留空（占位「与面板版本配套（默认）」），留空时不发送 `image`，由服务端选配套镜像；
+  手填时与以前一样原样发送。「Docker Agent 更新步骤」对话框仍默认 `latest`（只给已注册 Agent 换镜像，注册不依赖新入口；未改）。
+- **Flask 对比测试**：差分与 proddiff 在未注入的构建上运行，生成结果仍是 `:latest`，因此不需要也没有加宽泛忽略；
+  配套标签的行为由 `installer.TestDockerInstallersUsePairedAgentImage`（注入后只有镜像引用变化、其余字节与未注入输出相同）、
+  `installer.TestGuideDefaultsToPairedAgentImage`、`version.TestDockerAgentImage` 和前端 `docker-ha-install-guide.test.ts` 覆盖。
+  若以后差分改用注入版本构建，唯一允许的例外是镜像引用 `thsrite/config-flow-agent:latest` ↔ 注入值。
+- **兼容性（新 Agent 镜像配旧 Python 面板）**：新入口脚本在环境变量缺失时写入空的 `registration_token`/`registration_key`，
+  Agent 读入后为空、注册请求按 `omitempty` 不带这两个字段，心跳的 `host` 字段只在面板声明 `reads_host` 后发送；
+  因此 Python 面板看到的注册/心跳请求与旧镜像相同，老用户随 main 拉到新 latest 不受影响（实验验证见 progress/o14-switch.md）。
+
+### O9-H2 发布补充 — Agent 版本提升到 1.9.0-go（协调者裁定 2026-11-21）
+
+- `go` 分支的 Agent（`backend/agents/go-agent/upgrade.Version`）与面板 `agents.LatestAgentVersion` 改为 **1.9.0-go**，并新增版本日志条目。
+  原因：upstream/main 的 Agent 和 `go` 分支 Agent 都报 1.8.61-go，但只有后者支持一次性注册凭据/注册密钥，同号不同能力会让升级判断和排障混淆。
+  效果：Go 面板把 1.8.61-go 及更早的 Agent 显示为「可更新」，Agent 升级目标、升级事件文案（「正在提交 Agent 1.9.0-go 更新请求」等）随之变化。
+- Python 参考 `backend/agents/version.py` 不改（它的 `.py` 参与 pyref 源指纹）；版本表停在 1.8.61-go，Go 只多出 Go 专有发布。
+- 测试例外（显式、只限版本号）：
+  - `agents.TestVersionTableMatchesPython`：Python 表 = Go 表去掉 Go 专有发布（`1.9.0-go`），其余逐条比较；Python 的 LATEST 固定断言为 1.8.61-go。
+  - `api/agents/difftest`：进程内 Go 服务与种子数据/假 Agent 通过 `agents.SetLatestVersionForTest` 使用 Python 的 `LATEST_AGENT_VERSION`（从 `version.py` 读取），升级与心跳响应其余字段仍逐字节比较。
+  - `installer.TestGeneratorFingerprintMatchesReleaseInputs` 重算冻结的 Python 发布指纹时用 Python 的 1.8.61-go（Go 的 `GeneratorFingerprint` 不含 Agent 版本，未变）。
+  - `tools/configdiff` 的 T16/T25 心跳改报 1.9.0-go：两侧都判定「无需更新」，与原来报两侧最新版的语义相同。
+  - `tools/proddiff`（`pair_agent_release`）：只在 `/api/agents/latest-version`（Python 1.8.61-go ↔ Go 1.9.0-go）以及 `/api/agents`、`/api/agents/<agent_id>` 中版本相同、介于两者之间（≥1.8.61-go 且 <1.9.0-go）的 Agent 上，把 Go 的 `has_update: true` 对齐为 Python 的 `false`；其他版本、其他字段或路由照常报差异（`test_agent_release_exemption_is_exact`）。
+
+## O10-T1 — 路由器检查摘要改用 OxiDNS Agent 投影（协调裁定：接受）
+
+- 解析后的配置视图（`repo.Config`）默认不再带 Agent。路由器检查记录的摘要与通知快照的摘要两侧同改为
+  `ConfigWithOxiDNSAgents`：只含 OxiDNS 策略/规则 DNS 读取的 8 个成员（id、name、host、service_type、
+  profile_id、enabled、dns_follow、rule_sync），不含 token 与部署/IPv6 历史。OxiDNS Agent 地址等变化仍让
+  提醒过期；部署历史、token、心跳类变化不再让它过期（Python 摘要含整条 Agent，任何 Agent 记录变化都会过期）。
+- **升级时一次性影响：** 旧版本存下的摘要是按整条 Agent 算的，升级后全部路由器检查提醒显示一次「已过期」。
+  不改任何数据，不触发发布；每台路由器重新检查一次即恢复。见 O12 发布说明 U17。
+- 路由器页、客户端设备响应与路由器诊断文本的脱敏集合保持不变：Agent 记录中的凭据类值（含部署历史）由
+  `redact.AgentRecordCredentials` 从 Agent 记录收集（仓库按存储 head 缓存，Agent 写入后重新收集），
+  不再随整份配置复制；`/api/routers` 与路由策略页的单次分配与 T1 前一致。
+  `TestO10RouterRedactionKeepsAgentRecordCredentials` 固定部署历史中的 password 仍被脱敏。
+- 内部 API：`repo.Config` 的结果不再含 `agents`（Python `get_config`/`get_compat_config` 含）。没有路由、导出、备份或 MCP
+  输出序列化解析后的配置（导出走 `ExportAllJSON`/`ExportProfileJSON`，MCP 备份调用导出路由），对外无变化。
+  仓库与 Python 的交叉检查（`TestCrossCheckC04Operations` 的 `cfg_get_config`、`cfg_get_resource_config`、
+  `get_compat_config`）按新边界比较：Go 侧把 System 中的完整 Agent 注册表附到副本上再与 Python 整体比较，并逐条断言
+  `ConfigWithOxiDNSAgents` 的投影只含 8 个投影成员、字节与注册表相同（不含 token 与历史）。
+
+## O10-R2 — 借用读返回的 Profile 保留存储键（内部 API，对外无变化）
+
+- `repo.Profile`、`repo.Config` 等改为借用快照后，返回的 `*model.Profile` 是存储记录的浅拷贝，保留存储节键：
+  `Key()` 返回 `profiles` 映射里的键。原实现经编码再解码得到副本，副本没有存储键，`Key()` 回落到 `id` 成员。
+- 只有存储 id 与映射键不一致时两者才不同。这种文档过不了校验（`validateStored` 对每个配置空间要求
+  `profile.ID == Key()`，否则 `msgProfileIDMismatch`），所以已提交的快照里不存在；`repo` 包外也没有对
+  `Profile`/`Config` 的结果调用 `Key()`（遍历 `document.Profiles` 的调用方不受影响）。路由、JSON、存储均无变化。
+
+## O18 T5 — 存储时间戳改用 `time.Parse`（删除 CPython `fromisoformat` 移植）
+
+`taskstatus.ParseISO` 只读 ConfigFlow 实际写出的时间戳写法：`YYYY-MM-DD`、`YYYY-MM-DDTHH:MM:SS`（可带小数秒），
+以及带 `Z` / `±HH:MM` / `±HH:MM:SS` 时区的同样写法；时区偏移满一天的拒绝（同 Python）。生产快照（2026-11-16，DATA_DIR 全部
+JSON/JSONL/SQLite 文本）里出现的 7 种写法全部覆盖（带/不带微秒 × 无时区/`Z`/`+HH:MM`，加纯日期）；Go Agent 上报用
+`RFC3339`/`RFC3339Nano`，也在其中。不再接受 CPython 3.11 `fromisoformat` 额外接受的周日期（`2026-W46-5`）、基本格式
+（`20261114T120000`）、空格或任意字符分隔、只到时或分（`T12`、`T12:34`）、亚秒偏移等：ConfigFlow 从不写这些，
+只可能来自手改数据；遇到时按「时间无效」处理（与原来对坏时间戳的处理相同）。解析出的时区不再带 Python
+`tzname()` 名称（`UTC+08:00`），只保留偏移；所有输出只用偏移，API 无变化。对照测试中这些写法的行改为跳过
+（`isoformtest.Stored`），其余行不变。
+
+## O18 T6 — Agent / Sub-Store 请求体不再模仿 `requests` 的 `json=`
+
+- 发给 Go Agent 的 JSON 请求体改为 `encoding/json` 紧凑 UTF-8（不转义 HTML），不再是 Python `json.dumps` 的 ASCII 转义加
+  `", "`/`": "` 分隔；删除 `jsonresp.EncodeDevice`/`EncodeDeviceUTF8`。Go Agent 用 `encoding/json` 解析请求体，不对请求体签名、
+  不算哈希（再查 `backend/agents/go-agent`：仅对本地配置文件和自身状态算 sha256），旧版 `/api/config/update` 仍带
+  `charset=utf-8`。值、成员顺序、大整数原样不变；NaN/Infinity 仍在发送前拒绝。请求体变短，不会触到 Agent 的体积上限。
+- OxiDNS 上游行 `id` 与目标身份摘要（`monitor.digestIdentity`）是 API 值，保持原拼写（紧凑 JSON + 非 ASCII 转小写 `\uXXXX`）不变，
+  只是不再借用 `EncodeDevice`。
+- Sub-Store 客户端默认 `User-Agent` 由 `python-requests/2.31.0` 改为 `ConfigFlow`（显式带 UA 的请求不变：直连订阅仍是
+  `clash.meta`）。默认 UA 只到达本机 Sub-Store 和 Sub-Store 包下载（GitHub/镜像）。Sub-Store 2.44.7 只有订阅开启
+  `passThroughUA` 时才把请求 UA 转给上游，ConfigFlow 创建的临时订阅不设此项；下载地址里总带 target，不靠 UA 猜平台。
+  Sub-Store 请求体本来就是 `jsonresp.Encode`。
+- 对照测试改为按 JSON 值比较 Agent 请求体（`wireBody`/`wireCalls`/`requestData`），冻结的 Python 记录不动。
+
+## O18 C15a — 公开路径白名单不再接受末尾换行
+
+维护者裁定（2026-11-22）：配置/规则订阅类公开路径（`/api/config/<id>/<客户端>`、`/api/config/<id>/loon/<名>`、
+`/api/profiles/<id>/mosdns/rule-proxy`、订阅/聚合/本地规则/规则库内容）改为用 `\z` 精确匹配，不再模仿 Python
+`re.match` 加 `$` 允许末尾一个 `\n` 的怪癖。末尾带 `%0A` 的这类路径不再免登录：开启登录时由 404 变为 401
+（`{"success": false, "message": ...}` 的未登录响应）；正常路径不受影响。
+
+## O18 C15b — 生成链接里的主机名按请求原样使用
+
+维护者裁定（2026-11-22）：`request.url_root`/`host_url`（`httpx.Ctx.URLRoot`/`HostURL`）不再模仿 Werkzeug `uri_to_iri`
+把主机名转小写、把端口规范成数字（`:0080` → `:80`、`:0` 去掉）。现在用请求 `Host`（仍去掉协议默认端口、仍拒绝非法字符）
+原样拼成 `scheme://host/`。影响生成配置/安装脚本/规则链接里嵌入的服务器地址：只有客户端发来大写主机名或带前导零端口时才
+不同（浏览器总是发小写主机名）。规则来源「是否指向本机」的判断本来就按不区分大小写的源比较，不受影响；安装命令、部署
+指纹等没有按大小写比较服务器地址的地方。
+
+## O18 C15c — 文件响应改用 `http.ServeContent`（删除 Werkzeug 条件请求移植）
+
+维护者裁定（2026-11-22）：所有 `httpx.File` 响应（Agent 二进制下载、生成配置/产物下载、全局配置导出、部署预览文件）的
+Range / If-Range / If-None-Match / If-Modified-Since / If-Match 改由 `http.ServeContent` 处理；删除 `downloads_range.go`
+（Werkzeug `make_conditional`/`parse_range_header`/`parse_date` 移植）、`downloads_date.go` 和 `httpx` 自写的区间解析。正常
+下载（无条件头）不变。可见变化只在带这些头的请求上：
+
+- 不可满足或语法错误的 Range：416，正文是 net/http 的纯文本（`invalid range: failed to overlap` / `invalid range`），
+  可满足的另有 `Content-Range: bytes */<大小>`；原来是 JSON `{"success": false, "message": "416 Requested Range Not
+  Satisfiable: …"}`。
+- 多段 Range（`bytes=0-1,5-6`）：206 `multipart/byteranges`（原来 416）；超出 int64 的边界、带 Latin-1 空白或空格的 Range：
+  416（Werkzeug 当作 Python 大整数或去掉空白后可能给 206）。
+- 不是 HTTP 日期的 If-Modified-Since / If-Range（溢出的年份、缺星期的 RFC 2822 写法）：按标准忽略，200/完整内容
+  （原来 Agent 下载路由 500）。
+- Range 同时带命中的 If-None-Match：304；If-Range 用弱 ETag：不匹配，返回完整 200；If-Match 不匹配：412；空文件上的 Range：
+  忽略，200。
+- 304 不再带 `Accept-Ranges`。
+- 只有 GET/HEAD 的 200 文件响应交给 `ServeContent`（batch-24 复核补充）：POST 路由返回的文件（生成配置下载）照旧
+  整份返回，不带 `Accept-Ranges`，忽略 Range / If-None-Match / If-Match（否则 `If-None-Match: *` 或不匹配的 If-Match
+  会让 POST 得到 412、Range 得到 206；RFC 9110 只为 GET 定义 Range）。与 Python 原行为一致。
+
+已在测试服务器用真实 curl/wget 确认：安装/升级脚本的 `curl -fsSL --retry 2 -o` 与 `wget -q -T 60 -O`（Go Agent 升级同为普通 GET）
+完整下载；`curl -C -`/`wget -c` 续传 206 且文件一致；`curl -z`/`wget -N` 得到 304。Flask 下载差分中带 Range/条件头的 33 行改为
+断言 net/http 标准结果（状态码、`Content-Range`、正文长度），其余行仍与 Flask 逐项比较；Werkzeug 条件请求的 pyref 参考
+（`TestReviewConditionalMatchesWerkzeug`）及其策略文件删除。
+
+## O18 C17 — JWT 时间声明必须是 JSON 数字
+
+维护者裁定（2026-11-22）：`iat`/`nbf`/`exp` 按 RFC 7519 NumericDate 读取：JSON 数字（允许小数，按秒比较），不再按 Python
+`int()` 接受数字字符串（`"2110020686"`）或布尔值（`true` 当 1）；`null`、数组、对象等类型错误不再是 PyJWT 漏出的 TypeError
+（500），统一为令牌无效：HTTP 401 `token_invalid`，详情 `… claim (exp) must be a number.`（原文 `must be an integer.`）。
+只影响用服务器密钥签出的畸形令牌：Go 与 PyJWT 签发的令牌都是整数时间，不受影响。`TestDecodeMatchesPyJWT` 中对应 4 行
+（`exp_string`、`exp_bad_string`、`exp_bool`、`iat_bad`）改为新期望。
+
+## L2 实验网 — 「重新恢复原配置」受理后的状态码
+
+- （L2 D1，Python bug 修正）`POST /api/agents/<id>/deployments/<dep>/recover` 被 Agent 受理后（任务变为 `rolling_back`，无设备错误码），返回 **202**，与受理手动回滚一致；Python 把它记为 `success=false`，按 `_deployment_response` 返回 500，Agent 页随即提示「无法重新恢复」并停止跟踪，而设备实际在恢复（实验网 1.8.61-go 复现）。存储的任务内容不变；被拒绝（旧 Agent 404/405、400/409）和结果未知时的状态码不变。测试：`TestDeployHTTPAcceptedRecoveryIsAccepted`。
+
+## 实验网 L5-D1 — 回流在 nftables 1.0.6（Debian 12）上可以启用，旧版本残留可认领清理（Agent 1.9.1-go）
+
+- 根因：回流给 nft 表和链写 `comment`（归属标签），写入后用 `nft -j list ruleset` 回读逐项比较。nft 1.0.6 的
+  JSON 输入会丢掉表/链 comment，JSON 输出也不列出（规则 comment 正常）；回读必然不一致，写入的路由、策略规则和
+  nft 对象留在主机上、事务停在 pending，之后计划和撤销都被「上次回流事务未完成」「无法证明旧回流资源的归属」挡住。
+  Python 时代的同一 Agent 也是如此。
+- 归属标识改为各 nft 版本都会回显的内容：链名 `cf_<token>_pre/_out`（token 为 128 位随机数，只存在本机状态文件）、
+  规则 comment `configflow-return:<token>:<用途>`、表用固定名 `configflow_return`。新 Agent 写表和链时不再带
+  comment；回流的比较忽略表/链 comment（旧版本记录下来的、带 comment 的表/链仍然匹配，升级后不触发重放）。
+  Linux 网关有自己的 1.0.6 处理（固定内核表示），仍严格比较，不受影响。
+- pending 事务不再一律拒绝：计划、发布、撤销先在 `configflow_return` 中补记带本机 token 的对象（`cf_<token>_*`
+  链、这些链里 comment 以本机标签开头的规则，以及含有这些对象或带本机标签的表）。表里有任何无法用 token 证明的
+  对象（他人链名、无标签规则、带其他标签的表、空且无标签的表），或路由表/优先级里有未记录的路由和规则，仍按原样
+  拒绝且不写任何东西。补记后发布按原事务重放、撤销按记录精确删除；记录完整的 pending（例如上一次删除命令返回成功
+  但没有生效）也允许重试，失败时保留归属记录。开机重放对 pending 仍不做任何操作。
+- 回归测试：`return_routing_pending_test.go`（假主机模拟 1.0.6 回显：启用→撤销→再启用；旧版本残留在 1.0.6/新版 nft
+  回显下先撤销或先发布都能恢复；四类无法证明的对象仍拒绝且不写入；带 comment 的旧记录升级后开机不重放）。真实内核：
+  `backend/agents/go-agent/integration/return_routing_nft_lab.sh`（`-tags nftlab`，一次性容器，默认 debian:12 =
+  nft 1.0.6，`NFT_LAB_IMAGE=debian:13` = 1.1.3）：协议 1/2 各启用→Agent 重启→撤销两轮，以及从旧版本残留先撤销/先发布
+  恢复后再启用。负控：同一测试在修复前代码上得到实验网原报错「写入后的资源内容与计划不一致；安全撤销未完成…」。
+
+## 实验网 L3-D1 — 停用 DNS 高可用先停 keepalived 再删配置，并确认已释放虚拟 IP（Agent 1.9.1-go）
+
+- 根因：停用时 Agent 先删 `keepalived.conf`/`configflow-oxidns.conf`，再恢复服务原状态。Alpine 的 keepalived init 脚本有
+  `required_files=$cfgfile`，配置删除后 `rc-service keepalived status/stop` 都失败，Agent 判断「没在运行」就不停止，停用
+  返回成功，keepalived 继续持有虚拟 IP。用户手工结束进程后 OpenRC 记为 `crashed`，之后开启报「keepalived 启动后未保持运行」。
+  开启失败时撤销备机走同一路径，也留下同样的残留。Python 时代同一 Agent 也是如此。
+- 停用顺序：keepalived 原本没有运行时，先停止服务（配置还在，init 脚本可用），确认停止后才改配置文件；原本在运行时仍是
+  改完配置后重启（让它丢掉 ConfigFlow 的 VRRP 实例）。开启失败的回滚同样先停止再恢复文件。systemd 与受管 Docker
+  （Supervisor）走相同顺序。
+- OpenRC：`crashed` 状态在启动、重启、停止前先 `rc-service keepalived zap`；init 脚本因缺配置无法运行时，按 init 脚本的
+  pidfile（`/run/keepalived.pid`，核对 `/proc/<pid>/comm` 为 keepalived）发送 SIGTERM，进程退出后 zap。
+- 停用必须确认释放：原本不运行的 keepalived 已停止（含服务管理器看不到、但 pidfile 仍指向的进程），且虚拟 IP 不在本机网卡上
+  （最多等 5 s）。否则返回失败并保留记录可重试：「停用 DNS 高可用前停止 keepalived 失败，配置未删除，可重试停用：…」
+  「停用 DNS 高可用后 keepalived 仍在运行（服务管理器无法停止它），虚拟 IP … 可能仍由本机持有…」
+  「停用 DNS 高可用后虚拟 IP … 仍在本机网卡上；请确认 keepalived 已停止并移除该地址后重试停用」。以前这些情况停用返回成功。
+- 回归测试：`oxidns_ha_openrc_test.go`（OpenRC 行为模型：required_files、crashed、pidfile、虚拟 IP 跟随进程；停用先停、配置
+  已删时按 pidfile 停、停不掉时失败且不删配置、虚拟 IP 残留时失败、crashed 后可再开启、回滚先停；systemd 停用先停）。真实
+  环境：`backend/agents/go-agent/integration/oxidns_ha_openrc_lab.sh`（`-tags halab`，一次性 alpine:3.24 容器，真实 OpenRC +
+  keepalived，私有 Docker 网络 198.51.100.0/24）：开启→停用两轮、配置已被删除时停用、crashed 时再开启与停用。负控：修复前
+  代码停用后 keepalived 仍在运行，再次开启被「虚拟 IP … 已在本机网卡上，但不是由 DNS 高可用持有」拒绝，与实验网一致。
+
+## 实验网 L2-D3 — Agent 定期刷新 Mihomo 内核版本（Agent 1.9.1-go）
+
+- 根因：域名发现采集只在连上控制器（或断开后重连）时读一次 `/version`；在两次连接轮询之间替换内核并重启，连接轮询不会失败，
+  Agent 一直上报旧版本，直到 Agent 重启。
+- 修法：连接正常时，距上次读取满 60 s（`discoveryVersionRefresh`）的下一次轮询再读一次 `/version`；断开重连时仍立即读取。
+  每分钟多一个本机 HTTP 请求，上报周期（5 分钟）内总能带上新版本。
+- 回归测试：`TestCollectorRefreshesVersionWhileConnected`（假控制器在连接不断开的情况下改版本，上报的版本随之更新）。
+
+## 实验网 L2/L3/L5 Agent 修复 — Agent 版本提升到 1.9.1-go
+
+- Agent `upgrade.Version` 与面板 `agents.LatestAgentVersion` 改为 1.9.1-go，更新日志新增 1.9.1-go（L5-D1 回流兼容 nft 1.0.6、
+  L3-D1 停用 DNS 高可用确认释放 keepalived 与虚拟 IP、L2-D3 内核版本定期刷新）。1.9.0-go 及更早的 Agent 在面板上显示可更新。
+- 与 Python 比较的例外沿用 1.9.0-go 的做法（Python `version.py` 仍为 1.8.61-go）：`TestVersionTableMatchesPython` 的 Go 独有版本
+  为 1.9.1-go、1.9.0-go；difftest 仍钉住 Python 的 `LATEST_AGENT_VERSION`；configdiff T16/T25 心跳报 1.9.1-go（两侧都无更新）；
+  proddiff `pair_agent_release` 的 Go 最新版改为 1.9.1-go，`has_update` 例外范围变为 [1.8.61-go, 1.9.1-go)（`test_agent_release_exemption_is_exact`
+  增加 1.9.0-go 在范围内、1.9.1-go 不在范围内的用例）。
+
+## Agent routes 包 -race 下 4 个已有数据竞争（测试同步，对外无变化）
+
+- 部署/恢复的后台任务持有服务操作锁（`operation.lock` 的 flock），测试用「能重新拿到锁」判断任务已结束，随后恢复被替换的全局函数。flock 是系统调用，
+  在 Go 内存模型里不构成同步，race 检测器因此报告任务读取与测试清理写入之间的竞争
+  （`TestGatewayMihomoPublishReloadsSameHostOxiDNS`、`TestUnchangedFilesAreLinkedNotCopiedAndDirectoriesSyncOnce`、`TestChangedOwnerOrModeStillReplacesFile`）。
+  修法：锁释放前对 `serviceOperationHandoff` 做一次 atomic 写，拿到锁后做一次 atomic 读，进程内的锁交接因此有 happens-before 关系；跨进程仍由 flock 排序。
+- `forwardFilterStatus` 的检查 goroutine 在启动后才读取可替换的 `forwardFilterInspect`；检查挂起时它比调用方活得久，会在测试恢复该变量后才读到
+  （`TestForwardFilterIsBoundedWhenInspectionHangs`）。修法：启动 goroutine 前先取出函数值。生产中这两个变量不会被改写，无行为变化。
+
+## 实验网 L3-D2 — HA 成员「重新恢复」后配对发布能收敛（修 Python 缺陷）
+
+- 现象（Python 相同）：配对发布 `rollback_failed` 后在 Agent 页点「重新恢复」，设备恢复成功，但成员任务存成
+  `rolling_back`；配对日志的恢复检查只对 `rollback_failed` 的成员向 Agent 查询，面板 GET 又走配对汇总，于是任务
+  永远停在 `rolling_back`/`rollback_failed`，这台之后的发布一直 409「这台 Agent 还有未结束的发布…」。
+- Go：配对日志处于 `rollback_failed` 时，GET 和后台推进对每个未终结（`rollback_failed`、`rolling_back`、`unknown`
+  或 pending）的成员都调用 `ReadDeploymentModel` 向 Agent 查询并记录；全部终结后配对日志变为
+  `failed`「设备回滚恢复已确认；原主备发布未完成，可重新发布」（`msgRecovered`，原有文案），之后可再发布。配对日志已是 `succeeded`/`failed` 而成员任务仍未终结时，
+  配对 GET 同样先向 Agent 查询再汇总。恢复仍失败 → 成员记录 `rollback_failed`，可再次「重新恢复」；Agent
+  离线 → 走原有的 pending 路径，不改存储，保持当前状态。
+- 测试：`dnsha.TestRecoveredMemberSettlesPairDeployment`（恢复成功 / 仍失败 / Agent 离线三种）、
+  `TestSettledJournalPollsReopenedMember`。
+
+## 实验网 L3-D3 — HA 成员规则自动同步失败时显示原因（修 Python 缺陷）
+
+- 现象（Python 相同）：HA 成员的自动同步被配对发布拒绝（例如一新一旧时「主备配置基线不同，请先完整发布一次主备配置，
+  再自动同步规则」）时，状态只有通用的「规则自动同步失败；将稍后重试，可查看设备发布状态」，日志只有
+  「Agent rule sync failed (*dnsha.Error)」。
+- Go：dnsha 通过 `rulesync.SetPairFailureMessage` 把它的拒绝（`*dnsha.Error`）交给自动同步，状态消息改为该拒绝的中文
+  原文，用与手动「更新规则」相同的 `FailureMessage` 脱敏；`logState` 照常以 WARNING 记录「Agent <名称> 规则自动同步：<原因>」。
+  状态仍是 `failed` 并按原间隔重试。其他错误（内部错误、非 HA 设备）文案不变。
+- 测试：`rulesync.TestPairRefusalReasonReachesSyncState`、`dnsha.TestPairFailureMessageHook`。
+
+## 实验网 L5-D2 — 管理地址不在 Mihomo 网段时回流计划直接阻止（修 Python 缺陷）
+
+- 现象（Python 相同）：路由器管理地址不在 Mihomo 所在网段（例如经 WAN 口管理）时，回流计划把它当下一跳，计划不阻止；
+  apply 时 Agent 报「主路由 … 不在 eth0 的网段 … 内」并逆序撤销。
+- Go：开启「自动配置回流」时，计划用已读取的路由器直连路由（主表、启用、`connect` 且 `active`）找出包含 Mihomo
+  网关地址的最长网段；管理地址不在其中 → 阻止项「回流以路由器管理地址作为下一跳，它必须在 mihomo 所在网段内：当前管理地址
+  <地址> 不在 <网段> 内。请把路由器地址改为路由器在 <网段> 中的地址，或关闭「自动配置回流」」。没有直连路由证据（iKuai、
+  路由读取失败、网关不在任何直连网段）时不判断，Agent 的 apply 校验照旧保留。
+- 测试：`routers.TestReturnUpstreamOutsideGatewayNetworkBlocksPlan`（LAN 地址、WAN 地址、无直连路由、直连路由未生效）。
+
+## 实验网 L5-D3 — 关停打断路由器发布时留下中止记录（修 R12 接线缺陷）
+
+- 现象：iKuai 长批次发布中 SIGTERM，宽限期内继续写入，到期后进行中的请求被断开；重启后 `last_release` 仍是上一次成功，
+  没有中止记录。根因：发布路由在 HTTP 请求的 goroutine 里直接调用 `routers.Publish`，不是 Runtime 跟踪的任务。Runtime
+  在宽限期末取消后只等待跟踪任务（≈0.5 s），随即关闭，D-R12-3 的「中止记录」那一次本地提交来不及完成。已有的
+  `routers.StartPublish`（跟踪任务）没有接到路由上；它还用全局 `lifecycle.Spawn`，不随请求所属的 Runtime。
+- Go：发布路由改为经 `StartPublish` 运行并等待结果（HTTP 响应不变）；`StartPublish` 用 `lifecycle.SpawnerFrom(ctx)`
+  跟随请求的 Runtime。中止时 `last_release` 为 `ok:false`、时间、`failed_stage`，消息为原「服务正在停止，发布在当前操作
+  完成后中止；已完成的变更保留，请重新预览后发布」后附「（已完成 N/总数 项操作）」（N 为已由设备回复证实的操作数）。
+  重新预览照旧按设备现状接着规划剩余操作。Python 关停时直接被杀，什么都不记录。
+- 测试：`api/routers.TestR15PublishHTTPDisconnectAndShutdownAfterWrite/shutdown` 现在要求 `Shutdown` 返回时中止记录已提交
+  （改回直接调用时稳定失败）；`routers.TestAbortedReleaseRecordsProgress`。
+
+## 实验网 O-1 — HA 配对发布中成员永久失联时 10 分钟后停止（协调裁定：方案 B）
+
+- 现象（Python 相同）：交接确认后新持有者断电，配对日志一直是 `unknown`「主备设备连接暂不可用，正在等待确认，未继续更新下一台」，
+  没有时限；后台推进几乎一直占着配对 lease，推送和停用都 409，成员不回来就永久卡死。
+- Go：配对日志新增 `unreachable_since`（Unix 秒）。推进时第一次遇到成员连接错误（传输错误或状态不可用）就记下这个时间，
+  之后任何一轮成员有应答就清除。连续 `MemberLostTimeout`（10 分钟，常量）后，先向仍可达成员查询已提交但本地未终结的子发布
+  （原主机已暂存的候选因此记为 `ready` 并撤销），再按原失败流程停止：撤销原主机的让位，选举确认最多等 `HandoffTimeout`，
+  最终 `failed`「主备设备连接中断超过 10 分钟，本次主备发布已停止；设备恢复后请完整发布一次主备配置，设备无法恢复时可以强制停用高可用」。
+  结局与成员晚归时的超时失败相同（一新一旧，DNS 不中断）。之后停用：离线成员撤销失败 → 现有 `can_force`，强制停用清除记录。
+- 不变：失联成员上已提交且结果未知的子发布仍保持 `unknown`「已提交的设备结果仍待确认」，不另加时限；两台都离线时撤销让位失败，仍保持 `unknown`。
+- 测试：`dnsha.TestLostMemberStopsPairAfterTimeout`（假时钟：10 分钟内保持 unknown 且停用被拒；超过后 failed，停用不加 force 返回 can_force，
+  加 force 成功；10 分钟内成员回来则正常 succeeded 并清除计时）。
+
+## O18 T1a — 顶层记录（Document/Profile/Shared/System）改为普通结构体
+
+协调裁定（2026-11-22，Q1/Q2-A）。存储读写不再保留原字节、成员顺序和类型错误的原值；值不变。
+
+- **存储格式**：各行按 Go 的编码写出（紧凑、成员按结构体声明顺序、字符串转义按 encoding/json/v2）。Python 写的行
+  在所在记录第一次被提交时改写成 Go 格式，之后稳定；未改动的行不写。只比较值的测试改为比较解析后的值（原因：字节一致已不是目标）。
+- **始终写出的成员**：配置空间的 `id/name/description/created_at/updated_at/_revision/proxy_groups/rule_configs/mihomo/surge/mosdns`、
+  共享资源的四个列表和 `_revision`、system 的 `system_config/backup/agents/_revision` 总是写出（零值也写，例如 `_revision: 0`、
+  `description: ""`）；`loon/oxidns/domain_discovery/routers/device_notes/client_fixed_ips`、`agent_registration_sessions`、旧版
+  `rules/rule_sets` 为空时不写。旧库缺少「始终写」成员时首次写入补零值（Python 建档时本来就写这些成员）。
+- **未声明的成员**：根、system、shared、配置空间里结构体不认识的行在读取时丢弃，加载时汇总告警一次
+  「配置中有未声明的字段，读取时已丢弃：<路径模式>（<个数> 处）」（不含值），下一次写入删除这些行。Python 会原样带着。
+  导入整份配置（v5）时根和配置空间里的未知成员同样丢弃；system 节多出的成员仍按 Python 拒绝「system 节只接受全局设置、备份与 Agent」。
+  旧版 `rules`/`rule_sets` 列表是声明过的成员（生成器在没有 `rule_configs` 时仍读取），不受影响。
+  尚未迁移的嵌套记录（T1b/T1c）照旧保留自己的未知成员和原字节（本步不改它们）。
+- **读存储时类型不对**：按零值读并告警（路径和类型，不含值），不再写回原错值；整数接受 `60`、`60.0`、`6e1`、`"60"`，文本接受数字原文。
+  因此原来「库里 `system_config: null` / 数字 / 字符串时启动不写入」改为：读成空设置后通过校验，启动时的令牌维护写入一次修复结果，
+  再次启动不写（`TestReviewN85WrongTypedStoredValuesAreRepairedOnceAtStartup`）。库里显式 `null` 的布尔开关读作「关」（flag-truthiness 裁定）。
+- **输入（HTTP、导入）严格解码**：`Profile/Shared/System.SetJSON` 和整份配置导入（v5）对类型不符的成员直接返回 400。
+  有 Python 文案的形状错误文案不变（例如「mosdns 参数必须是对象」「routers 参数必须是包含 items 列表的对象」「X 必须是列表」
+  「系统设置和备份设置必须是对象」「配置修订号无效」「缺少配置节：X」「配置内容与 ID 不一致」）；Python 不校验的成员类型错误
+  （例如 `description: 5`）以前照存，现在返回 400「description 类型不正确」。一个请求里有多处错误时，报错顺序可能和 Python 不同。
+  `_revision` 只接受整数：Python 接受的 `true` 和超出 int64 的整数现在返回「配置修订号无效」；字符串 `"5"` 作为 `schema_version`
+  与 Python 一致被拒（以前 Go 接受）。对象/列表成员给 `null` 视为类型不符。
+- **库里错类型的设备备注**：`device_notes` 存成列表时读作空备注（告警），保存设备备注/策略行会写入有效对象；Python 拒绝写入
+  「设备备注必须为对象，最多 2048 条。」。`null` 仍按 Python 拒绝（devicenotes/difftest、oxidns 测试已改期望）。
+- **整体损坏的系统设置**：`system_config` 不是对象时读作空设置并告警，但视为凭据损坏：MCP 和配置令牌校验拒绝访问（不当成「未设置令牌」），
+  启动时的令牌维护不改写它（`Repository.SystemSettingsDamaged`）。改写只发生在用户显式保存设置时。
+  HR 复核补充：配置令牌校验对调用方自带快照的入口（实时配置 `/api/config/...`、Linux 网关 provider）同样检查；
+  无关写入（改配置空间、Agent 等 system 写入）不再借令牌维护把损坏设置改写成空令牌的新对象
+  （`repo.TestReviewO18T1aUnrelatedWriteKeepsDamagedSettings`、`auth.TestSystemTokenRefusesDamagedSettingsFromCallerSnapshot`）。
+- **配置空间的旧版规则列表**：`rules/rule_sets` 不再按「未知成员」保存，而是声明为原始 JSON 成员，生成器行为不变。
+- **路由器规则缓存归属**：`rules.cacheSourceOwned` 读旧版 `rules/rule_sets` 的方式不变（改经 `Profile.LegacyRuleList`）。
+- 测试：`model.TestPlainDocumentStrictInputUnknownMembersAndOrder`、`repo.TestModelRowsUnknownMembersAndNullSwitch`、
+  `repo.TestModelStoredValuesLoadLenientlyAndWriteTyped`、`repo.TestModelIssuesLoggedOncePerRevision`（未知成员汇总告警、不含值）、
+  `repo.TestReferenceValidateDocument`（Python 校验参考经输入路径）、`repo.TestStoredRoundTrip`（含 CONFIGFLOW_SNAPSHOT 私有快照模式）。
+
+## O-1 后续 — 失联超时停止的主备发布在成员恢复后自动补完（新功能，Python 无）
+
+- 失联超时（`MemberLostTimeout`）停止时，配对日志记下失联成员和停止时间（`auto_complete_watch`），公开状态
+  `auto_complete: {status: "waiting", message: "等待设备恢复后自动完成发布"}`，停止消息改为「主备设备连接中断超过 10 分钟，
+  本次主备发布已停止；设备恢复后会自动完成本次主备发布。设备无法恢复时可以强制停用高可用」。开启 HA 的配对日志不自动补完，
+  仍用原文案「…设备恢复后请完整发布一次主备配置…」。
+- 触发（全部满足）：每个失联成员连续两次新心跳都健康（在线、`service_status` 为 running、能读 HA runtime）；两台都在线，
+  另一台 runtime 可读；拿得到配对 lease（没有其他配对发布或停用）；日志仍是这条等待中的 `failed` 日志（停用 HA 会删除日志，
+  任何新的手动主备发布会取代它——包括之后失败的手动发布，用户已有更新的发布意图）。心跳证据保存在日志里，面板重启后继续计数。
+  后台 HA 循环在有等待项时不进入空闲（心跳不是存储提交）；只在出现新心跳时读 runtime。
+- 补发：读取被中断日志保存的 payload 与 bundle，换新的部署 ID（`childBundle`），用原 source snapshot / resource /
+  revision / BaseURL / activate，经正常 `PublishPair` 流程（先备机、健康确认、交接、再原主机）。新日志 `auto_complete.attempt=true`，
+  发布记录和卡片显示「自动补完」。面板当前的新改动不参与，仍为待发布。与规则自动同步开关无关。
+- 不补（`auto_complete.status = "blocked"`，消息「无法自动完成本次主备发布：<原因>；请手动完整发布一次主备配置」）：payload 不可读或
+  摘要不符、停止超过 `AutoCompleteMaxAge`（24 小时）、任一成员 capabilities 缺 `oxidns_ha_protocols`（非 reload-only 还要
+  `oxidns_ha_handoff_protocols`）、成员身份或配对关系变化、`PublishPair` 在预约前拒绝（例如 reload-only 内容要求基线相同）。
+- 只试一次：补完日志是普通日志，失败就停在 `failed`，不再重试；它若再次失联超时，会重新进入等待并在恢复后再补一次
+  （每次「失联超时→恢复」最多一次）。
+- 前端：Agent 页 DNS 高可用行在等待时显示「等待设备恢复后自动完成发布」（警告色），开始补完时「正在自动完成主备发布」并轮询到新
+  发布出现；无法补完时写明原因；补完发布带「自动补完」标记，成功后卡片仍显示这次结果。文档 `doc/guide/oxidns-ha.md#member-lost`。
+- 测试：`dnsha.TestAutoCompleteAfterRecovery`（一次心跳不补、重启后的新 owner 用持久证据补完、补完后不再发布）、
+  `TestAutoCompleteDoesNotStart`（停用过 / 手动发布成功过 / 两台都离线 / 只有原持有者在线，后两者带恢复后会补的对照）、
+  `TestAutoCompleteBlockedContent`（payload 损坏 / 过期 / Agent 不支持，blocked 后不再发布）、`TestAutoCompleteFailureIsNotRetried`、
+  `TestAutoCompleteOncePerLoss`、`TestAutoCompletePublishesInterruptedContent`；前端 `agent-ha-publication`、`agent-dns-ha` 各加一组。
+
+## O18 T1b — Agent、部署、HA、IPv6 校验、规则同步、DNS 联动记录改为普通结构体
+
+协调任务 O18 T1b（2026-11-22），沿用 T1a 裁定（宽松读存储、严格输入、未知成员丢弃并告警、只写值变了的行、`enabled:null` 读作关）。
+
+- **存储格式**：`system.agents` 各记录及其嵌套记录（部署历史、最近部署/升级、应用内容、规则同步、DNS 联动、OxiDNS HA 配置/状态/发布日志、
+  IPv6 校验、旧版节点测速 DNS 端点、运行指标）按 Go 编码写出：成员按结构体声明顺序；**文本、列表、对象和指针成员为空时不写**
+  （Python 写的 `null`、`""`、`{}`、`[]` 首次改写后变为缺失；读取方对 null/缺失一律同等处理）。零值有含义的数字照写：
+  升级记录的 `started_at/updated_at`、HA 交接的 `confirmations`、DNS 联动的 `upstream_index`、升级产物的 `size`。
+  与 T1a 的 Q1（Python 建档总写的成员始终写出）不同：Agent 记录同时是 API 响应的投影，补写空文本会让 `/api/agents` 等多出空成员，
+  而 Python 建档时这些成员本就非空。`deployments{*}.success` 改为可选（Python 部分历史条目没有它）。
+- **用户数据作键的对象保持插入顺序**：`deployments`、`ipv6_verifications`、`children`、`identities`、`artifacts`、`files`
+  改用 `model.OrderedMap`（插入序、写时复制，没有原字节）。
+- **未声明的成员丢弃**：例如 `agents[].has_update`（Python 接口给响应算出的字段，被误写进存储）、旧扩展字段、嵌套记录里的未知键；
+  加载时汇总告警一次（路径模式，不含值）。随之：(1) 存在未知成员里的口令不再被收集为凭据（这些成员本身已不在）；
+  (2) 设备回复里的未声明成员仍原样返回给前端（`agents.DeploymentReply` 保留回复的全部成员），部署发布结果的
+  `restart/file_count/provider_count/rule_count`、预留结果的 `existing` 照旧输出。
+- **库里类型不对的值**：文本成员接受数字原文（`7` 读作 `"7"`），整数接受 `"8080"`、`8080.0`，开关按 flag-truthiness 取真值
+  （`1`、`"yes"`、`"false"` 为开，`0`、`""`、`[]`、`null` 为关），对象/列表成员类型不对读作缺失；均告警一次。
+  以前 Go 保留原值并在多处把“原 JSON 类型不对”当作损坏证据（拒绝匹配身份、拒绝发布、报“记录损坏”），这些判断全部去掉：
+  例如数字 ID/令牌/配置空间、数字端口文本、损坏的 HA 发布日志/升级记录/部署回执不再触发 Go 自有的拒绝文案，而按读出的值处理。
+  **例外（HR 复核裁定）：会触发设备写入或自动推送的开关**存成非布尔值时一律读作「关」并告警，不按真值：
+  Agent 的 `enabled`、`domain_discovery_enabled`、`traffic_history_enabled`，`rule_sync.settings.library/rules`
+  （含 HA 发布日志里的 `rule_sync_settings`），`rule_sync.state.force_refresh`，`dns_follow_state.retry_requested`，
+  `oxidns_ha.enabled`，`oxidns_ha_publication.activate`（模型里以 `stored:"gate"` 标注）。与 Python 相比：`library/rules`、
+  `oxidns_ha.enabled` 与 Python 的 `is True` 一致；Agent `enabled` 存成 `"yes"`/`1` 时 Python 多处按真值为开、少数处只认 `False`，
+  Go 为关（停止对该设备的自动推送）；其余几个 Python 按真值，Go 为关。部署记录里的状态标记（`manual_rollback`、`success`、
+  `pending` 等）与 HA 交接状态（`handoff_required`、`handoff.confirmed/released`）不是写入开关，仍按真值（`handoff_required`
+  取真更保守）。`oxidns_ha.enabled` 读作关同时意味着该 Agent 不再按「HA 已开启」锁定编辑（与 Python 一致）。
+  其余已知与 Python 不同的点（生产快照中均为 0 例）：`oxidns_ha_publication.enable` 存成任意对象（含 `{}`）都视为启用意图并锁定配对
+  （恢复发布时 keepalived 意图会按对端与 VIP 重新校验，残缺意图不会写设备）；库里存在的 `oxidns_ha_publication`
+  只要状态不是终态（含 `{}`、`status` 类型不对或为 `null`）都视为进行中、锁定配对；存成非对象（文本、数字、列表）时读作空日志，
+  同样锁定（fail closed，Python 把空日志当作没有、非对象直接报错）。
+  **HR 复核补充（fail closed）**：(1) 鉴权字符串（Agent `token`、注册会话 `hash`、`system_config` 的 `config_token`/
+  `rule_proxy_token`/`retired_rule_proxy_tokens`）存成非字符串（含数字）时读作空并告警，不再读成数字原文——空 Agent 令牌不鉴权通过、
+  不发请求，`config_token` 仍按原值判为损坏凭据拒绝，规则代理令牌读空后不接受任何令牌（下次写入时照常生成新令牌）；退役列表只保留文本元素。
+  (2) 注册会话的 `host` 存成非字符串时读作损坏（`model.DamagedText`，原样写回），该会话不能用于注册；缺失或 `null` 仍表示不限主机。
+  (3) `dns_follow_state` 存成非对象时读作空状态；没有 `status` 的状态（含 `{}`）视为运行中，保持 DNS 联动对目标/源 Agent 的编辑、
+  部署和绑定修改锁；`null` 仍算没有。显式「停用 DNS 联动」可以清除损坏状态（只拒绝真正运行中的状态）；联动轮询本身照常对已绑定的目标重新计算状态。
+- **输入**：Agent 编辑（`PUT /api/agents/<id>`）严格解码，类型不符返回「`<成员> 类型不正确`」（以前照存原值）；注册请求、部署回执、
+  心跳宽松解码（上报值类型不符读作零值）；三者都拒绝重复成员名。心跳上报 `version`/`config_version` 为空串视为未上报；
+  上报 `service_status`/`system_metrics` 为 `null` 视为未上报（不覆盖上一次的值）。
+- **空文本即缺失**：`name:""` 的 Agent 在名称展示处回退为 ID（Python 显示空串）；`service_type:""` 视为未设置（默认 mihomo）；
+  令牌为空的 Agent 不发请求（`ErrAgentEndpoint`）。
+- 测试：删除只验证“原值证据 / R5 / 大小写别名证明”的用例；Python 参考对照里输入为错类型、null 或空文本 Agent 成员的行
+  作为已接受差异跳过（各处注释说明）；pyref 只重录 metadata（条目逐字节相同）；o10t2 参考语料只有 Agent/部署/含 Agent 文档行变化。
+
+## 去掉产品里面板生成、在 Agent 镜像里运行的 Python — Agent 版本提升到 1.9.2-go
+
+- 新增 Agent 子命令（`backend/agents/go-agent/dockerha`）：`configflow-agent ha-bootstrap`（Compose 安装包首次登记/离线重启，替代
+  `bootstrap.py`）、`ha-enroll`（备用安装脚本首次登记，设置经 stdin 传入）、`ha-enroll-check`（重复执行时核对本地身份）、
+  `ha-migration-check`（旧单 OxiDNS 容器迁移检查）、`ha-inspect`（只读检查）、`ha-port-check`（宿主机 UDP/TCP 53 检查）。
+  中文提示、文件名/权限/字段顺序、退出码与原 Python 一致。
+- 生成内容变化（已批准差异，比较时由 `installertest.NoPythonBaseline` / `NoPythonBundle` 还原为 Python 形式）：
+  - Compose 安装包（`install_method=compose`）不再含 `bootstrap.py`；`agent.entrypoint` 为 `[configflow-agent, ha-bootstrap]`；
+    `prepare.sh` 不再检查/复制 `bootstrap.py`（`composeManagedParts` 仍保留该名字，旧安装目录不受影响）。
+  - 备用安装脚本：`docker run … --entrypoint configflow-agent IMAGE ha-enroll` + JSON heredoc；重复执行 `… ha-enroll-check URL`；
+    53 端口检查 `--entrypoint configflow-agent "$1" ha-port-check`。
+  - 迁移脚本：检查改为 `docker run --rm -i --network none --volumes-from "$cf_old_id:ro" --entrypoint configflow-agent IMAGE ha-migration-check …`
+    （原为在旧容器里 `docker exec … python3 -c`）；原容器环境仍来自 stdin 的 `.Config.Env`；拉取目标镜像移到检查之前。
+  - 只读检查：`docker run --rm --network none --volumes-from NAME:ro --entrypoint configflow-agent IMAGE ha-inspect`；
+    `action=inspect` 时 IMAGE 为面板配套镜像（`DockerAgentImage()`），生成迁移时为所选镜像。
+- 镜像版本探测（batch-35 复核补充）：安装脚本、迁移脚本在 `docker image inspect || docker pull` 之后、只读检查在 `ha-inspect` 之前，
+  先运行 `docker run --rm --network none --entrypoint configflow-agent IMAGE -version` 并要求 ≥ 1.9.2-go，否则提示
+  `所选 Agent 镜像缺少 Docker 高可用命令（需要 1.9.2-go 或更新）；请先用 docker pull 拉取该镜像的新版本后重试。` 并停止（只读检查只提示）。
+  原因：旧 Agent 会把未知的 `ha-*` 位置参数忽略后作为常驻 Agent 启动（迁移/只读检查挂住，安装脚本报无关错误）；浮动标签在本机已有旧副本时
+  `inspect || pull` 不会更新它。`-version` 在所有 Go Agent 上立即退出，更早的版本因未知参数立即失败。Python 形式无此行，比较时由
+  `NoPythonBaseline` 去掉（仅当探测的镜像就是紧接着拉取/运行的镜像）。
+- 修正的 Python 缺陷（只影响异常输入）：
+  - bootstrap 读安装文件加 `O_NONBLOCK`：命名管道不再卡住启动，按“不是普通文件”拒绝；`setup` 非 UTF-8 不再抛异常，按未准备拒绝。
+  - 迁移检查：stdin 为 `null` 或数组后还有内容时与 Python 一样拒绝（`无法读取原容器环境配置`）；stdin 不是 JSON、原配置缺失/损坏/不是对象时给中文提示（原为 Python 回溯）；`heartbeat_interval` 等设置为
+    null/布尔/数组/对象时拒绝（`原 Agent 运行设置格式无效…`，原样输出 `None`/`True` 会写坏环境文件）；数字按 JSON 原文输出。
+  - ha-enroll：登记响应非对象、错误响应的 `message` 非字符串、写身份文件失败时给中文提示（原为 Python 回溯）；
+    设置不完整时 `安装命令参数无效；请回到引导重新生成。`。
+  - ha-port-check 直接 bind（无 SO_REUSEADDR、不 listen），与原 Python 相同。
+  - ha-enroll 的重定向（Go 标准客户端）：301/302/303 与 Python 一样改为 GET，但跨主机时去掉 `Authorization`（Python urllib 会带到任何主机）；
+    307/308 重发 POST、仅同主机保留 `Authorization`（Python 对 POST 的 307/308 报 HTTPError）。ha-bootstrap 照旧不跟随重定向、不走代理。
+- 镜像：Dockerfile.agent 暂保留 python3——supervisord 本身、`docker-compose-install.py` / `docker-compose-compact.py`（精简 Compose）、
+  入口脚本内联 Python 仍需要它（见 `progress/no-python-product.md` 盘点）。旧 Compose 安装包部署（entrypoint 为
+  `python3 /run/configflow-compose/bootstrap.py`）升级镜像后照常运行。
+- 版本：Agent `upgrade.Version` 与面板 `LatestAgentVersion` 改为 1.9.2-go；Python 比较例外沿用（proddiff
+  `GO_AGENT_LATEST`、`has_update` 例外范围 [1.8.61-go, 1.9.2-go)，configdiff T16/T25 心跳 1.9.2-go）。
+
+## Agent 镜像去掉 Python：Supervisor 换成 s6-overlay — Agent 版本提升到 1.9.3-go
+
+- **进程管理**：`docker/Dockerfile.agent` 不再安装 `supervisor`、`python3`、`py3-pip`、`setuptools`；PID 1 为 s6-overlay 3.2.3.2
+  （noarch + x86_64/aarch64，SHA256 写死）。入口仍是 `/entrypoint.sh`，准备完后 `exec /init`；默认 CMD 为 `/init`，旧容器/Compose 里
+  显式写的 `/usr/bin/supervisord …` 会被入口换成 `/init`。服务对照表见 `progress/nopy-agent-image.md`。
+  - `service_manager` 新值 **`"s6"`**：入口写入的 `config-<核心>.json`、Agent 新写的 HA journal（`service.manager`）、
+    `configflow-agent` 保存配置、心跳与诊断里出现的都是 `"s6"`；`restart_command` 改为 `/usr/local/bin/configflow-agent svc restart <核心>`。
+    读取时把旧值 `"supervisor"` 当作同义词（`svc.NormalizeManager`，在载入 Agent 配置、HA journal、同机对端配置时换成 `"s6"`），
+    HA journal / dns_follow 的比对与恢复照常工作，不做专门的数据迁移（下一次保存即写 `"s6"`）。保留同义词的原因：
+    (1) Python 面板时代写下的 HA journal / dns_follow 相关状态存的是 `"supervisor"`（HA journal 在 Agent 的持久目录里），切换后照样被读取；
+    (2) 切换后尚未换新镜像的 Docker Agent（1.8.x-go / 1.9.x-go，镜像里仍是 supervisord）继续写 `"supervisor"`。
+    同义词只为读旧数据存在，**计划在下一个大版本删除**。测试：`TestHAContainerRecoversLegacySupervisorJournal`（旧 journal 恢复、
+    新 journal 写 `"s6"`）、`TestLoadConfigNormalizesLegacyContainerManager`（旧配置读作 `"s6"` 并保存为 `"s6"`）、dns_follow
+    `legacy-manager` 对端、`upgrade.TestDockerRecognizesBothContainerManagers`；实验 D2：旧镜像开启 HA（journal 为 `"supervisor"`），
+    同一数据卷换新镜像后 Agent 恢复 keepalived。
+  - startsecs/startretries 由 finish 脚本（`configflow-agent svc-finish`）复现：启动后 3 秒（Agent/keepalived 1 秒）内退出算启动失败，
+    连续 3 次重试仍失败（共 4 次）即 FATAL、不再拉起；手动 start/restart 清零。重试间隔与 Supervisor 相同，依次 1、2、3 秒
+    （finish 里等待，期间收到停止即结束；`timeout-finish` 15 秒），实验中坏配置约 10 秒 FATAL（batch-37 复核前为固定约 1 秒、约 5 秒）。
+  - keepalived 退出后，finish 结束它留在自己进程组里的 keepalived 进程（先 SIGTERM，3 秒后 SIGKILL，只认名为 keepalived 的进程），
+    对应原 `stopasgroup/killasgroup`：父进程被 SIGKILL 时 VRRP 子进程不会残留并继续持有 VIP。
+  - Docker HA 停用/回滚：keepalived 状态为 STARTING/BACKOFF/STOPPING 或读不到时一律先停止（s6 会自行拉起这些状态的程序），
+    只有 STOPPED/FATAL 才算已停；原 Supervisor 时代同样只认 RUNNING，属顺带修正。
+  - 停止：SIGTERM 后等待（Agent/核心 10 秒、keepalived 15 秒）再 SIGKILL，与原 stopwaitsecs 相同；容器停止顺序由 s6-rc 依赖还原
+    原 priority（macvlan HA：keepalived → Agent → 核心；其余：Agent → 核心）。s6-overlay 收尾等待 `S6_KILL_GRACETIME=1000`，
+    普通容器 `docker stop` 约 1.2 秒。
+  - Agent 代码通过 `svc.Manager` 接口控制程序（`backend/agents/go-agent/svc`）：部署启停/状态、心跳服务状态、重启命令、卸载、
+    Docker HA keepalived。状态沿用 Supervisor 词汇（RUNNING/STARTING/BACKOFF/STOPPING/STOPPED/FATAL）；停止已停止的程序不再报错
+    （原来依赖 `NOT_RUNNING` 文本放行）；重启命令失败时不再回退执行 start（新命令对未运行的程序直接启动）。
+  - `GET /api/logs/sources` 不再有 `supervisord`（Supervisor 日志）来源。
+- **日志**：Docker 镜像里 Mihomo/MosDNS/OxiDNS 的标准输出与错误输出**合并**写入 `/var/log/configflow/<核心>/current`
+  （s6-log，10 MB × 3 个轮转文件，与原 maxbytes/backups 相同）。原来分开的 `/var/log/supervisor/<核心>.log` 与 `.err.log`、
+  MosDNS 写在数据卷里的 `/etc/mosdns/mosdns.err.log` 不再生成（旧文件保留不删，不再作为首选来源）；页面日志对 Docker 核心不再单独
+  显示“错误输出”来源，`/api/logs` 的 `error_logs` 为空。Agent 自己与 keepalived 的输出照旧在 `docker logs`。文档见
+  `doc/manual/agents.md#logs`。
+- **入口脚本的内嵌 Python 改为 Agent 子命令**：`configflow-agent docker-config agent|services|companion`（原 PYCONFIG、PYSUPERVISOR、
+  supervisor autostart 改写）、`ha-companion-check`（原 PYCOMPANION）、`ha-compact`（原 `docker-compose-compact.py`）、
+  `ha-compose prepare|run`（原 `docker-compose-install.py`）。消息、记录文件、字段、临时文件名（`.compose-write-<owner>-xxxxxxxx`）、
+  owner 摘要（binding 的规范形式：键排序、紧凑分隔、非 ASCII 转义）与原脚本相同；`dockerha/pyref_test.go`（构建标签 pyref）
+  在同一夹具上对照原脚本（消息与文件一致，双方装的实例互相能启动）。
+- **辅助容器（host 模式）控制方式**：原来主 Agent 用 `supervisorctl -s unix://…/supervisor.sock` 控制辅助容器的 Supervisor；
+  现在辅助容器由 s6 运行 `configflow-agent ha-companion-serve`，在共享 HA 卷上监听 `/var/lib/configflow-ha/run/control.sock`
+  （root 0600，只接受 keepalived 的 status/start/stop/restart；已有另一个辅助容器在服务同一套接字时拒绝接管），主 Agent 用同一接口的 Remote 实现。对端检查（SO_PEERCRED，独立
+  PID 命名空间）不变，只是路径从 `supervisor.sock` 改为 `control.sock`。新旧镜像混用（新 Agent + 旧辅助容器或反之）时 HA 环境
+  显示未就绪，用同一镜像重建两个容器即可。环境检查的提示由“受管 keepalived Supervisor 程序尚未就绪”改为“受管 keepalived 程序尚未就绪”。
+- **面板生成内容**（已批准差异，比较时由 `installertest.NoPythonBaseline` 还原）：
+  - 备用安装脚本的启动检查改为 `docker exec ID configflow-agent svc status oxidns`（原 `supervisorctl -c … status oxidns`），
+    输出格式不变；因此镜像版本探测要求 ≥ **1.9.3-go**（提示文案中的版本号随之变化）。
+  - `compose_direct`：init 与 agent 的 entrypoint 改为 `[configflow-agent, ha-compose, prepare|run]`
+    （原 `[python3, /usr/local/lib/configflow/docker-compose-install.py, …]`），init 去掉 `PYTHONDONTWRITEBYTECODE`。
+  - 精简 Compose 生成内容不变（它只靠 `SERVICE_TYPE`，入口在镜像里）。
+- **过渡用兼容脚本**（只为旧面板生成的脚本和已部署的旧安装存在，**计划在下一个大版本删除**）：
+  - `/usr/bin/supervisorctl`：只支持 `supervisorctl [-c 配置文件] status|start|stop|restart <程序名>`，转调
+    `configflow-agent svc`；其余用法用中文报错并给出替代命令，退出码 2。用于旧面板生成的启动检查脚本配新镜像。
+  - `/usr/bin/python3`：只认 `python3 /usr/local/lib/configflow/docker-compose-install.py prepare|run`（旧 compose_direct）与
+    `python3 /run/configflow-compose/bootstrap.py`（1.9.2-go 之前的 Compose 安装包），分别转 `configflow-agent ha-compose …` /
+    `ha-bootstrap`；其余一律中文报错、退出码 2。镜像里没有任何 Python 解释器或包。
+- **修正的 Python 缺陷 / 差异**（只影响异常输入）：
+  - 期望文件却遇到目录时，所有 `ha-*` 读取统一报“安装文件不存在、不可读…”（原脚本 `os.fdopen` 打不开目录，同样落到这条；
+    1.9.2-go 的 Go 版本曾报“不是普通文件”，已改回与原脚本一致）。
+  - `ha-compose` 的设置 `protocol` 只接受整数 1（原 Python 因 `True == 1`、`1.0 == 1` 也接受）；精简 Compose 记录的 `protocol`
+    同样只接受整数 2。面板只写整数。
+  - 精简 Compose 的 `SERVER_URL` 由 `net/url` 解析：端口段不是数字等 Python `urlsplit` 不检查的畸形地址现在直接拒绝（同一条提示）。
+  - 精简 Compose 完成初始化时重写的记录只保留已知字段的固定顺序（原脚本保留手工加入的其他字段及其顺序）；读取方都按键取值。
+  - 辅助容器检查、`ha-compose`/`ha-compact` 遇到原脚本会抛 Python 回溯的系统错误时，给出命令名加错误原因（或原脚本兜底的中文提示）。
+  - Docker 卸载：原来删除 Supervisor 程序配置并 `reread/update`；现在 s6 停止核心与 Agent（不再拉起）。容器重启后入口会重新生成服务
+    （与原来容器层里的配置已被删除的效果不同）；面板的卸载流程随后会删除容器。
+- 版本：Agent `upgrade.Version` 与面板 `LatestAgentVersion` 为 1.9.3-go；Python 比较例外沿用（proddiff `GO_AGENT_LATEST`、
+  `has_update` 例外范围 [1.8.61-go, 1.9.3-go)，configdiff T16/T25 心跳 1.9.3-go）。
+
+## O18 T1c — 路由器、设置、资源、策略记录改为普通结构体
+
+协调任务 O18 T1c（2026-11-22），沿用 T1a/T1b 裁定（宽松读存储、严格输入、未知成员丢弃并告警、只写值变了的行）。
+另有本步裁定：会触发设备写入或自动推送的开关类型不对时按「关」+ 告警，其余开关保留 truthiness；节点扁平协议参数选 A。
+
+- **范围**：`routers`（路由器、探测/发布结果、所有权清单、规则同步）、`system_config`、`backup`、订阅/节点/聚合/规则仓库、
+  策略组、规则、Mihomo/Surge/Loon/MosDNS/EasyTier 设置、域名发现、设备备注、固定 IP。
+- **始终写 / 可选**：Python 建档或归一化总写的成员始终写（例如路由器 `id/type/endpoint/username/password/两个 agent id/两个规则集列表`、
+  发布结果 `at/ok/fingerprint/message`、`system_config.server_domain/github_proxy_domain/rule_fetch_proxy`、MosDNS 的规则列表与 DNS 文本、
+  域名发现历史的 `verdict/confidence/recheck`），其余为空时不写。配置空间的 `loon/domain_discovery/routers/device_notes`
+  改为始终写（Python `_empty_profile` 总写；T1a 曾定为空时不写），`client_fixed_ips` 按存在性保留（新建配置空间写 `{}`，旧库缺行时接口与导出也不出现，与 Python 相同）；
+  接口和导出会原样回显的文本/对象成员保留存在性（指针，空文本 `""`/`{}` 与缺失区分）：规则 `value/remark/group_name`、节点 `remark`、
+  规则仓库 `remark`（新增声明）、订阅/聚合 `description`、域名发现 `regional_rulesets`（门禁 proddiff，HR 复核第四轮）；旧库缺这些行时，值不变就不补行（行的「存在」也按值是否改变保留）。
+  库里存的空历史条目 `{}` 读出后带上这些始终写的空成员（接口返回空文本/`null`，Python 原样返回 `{}`）。
+- **未声明成员丢弃**：上述记录里不认识的成员读取时丢弃并汇总告警。例外（裁定 A）：节点的扁平协议参数（`cipher`、`uuid`、`ws-opts` 等）
+  是协议参数而不是未知成员，保存在 `Node.ProtocolParams`（有序、写时复制、Clone 深拷贝），导出脱敏和节点测速照旧遍历；
+  其它记录的守卫测试照旧拒绝未声明成员。`MihomoSettings` 声明 `router_split`、`linux_gateway`、`linux_gateway_restore_point`（无结构对象）；
+  策略组声明生成期成员 `_chain_dialer`、`_chain_original_candidates`，节点声明 `_proxy_chain_id`。
+- **库里类型不对的值**：文本接受数字原文，但 `server_domain`、`config_token`、`backup.webdav_url` 不接受（读作空 + 告警；
+  `config_token` 非文本时 `SystemSettingsDamaged` 认作凭据损坏，失败即关）。开关：`manage_return_routing`、`auto_rule_sync`、
+  `dns_guard.enabled`、`ipv6_pd_guard.enabled`、`domain_discovery.auto_apply`、`backup.auto_backup` 类型不对或 `null` 读作关；
+  `verify_tls` 读作开；其余开关按真值（例如 `auto_probe: 1` 为开，与 Python 一致，以前 Go 按 R5 读作关）。
+  备份保留数 `keep_latest/keep_daily` 只接受整数字面量，`1.0`、`"3"` 读作缺失、用默认 30（与 Python 相同）。
+  `GET /api/backup/config` 对库里的 `null` 用户名/路径返回空文本/默认路径，数字返回文本（Python 原样回显）。
+  规则的 `policy` 存成 `null` 或非文本时读作空引用：生成时按 Python 拒绝，不回退到 `PROXY`。
+  设备备注存成 `null` 或备注名不是文本时，读取照常（读作空/略过该条），写备注仍按 Python 拒绝（`DeviceNotes.Null`/`NonTextName`，裁定）。
+- **列表里的非对象元素**：任何层级的记录列表里，非对象元素丢弃（`null` 静默，其它告警），其余元素保留。
+  以前 Go 对嵌套列表（例如策略组 `proxies_order`、路由器 `items`、域名发现 `history`）按 R5 整列读作缺失，下一次写入会丢掉整列；
+  Python 的读者跳过这类元素，生成器遇到时直接报错。
+- **路由器守卫设置**（`dns_guard`、`ipv6_pd_guard`）：开启的守卫里有成员类型不对（例如 `bypass` 不是列表），或守卫本身是非对象的真值，
+  整份原样保留（`Stored`），设备管理按「已保存的守卫设置无效」拒绝（失败即关，与以前相同，以前靠原值证据）；守卫开关本身类型不对时，
+  Python 按真值为开的（`"x"`、`1`）同样整份保留并拒绝设备管理（HR 复核：读作关会在下次发布时撤下守卫），为假的（`0`、`""`）读作关、可以撤下。守卫里的未声明成员照常丢弃。作为输入（路由器设置保存）严格解码，不会整份保留。
+- **策略组 `proxies_order`**：列表里有非对象元素时整列读作没有排序（`elements:"all"`），与 Python `managed_members` 相同；
+  旧版（v4）整份导入在解码前先按 Python 升级逻辑去掉非对象项，保留其余排序项；
+  其它记录列表只丢坏元素。Agent 部署的 `dns_checks` 坏元素读作空检测（`elements:"keep"`），报告照旧追加「DNS 报告完整性」。
+- **删除/清理数量类设置**：`backup.keep_latest/keep_daily`、`traffic_history_retention_days` 只认整数字面量，数字文本、`1.0`、布尔等读作缺失
+  （用默认值，宁可多留）+ 告警。订阅缓存孤儿清理在库里订阅列表有类型告警（非列表、元素非对象、id 非文本）时不删任何文件（失败即关）。
+- **非法 UTF-8**：宽松读接受（字符串叶子读作 U+FFFD）；原样保留的值（损坏的所有权清单、节点协议参数、原始 JSON 成员）写出时同样替换为 U+FFFD，
+  能读就能写（门禁 fuzz，HR 复核第四轮）。
+- **节点 `dialer_ref`**：库里存成非对象读作空引用（`ResourceRef` failClosed），生成时按「dialer_ref 必须为 …」拒绝，不会当成直连。
+- **规则集 behavior 存成 null**：读作空 behavior（`null:"empty"`），不套默认 `domain`（Python `get('behavior','domain')` 对 null 返回 None），
+  例如 Linux 网关准备时这样的规则集不算可接管的域名规则集。
+- **路由器规则集选择**（`ip_rule_sets`、`ros_policy_rule_sets`）：库里存成非列表（`null` 除外）时读作只含损坏标记的列表（`stored:"selection"`），
+  设备管理按「字段类型无效」拒绝，写回时损坏保持（HR 复核：读作空选择会在下次发布时撤掉全部路由/策略；O18 T1c 前按原值拒绝）。`null` 仍是没有选择。
+- **config_token 损坏时保存其它设置**：非文本的 `config_token` 在保存服务器地址等其它设置时原样保留（HR 复核：以前会被省略，损坏证据消失、登录关闭时变成匿名访问），
+  只有设置新令牌才修复；`DELETE /api/config-token` 不修复（与 T1c 前相同）。
+- **路由器连接身份**（协调裁定 M3）：`id`、`type`、`endpoint`、`username`、`password` 存成非文本（含数字、`null`）、两个 Agent 关联存成非文本（`null` 除外）时
+  读作损坏标记（`stored:"restrict"`）+ 告警，设备管理按「字段类型无效」拒绝，主路由分流不把它当拓扑身份，写回保持损坏；不会把 1 和 "1" 当成同一台，
+  数字 Agent 关联也不再关联到 Agent "1"（Python `1 == "1"` 同样不关联）。损坏地址的路由器发布时单独取任务锁（Python 把 null/5 与 ""/"5/" 合并为同一连接）。
+- **凭据列表**：`retired_rule_proxy_tokens` 只保留文本元素，其余丢弃并告警。
+- **MosDNS 自定义匹配**：对象形里类型不对、未声明的成员有加载告警。
+- 删除了依赖 `model.Issues`、在普通记录上永不触发的检查（convert `storedText`/`validateRuleIdentities`/`clientProtocolType`、
+  discovery `storedStrings`、rulesetfmt/rules/provider 的错类型分支）；仍用旧编解码的局部记录（节点测速、刷新回执、订阅缓存等）保留。
+- **路由器所有权清单**（`ros_policy_state`、`dns_guard_state`、`ipv6_fakeip_state`、`ipv6_routes_state`、`ipv6_pd_guard_state`）：
+  库里类型不对、带未声明成员或内部成员类型不对（如 `resources:"x"`）的清单整份原样保留，守卫按 Python 真值判断（失败即关），不按普通记录丢成员。
+- **凭据文本**：`rule_proxy_token`、`retired_rule_proxy_tokens` 的元素也只认文本（非文本读作空），数字不会成为规则代理凭据。
+- **解析出的节点**（proxy_string、订阅代理列表、VMess 链接）：`type`/`server` 不是文本（数字按文本）时，客户端生成按 Python 拒绝该节点
+  （单节点报「节点 … server 类型不正确」，代理列表里的节点跳过并告警），不再生成空 server 行；VMess 链接的 `add` 证据经
+  `subs.ParsedProxy.WrongText` 带出。
+- **EasyTier 设置输入**：在请求原始 JSON 上校验（`convert.NormalizeEasyTierJSON`），类型不对、未知参数照旧按 Python 文案拒绝；
+  库里已存的设置按存储规则读。
+- **节点端口**：节点的 `port` 可选（库里有就保留存在性）；订阅缓存解析出的节点总带 `port`（缺失写 0，与 Python `proxies_to_nodes` 相同）。
+- **输入严格解码**：嵌套记录作为输入时逐成员严格解码；整数只接受整数字面量（MosDNS 缓存数字是 Python `int()` 读的，仍接受 `"128"` 这样的十进制文本）；
+  健康检查成员、策略组 id 列表、订阅 `interval` 给 `null` 拒绝；代理链和健康检查对象有未声明成员时拒绝（Python 同样拒绝）。
+  被拒输入按 Python 的校验顺序出原文案（`repo/input_errors.go`）；一个请求里多处错误时报错顺序可能不同。
+  MosDNS 设置接口以前对类型不对的成员读作缺失后保存，现在按「MosDNS 设置字段类型无效」拒绝（Python 对非整数文本同样报错）。
+  聚合目录写入（新建/编辑）严格解码：名称为数字等返回 400。自定义配置文本不是字符串时在解析前返回 400（`<引擎> 类型不正确`）。
+  策略组候选校验对自身为来源的请求检查请求自己的成员（`proxies_order` 项必须恰为 type/id，文案「排序项必须包含且仅包含 type 和 id」）。
+  订阅聚合开关保存为真值（Python 保存请求原值，读取按真值，效果相同）。
+- **路由器设置保存的 CAS**：`SaveRouterSettingsJSON` 把调用方快照按普通记录解码后比较值，不比较原字节或成员存在性。
+- 测试：difftest 的存储比较经 `modeltest.StateThroughModel`/`RowThroughModel` 和 `testjson.WithoutEmptyMembers`（未声明成员、空可选成员两边都不比）；
+  需要库里脏数据的夹具改用 `repotest.WriteRow` 直接写行（普通记录的 SetJSON 会拒绝）；Python 参考里输入为错类型/null/未声明成员的行作为已接受差异，
+  各处注释说明；pyref 只重录 metadata（条目逐字节相同）。
+
+## O18 C10 — 锁超时与数据目录路径改用标准库（随 T1c）
+
+- `CONFIGFLOW_LOCK_TIMEOUT_SECONDS` 用 `strconv.ParseFloat` 读（去首尾空白，接受数字下划线），全角/阿拉伯-印度等非 ASCII 数字和十六进制浮点
+  不再当作数字，按未设置用默认 300 s（Python `float()` 接受 Unicode 数字）。
+- 数据目录和文件路径的解析改为普通的逐段解析（Lstat/Readlink，链接先于其后的 `..` 展开，不存在的部分原样保留、悬空链接跟随到目标，
+  与以前结果相同）；符号链接环超过 40 层报 `resolve …: too many links`（以前照搬 CPython 的环检测和「Symlink loop from '…'」文本），仍按内部错误处理。
+- 路径中读不到的部分（不存在、不是目录、无权限）原样保留（HR 复核：C10 初版对非「不存在」的错误直接报错，与以前不同）。
+- `~`/`~name` 用 `os.UserHomeDir` / `user.Lookup` 展开；无法确定主目录时的错误文本改为 Go 的错误（以前照搬「Could not determine home directory.」）。
+
+## O18 T8 — 流量记录、OxiDNS 排行历史改用 database/sql 事务（C11）
+
+- 查询时长超出可表示日期范围（`/metrics/history`、`/metrics/summary` 的 `hours`、流量趋势）仍是 500，`message` 统一为
+  「查询时长超出可表示的日期范围」（以前是 Python `OverflowError` 的三种英文文本）。
+- 「监控历史保存」任务记录里流量记录失败的原因（「流量记录：…」）改为 Go 的错误文本：SQLite 错误带驱动的错误码后缀和
+  `begin/commit traffic transaction:` 前缀（以前照搬 `sqlite3_errmsg`，如 `database is locked`）；数据目录无法创建时是
+  `mkdir …: …`（以前是 `[Errno 17] File exists: '…'`）；手改文件里的无效计数为「流量记录里有无效的计数」、超出 INTEGER/REAL 范围为
+  「流量计数超出可保存的范围」（以前是英文的 `invalid stored traffic counter` / `Python int too large…`）。
+- 回滚本身失败时不再用回滚错误顶替原错误：返回原错误，回滚失败写一条告警日志（HR 复核补上日志）。
+- OxiDNS 排行的存槽和整理从第一条语句起就持有写锁（`BEGIN IMMEDIATE`，以前在第一条写语句前隐式 `BEGIN`）；只读查询不开事务，与以前相同。
+  存储内容不变：生产快照私有副本上同一组操作改前改后结果哈希、行数一致。
+
+## O18 T1d — model 包外的记录改为普通结构体，删除旧 R5 编解码
+
+协调任务 O18 T1d（2026-11-23），沿用 T1a–T1c 裁定（宽松读存储、严格输入、未知成员丢弃、只写变化的部分、开关错类型按真值/关、安全相关失败即关）。
+
+- **范围**：DATA_DIR 文件和 Agent/设备回复里的记录——通知（`notifications.json` 与路由器报告视图）、订阅缓存（`subscribes/*.json`，含 hosts/dialers 元数据）、
+  订阅健康历史、下载回执、任务状态（`task-status.json`）、Sub-Store 运行状态（`state.json`）与 GitHub 发布信息、配置向导会话、节点测速结果、
+  域名探测/区域检测存储、概览历史、客户端节点选项视图、主路由分流的会话视图、MosDNS/OxiDNS 投影。
+  删除 `model.DecodeRecord/EncodeRecord/SetMemberJSON/ClearMember/Raw/Map/Raw.MemberJSON/Issues/JSONHasContent/JSONSwitchEnabled` 和保原字节的 JSON 解析
+  （`record.go/map.go/member.go/fields.go/json.go/switch.go/content.go`）；`model.Fields` 换成不保原片段的普通有序对象（`object.go`），编码器（`encode.go`）
+  可直接写出没有编解码方法的结构体。JSON 真值判断统一为 `model.Truthy`/`model.Switch`。`_revision` 改为 `int64`（输入仍接受 `60.0` 这样的整数写法，不接受文本）。
+- **未声明成员丢弃**：上述文件第一次被 Go 重写时，不认识的成员不再写回（例如通知记录、区域/探测文件、Sub-Store 状态、向导会话里的扩展成员）。
+  例外：节点测速结果保留测速组件报告的全部成员（`LatencyEntry.Extensions`），与 Python 相同。Python 写的这些文件实际只有已声明成员。
+- **存储里的 `null`**：可选文本/对象成员存成 `null` 读作缺失，重写时不写（例如通知记录的 `title: null`、`target: null`；任务回执的 `null` 成员）。
+  例外：通知记录的 `profile_id/profile_name/checked_at/failure_count/evidence` 保留原 JSON（任务通知按 Python 写 `null`）。
+  通知记录的 `occurrences` 为 `null`/非有限数时读作缺失（以前保留 `null`；Python 两种情况都无法再计数）。类型不对的计数读作 0。
+- **类型不对的值**：读作零值并在下次重写该条目时写成读到的值（以前保留原字节）。只影响该条目本身的重写：任务状态、订阅健康历史按条目重写，
+  其它条目原样保留。
+- **失败即关（不删用户数据）**：区域检测文件里 domains/websites 的条目不是对象时，`UpdateData` 拒绝写入（文件不改，与以前相同，以前靠 R5 证据）；
+  订阅缓存的节点列表不是列表或含非对象元素时，发布/provider 路径照旧拒绝（`NodesDamaged`），汇总接口照旧略过节点；缓存的 `metadata` 不是对象或 `url` 不是文本时
+  不认领该缓存；`updated_at` 不是文本时不当作缓存时间；下载回执的 `text/fetched_at` 不是文本时不用；向导会话成员类型不对时整份拒绝（`ErrCorruptRecord`）；
+  节点测速记录里测试设置（url/unified_delay/dns 列表）类型不对时不续接历史。通知文件不是 `{"items":{...}}` 或有非对象条目时照旧拒绝。
+- **客户端节点开关**（`udp/udp-relay/tls/skip-cert-verify/reuse/tfo/udp-over-tcp`）：只认 JSON 布尔，其它类型或 `null` 读作缺失并告警（与以前相同）。
+- **Agent 注册表行**：按需加载 `system.agents` 时与整份加载同样宽松解码并告警（以前严格解码、告警分支不可达）。
+- **节点测速 DNS 设置**：`system_config` 整体损坏时读写节点测速 DNS 设置报「已保存的系统配置无效」（以前该检查在普通记录上不可达）。
+- 删除了在普通记录上永不触发的检查：IPv6 路由的「基础 YAML 必须是文本」、发布检查的「归属记录格式不完整」（T1c 起清单损坏整份保留、失败即关）、
+  节点测速的「节点 name 必须是字符串」、convert 节点端口的原值回读。
+- **修复**：`Fields` 读取成员名时用到已失效的 token（新实现）；`OrderedMap` 自引用时无限递归，现在报 `ErrJSON`。
+- 测试：语料测试按名字接受 Python 合成夹具里的未声明成员（`keep`/`extra`/`name2`）被丢弃、健康历史里非对象 `traffic` 被丢弃；
+  o10t2 参考语料删去旧编解码的行，唯一变化的行是 `marshal-struct`（没有编解码方法的结构体现在可以写出）。
+- **HR 复核补充**（review-o18-t1d.md）：订阅缓存 metadata 没有 `url` 成员（旧缓存）时，配置向导不比较订阅链接（Python `get('url', 当前链接)`；
+  `null` 仍按已存链接比较）；节点列表含 `null` 元素算损坏，发布照旧拒绝；JSON 真值把下溢到 0.0 的数（`1e-400`）当假（Python `bool`）；
+  `dns.use-hosts/enable: null` 读作缺失；通知的 `profile_id/profile_name/checked_at/evidence` 与 Sub-Store 运行状态的 `error` 写入时不再做 HTML 转义（`&<>` 原样，与 Python 相同）。
+- **自定义基础配置不是文本（HR 复核 M3 裁定）**：Mihomo/Surge/Loon/MosDNS 的 `custom_config` 存成非文本时，Python 为假的值（`[]`、`{}`、`false`、`0`）
+  照旧当作没有自定义配置（并告警）；其它值（对象、列表、`true`、非零数字）读作损坏并告警、写回保持损坏，生成配置、IPv6 部署、期望 fake-ip 网段、
+  监听器引用改写、端口检查都拒绝（「<引擎>.custom_config 不是文本，请在配置页重新填写后保存」/「基础 YAML 必须是文本」），不再按空基础继续
+  （T1c 起读作空；Python 在这些值上出错）。数字以前读作其文本，现在同样算损坏。
+
+## O17 1.6 — CRUD 请求体与整份编辑改为类型化（batch-44）
+
+存储结果、状态码和中文提示不变（HR 复核用同一组 196 个畸形/边界请求对照改前改后：类型错误、`null`、大小写不同的成员名、
+重复成员、未声明成员、非对象请求体，覆盖规则/规则集/节点/策略组/聚合/订阅/规则库的增改删、批量、排序、DNS；存储逐项相同）。
+变化只在成功响应的回显上，前端不读这些成员（只读 `warnings` 等顶层成员），MCP 的 `manage_node`/`manage_rule` 结果里的 `item` 随之变化：
+
+- **规则**（创建/修改规则、规则集，批量添加）：`data`/`rules` 是保存后的规则，不再回显未声明的成员（例如 `VALUE`、`future`，本来就不保存）；
+  成员顺序由字典序变为声明顺序。发 `policy: null` 或批量添加不传 `policy` 时回显 `""`（存储里一直是空引用），以前回显 `null`；
+  发 `remark: null` 等可选成员为 `null` 时回显里不再出现该成员（存储里本来就不写），以前回显 `null`。
+- **节点**（创建/修改）：`data` 是保存后的节点，以前原样回显请求。成员类型不对时回显保存后的值：数字名称/ID 回显为文本（`5` → `"5"`），
+  `enabled: "x"` 回显 `true`，文本端口 `"443"` 回显 `443`，无法读成端口的 `"bad"` 不回显（存储与以前相同，这些值以前也这样保存）。
+  `GET /api/nodes` 与回显的成员顺序由字典序变为声明顺序。
+- **聚合、订阅、规则库、策略组**（创建/修改，O17 1.6 收尾 `go-o17-typed-rest`，batch-48 复核 463 个请求对照）：`data` 是保存后的记录，
+  以前原样回显请求。不再回显未声明或大小写不同的成员（`future`、`Name`、`Subscriptions`，本来就不保存）和派生成员（规则库 `base_url`/`has_ip_part`）；
+  值为 `null` 的可选成员（`health_check`、`description`、`regex_filter`、`remark`、`update_interval`、`icon`、`type` 等）不再出现在回显里（存储里本来就不写）；
+  类型不对但按存储规则读入的成员回显读入后的值（订阅 `"type":5` → `"5"`、`"enabled":"x"` → `true`，规则库创建 `"name":5` → `"5"`）。
+  HTTP 响应成员顺序仍是字典序。状态码、中文提示与存储不变：订阅创建/修改、规则库创建对类型不对的成员仍按存储规则读入（不报 400），
+  规则库修改、聚合、策略组仍严格拒绝；聚合/订阅创建时数字 `health_check_url` 仍报「探测 URL 必须是无凭据的 HTTP(S) 地址」。
+- **策略组 `_chain_dialer` / `_chain_original_candidates`**：这两个成员只由生成配置时的代理链展开写在运行时副本上。以前创建/修改策略组的请求里带了它们会原样存进 profile，
+  修改时也会保留已存的值；现在请求里的被忽略，修改后已存的被去掉（编辑器从不发送，正常数据里没有）。
+- 同一请求里「成员类型错误」与其他错误同时出现时，报哪一条可能不同（单一错误的文案和状态码不变）。
+
+## O17 切换前清理（第一部分）— Python 异常名、重复小工具、原子写、三处裁定（2026-11-23）
+
+状态码和面向用户的中文提示不变，除非下面写明。
+
+- **日志里的错误类名**：`exception_type=` 不再出现 Python 类名：区间错误 `ValueError` → `IntervalError`，订阅源校验
+  `ValueError` → `SourceValidationError`，任务资源已删除 `LookupError` → `NotFound`，Basic 认证字符 `UnicodeEncodeError` →
+  `CredentialEncodingError`，CA 证书包 `OSError` → `CertificateBundleError`；mosdns 下载失败文案里的类名属于用户文案，未动。
+  流量记录写入失败（500 页、只进日志）的错误文本改为 `invalid traffic data: …` / `missing traffic member "rule"`
+  （以前照搬 Python 的 `unhashable type: 'list'`、`'rule'`、`sequence item 0: …`）。安装脚本接口失败日志里缺省参数写 `-`（以前 `None`）。
+- **Agent 版本比较**（`version.CompareAgent`，原 `agents.CompareVersions`）：每段只认 ASCII 数字（任意长度，按数值比较）；Python `int()`
+  才接受的写法（首尾空白、`+`、`_`）改按文本比较。**Sub-Store 版本**（`version.ParseRelease`）同理，这类段以及超过 uint64 的段使版本无效。
+  所有真实版本号（Agent 更新日志里的全部版本、各功能最低版本、Sub-Store/Mihomo 版本形式）逐对与旧实现一致，见
+  `internal/version/compare_test.go`。
+- **MCP 安装工具**：布尔参数按 `true`/`false` 传给安装接口（以前是 Python 的 `True`/`False`）。`install_core`、`prepare_dns_ha`、
+  `ipv4_forwarding` 只认小写，以前经 MCP 传布尔值会得到 400，现在正常（Python 遗留问题修正）。
+- **原子写文件**：统一为 `internal/fsx`（临时文件 → fsync → rename → fsync 目录）。IPv6 校验记录、安装登记会话、autoupdate 清单和
+  `jsonstore` 以前不 fsync，现在 fsync；所有替换后都 fsync 目录。临时文件名模式、权限位、取消时返回的错误不变，不改属主。
+- **Docker 高可用安装向导（裁定）**：`vip`、`ha_gateway` 只接受字符串；JSON `true`/`false`/数字不再按 Python `IPv4Address(True)`
+  变成 `0.0.0.1` 等地址，返回 400「虚拟 IPv4 地址必须是文本」/「高可用网关地址必须是文本」（新增）。「没填」只指字段缺失或空字符串：
+  `container_name: null` 等非字符串返回 400「原容器名只能包含…」（以前 `null`、`false`、`0`、`[]`、`{}` 都当没填）；
+  `ha_gateway: null` 同样 400（以前当没填）。前端始终发字符串，不受影响。
+- **区域检测证据（裁定）**：没有 HTTP 状态码时写「无 HTTP 响应」，不再出现「HTTP None」。
+- **断行（裁定）**：规则内容的行号与诊断、OxiDNS 设置里的多行列表、安装脚本渲染、诊断文本脱敏、Agent 诊断文本只按 `\n`、`\r\n`、
+  `\r` 断行（`textx.SplitLines`），与前端 CodeMirror 6 默认的 `/\r\n?|\n/` 一致；`\v`、`\f`、`\x1c–\x1e`、U+0085、U+2028/2029 留在行内
+  （以前按 Python `str.splitlines`）。脱敏按行整体替换时，行只会变长，脱敏范围不会变窄。
+
+## O17 ② — Agent 运行记录移出配置文档（存储版本 2）＋ ① 后台循环改为变化通知
+
+设计与裁定：`design/o17-runtime-state.md`。API 字段和值、Agent 协议、写设备语义不变，除下列有意变化：
+
+- **存储布局 v2**：Agent 的运行状态和历史（`model.AgentStateMembers`：部署历史、`latest_deployment`、`applied_content`、`version`/`config_version`/
+  `config_revision`/`pushed_at`、`latest_upgrade`、`rule_sync.state`、`dns_follow_state`/`dns_follow_job`、`oxidns_ha_state`/`oxidns_ha_publication`、
+  `ipv6_verifications`，以及 Python 写过的 `status`/`last_heartbeat`/指标）存进同一个数据库的 `agent_state` 表，与配置同一事务提交。
+  只改状态的提交不推进配置代号（`Head.Generation`），只推进 `Head.State`。Python 和较早的 Go 版本不能打开 v2 数据库（`StoreUnsupported`）。
+- **升级**：第一次打开 v1 数据库（Python 写的或较早 Go 写的）先在线备份到 `DATA_DIR/backups/configflow-v1-<UTC>.sqlite3` 并检查，
+  再用一个事务搬出状态成员（原字节，损坏值原样，无 id/重复 id/非对象条目整条留在配置行）。备份失败拒绝启动并写明原因；升级失败数据库不变、拒绝启动。
+  升级改写了 `agents` 行时配置代号加一。
+- **系统 `_revision`** 只在配置编辑时推进；只改 Agent 状态的写入（部署进度、心跳上报版本、规则同步/联动/HA 进度）不再推进（Python 每次都推进）。
+- **导出与 WebDAV 备份只含配置**：完整导出不再带上述状态成员（脱敏导出本来就清空 Agent），仅保留「启用 DNS 高可用失败且回滚失败、设备上可能仍有 keepalived/VIP」时的最小成员列表（`oxidns_ha_state` 仅含 `status:"failed"` 与 `members`，不含报错文本、时间或其它状态），以便恢复后停用高可用仍能清理设备；导入此类备份仍写恢复标记 `state_restored_at`。`DiagnosticExportJSON` 保留完整文档供诊断，不是备份格式。
+- **用不含运行记录的备份导入**：每台有 id 的 Agent 写恢复标记 `state_restored_at`（Agent 列表/详情多出这个只读成员）。标记存在时：受保护字段编辑、
+  换绑、注册时改服务/端口/配置空间返回 409「运行记录未包含在备份里，请先重新发布此 Agent」；规则同步显示 blocked 并不推送；DNS 联动不以它为源或目标推送。
+  已开启 DNS 高可用的配对仍由保留的 HA 设置锁定，发布照常成对进行。一次成功发布（含旧式推送）清除标记；删除 Agent 不受限。导入接口在写了标记时
+  回复 `{"success":true,"message":"全部数据已导入。运行记录未包含在备份里，各 Agent 需要重新发布一次"}`。带运行记录的旧备份（Python 时期）照旧连状态一起导入、不加标记。
+- **WebDAV 自动备份**只由配置提交触发：规则同步、DNS 联动、HA、IPv6 校验的状态变化不再触发（以前这几类不在 Python 的忽略清单里，HA 成对发布一次会排十几次备份）。
+- **路由器签名/OxiDNS 视图**：`ConfigWithOxiDNSAgents` 只带 `rule_sync.settings`，规则同步进度变化不再改变路由器签名、不再触发相关重算。
+- **后台循环**：`dns-follow`、`oxidns-ha-publish`、`ipv6-verification-scheduler`、`agent-rule-sync` 在配置/状态提交和 Agent 上线时立即运行一轮；
+  有进行中的工作时保持原间隔（5/2/5/5 s），空闲时不再每隔几秒读库，兜底 10 分钟（规则同步 1 分钟，另由规则源刷新完成唤醒）。
+  `scheduled-refresh`、`router-rule-sync` 按最近到期时间休眠（至少 1 s、至多 10 分钟），配置提交和手动执行后重新计算；到期任务的启动误差从最多 30 s 变为秒级。
+  删除 Python `idle_rounds.py` 的移植 `IdleRounds`。
+- **路由器 `last_release` 迁入状态表（同存储版本 2）**：每个 profile 路由器记录的 `last_release`（上次发布记录）与 `state_restored_at`（恢复标记）
+  随 Agent 状态同在 v1→v2 单事务升级中迁入 `agent_state`（成员前缀 `router.`，owner 为 `router/<profile_id>/<router_id>`，不增加库版本）。
+  只改 `last_release` 或恢复标记的提交不推进配置代号（`Head.Generation`）和 profile `_revision`；完整导出/WebDAV 备份不含路由器 `last_release`；
+  导入不含 `last_release` 的新格式备份时为路由器写 `state_restored_at`（路由器视图多出该只读字段），标记存在时 `router-rule-sync`（自动/手动同步与定时任务）按 fail closed 拒绝并提示「运行记录未包含在备份里，请先重新发布此路由器」，一次成功的重新发布（`last_release.ok = true`）在同一事务里清除标记。带 `last_release` 的旧格式备份照旧恢复、不加标记。
+- **测试**：与 Python 的对照把 Go 数据库降级成 v1 后交给 Python（`repotest.PythonLayout`），比较整份存储时用合并视图（`repotest.MergedLoad`），
+  并屏蔽系统 `_revision`；Python 侧对照将随切换提交删除。

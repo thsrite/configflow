@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -36,7 +35,7 @@ func aioPublicationConfig(t *testing.T, mode string) *Config {
 
 func assertOriginalDNSDocument(t *testing.T, cfg *Config, got, original []byte) {
 	t.Helper()
-	var actual, expected map[string]interface{}
+	var actual, expected map[string]any
 	if err := yaml.Unmarshal(got, &actual); err != nil {
 		t.Fatal(err)
 	}
@@ -45,8 +44,8 @@ func assertOriginalDNSDocument(t *testing.T, cfg *Config, got, original []byte) 
 	}
 	// Native AIO adds host exclusions only when TUN auto-redirect is enabled.
 	// Every original DNS value, omitted/null field and other TUN entry survives.
-	if tun, ok := expected["tun"].(map[string]interface{}); ok && cfg.NativeAIO && tun["enable"] == true && tun["auto-redirect"] == true {
-		tun["route-exclude-address"] = []interface{}{"127.0.0.0/8", cfg.AgentIP + "/32"}
+	if tun, ok := expected["tun"].(map[string]any); ok && cfg.NativeAIO && tun["enable"] == true && tun["auto-redirect"] == true {
+		tun["route-exclude-address"] = []any{"127.0.0.0/8", cfg.AgentIP + "/32"}
 	}
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("DNS configuration changed:\n%s", got)
@@ -148,14 +147,9 @@ func TestAIODNSPreservesCandidateThroughReadyActivation(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("activation: %d %s", w.Code, w.Body.String())
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		s, _ = loadDeployment(cfg, "preserved-ready")
-		if s != nil && s.Status == "succeeded" {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	s = waitDeploymentState(t, cfg, "preserved-ready", true, func(st *DeploymentState) bool {
+		return st.Status == "succeeded" || st.Status == "failed"
+	}, "activation preserved-ready")
 	if s == nil || s.Status != "succeeded" || calls != 2 {
 		t.Fatalf("activation did not recheck DNS: %+v (%d calls)", s, calls)
 	}

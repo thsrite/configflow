@@ -3,6 +3,7 @@ package routes
 // A deployment is a write-ahead transaction. Nothing in the live directory is
 // changed before the backup is durable, and success is durable before cleanup.
 import (
+	"agent/internal/atomicfile"
 	"agent/upgrade"
 	"archive/tar"
 	"compress/gzip"
@@ -12,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -42,13 +43,13 @@ type DeploymentFile struct {
 	Role   string `json:"role"`
 }
 type DeploymentManifest struct {
-	ProtocolVersion int         `json:"protocol_version"`
-	DeploymentID    string      `json:"deployment_id"`
-	AgentID         string      `json:"agent_id"`
-	ProfileID       interface{} `json:"profile_id"`
-	ServiceType     string      `json:"service_type"`
-	ConfigPath      string      `json:"config_path"`
-	FinalConfig     bool        `json:"final_config,omitempty"`
+	ProtocolVersion int    `json:"protocol_version"`
+	DeploymentID    string `json:"deployment_id"`
+	AgentID         string `json:"agent_id"`
+	ProfileID       any    `json:"profile_id"`
+	ServiceType     string `json:"service_type"`
+	ConfigPath      string `json:"config_path"`
+	FinalConfig     bool   `json:"final_config,omitempty"`
 	// ReloadOnly refuses candidate activation when native hot reload is not
 	// available. Rollback may still restart the previous service for recovery.
 	ReloadOnly bool             `json:"reload_only,omitempty"`
@@ -139,8 +140,20 @@ func acquireServiceOperation(cfg *Config, updating bool) (func(), error) {
 		unix.Close(fd)
 		return nil, errDeploymentBusy
 	}
-	return func() { unix.Flock(fd, unix.LOCK_UN); unix.Close(fd) }, nil
+	serviceOperationHandoff.Load()
+	return func() {
+		serviceOperationHandoff.Add(1)
+		unix.Flock(fd, unix.LOCK_UN)
+		unix.Close(fd)
+	}, nil
 }
+
+// serviceOperationHandoff orders service operations inside this process. The
+// flock orders them across processes, but a system call is no synchronization
+// in the Go memory model: without this atomic store (release) and load (after
+// acquire), what a detached worker did before releasing the lock would not
+// happen-before the next holder, and the race detector reports it.
+var serviceOperationHandoff atomic.Uint64
 
 // waitServiceOperation retries only lock contention. Brief holders such as the
 // DNS watchdog tick on the same schedule as other periodic work and must not
@@ -157,40 +170,14 @@ func durableWrite(name string, data []byte, mode os.FileMode) error {
 	if err := durableMkdirAll(filepath.Dir(name), 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(name), ".write-")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if err = f.Chmod(mode); err == nil {
-		_, err = f.Write(data)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	closeErr := f.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(tmp, name); err != nil {
-		return err
-	}
-	return syncDirectory(filepath.Dir(name))
+	return atomicfile.WriteWith(name, data, mode, atomicfile.Options{
+		Pattern: ".write-*",
+		SyncDir: syncDirectory,
+	})
 }
 
 // syncDirectory is a variable so tests can count directory flushes.
-var syncDirectory = func(name string) error {
-	f, e := os.Open(name)
-	if e != nil {
-		return e
-	}
-	defer f.Close()
-	return f.Sync()
-}
+var syncDirectory = atomicfile.SyncDir
 
 // syncDirectories flushes each directory of a batch of renames once.
 func syncDirectories(dirs map[string]bool) error {
@@ -278,11 +265,11 @@ func deploymentBlocked(cfg *Config) error {
 }
 func deploymentFailure(w http.ResponseWriter, code int, err error) {
 	message, details := deploymentErrorFields(err)
-	response := map[string]interface{}{"success": false, "message": message}
-	if details != "" {
-		response["error_details"] = details
-	}
-	JsonResponse(w, code, response)
+	JsonResponse(w, code, DeploymentFailureResponse{
+		ErrorDetails: details,
+		Message:      message,
+		Success:      false,
+	})
 }
 func CapabilitiesHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -290,30 +277,38 @@ func CapabilitiesHandler(cfg *Config) http.HandlerFunc {
 			w.WriteHeader(405)
 			return
 		}
-		result := map[string]interface{}{"success": true, "deployment_protocols": []int{1}, "return_routing_safety_protocols": []int{1}, "service_type": cfg.ServiceType, "config_path": filepath.Base(cfg.ConfigPath)}
-		result["reload_only_protocols"] = []int{1}
-		result["final_config_protocols"] = []int{1}
-		result["rule_sync_snapshot_protocols"] = []int{1}
-		result["platform"] = gatewayOS
+		result := CapabilitiesResponse{
+			ConfigPath:                   filepath.Base(cfg.ConfigPath),
+			DeploymentProtocols:          []int{1},
+			FinalConfigProtocols:         []int{1},
+			Platform:                     gatewayOS,
+			ReloadOnlyProtocols:          []int{1},
+			ReturnRoutingSafetyProtocols: []int{1},
+			RuleSyncSnapshotProtocols:    []int{1},
+			ServiceType:                  cfg.ServiceType,
+			Success:                      true,
+		}
 		if ipv6VerifySupported(cfg) {
-			result["ipv6_client_probe_protocols"] = []int{1}
+			result.IPv6ClientProbeProtocols = []int{1}
 			if cfg.ServiceType == "mihomo" {
-				result["ipv6_verification_protocols"] = []int{1}
+				result.IPv6VerificationProtocols = []int{1}
 			}
 		}
 		if cfg.ServiceType == "mihomo" {
-			result["mihomo_resources"] = mihomoGeoAssetNames(filepath.Dir(cfg.ConfigPath))
-			result["config_directory"] = filepath.Dir(cfg.ConfigPath)
-			result["aio_forwarding_protocols"] = []int{1}
-			result["ipv6_readiness_protocols"] = []int{1}
+			resources := mihomoGeoAssetNames(filepath.Dir(cfg.ConfigPath))
+			configDir := filepath.Dir(cfg.ConfigPath)
+			result.MihomoResources = &resources
+			result.ConfigDirectory = &configDir
+			result.AIOForwardingProtocols = []int{1}
+			result.IPv6ReadinessProtocols = []int{1}
 		}
 		if cfg.ServiceType == "oxidns" {
-			result["oxidns_ha_protocols"] = []int{oxidnsHAProtocol}
-			result["oxidns_ha_handoff_protocols"] = []int{oxidnsHAHandoffProtocol}
+			result.OxiDNSHAProtocols = []int{oxidnsHAProtocol}
+			result.OxiDNSHAHandoffProtocols = []int{oxidnsHAHandoffProtocol}
 			environment := haEnvironment(cfg)
-			result["oxidns_ha_environment"] = environment
+			result.OxiDNSHAEnvironment = &environment
 			if environment.Kind == "container" && environment.Ready {
-				result["oxidns_ha_container_protocols"] = []int{oxidnsHAContainerProtocol}
+				result.OxiDNSHAContainerProtocols = []int{oxidnsHAContainerProtocol}
 			}
 		}
 		JsonResponse(w, 200, result)
@@ -424,7 +419,7 @@ func DeploymentUploadHandler(cfg *Config) http.HandlerFunc {
 		}
 		activate := r.Header.Get("X-Activate") != "false"
 		// Encode the accepted snapshot before the worker mutates state.
-		JsonResponse(w, 202, map[string]interface{}{"success": true, "deployment_id": id, "status": "verifying"})
+		JsonResponse(w, 202, DeploymentAcceptedResponse{DeploymentID: id, Status: "verifying", Success: true})
 		handedOff = true
 		go func() { defer release(); prepareDeployment(cfg, s, activate) }()
 	}
@@ -492,7 +487,7 @@ func DeploymentHandler(cfg *Config) http.HandlerFunc {
 			deploymentFailure(w, 500, e)
 			return
 		}
-		JsonResponse(w, 202, map[string]interface{}{"success": true, "deployment_id": id, "status": "verifying"})
+		JsonResponse(w, 202, DeploymentAcceptedResponse{DeploymentID: id, Status: "verifying", Success: true})
 		handedOff = true
 		go func() {
 			defer release()
@@ -767,36 +762,13 @@ func copyFileOwned(src, dst string, mode os.FileMode, uid, gid int) error {
 		return e
 	}
 	defer in.Close()
-	out, e := os.CreateTemp(filepath.Dir(dst), ".configflow-copy-")
-	if e != nil {
-		return e
-	}
-	tmp := out.Name()
-	defer os.Remove(tmp)
-	if uid >= 0 && gid >= 0 {
-		if info, statErr := out.Stat(); statErr != nil {
-			e = statErr
-		} else if oldUID, oldGID := fileOwnership(info); oldUID != uid || oldGID != gid {
-			e = out.Chown(uid, gid)
-		}
-	}
-	if e == nil {
-		e = out.Chmod(mode)
-	}
-	if e == nil {
-		_, e = io.Copy(out, in)
-	}
-	if e == nil {
-		e = out.Sync()
-	}
-	ce := out.Close()
-	if e == nil {
-		e = ce
-	}
-	if e != nil {
-		return e
-	}
-	return os.Rename(tmp, dst)
+	return atomicfile.WriteFrom(dst, in, mode, atomicfile.Options{
+		Pattern:     ".configflow-copy-*",
+		SetOwner:    uid >= 0 && gid >= 0,
+		UID:         uid,
+		GID:         gid,
+		SkipDirSync: true,
+	})
 }
 func managedPaths(cfg *Config, s *DeploymentState) ([]string, error) {
 	set := map[string]bool{}
@@ -1151,11 +1123,11 @@ func activateDeployment(cfg *Config, s *DeploymentState) {
 			reloadErr = e
 			// A manual deployment may resolve a failed or uncertain reload by
 			// applying the candidate through the usual stop/start health checks.
-			log.Printf("%s release %s: reload failed (%v), restarting", cfg.ServiceType, s.DeploymentID, e)
+			logger.Infof("%s release %s: reload failed (%v), restarting", cfg.ServiceType, s.DeploymentID, e)
 			// A reload that outlived the wait is still running and the core
 			// ignores SIGTERM until it ends; let it finish before stopping.
 			if ox, ok := reloader.(*oxidnsReloader); ok && !ox.settle(oxidnsReloadSettleTimeout) {
-				log.Printf("%s release %s: core still reloading after %s; stopping anyway", cfg.ServiceType, s.DeploymentID, oxidnsReloadSettleTimeout)
+				logger.Warnf("%s release %s: core still reloading after %s; stopping anyway", cfg.ServiceType, s.DeploymentID, oxidnsReloadSettleTimeout)
 			}
 			reloader = nil
 			if e = saveDeployment(cfg, s, "stopping"); e != nil {
@@ -1357,15 +1329,15 @@ func recoverHandler(cfg *Config, id string, w http.ResponseWriter) {
 		deploymentFailure(w, 409, err)
 		return
 	}
-	JsonResponse(w, 202, map[string]interface{}{"success": true, "deployment_id": id, "status": "rolling_back", "recovering": true})
+	JsonResponse(w, 202, DeploymentAcceptedResponse{DeploymentID: id, Recovering: true, Status: "rolling_back", Success: true})
 	handedOff = true
 	go func() {
 		defer release()
 		if err := recoverDeploymentsLocked(cfg, true); err != nil {
-			log.Printf("Deployment recovery requested from ConfigFlow did not complete: %v", err)
+			logger.Warnf("Deployment recovery requested from ConfigFlow did not complete: %v", err)
 			return
 		}
-		log.Println("Deployment recovery requested from ConfigFlow completed.")
+		logger.Info("Deployment recovery requested from ConfigFlow completed.")
 	}()
 }
 

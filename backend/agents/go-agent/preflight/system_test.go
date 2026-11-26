@@ -35,7 +35,7 @@ func (f fixtureDevice) Size() int64        { return 0 }
 func (f fixtureDevice) Mode() os.FileMode  { return f.mode }
 func (f fixtureDevice) ModTime() time.Time { return time.Time{} }
 func (f fixtureDevice) IsDir() bool        { return f.mode.IsDir() }
-func (f fixtureDevice) Sys() interface{}   { return nil }
+func (f fixtureDevice) Sys() any           { return nil }
 
 func healthySystemFixture() *systemFixture {
 	return &systemFixture{

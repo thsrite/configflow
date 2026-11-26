@@ -35,7 +35,7 @@ export interface OverviewStatRow extends OverviewStatPart {
   parts: OverviewStatPart[]
 }
 
-/** 目标按主域名归并（a.b.example.com.cn → example.com.cn），IP 与无法识别的主机保持原样 */
+/** 目标按可注册域名归并（a.b.example.com → example.com）。遇到 co.uk 等多级公共后缀时保留其上一层。IP 与无法识别的主机保持原样。 */
 export function destinationKey(connection: MihomoConnection): string {
   const meta = connection.metadata
   const host = (meta.host || meta.sniffHost || '').toLowerCase().replace(/\.$/, '')

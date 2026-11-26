@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
-	"time"
 )
 
 func requestRollback(cfg *Config, id string) *httptest.ResponseRecorder {
@@ -20,22 +19,9 @@ func requestRollback(cfg *Config, id string) *httptest.ResponseRecorder {
 
 func waitRollback(t *testing.T, cfg *Config, id string) *DeploymentState {
 	t.Helper()
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
-		s, err := loadDeployment(cfg, id)
-		if err == nil && (s.Status == "rolled_back" || s.Status == "rollback_failed") {
-			for time.Now().Before(deadline) {
-				if release, err := AcquireServiceOperation(cfg); err == nil {
-					release()
-					return s
-				}
-				time.Sleep(5 * time.Millisecond)
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("manual rollback did not complete")
-	return nil
+	return waitDeploymentState(t, cfg, id, true, func(s *DeploymentState) bool {
+		return s.Status == "rolled_back" || s.Status == "rollback_failed"
+	}, "manual rollback "+id)
 }
 
 func TestManualRollbackRestoresCurrentRevisionOnlyAndKeepsState(t *testing.T) {

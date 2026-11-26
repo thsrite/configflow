@@ -187,24 +187,24 @@ func domainProbeHandler(cfg *Config) http.HandlerFunc {
 			return
 		}
 		if cfg.ServiceType != "mihomo" {
-			routes.JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": "domain probe requires a mihomo agent"})
+			routes.JsonResponse(w, http.StatusBadRequest, routes.MessageResponse{Success: false, Message: "domain probe requires a mihomo agent"})
 			return
 		}
 		var req probeRequest
 		if err := json.NewDecoder(io.LimitReader(r.Body, probeMaxBody)).Decode(&req); err != nil {
-			routes.JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": "invalid probe request"})
+			routes.JsonResponse(w, http.StatusBadRequest, routes.MessageResponse{Success: false, Message: "invalid probe request"})
 			return
 		}
 		if err := validateProbeRequest(&req); err != nil {
-			routes.JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": err.Error()})
+			routes.JsonResponse(w, http.StatusBadRequest, routes.MessageResponse{Success: false, Message: err.Error()})
 			return
 		}
 		controller, err := resolveMihomoController(cfg.ConfigPath)
 		if err != nil {
-			routes.JsonResponse(w, http.StatusServiceUnavailable, map[string]interface{}{"success": false, "message": "mihomo controller unavailable: " + err.Error()})
+			routes.JsonResponse(w, http.StatusServiceUnavailable, routes.MessageResponse{Success: false, Message: "mihomo controller unavailable: " + err.Error()})
 			return
 		}
 		results := runProbes(r.Context(), controller, req)
-		routes.JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "results": results})
+		routes.JsonResponse(w, http.StatusOK, domainProbeResponse{Results: results, Success: true})
 	}
 }

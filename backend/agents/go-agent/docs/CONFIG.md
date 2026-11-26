@@ -58,7 +58,7 @@ Agent 启动时按以下顺序查找配置文件：
 ### service_name
 - **类型**：字符串
 - **必须**：是
-- **说明**：服务名称，必须与 Supervisor 中配置的服务名称一致
+- **说明**：服务名称，Docker 镜像中必须与 s6 管理的程序名一致（mihomo、mosdns、oxidns）
 - **示例**：`"mihomo"`
 
 ### config_path
@@ -71,7 +71,7 @@ Agent 启动时按以下顺序查找配置文件：
 - **类型**：字符串
 - **必须**：是
 - **说明**：重启服务的命令
-- **示例**：`"supervisorctl -c /etc/supervisor/supervisord.conf restart mihomo"`
+- **示例**：`"/usr/local/bin/configflow-agent svc restart mihomo"`（Docker 镜像）
 
 ### heartbeat_interval
 - **类型**：整数
@@ -98,7 +98,7 @@ Agent 启动时按以下顺序查找配置文件：
 
 | 字段 | 用途 |
 | --- | --- |
-| `service_manager` | `systemd`、`openrc`、`supervisor` 或 `command` |
+| `service_manager` | `systemd`、`openrc`、`s6`（Docker 镜像；1.9.3-go 之前的镜像写 `supervisor`，读取时视为同义词，计划下个大版本删除）或 `command` |
 | `service_unit` | 被管理的核心服务名称；systemd 可用 `mihomo` 或 `mihomo.service` |
 | `service_binary` | 与运行核心相同的可执行程序，Mihomo 用它执行 `-t`，OxiDNS 用它执行原生 `check` |
 | `stop_command` / `start_command` / `status_command` | `command` 管理器必需的三个明确动作；不从重启命令推断 |
@@ -120,7 +120,7 @@ Agent 启动时按以下顺序查找配置文件：
 
 发布包、暂存区、备份、发布清单位于 `config_path` 同目录的 `.configflow-deployments/`，需要保留和持久化整个服务目录。不要在存在未完成事务时移动配置目录或删除该目录。
 
-Docker 入口会填写 `supervisor` 管理器。可通过 `MIHOMO_HEALTH_URL`、`MIHOMO_HEALTH_DNS_ADDRESS`、`MIHOMO_HEALTH_DNS_NAME` 或对应的 `MOSDNS_`、`OXIDNS_` 变量覆盖探测目标；`DEPLOYMENT_HEALTH_TIMEOUT` 设置等待秒数。
+Docker 入口会填写 `s6` 管理器。可通过 `MIHOMO_HEALTH_URL`、`MIHOMO_HEALTH_DNS_ADDRESS`、`MIHOMO_HEALTH_DNS_NAME` 或对应的 `MOSDNS_`、`OXIDNS_` 变量覆盖探测目标；`DEPLOYMENT_HEALTH_TIMEOUT` 设置等待秒数。
 
 OxiDNS 的 `config_path` 必须与核心实际加载的配置一致；systemd 的 `-d`/`WorkingDirectory` 也必须等于配置所在目录。安装器通过 `-validate-service` 在替换 Agent 前检查该条件，推送和手动回滚继续校验。`state/` 中的动态域名、查询记录和缓存属于运行数据，不能作为受管配置覆盖；原生配置检查使用隔离目录。
 
@@ -237,11 +237,11 @@ AIO 的 MosDNS 和 OxiDNS 默认都使用 DNS 端口 53，入口要求二者只�
   "agent_ip": "203.0.113.1",
   "service_type": "mihomo",
   "service_name": "mihomo",
-  "service_manager": "supervisor",
+  "service_manager": "s6",
   "service_unit": "mihomo",
   "service_binary": "/usr/local/bin/mihomo",
   "config_path": "/etc/mihomo/config.yaml",
-  "restart_command": "supervisorctl -c /etc/supervisor/supervisord.conf restart mihomo",
+  "restart_command": "/usr/local/bin/configflow-agent svc restart mihomo",
   "heartbeat_interval": 60
 }
 ```
@@ -257,11 +257,11 @@ AIO 的 MosDNS 和 OxiDNS 默认都使用 DNS 端口 53，入口要求二者只�
   "agent_ip": "203.0.113.1",
   "service_type": "mosdns",
   "service_name": "mosdns",
-  "service_manager": "supervisor",
+  "service_manager": "s6",
   "service_unit": "mosdns",
   "service_binary": "/usr/local/bin/mosdns",
   "config_path": "/etc/mosdns/config.yaml",
-  "restart_command": "supervisorctl -c /etc/supervisor/supervisord.conf restart mosdns",
+  "restart_command": "/usr/local/bin/configflow-agent svc restart mosdns",
   "heartbeat_interval": 60,
   "directories": [
     "rules",

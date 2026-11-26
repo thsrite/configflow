@@ -76,10 +76,10 @@ func TestUnreadableInterfacesKeepTheConfiguredAddress(t *testing.T) {
 
 func TestContainerReportsOnlyItsExplicitAddress(t *testing.T) {
 	withInterfaces(t, "172.17.0.2")
-	if got := (&Config{ServiceManager: "supervisor"}).heartbeatHost(); got != "" {
+	if got := (&Config{ServiceManager: "s6"}).heartbeatHost(); got != "" {
 		t.Fatalf("bridge container reported %q", got)
 	}
-	cfg := &Config{AgentIP: "192.0.2.21", ServiceManager: "supervisor"}
+	cfg := &Config{AgentIP: "192.0.2.21", ServiceManager: "s6"}
 	if cfg.heartbeatHost() != "192.0.2.21" || cfg.effectiveAgentIP() != "192.0.2.21" {
 		t.Fatal("explicit AGENT_IP of a container must be kept")
 	}
@@ -113,7 +113,7 @@ func TestHeartbeatCarriesHostOnlyForServersThatReadIt(t *testing.T) {
 func addressConfig(t *testing.T, agentIP, manager string) *Config {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "config-oxidns.json")
-	data, _ := json.Marshal(map[string]interface{}{"server_url": "http://192.0.2.1", "agent_name": "dns", "agent_port": 8082,
+	data, _ := json.Marshal(map[string]any{"server_url": "http://192.0.2.1", "agent_name": "dns", "agent_port": 8082,
 		"agent_ip": agentIP, "service_type": "oxidns", "service_manager": manager, "installer_extension": "kept"})
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		t.Fatal(err)
@@ -125,13 +125,13 @@ func addressConfig(t *testing.T, agentIP, manager string) *Config {
 	return cfg
 }
 
-func storedAgentIP(t *testing.T, cfg *Config) (string, map[string]interface{}) {
+func storedAgentIP(t *testing.T, cfg *Config) (string, map[string]any) {
 	t.Helper()
 	data, err := os.ReadFile(cfg.filePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	values := map[string]interface{}{}
+	values := map[string]any{}
 	if err = json.Unmarshal(data, &values); err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestConfirmedAddressIsNotWrittenWhenNothingWasPinnedOrInAContainer(t *testi
 	if got, _ := storedAgentIP(t, automatic); got != "" {
 		t.Fatalf("automatic install was pinned to %q", got)
 	}
-	container := addressConfig(t, "192.0.2.2", "supervisor")
+	container := addressConfig(t, "192.0.2.2", "s6")
 	container.adoptConfirmedHost("192.0.2.11")
 	if got, _ := storedAgentIP(t, container); got != "192.0.2.2" {
 		t.Fatalf("container AGENT_IP replaced by %q", got)
@@ -230,11 +230,11 @@ func TestRoutesSeeTheAddressAsItIsNow(t *testing.T) {
 	}
 }
 
-func addressRequest(t *testing.T, cfg *Config, method, body string) (int, map[string]interface{}) {
+func addressRequest(t *testing.T, cfg *Config, method, body string) (int, map[string]any) {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	agentAddressHandler(cfg)(recorder, httptest.NewRequest(method, "/api/agent-address", strings.NewReader(body)))
-	result := map[string]interface{}{}
+	result := map[string]any{}
 	if recorder.Body.Len() > 0 {
 		if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
 			t.Fatalf("body %q: %v", recorder.Body.String(), err)
@@ -252,7 +252,7 @@ func TestAddressEndpointListsAndPinsOnlyAddressesOfThisHost(t *testing.T) {
 
 	code, info := addressRequest(t, cfg, http.MethodGet, "")
 	if code != 200 || info["writable"] != true || info["configured"] != "" || info["reported"] != "192.0.2.11" ||
-		len(info["addresses"].([]interface{})) != 2 {
+		len(info["addresses"].([]any)) != 2 {
 		t.Fatalf("GET %d %v", code, info)
 	}
 	if code, reply := addressRequest(t, cfg, http.MethodPost, `{"host":"192.0.2.99"}`); code != 400 || !strings.Contains(reply["message"].(string), "192.0.2.99") {
@@ -280,7 +280,7 @@ func TestAddressEndpointDoesNotWriteAContainersAddress(t *testing.T) {
 	previous := detectAllLocalIPv4
 	detectAllLocalIPv4 = func() ([]string, error) { return []string{"192.0.2.11"}, nil }
 	t.Cleanup(func() { detectAllLocalIPv4 = previous })
-	cfg := addressConfig(t, "192.0.2.2", "supervisor")
+	cfg := addressConfig(t, "192.0.2.2", "s6")
 	if code, info := addressRequest(t, cfg, http.MethodGet, ""); code != 200 || info["writable"] != false || info["configured"] != "192.0.2.2" {
 		t.Fatalf("GET %d %v", code, info)
 	}

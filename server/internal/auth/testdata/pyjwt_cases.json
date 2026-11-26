@@ -1,0 +1,256 @@
+{
+ "secret": "go-port-test-secret",
+ "generated_at": 1794660686,
+ "cases": [
+  {
+   "name": "valid",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwiZXhwIjoyMTEwMDIwNjg2LCJpYXQiOjE3OTQ2NjA2NzZ9.fJQlKAbHNPc-Wtxj9TMOhTKOwNIQGXUdubvaI3br__w",
+   "result": {
+    "ok": true,
+    "claims": {
+     "username": "admin",
+     "exp": 2110020686,
+     "iat": 1794660676
+    }
+   }
+  },
+  {
+   "name": "unicode_user",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6Ilx1N2JhMVx1NzQwNlx1NTQ1OCIsImV4cCI6MjExMDAyMDY4NiwiaWF0IjoxNzk0NjYwNjc2fQ.qTQLClqdGM5zzpo4QqtpyH97J-oBbL8YlzUdwaMUTTo",
+   "result": {
+    "ok": true,
+    "claims": {
+     "username": "管理员",
+     "exp": 2110020686,
+     "iat": 1794660676
+    }
+   }
+  },
+  {
+   "name": "expired",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwiZXhwIjoxNzk0NjYwNTg2LCJpYXQiOjE3OTQ2NjA0ODZ9.WnSDSu3G76AD9LaXBT-X_NrixwJTKym7Kq01bHu2_GM",
+   "result": {
+    "ok": false,
+    "expired": true,
+    "message": "Signature has expired"
+   }
+  },
+  {
+   "name": "future_iat",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwiZXhwIjoyMTEwMDIwNjg2LCJpYXQiOjIxMTAwMjA2NzZ9.xWLbRIUC7LnBzA00XFgw0fwK0KElMCN7HFxG07Z1F5o",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "The token is not yet valid (iat)"
+   }
+  },
+  {
+   "name": "nbf_future",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwiZXhwIjoyMTEwMDIwNjg2LCJuYmYiOjIxMTAwMjA2NzZ9.0VOlo-BiFTznDlJhiWMgVIF91NIRtAqOmKwhji6wfgg",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "The token is not yet valid (nbf)"
+   }
+  },
+  {
+   "name": "wrong_secret",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwiZXhwIjoyMTEwMDIwNjg2fQ.1WwSpIsROjlKpb3tXvVMQqwnlf_R01khtq--xJ9VZzA",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Signature verification failed"
+   }
+  },
+  {
+   "name": "hs512",
+   "token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwiZXhwIjoyMTEwMDIwNjg2fQ.lx_lIICEbjQ1cFrsQx08mgmtp7z6X85BDlc8Jrmo1fcjKbSMHtmE5iNh8JKtE4DZaOaM3WWoI8FsKxAPLnc1IQ",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "The specified alg value is not allowed"
+   }
+  },
+  {
+   "name": "none_alg",
+   "token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJ1c2VybmFtZSI6ImFkbWluIn0.lINP-PuuKMzcAso6N7hrsRjid1eavkVPv1412v-WNCM",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "The specified alg value is not allowed"
+   }
+  },
+  {
+   "name": "no_alg",
+   "token": "eyJ0eXAiOiJKV1QifQ.eyJ1c2VybmFtZSI6ImFkbWluIn0.TiqRaPYQ1qhCGrin9UMtAt8jqGXU_-8sns6iBgNInfg",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Algorithm not specified"
+   }
+  },
+  {
+   "name": "aud",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwiZXhwIjoyMTEwMDIwNjg2LCJhdWQiOiJ4In0._7nia1Et-oHW2hiGOpo_P4Q0hKIU1vmSOVhZbTyZkgs",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Invalid audience"
+   }
+  },
+  {
+   "name": "empty_aud",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwiZXhwIjoyMTEwMDIwNjg2LCJhdWQiOiIifQ.nsuOS17PdS83eNNZmIK-1s-TkvyM94WjhgsICNm9uNQ",
+   "result": {
+    "ok": true,
+    "claims": {
+     "username": "admin",
+     "exp": 2110020686,
+     "aud": ""
+    }
+   }
+  },
+  {
+   "name": "exp_string",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOiAiMjExMDAyMDY4NiJ9.3BuGdralyT4LK0HGvyiHQH2_pJ4kI-v8QoJUQRJApUs",
+   "result": {
+    "ok": true,
+    "claims": {
+     "exp": "2110020686"
+    }
+   }
+  },
+  {
+   "name": "exp_bad_string",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOiJzb29uIn0.oBNvw7ZtJN2jwvDkzXxHap5JXUnHIoPuMTJZ-H6z_CQ",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Expiration Time claim (exp) must be an integer."
+   }
+  },
+  {
+   "name": "exp_float",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOiAyMTEwMDIwNjg2LjV9.f-JH_mknzezjeg0QMJEMBSh3_cKfXJva_Sz9vY_m5Rs",
+   "result": {
+    "ok": true,
+    "claims": {
+     "exp": 2110020686.5
+    }
+   }
+  },
+  {
+   "name": "exp_bool",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOnRydWV9.MrMehw6pvm-FNj4_qjv9tjYes6HoUhpOzYZ1JUZHDTU",
+   "result": {
+    "ok": false,
+    "expired": true,
+    "message": "Signature has expired"
+   }
+  },
+  {
+   "name": "iat_bad",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOiJ4IiwiZXhwIjoyMTEwMDIwNjg2fQ.Jjr5DiHWWCBc-1_ghE2AOXng0gl1os9kSVn97afTxtA",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Issued At claim (iat) must be an integer."
+   }
+  },
+  {
+   "name": "payload_list",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.WzEsMl0.1WNlrXallHKxSRIdvC0yNFz9IcP9wjFv1IzZi97l_90",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Invalid payload string: must be a json object"
+   }
+  },
+  {
+   "name": "payload_bad_json",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhIjo.Xe7Hr41Nnk1TYDWZcsBlgyoCgAt3LJZ0LlIjdyr4Yv8",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Invalid payload string: Expecting value: line 1 column 6 (char 5)"
+   }
+  },
+  {
+   "name": "header_list",
+   "token": "WzFd.e30.9azqrNSO28hZUW8ETSEn1ZgOe0JcmNxvUparBKLtEUM",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Invalid header string: must be a json object"
+   }
+  },
+  {
+   "name": "header_bad_json",
+   "token": "eyJhbGciOi.e30.sig",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Invalid header string: Expecting value: line 1 column 8 (char 7)"
+   }
+  },
+  {
+   "name": "one_segment",
+   "token": "abc",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Not enough segments"
+   }
+  },
+  {
+   "name": "two_segments",
+   "token": "abc.def",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Not enough segments"
+   }
+  },
+  {
+   "name": "bad_padding",
+   "token": "a.b.c",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Invalid header padding"
+   }
+  },
+  {
+   "name": "empty_payload_object",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.Rwvc5-b58bCwdpPVdmvSz9NB2Wjnpu4gzPrMdZ7eVts",
+   "result": {
+    "ok": true,
+    "claims": {}
+   }
+  },
+  {
+   "name": "error_claim",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlcnJvciI6ImV4cGlyZWQiLCJleHAiOjIxMTAwMjA2ODZ9.YlvzKo8w4KDMwD_O8ZGm8EiUcXUPfVjeBQbFgj1ipz8",
+   "result": {
+    "ok": true,
+    "claims": {
+     "error": "expired",
+     "exp": 2110020686
+    }
+   }
+  },
+  {
+   "name": "junk_chars",
+   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.!eyJ1c2VybmFtZSI6ImFkbWluIiwiZXhwIjoyMTEwMDIwNjg2fQ.5WOVlwRJXkrtN2ogema9aEbxofJO7O7lJRKEyEGmYXk",
+   "result": {
+    "ok": false,
+    "expired": false,
+    "message": "Invalid payload padding"
+   }
+  }
+ ],
+ "encode": {
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImFkbWluIiwiZXhwIjoxODkzNjM5ODQ1LCJpYXQiOjE4OTM1NTM0NDV9.TiovTbyE8NoyWoXumwZVliDIZszPCeEl1m6ISjX78yM",
+  "unicode": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6Ilx1N2JhMVx1NzQwNlx1NTQ1OCIsImV4cCI6MTkwMDAwMDAwMCwiaWF0IjoxODAwMDAwMDAwfQ.de6KL1M1Ww2SiX2l8Y9RN2-T7TQGGg05cOrQIEJUx1o"
+ }
+}

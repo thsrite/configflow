@@ -18,21 +18,21 @@ func adaptNativeAIODNS(cfg *Config, content string) (string, error) {
 	}
 	// Decode aliases and merge keys first. Editing an anchor definition in a
 	// yaml.Node tree would also change unrelated fields that reference it.
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
 		return "", err
 	}
 	if len(doc) == 0 {
 		return "", fmt.Errorf("mihomo config must be a nonempty YAML mapping")
 	}
-	marker, _ := doc["x-configflow-linux-gateway"].(map[string]interface{})
+	marker, _ := doc["x-configflow-linux-gateway"].(map[string]any)
 	if marker["enabled"] == true {
 		return content, nil
 	}
 	if doc["tun"] == nil {
 		return content, nil
 	}
-	tun, ok := doc["tun"].(map[string]interface{})
+	tun, ok := doc["tun"].(map[string]any)
 	if !ok {
 		return "", fmt.Errorf("mihomo tun must be a mapping")
 	}
@@ -43,9 +43,9 @@ func adaptNativeAIODNS(cfg *Config, content string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("原生 AIO 启用 TUN 自动重定向时为 OxiDNS 排除本机 DNS 失败：%w", err)
 	}
-	var excluded []interface{}
+	var excluded []any
 	if tun["route-exclude-address"] != nil {
-		values, ok := tun["route-exclude-address"].([]interface{})
+		values, ok := tun["route-exclude-address"].([]any)
 		if !ok {
 			return "", fmt.Errorf("mihomo tun.route-exclude-address must be a CIDR list")
 		}
@@ -99,11 +99,11 @@ func adaptAIOUpstreamDNS(cfg *Config, content string) (string, error) {
 	if dnsPeerService(cfg) != "oxidns" {
 		return content, nil
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
 		return "", err
 	}
-	tun, _ := doc["tun"].(map[string]interface{})
+	tun, _ := doc["tun"].(map[string]any)
 	if tun["enable"] != true {
 		return content, nil
 	}
@@ -111,13 +111,13 @@ func adaptAIOUpstreamDNS(cfg *Config, content string) (string, error) {
 	if peer == nil {
 		return content, nil
 	}
-	var peerDoc map[string]interface{}
+	var peerDoc map[string]any
 	if yaml.Unmarshal(peer.Content, &peerDoc) != nil {
 		return content, nil
 	}
-	var excluded []interface{}
+	var excluded []any
 	if tun["route-exclude-address"] != nil {
-		values, ok := tun["route-exclude-address"].([]interface{})
+		values, ok := tun["route-exclude-address"].([]any)
 		if !ok {
 			return "", fmt.Errorf("mihomo tun.route-exclude-address must be a CIDR list")
 		}

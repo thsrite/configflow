@@ -3,6 +3,7 @@
 package clioutput
 
 import (
+	"agent/internal/logx"
 	"fmt"
 	"io"
 	"log"
@@ -101,7 +102,11 @@ func New(operation string, verbose bool) *Session {
 		diagnostic = io.MultiWriter(s, s.Out)
 	}
 	log.SetOutput(diagnostic)
-	s.restore = func() { log.SetOutput(previous) }
+	previousLogx := logx.SetOutput(diagnostic)
+	s.restore = func() {
+		log.SetOutput(previous)
+		logx.SetOutput(previousLogx)
+	}
 	fmt.Fprintf(s, "\n=== %s | %s ===\n", Printable(operation), time.Now().Format(time.RFC3339))
 	return s
 }

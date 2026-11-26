@@ -1,0 +1,2808 @@
+[
+  {
+    "name": "reorder_items",
+    "arguments": {
+      "collection": "nodes",
+      "ids": [
+        "synthetic"
+      ]
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/nodes/reorder",
+        "body": {
+          "ids": [
+            "synthetic"
+          ],
+          "position": "top"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "collection": "nodes",
+      "position": "top",
+      "moved": [
+        "synthetic"
+      ],
+      "order": [
+        "synthetic"
+      ],
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "list_profiles",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/profiles",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_profile",
+    "arguments": {
+      "id": "synthetic"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/profiles/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_profile",
+    "arguments": {
+      "action": "update",
+      "id": "synthetic",
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "PUT",
+        "path": "/api/profiles/synthetic",
+        "body": {
+          "name": "Changed"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "name": "Changed"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "clone_profile",
+    "arguments": {
+      "source_profile_id": "synthetic",
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/profiles/synthetic/clone",
+        "body": {
+          "name": "Changed"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "name": "Changed"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "import_client_config",
+    "arguments": {
+      "client_type": "mihomo",
+      "content": "proxies: []",
+      "name": "Synthetic"
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/profiles/import-client",
+        "body": {
+          "client_type": "mihomo",
+          "content": "proxies: []",
+          "name": "Synthetic"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "client_type": "mihomo",
+        "content": "proxies: []",
+        "name": "Synthetic"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "bind_agent_profile",
+    "arguments": {
+      "id": "synthetic",
+      "profile_id": "default"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/synthetic",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "PUT",
+        "path": "/api/agents/synthetic",
+        "body": {
+          "id": "synthetic",
+          "name": "Existing",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          },
+          "profile_id": "default"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        },
+        "profile_id": "default"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "list_subscriptions",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/subscriptions",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": [
+      {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      }
+    ]
+  },
+  {
+    "name": "manage_subscription",
+    "arguments": {
+      "action": "update",
+      "id": "synthetic",
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/subscriptions",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "PUT",
+        "path": "/api/subscriptions/synthetic",
+        "body": {
+          "id": "synthetic",
+          "name": "Changed",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "update",
+      "item": {
+        "id": "synthetic",
+        "name": "Changed",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "fetch_subscription",
+    "arguments": {
+      "id": "synthetic"
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/subscriptions/synthetic/fetch",
+        "body": {
+          "preview": false
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "preview": false
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_subscription_nodes",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/subscriptions/proxies",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "list_aggregations",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/aggregations",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_aggregation",
+    "arguments": {
+      "action": "update",
+      "id": "synthetic",
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/aggregations/synthetic",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "PUT",
+        "path": "/api/aggregations/synthetic",
+        "body": {
+          "id": "synthetic",
+          "name": "Changed",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "update",
+      "item": {
+        "id": "synthetic",
+        "name": "Changed",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "preview_aggregation",
+    "arguments": {
+      "id": "synthetic"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/aggregations/synthetic/preview",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "list_nodes",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/nodes",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": [
+      {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      }
+    ]
+  },
+  {
+    "name": "manage_node",
+    "arguments": {
+      "action": "update",
+      "id": "synthetic",
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/nodes",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "PUT",
+        "path": "/api/nodes/synthetic",
+        "body": {
+          "id": "synthetic",
+          "name": "Changed",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "update",
+      "item": {
+        "id": "synthetic",
+        "name": "Changed",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "list_rules",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/rules",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": [
+      {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      }
+    ]
+  },
+  {
+    "name": "manage_rule",
+    "arguments": {
+      "action": "update",
+      "id": "synthetic",
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/rules",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "PUT",
+        "path": "/api/rules/synthetic",
+        "body": {
+          "id": "synthetic",
+          "name": "Changed",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "update",
+      "item": {
+        "id": "synthetic",
+        "name": "Changed",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "compose_rule",
+    "arguments": {
+      "source": {
+        "kind": "values",
+        "text": "example.test"
+      },
+      "rule": {
+        "policy": "DIRECT"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/rules/compose",
+        "body": {
+          "source": {
+            "kind": "values",
+            "text": "example.test"
+          },
+          "rule": {
+            "policy": "DIRECT"
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "source": {
+          "kind": "values",
+          "text": "example.test"
+        },
+        "rule": {
+          "policy": "DIRECT"
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_rule_dns",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/rules/dns",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "set_rule_dns",
+    "arguments": {
+      "routes": {
+        "synthetic": "default"
+      }
+    },
+    "calls": [
+      {
+        "method": "PUT",
+        "path": "/api/rules/dns",
+        "body": {
+          "routes": {
+            "synthetic": "default"
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "routes": {
+          "synthetic": "default"
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "batch_add_rules",
+    "arguments": {
+      "rule_type": "DOMAIN",
+      "domains": [
+        "example.test"
+      ],
+      "policy": "DIRECT"
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/rules/batch",
+        "body": {
+          "rule_type": "DOMAIN",
+          "domains": [
+            "example.test"
+          ],
+          "policy": "DIRECT"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "rule_type": "DOMAIN",
+        "domains": [
+          "example.test"
+        ],
+        "policy": "DIRECT"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "test_rule_match",
+    "arguments": {
+      "query": "example.test"
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/rules/match-test",
+        "body": {
+          "query": "example.test"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "query": "example.test"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "find_duplicate_rules",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/rules/find-duplicates",
+        "body": {},
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {},
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "list_rule_library",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/rule-library",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": [
+      {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      }
+    ]
+  },
+  {
+    "name": "manage_rule_library",
+    "arguments": {
+      "action": "update",
+      "id": "synthetic",
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/rule-library",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "PUT",
+        "path": "/api/rule-library/synthetic",
+        "body": {
+          "id": "synthetic",
+          "name": "Changed",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "update",
+      "item": {
+        "id": "synthetic",
+        "name": "Changed",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_rule_library_content",
+    "arguments": {
+      "id": "synthetic"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/rule-library/content/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "content": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "cache_rule_library",
+    "arguments": {
+      "ids": [
+        "synthetic"
+      ]
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/rule-library/cache",
+        "body": {
+          "rule_ids": [
+            "synthetic"
+          ]
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "rule_ids": [
+          "synthetic"
+        ]
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "test_rule_library",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/rule-library/test",
+        "body": {},
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {},
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "list_proxy_groups",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/proxy-groups",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": [
+      {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      }
+    ]
+  },
+  {
+    "name": "manage_proxy_group",
+    "arguments": {
+      "action": "update",
+      "id": "synthetic",
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "PUT",
+        "path": "/api/proxy-groups/synthetic",
+        "body": {
+          "name": "Changed"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "update",
+      "item": {
+        "name": "Changed"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "preview_proxy_group_regex",
+    "arguments": {
+      "regex": "HK",
+      "source": "subscription"
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/proxy-groups/preview-regex",
+        "body": {
+          "regex": "HK",
+          "source": "subscription",
+          "subscriptions": [],
+          "aggregations": []
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "regex": "HK",
+        "source": "subscription",
+        "subscriptions": [],
+        "aggregations": []
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "preview_config",
+    "arguments": {
+      "target": "mihomo"
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/generate/mihomo/preview",
+        "body": {
+          "base_url": ""
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "base_url": ""
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "generate_config",
+    "arguments": {
+      "target": "mihomo"
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/generate/mihomo",
+        "body": {
+          "base_url": ""
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "success": true,
+      "target": "mihomo",
+      "saved": true,
+      "size": null,
+      "message": "mihomo 配置已生成并保存到数据目录，订阅链接即可取到新配置",
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_config_backup",
+    "arguments": {
+      "action": "export"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/config/export",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "list_agents",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_agent",
+    "arguments": {
+      "id": "synthetic"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "agent": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_agent",
+    "arguments": {
+      "action": "push_config",
+      "id": "synthetic"
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/agents/synthetic/push-config",
+        "body": {
+          "base_url": ""
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "base_url": ""
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_agent_logs",
+    "arguments": {
+      "id": "synthetic"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/synthetic/logs",
+        "body": null,
+        "query": {
+          "lines": "100"
+        }
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_agent_metrics",
+    "arguments": {
+      "id": "synthetic"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/synthetic/metrics",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_agent_install_info",
+    "arguments": {
+      "method": "docker_compose"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/docker-agent-compose",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_mosdns_settings",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/mosdns/rulesets",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/mosdns/custom-matches",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/mosdns/dns-servers",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/mosdns/log-settings",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/mosdns/api-settings",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/mosdns/cache-settings",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "rulesets": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "custom_matches": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "dns_servers": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "log": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "api": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "cache": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "update_mosdns_settings",
+    "arguments": {
+      "section": "cache",
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/mosdns/cache-settings",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "POST",
+        "path": "/api/mosdns/cache-settings",
+        "body": {
+          "id": "synthetic",
+          "name": "Changed",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "id": "synthetic",
+        "name": "Changed",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "convert_mosdns_rule",
+    "arguments": {
+      "url": "https://example.test/rules"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/mosdns/rule-proxy",
+        "body": null,
+        "query": {
+          "url": "https://example.test/rules"
+        }
+      }
+    ],
+    "out": {
+      "url": "https://example.test/rules",
+      "content": "synthetic text",
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_oxidns_settings",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/oxidns/settings",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "update_oxidns_settings",
+    "arguments": {
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/oxidns/settings",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "POST",
+        "path": "/api/oxidns/settings",
+        "body": {
+          "id": "synthetic",
+          "name": "Changed",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "id": "synthetic",
+        "name": "Changed",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_overview",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/stats/overview",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_settings",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/server-domain",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/config-token",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/settings/subscription-aggregation",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/backup/config",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/rule-library/proxy-domains",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/version",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "server_domain": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "config_token": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "subscription_aggregation": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "backup": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "github_proxy": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "version": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "update_settings",
+    "arguments": {
+      "section": "backup",
+      "data": {
+        "name": "Changed"
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/backup/config",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "POST",
+        "path": "/api/backup/config",
+        "body": {
+          "id": "synthetic",
+          "name": "Changed",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "id": "synthetic",
+        "name": "Changed",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "run_backup",
+    "arguments": {
+      "action": "test_connection"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/backup/config",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "POST",
+        "path": "/api/backup/test",
+        "body": {
+          "id": "synthetic",
+          "name": "Existing",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_app_logs",
+    "arguments": {},
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/logs/tail",
+        "body": null,
+        "query": {
+          "lines": "100"
+        }
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_app_logs",
+    "arguments": {
+      "action": "info"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/logs/info",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_custom_config",
+    "arguments": {
+      "target": "mihomo",
+      "action": "get"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/custom-config/mihomo",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_subscription",
+    "arguments": {
+      "id": "synthetic",
+      "action": "create",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/subscriptions",
+        "body": {
+          "id": "synthetic",
+          "name": "Created"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "create",
+      "item": {
+        "id": "synthetic",
+        "name": "Created"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_subscription",
+    "arguments": {
+      "id": "synthetic",
+      "action": "delete",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "DELETE",
+        "path": "/api/subscriptions/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "delete",
+      "id": "synthetic",
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_node",
+    "arguments": {
+      "id": "synthetic",
+      "action": "create",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/nodes",
+        "body": {
+          "id": "synthetic",
+          "name": "Created"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "create",
+      "item": {
+        "id": "synthetic",
+        "name": "Created"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_node",
+    "arguments": {
+      "id": "synthetic",
+      "action": "delete",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "DELETE",
+        "path": "/api/nodes/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "delete",
+      "id": "synthetic",
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_rule_library",
+    "arguments": {
+      "id": "synthetic",
+      "action": "create",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/rule-library",
+        "body": {
+          "id": "synthetic",
+          "name": "Created"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "create",
+      "item": {
+        "id": "synthetic",
+        "name": "Created"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_rule_library",
+    "arguments": {
+      "id": "synthetic",
+      "action": "delete",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "DELETE",
+        "path": "/api/rule-library/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "delete",
+      "id": "synthetic",
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_proxy_group",
+    "arguments": {
+      "id": "synthetic",
+      "action": "create",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/proxy-groups",
+        "body": {
+          "id": "synthetic",
+          "name": "Created"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "create",
+      "item": {
+        "id": "synthetic",
+        "name": "Created"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_proxy_group",
+    "arguments": {
+      "id": "synthetic",
+      "action": "delete",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "DELETE",
+        "path": "/api/proxy-groups/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "delete",
+      "id": "synthetic",
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_rule",
+    "arguments": {
+      "id": "synthetic",
+      "action": "create",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/rules",
+        "body": {
+          "id": "synthetic",
+          "name": "Created"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "create",
+      "item": {
+        "id": "synthetic",
+        "name": "Created"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_rule",
+    "arguments": {
+      "id": "synthetic",
+      "action": "delete",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "DELETE",
+        "path": "/api/rules/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "delete",
+      "id": "synthetic",
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_aggregation",
+    "arguments": {
+      "id": "synthetic",
+      "action": "create",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/aggregations",
+        "body": {
+          "id": "synthetic",
+          "name": "Created"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "create",
+      "item": {
+        "id": "synthetic",
+        "name": "Created"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_aggregation",
+    "arguments": {
+      "id": "synthetic",
+      "action": "delete",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "DELETE",
+        "path": "/api/aggregations/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "delete",
+      "id": "synthetic",
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_profile",
+    "arguments": {
+      "id": "synthetic",
+      "action": "create",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/profiles",
+        "body": {
+          "id": "synthetic",
+          "name": "Created"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_profile",
+    "arguments": {
+      "id": "synthetic",
+      "action": "delete",
+      "data": {
+        "id": "synthetic",
+        "name": "Created"
+      }
+    },
+    "calls": [
+      {
+        "method": "DELETE",
+        "path": "/api/profiles/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "success": true,
+      "profile_id": "synthetic"
+    }
+  },
+  {
+    "name": "manage_rule",
+    "arguments": {
+      "action": "create",
+      "position": "bottom",
+      "data": {
+        "id": "synthetic",
+        "dns": "default"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/rules",
+        "body": {
+          "id": "synthetic"
+        },
+        "query": {}
+      },
+      {
+        "method": "POST",
+        "path": "/api/rules/reorder",
+        "body": {
+          "ids": [
+            "synthetic"
+          ],
+          "position": "bottom"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "create",
+      "item": {
+        "id": "synthetic"
+      },
+      "position": "bottom",
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_subscription",
+    "arguments": {
+      "action": "update",
+      "id": "synthetic",
+      "data": {
+        "health_check": {
+          "enable": false
+        }
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/subscriptions",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "PUT",
+        "path": "/api/subscriptions/synthetic",
+        "body": {
+          "id": "synthetic",
+          "name": "Existing",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "action": "update",
+      "item": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "preview_aggregation",
+    "arguments": {
+      "id": "synthetic",
+      "mode": "count"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/aggregations/synthetic/count",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "preview_aggregation",
+    "arguments": {
+      "id": "synthetic",
+      "mode": "provider"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/aggregations/synthetic/provider",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "provider": "synthetic text",
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_agent",
+    "arguments": {
+      "id": "synthetic",
+      "include_status": true
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/synthetic",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "GET",
+        "path": "/api/agents/synthetic/status",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "agent": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "status": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_agent_metrics",
+    "arguments": {
+      "id": "synthetic",
+      "scope": "history",
+      "hours": 3
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/synthetic/metrics/history",
+        "body": null,
+        "query": {
+          "hours": "3"
+        }
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_agent_logs",
+    "arguments": {
+      "id": "synthetic",
+      "lines": 7,
+      "log_path": "/var/log/synthetic.log"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/synthetic/logs",
+        "body": null,
+        "query": {
+          "lines": "7",
+          "log_path": "/var/log/synthetic.log"
+        }
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_agent_install_info",
+    "arguments": {
+      "method": "docker_run",
+      "params": {
+        "name": "Synthetic",
+        "enable_mihomo": true
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/docker-agent-run",
+        "body": null,
+        "query": {
+          "name": "Synthetic",
+          "enable_mihomo": "True"
+        }
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_settings",
+    "arguments": {
+      "section": "backup"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/backup/config",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "get_mosdns_settings",
+    "arguments": {
+      "section": "cache"
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/mosdns/cache-settings",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "update_settings",
+    "arguments": {
+      "section": "server_domain",
+      "data": {
+        "server_domain": "https://panel.example.test"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/server-domain",
+        "body": {
+          "new_domain": "https://panel.example.test"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "new_domain": "https://panel.example.test"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "update_settings",
+    "arguments": {
+      "section": "config_token",
+      "data": {
+        "config_token": "synthetic-token"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/config-token",
+        "body": {
+          "token": "synthetic-token"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "token": "synthetic-token"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_config_backup",
+    "arguments": {
+      "action": "import",
+      "scope": "profile",
+      "profile_id": "default",
+      "data": {
+        "name": "Synthetic"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/profiles/default/import",
+        "body": {
+          "name": "Synthetic"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "name": "Synthetic"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_config_backup",
+    "arguments": {
+      "action": "reset"
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/config/reset",
+        "body": {},
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {},
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_config_backup",
+    "arguments": {
+      "action": "import",
+      "data": {
+        "name": "Synthetic"
+      }
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/config/import",
+        "body": {
+          "name": "Synthetic"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "name": "Synthetic"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "update_oxidns_settings",
+    "arguments": {
+      "data": {
+        "nested": {
+          "child": null
+        }
+      }
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/oxidns/settings",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "POST",
+        "path": "/api/oxidns/settings",
+        "body": {
+          "id": "synthetic",
+          "name": "Existing",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          },
+          "nested": {
+            "child": null
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "id": "synthetic",
+        "name": "Existing",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        },
+        "nested": {
+          "child": null
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "set_rule_dns",
+    "arguments": {
+      "routes": {
+        "synthetic": "direct"
+      },
+      "skip_unsupported": true
+    },
+    "calls": [
+      {
+        "method": "PUT",
+        "path": "/api/rules/dns",
+        "body": {
+          "routes": {
+            "synthetic": "direct"
+          },
+          "skip_unsupported": true
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "routes": {
+          "synthetic": "direct"
+        },
+        "skip_unsupported": true
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_custom_config",
+    "arguments": {
+      "target": "surge",
+      "action": "set",
+      "content": ""
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/custom-config/surge",
+        "body": {
+          "config": ""
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "config": ""
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_agent",
+    "arguments": {
+      "id": "synthetic",
+      "action": "update",
+      "data": {
+        "name": "Changed"
+      },
+      "log_path": "/var/log/synthetic.log",
+      "enabled": false
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/synthetic",
+        "body": null,
+        "query": {}
+      },
+      {
+        "method": "PUT",
+        "path": "/api/agents/synthetic",
+        "body": {
+          "id": "synthetic",
+          "name": "Changed",
+          "keep": true,
+          "health_check": {
+            "enable": false,
+            "interval": 300
+          }
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "id": "synthetic",
+        "name": "Changed",
+        "keep": true,
+        "health_check": {
+          "enable": false,
+          "interval": 300
+        }
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_agent",
+    "arguments": {
+      "id": "synthetic",
+      "action": "delete",
+      "data": {
+        "name": "Changed"
+      },
+      "log_path": "/var/log/synthetic.log",
+      "enabled": false
+    },
+    "calls": [
+      {
+        "method": "DELETE",
+        "path": "/api/agents/synthetic",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": null,
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_agent",
+    "arguments": {
+      "id": "synthetic",
+      "action": "restart",
+      "data": {
+        "name": "Changed"
+      },
+      "log_path": "/var/log/synthetic.log",
+      "enabled": false
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/agents/synthetic/restart",
+        "body": {},
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {},
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_agent",
+    "arguments": {
+      "id": "synthetic",
+      "action": "uninstall",
+      "data": {
+        "name": "Changed"
+      },
+      "log_path": "/var/log/synthetic.log",
+      "enabled": false
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/agents/synthetic/uninstall",
+        "body": {},
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {},
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_agent",
+    "arguments": {
+      "id": "synthetic",
+      "action": "upgrade",
+      "data": {
+        "name": "Changed"
+      },
+      "log_path": "/var/log/synthetic.log",
+      "enabled": false
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/agents/synthetic/update",
+        "body": {},
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {},
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_agent",
+    "arguments": {
+      "id": "synthetic",
+      "action": "clear_log",
+      "data": {
+        "name": "Changed"
+      },
+      "log_path": "/var/log/synthetic.log",
+      "enabled": false
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/agents/synthetic/logs/clear",
+        "body": {
+          "log_path": "/var/log/synthetic.log"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "log_path": "/var/log/synthetic.log"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_agent",
+    "arguments": {
+      "id": "synthetic",
+      "action": "validate_log_path",
+      "data": {
+        "name": "Changed"
+      },
+      "log_path": "/var/log/synthetic.log",
+      "enabled": false
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/agents/synthetic/logs/validate",
+        "body": {
+          "path": "/var/log/synthetic.log"
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "path": "/var/log/synthetic.log"
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_agent",
+    "arguments": {
+      "id": "synthetic",
+      "action": "get_logging",
+      "data": {
+        "name": "Changed"
+      },
+      "log_path": "/var/log/synthetic.log",
+      "enabled": false
+    },
+    "calls": [
+      {
+        "method": "GET",
+        "path": "/api/agents/synthetic/config/logging",
+        "body": null,
+        "query": {}
+      }
+    ],
+    "out": {
+      "id": "synthetic",
+      "name": "Existing",
+      "keep": true,
+      "health_check": {
+        "enable": false,
+        "interval": 300
+      },
+      "profile_id": "default"
+    }
+  },
+  {
+    "name": "manage_agent",
+    "arguments": {
+      "id": "synthetic",
+      "action": "set_logging",
+      "data": {
+        "name": "Changed"
+      },
+      "log_path": "/var/log/synthetic.log",
+      "enabled": false
+    },
+    "calls": [
+      {
+        "method": "POST",
+        "path": "/api/agents/synthetic/config/logging",
+        "body": {
+          "enabled": false
+        },
+        "query": {}
+      }
+    ],
+    "out": {
+      "data": {
+        "enabled": false
+      },
+      "profile_id": "default"
+    }
+  }
+]

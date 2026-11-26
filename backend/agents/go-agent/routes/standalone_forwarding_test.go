@@ -47,7 +47,7 @@ func TestAIOForwardingStandaloneLayoutRecognition(t *testing.T) {
 		{"AIO unit", func(f *aioFixture) { f.cfg.AgentServiceUnit = "configflow-agent-mihomo" }},
 		{"native AIO flag", func(f *aioFixture) { f.cfg.NativeAIO = true }},
 		{"command manager", func(f *aioFixture) { f.cfg.ServiceManager = "command" }},
-		{"supervisor manager", func(f *aioFixture) { f.cfg.ServiceManager = "supervisor" }},
+		{"supervisor manager", func(f *aioFixture) { f.cfg.ServiceManager = "s6" }},
 		{"mixed layout directory", func(f *aioFixture) { os.Mkdir(filepath.Join(aioAgentRoot, "mihomo"), 0755) }},
 		{"mixed layout file", func(f *aioFixture) { os.WriteFile(filepath.Join(aioAgentRoot, "mihomo"), nil, 0644) }},
 	} {
@@ -142,9 +142,9 @@ func TestAIOForwardingStandaloneHookLines(t *testing.T) {
 	if target.SystemdHookLine() != "ExecStartPre=/bin/sh "+hook || target.OpenRCHookLine() != "    /bin/sh "+hook+" || return 1" {
 		t.Fatalf("wrong hook lines: %q %q", target.SystemdHookLine(), target.OpenRCHookLine())
 	}
-	// The zero-argument helpers keep describing the native AIO Mihomo Agent.
-	if aioForwardingHookPath() != filepath.Join(aioAgentRoot, "mihomo", "enable-ipv4-forwarding.sh") {
-		t.Fatalf("default hook path changed: %s", aioForwardingHookPath())
+	// Check the native AIO Mihomo Agent default too.
+	if aioDefaultTarget().Hook() != filepath.Join(aioAgentRoot, "mihomo", "enable-ipv4-forwarding.sh") {
+		t.Fatalf("default hook path changed: %s", aioDefaultTarget().Hook())
 	}
 }
 
@@ -190,14 +190,14 @@ func TestAIOForwardingStandalonePersistKeepsForwardingOnGatewayRemoval(t *testin
 			if _, err := os.Stat(filepath.Join(aioAgentRoot, "linux-gateway.json")); err != nil {
 				t.Fatalf("gateway journal not in the single-service Agent directory: %v", err)
 			}
-			if gatewayManaged(f.cfg)["preserves_forwarding"] != false {
+			if gatewayManaged(f.cfg).PreservesForwarding {
 				t.Fatal("forwarding preserved before it was persisted")
 			}
 			if _, err := persistAIOForwarding(f.cfg, false); err != nil {
 				t.Fatal(err)
 			}
 			f.assertPersisted(t)
-			if gatewayManaged(f.cfg)["preserves_forwarding"] != true {
+			if !gatewayManaged(f.cfg).PreservesForwarding {
 				t.Fatal("persisted single-service forwarding not recognised by the gateway")
 			}
 			f.writeConfig(t, false)

@@ -34,10 +34,10 @@ export function gatewaySpecErrors(draft: LinuxGatewaySpec): string[] {
   const network = match ? ipv4(match[1]) : null
   const prefix = match ? Number(match[2]) : -1
   if (network === null || prefix < 8 || prefix > 30) {
-    errors.push('LAN 网段需要使用 /8 到 /30 的 CIDR 格式，例如 192.168.1.0/24。')
+    errors.push('LAN 网段需要使用 /8 到 /30 的 CIDR 格式，例如 192.0.2.0/24。')
   } else {
     const size = 2 ** (32 - prefix)
-    if (network % size !== 0) errors.push('LAN 网段请填写网络地址，例如 192.168.1.0/24，而不是设备地址。')
+    if (network % size !== 0) errors.push('LAN 网段请填写网络地址，例如 192.0.2.0/24，而不是设备地址。')
     if (address !== null && Math.floor(address / size) !== Math.floor(network / size)) errors.push('Linux 地址必须在填写的 LAN 网段内。')
     if (gateway !== null && Math.floor(gateway / size) !== Math.floor(network / size)) errors.push('此向导用于单网卡同网段网关，主路由地址必须在 LAN 网段内。')
     if (address !== null && (address % size === 0 || address % size === size - 1)) errors.push('Linux 地址不能使用该网段的网络地址或广播地址。')

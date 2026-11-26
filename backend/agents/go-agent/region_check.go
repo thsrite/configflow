@@ -363,17 +363,17 @@ func regionFailure(w http.ResponseWriter, err error) {
 	if errors.Is(err, errRegionProbeMissing) {
 		status = http.StatusConflict
 	}
-	routes.JsonResponse(w, status, map[string]interface{}{"success": false, "message": err.Error()})
+	routes.JsonResponse(w, status, routes.MessageResponse{Success: false, Message: err.Error()})
 }
 
 func regionCheckPrecheck(w http.ResponseWriter, cfg *Config) (*mihomoController, string, bool) {
 	if cfg.ServiceType != "mihomo" {
-		routes.JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": "region check requires a mihomo agent"})
+		routes.JsonResponse(w, http.StatusBadRequest, routes.MessageResponse{Success: false, Message: "region check requires a mihomo agent"})
 		return nil, "", false
 	}
 	controller, err := resolveMihomoController(cfg.ConfigPath)
 	if err != nil {
-		routes.JsonResponse(w, http.StatusServiceUnavailable, map[string]interface{}{"success": false, "message": "mihomo controller unavailable: " + err.Error()})
+		routes.JsonResponse(w, http.StatusServiceUnavailable, routes.MessageResponse{Success: false, Message: "mihomo controller unavailable: " + err.Error()})
 		return nil, "", false
 	}
 	listener, err := resolveRegionProbeListener(cfg.ConfigPath)
@@ -399,7 +399,7 @@ func regionTargetsHandler(cfg *Config) http.HandlerFunc {
 			regionFailure(w, err)
 			return
 		}
-		routes.JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "targets": targets})
+		routes.JsonResponse(w, http.StatusOK, regionTargetsResponse{Success: true, Targets: targets})
 	}
 }
 
@@ -415,12 +415,12 @@ func regionCheckHandler(cfg *Config) http.HandlerFunc {
 		}
 		var req regionCheckRequest
 		if err := json.NewDecoder(io.LimitReader(r.Body, 64*1024)).Decode(&req); err != nil {
-			routes.JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": "invalid region check request"})
+			routes.JsonResponse(w, http.StatusBadRequest, routes.MessageResponse{Success: false, Message: "invalid region check request"})
 			return
 		}
 		patterns, err := validateRegionCheck(&req)
 		if err != nil {
-			routes.JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": err.Error()})
+			routes.JsonResponse(w, http.StatusBadRequest, routes.MessageResponse{Success: false, Message: err.Error()})
 			return
 		}
 		results, err := runRegionCheck(r.Context(), controller, listener, req, patterns)
@@ -428,6 +428,6 @@ func regionCheckHandler(cfg *Config) http.HandlerFunc {
 			regionFailure(w, err)
 			return
 		}
-		routes.JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "target": req.Target, "results": results})
+		routes.JsonResponse(w, http.StatusOK, regionCheckResponse{Results: results, Success: true, Target: req.Target})
 	}
 }

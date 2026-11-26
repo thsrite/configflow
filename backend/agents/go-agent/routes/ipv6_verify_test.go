@@ -36,12 +36,12 @@ func ipv6VerificationTestConfig(t *testing.T, controller string) *Config {
 	return cfg
 }
 
-func ipv6RunVerification(t *testing.T, cfg *Config, action string, body interface{}) (int, map[string]interface{}) {
+func ipv6RunVerification(t *testing.T, cfg *Config, action string, body any) (int, map[string]any) {
 	t.Helper()
 	data, _ := json.Marshal(body)
 	recorder := httptest.NewRecorder()
 	IPv6ReadinessHandler(cfg, action)(recorder, httptest.NewRequest(http.MethodPost, "/api/ipv6-readiness/"+action, strings.NewReader(string(data))))
-	var result map[string]interface{}
+	var result map[string]any
 	if json.Unmarshal(recorder.Body.Bytes(), &result) != nil {
 		t.Fatalf("invalid response %s", recorder.Body.String())
 	}
@@ -50,10 +50,10 @@ func ipv6RunVerification(t *testing.T, cfg *Config, action string, body interfac
 	}
 	return recorder.Code, result
 }
-func ipv6CheckStatus(t *testing.T, result map[string]interface{}, id string) string {
+func ipv6CheckStatus(t *testing.T, result map[string]any, id string) string {
 	t.Helper()
-	for _, raw := range result["checks"].([]interface{}) {
-		row := raw.(map[string]interface{})
+	for _, raw := range result["checks"].([]any) {
+		row := raw.(map[string]any)
 		if row["id"] == id {
 			return row["status"].(string)
 		}
@@ -92,9 +92,9 @@ func TestIPv6VerificationRequiresFreshSuccessfulHTTPNotDelayAlone(t *testing.T) 
 					completed = time.Now()
 					fmt.Fprint(w, `{"delay":2}`)
 				case "/proxies/node":
-					node := map[string]interface{}{"name": "node", "type": "Socks5", "id": "stable"}
+					node := map[string]any{"name": "node", "type": "Socks5", "id": "stable"}
 					if test.history {
-						node["extra"] = map[string]interface{}{target: map[string]interface{}{"alive": test.alive, "history": []interface{}{map[string]interface{}{"time": completed, "delay": 2}}}}
+						node["extra"] = map[string]any{target: map[string]any{"alive": test.alive, "history": []any{map[string]any{"time": completed, "delay": 2}}}}
 					}
 					_ = json.NewEncoder(w).Encode(node)
 				default:
@@ -104,7 +104,7 @@ func TestIPv6VerificationRequiresFreshSuccessfulHTTPNotDelayAlone(t *testing.T) 
 			defer server.Close()
 			cfg := ipv6VerificationTestConfig(t, strings.TrimPrefix(server.URL, "http://"))
 			data, _ := os.ReadFile(cfg.ConfigPath)
-			code, result := ipv6RunVerification(t, cfg, "verify", map[string]interface{}{"test_url": target, "expected_config_sha256": sha256Hex(data)})
+			code, result := ipv6RunVerification(t, cfg, "verify", map[string]any{"test_url": target, "expected_config_sha256": sha256Hex(data)})
 			if code != 200 || ipv6CheckStatus(t, result, "proxy_http") != test.want {
 				t.Fatalf("unexpected verification %v", result)
 			}
@@ -122,8 +122,8 @@ func TestIPv6VerificationRequiresFreshSuccessfulHTTPNotDelayAlone(t *testing.T) 
 
 func TestIPv6VerificationRejectsWrongPublishedFileBeforeNetwork(t *testing.T) {
 	cfg := ipv6VerificationTestConfig(t, "127.0.0.1:1")
-	code, result := ipv6RunVerification(t, cfg, "verify", map[string]interface{}{"expected_config_sha256": strings.Repeat("0", 64)})
-	if code != 200 || ipv6CheckStatus(t, result, "deployed_config") != "error" || len(result["checks"].([]interface{})) != 1 {
+	code, result := ipv6RunVerification(t, cfg, "verify", map[string]any{"expected_config_sha256": strings.Repeat("0", 64)})
+	if code != 200 || ipv6CheckStatus(t, result, "deployed_config") != "error" || len(result["checks"].([]any)) != 1 {
 		t.Fatalf("wrong file was verified: %v", result)
 	}
 }
@@ -199,7 +199,7 @@ func TestIPv6ClientUsesDNSAnswersAndDoesNotFollowRedirects(t *testing.T) {
 	ipv6ClientRouteRead = func(_ context.Context, _ string) ([]byte, error) {
 		return []byte(`[{"gateway":"192.0.2.1","dev":"eth0"}]`), nil
 	}
-	code, result := ipv6RunVerification(t, cfg, "verify-client", map[string]interface{}{"test_url": "http://fixture.test/test", "fake_ipv4_range": "198.18.0.0/16", "request_id": "test-request-123456"})
+	code, result := ipv6RunVerification(t, cfg, "verify-client", map[string]any{"test_url": "http://fixture.test/test", "fake_ipv4_range": "198.18.0.0/16", "request_id": "test-request-123456"})
 	if code != 200 || ipv6CheckStatus(t, result, "client_dns_aaaa") != "ok" || ipv6CheckStatus(t, result, "client_http_ipv4") != "error" {
 		t.Fatalf("redirect passed %v", result)
 	}
@@ -217,16 +217,16 @@ func TestIPv6SocketEvidenceRequiresOwnedObservedSocket(t *testing.T) {
 	ipv6VerifySocketRead = func(pid int, ip net.IP, port int) bool {
 		return pid == 42 && ip.Equal(net.ParseIP("2001:db8::1")) && port == 1080
 	}
-	stop := ipv6ObserveNodeSockets(context.Background(), &Config{}, map[string]interface{}{"server": "2001:db8::1", "port": 1080}, "")
+	stop := ipv6ObserveNodeSockets(context.Background(), &Config{}, map[string]any{"server": "2001:db8::1", "port": 1080}, "")
 	time.Sleep(time.Millisecond)
 	if stop().Status != "ok" {
 		t.Fatal("actual socket not recorded")
 	}
-	if ipv6ObserveNodeSockets(context.Background(), &Config{}, map[string]interface{}{"server": "node.test", "port": 1080}, "")().Status != "unknown" {
+	if ipv6ObserveNodeSockets(context.Background(), &Config{}, map[string]any{"server": "node.test", "port": 1080}, "")().Status != "unknown" {
 		t.Fatal("DNS node inferred to use IPv6")
 	}
 	match := ipv6ConnectionMatch{SourcePort: 32000, RemoteDestination: "2001:db8::1", Network: "tcp"}
-	node := map[string]interface{}{"server": "2001:db8::1", "port": 1080}
+	node := map[string]any{"server": "2001:db8::1", "port": 1080}
 	proxy := ipv6RuntimeProxy{Type: "Socks5"}
 	if !ipv6ConnectionTransport(context.Background(), &Config{}, match, node, proxy) {
 		t.Fatal("matching runtime remote and owned IPv6 socket not correlated")
@@ -252,11 +252,11 @@ func TestIPv6ConnectionsOnlyAssociatesNewClientConnections(t *testing.T) {
 		switch r.URL.Path {
 		case "/connections":
 			count++
-			connections := []interface{}{map[string]interface{}{"id": "old", "metadata": map[string]interface{}{"sourceIP": "192.0.2.5", "host": "fixture.test"}, "chains": []string{"node"}}}
+			connections := []any{map[string]any{"id": "old", "metadata": map[string]any{"sourceIP": "192.0.2.5", "host": "fixture.test"}, "chains": []string{"node"}}}
 			if count > 1 {
-				connections = append(connections, map[string]interface{}{"id": "new", "metadata": map[string]interface{}{"sourceIP": "192.0.2.5", "sourcePort": "32000", "host": "fixture.test", "destinationIP": "198.18.0.2", "destinationPort": "80"}, "chains": []string{"node", "select"}, "rule": "Match"})
+				connections = append(connections, map[string]any{"id": "new", "metadata": map[string]any{"sourceIP": "192.0.2.5", "sourcePort": "32000", "host": "fixture.test", "destinationIP": "198.18.0.2", "destinationPort": "80"}, "chains": []string{"node", "select"}, "rule": "Match"})
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"connections": connections})
+			_ = json.NewEncoder(w).Encode(map[string]any{"connections": connections})
 		case "/proxies":
 			fmt.Fprint(w, `{"proxies":{"node":{"type":"Socks5"},"select":{"type":"Selector","all":["node"]}}}`)
 		default:
@@ -265,12 +265,12 @@ func TestIPv6ConnectionsOnlyAssociatesNewClientConnections(t *testing.T) {
 	}))
 	defer server.Close()
 	cfg := ipv6VerificationTestConfig(t, strings.TrimPrefix(server.URL, "http://"))
-	code, result := ipv6RunVerification(t, cfg, "verify-connections", map[string]interface{}{"source_ip": "192.0.2.5", "host": "fixture.test", "request_id": "test-request-123456"})
+	code, result := ipv6RunVerification(t, cfg, "verify-connections", map[string]any{"source_ip": "192.0.2.5", "host": "fixture.test", "request_id": "test-request-123456"})
 	if code != 200 || ipv6CheckStatus(t, result, "client_mihomo_path") != "ok" {
 		t.Fatalf("new connection not found %v", result)
 	}
-	matches := result["matches"].([]interface{})
-	if len(matches) != 1 || matches[0].(map[string]interface{})["id"] != "new" {
+	matches := result["matches"].([]any)
+	if len(matches) != 1 || matches[0].(map[string]any)["id"] != "new" {
 		t.Fatal("old connection used as evidence")
 	}
 }
@@ -278,10 +278,10 @@ func TestIPv6ConnectionsOnlyAssociatesNewClientConnections(t *testing.T) {
 func TestIPv6FreshHTTPResultRejectsStaleOrConcurrentHistory(t *testing.T) {
 	started := time.Now()
 	for _, times := range [][]time.Time{{started.Add(-time.Second)}, {started, started.Add(time.Millisecond)}} {
-		raw, _ := json.Marshal(map[string]interface{}{"extra": map[string]interface{}{"https://test/": map[string]interface{}{"alive": true, "history": func() []interface{} {
-			out := []interface{}{}
+		raw, _ := json.Marshal(map[string]any{"extra": map[string]any{"https://test/": map[string]any{"alive": true, "history": func() []any {
+			out := []any{}
 			for _, when := range times {
-				out = append(out, map[string]interface{}{"time": when, "delay": 3})
+				out = append(out, map[string]any{"time": when, "delay": 3})
 			}
 			return out
 		}()}}})
@@ -301,7 +301,7 @@ func TestIPv6VerificationCapabilitiesExcludeUnknownContainerNetwork(t *testing.T
 		cfg := &Config{ServiceType: "oxidns", ServiceManager: manager}
 		rec := httptest.NewRecorder()
 		CapabilitiesHandler(cfg)(rec, httptest.NewRequest(http.MethodGet, "/api/capabilities", nil))
-		var result map[string]interface{}
+		var result map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &result)
 		_, present := result["ipv6_client_probe_protocols"]
 		if present != (manager == "systemd") {

@@ -1,0 +1,9 @@
+# L6 synthetic subscription (served by the lab infra CT at /sub/lab.yaml).
+# TEST-NET-1 addresses and fake credentials only: nothing here reaches a real proxy.
+proxies:
+  - {name: "L6 香港 01", type: ss, server: 192.0.2.11, port: 8388, cipher: aes-256-gcm, password: l6-synthetic-1}
+  - {name: "L6 香港 02", type: ss, server: 192.0.2.12, port: 8388, cipher: aes-256-gcm, password: l6-synthetic-2}
+  - {name: "L6 日本 01", type: ss, server: 192.0.2.21, port: 8388, cipher: aes-256-gcm, password: l6-synthetic-3}
+  - {name: "L6 新加坡 01", type: ss, server: 192.0.2.31, port: 8388, cipher: aes-256-gcm, password: l6-synthetic-4}
+  - {name: "L6 美国 01", type: trojan, server: 192.0.2.41, port: 443, password: l6-synthetic-5, sni: example.com}
+  - {name: "L6 美国 02", type: vmess, server: 192.0.2.42, port: 443, uuid: 00000000-0000-4000-8000-000000000006, alterId: 0, cipher: auto}

@@ -1,0 +1,330 @@
+package routers
+
+import (
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
+	"context"
+	"errors"
+	"fmt"
+	"net/netip"
+	"slices"
+	"strings"
+)
+
+var advisoryMetadata = []string{".id", "chain", "action", "comment", "disabled", "invalid", "dynamic", "bytes", "packets", "log", "log-prefix", "reject-with"}
+var advisoryScope = []string{"src-address", "dst-address", "src-address-list", "dst-address-list", "in-interface", "out-interface", "in-interface-list", "out-interface-list", "src-address-type", "dst-address-type"}
+
+func advisoryLive(r ros.Row) bool {
+	return r.Is("chain", "forward") && !ros.Flag(r["disabled"]) && !ros.Flag(r["invalid"])
+}
+func advisoryStates(r ros.Row) ([]string, bool) {
+	s := strings.TrimSpace(r.Text("connection-state"))
+	neg := strings.HasPrefix(s, "!")
+	out := []string{}
+	for _, v := range strings.Split(strings.TrimLeft(s, "!"), ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out, neg
+}
+func advisoryState(r ros.Row, state string) bool {
+	v, neg := advisoryStates(r)
+	return len(v) == 0 || (slices.Contains(v, state) != neg)
+}
+func advisoryEstablished(r ros.Row) bool {
+	return r.Is("action", "accept") && r.Set("connection-state") && advisoryState(r, "established") && !advisoryState(r, "invalid") && !advisoryState(r, "new")
+}
+func advisoryExtra(r ros.Row, protocol bool) bool {
+	for k, v := range r {
+		if slices.Contains(advisoryMetadata, k) || slices.Contains(advisoryScope, k) || k == "connection-state" {
+			continue
+		}
+		if protocol && k == "protocol" && slices.Contains([]string{"tcp", "6", "all"}, strings.ToLower(r.Text(k))) {
+			continue
+		}
+		if rosValueSet(v) {
+			return true
+		}
+	}
+	return false
+}
+func rosValueSet(v any) bool {
+	switch v := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return v
+	case string:
+		return v != ""
+	default:
+		return true
+	}
+}
+func advisoryRemaining(r ros.Row) bool { return advisoryState(r, "invalid") && !advisoryExtra(r, true) }
+func advisoryOverlap(values []string, networks []netip.Prefix, neg bool) bool {
+	if len(networks) == 0 {
+		return true
+	}
+	parsed := device.Networks(values)
+	if len(parsed) == 0 {
+		return len(values) == 0 || neg
+	}
+	if neg {
+		for _, target := range networks {
+			covered := false
+			for _, n := range parsed {
+				covered = covered || (n.Bits() <= target.Bits() && n.Contains(target.Addr()))
+			}
+			if !covered {
+				return true
+			}
+		}
+		return false
+	}
+	for _, target := range networks {
+		for _, n := range parsed {
+			if target.Overlaps(n) {
+				return true
+			}
+		}
+	}
+	return false
+}
+func advisoryPossible(r ros.Row, iface string, ctx *ros.NatContext, src, dst []netip.Prefix, sets map[string][]string) bool {
+	if r.Is("src-address-type", "local") || r.Is("dst-address-type", "local") {
+		return false
+	}
+	for _, direction := range []struct {
+		name string
+		nets []netip.Prefix
+	}{{"src", src}, {"dst", dst}} {
+		value := strings.TrimSpace(r.Text(direction.name + "-address"))
+		literal, neg := strings.CutPrefix(value, "!")
+		if value != "" && len(device.Networks([]string{literal})) > 0 && !advisoryOverlap([]string{literal}, direction.nets, neg) {
+			return false
+		}
+		value = strings.TrimSpace(r.Text(direction.name + "-address-list"))
+		name, neg := strings.CutPrefix(value, "!")
+		if values, known := sets[name]; value != "" && known {
+			if len(values) == 0 {
+				if !neg {
+					return false
+				}
+			} else if len(device.Networks(values)) > 0 && !advisoryOverlap(values, direction.nets, neg) {
+				return false
+			}
+		}
+	}
+	for _, dir := range []string{"in", "out"} {
+		for _, suffix := range []string{"interface", "interface-list"} {
+			if ros.SelectorMatches(r.Text(dir+"-"+suffix), iface, ctx, suffix == "interface-list") == ros.MatchNo {
+				return false
+			}
+		}
+	}
+	return true
+}
+func advisoryCovers(r ros.Row, iface string, ctx *ros.NatContext, src, dst []netip.Prefix, sets map[string][]string) bool {
+	if !advisoryState(r, "invalid") || advisoryExtra(r, false) {
+		return false
+	}
+	for _, dir := range []struct {
+		name string
+		nets []netip.Prefix
+	}{{"src", src}, {"dst", dst}} {
+		for _, suffix := range []string{"address", "address-list"} {
+			text := strings.TrimSpace(r.Text(dir.name + "-" + suffix))
+			if text == "" {
+				continue
+			}
+			key, neg := strings.CutPrefix(text, "!")
+			values := []string{key}
+			if suffix == "address-list" {
+				var known bool
+				values, known = sets[key]
+				if !known {
+					return false
+				}
+			}
+			if len(dir.nets) == 0 {
+				return false
+			}
+			parsed := device.Networks(values)
+			if len(values) > 0 && len(parsed) == 0 {
+				return false
+			}
+			if neg {
+				for _, net := range parsed {
+					for _, target := range dir.nets {
+						if net.Overlaps(target) {
+							return false
+						}
+					}
+				}
+			} else {
+				for _, target := range dir.nets {
+					covered := false
+					for _, net := range parsed {
+						covered = covered || (net.Bits() <= target.Bits() && net.Contains(target.Addr()))
+					}
+					if !covered {
+						return false
+					}
+				}
+			}
+		}
+	}
+	if r.Set("src-address-type") || r.Set("dst-address-type") {
+		return false
+	}
+	for _, dir := range []string{"in", "out"} {
+		for _, suffix := range []string{"interface", "interface-list"} {
+			if ros.SelectorMatches(r.Text(dir+"-"+suffix), iface, ctx, suffix == "interface-list") != ros.MatchYes {
+				return false
+			}
+		}
+	}
+	return true
+}
+func advisoryLabel(r ros.Row, index int) string {
+	clip := func(s string, n int) string {
+		v := []rune(strings.Join(strings.Fields(s), " "))
+		if len(v) > n {
+			v = v[:n]
+		}
+		return string(v)
+	}
+	identity := r.ID()
+	if identity == "" {
+		identity = fmt.Sprintf(messageAdvisoryRow, index+1)
+	}
+	identity = clip(identity, 40)
+	if comment := clip(r.Text("comment"), 100); comment != "" {
+		return fmt.Sprintf(messageAdvisoryLabel, comment, identity)
+	}
+	return fmt.Sprintf(messageAdvisoryID, identity)
+}
+
+// ReturnAdvisoryWarnings conservatively observes a one-way LAN state firewall.
+// This optional advice never changes operations, checks or fingerprints.
+func ReturnAdvisoryWarnings(ctx context.Context, desired *spec.Desired, state *RouterState, d Driver) ([]string, error) {
+	out := []string{}
+	rosDriver, ok := d.(*RouterOS)
+	if !ok || desired == nil || state == nil {
+		return out, nil
+	}
+	var rows []ros.Row
+	if state.ROSPolicy != nil {
+		rows = (*state.ROSPolicy)[ros.PathFilter]
+	} else if state.DNSGuard != nil {
+		rows = (*state.DNSGuard)[ros.PathFilter]
+	}
+	if rows == nil {
+		rows = rosDriver.ForwardFilterRows()
+	}
+	if rows == nil {
+		var err error
+		rows, err = rosDriver.List(ctx, ros.PathFilter)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			var re *device.RouterError
+			if errors.As(err, &re) {
+				return out, nil
+			}
+			return nil, err
+		}
+	}
+	candidate, established := false, false
+	for _, r := range rows {
+		if !advisoryLive(r) {
+			continue
+		}
+		established = established || advisoryEstablished(r)
+		values, neg := advisoryStates(r)
+		if slices.Contains([]string{"drop", "reject"}, r.Text("action")) && ((slices.Contains(values, "invalid") && !neg) || (established && advisoryRemaining(r))) {
+			candidate = true
+			break
+		}
+	}
+	if !candidate {
+		return out, nil
+	}
+	gateway, err := netip.ParseAddr(desired.ProxyGateway)
+	if err != nil || !gateway.Is4() {
+		return out, nil
+	}
+	context := ros.NatContext{}
+	if state.NatContext != nil {
+		context = *state.NatContext
+	}
+	network := netip.PrefixFrom(gateway, 24).Masked()
+	longest := -1
+	for _, r := range context.Routes {
+		if ros.Flag(r["connect"]) && ros.Flag(r["active"]) {
+			for _, n := range device.Networks([]string{r.Text("dst-address")}) {
+				if n.Contains(gateway) && n.Bits() > longest {
+					network = n
+					longest = n.Bits()
+				}
+			}
+		}
+	}
+	sources := rospolicy.SubtractNetworks([]netip.Prefix{network}, []netip.Prefix{netip.PrefixFrom(gateway, 32)})
+	iface, _ := ros.NewRouteEgressIndex(&context).GatewayEgress(gateway)
+	if iface != "" && slices.ContainsFunc(rows, func(r ros.Row) bool { return r.Set("in-interface-list") || r.Set("out-interface-list") }) {
+		for _, item := range []struct {
+			path string
+			dest *[]ros.Row
+		}{{"/interface/list", &context.InterfaceLists}, {"/interface/list/member", &context.InterfaceMembers}} {
+			if *item.dest == nil {
+				v, e := rosDriver.List(ctx, item.path)
+				if e == nil {
+					*item.dest = v
+				} else if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+			}
+		}
+	}
+	values := []string{}
+	for _, v := range desired.ProxyCIDRs {
+		values = append(values, v.CIDR)
+	}
+	if desired.ROSPolicy != nil {
+		for _, v := range desired.ROSPolicy.CIDRs {
+			values = append(values, v.CIDR)
+		}
+	}
+	destinations := device.Networks(values)
+	var accepted ros.Row
+	acceptedIndex := 0
+	for index, r := range rows {
+		if !advisoryLive(r) || !advisoryPossible(r, iface, &context, sources, destinations, state.AddressSets) {
+			continue
+		}
+		if advisoryEstablished(r) {
+			accepted = r
+			acceptedIndex = index
+		}
+		states, neg := advisoryStates(r)
+		if slices.Contains([]string{"drop", "reject"}, r.Text("action")) {
+			explicit := slices.Contains(states, "invalid") && !neg
+			if explicit || (accepted != nil && advisoryRemaining(r)) {
+				reason := fmt.Sprintf(messageAdvisoryRemaining, advisoryLabel(accepted, acceptedIndex), r.Text("action"))
+				if explicit {
+					reason = fmt.Sprintf("%s connection-state=%s", r.Text("action"), r.Text("connection-state"))
+				}
+				out = append(out, fmt.Sprintf(messageReturnAdvisory, advisoryLabel(r, index), reason))
+			}
+		}
+		if slices.Contains([]string{"accept", "drop", "reject"}, r.Text("action")) && advisoryCovers(r, iface, &context, sources, destinations, state.AddressSets) {
+			break
+		}
+	}
+	return out, nil
+}

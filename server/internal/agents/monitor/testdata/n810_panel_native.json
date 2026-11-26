@@ -1,0 +1,27 @@
+{
+  "archive_sha256": "031dcaac9f607e413ffe0ca623257a1022c30c9318e5ba191564cf3be50f9b2a",
+  "row": {
+    "agent": {
+      "host": "127.0.0.1",
+      "id": "gw",
+      "name": "Gateway",
+      "port": 8080,
+      "service_type": "mihomo",
+      "status": "online",
+      "token": "agent-token",
+      "version": "1.8.60-go"
+    },
+    "args": [],
+    "body": null,
+    "method": "GET",
+    "outcome": "{\"ok\": {\"data\": {\"a\": NaN, \"b\": Infinity, \"c\": -0.0}, \"success\": true}}",
+    "reply": [
+      200,
+      "eyJhIjogTmFOLCAiYiI6IDFlNDAwLCAiYyI6IC0wLjB9"
+    ],
+    "resource": "version",
+    "seen": "[{\"allow_redirects\": false, \"data\": null, \"headers\": {\"Accept\": \"application/json\", \"Authorization\": \"Bearer agent-token\"}, \"method\": \"GET\", \"stream\": true, \"timeout\": [3, 20], \"trust_env\": false, \"url\": \"http://127.0.0.1:8080/api/mihomo/version\"}]"
+  },
+  "row_sha256": "f950aa03ea4d27de9d368dde19aaebbbb86d512b6d922f54799e516a5a34c2f3",
+  "native_text": "{\"ok\":{\"success\":true,\"data\":{\"a\":null,\"b\":Infinity,\"c\":-0.0}}}"
+}

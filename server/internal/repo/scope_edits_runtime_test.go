@@ -1,0 +1,205 @@
+package repo_test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"testing"
+
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/repo"
+)
+
+func mihomoMarker(t *testing.T, cfg *model.Config) string {
+	t.Helper()
+	raw, err := model.Marshal(cfg.Profile.Mihomo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Marker string `json:"custom_config"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m.Marker
+}
+
+func TestScopedRecordTransactionsRuntimeAndSharedBaseline(t *testing.T) {
+	t.Run("runtime-shutdown-and-disconnect", func(t *testing.T) {
+		for _, sharedPath := range []bool{false, true} {
+			for _, shutdown := range []bool{true, false} {
+				name := "single"
+				if sharedPath {
+					name = "shared"
+				}
+				if shutdown {
+					name += "/shutdown"
+				} else {
+					name += "/disconnect"
+				}
+				t.Run(name, func(t *testing.T) {
+					r := recordRepository(t)
+					bg := context.Background()
+					if _, err := r.CreateProfileRecord(bg, repo.ProfileCreation{ID: "other", Name: "Other"}, ""); err != nil {
+						t.Fatal(err)
+					}
+					base := repo.WithScope(bg)
+					runtime := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+					runtime.Start(bg)
+					defer runtime.Shutdown(bg)
+					request, disconnect := context.WithCancel(runtime.BindRequest(base))
+					defer disconnect()
+
+					for _, id := range []string{"default", "other"} {
+						if _, err := r.ScopedConfig(request, id); err != nil {
+							t.Fatal(err)
+						}
+						if err := r.UpdateConfig(bg, id, func(_ context.Context, config *model.Config) error {
+							return config.Profile.SetJSON("mihomo", []byte(`{"custom_config":"external"}`))
+						}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					beforeHead, err := r.Head(bg)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if shutdown {
+						runtime.Shutdown(bg)
+					} else {
+						disconnect()
+					}
+					var errTx error
+					if sharedPath {
+						errTx = r.UpdateScopedSharedConfigs(request, func(_ context.Context, shared *model.Shared) error {
+							return shared.SetJSON("rule_library", []byte(`[]`))
+						}, func(_ context.Context, _ string, _, after *model.Config) error {
+							return after.Profile.SetJSON("mihomo", []byte(`{"custom_config":"ok"}`))
+						}, nil)
+					} else {
+						profileArg := "default"
+						if shutdown {
+							// Shutdown must fail fast before profile validation/reads.
+							profileArg = "bad/profile"
+						}
+						errTx = r.UpdateScopedConfig(request, profileArg, func(_ context.Context, config *model.Config) error {
+							return config.Profile.SetJSON("mihomo", []byte(`{"custom_config":"ok"}`))
+						})
+					}
+					afterHead, err := r.Head(bg)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if shutdown {
+						if !errors.Is(errTx, context.Canceled) {
+							t.Fatalf("expected context.Canceled after shutdown, got %v", errTx)
+						}
+						if afterHead != beforeHead {
+							t.Fatal("shutdown transaction modified storage")
+						}
+						// Cached pre-external snapshot must still be intact.
+						snap, err := r.ScopedConfig(base, "default")
+						if err != nil {
+							t.Fatal(err)
+						}
+						if got := mihomoMarker(t, snap); got != "" {
+							t.Fatalf("shutdown transaction invalidated scope cache: %q", got)
+						}
+						return
+					}
+					if errTx != nil {
+						t.Fatalf("disconnected request failed: %v", errTx)
+					}
+					if afterHead == beforeHead {
+						t.Fatal("disconnected request did not commit")
+					}
+					defSnap, err := r.ScopedConfig(base, "default")
+					if err != nil {
+						t.Fatal(err)
+					}
+					if got := mihomoMarker(t, defSnap); got != "ok" {
+						t.Fatalf("default marker after disconnect commit = %q, want ok", got)
+					}
+					otherSnap, err := r.ScopedConfig(base, "other")
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantOther := ""
+					if sharedPath {
+						wantOther = "external"
+					}
+					if got := mihomoMarker(t, otherSnap); got != wantOther {
+						t.Fatalf("other marker = %q, want %q", got, wantOther)
+					}
+				})
+			}
+		}
+	})
+
+	t.Run("shared-record-baseline-three-way-merge", func(t *testing.T) {
+		r := recordRepository(t)
+		bg := context.Background()
+		ctx := repo.WithScope(bg)
+		if err := r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+			shared.Nodes = []model.Node{{ID: "a", Name: "A"}, {ID: "b", Name: "B"}}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		snap, err := r.ScopedSharedConfig(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Single-profile UpdateConfig must preserve Scope's shared record baseline.
+		if err := r.UpdateScopedConfig(ctx, "default", func(_ context.Context, config *model.Config) error {
+			return config.Profile.SetJSON("mihomo", []byte(`{"custom_config":"one"}`))
+		}); err != nil {
+			t.Fatal(err)
+		}
+		// Concurrent external edit to node b, while this scope edits node a.
+		if err := r.UpdateShared(bg, func(_ context.Context, shared *model.Shared) error {
+			shared.Nodes[1].Name = "External B"
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		// Failed UpdateSharedConfigs must preserve Scope's shared record baseline.
+		stop := errors.New("abort shared")
+		if err := r.UpdateScopedSharedConfigs(ctx, func(_ context.Context, shared *model.Shared) error {
+			return stop
+		}, func(_ context.Context, _ string, _, _ *model.Config) error {
+			return nil
+		}, nil); !errors.Is(err, stop) {
+			t.Fatalf("expected stop, got %v", err)
+		}
+		snap.Nodes[0].Name = "Scoped A"
+		if err := r.SaveScopedSharedRecord(ctx, snap, nil); err != nil {
+			t.Fatalf("three-way merge failed after UpdateConfig and failed UpdateSharedConfigs: %v", err)
+		}
+		merged, err := r.Shared(bg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if merged.Nodes[0].Name != "Scoped A" || merged.Nodes[1].Name != "External B" {
+			t.Fatalf("concurrent edits lost: %+v", merged.Nodes)
+		}
+		// Re-capture baseline; successful UpdateSharedConfigs must clear it so stale save fails with 409.
+		staleSnap, err := r.ScopedSharedConfig(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.UpdateScopedSharedConfigs(ctx, func(_ context.Context, shared *model.Shared) error {
+			shared.Nodes[0].Name = "Tx A"
+			return nil
+		}, func(_ context.Context, _ string, _, _ *model.Config) error {
+			return nil
+		}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.SaveScopedSharedRecord(ctx, staleSnap, nil); !errors.Is(err, repo.ErrInUse) {
+			t.Fatalf("UpdateSharedConfigs did not clear shared record baseline: %v", err)
+		}
+	})
+}

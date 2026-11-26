@@ -1,0 +1,983 @@
+{
+  "archive": "a15_review.json",
+  "archive_sha256": "c3f3dfe2ea56a8940328d95dd8d2e8058c00c3539a7b7309b6eb99e2b458fb4c",
+  "rows": [
+    {
+      "group": "poll",
+      "key": "string",
+      "original": {
+        "name": "string",
+        "record": "abc",
+        "agent": {},
+        "error": "ValueError: dictionary update sequence element #0 has length 1; 2 is required",
+        "stored": "abc"
+      },
+      "row_sha256": "52d0a8bae6c641e19926b609f3de29f06b25633ca5146699a1c75237b04ac3e2",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "one char",
+      "original": {
+        "name": "one char",
+        "record": "a",
+        "agent": {},
+        "error": "ValueError: dictionary update sequence element #0 has length 1; 2 is required",
+        "stored": "a"
+      },
+      "row_sha256": "15cde9faa1207e2d760521c967cf6dd745874318c4dc29a00355e012abe51233",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "int",
+      "original": {
+        "name": "int",
+        "record": 5,
+        "agent": {},
+        "error": "TypeError: 'int' object is not iterable",
+        "stored": 5
+      },
+      "row_sha256": "09e198678e0b64c547ba082c1c1cd17af7c27c4e3b97c7878548b67e3c81dabc",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "float",
+      "original": {
+        "name": "float",
+        "record": 1.5,
+        "agent": {},
+        "error": "TypeError: 'float' object is not iterable",
+        "stored": 1.5
+      },
+      "row_sha256": "eae5ae0af2302cbcfa5d62db77f0d6b2acb8bf5966fadb18062a757418f16613",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "true",
+      "original": {
+        "name": "true",
+        "record": true,
+        "agent": {},
+        "error": "TypeError: 'bool' object is not iterable",
+        "stored": true
+      },
+      "row_sha256": "4bdf5abb0cf913fcc1dde7bae7bc575cd6d913ea031e29e025cae68c28a751c7",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "list of int",
+      "original": {
+        "name": "list of int",
+        "record": [
+          1
+        ],
+        "agent": {},
+        "error": "TypeError: cannot convert dictionary update sequence element #0 to a sequence",
+        "stored": [
+          1
+        ]
+      },
+      "row_sha256": "892e4beafa1c7b885cfb63d9312f8422e7b650c32bfc1a2f74ea85c42dc1b5af",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "list of none",
+      "original": {
+        "name": "list of none",
+        "record": [
+          null
+        ],
+        "agent": {},
+        "error": "TypeError: cannot convert dictionary update sequence element #0 to a sequence",
+        "stored": [
+          null
+        ]
+      },
+      "row_sha256": "d1531260abb1154aef7c73ed7e712ad8053209ec244df06f2a7e672cd18f2c92",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "list of two-char string",
+      "original": {
+        "name": "list of two-char string",
+        "record": [
+          "ab"
+        ],
+        "agent": {},
+        "error": "KeyError: 'status'",
+        "stored": [
+          "ab"
+        ]
+      },
+      "row_sha256": "00d055f792f836292e2d265939e981f0be70876129acf359ecfaeded0f988922",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "list of three-char string",
+      "original": {
+        "name": "list of three-char string",
+        "record": [
+          "abc"
+        ],
+        "agent": {},
+        "error": "ValueError: dictionary update sequence element #0 has length 3; 2 is required",
+        "stored": [
+          "abc"
+        ]
+      },
+      "row_sha256": "f9f1fb66141be2119acc66a0e9763c10d4fea02937e4f86644447c0cd5354e9c",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "list of astral pair",
+      "original": {
+        "name": "list of astral pair",
+        "record": [
+          "😀x"
+        ],
+        "agent": {},
+        "error": "KeyError: 'status'",
+        "stored": [
+          "😀x"
+        ]
+      },
+      "row_sha256": "edd2cd93dcbd6aa4eb97a8053ed76163eb3776d8c8bab944d19936918cf1e37a",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "list of short pair",
+      "original": {
+        "name": "list of short pair",
+        "record": [
+          [
+            "a"
+          ]
+        ],
+        "agent": {},
+        "error": "ValueError: dictionary update sequence element #0 has length 1; 2 is required",
+        "stored": [
+          [
+            "a"
+          ]
+        ]
+      },
+      "row_sha256": "7ab46b8c076b2e19016d745d5c397ddaee13ae32031392c1449d08a977bae253",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "second element bad",
+      "original": {
+        "name": "second element bad",
+        "record": [
+          [
+            "status",
+            "succeeded"
+          ],
+          [
+            "x"
+          ]
+        ],
+        "agent": {},
+        "error": "ValueError: dictionary update sequence element #1 has length 1; 2 is required",
+        "stored": [
+          [
+            "status",
+            "succeeded"
+          ],
+          [
+            "x"
+          ]
+        ]
+      },
+      "row_sha256": "a626e2141b19dfc9adb2c51f0f6687f6612fc286e35d8401186575d35c0cc81e",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "pair terminal",
+      "original": {
+        "name": "pair terminal",
+        "record": [
+          [
+            "status",
+            "succeeded"
+          ]
+        ],
+        "agent": {},
+        "result": {
+          "status": "succeeded"
+        },
+        "stored": [
+          [
+            "status",
+            "succeeded"
+          ]
+        ]
+      },
+      "row_sha256": "cf11b80760c69f59a65374a0867ca1f7db4f925c9f8181c017de3a742330e90f",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "pair duplicate",
+      "original": {
+        "name": "pair duplicate",
+        "record": [
+          [
+            "status",
+            "queued"
+          ],
+          [
+            "x",
+            1
+          ],
+          [
+            "status",
+            "failed"
+          ]
+        ],
+        "agent": {},
+        "result": {
+          "status": "failed",
+          "x": 1
+        },
+        "stored": [
+          [
+            "status",
+            "queued"
+          ],
+          [
+            "x",
+            1
+          ],
+          [
+            "status",
+            "failed"
+          ]
+        ]
+      },
+      "row_sha256": "e5948c0fb38d2a6951f5946ca14c97301e8da952dab67b4eeb7f7a4361e00544",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "pair unhashable key",
+      "original": {
+        "name": "pair unhashable key",
+        "record": [
+          [
+            [
+              1
+            ],
+            2
+          ]
+        ],
+        "agent": {},
+        "error": "TypeError: unhashable type: 'list'",
+        "stored": [
+          [
+            [
+              1
+            ],
+            2
+          ]
+        ]
+      },
+      "row_sha256": "5a712f573fd17e34d765f80d425a975fbf18887e850af350cee752bcc836a04d",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "pair dict key",
+      "original": {
+        "name": "pair dict key",
+        "record": [
+          [
+            {},
+            2
+          ]
+        ],
+        "agent": {},
+        "error": "TypeError: unhashable type: 'dict'",
+        "stored": [
+          [
+            {},
+            2
+          ]
+        ]
+      },
+      "row_sha256": "64fef5f859144a64682fa4e83d133ba13e57aa63a35fe008ca25209854913778",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "dict element",
+      "original": {
+        "name": "dict element",
+        "record": [
+          {
+            "status": 1,
+            "failed": 2
+          }
+        ],
+        "agent": {},
+        "result": {
+          "status": "failed"
+        },
+        "stored": [
+          {
+            "status": 1,
+            "failed": 2
+          }
+        ]
+      },
+      "row_sha256": "3bea1af82fad067072f276a20d71244d2b5f82353605c37fda63a22a7d0d7bc7",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "dict element short",
+      "original": {
+        "name": "dict element short",
+        "record": [
+          {
+            "status": 1
+          }
+        ],
+        "agent": {},
+        "error": "ValueError: dictionary update sequence element #0 has length 1; 2 is required",
+        "stored": [
+          {
+            "status": 1
+          }
+        ]
+      },
+      "row_sha256": "d0674e568cb13cc0b845d439289cd625ff8a38027008c0f94df2f2323c30b659",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "pairs not terminal",
+      "original": {
+        "name": "pairs not terminal",
+        "record": [
+          [
+            "status",
+            "queued"
+          ],
+          [
+            "protocol",
+            9
+          ],
+          [
+            "update_id",
+            "j"
+          ],
+          [
+            "started_at",
+            1794791592.951481
+          ]
+        ],
+        "agent": {},
+        "result": {
+          "status": "queued",
+          "protocol": 9,
+          "update_id": "j",
+          "started_at": 1794791592.951481
+        },
+        "stored": [
+          [
+            "status",
+            "queued"
+          ],
+          [
+            "protocol",
+            9
+          ],
+          [
+            "update_id",
+            "j"
+          ],
+          [
+            "started_at",
+            1794791592.951481
+          ]
+        ]
+      },
+      "row_sha256": "a47a841e7a79906abf31fda1f3adcbf50fac7b3c37c7604814bed124919a1e5d",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "poll",
+      "key": "unhashable status",
+      "original": {
+        "name": "unhashable status",
+        "record": {
+          "status": [
+            "x"
+          ]
+        },
+        "agent": {},
+        "error": "TypeError: unhashable type: 'list'",
+        "stored": {
+          "status": [
+            "x"
+          ]
+        }
+      },
+      "row_sha256": "5ce245214a703e0bedcbb3185e178be444c4869c1cc36e533b8e2ba79040e82c",
+      "native_field": "latest_upgrade.status"
+    },
+    {
+      "group": "poll",
+      "key": "missing protocol",
+      "original": {
+        "name": "missing protocol",
+        "record": {
+          "status": "queued"
+        },
+        "agent": {},
+        "error": "KeyError: 'protocol'",
+        "stored": {
+          "status": "queued"
+        }
+      },
+      "row_sha256": "b8fd8fa908c543c7c140abf9ab04d938578b857a0149100abb182ebc1db94fba",
+      "native_field": "latest_upgrade.update_id"
+    },
+    {
+      "group": "poll",
+      "key": "protocol true is 1",
+      "original": {
+        "name": "protocol true is 1",
+        "record": {
+          "update_id": "j",
+          "status": "failed",
+          "protocol": true,
+          "started_at": 0,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志",
+          "events": [
+            {
+              "at": "2026-11-16T01:13:12.951751Z",
+              "status": "failed",
+              "message": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+            }
+          ],
+          "updated_at": 1794791592.9517868
+        },
+        "agent": {
+          "version": "1.0",
+          "last_heartbeat": "2026-11-16T00:00:00"
+        },
+        "result": {
+          "update_id": "j",
+          "status": "failed",
+          "protocol": true,
+          "started_at": 0,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+        },
+        "stored": {
+          "update_id": "j",
+          "status": "failed",
+          "protocol": true,
+          "started_at": 0,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "error": "更新未生效：Agen[REDACTED] 仍在运行 1.0，可重新更新；详情请查看 Agen[REDACTED] 日志"
+        }
+      },
+      "row_sha256": "8f23938d9323de571bc8b69577ae6b7e55054b0ed82133d26f4b869c58205899",
+      "native_field": "latest_upgrade.protocol"
+    },
+    {
+      "group": "poll",
+      "key": "started_at str",
+      "original": {
+        "name": "started_at str",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": "x",
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        },
+        "agent": {},
+        "error": "TypeError: can only concatenate str (not \"int\") to str",
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": "x",
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        }
+      },
+      "row_sha256": "d40a78749cbf376e01c7b05280041e893545ecdcac83afee8f42988e2c3fe6af",
+      "native_field": "latest_upgrade.started_at"
+    },
+    {
+      "group": "poll",
+      "key": "started_at list",
+      "original": {
+        "name": "started_at list",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": [
+            1
+          ],
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        },
+        "agent": {},
+        "error": "TypeError: can only concatenate list (not \"int\") to list",
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": [
+            1
+          ],
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        }
+      },
+      "row_sha256": "9306ff8d90ce6f4e335a61c0190e3b9420d08d34173b4a613b1387269de21d5f",
+      "native_field": "latest_upgrade.started_at"
+    },
+    {
+      "group": "poll",
+      "key": "started_at none",
+      "original": {
+        "name": "started_at none",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": null,
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        },
+        "agent": {},
+        "error": "TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'",
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": null,
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        }
+      },
+      "row_sha256": "ea164a528e37049ffcb3a9e3e9268a883e1d1e7438510876b6af0f29fd8d96b6",
+      "native_field": "latest_upgrade.started_at"
+    },
+    {
+      "group": "poll",
+      "key": "started_at dict",
+      "original": {
+        "name": "started_at dict",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": {},
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        },
+        "agent": {},
+        "error": "TypeError: unsupported operand type(s) for +: 'dict' and 'int'",
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": {},
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        }
+      },
+      "row_sha256": "980a40de6377d4036bca5d676ab433684fa6d532440ba5ceb2a5d3532ac0b306",
+      "native_field": "latest_upgrade.started_at"
+    },
+    {
+      "group": "poll",
+      "key": "started_at missing",
+      "original": {
+        "name": "started_at missing",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        },
+        "agent": {},
+        "error": "KeyError: 'started_at'",
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        }
+      },
+      "row_sha256": "6a66eb5f1872c0dc6bac40a979c2cb183ae011f4e6fa0cd6902594e61a903224",
+      "native_field": "latest_upgrade.started_at"
+    },
+    {
+      "group": "poll",
+      "key": "started_at huge",
+      "original": {
+        "name": "started_at huge",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        },
+        "agent": {},
+        "result": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        },
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        }
+      },
+      "row_sha256": "cd8b94df45725d22b68787c1fc21acffd6074b7dc2f1082fc1f5eb18872f676c",
+      "native_field": "latest_upgrade.started_at"
+    },
+    {
+      "group": "poll",
+      "key": "started_at negative huge",
+      "original": {
+        "name": "started_at negative huge",
+        "record": {
+          "update_id": "j",
+          "status": "unknown",
+          "protocol": 2,
+          "started_at": -10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志",
+          "events": [
+            {
+              "at": "2026-11-16T01:13:12.951994Z",
+              "status": "unknown",
+              "message": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+            }
+          ],
+          "updated_at": 1794791592.952024
+        },
+        "agent": {
+          "version": "9"
+        },
+        "result": {
+          "update_id": "j",
+          "status": "unknown",
+          "protocol": 2,
+          "started_at": -10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+        },
+        "stored": {
+          "update_id": "j",
+          "status": "unknown",
+          "protocol": 2,
+          "started_at": -10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+        }
+      },
+      "row_sha256": "f3f63e203e02fa8fc115b842dce11ae09cee8798c92804feebf0b68cf7964f64",
+      "native_field": "latest_upgrade.started_at"
+    },
+    {
+      "group": "poll",
+      "key": "started_at true",
+      "original": {
+        "name": "started_at true",
+        "record": {
+          "update_id": "j",
+          "status": "unknown",
+          "protocol": 2,
+          "started_at": true,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志",
+          "events": [
+            {
+              "at": "2026-11-16T01:13:12.952067Z",
+              "status": "unknown",
+              "message": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+            }
+          ],
+          "updated_at": 1794791592.9520857
+        },
+        "agent": {
+          "version": "9"
+        },
+        "result": {
+          "update_id": "j",
+          "status": "unknown",
+          "protocol": 2,
+          "started_at": true,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+        },
+        "stored": {
+          "update_id": "j",
+          "status": "unknown",
+          "protocol": 2,
+          "started_at": true,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "error": "升级结果未能确认，正在继续查询；请查看 Agen[REDACTED] 日志"
+        }
+      },
+      "row_sha256": "492cfd73ae3148d18bc2822e6f93ba256feb54b4a03b3ab43263bedc1d5168a4",
+      "native_field": "latest_upgrade.started_at"
+    },
+    {
+      "group": "poll",
+      "key": "deadline heartbeat none",
+      "original": {
+        "name": "deadline heartbeat none",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 0,
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        },
+        "agent": {
+          "last_heartbeat": null
+        },
+        "error": "TypeError: fromisoformat: argument must be str",
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 0,
+          "previous_version": "1.0",
+          "target_version": "2.0"
+        }
+      },
+      "row_sha256": "3699355ea9877c4490c622b8ab21f07e8077cb601fa47430e2bc2f012b7f77a9",
+      "native_field": "last_heartbeat"
+    },
+    {
+      "group": "poll",
+      "key": "previous version missing",
+      "original": {
+        "name": "previous version missing",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 0,
+          "target_version": "2.0"
+        },
+        "agent": {},
+        "error": "KeyError: 'previous_version'",
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 0,
+          "target_version": "2.0"
+        }
+      },
+      "row_sha256": "b07b946ce10c016a9994288979e45a5ed093d7d269fa5a7388bdb87aa6d373aa",
+      "native_field": "latest_upgrade.version"
+    },
+    {
+      "group": "poll",
+      "key": "recovery str",
+      "original": {
+        "name": "recovery str",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 1794792592.951481,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "recovery_reported_at": "x"
+        },
+        "agent": {},
+        "error": "TypeError: '>' not supported between instances of 'float' and 'str'",
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 1794792592.951481,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "recovery_reported_at": "x"
+        }
+      },
+      "row_sha256": "494ed8ec1b13e496be34b355de2d9ef61674a00b6ecd05153f9327f1729d547a",
+      "native_field": "latest_upgrade.recovery_reported_at"
+    },
+    {
+      "group": "poll",
+      "key": "recovery list",
+      "original": {
+        "name": "recovery list",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 1794792592.951481,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "recovery_reported_at": [
+            1
+          ]
+        },
+        "agent": {},
+        "error": "TypeError: '>' not supported between instances of 'float' and 'list'",
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 1794792592.951481,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "recovery_reported_at": [
+            1
+          ]
+        }
+      },
+      "row_sha256": "4ad33d3999e7e38b80616c8fa0c37c60052954b5a52d29052618c16af345c8d0",
+      "native_field": "latest_upgrade.recovery_reported_at"
+    },
+    {
+      "group": "poll",
+      "key": "recovery heartbeat none",
+      "original": {
+        "name": "recovery heartbeat none",
+        "record": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 1794792592.951481,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "recovery_reported_at": 1
+        },
+        "agent": {
+          "last_heartbeat": null
+        },
+        "error": "TypeError: fromisoformat: argument must be str",
+        "stored": {
+          "update_id": "j",
+          "status": "queued",
+          "protocol": 2,
+          "started_at": 1794792592.951481,
+          "previous_version": "1.0",
+          "target_version": "2.0",
+          "recovery_reported_at": 1
+        }
+      },
+      "row_sha256": "585c6f9e490cb71077e47141de642694dbd92edaf48435d374f7e46c7ff99980",
+      "native_field": "last_heartbeat"
+    },
+    {
+      "group": "start",
+      "key": "malformed previous",
+      "original": {
+        "name": "malformed previous",
+        "python_error": "AttributeError: 'str' object has no attribute 'get'"
+      },
+      "row_sha256": "0ebcb303b9809deeb83b7fab9b87764f4e441571e5ba1849b3f7699193c78dc0",
+      "native_field": "latest_upgrade"
+    },
+    {
+      "group": "header",
+      "key": "none",
+      "original": {
+        "name": "none",
+        "token": null,
+        "python": {
+          "request": {
+            "error": "TypeError",
+            "authorization": null
+          },
+          "reaches": {
+            "result": false,
+            "authorization": "426561726572204e6f6e65"
+          },
+          "ask": {
+            "result": [
+              null,
+              {}
+            ],
+            "authorization": "426561726572204e6f6e65"
+          }
+        }
+      },
+      "row_sha256": "1d12a51a1922a41c798645de64b1192e5406e3a2084a50cd1b91d7793756d33b",
+      "native_field": "endpoint"
+    },
+    {
+      "group": "header",
+      "key": "int",
+      "original": {
+        "name": "int",
+        "token": 7,
+        "python": {
+          "request": {
+            "error": "TypeError",
+            "authorization": null
+          },
+          "reaches": {
+            "result": false,
+            "authorization": "4265617265722037"
+          },
+          "ask": {
+            "result": [
+              null,
+              {}
+            ],
+            "authorization": "4265617265722037"
+          }
+        }
+      },
+      "row_sha256": "76373260166912d55fad43f4c9cbfa70a25feaede1c77cac7db2ff0a14985f6c",
+      "native_field": "endpoint"
+    }
+  ]
+}

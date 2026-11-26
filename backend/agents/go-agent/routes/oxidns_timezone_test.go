@@ -31,12 +31,12 @@ func useZoneinfo(t *testing.T, zones ...string) string {
 	return dir
 }
 
-func cronArgs(zone string, jobs ...map[string]interface{}) map[string]interface{} {
-	list := []interface{}{}
+func cronArgs(zone string, jobs ...map[string]any) map[string]any {
+	list := []any{}
 	for _, job := range jobs {
 		list = append(list, job)
 	}
-	args := map[string]interface{}{"jobs": list}
+	args := map[string]any{"jobs": list}
 	if zone != "" {
 		args["timezone"] = zone
 	}
@@ -44,11 +44,11 @@ func cronArgs(zone string, jobs ...map[string]interface{}) map[string]interface{
 }
 
 func TestOxiDNSTimezoneNeedsDatabaseOnlyForNamedZones(t *testing.T) {
-	scheduled := map[string]interface{}{"name": "rules", "schedule": "30 3 * * *"}
-	interval := map[string]interface{}{"name": "rules", "interval": "1h"}
+	scheduled := map[string]any{"name": "rules", "schedule": "30 3 * * *"}
+	interval := map[string]any{"name": "rules", "interval": "1h"}
 	for _, test := range []struct {
 		kind string
-		args map[string]interface{}
+		args map[string]any
 		want string
 	}{
 		{"cron", cronArgs("Asia/Shanghai", scheduled), "Asia/Shanghai"},
@@ -57,9 +57,9 @@ func TestOxiDNSTimezoneNeedsDatabaseOnlyForNamedZones(t *testing.T) {
 		{"cron", cronArgs("", scheduled), ""},
 		{"cron", cronArgs("utc", scheduled), ""},
 		{"cron", cronArgs("+08:00", scheduled), ""},
-		{"time", map[string]interface{}{"timezone": "Europe/Berlin"}, "Europe/Berlin"},
-		{"time", map[string]interface{}{}, ""},
-		{"sequence", map[string]interface{}{"timezone": "Asia/Shanghai"}, ""},
+		{"time", map[string]any{"timezone": "Europe/Berlin"}, "Europe/Berlin"},
+		{"time", map[string]any{}, ""},
+		{"sequence", map[string]any{"timezone": "Asia/Shanghai"}, ""},
 	} {
 		if got := oxidnsPluginTimezone(test.kind, test.args); got != test.want {
 			t.Fatalf("%s %v: got %q, want %q", test.kind, test.args, got, test.want)
@@ -89,7 +89,7 @@ func TestOxiDNSMissingTimezoneDataStopsBeforeActivation(t *testing.T) {
 	useZoneinfo(t)
 	content := "plugins:\n  - tag: rules_cron\n    type: cron\n    args:\n      timezone: Asia/Shanghai\n      jobs:\n        - name: update\n          schedule: 30 3 * * *\n          executors: [\"$rules_update\"]\n"
 	stage, manifest := diagnosticFixture(t, content)
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestOxiDNSMissingTimezoneDataStopsBeforeActivation(t *testing.T) {
 
 func TestOxiDNSTimezoneCheckPassesWithTzdata(t *testing.T) {
 	useZoneinfo(t, "Asia/Shanghai")
-	args := cronArgs("Asia/Shanghai", map[string]interface{}{"name": "rules", "schedule": "30 3 * * *"})
+	args := cronArgs("Asia/Shanghai", map[string]any{"name": "rules", "schedule": "30 3 * * *"})
 	if err := validateOxiDNSTimezone("cron", args); err != nil {
 		t.Fatal(err)
 	}

@@ -99,10 +99,10 @@ func TestOxiDNSMonitorSuccessAndReadOnly(t *testing.T) {
 	cfg.StartCommand, cfg.StopCommand, cfg.RestartCommand = "touch "+sentinel, "touch "+sentinel, "touch "+sentinel
 	response := oxMonitorTestRequest(cfg, http.MethodGet, "/api/oxidns/overview")
 	var overview struct {
-		Success      bool                   `json:"success"`
-		Capabilities oxMonitorCapabilities  `json:"capabilities"`
-		Health       map[string]interface{} `json:"health"`
-		Metrics      string                 `json:"metrics"`
+		Success      bool                  `json:"success"`
+		Capabilities oxMonitorCapabilities `json:"capabilities"`
+		Health       map[string]any        `json:"health"`
+		Metrics      string                `json:"metrics"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &overview); err != nil || response.Code != 200 || !overview.Success || overview.Health["instance_id"] != "test-instance" || !strings.Contains(overview.Metrics, "oxidns_queries_total 42") {
 		t.Fatalf("unexpected overview: %d %s (%v)", response.Code, response.Body.String(), err)
@@ -504,15 +504,15 @@ func TestOxiDNSMonitorExactIPAcrossPages(t *testing.T) {
 			start, _ = strconv.Atoi(strings.Split(cursor, ":")[1])
 		}
 		end := min(start+limit, len(ips))
-		rows := []map[string]interface{}{}
+		rows := []map[string]any{}
 		for i := start; i < end; i++ {
-			rows = append(rows, map[string]interface{}{"id": 10 - i, "client_ip": ips[i]})
+			rows = append(rows, map[string]any{"id": 10 - i, "client_ip": ips[i]})
 		}
-		var next interface{}
+		var next any
 		if end < len(ips) {
 			next = fmt.Sprintf("100:%d", end)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "records": rows, "next_cursor": next})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "records": rows, "next_cursor": next})
 	}))
 	defer core.Close()
 	cfg := oxMonitorTestConfig(t, core.URL, "- {tag: records, type: query_recorder}\n")
@@ -559,12 +559,12 @@ func TestOxiDNSMonitorExactIPSparseScanKeepsCursor(t *testing.T) {
 			offset, _ = strconv.Atoi(strings.Split(cursor, ":")[1])
 		}
 		ip := "192.168.0.20"
-		var cursor interface{} = fmt.Sprintf("100:%d", offset+1)
+		var cursor any = fmt.Sprintf("100:%d", offset+1)
 		if offset == oxMonitorExactIPPages {
 			ip = "192.168.0.2"
 			cursor = nil
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "records": []map[string]interface{}{{"id": 100 - offset, "client_ip": ip}}, "next_cursor": cursor})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "records": []map[string]any{{"id": 100 - offset, "client_ip": ip}}, "next_cursor": cursor})
 	}))
 	defer core.Close()
 	cfg := oxMonitorTestConfig(t, core.URL, "- {tag: records, type: query_recorder}\n")

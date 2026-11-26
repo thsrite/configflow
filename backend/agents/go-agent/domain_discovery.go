@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -38,6 +37,11 @@ const (
 	discoveryZeroDLAfter    = 3 * time.Second
 	discoveryServerTooOld   = 30 * time.Minute
 )
+
+// discoveryVersionRefresh is how often a connected controller's /version is
+// read again: a kernel replaced and restarted between two polls never breaks
+// the connection, and its new version must still be reported.
+var discoveryVersionRefresh = time.Minute
 
 var errControllerAuth = errors.New("mihomo controller rejected the secret")
 
@@ -503,6 +507,7 @@ func (d *discoveryCollector) pollLoop(ctx context.Context) {
 	defer unsubscribe()
 	tracker := newConnTracker(discoveryMaxTracked)
 	connected := false
+	var versionAt time.Time
 	for {
 		var snapshot mihomoConnSnapshot
 		select {
@@ -512,9 +517,9 @@ func (d *discoveryCollector) pollLoop(ctx context.Context) {
 		}
 		switch err := snapshot.Err; {
 		case err == nil:
-			if !connected {
+			if !connected || snapshot.At.Sub(versionAt) >= discoveryVersionRefresh {
 				d.fetchVersion(ctx, snapshot.Controller)
-				connected = true
+				connected, versionAt = true, snapshot.At
 			}
 			d.setStatus("running", false)
 			finished, overflow := tracker.observe(snapshot.Conns)
@@ -649,17 +654,17 @@ func (d *discoveryCollector) reportOnce(ctx context.Context, windowStart time.Ti
 		}
 		return now
 	case code == http.StatusNotFound:
-		log.Printf("Domain discovery: server does not support traffic reports yet, pausing")
+		logger.Infof("Domain discovery: server does not support traffic reports yet, pausing")
 		d.mu.Lock()
 		d.pausedUntil = time.Now().Add(discoveryServerTooOld)
 		d.mu.Unlock()
 	case code == http.StatusBadRequest || code == http.StatusRequestEntityTooLarge:
 		// 被拒收的数据重试也不会成功，直接丢弃
-		log.Printf("Domain discovery: report rejected with status %d", code)
+		logger.Warnf("Domain discovery: report rejected with status %d", code)
 		return now
 	default:
 		if err != nil {
-			log.Printf("Domain discovery: report failed: %v", err)
+			logger.Infof("Domain discovery: report failed: %v", err)
 		}
 	}
 	d.aggregator.restore(items, ipOnly, dropped)
@@ -719,7 +724,7 @@ func (d *discoveryCollector) refreshProviders(ctx context.Context, revisions map
 			d.mu.Lock()
 			d.revisions[name] = revision
 			d.mu.Unlock()
-			log.Printf("Domain discovery: refreshed rule provider %q", name)
+			logger.Infof("Domain discovery: refreshed rule provider %q", name)
 		}
 	}
 }
@@ -744,12 +749,12 @@ func (c *discoveryController) SetEnabled(cfg *Config, enabled bool) {
 	if !enabled {
 		c.cancel()
 		c.cancel = nil
-		log.Printf("Domain discovery stopped")
+		logger.Infof("Domain discovery stopped")
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 	collector := newDiscoveryCollector(cfg, func() { c.SetEnabled(cfg, false) })
 	go collector.run(ctx)
-	log.Printf("Domain discovery started")
+	logger.Infof("Domain discovery started")
 }

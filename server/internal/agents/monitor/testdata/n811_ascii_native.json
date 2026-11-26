@@ -1,0 +1,936 @@
+{
+  "source_sha256": "0d4df818cf47842b14e7de63263ec9ab333081fba1429693d7388b6520a6744c",
+  "rows": [
+    {
+      "section": "metrics",
+      "sha256": "d7c4da55cedafd3e8495b26da1bc96b968b7de137b50965f4f3f3743980b7924",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches"
+          ],
+          "empty_list": true
+        },
+        {
+          "path": [
+            "summary",
+            "caches"
+          ],
+          "empty_list": true
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "30e981ce1f15d96e01a277867936aff2343449110267c06bdc6de76ab59345e5",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "entries"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "entries"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "0ae718c1786f87f9b64e121bf7c4cf3f7da0f391ce2cd6a584e801b82626aedb",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "misses"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "misses"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "410f48376854347d775131922398dd90f8ccea94adaf701bdb638d21ad7889db",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "servers",
+            "0",
+            "latency_count"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "c5bb44da498b5cb12acf323ef5bbc710b3e443efa0c81a04b9ed6277f56679fd",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "upstreams",
+            "0",
+            "latency_sum_ms"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "ec5a98333262cbee340a10f61a5225cfe6a593746ef5f9cc24570c02ba1e56ca",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "misses"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "misses"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "338a6b54ff628d4d3273a935d91294cdb7886dc16160a848125d9a8cae85dc48",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "820af86711abcee36f36c9813974e01c650a57a1aefd5aca97cbcf0fb71f4892",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "servers",
+            "0",
+            "requests"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "metrics",
+            "requests_total"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "servers",
+            "0",
+            "requests"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "a5da5934a3937ec34e87dceda2e56e5aee47513a3caa263140556981a9209813",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "misses"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "misses"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "06e3bf11cf6bcf43907683b024c3d6e5719ed059706f7804a4df093ac4150577",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches"
+          ],
+          "empty_list": true
+        },
+        {
+          "path": [
+            "summary",
+            "caches"
+          ],
+          "empty_list": true
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "fed5d273b3bab5a969cfd433ad477293a0c67e31ccea7ffac0be8e2873cd39de",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches"
+          ],
+          "empty_list": true
+        },
+        {
+          "path": [
+            "summary",
+            "caches"
+          ],
+          "empty_list": true
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "65f1f96bdb7f3ad094b07542c1c4739a65d0df9045937efc862964d958c58d8b",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "1c7dd1b4005c5ce335a05a9b9b460e4fa91d92dd5ebca07fda9dd309fb85b915",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "expired"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "expired"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "ba16e61ea74e050728aa346bcb5eddf794ae91274aa20957e434d7d71dc8f125",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "entries"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "entries"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "a12a20112dcbe6a00e34dab8b5c0551eb35a09af0146f7debd55603cfd19b002",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "servers",
+            "0",
+            "requests"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "metrics",
+            "requests_total"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "servers",
+            "0",
+            "requests"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "42e768c40180103bd7099a01a301653c9b1e8baba066c9260e61796ad8daec9f",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches"
+          ],
+          "empty_list": true
+        },
+        {
+          "path": [
+            "summary",
+            "caches"
+          ],
+          "empty_list": true
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "4795b9e48017ab6f9dd25f319e982a5bca1b3a7be161de28f927acbbfd0fd292",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "misses"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "misses"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "3edf0aba3b4e126a48c6ab646327d9d4c1ffb31db32b9920062efeba47c91d9f",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "entries"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "entries"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "d21f1be254c75d56cfd80877a2742fb8d3ee26cd6e9e9d7d9e899885a401d8a2",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "ac008dae5130545b63b228ac50f208a247a50089feb6e44cd1ae94fd0d0bb176",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "expired"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "expired"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "0433ccb4093faa12373a9b5ba9b04f54d2e1e0f5c36b27d6a5474ec48c5184f9",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "servers",
+            "0",
+            "latency_count"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "2aa80a0a128ee2bca3f6f694967e75d5fe938780a6bd5a545baefa31ecd71752",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "28937d4a5443fc0c57318c55c516f2069a528ac4bf5e3d577470f29476fcfebe",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "misses"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "misses"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "59bf27d22f5622a99cc985fe49f6d7a37e90582598418864d4fbfc26718390c9",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "3f2c03f3e38cb22f1c71c232dfe10473a6a2d5b7b4bde8d59da8d638a164fc80",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "upstreams",
+            "0",
+            "failed"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "upstreams",
+            "0",
+            "failed"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "c2aa99faaabda2f83b6a2bc623d846cb9166ede512c16c7d9ea7ab850066a703",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "upstreams"
+          ],
+          "empty_list": true
+        },
+        {
+          "path": [
+            "summary",
+            "upstreams"
+          ],
+          "empty_list": true
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "e2be229f7d5725ccac19d526f75d44b64864020c366b8a6b3c3d787fe4ee93f3",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "misses"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "misses"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "f055198558e827f440d043816c3a1ae3b94fee630e280a700de388c78c52dbe1",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "upstreams"
+          ],
+          "empty_list": true
+        },
+        {
+          "path": [
+            "summary",
+            "upstreams"
+          ],
+          "empty_list": true
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "e6d32021b1546ffcb1420f3c996dd29c6eb286aefd3fe7d9afc1fe86c8c85a4f",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "entries"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "entries"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "da1856ec3b9f77585d15a3306d892a895992b255162a4a36ae460dbb5eb28add",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "upstreams",
+            "0",
+            "failed"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "upstreams",
+            "0",
+            "failed"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "fc7e6925d3ce460f69f6094e7480c80ccb1f07d6d0a0f2a293d8c6c8362616cc",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "upstreams",
+            "0",
+            "failed"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "upstreams",
+            "0",
+            "failed"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "ba7f060ced3aae3e7d31a9dc0a740d6ecebed241dd8a3a139709bb41cf9e614c",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "572fd7488c9d869e691da5b74406f3b2c6518efcb097e046877373e7f6febc04",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "entries"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "entries"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "4df73dfa6f07af20a5db1837485c62d73ebd05ea47cd9cfc4e62d834d3f4db95",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "expired"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "expired"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "36cc66daa17016b9dafa537685b3be410ece99242b1b9f1522461faa13d84b6f",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "servers",
+            "0",
+            "requests"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "metrics",
+            "requests_total"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "servers",
+            "0",
+            "requests"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "a2342e19e8fc2208753fda56e67d876538fa5d3edfb2f8cf66899352fe475e26",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "c9aa6a22a45164caf029646821e844d032e5b3ad893b8c14eb36879c85ce3e22",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches"
+          ],
+          "empty_list": true
+        },
+        {
+          "path": [
+            "summary",
+            "caches"
+          ],
+          "empty_list": true
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "0047baf39f54e8ff0f9129276591226c54c34283021aee8c65ef555255b6e5ca",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "upstreams",
+            "0",
+            "latency_count"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "8670453d8f3f379afb1f8c814ae56361e993fc02d79b67fb8baf0af217143e50",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "misses"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "misses"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "metrics",
+      "sha256": "fc04ad351aef45e008d3dfedeaeea9c222e0d92d57d410533766848218dd590d",
+      "changes": [
+        {
+          "path": [
+            "parsed",
+            "caches",
+            "0",
+            "misses"
+          ]
+        },
+        {
+          "path": [
+            "summary",
+            "caches",
+            "0",
+            "misses"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "overview_snapshot",
+      "sha256": "7eb68f4364d686cef07f3605d7c1375b51ec5be79acc8516cbd89d2977cb9a83",
+      "changes": [
+        {
+          "path": [
+            "result",
+            "summary",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        },
+        {
+          "path": [
+            "result",
+            "summary",
+            "metrics",
+            "inflight"
+          ]
+        },
+        {
+          "path": [
+            "result",
+            "summary",
+            "servers",
+            "0",
+            "inflight"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "overview_snapshot",
+      "sha256": "0f9a7f9fa78a421c37c79ed7b3a9d6ba47be4f50662850fd688d5670620000f8",
+      "changes": [
+        {
+          "path": [
+            "result",
+            "summary",
+            "upstreams"
+          ],
+          "empty_list": true
+        }
+      ]
+    },
+    {
+      "section": "overview_snapshot",
+      "sha256": "58d05e4d34fc8c63e809b8541544cb40da59ff51b34e12e74a6aa67071458f20",
+      "changes": [
+        {
+          "path": [
+            "result",
+            "summary",
+            "upstreams",
+            "0",
+            "failed"
+          ]
+        }
+      ]
+    },
+    {
+      "section": "overview_snapshot",
+      "sha256": "854e4e524d8cb2f82213887462935906287e90f627123435a4c3fc350d0c528e",
+      "changes": [
+        {
+          "path": [
+            "result",
+            "summary",
+            "caches",
+            "0",
+            "lookups"
+          ]
+        }
+      ]
+    }
+  ]
+}

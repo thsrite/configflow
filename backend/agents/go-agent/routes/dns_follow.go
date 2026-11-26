@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"agent/svc"
 )
 
 // A DNS follow summary is deliberately smaller than a configuration download:
@@ -90,14 +93,14 @@ func readFollowConfig(name string, size int64) ([]byte, error) {
 func dnsFollowLock(cfg *Config, w http.ResponseWriter) (func(), bool) {
 	release, err := AcquireServiceOperation(cfg)
 	if err != nil {
-		JsonResponse(w, http.StatusConflict, map[string]interface{}{"success": false, "message": "设备正在执行其他操作，暂时无法确认 DNS 配置，请稍后重试"})
+		JsonResponse(w, http.StatusConflict, MessageResponse{Success: false, Message: "设备正在执行其他操作，暂时无法确认 DNS 配置，请稍后重试"})
 		return nil, false
 	}
 	return release, true
 }
 
 func dnsFollowFailure(w http.ResponseWriter, status int, err error) {
-	JsonResponse(w, status, map[string]interface{}{"success": false, "message": err.Error()})
+	JsonResponse(w, status, MessageResponse{Success: false, Message: err.Error()})
 }
 
 func dnsFollowRequest(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -146,16 +149,16 @@ func DNSActiveHandler(cfg *Config) http.HandlerFunc {
 			dnsFollowFailure(w, http.StatusConflict, err)
 			return
 		}
-		JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "agent_id": cfg.AgentID, "deployment_id": id})
+		JsonResponse(w, http.StatusOK, DNSActiveResponse{AgentID: cfg.AgentID, DeploymentID: id, Success: true})
 	}
 }
 
 func parseFollowListener(content []byte) (string, string, int, error) {
-	var doc map[string]interface{}
+	var doc map[string]any
 	if yaml.Unmarshal(content, &doc) != nil {
 		return "", "", 0, fmt.Errorf("无法解析 Mihomo 当前 DNS 配置")
 	}
-	dns, _ := doc["dns"].(map[string]interface{})
+	dns, _ := doc["dns"].(map[string]any)
 	if dns["enable"] != true {
 		return "", "", 0, fmt.Errorf("Mihomo DNS 未开启，请开启 dns.enable 并重新发布")
 	}
@@ -209,9 +212,14 @@ func DNSListenerHandler(cfg *Config) http.HandlerFunc {
 			dnsFollowFailure(w, http.StatusConflict, err)
 			return
 		}
-		JsonResponse(w, http.StatusOK, map[string]interface{}{
-			"success": true, "agent_id": cfg.AgentID, "deployment_id": id,
-			"enabled": true, "listen": listen, "host": host, "port": port,
+		JsonResponse(w, http.StatusOK, DNSListenerResponse{
+			AgentID:      cfg.AgentID,
+			DeploymentID: id,
+			Enabled:      true,
+			Host:         host,
+			Listen:       listen,
+			Port:         port,
+			Success:      true,
 		})
 	}
 }
@@ -227,12 +235,15 @@ func sameNamespaceDNSPeer(cfg *Config, read func(string) ([]byte, error)) (strin
 			return "", unavailable
 		}
 		peerPath = "/opt/configflow-agent/mihomo/config.json"
-	} else if cfg.AgentConfigFile != "/opt/configflow-agent/config-oxidns.json" || cfg.ServiceManager != "supervisor" || cfg.ServiceUnit != "oxidns" {
+	} else if cfg.AgentConfigFile != "/opt/configflow-agent/config-oxidns.json" || cfg.ServiceManager != svc.ContainerManager || cfg.ServiceUnit != "oxidns" {
 		return "", unavailable
 	}
 	data, err := read(peerPath)
 	var peer Config
-	if err != nil || json.Unmarshal(data, &peer) != nil || peer.ServiceType != "mihomo" ||
+	err = errors.Join(err, json.Unmarshal(data, &peer))
+	// A peer configuration written before 1.9.3-go says "supervisor".
+	peer.ServiceManager = svc.NormalizeManager(peer.ServiceManager)
+	if err != nil || peer.ServiceType != "mihomo" ||
 		peer.AgentID == "" || peer.AgentID == cfg.AgentID || !filepath.IsAbs(peer.ConfigPath) ||
 		peer.ConfigPath == cfg.ConfigPath || peer.ServerURL != cfg.ServerURL {
 		return "", unavailable
@@ -242,7 +253,7 @@ func sameNamespaceDNSPeer(cfg *Config, read func(string) ([]byte, error)) (strin
 		if _, err := nativeAIOInstallationFor(&peer); err != nil || peer.ServiceManager != cfg.ServiceManager {
 			return "", unavailable
 		}
-	} else if peer.NativeAIO || peer.ServiceManager != "supervisor" || peer.ServiceUnit != "mihomo" {
+	} else if peer.NativeAIO || peer.ServiceManager != svc.ContainerManager || peer.ServiceUnit != "mihomo" {
 		return "", unavailable
 	}
 	return peer.AgentID, nil
@@ -260,6 +271,6 @@ func DNSPeerHandler(cfg *Config) http.HandlerFunc {
 			dnsFollowFailure(w, http.StatusConflict, err)
 			return
 		}
-		JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "peer_agent_id": peerID, "service_type": "mihomo"})
+		JsonResponse(w, http.StatusOK, DNSPeerResponse{PeerAgentID: peerID, ServiceType: "mihomo", Success: true})
 	}
 }

@@ -39,7 +39,7 @@ function identityChanged(value: boolean | 'indeterminate') {
         </FormField>
       </template>
       <FormField :label="network === 'host' ? '宿主机固定 IPv4' : '容器固定 IPv4'" :html-for="`${prefix}-ip`" :hint="network === 'host' ? '填写宿主机现有的静态局域网地址。' : '为容器预留独立地址，不能与宿主机、网关或 VIP 相同。'">
-        <Input :id="`${prefix}-ip`" v-model="host.agent_ip" class="font-mono" placeholder="192.168.1.21" />
+        <Input :id="`${prefix}-ip`" v-model="host.agent_ip" class="font-mono" placeholder="192.0.2.21" />
       </FormField>
       <FormField label="Agent 端口" :html-for="`${prefix}-port`">
         <Input :id="`${prefix}-port`" v-model.number="host.oxidns_port" class="font-mono" type="number" min="1024" max="65535" />
@@ -60,8 +60,8 @@ function identityChanged(value: boolean | 'indeterminate') {
       </template>
       <template v-if="network === 'macvlan'">
         <FormField label="宿主机网卡" :html-for="`${prefix}-parent`"><Input :id="`${prefix}-parent`" v-model="host.ha_parent" class="font-mono" placeholder="例如：eth0 或 enp1s0" /></FormField>
-        <FormField label="局域网 CIDR" :html-for="`${prefix}-subnet`"><Input :id="`${prefix}-subnet`" v-model="host.ha_subnet" class="font-mono" placeholder="192.168.1.0/24" /></FormField>
-        <FormField label="网关（可选）" :html-for="`${prefix}-gateway`" hint="建议填写实际路由器地址；留空由 Docker 选择默认网关。"><Input :id="`${prefix}-gateway`" v-model="host.ha_gateway" class="font-mono" placeholder="192.168.1.1" /></FormField>
+        <FormField label="局域网 CIDR" :html-for="`${prefix}-subnet`"><Input :id="`${prefix}-subnet`" v-model="host.ha_subnet" class="font-mono" placeholder="192.0.2.0/24" /></FormField>
+        <FormField label="网关（可选）" :html-for="`${prefix}-gateway`" hint="建议填写实际路由器地址；留空由 Docker 选择默认网关。"><Input :id="`${prefix}-gateway`" v-model="host.ha_gateway" class="font-mono" placeholder="192.0.2.1" /></FormField>
       </template>
     </div>
     <p v-if="compactCompose" class="m-0 text-[12px] leading-relaxed text-muted-foreground">身份随 Agent 数据自动保存，无需填写宿主身份文件。重建时保留数据目录。</p>

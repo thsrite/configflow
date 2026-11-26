@@ -34,7 +34,7 @@ var (
 
 func ruleSnapshotFailure(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Cache-Control", "no-store")
-	JsonResponse(w, status, map[string]interface{}{"success": false, "code": code, "message": message})
+	JsonResponse(w, status, CodedErrorResponse{Code: code, Message: message, Success: false})
 }
 
 // RuleSyncSnapshotHandler exports only already-managed files. Callers cannot

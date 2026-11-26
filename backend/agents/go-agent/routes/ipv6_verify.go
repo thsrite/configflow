@@ -72,10 +72,10 @@ var ipv6VerifySHA = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 
 // The controller supplies only a saved verification target. In the absence of
 // that selection, use an already deployed health-check URL or the fixed default.
-func ipv6SavedVerificationURL(doc map[string]interface{}) string {
-	groups, _ := doc["proxy-groups"].([]interface{})
+func ipv6SavedVerificationURL(doc map[string]any) string {
+	groups, _ := doc["proxy-groups"].([]any)
 	for _, value := range groups {
-		if group, ok := value.(map[string]interface{}); ok {
+		if group, ok := value.(map[string]any); ok {
 			if raw, ok := group["url"].(string); ok {
 				if _, err := ipv6VerificationURL(raw); err == nil {
 					return raw
@@ -83,15 +83,15 @@ func ipv6SavedVerificationURL(doc map[string]interface{}) string {
 			}
 		}
 	}
-	providers, _ := doc["proxy-providers"].(map[string]interface{})
+	providers, _ := doc["proxy-providers"].(map[string]any)
 	names := make([]string, 0, len(providers))
 	for name := range providers {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if provider, ok := providers[name].(map[string]interface{}); ok {
-			if health, ok := provider["health-check"].(map[string]interface{}); ok {
+		if provider, ok := providers[name].(map[string]any); ok {
+			if health, ok := provider["health-check"].(map[string]any); ok {
 				if raw, ok := health["url"].(string); ok {
 					if _, err := ipv6VerificationURL(raw); err == nil {
 						return raw
@@ -103,7 +103,7 @@ func ipv6SavedVerificationURL(doc map[string]interface{}) string {
 	return ipv6VerifyDefaultURL
 }
 
-func ipv6VerifyAPI(ctx context.Context, controller *mihomoReloader, path string, result interface{}) error {
+func ipv6VerifyAPI(ctx context.Context, controller *mihomoReloader, path string, result any) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, controller.endpoint+path, nil)
 	if err != nil {
 		return fmt.Errorf("控制接口请求无效")
@@ -126,7 +126,7 @@ func ipv6VerifyAPI(ctx context.Context, controller *mihomoReloader, path string,
 	return nil
 }
 
-func ipv6VerifyAPIStep(ctx context.Context, controller *mihomoReloader, path string, result interface{}) error {
+func ipv6VerifyAPIStep(ctx context.Context, controller *mihomoReloader, path string, result any) error {
 	step, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	return ipv6VerifyAPI(step, controller, path, result)
@@ -158,11 +158,11 @@ func ipv6ActualProxy(p ipv6RuntimeProxy) bool {
 	return true
 }
 
-func ipv6SelectVerifyNode(doc map[string]interface{}, proxies map[string]ipv6RuntimeProxy, requested string) (string, map[string]interface{}) {
-	definitions := map[string]map[string]interface{}{}
-	items, _ := doc["proxies"].([]interface{})
+func ipv6SelectVerifyNode(doc map[string]any, proxies map[string]ipv6RuntimeProxy, requested string) (string, map[string]any) {
+	definitions := map[string]map[string]any{}
+	items, _ := doc["proxies"].([]any)
 	for _, item := range items {
-		if node, ok := item.(map[string]interface{}); ok {
+		if node, ok := item.(map[string]any); ok {
 			if name, ok := node["name"].(string); ok {
 				definitions[name] = node
 			}
@@ -206,11 +206,11 @@ func ipv6VerifyHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 		ExpectedConfigSHA256 string `json:"expected_config_sha256"`
 	}
 	if err := decodeIPv6Request(w, r, &request); err != nil {
-		JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "验收请求无效"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "验收请求无效"})
 		return
 	}
 	if !ipv6VerifySupported(cfg) || cfg.ServiceType != "mihomo" || len(request.NodeName) > 256 || strings.ContainsAny(request.NodeName, "\r\n\x00") || (request.ExpectedConfigSHA256 != "" && !ipv6VerifySHA.MatchString(request.ExpectedConfigSHA256)) {
-		JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "需要 Linux Mihomo Agent 和有效验收参数"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "需要 Linux Mihomo Agent 和有效验收参数"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 28*time.Second)
@@ -219,7 +219,7 @@ func ipv6VerifyHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	finish := func() { JsonResponse(w, 200, report) }
 	release, err := AcquireServiceOperation(cfg)
 	if err != nil {
-		JsonResponse(w, 409, map[string]interface{}{"success": false, "message": "服务正在更新或执行其他操作，请稍后验收"})
+		JsonResponse(w, 409, MessageResponse{Success: false, Message: "服务正在更新或执行其他操作，请稍后验收"})
 		return
 	}
 	defer release()
@@ -243,7 +243,7 @@ func ipv6VerifyHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	}
 	target, err := ipv6VerificationURL(request.TestURL)
 	if err != nil {
-		JsonResponse(w, 400, map[string]interface{}{"success": false, "message": err.Error()})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: err.Error()})
 		return
 	}
 	report.TargetHost = target.Hostname()
@@ -257,7 +257,7 @@ func ipv6VerifyHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	var version struct {
 		Version string `json:"version"`
 	}
-	var current map[string]interface{}
+	var current map[string]any
 	if ipv6VerifyAPIStep(ctx, controller, "/version", &version) != nil || version.Version == "" || ipv6VerifyAPIStep(ctx, controller, "/configs", &current) != nil || current == nil {
 		report.add("runtime_core", "Mihomo 运行状态", "error", "未能读取正在运行的 Mihomo 控制接口", "mihomo_api")
 		finish()
@@ -276,8 +276,8 @@ func ipv6VerifyHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	} else {
 		report.add("runtime_ipv6", "运行中的 IPv6 开关", "ok", fmt.Sprintf("运行中的 IPv6 开关与文件一致：%t", actualIPv6), "mihomo_api")
 	}
-	configuredTUN, _ := doc["tun"].(map[string]interface{})
-	runtimeTUN, _ := current["tun"].(map[string]interface{})
+	configuredTUN, _ := doc["tun"].(map[string]any)
+	runtimeTUN, _ := current["tun"].(map[string]any)
 	tunEnabled, tunKnown := runtimeTUN["enable"].(bool)
 	if !tunKnown {
 		report.add("runtime_tun", "运行中的 TUN", "unknown", "当前核心未返回 TUN 状态", "mihomo_api")

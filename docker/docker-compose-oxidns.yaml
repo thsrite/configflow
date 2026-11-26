@@ -1,6 +1,6 @@
 services:
   oxidns-agent:
-    image: thsrite/config-flow-agent:latest
+    image: thsrite/config-flow-agent:3
     container_name: configflow-agent-oxidns
     restart: unless-stopped
     ports:

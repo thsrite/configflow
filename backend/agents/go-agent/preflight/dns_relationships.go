@@ -68,12 +68,12 @@ func dnsParseUpstream(raw string) dnsUpstream {
 	return result
 }
 
-func dnsStrings(value interface{}) []string {
+func dnsStrings(value any) []string {
 	if text, ok := value.(string); ok {
 		return []string{text}
 	}
 	var result []string
-	if values, ok := value.([]interface{}); ok {
+	if values, ok := value.([]any); ok {
 		for _, item := range values {
 			if text, ok := item.(string); ok {
 				result = append(result, text)
@@ -85,14 +85,14 @@ func dnsStrings(value interface{}) []string {
 	return result
 }
 
-func dnsGroups(cfg Config, doc map[string]interface{}) ([]dnsGroup, bool) {
+func dnsGroups(cfg Config, doc map[string]any) ([]dnsGroup, bool) {
 	if cfg.ServiceType == "mihomo" {
-		dns, _ := doc["dns"].(map[string]interface{})
+		dns, _ := doc["dns"].(map[string]any)
 		enabled, _ := dns["enable"].(bool)
 		if !enabled {
 			return nil, false
 		}
-		policy, _ := dns["nameserver-policy"].(map[string]interface{})
+		policy, _ := dns["nameserver-policy"].(map[string]any)
 		values := append(dnsStrings(dns["nameserver"]), dnsStrings(dns["fallback"])...)
 		respectRules, _ := dns["respect-rules"].(bool)
 		group := dnsGroup{definite: len(policy) == 0 && !respectRules}
@@ -114,10 +114,10 @@ func dnsGroups(cfg Config, doc map[string]interface{}) ([]dnsGroup, bool) {
 		}
 		return groups, false
 	}
-	plugins, _ := doc["plugins"].([]interface{})
-	tags := map[string]map[string]interface{}{}
+	plugins, _ := doc["plugins"].([]any)
+	tags := map[string]map[string]any{}
 	for _, item := range plugins {
-		plugin, _ := item.(map[string]interface{})
+		plugin, _ := item.(map[string]any)
 		tag, _ := plugin["tag"].(string)
 		if tag != "" {
 			tags[tag] = plugin
@@ -140,11 +140,11 @@ func dnsGroups(cfg Config, doc map[string]interface{}) ([]dnsGroup, bool) {
 		defer delete(seen, tag)
 		kind, _ := plugin["type"].(string)
 		if kind == "forward" {
-			args, _ := plugin["args"].(map[string]interface{})
-			upstreams, _ := args["upstreams"].([]interface{})
+			args, _ := plugin["args"].(map[string]any)
+			upstreams, _ := args["upstreams"].([]any)
 			group := dnsGroup{definite: definite}
 			for _, item := range upstreams {
-				upstream, _ := item.(map[string]interface{})
+				upstream, _ := item.(map[string]any)
 				address, _ := upstream["addr"].(string)
 				parsed := dnsParseUpstream(address)
 				for _, field := range []string{"dialer", "dial_addr", "outbound", "socks5", "proxy"} {
@@ -173,7 +173,7 @@ func dnsGroups(cfg Config, doc map[string]interface{}) ([]dnsGroup, bool) {
 			unknown = true
 			return
 		}
-		steps, ok := plugin["args"].([]interface{})
+		steps, ok := plugin["args"].([]any)
 		if !ok {
 			unknown = true
 			return
@@ -182,7 +182,7 @@ func dnsGroups(cfg Config, doc map[string]interface{}) ([]dnsGroup, bool) {
 		// sequences), followed by accept. Conditional/other steps are only warnings.
 		certain := definite
 		for _, item := range steps {
-			step, ok := item.(map[string]interface{})
+			step, ok := item.(map[string]any)
 			if !ok {
 				unknown = true
 				certain = false
@@ -217,12 +217,12 @@ func dnsGroups(cfg Config, doc map[string]interface{}) ([]dnsGroup, bool) {
 	}
 	entries, listeners := map[string]bool{}, map[string]bool{}
 	for _, item := range plugins {
-		plugin, _ := item.(map[string]interface{})
+		plugin, _ := item.(map[string]any)
 		kind, _ := plugin["type"].(string)
 		if kind != "udp_server" && kind != "tcp_server" {
 			continue
 		}
-		args, _ := plugin["args"].(map[string]interface{})
+		args, _ := plugin["args"].(map[string]any)
 		entry, _ := args["entry"].(string)
 		entries[entry] = true
 		for _, listen := range dnsStrings(args["listen"]) {
@@ -287,7 +287,7 @@ func dnsGroupReferences(group dnsGroup, requirements []portRequirement) (some, a
 	return
 }
 
-func dnsSelfChecks(cfg Config, doc map[string]interface{}, requirements []portRequirement) []Check {
+func dnsSelfChecks(cfg Config, doc map[string]any, requirements []portRequirement) []Check {
 	groups, _ := dnsGroups(cfg, doc)
 	var checks []Check
 	for _, group := range groups {
@@ -306,7 +306,7 @@ func dnsSelfChecks(cfg Config, doc map[string]interface{}, requirements []portRe
 	return checks
 }
 
-func dnsRelationshipChecks(candidate DNSCandidate, doc map[string]interface{}, requirements []portRequirement, peer DNSCandidate, peerDoc map[string]interface{}, peerRequirements []portRequirement) []Check {
+func dnsRelationshipChecks(candidate DNSCandidate, doc map[string]any, requirements []portRequirement, peer DNSCandidate, peerDoc map[string]any, peerRequirements []portRequirement) []Check {
 	checks := dnsSelfChecks(peer.Config, peerDoc, peerRequirements)
 	// The peer is not part of this transaction. Blocking on its pre-existing
 	// self-loop would prevent repairing either core when both are broken.

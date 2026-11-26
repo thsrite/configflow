@@ -1,0 +1,91 @@
+package notifications
+
+import (
+	"context"
+	"testing"
+
+	"configflow/internal/model"
+	"configflow/internal/repo"
+)
+
+func TestO17FollowupRouterSignaturesCacheUsesSameConfig(t *testing.T) {
+	r, err := repo.Open(t.TempDir(), repo.Options{DefaultSettings: repo.DefaultConfig})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{{
+			ID:          "a1",
+			Name:        "Agent 1",
+			Host:        "192.0.2.1",
+			Port:        model.Int(8080),
+			Token:       "tok-1",
+			ProfileID:   repo.DefaultProfileID,
+			ServiceType: "oxidns",
+			Version:     "1.0.0",
+		}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	routerSigMu.Lock()
+	delete(routerSigCache, r.DataDir())
+	routerSigMu.Unlock()
+
+	var zeroKey [32]byte
+	sigs1, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID}, zeroKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routerSigMu.Lock()
+	head1 := routerSigCache[r.DataDir()].head
+	routerSigMu.Unlock()
+
+	// State-only commit must keep routerSigCache hit (cached head unchanged).
+	if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Version = "2.0.0"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sigs2, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID}, zeroKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routerSigMu.Lock()
+	head2 := routerSigCache[r.DataDir()].head
+	routerSigMu.Unlock()
+	if head2 != head1 || len(sigs2) != len(sigs1) {
+		t.Fatalf("routerSigCache invalidated by state-only commit: head %+v -> %+v", head1, head2)
+	}
+
+	// Router last_release change must invalidate routerSigCache.
+	changedKey := [32]byte{1}
+	if _, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID}, changedKey); err != nil {
+		t.Fatal(err)
+	}
+	routerSigMu.Lock()
+	headRel := routerSigCache[r.DataDir()].head
+	routerSigMu.Unlock()
+	if headRel == head1 {
+		t.Fatalf("routerSigCache not invalidated by router release state change: head stayed %+v", headRel)
+	}
+
+	// Configuration commit must invalidate routerSigCache.
+	if err := r.UpdateSystem(ctx, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Name = "Agent 1 Renamed"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := routerSignatures(ctx, r, []string{repo.DefaultProfileID}, changedKey); err != nil {
+		t.Fatal(err)
+	}
+	routerSigMu.Lock()
+	head3 := routerSigCache[r.DataDir()].head
+	routerSigMu.Unlock()
+	if head3.SameConfig(head1) {
+		t.Fatalf("routerSigCache not invalidated by config commit: head %+v -> %+v", head1, head3)
+	}
+}

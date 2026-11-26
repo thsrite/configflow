@@ -18,6 +18,7 @@ export default defineConfig({
       { text: '安装与首次使用', items: [
         { text: '文档概览', link: '/README' },
         { text: '安装管理面板', link: '/guide/install' },
+        { text: 'v3.0.0 升级说明', link: '/guide/upgrade-v3' },
         { text: '首次使用向导', link: '/guide/first-run' },
         { text: '设备安装组合', link: '/guide/agent-install' },
         { text: 'RouterOS 容器安装', link: '/guide/routeros-install' },

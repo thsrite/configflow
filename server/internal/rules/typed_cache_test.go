@@ -1,0 +1,107 @@
+package rules
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"configflow/internal/model"
+	"configflow/internal/testjson"
+)
+
+type cacheExpectedRow struct {
+	Input       json.RawMessage `json:"input"`
+	Original    string          `json:"original"`
+	PythonTyped string          `json:"python_typed"`
+	Native      string          `json:"native"`
+	Class       string          `json:"class"`
+}
+type cacheExpected struct {
+	Policies      []cacheExpectedRow `json:"policies"`
+	ReviewSHA256  string             `json:"review_sha256"`
+	ArchiveSHA256 string             `json:"archive_sha256"`
+	Rows          []cacheExpectedRow `json:"rows"`
+	Namespace     []cacheExpectedRow `json:"namespace"`
+}
+
+func cacheReference(t *testing.T) cacheExpected {
+	t.Helper()
+	data, err := os.ReadFile("testdata/n89_cache_expected.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var expected cacheExpected
+	if err := json.Unmarshal(data, &expected); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile("testdata/corpus.jsonl.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	if hex.EncodeToString(sum[:]) != expected.ArchiveSHA256 {
+		t.Fatal("cache archive changed without re-recording real Python reference")
+	}
+	return expected
+}
+
+func assertCacheReferenceInput(t *testing.T, expected cacheExpectedRow, rule any, original any) {
+	t.Helper()
+	if !testjson.Equal(expected.Input, rule) || expected.Original != original {
+		t.Fatal("reference row input/original drift")
+	}
+	switch expected.Class {
+	case "unchanged":
+		if expected.Native != expected.Original {
+			t.Fatal("unchanged reference changed")
+		}
+	case "R5", "D2", "R5+D2":
+	default:
+		t.Fatalf("unreviewed reference class %q", expected.Class)
+	}
+}
+
+func TestNativeMatcherOwnsHitCopy(t *testing.T) {
+	cache := NewCache(CacheOptions{RulesDir: func() string { return t.TempDir() }})
+	t.Cleanup(cache.Clear)
+	matcher := cache.LocalMatcher(MatcherInput{Rules: []model.RuleConfig{{ID: "r", RuleType: "DOMAIN-SUFFIX", Value: new("example.com")}}}, "p")
+	first := matcher.Match("example.com")
+	if first == nil {
+		t.Fatal("missing hit")
+	}
+	first.Policy = "changed"
+	*first.RuleID = "changed"
+	second := matcher.Match("example.com")
+	if second.Policy != "DIRECT" || *second.RuleID != "r" {
+		t.Fatal("borrowed cached result")
+	}
+}
+
+func TestNativeCacheReadPathOwnsBorrowedSnapshot(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "validated.list")
+	if err := os.WriteFile(path, []byte("example.com\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var rule model.RuleConfig
+	if err := json.Unmarshal([]byte(`{"id":"r","name":"Synthetic","itemType":"ruleset","source_type":"url","url":"https://example.com/rules","behavior":"domain","format":"text","policy":"DIRECT"}`), &rule); err != nil {
+		t.Fatal(err)
+	}
+	reads := 0
+	cache := NewCache(CacheOptions{RulesDir: func() string { return directory }, StoredLibrary: func() []model.RuleLibraryItem { t.Fatal("native read path copied the entire library"); return nil }, ReadPath: func(received model.RuleConfig, _ []model.RuleLibraryItem, root string) string {
+		reads++
+		if received.ID != "r" || root != directory {
+			t.Fatal("lost declaration or namespace")
+		}
+		return path
+	}})
+	t.Cleanup(cache.Clear)
+	matcher := cache.LocalMatcher(MatcherInput{Rules: []model.RuleConfig{rule}}, "default")
+	hit := matcher.Match("example.com")
+	if hit == nil || hit.Policy != "DIRECT" || reads < 2 {
+		t.Fatalf("native path not used by signature and lazy load: hit=%v reads=%d", hit, reads)
+	}
+}

@@ -152,7 +152,7 @@ func portChecksWithProbe(configs []Config, probe portProbe) []Check {
 	return checks
 }
 
-func corePortRequirements(cfg Config, doc map[string]interface{}, index int) ([]portRequirement, []Check) {
+func corePortRequirements(cfg Config, doc map[string]any, index int) ([]portRequirement, []Check) {
 	var requirements []portRequirement
 	var checks []Check
 	unrecognized := func(message string) {
@@ -169,7 +169,7 @@ func corePortRequirements(cfg Config, doc map[string]interface{}, index int) ([]
 		}
 	}
 	if cfg.ServiceType == "mihomo" {
-		dns, isMap := doc["dns"].(map[string]interface{})
+		dns, isMap := doc["dns"].(map[string]any)
 		if value, present := doc["dns"]; present && value != nil && !isMap {
 			unrecognized("DNS 配置结构无法识别，不能判断是否启用监听")
 		}
@@ -193,16 +193,16 @@ func corePortRequirements(cfg Config, doc map[string]interface{}, index int) ([]
 		}
 	} else {
 		if include, present := doc["include"]; present && include != nil {
-			if items, ok := include.([]interface{}); !ok || len(items) > 0 {
+			if items, ok := include.([]any); !ok || len(items) > 0 {
 				unrecognized("配置含外部 include，DNS 监听检查未覆盖外部文件")
 			}
 		}
-		plugins, isList := doc["plugins"].([]interface{})
+		plugins, isList := doc["plugins"].([]any)
 		if !isList {
 			unrecognized("plugins 缺失或不是列表，无法完整识别 DNS 监听")
 		}
 		for _, item := range plugins {
-			plugin, isMap := item.(map[string]interface{})
+			plugin, isMap := item.(map[string]any)
 			kind, isString := plugin["type"].(string)
 			if !isMap || !isString || kind == "" {
 				unrecognized("plugins 中存在无法识别的插件，不能完整判断 DNS 监听")
@@ -211,12 +211,12 @@ func corePortRequirements(cfg Config, doc map[string]interface{}, index int) ([]
 			if kind != "udp_server" && kind != "tcp_server" {
 				continue
 			}
-			args, _ := plugin["args"].(map[string]interface{})
+			args, _ := plugin["args"].(map[string]any)
 			protocol := strings.TrimSuffix(kind, "_server")
 			switch listen := args["listen"].(type) {
 			case string:
 				add(listen, protocol)
-			case []interface{}:
+			case []any:
 				if len(listen) == 0 {
 					add("", protocol)
 				}

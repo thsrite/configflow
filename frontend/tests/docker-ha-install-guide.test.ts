@@ -92,6 +92,8 @@ describe('Docker HA installation guide', () => {
       await click(wrapper, '4. 执行安装')
       await click(wrapper, '生成主机 1 的Compose')
       expect(agentApi.generateDockerHAGuide).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'new', install_method: 'compose_compact', agent_ip: '192.168.1.21', data_dir: '/srv/dns-1' }), 'space')
+      // An untouched image field lets the server pick the Agent image paired with this panel build.
+      expect(vi.mocked(agentApi.generateDockerHAGuide).mock.calls.at(-1)![0]).not.toHaveProperty('image')
       expect(wrapper.text()).toContain('1. 保存 Compose')
       expect(wrapper.text()).toContain('2. 启动项目')
       expect(wrapper.text()).not.toContain('prepare.sh')

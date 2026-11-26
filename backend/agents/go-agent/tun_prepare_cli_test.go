@@ -24,7 +24,7 @@ func TestTUNPreparationCLIStopsBeforeNormalStartup(t *testing.T) {
 			root := t.TempDir()
 			corePath := filepath.Join(root, "config.yaml")
 			candidate := filepath.Join(root, "candidate.json")
-			data, err := json.Marshal(map[string]interface{}{
+			data, err := json.Marshal(map[string]any{
 				"server_url": "http://127.0.0.1:1", "token": "PRIVATE-TOKEN", "agent_port": 8080,
 				"native_aio": true, "service_type": "mihomo", "service_manager": "openrc", "config_path": corePath,
 			})
@@ -110,7 +110,7 @@ func TestTUNPreparationCLIAssumeEnabledDoesNotSkipDisabledBootstrap(t *testing.T
 	candidate := filepath.Join(root, "candidate.json")
 	// A non-native candidate is refused before any host inspection, which
 	// proves the disabled bootstrap was not skipped as in ordinary preparation.
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"server_url": "http://127.0.0.1:1", "token": "PRIVATE-TOKEN", "agent_port": 8080,
 		"service_type": "mihomo", "service_manager": "openrc", "config_path": corePath,
 	})

@@ -30,7 +30,7 @@
                 id="server-domain"
                 v-model="serverDomain"
                 class="min-w-0 bg-background/50 font-mono"
-                placeholder="http://192.168.1.10:5010"
+                placeholder="http://192.0.2.10:5010"
                 @blur="onServerDomainBlur"
               />
               <Button
@@ -62,7 +62,7 @@
                 autocomplete="off"
                 :spellcheck="false"
                 class="min-w-0 bg-background/50 font-mono"
-                placeholder="http://192.168.0.3:7890"
+                placeholder="http://192.0.2.3:7890"
                 @blur="onRuleFetchProxyBlur"
               />
               <Button
@@ -233,13 +233,13 @@
           <FormField
             label="WebDAV 地址"
             html-for="webdav-url"
-            hint="例如坚果云：https://dav.jianguoyun.com/dav/"
+            hint="填写 WebDAV 服务提供的完整地址。"
           >
             <Input
               id="webdav-url"
               v-model="backupForm.webdav_url"
               class="bg-background/50 font-mono"
-              placeholder="https://dav.jianguoyun.com/dav/"
+              placeholder="https://storage.example.com/dav/"
             />
           </FormField>
 
@@ -736,8 +736,10 @@ const onImportFileChange = async (event: Event) => {
       { title: '导入全部数据', confirmText: '确认覆盖并导入' }
     )
     if (!ok) return
-    await configApi.import(config)
-    notify.success('全部数据已导入，正在刷新页面')
+    const response = await configApi.import(config)
+    const message = typeof response?.data?.message === 'string' ? response.data.message : ''
+    if (message) notify.warning(`${message}，正在刷新页面`)
+    else notify.success('全部数据已导入，正在刷新页面')
     localStorage.removeItem('serverDomain')
     localStorage.removeItem('subscriptionAggregationEnabled')
     window.location.reload()

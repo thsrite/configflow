@@ -1,0 +1,1177 @@
+[
+ {
+  "op": "create_profile",
+  "metadata": {
+   "id": "work",
+   "name": " Work ",
+   "description": "办公"
+  }
+ },
+ {
+  "op": "create_profile",
+  "metadata": {
+   "id": "work",
+   "name": "again"
+  }
+ },
+ {
+  "op": "create_profile",
+  "metadata": {
+   "id": "bad id"
+  }
+ },
+ {
+  "op": "create_profile",
+  "metadata": {
+   "id": "blank",
+   "name": "   "
+  }
+ },
+ {
+  "op": "update_shared_transaction",
+  "patch": [
+   {
+    "path": [
+     "subscriptions"
+    ],
+    "set": [
+     {
+      "id": "s1",
+      "name": "订阅 🚀",
+      "url": "https://example.test/s",
+      "enabled": true,
+      "interval": 3600,
+      "health_check": {
+       "enable": true,
+       "url": "https://www.gstatic.com/generate_204",
+       "interval": 300
+      }
+     }
+    ]
+   },
+   {
+    "path": [
+     "nodes"
+    ],
+    "set": [
+     {
+      "id": "n1",
+      "name": "节点一",
+      "type": "ss",
+      "server": "192.0.2.1",
+      "port": 8388,
+      "params": {
+       "weight": 1.5,
+       "big": 12345678901234567890
+      }
+     },
+     {
+      "id": "n2",
+      "name": "n2",
+      "subscription_id": "s1",
+      "type": "ss",
+      "server": "x.test",
+      "port": 1
+     }
+    ]
+   },
+   {
+    "path": [
+     "subscription_aggregations"
+    ],
+    "set": [
+     {
+      "id": "a1",
+      "name": "聚合",
+      "subscriptions": [
+       "s1"
+      ],
+      "nodes": [
+       "n1"
+      ]
+     }
+    ]
+   },
+   {
+    "path": [
+     "rule_library"
+    ],
+    "set": [
+     {
+      "id": "lib1",
+      "name": "库 一",
+      "url": "https://example.test/r.list",
+      "behavior": "domain",
+      "source_type": "url",
+      "enabled": true
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "op": "update_shared_transaction",
+  "patch": [
+   {
+    "path": [
+     "subscriptions",
+     0,
+     "interval"
+    ],
+    "set": 5
+   }
+  ]
+ },
+ {
+  "op": "update_shared_transaction",
+  "patch": [
+   {
+    "path": [
+     "nodes"
+    ],
+    "append": {
+     "id": "n1",
+     "name": "dup"
+    }
+   }
+  ]
+ },
+ {
+  "op": "update_profile_fields",
+  "id": "work",
+  "fields": {
+   "proxy_groups": [
+    {
+     "id": "g1",
+     "name": "G1",
+     "type": "select",
+     "manual_nodes": [
+      "n1",
+      "DIRECT"
+     ],
+     "subscriptions": [
+      "s1"
+     ],
+     "aggregations": [
+      "a1"
+     ]
+    },
+    {
+     "id": "g2",
+     "name": "G2",
+     "type": "select",
+     "include_groups": [
+      "g1"
+     ]
+    }
+   ],
+   "rule_configs": [
+    {
+     "id": "r1",
+     "itemType": "rule",
+     "rule_type": "DOMAIN",
+     "value": "a.test",
+     "policy": "G1"
+    },
+    {
+     "id": "rs1",
+     "itemType": "ruleset",
+     "library_rule_id": "lib1",
+     "policy": "G2",
+     "name": "ignored",
+     "url": "dropped"
+    }
+   ],
+   "mihomo": {
+    "custom_config": "mixed-port: 7890\n"
+   },
+   "unknown_field": 1
+  }
+ },
+ {
+  "op": "update_profile_fields",
+  "id": "work",
+  "fields": {
+   "proxy_groups": [
+    {
+     "id": "g9",
+     "name": "G9",
+     "type": "select",
+     "manual_nodes": [
+      "missing"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "op": "update_profile_fields",
+  "id": "work",
+  "fields": {
+   "proxy_groups": [
+    {
+     "id": "g2",
+     "name": "G2",
+     "type": "select",
+     "include_groups": [
+      "g1"
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "op": "update_profile_fields",
+  "id": "work",
+  "fields": {
+   "_revision": 0,
+   "loon": {
+    "custom_config": "x"
+   }
+  }
+ },
+ {
+  "op": "update_profile_fields",
+  "id": "work",
+  "fields": {
+   "resource_refs": {}
+  }
+ },
+ {
+  "op": "get_profile",
+  "id": "work",
+  "save": "prof"
+ },
+ {
+  "op": "get_compat_config",
+  "id": "work"
+ },
+ {
+  "op": "get_compat_config",
+  "id": "default",
+  "roots": {
+   "nodes": null
+  }
+ },
+ {
+  "op": "get_compat_config",
+  "id": "default",
+  "roots": {
+   "subscription_aggregations": [
+    "a1",
+    "zz"
+   ]
+  }
+ },
+ {
+  "op": "get_publish_snapshot",
+  "id": "work",
+  "agents": false
+ },
+ {
+  "op": "update_profile_transaction",
+  "id": "work",
+  "patch": [
+   {
+    "path": [
+     "proxy_groups"
+    ],
+    "append": {
+     "id": "g3",
+     "name": "G3",
+     "type": "url-test",
+     "manual_nodes": [
+      "n1"
+     ],
+     "interval": 60,
+     "tolerance": 50
+    }
+   },
+   {
+    "path": [
+     "proxy_groups",
+     0,
+     "name"
+    ],
+    "set": "G1"
+   },
+   {
+    "path": [
+     "subscriptions"
+    ],
+    "set": []
+   }
+  ]
+ },
+ {
+  "op": "update_profile_fields",
+  "id": "work",
+  "fields": {
+   "$var": "prof",
+   "patch": [
+    {
+     "path": [
+      "proxy_groups"
+     ],
+     "set": [
+      {
+       "id": "g2",
+       "name": "G2",
+       "type": "select",
+       "include_groups": [
+        "g1"
+       ],
+       "icon": "i"
+      },
+      {
+       "id": "g1",
+       "name": "G1",
+       "type": "select",
+       "manual_nodes": [
+        "n1",
+        "DIRECT"
+       ],
+       "subscriptions": [
+        "s1"
+       ],
+       "aggregations": [
+        "a1"
+       ]
+      }
+     ]
+    },
+    {
+     "path": [
+      "mihomo",
+      "extra"
+     ],
+     "set": {
+      "a": [
+       1,
+       2.0
+      ]
+     }
+    }
+   ]
+  },
+  "baseline": {
+   "$var": "prof"
+  }
+ },
+ {
+  "op": "update_profile_transaction",
+  "id": "work",
+  "patch": [
+   {
+    "path": [
+     "proxy_groups"
+    ],
+    "set": [
+     {
+      "id": "g2",
+      "name": "G2",
+      "type": "select",
+      "include_groups": [
+       "g1"
+      ]
+     },
+     {
+      "id": "g3x",
+      "name": "G1",
+      "type": "select",
+      "manual_nodes": [
+       "n1",
+       "DIRECT"
+      ],
+      "subscriptions": [
+       "s1"
+      ],
+      "aggregations": [
+       "a1"
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "op": "update_profile",
+  "id": "work",
+  "updates": {
+   "name": " Work 2 ",
+   "description": "d"
+  }
+ },
+ {
+  "op": "update_profile",
+  "id": "work",
+  "updates": {
+   "name": " "
+  }
+ },
+ {
+  "op": "update_profile",
+  "id": "work",
+  "updates": {
+   "id": "x"
+  }
+ },
+ {
+  "op": "update_profile",
+  "id": "nope",
+  "updates": {
+   "name": "x"
+  }
+ },
+ {
+  "op": "clone_profile",
+  "source": "work",
+  "metadata": {
+   "id": "copy",
+   "name": "Copy"
+  }
+ },
+ {
+  "op": "clone_profile",
+  "source": "nope",
+  "metadata": {
+   "id": "copy2"
+  }
+ },
+ {
+  "op": "update_system_transaction",
+  "patch": [
+   {
+    "path": [
+     "system_config",
+     "server_domain"
+    ],
+    "set": "https://例.test"
+   },
+   {
+    "path": [
+     "agents"
+    ],
+    "append": {
+     "id": "ag1",
+     "name": "A",
+     "token": "tok",
+     "profile_id": "work",
+     "host": "h",
+     "port": 1,
+     "deployments": [
+      {
+       "x": 1
+      }
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "op": "update_system_transaction",
+  "patch": [
+   {
+    "path": [
+     "agents"
+    ],
+    "append": {
+     "id": "ag2",
+     "profile_id": "gone"
+    }
+   }
+  ]
+ },
+ {
+  "op": "update_system_transaction",
+  "patch": [
+   {
+    "path": [
+     "system_config",
+     "config_token"
+    ],
+    "set": "cfg"
+   },
+   {
+    "path": [
+     "extra"
+    ],
+    "set": 1
+   }
+  ]
+ },
+ {
+  "op": "get_system",
+  "save": "sys"
+ },
+ {
+  "op": "update_system_transaction",
+  "patch": [
+   {
+    "path": [
+     "backup"
+    ],
+    "set": {
+     "webdav_url": "https://dav.test"
+    }
+   }
+  ]
+ },
+ {
+  "op": "save_system",
+  "snapshot": {
+   "$var": "sys",
+   "patch": [
+    {
+     "path": [
+      "system_config",
+      "github_proxy_domain"
+     ],
+     "set": "g.test"
+    }
+   ]
+  },
+  "baseline": {
+   "$var": "sys"
+  }
+ },
+ {
+  "op": "save_system",
+  "snapshot": {
+   "_revision": 0,
+   "system_config": {}
+  }
+ },
+ {
+  "op": "save_system",
+  "snapshot": {
+   "system_config": {
+    "rule_fetch_proxy": "http://p.test"
+   },
+   "backup": {
+    "k": 1
+   }
+  }
+ },
+ {
+  "op": "get_shared",
+  "save": "sh"
+ },
+ {
+  "op": "update_shared_transaction",
+  "patch": [
+   {
+    "path": [
+     "nodes",
+     0,
+     "port"
+    ],
+    "set": 9
+   }
+  ]
+ },
+ {
+  "op": "save_shared",
+  "snapshot": {
+   "$var": "sh",
+   "patch": [
+    {
+     "path": [
+      "nodes"
+     ],
+     "append": {
+      "id": "n3",
+      "name": "n3",
+      "type": "ss",
+      "server": "s.test",
+      "port": 2
+     }
+    }
+   ]
+  },
+  "baseline": {
+   "$var": "sh"
+  }
+ },
+ {
+  "op": "save_shared",
+  "snapshot": {
+   "_revision": 0
+  }
+ },
+ {
+  "op": "update_shared_transaction",
+  "patch": [
+   {
+    "path": [
+     "nodes",
+     0
+    ],
+    "delete": true
+   }
+  ]
+ },
+ {
+  "op": "update_shared_transaction",
+  "patch": [
+   {
+    "path": [
+     "subscriptions",
+     0,
+     "enabled"
+    ],
+    "set": false
+   }
+  ]
+ },
+ {
+  "op": "update_shared_transaction",
+  "patch": [
+   {
+    "path": [
+     "rule_library"
+    ],
+    "set": []
+   }
+  ]
+ },
+ {
+  "op": "get_resource_usage",
+  "kind": "nodes",
+  "id": "n1"
+ },
+ {
+  "op": "get_resource_usage",
+  "kind": "subscriptions",
+  "id": "s1"
+ },
+ {
+  "op": "get_resource_usage",
+  "kind": "rule_library",
+  "id": "lib1"
+ },
+ {
+  "op": "get_resource_usage",
+  "kind": "bogus",
+  "id": "x"
+ },
+ {
+  "op": "update_shared_and_profiles",
+  "ids": [
+   "work",
+   "work"
+  ],
+  "shared_patch": [
+   {
+    "path": [
+     "rule_library"
+    ],
+    "append": {
+     "id": "lib2",
+     "name": "L2",
+     "content": "a.test",
+     "source_type": "content",
+     "enabled": true
+    }
+   }
+  ],
+  "profile_patch": [
+   {
+    "path": [
+     "rule_configs"
+    ],
+    "append": {
+     "id": "rs2",
+     "itemType": "ruleset",
+     "library_rule_id": "lib2",
+     "policy": "G1"
+    }
+   }
+  ]
+ },
+ {
+  "op": "get_compat_config",
+  "id": "work"
+ },
+ {
+  "op": "create_rule_library_item",
+  "rule": {
+   "id": "lib3",
+   "name": "L3",
+   "url": "https://example.test/3",
+   "source_type": "url",
+   "behavior": "domain",
+   "enabled": true
+  },
+  "content": "a.test\n"
+ },
+ {
+  "op": "create_rule_library_item",
+  "rule": {
+   "id": "lib3",
+   "name": "L3b",
+   "url": "https://example.test/3",
+   "source_type": "url",
+   "behavior": "domain",
+   "enabled": true
+  },
+  "content": "b.test\n"
+ },
+ {
+  "op": "create_rule_library_item",
+  "rule": {
+   "id": "lib4",
+   "name": "L3",
+   "url": "https://example.test/4",
+   "source_type": "url"
+  },
+  "content": "b.test\n"
+ },
+ {
+  "op": "set_default_profile",
+  "id": "work"
+ },
+ {
+  "op": "set_default_profile",
+  "id": "work"
+ },
+ {
+  "op": "set_default_profile",
+  "id": "nope"
+ },
+ {
+  "op": "default_profile_id"
+ },
+ {
+  "op": "list_profiles"
+ },
+ {
+  "op": "get_profile_agent_bindings",
+  "id": "work"
+ },
+ {
+  "op": "delete_profile",
+  "id": "copy"
+ },
+ {
+  "op": "delete_profile",
+  "id": "work"
+ },
+ {
+  "op": "delete_profile",
+  "id": "work",
+  "new_default": "work"
+ },
+ {
+  "op": "delete_profile",
+  "id": "work",
+  "new_default": "default"
+ },
+ {
+  "op": "update_system_transaction",
+  "patch": [
+   {
+    "path": [
+     "agents"
+    ],
+    "set": []
+   }
+  ]
+ },
+ {
+  "op": "reopen"
+ },
+ {
+  "op": "delete_profile",
+  "id": "work",
+  "new_default": "default"
+ },
+ {
+  "op": "delete_profile",
+  "id": "default"
+ },
+ {
+  "op": "config_revision",
+  "id": "default"
+ },
+ {
+  "op": "export_all",
+  "save": "exp"
+ },
+ {
+  "op": "update_profile_fields",
+  "id": "default",
+  "fields": {
+   "mihomo": {
+    "custom_config": "changed"
+   }
+  }
+ },
+ {
+  "op": "import_all",
+  "data": {
+   "$var": "exp"
+  }
+ },
+ {
+  "op": "import_all",
+  "data": {
+   "schema_version": 3
+  }
+ },
+ {
+  "op": "import_all",
+  "data": {
+   "profiles": {}
+  }
+ },
+ {
+  "op": "import_all",
+  "data": {
+   "$var": "exp",
+   "patch": [
+    {
+     "path": [
+      "profiles",
+      "default",
+      "id"
+     ],
+     "set": "other"
+    }
+   ]
+  }
+ },
+ {
+  "op": "import_all",
+  "data": {
+   "subscriptions": [
+    {
+     "id": "s1",
+     "name": "S",
+     "url": "https://x.test/s"
+    }
+   ],
+   "nodes": [
+    {
+     "id": "n1",
+     "name": "N1",
+     "type": "ss",
+     "server": "h.test",
+     "port": 1,
+     "params": {}
+    }
+   ],
+   "subscription_aggregations": [
+    {
+     "id": "ag",
+     "name": "S",
+     "subscriptions": [
+      "s1"
+     ],
+     "nodes": [
+      "n1"
+     ]
+    }
+   ],
+   "rule_library": [
+    {
+     "id": "l1",
+     "name": "Lib",
+     "url": "https://x.test/l",
+     "behavior": "domain"
+    }
+   ],
+   "proxy_groups": [
+    {
+     "id": "g1",
+     "name": "PG",
+     "type": "select",
+     "manual_nodes": [
+      "n1"
+     ],
+     "subscriptions": [
+      "s1"
+     ],
+     "proxies_order": [
+      {
+       "type": "node",
+       "id": "n1"
+      },
+      {
+       "type": "node",
+       "id": "gone"
+      },
+      {
+       "type": "strategy",
+       "id": "g1"
+      },
+      {
+       "type": "subscription",
+       "id": "s1"
+      },
+      "junk"
+     ]
+    }
+   ],
+   "rules": [
+    {
+     "id": "r1",
+     "rule_type": "RULE-SET",
+     "value": "Lib",
+     "policy": "PG"
+    },
+    {
+     "rule_type": "DOMAIN",
+     "value": "b.test",
+     "policy": "DIRECT"
+    }
+   ],
+   "rule_sets": [
+    {
+     "id": "rs1",
+     "name": "Lib",
+     "library_rule_id": "l1",
+     "policy": "PG",
+     "behavior": "ipcidr"
+    },
+    {
+     "id": "rs2",
+     "name": "Inline",
+     "url": "https://x.test/i",
+     "policy": "PG"
+    },
+    {
+     "id": "rs3",
+     "library_rule_id": "l1",
+     "policy": "PG"
+    }
+   ],
+   "system_config": {
+    "server_domain": "d",
+    "github_proxy_domain": 5
+   },
+   "agents": [
+    {
+     "id": "a",
+     "name": "A",
+     "profile_id": "zzz"
+    }
+   ],
+   "mosdns": {
+    "direct_rulesets": [
+     "rs1",
+     "nope"
+    ],
+    "direct_rules": [
+     "r1",
+     7
+    ]
+   },
+   "surge": {
+    "smart_groups": [
+     {
+      "group_id": "g1"
+     },
+     {
+      "group_id": "gone"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "op": "export_all"
+ },
+ {
+  "op": "import_all",
+  "data": {
+   "schema_version": 2,
+   "system": {
+    "schema_version": 2,
+    "_revision": 4,
+    "profiles": [
+     {
+      "id": "default",
+      "name": "默认"
+     },
+     {
+      "id": "p2",
+      "name": "P2",
+      "description": "second"
+     }
+    ],
+    "system_config": {},
+    "agents": [
+     {
+      "id": "x",
+      "profile_id": "p2"
+     },
+     {
+      "id": "y"
+     }
+    ]
+   },
+   "profiles": {
+    "default": {
+     "subscriptions": [
+      {
+       "id": "s",
+       "name": "Sub",
+       "url": "https://u1.test"
+      }
+     ],
+     "nodes": [
+      {
+       "id": "a",
+       "name": "A",
+       "type": "ss",
+       "server": "h.test",
+       "port": 1,
+       "params": {}
+      },
+      {
+       "id": "b",
+       "name": "B",
+       "type": "ss",
+       "server": "h.test",
+       "port": 2,
+       "params": {
+        "dialer-proxy": "A"
+       }
+      }
+     ],
+     "proxy_groups": [
+      {
+       "id": "g",
+       "name": "G",
+       "type": "select",
+       "manual_nodes": [
+        "b"
+       ],
+       "subscriptions": [
+        "s"
+       ]
+      }
+     ],
+     "rule_library": [
+      {
+       "id": "l",
+       "name": "Lib",
+       "url": "https://x.test/l"
+      }
+     ],
+     "rule_configs": [
+      {
+       "id": "q",
+       "itemType": "ruleset",
+       "library_rule_id": "l",
+       "policy": "G"
+      },
+      {
+       "id": "w",
+       "itemType": "rule",
+       "rule_type": "DOMAIN",
+       "value": "a.test",
+       "policy": "A"
+      }
+     ]
+    },
+    "p2": {
+     "subscriptions": [
+      {
+       "id": "s",
+       "name": "Sub",
+       "url": "https://u2.test"
+      }
+     ],
+     "nodes": [
+      {
+       "id": "a",
+       "name": "A",
+       "type": "ss",
+       "server": "other.test",
+       "port": 1,
+       "params": {}
+      },
+      {
+       "id": "b",
+       "name": "B",
+       "type": "ss",
+       "server": "h.test",
+       "port": 2,
+       "proxy_string": "{\"type\":\"ss\",\"server\":\"h.test\",\"port\":2,\"dialer-proxy\":\"A\"}"
+      }
+     ],
+     "proxy_groups": [
+      {
+       "id": "g",
+       "name": "G",
+       "type": "select",
+       "manual_nodes": [
+        "b"
+       ],
+       "subscriptions": [
+        "s"
+       ]
+      }
+     ],
+     "rule_library": [
+      {
+       "id": "l",
+       "name": "Lib",
+       "url": "https://x.test/other"
+      }
+     ],
+     "rule_configs": [
+      {
+       "id": "q",
+       "itemType": "ruleset",
+       "library_rule_id": "l",
+       "policy": "G"
+      },
+      {
+       "id": "w",
+       "itemType": "rule",
+       "rule_type": "DOMAIN",
+       "value": "a.test",
+       "policy": "A"
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "op": "export_all"
+ },
+ {
+  "op": "list_profiles"
+ },
+ {
+  "op": "import_all",
+  "data": {
+   "schema_version": 2,
+   "system": {
+    "schema_version": 2,
+    "profiles": [
+     {
+      "id": "p2",
+      "name": "P2"
+     }
+    ]
+   },
+   "profiles": {
+    "p2": {}
+   }
+  }
+ },
+ {
+  "op": "reset_all"
+ },
+ {
+  "op": "reopen"
+ },
+ {
+  "op": "export_all"
+ }
+]

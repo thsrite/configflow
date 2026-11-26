@@ -1,0 +1,196 @@
+[
+  {
+    "route": "/api/logs/info",
+    "path": "modified",
+    "tolerance": 600,
+    "reason": "Each process writes its own log file during the run; same timestamp format within 10 minutes."
+  },
+  {
+    "route": "/api/logs/info",
+    "path": "created",
+    "tolerance": 600,
+    "reason": "Each process creates its own log file at startup; same timestamp format within 10 minutes."
+  },
+  {
+    "route": "/api/logs/tail",
+    "path": "logs[]",
+    "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2},\\d{3}(?= - )",
+    "reason": "Log line timestamps of two processes; logger, level and message text are still compared."
+  },
+  {
+    "route": "/api/logs/tail",
+    "path": "logs",
+    "unordered": true,
+    "reason": "Lines are written by concurrent requests in scheduler order; the multiset of lines (and its size) is still compared."
+  },
+  {
+    "route": "/api/agents/<agent_id>/config/logging",
+    "path": "message",
+    "pattern": "(?s)(?<=^Connection error: ).+",
+    "reason": "Offline device: transport error text after the shared literal prefix comes from requests vs net/http (PORTING forbids emulating Python exception texts)."
+  },
+  {
+    "route": "/api/agents/<agent_id>/logs",
+    "path": "message",
+    "pattern": "(?s)(?<=^Connection error: ).+",
+    "reason": "Offline device: transport error text after the shared literal prefix comes from requests vs net/http (PORTING forbids emulating Python exception texts)."
+  },
+  {
+    "route": "/api/agents/<agent_id>/logs/sources",
+    "path": "message",
+    "pattern": "(?s)(?<=^Connection error: ).+",
+    "reason": "Offline device: transport error text after the shared literal prefix comes from requests vs net/http (PORTING forbids emulating Python exception texts)."
+  },
+  {
+    "route": "/api/agents/<agent_id>/traffic-history",
+    "path": "data.start",
+    "tolerance": 120,
+    "reason": "Query default start is now - range from each request wall clock; persisted traffic content is still compared."
+  },
+  {
+    "route": "/api/subscriptions/test",
+    "path": "timestamp",
+    "tolerance": 120,
+    "reason": "Diagnostic endpoint returns the request wall clock; message and success are still compared."
+  },
+  {
+    "route": "/api/agents/<agent_id>/metrics/history",
+    "bracket": true,
+    "reason": "Window is datetime.now() - hours over 30 s samples; Go must equal Python immediately before or after it."
+  },
+  {
+    "route": "/api/agents/<agent_id>/metrics/summary",
+    "bracket": true,
+    "reason": "Window is datetime.now() - hours over 30 s samples (observed flake); Go must equal Python immediately before or after it."
+  },
+  {
+    "route": "/api/agents/<agent_id>/traffic/stats",
+    "bracket": true,
+    "reason": "Periods are derived from datetime.now() over the 24 h metrics window."
+  },
+  {
+    "route": "/api/agents/<agent_id>/traffic/trend",
+    "bracket": true,
+    "reason": "Window is datetime.now() - hours over 30 s samples."
+  },
+  {
+    "route": "/api/agents/<agent_id>/traffic-history",
+    "bracket": true,
+    "reason": "Rows are selected from time.time() - range over persisted buckets."
+  },
+  {
+    "route": "/api/profiles/<profile_id>/subscriptions/<sub_id>/proxies",
+    "path": "header.content-disposition",
+    "pattern": "(?<=_)\\d{8}_\\d{6}(?=\\.[a-z]+\"$)",
+    "reason": "Download file name embeds datetime.now() to the second; disposition type, prefix and extension are still compared."
+  },
+  {
+    "route": "/api/subscriptions/<sub_id>/proxies",
+    "path": "header.content-disposition",
+    "pattern": "(?<=_)\\d{8}_\\d{6}(?=\\.[a-z]+\"$)",
+    "reason": "Download file name embeds datetime.now() to the second; disposition type, prefix and extension are still compared."
+  },
+  {
+    "route": "/api/subscriptions/proxies",
+    "path": "header.content-disposition",
+    "pattern": "(?<=_)\\d{8}_\\d{6}(?=\\.[a-z]+\"$)",
+    "reason": "Download file name embeds datetime.now() to the second; disposition type, prefix and extension are still compared."
+  },
+  {
+    "route": "/api/rule-library/<rule_id>/draft-content",
+    "path": "revision",
+    "pattern": "^[0-9a-f]{64}$",
+    "reason": "Maintainer-approved D2 ephemeral editor revision: native encoding/json hashing differs from Python ASCII/numeric spelling. Only this response field is normalized; C33 real Flask/Go tests separately prove per-side stability, invalidation and competing-submission rejection. See behaviour-changes.md D2 and difftest-c33.md."
+  },
+  {
+    "route": "/api/generate/mihomo",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/generate/surge",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/generate/loon",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/profiles/<profile_id>/generate/mihomo",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/profiles/<profile_id>/generate/surge",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/profiles/<profile_id>/generate/loon",
+    "path": "header.last-modified",
+    "timestamp_format": "http-date",
+    "tolerance": 600,
+    "reason": "PD-1（协调者 2026-11-18）：独立生成文件的运行时元数据；仅规范 HTTP-date 且两边相差不超过600秒。缺失、错误格式/类型与超窗保持差异。"
+  },
+  {
+    "route": "/api/agents/<agent_id>/ipv6-readiness",
+    "path": "refresh_error.at",
+    "tolerance": 120,
+    "reason": "A23 refresh failure records the current request time after a failed live retry; retained cached report data and error code/message remain compared.",
+    "timestamp_format": "request-clock"
+  },
+  {
+    "route": "/api/agents/<agent_id>/upstream-routers",
+    "path": "checked_at",
+    "tolerance": 120,
+    "reason": "R16 discovery stamps the start of each request using the local second-resolution clock; sources, device results and errors remain compared.",
+    "timestamp_format": "request-clock"
+  },
+  {
+    "route": "/api/notifications",
+    "path": "checked_at",
+    "tolerance": 120,
+    "reason": "Notification list receipt stamps this request in UTC with microseconds; incident timestamps, versions and all items remain compared.",
+    "timestamp_format": "request-clock"
+  },
+  {
+    "route": "/api/routers/<router_id>/policy",
+    "path": "generated_at",
+    "tolerance": 120,
+    "reason": "R15 policy preview stamps each request with the local second-resolution clock; every generated policy object and source remains compared.",
+    "timestamp_format": "request-clock"
+  },
+  {
+    "route": "/api/client-devices/discovery",
+    "path": "checked_at",
+    "tolerance": 120,
+    "timestamp_format": "request-clock",
+    "reason": "R16 stamps a new router snapshot from its collection request clock; cache hits retain that origin. Compare close independent capture times with exact second/offset format, while cached/stale/error and all device evidence remain strict. Discovery comparisons run serially to align cold/hit transitions."
+  },
+  {
+    "route": "/api/notifications",
+    "path": "items[].first_seen_at",
+    "tolerance": 600,
+    "mode": "go",
+    "reason": "Go-vs-Go only: an incident first detected during the run is stamped by each process at its own detection time (version = first_seen_at); stored incidents keep their snapshot stamps, which differ far beyond 600 s if changed."
+  },
+  {
+    "route": "/api/notifications",
+    "path": "items[].version",
+    "tolerance": 600,
+    "mode": "go",
+    "reason": "Go-vs-Go only: an incident first detected during the run is stamped by each process at its own detection time (version = first_seen_at); stored incidents keep their snapshot stamps, which differ far beyond 600 s if changed."
+  }
+]

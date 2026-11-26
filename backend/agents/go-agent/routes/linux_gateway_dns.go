@@ -11,11 +11,11 @@ import (
 // Exclude only this Agent's LAN address (and loopback) before that DNAT so LAN
 // clients reach OxiDNS. Adapt only explicitly marked gateway publications.
 func adaptGatewayDNS(cfg *Config, content string) (string, error) {
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
 		return "", err
 	}
-	marker, _ := doc["x-configflow-linux-gateway"].(map[string]interface{})
+	marker, _ := doc["x-configflow-linux-gateway"].(map[string]any)
 	if marker["enabled"] != true {
 		return content, nil
 	}
@@ -23,8 +23,8 @@ func adaptGatewayDNS(cfg *Config, content string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("为 OxiDNS 排除网关 DNS 时失败：%w", err)
 	}
-	tun, tunOK := doc["tun"].(map[string]interface{})
-	dns, dnsOK := doc["dns"].(map[string]interface{})
+	tun, tunOK := doc["tun"].(map[string]any)
+	dns, dnsOK := doc["dns"].(map[string]any)
 	if !tunOK || !dnsOK {
 		return "", fmt.Errorf("Linux 网关配置缺少 tun 或 dns 对象")
 	}

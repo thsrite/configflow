@@ -72,7 +72,12 @@ func oxCacheFlush(ctx context.Context, client *http.Client, config *oxMonitorCon
 
 func oxCacheWriteFailure(w http.ResponseWriter, err *oxMonitorError, flushed []string) {
 	w.Header().Set("Cache-Control", "no-store")
-	JsonResponse(w, err.status, map[string]interface{}{"success": false, "code": err.code, "message": err.message, "flushed": flushed})
+	JsonResponse(w, err.status, OxiDNSCacheFlushErrorResponse{
+		Code:    err.code,
+		Flushed: flushed,
+		Message: err.message,
+		Success: false,
+	})
 }
 
 func OxiDNSCacheHandler(cfg *Config) http.HandlerFunc {
@@ -103,7 +108,7 @@ func OxiDNSCacheHandler(cfg *Config) http.HandlerFunc {
 				oxMonitorWriteError(w, configErr)
 				return
 			}
-			JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "caches": config.capabilities.Caches})
+			JsonResponse(w, http.StatusOK, OxiDNSCacheListResponse{Caches: config.capabilities.Caches, Success: true})
 		case "/api/oxidns/cache/flush":
 			if r.Method != http.MethodPost {
 				w.Header().Set("Allow", "POST")
@@ -152,7 +157,7 @@ func OxiDNSCacheHandler(cfg *Config) http.HandlerFunc {
 				}
 				flushed = append(flushed, tag)
 			}
-			JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "flushed": flushed})
+			JsonResponse(w, http.StatusOK, OxiDNSCacheFlushResponse{Flushed: flushed, Success: true})
 		default:
 			oxMonitorWriteError(w, oxMonitorFail(http.StatusNotFound, "NOT_FOUND", "Unknown cache operation"))
 		}

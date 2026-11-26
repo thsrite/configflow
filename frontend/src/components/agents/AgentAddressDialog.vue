@@ -75,7 +75,7 @@ async function save() {
           <FormField label="设备地址" html-for="agent-address-host" :hint="scope || undefined">
             <Input
               id="agent-address-host" v-model="host" class="min-h-11 bg-background/50 font-mono" inputmode="decimal"
-              autocomplete="off" spellcheck="false" placeholder="192.168.1.10" :aria-invalid="!valid" @keydown.enter="save"
+              autocomplete="off" spellcheck="false" placeholder="192.0.2.10" :aria-invalid="!valid" @keydown.enter="save"
             />
           </FormField>
           <div v-if="info.addresses.length > 1" class="flex flex-col gap-1.5">
@@ -90,7 +90,7 @@ async function save() {
           <p v-if="info.mode === 'agent' && info.configured && info.configured !== info.host" class="m-0 text-[12px] text-muted-foreground">
             设备配置文件里现在写的是 {{ info.configured }}。
           </p>
-          <p v-if="!valid" role="alert" class="m-0 text-destructive">请输入 IPv4 地址，例如 192.168.1.10。</p>
+          <p v-if="!valid" role="alert" class="m-0 text-destructive">请输入 IPv4 地址，例如 192.0.2.10。</p>
           <p v-if="saveError" role="alert" class="m-0 text-destructive" data-address-error>{{ saveError }}</p>
         </template>
       </div>

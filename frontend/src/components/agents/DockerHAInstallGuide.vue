@@ -18,7 +18,8 @@ const emit = defineEmits<{ changed: [] }>()
 // This installation keeps its chosen profile even if the global space changes elsewhere.
 const profile = { id: props.profileId, name: props.profileName }
 const server = ref(props.serverUrl)
-const image = ref('thsrite/config-flow-agent:latest')
+// Empty = the Agent image paired with this panel build (chosen by the server).
+const image = ref('')
 const network = ref<DockerHANetwork>('host')
 const step = ref(0)
 const pairingVisited = ref(false)
@@ -96,7 +97,7 @@ async function generate(index: number) {
     }
     const { data } = await agentApi.generateDockerHAGuide({
       ...host, action: 'generate', server_url: server.value,
-      network_mode: network.value, image: image.value,
+      network_mode: network.value, ...(image.value.trim() ? { image: image.value.trim() } : {}),
       install_method: method,
       enable_dns_ha: true, enable_oxidns: true, enable_mihomo: false,
     }, profile.id)
@@ -144,8 +145,8 @@ onUnmounted(() => { disposed = true; requestIds.forEach((_, index) => requestIds
       </FormField>
       <p v-if="network === 'host'" class="m-0 text-[13px] leading-relaxed">使用宿主机地址；OxiDNS 和 HA companion 分开运行，NET_ADMIN / NET_RAW 只授予 HA 容器。核心容器停止后 HA 仍可探测并让出 VIP；强杀 HA 容器或整个 Docker 可能留下宿主 VIP，需要恢复 HA 或人工清理。</p>
       <p v-else class="m-0 rounded-md bg-warning-soft p-3 text-[13px] leading-relaxed">单个容器内仍包含 OxiDNS、Agent 和 keepalived。需要宿主机和网络支持 macvlan，为每台容器分配独立 LAN 地址。macvlan 默认不能访问本宿主机；ConfigFlow 应部署在可达的其他 LAN 主机或同 macvlan 网络。NAS 不支持时使用 Host。</p>
-      <FormField label="ConfigFlow 服务器地址" html-for="docker-ha-server" persistent-hint hint="两端都必须能访问，不能填写 localhost 或 127.0.0.1。"><Input id="docker-ha-server" v-model="server" class="font-mono" placeholder="http://192.168.1.10:8000" /></FormField>
-      <FormField label="Agent Docker 镜像" html-for="docker-ha-image" hint="精简 Compose 需要 Agent 1.8.49-go 或更新镜像，旧镜像需先升级。"><Input id="docker-ha-image" v-model="image" class="font-mono" /></FormField>
+      <FormField label="ConfigFlow 服务器地址" html-for="docker-ha-server" persistent-hint hint="两端都必须能访问，不能填写 localhost 或 127.0.0.1。"><Input id="docker-ha-server" v-model="server" class="font-mono" placeholder="http://192.0.2.10:5010" /></FormField>
+      <FormField label="Agent Docker 镜像" html-for="docker-ha-image" hint="留空时使用与当前面板版本配套的镜像。自定义镜像须与面板版本配套，精简 Compose 需要 Agent 1.8.49-go 或更新镜像。"><Input id="docker-ha-image" v-model="image" class="font-mono" placeholder="与面板版本配套（默认）" /></FormField>
       <Button variant="outline" class="min-h-11 self-start" :disabled="preflightBusy" @click="inspectHost()"><Loader2 v-if="preflightBusy" class="size-4 animate-spin" />生成环境检查命令</Button>
       <p v-if="preflightError" role="alert" class="m-0 text-sm text-destructive-accent">{{ preflightError }}</p>
       <DockerHAGuideCommand v-if="preflight" title="两台宿主机分别检查" :command="preflight" collapsed note="复制完整命令到两台宿主机分别执行；将完整输出粘贴到下方检测，逐项查看需要处理的问题。" />

@@ -129,19 +129,19 @@ func diagnosticSecretParts(secrets []string) []string {
 	return parts
 }
 
-func configurationDiagnosticSecrets(doc map[string]interface{}) []string {
+func configurationDiagnosticSecrets(doc map[string]any) []string {
 	var secrets []string
-	var visit func(interface{})
-	visit = func(value interface{}) {
+	var visit func(any)
+	visit = func(value any) {
 		switch item := value.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			for key, child := range item {
 				if text, ok := child.(string); ok && (sensitiveURLQueryKey(key) || key == "uuid") && text != "" {
 					secrets = append(secrets, text)
 				}
 				visit(child)
 			}
-		case []interface{}:
+		case []any:
 			for _, child := range item {
 				visit(child)
 			}

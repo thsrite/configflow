@@ -2,14 +2,17 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import DockerAgentUpdateDialog from '@/components/agents/DockerAgentUpdateDialog.vue'
 import { notify } from '@/lib/feedback'
+import { systemApi } from '@/api'
 
 vi.mock('@/lib/feedback', () => ({ notify: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('@/api', () => ({ systemApi: { getVersion: vi.fn() } }))
 let wrapper: ReturnType<typeof mount>
 const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
 const execCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
 const writeText = vi.fn()
 beforeEach(() => {
  vi.clearAllMocks()
+ vi.mocked(systemApi.getVersion).mockResolvedValue({ data: { version: '3.0.0', agent_image: 'thsrite/config-flow-agent:3.0.0' } } as any)
  writeText.mockResolvedValue(undefined)
  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
  wrapper = mount(DockerAgentUpdateDialog, {
@@ -92,4 +95,28 @@ it('copies within the real dialog focus scope when the Clipboard API is absent',
  expect(fallback).toHaveBeenCalledOnce()
  expect(notify.success).toHaveBeenCalledWith('命令已复制，请到 Docker 宿主机执行')
  expect(notify.error).not.toHaveBeenCalled()
+})
+
+async function chooseRun() {
+ await flushPromises()
+ ;(document.querySelector('[role="radio"][value="run"]') as HTMLElement).click()
+ await flushPromises()
+}
+
+it('defaults the target image to the Agent paired with this panel, never the frozen latest', async () => {
+ await chooseRun()
+ expect((document.getElementById('docker-update-image') as HTMLInputElement).value).toBe('thsrite/config-flow-agent:3.0.0')
+ await click('复制拉取命令')
+ expect(writeText).toHaveBeenCalledWith("docker pull 'thsrite/config-flow-agent:3.0.0'")
+})
+
+it('falls back to the major-version tag when the panel version cannot be read', async () => {
+ wrapper.unmount()
+ vi.mocked(systemApi.getVersion).mockRejectedValue(new Error('offline'))
+ wrapper = mount(DockerAgentUpdateDialog, {
+  props: { agent: { id: 'docker-agent', name: 'Docker Agent', host: '192.0.2.10' } as any },
+  attachTo: document.body
+ })
+ await chooseRun()
+ expect((document.getElementById('docker-update-image') as HTMLInputElement).value).toBe('thsrite/config-flow-agent:3')
 })

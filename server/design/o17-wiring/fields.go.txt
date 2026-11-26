@@ -1,0 +1,88 @@
+// fields prints, per top-level function/method in a package directory, the
+// fields of the named aggregate types (RouterState, Desired, Report, Router)
+// it touches.
+package main
+
+import (
+	"fmt"
+	"go/ast"
+	"go/importer"
+	"go/parser"
+	"go/token"
+	"go/types"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+func main() {
+	dir := os.Args[1]
+	targets := map[string]bool{}
+	for _, t := range strings.Split(os.Args[2], ",") {
+		targets[t] = true
+	}
+	fset := token.NewFileSet()
+	matches, _ := filepath.Glob(filepath.Join(dir, "*.go"))
+	var files []*ast.File
+	for _, m := range matches {
+		if strings.HasSuffix(m, "_test.go") {
+			continue
+		}
+		f, _ := parser.ParseFile(fset, m, nil, 0)
+		files = append(files, f)
+	}
+	info := &types.Info{Selections: map[*ast.SelectorExpr]*types.Selection{}, Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
+	conf := types.Config{Importer: importer.ForCompiler(fset, "source", nil), Error: func(error) {}}
+	conf.Check("configflow/internal/routers", fset, files, info)
+	for _, f := range files {
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			got := map[string]map[string]bool{}
+			ast.Inspect(fd, func(n ast.Node) bool {
+				se, ok := n.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				sel := info.Selections[se]
+				if sel == nil || sel.Kind() != types.FieldVal {
+					return true
+				}
+				t := sel.Recv()
+				if p, ok := t.(*types.Pointer); ok {
+					t = p.Elem()
+				}
+				nt, ok := t.(*types.Named)
+				if !ok || !targets[nt.Obj().Name()] {
+					return true
+				}
+				if got[nt.Obj().Name()] == nil {
+					got[nt.Obj().Name()] = map[string]bool{}
+				}
+				got[nt.Obj().Name()][se.Sel.Name] = true
+				return true
+			})
+			if len(got) == 0 {
+				continue
+			}
+			name := fd.Name.Name
+			if fd.Recv != nil {
+				name = "(" + types.ExprString(fd.Recv.List[0].Type) + ")." + name
+			}
+			var parts []string
+			for t, fs := range got {
+				var l []string
+				for k := range fs {
+					l = append(l, k)
+				}
+				sort.Strings(l)
+				parts = append(parts, t+"{"+strings.Join(l, ",")+"}")
+			}
+			sort.Strings(parts)
+			fmt.Printf("%s\t%s\t%s\n", filepath.Base(fset.Position(fd.Pos()).Filename), name, strings.Join(parts, " "))
+		}
+	}
+}

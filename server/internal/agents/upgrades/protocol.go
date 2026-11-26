@@ -1,0 +1,248 @@
+package upgrades
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"configflow/internal/agents"
+	"configflow/internal/jsondecode"
+	"configflow/internal/jsonresp"
+	"configflow/internal/model"
+	"configflow/internal/redact"
+)
+
+func originalString(raw []byte, present bool, err error) (string, bool) {
+	raw = bytes.TrimSpace(raw)
+	if err != nil || !present || len(raw) == 0 || raw[0] != '"' {
+		return "", false
+	}
+	var text string
+	if jsondecode.Unmarshal(raw, &text) != nil {
+		return "", false
+	}
+	return text, true
+}
+
+// portJSON is the Agent's port as a JSON number.
+func portJSON(a *model.Agent) json.RawMessage {
+	return json.RawMessage(strconv.FormatInt(int64(a.Port), 10))
+}
+func fieldString(fields model.Fields, key string) (string, bool) {
+	raw, ok := fields.Get(key)
+	return originalString(raw, ok, nil)
+}
+func rawText(raw json.RawMessage) string {
+	if text, ok := originalString(raw, len(raw) > 0, nil); ok {
+		return text
+	}
+	if len(raw) == 0 {
+		return ""
+	}
+	return string(raw)
+}
+
+var versionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
+
+func validVersion(text string) bool { return versionPattern.MatchString(text) }
+
+// Info is the exact-key identity and migration proof from /api/upgrade-info.
+type Info struct {
+	AgentID          string `json:"agent_id"`
+	DeploymentMethod string `json:"deployment_method"`
+	Architecture     string `json:"architecture"`
+	Version          string `json:"version"`
+	MigrationReady   bool   `json:"migration_ready"`
+}
+
+// Worker is an update worker observation. It cannot alone prove upgrade success.
+type Worker struct {
+	UpdateID  string                 `json:"update_id"`
+	AgentID   string                 `json:"agent_id"`
+	Status    string                 `json:"status"`
+	Error     json.RawMessage        `json:"error"`
+	Message   *string                `json:"message"`
+	Events    []model.OperationEvent `json:"events"`
+	UpdatedAt *string                `json:"updated_at"`
+}
+
+// LegacyReport is the protocol-1 rollback report, bound to one stored update ID.
+type LegacyReport struct {
+	UpdateID string          `json:"update_id"`
+	Status   string          `json:"status"`
+	Error    json.RawMessage `json:"error"`
+}
+
+// decodeProtocol retains exact member names and rejects duplicate JSON evidence.
+func decodeProtocol(data []byte, dst any) error {
+	var fields model.Fields
+	if err := jsondecode.Unmarshal(data, &fields); err != nil {
+		return agents.ErrInvalidAgentReply
+	}
+	if err := jsondecode.Unmarshal(data, dst); err != nil {
+		return agents.ErrInvalidAgentReply
+	}
+	return nil
+}
+func responseData(response *agents.Response) []byte {
+	if response == nil {
+		return nil
+	}
+	if response.Header.Get("Content-Type") == "" && len(response.Body) > 3 {
+		if text, ok := agents.DecodeJSONBytes(response.Body); ok {
+			return []byte(text)
+		}
+	}
+	return []byte(response.Text())
+}
+
+var requestOverride func(context.Context, *model.Agent, string, string, []byte) (*agents.Response, error)
+
+// requestModel deliberately bypasses environment proxies for update control calls.
+func requestModel(ctx context.Context, m *agents.Manager, a *model.Agent, method, path string, payload any) (*agents.Response, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if a == nil {
+		return nil, agents.ErrAgentEndpoint
+	}
+	host, token, port := a.Host, a.Token, portJSON(a)
+	if host == "" || token == "" {
+		return nil, agents.ErrAgentEndpoint
+	}
+	header := http.Header{"Authorization": {"Bearer " + token}}
+	var body []byte
+	var err error
+	if payload != nil {
+		body, err = jsonresp.Encode(payload)
+		if err != nil {
+			return nil, err
+		}
+		header.Set("Content-Type", "application/json")
+	}
+	if requestOverride != nil {
+		return requestOverride(ctx, a, method, path, body)
+	}
+	response, err := m.Client().Do(ctx, agents.Request{Method: method, URL: "http://" + host + ":" + rawText(port) + path, Header: header, Body: body, Timeout: agents.Seconds(5), NoProxy: true, Latin1Headers: true})
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err != nil && !agents.IsTransportError(err) && !errors.Is(err, agents.ErrHeaderEncoding) {
+		err = &agents.TransportError{Err: err}
+	}
+	return response, err
+}
+func agentSecrets(a *model.Agent) redact.Secrets {
+	token, _ := a.Token, true
+	return redact.NewSecrets([]string{token})
+}
+func heartbeatAfterModel(a *model.Agent, moment float64) (bool, error) {
+	if a.LastHeartbeat == "" {
+		return false, nil
+	}
+	ts, valid := agents.ISOTimestamp(a.LastHeartbeat)
+	return valid && ts > moment, nil
+}
+
+func agentLabel(a *model.Agent) string {
+	name, _ := a.Name, true
+	if name == "" {
+		name, _ = a.ID, true
+	}
+	return name
+}
+func findModel(records []model.Agent, id string) (*model.Agent, error) {
+	for i := range records {
+		if text, ok := records[i].ID, true; ok && text == id {
+			return &records[i], nil
+		}
+	}
+	return nil, invalidInput("Agent not found")
+}
+func activeHA(a *model.Agent) (bool, error) {
+	job := a.OxiDNSHAPublication
+	if !job.HasMembers() {
+		return false, nil
+	}
+	status := job.Status
+	if status == "" {
+		return false, &CorruptStateError{Field: agents.HAField + ".status"}
+	}
+	return status != "succeeded" && status != "failed" && status != "rollback_failed", nil
+}
+func memberHA(a *model.Agent) (bool, error) {
+	if a.OxiDNSHA != nil && a.OxiDNSHA.Enabled != nil && *a.OxiDNSHA.Enabled {
+		return true, nil
+	}
+	return activeHA(a)
+}
+func displayVersion(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return "?"
+	}
+	return text
+}
+
+func hasContent(raw json.RawMessage) bool {
+	content, err := model.Truthy(raw)
+	return err == nil && content
+}
+
+func decodeWorker(data []byte) (Worker, error) {
+	var fields model.Fields
+	var out Worker
+	if jsondecode.Unmarshal(data, &fields) != nil {
+		return out, agents.ErrInvalidAgentReply
+	}
+	var ok bool
+	out.UpdateID, ok = fieldString(fields, "update_id")
+	if !ok {
+		return out, agents.ErrInvalidAgentReply
+	}
+	out.AgentID, ok = fieldString(fields, "agent_id")
+	if !ok {
+		return out, agents.ErrInvalidAgentReply
+	}
+	out.Status, ok = fieldString(fields, "status")
+	if !ok {
+		return out, agents.ErrInvalidAgentReply
+	}
+	out.Error, _ = fields.Get("error")
+	if message, valid := fieldString(fields, "message"); valid {
+		out.Message = &message
+	}
+	if timestamp, valid := fieldString(fields, "updated_at"); valid {
+		out.UpdatedAt = &timestamp
+	}
+	if raw, exists := fields.Get("events"); exists {
+		_ = jsondecode.Unmarshal(raw, &out.Events)
+	}
+	return out, nil
+}
+func decodeInfo(data []byte) (Info, error) {
+	var out Info
+	var evidence model.Fields
+	if jsondecode.Unmarshal(data, &evidence) != nil {
+		return out, agents.ErrInvalidAgentReply
+	}
+	fields, err := jsondecode.Select(data, "agent_id", "version", "migration_ready")
+	if err != nil {
+		return out, agents.ErrInvalidAgentReply
+	}
+	var ok bool
+	out.AgentID, ok = originalString(fields["agent_id"], fields["agent_id"] != nil, nil)
+	if !ok {
+		return out, agents.ErrInvalidAgentReply
+	}
+	out.Version, ok = originalString(fields["version"], fields["version"] != nil, nil)
+	if !ok {
+		return out, agents.ErrInvalidAgentReply
+	}
+	out.MigrationReady = string(fields["migration_ready"]) == "true"
+	return out, nil
+}

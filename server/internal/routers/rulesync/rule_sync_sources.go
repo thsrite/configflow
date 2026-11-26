@@ -1,0 +1,145 @@
+package rulesync
+
+// Rule-source I/O uses the shared typed owner APIs. A source environment is
+// decoded once per operation and reused by all selected rules.
+import (
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
+	"configflow/internal/repo"
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/routeedit"
+	"configflow/internal/rulefetch"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"unicode/utf8"
+)
+
+type syncEnvironmentKey struct{}
+type syncEnvironment struct {
+	config    *rulefetch.SourceConfig
+	transport string
+}
+
+// withSyncEnvironment scopes one immutable config snapshot to one operation.
+// Callers must start from their parent context after replacing the snapshot;
+// the derived context is never shared between scheduler rounds or profiles.
+func withSyncEnvironment(ctx context.Context, raw json.RawMessage) (context.Context, error) {
+	if _, ok := ctx.Value(syncEnvironmentKey{}).(*syncEnvironment); ok {
+		return ctx, nil
+	}
+	var input struct {
+		System  json.RawMessage         `json:"system_config"`
+		Library []model.RuleLibraryItem `json:"rule_library"`
+	}
+	selected, err := jsondecode.Select(raw, "system_config", "rule_library")
+	if err != nil {
+		return nil, err
+	}
+	input.System = selected["system_config"]
+	if library, present := selected["rule_library"]; present {
+		if err := json.Unmarshal(library, &input.Library); err != nil {
+			return nil, err
+		}
+	}
+	cfg := &rulefetch.SourceConfig{Library: input.Library}
+	if len(input.System) > 0 && string(input.System) != "null" {
+		if err := json.Unmarshal(input.System, &cfg.Settings); err != nil {
+			return nil, err
+		}
+	}
+	return context.WithValue(ctx, syncEnvironmentKey{}, &syncEnvironment{cfg, routeedit.Digest(input.System)}), nil
+}
+
+func syncEnvironmentConfig(ctx context.Context, raw json.RawMessage) (*rulefetch.SourceConfig, error) {
+	ctx, err := withSyncEnvironment(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+	return ctx.Value(syncEnvironmentKey{}).(*syncEnvironment).config, nil
+}
+func syncRule(raw json.RawMessage) (model.RuleConfig, error) {
+	var rule model.RuleConfig
+	err := json.Unmarshal(raw, &rule)
+	return rule, err
+}
+func syncValidate(ctx context.Context, content string, source syncSource, config json.RawMessage) error {
+	rule, err := syncRule(source.Library.Raw)
+	if err != nil {
+		return err
+	}
+	cfg, err := syncEnvironmentConfig(ctx, config)
+	if err != nil {
+		return err
+	}
+	return rulefetch.ValidateRemote(rulefetch.Content{Data: []byte(content), Text: true}, rule, cfg.Library, "")
+}
+
+// syncCacheRead uses the rule owner's validated, read-only peek. It never
+// migrates a legacy path or changes mtime; keep generation off ReadCache.
+func syncCacheRead(ctx context.Context, r *repo.Repository, source syncSource, config json.RawMessage) (string, error) {
+	rule, err := syncRule(source.Library.Raw)
+	if err != nil {
+		return "", err
+	}
+	cfg, err := syncEnvironmentConfig(ctx, config)
+	if err != nil {
+		return "", err
+	}
+	if r == nil {
+		return "", errors.New("routers/rulesync: repository is nil")
+	}
+	raw, err := rulefetch.PeekCacheWithFormat(ctx, r, rule, cfg, "")
+	if err != nil {
+		return "", err
+	}
+	if raw == nil && source.Source.SourceType == "content" {
+		return source.Source.Content, nil
+	}
+	if len(raw) > syncMaxBytes {
+		return "", device.Error(fmt.Sprintf(messageSyncSourceLarge, device.OrText(source.Source.Name, source.Item.ID)))
+	}
+	if !utf8.Valid(raw) {
+		return "", device.Error(fmt.Sprintf(messageSyncUTF8, device.OrText(source.Source.Name, source.Item.ID)))
+	}
+	return strings.TrimPrefix(string(raw), "\ufeff"), nil
+}
+func syncCacheWrite(ctx context.Context, r *repo.Repository, source syncSource, content string, config json.RawMessage) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	rule, err := syncRule(source.Library.Raw)
+	if err != nil {
+		return err
+	}
+	cfg, err := syncEnvironmentConfig(ctx, config)
+	if err != nil {
+		return err
+	}
+	if r == nil {
+		return errors.New("routers/rulesync: repository is nil")
+	}
+	_, err = rulefetch.WriteCache(ctx, r, rule, rulefetch.Content{Data: []byte(content), Text: true}, cfg)
+	return err
+}
+
+// writeSyncSources is the service's actual post-readback cache-write loop.
+func writeSyncSources(ctx context.Context, r *repo.Repository, sources []syncSource, contents map[string]string, config json.RawMessage) error {
+	ctx, err := withSyncEnvironment(ctx, config)
+	if err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, source := range sources {
+		if source.Source.SourceType != "url" || seen[source.Source.ID] {
+			continue
+		}
+		seen[source.Source.ID] = true
+		if err = syncCacheWrite(ctx, r, source, contents[source.Item.ID], config); err != nil {
+			return err
+		}
+	}
+	return nil
+}

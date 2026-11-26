@@ -86,7 +86,7 @@ export const logFields: OxidnsField[] = [
 ]
 
 const rosFields = (name: string): OxidnsField[] => [
-  text(`${name}.args.address`, 'RouterOS API 地址', optionCopy('填写 OxiDNS 可访问的路由器 API 地址。', '使用 OxiDNS 联动 RouterOS，且已开启路由器 API 时填写。', '格式如 192.168.0.1:8728。明文 API 通常用 8728，TLS 通常用 8729；实际端口需与路由器设置一致。')),
+  text(`${name}.args.address`, 'RouterOS API 地址', optionCopy('填写 OxiDNS 可访问的路由器 API 地址。', '使用 OxiDNS 联动 RouterOS，且已开启路由器 API 时填写。', '格式如 192.0.2.1:8728。明文 API 通常用 8728，TLS 通常用 8729；实际端口需与路由器设置一致。')),
   text(`${name}.args.username`, '用户名', optionCopy('使用有权限维护目标列表或路由的账号。', 'RouterOS 已提供 API 访问，并准备好授权账号。', '账号须能读取和维护目标地址列表或路由。OxiDNS 使用此账号连接路由器，普通只读账号可能可以连接，但无法完成写入操作。')),
   { path: `${name}.args.password`, label: '密码', type: 'password', ...optionCopy('填写路由器 API 密码，生成配置会包含它。', '与上方 RouterOS 用户名配套，用于建立 API 连接。', '连接和断线重连都会使用此密码，并将它保存在生成的运行配置中。分享配置前移除凭据，修改路由器密码后也需同步更新这里。') },
   { path: `${name}.args.tls`, label: '使用 TLS', type: 'tls', ...optionCopy('路由器已启用 API-SSL 时，使用加密连接。', 'RouterOS 已开启 API-SSL，并可访问对应端口时开启。', '通过 TLS 加密 API 连接，管理地址需填写实际 TLS API 端口。关闭后改用明文 API；仅开启本选项不会替路由器启用服务。') },

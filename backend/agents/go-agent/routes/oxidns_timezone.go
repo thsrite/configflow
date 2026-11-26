@@ -14,16 +14,16 @@ var zoneinfoDirectories = []string{"/usr/share/zoneinfo", "/usr/share/lib/zonein
 
 // oxidnsPluginTimezone returns the timezone a plugin resolves from the
 // database at startup, or "" when it needs none.
-func oxidnsPluginTimezone(kind string, args map[string]interface{}) string {
+func oxidnsPluginTimezone(kind string, args map[string]any) string {
 	zone, _ := args["timezone"].(string)
 	zone = strings.TrimSpace(zone)
 	switch kind {
 	case "cron":
 		// Interval jobs never parse the timezone; only cron schedules do.
-		jobs, _ := args["jobs"].([]interface{})
+		jobs, _ := args["jobs"].([]any)
 		scheduled := false
 		for _, value := range jobs {
-			job, _ := value.(map[string]interface{})
+			job, _ := value.(map[string]any)
 			if schedule, _ := job["schedule"].(string); strings.TrimSpace(schedule) != "" {
 				scheduled = true
 			}
@@ -74,7 +74,7 @@ func zoneinfoAvailable(name string) bool {
 	return false
 }
 
-func validateOxiDNSTimezone(kind string, args map[string]interface{}) error {
+func validateOxiDNSTimezone(kind string, args map[string]any) error {
 	zone := oxidnsPluginTimezone(kind, args)
 	if zone == "" || zoneinfoAvailable(zone) {
 		return nil

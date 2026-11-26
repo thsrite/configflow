@@ -67,18 +67,6 @@ func (r Report) HasErrors() bool {
 	return false
 }
 
-// Print keeps values on one line, so a filename cannot forge another result or
-// inject terminal control sequences. Repair instructions are explanatory only.
-func (r Report) Print(out io.Writer) {
-	r.print(out, false)
-}
-
-// PrintPreparation deliberately distinguishes the opt-in installer mutation
-// from the read-only environment report.
-func (r Report) PrintPreparation(out io.Writer) {
-	r.print(out, true)
-}
-
 // PrintWithOptions separates complete evidence from the short operator-facing
 // report. It does not run checks, mutate their outcomes, or change exit status.
 func (r Report) PrintWithOptions(out io.Writer, options clioutput.Options, preparation bool) {
@@ -277,12 +265,12 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
-func loadCoreConfig(cfg Config) (map[string]interface{}, error) {
+func loadCoreConfig(cfg Config) (map[string]any, error) {
 	data, err := os.ReadFile(cfg.ConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("无法读取 %s 核心配置，请检查安装路径与读取权限", cfg.ServiceType)
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil || len(doc) == 0 {
 		// YAML errors can quote credentials or entire configuration lines.
 		return nil, fmt.Errorf("%s 核心配置需要是有效、非空的 YAML 对象", cfg.ServiceType)

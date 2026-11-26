@@ -1,0 +1,117 @@
+// filedeps type-checks one package directory and prints file-level
+// dependency edges between its files (who uses which top-level symbol).
+package main
+
+import (
+	"fmt"
+	"go/ast"
+	"go/importer"
+	"go/parser"
+	"go/token"
+	"go/types"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+func main() {
+	dir := os.Args[1]
+	withTests := len(os.Args) > 2 && os.Args[2] == "tests"
+	fset := token.NewFileSet()
+	matches, _ := filepath.Glob(filepath.Join(dir, "*.go"))
+	var files []*ast.File
+	for _, m := range matches {
+		if strings.HasSuffix(m, "_test.go") && !withTests {
+			continue
+		}
+		f, err := parser.ParseFile(fset, m, nil, parser.ParseComments)
+		if err != nil {
+			panic(err)
+		}
+		if strings.HasSuffix(f.Name.Name, "_test") {
+			continue
+		}
+		files = append(files, f)
+	}
+	info := &types.Info{Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
+	conf := types.Config{Importer: importer.ForCompiler(fset, "source", nil), Error: func(err error) { fmt.Fprintln(os.Stderr, "typeerr:", err) }}
+	pkg, _ := conf.Check("configflow/internal/routers", fset, files, info)
+	base := func(p token.Pos) string { return filepath.Base(fset.Position(p).Filename) }
+	// top-level owner of an object: for methods/fields use the receiver's named type.
+	owner := func(obj types.Object) (string, bool) {
+		if obj == nil || obj.Pkg() != pkg {
+			return "", false
+		}
+		if obj.Parent() == pkg.Scope() {
+			return obj.Name(), true
+		}
+		if fn, ok := obj.(*types.Func); ok {
+			sig := fn.Type().(*types.Signature)
+			if sig.Recv() != nil {
+				return "(" + types.TypeString(sig.Recv().Type(), func(*types.Package) string { return "" }) + ")." + fn.Name(), true
+			}
+		}
+		return "", false
+	}
+	defs := map[string][]string{}
+	for id, obj := range info.Defs {
+		if n, ok := owner(obj); ok {
+			defs[base(id.Pos())] = append(defs[base(id.Pos())], n)
+		}
+	}
+	type key struct{ from, to string }
+	edges := map[key]map[string]bool{}
+	for id, obj := range info.Uses {
+		n, ok := owner(obj)
+		if !ok {
+			continue
+		}
+		from, to := base(id.Pos()), base(obj.Pos())
+		if from == to {
+			continue
+		}
+		k := key{from, to}
+		if edges[k] == nil {
+			edges[k] = map[string]bool{}
+		}
+		edges[k][n] = true
+	}
+	imports := map[string][]string{}
+	for _, f := range files {
+		for _, im := range f.Imports {
+			p := strings.Trim(im.Path.Value, `"`)
+			if strings.HasPrefix(p, "configflow/") {
+				imports[base(f.Pos())] = append(imports[base(f.Pos())], strings.TrimPrefix(p, "configflow/internal/"))
+			}
+		}
+	}
+	var names []string
+	for _, f := range files {
+		names = append(names, base(f.Pos()))
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		d := defs[n]
+		sort.Strings(d)
+		fmt.Printf("FILE %s\n  IMPORTS %s\n  DEFS %s\n", n, strings.Join(imports[n], " "), strings.Join(d, " "))
+	}
+	var ks []key
+	for k := range edges {
+		ks = append(ks, k)
+	}
+	sort.Slice(ks, func(i, j int) bool {
+		if ks[i].from != ks[j].from {
+			return ks[i].from < ks[j].from
+		}
+		return ks[i].to < ks[j].to
+	})
+	for _, k := range ks {
+		var s []string
+		for n := range edges[k] {
+			s = append(s, n)
+		}
+		sort.Strings(s)
+		fmt.Printf("EDGE %s -> %s : %s\n", k.from, k.to, strings.Join(s, " "))
+	}
+}

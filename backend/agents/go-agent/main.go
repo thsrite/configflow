@@ -2,12 +2,15 @@ package main
 
 import (
 	"agent/clioutput"
+	"agent/dockerha"
+	"agent/dockerimage"
 	"agent/preflight"
 	"agent/routes"
+	"agent/svc"
 	"agent/upgrade"
+	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 )
@@ -17,6 +20,20 @@ func main() {
 }
 
 func runAgent() int {
+	// Docker HA one-shot commands (configflow-agent ha-bootstrap, ...) run
+	// before any Agent flag parsing, configuration or logging.
+	if len(os.Args) > 1 && dockerha.Commands[os.Args[1]] {
+		return dockerha.Run(context.Background(), os.Args[1], os.Args[2:], os.Stdin, os.Stdout, os.Stderr)
+	}
+	// Container start preparation called by the image entrypoint.
+	if len(os.Args) > 1 && os.Args[1] == dockerimage.Command {
+		return dockerimage.Run(os.Args[2:], dockerimage.LookupEnv, os.Stderr)
+	}
+	// Process control inside the Docker image (s6 run/finish scripts, the
+	// HA companion socket, configflow-agent svc status ...).
+	if len(os.Args) > 1 && svc.Commands[os.Args[1]] {
+		return svc.Run(context.Background(), os.Args[1], os.Args[2:], os.Stdout, os.Stderr)
+	}
 	// 使用命令行参数指定配置文件路径
 	// Go的flag包支持单横线(-)和双横线(--)两种格式的参数
 	configPath := flag.String("config", "", "Path to the configuration file")
@@ -27,7 +44,7 @@ func runAgent() int {
 	requireCleanDeployments := flag.Bool("require-clean-deployments", false, "Read-only installation preflight; exit nonzero if deployment or native Agent update journals require attention")
 	recoverOnly := flag.Bool("recover-only", false, "Deprecated compatibility alias for -check-deployments; does not restore files")
 	recoverAndExit := flag.Bool("recover-and-exit", false, "Recover interrupted deployments with service lifecycle, then exit without registration")
-	validateService := flag.Bool("validate-service", false, "Validate OxiDNS service working directory without registration or mutation")
+	validateService := flag.Bool("validate-service", false, "Check service configuration (OxiDNS/systemd working directory) without registration or mutation")
 	checkEnvironment := flag.Bool("check-environment", false, "Inspect native installation TUN, permissions, IPv4 forwarding and port occupancy without changing the system")
 	prepareTUN := flag.Bool("prepare-tun", false, "Prepare enabled TUN for native AIO: load the local driver and persist it, or explain required container host changes")
 	assumeTUN := flag.Bool("assume-tun-enabled", false, "With -prepare-tun: prepare TUN even when the bootstrap config has TUN disabled (gateway installer)")
@@ -57,7 +74,7 @@ func runAgent() int {
 	}
 	if *upgradeWorker != "" {
 		if err := upgrade.Run(*upgradeWorker); err != nil {
-			log.Printf("Agent update: %v", err)
+			logger.Infof("Agent update: %v", err)
 			return 1
 		}
 		return 0
@@ -82,7 +99,7 @@ func runAgent() int {
 		defer output.Close()
 	}
 	fail := func(title string, err error, fix string) int {
-		log.Printf("%s: %v", title, err)
+		logger.Infof("%s: %v", title, err)
 		if output != nil {
 			output.Result("error", title, err.Error(), fix)
 		}
@@ -114,7 +131,7 @@ func runAgent() int {
 		}
 	}
 
-	log.Printf("Using config file: %s", *configPath)
+	logger.Infof("Using config file: %s", *configPath)
 	if *prepareTUN {
 		candidate, err := preflight.LoadConfig(*configPath)
 		var report preflight.Report
@@ -167,13 +184,26 @@ func runAgent() int {
 	if err != nil {
 		return fail("Agent 配置加载失败", err, "检查 -config 指定的配置路径与读取权限。")
 	}
-	log.Println("Configuration loaded successfully.")
+	logger.Info("Configuration loaded successfully.")
 	if *validateService {
 		output.Title("核心服务配置检查")
 		if err := routes.ValidateOxiDNSServiceDirectory(toRoutesConfig(cfg)); err != nil {
 			return fail("核心服务配置检查未通过", err, "核对 OxiDNS 服务的工作目录及启动参数。")
 		}
-		output.Result("pass", "核心服务配置检查通过", "OxiDNS 服务目录校验完成；未更改文件或服务。", "")
+		message := "当前服务类型及管理方式无需服务目录专项校验；未更改文件或服务。"
+		switch cfg.ServiceType {
+		case "oxidns":
+			if cfg.ServiceManager == "systemd" {
+				message = "OxiDNS 服务目录校验完成；未更改文件或服务。"
+			} else {
+				message = "OxiDNS 当前服务管理方式无需校验 systemd 工作目录；未更改文件或服务。"
+			}
+		case "mosdns":
+			message = "MosDNS 无需服务目录专项校验；未更改文件或服务。"
+		case "mihomo":
+			message = "Mihomo 无需服务目录专项校验；未更改文件或服务。"
+		}
+		output.Result("pass", "核心服务配置检查通过", message, "")
 		return 0
 	}
 	if *cleanupOnly {
@@ -181,7 +211,7 @@ func runAgent() int {
 		if err := cleanupDisk(cfg); err != nil {
 			return fail("Agent 清理未完成", err, "检查目录权限、磁盘空间与详细日志。")
 		}
-		log.Println("Disk cleanup completed.")
+		logger.Info("Disk cleanup completed.")
 		output.Result("pass", "Agent 历史文件清理完成", "已回收符合条件的已完成发布载荷与超限 Agent 日志。", "")
 		return 0
 	}
@@ -194,7 +224,7 @@ func runAgent() int {
 		if err := routes.RecoverDeployments(toRoutesConfig(cfg), true); err != nil {
 			return fail("发布恢复未完成", err, "检查发布日志中的失败步骤，处理后显式重试 -recover-and-exit。")
 		}
-		log.Println("Deployment recovery completed.")
+		logger.Info("Deployment recovery completed.")
 		output.Result("pass", "发布恢复完成", "已完成显式请求的发布恢复及相应服务操作。", "")
 		return 0
 	}
@@ -202,12 +232,12 @@ func runAgent() int {
 		output.Title("发布记录检查（只读）")
 	}
 	if *requireCleanDeployments && cfg.NativeAIO && upgrade.Pending(filepath.Join(filepath.Dir(cfg.filePath), "configflow-agent")) {
-		log.Print("Native AIO Agent update requires completion or recovery; installation preflight left files and services unchanged.")
+		logger.Info("Native AIO Agent update requires completion or recovery; installation preflight left files and services unchanged.")
 		output.Result("error", "Agent 更新记录需要处理", "检测到未完成或不可读取的 Agent 更新记录。", "先完成或恢复上次 Agent 更新，再重新安装。文件与服务未更改。")
 		return 1
 	}
 	if err := routes.CheckDeployments(toRoutesConfig(cfg)); err != nil {
-		log.Printf("Deployment check requires attention: %v. Files and services were left unchanged; inspect the journal and use -recover-and-exit to recover explicitly.", err)
+		logger.Infof("Deployment check requires attention: %v. Files and services were left unchanged; inspect the journal and use -recover-and-exit to recover explicitly.", err)
 		if output != nil {
 			level := "warn"
 			if *requireCleanDeployments {
@@ -219,7 +249,7 @@ func runAgent() int {
 			return 1
 		}
 	} else {
-		log.Println("Deployment check completed; no recovery required.")
+		logger.Info("Deployment check completed; no recovery required.")
 		if output != nil {
 			output.Result("pass", "发布记录检查通过", "没有需要恢复的发布记录；未更改文件或服务。", "")
 		}
@@ -235,7 +265,7 @@ func runAgent() int {
 		}
 		// 注册成功后，配置已更新并保存
 	} else {
-		log.Printf("Agent already registered with ID: %s", cfg.AgentID)
+		logger.Infof("Agent already registered with ID: %s", cfg.AgentID)
 	}
 
 	// 3. 在后台启动心跳循环

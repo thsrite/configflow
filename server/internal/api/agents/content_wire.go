@@ -1,0 +1,152 @@
+package agents
+
+import (
+	"context"
+	"errors"
+	"sync"
+
+	core "configflow/internal/agents"
+	"configflow/internal/deploy"
+	"configflow/internal/deploy/contentsync"
+	"configflow/internal/lifecycle"
+	"configflow/internal/substore"
+)
+
+type contentPool struct {
+	mu         sync.Mutex
+	checkers   map[*core.Manager]*contentsync.Checker
+	deploys    map[*core.Manager]*deploy.Service
+	dispatcher contentsync.Dispatcher
+}
+
+var contentChecks = contentPool{checkers: map[*core.Manager]*contentsync.Checker{}}
+var contentPrepare struct {
+	sync.RWMutex
+	fn contentsync.PrepareFunc
+}
+
+// SetContentPrepare installs A14's preparation in the composition layer. The
+// returned restore function is intended for isolated tests. Existing results
+// are invalidated so jobs using an earlier implementation cannot publish them.
+func SetContentPrepare(fn contentsync.PrepareFunc) func() {
+	contentPrepare.Lock()
+	old := contentPrepare.fn
+	contentPrepare.fn = fn
+	contentPrepare.Unlock()
+	contentChecks.dispatcher.Invalidate()
+	return func() {
+		contentPrepare.Lock()
+		contentPrepare.fn = old
+		contentPrepare.Unlock()
+		contentChecks.dispatcher.Invalidate()
+	}
+}
+func prepareContent(ctx context.Context, m *core.Manager, t deploy.Target, s *deploy.Source, url, id string) (*deploy.Bundle, error) {
+	contentPrepare.RLock()
+	fn := contentPrepare.fn
+	contentPrepare.RUnlock()
+	if fn != nil {
+		return fn(ctx, t, s, url, id)
+	}
+	if m == nil {
+		return nil, errors.New("api/agents: manager is nil")
+	}
+	dp := contentChecks.deployFor(m)
+	if dp == nil {
+		return nil, errContentDeployUnbound
+	}
+	return dp.PrepareContentBundle(ctx, m, t, s, url, id)
+}
+
+// errContentDeployUnbound refuses a content comparison for a Manager whose
+// deploy Service was never bound: a fresh deploy Service would lack the
+// Sub-Store, provider (aggregations) and HA owners of the server instance.
+var errContentDeployUnbound = errors.New("api/agents: deploy service is not bound for this manager")
+
+// bindDeploy records dp as m's deploy Service for content preparation, until
+// m closes. NewHandler binds the injected Deps.Deploy.
+func (p *contentPool) bindDeploy(m *core.Manager, dp *deploy.Service) {
+	if m == nil || dp == nil {
+		return
+	}
+	p.mu.Lock()
+	if p.deploys == nil {
+		p.deploys = map[*core.Manager]*deploy.Service{}
+	}
+	_, bound := p.deploys[m]
+	p.deploys[m] = dp
+	p.mu.Unlock()
+	if bound {
+		return
+	}
+	forget := func() {
+		p.mu.Lock()
+		delete(p.deploys, m)
+		p.mu.Unlock()
+	}
+	if !m.OnClose(forget) {
+		forget()
+	}
+}
+
+func (p *contentPool) deployFor(m *core.Manager) *deploy.Service {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.deploys[m]
+}
+
+func (p *contentPool) checker(m *core.Manager) *contentsync.Checker {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if c := p.checkers[m]; c != nil {
+		return c
+	}
+	receipts := deploy.NewReceipts(m.Repository())
+	c := contentsync.New(contentsync.Options{Prepare: func(ctx context.Context, t deploy.Target, s *deploy.Source, url, id string) (*deploy.Bundle, error) {
+		return prepareContent(ctx, m, t, s, url, id)
+	}, LoadReceipt: func(ctx context.Context, t deploy.Target) (*deploy.Receipt, error) {
+		return receipts.LoadAgent(ctx, t.Record, true)
+	}, DefaultProfileID: m.Repository().DefaultProfileID})
+	unregister := p.dispatcher.Register(c)
+	if !m.OnClose(func() {
+		p.mu.Lock()
+		if p.checkers[m] == c {
+			delete(p.checkers, m)
+		}
+		p.mu.Unlock()
+		unregister()
+		c.Close()
+	}) {
+		unregister()
+		c.Close()
+		return c
+	}
+	p.checkers[m] = c
+	return c
+}
+func (p *contentPool) close() {
+	p.mu.Lock()
+	managers := make([]*core.Manager, 0, len(p.checkers))
+	for m := range p.checkers {
+		managers = append(managers, m)
+	}
+	p.mu.Unlock()
+	for _, m := range managers {
+		m.Close()
+	}
+}
+
+// WireContentSyncWith subscribes content-sync invalidation to sub's content
+// change event and registers the shutdown hook on rt.
+func WireContentSyncWith(rt *lifecycle.Runtime, sub *substore.Service) {
+	if sub != nil {
+		sub.OnContentChange(func(context.Context) error { contentChecks.dispatcher.Invalidate(); return nil })
+	}
+	if rt != nil {
+		rt.RegisterShutdown(lifecycle.ShutdownHook{Name: "agent-content-sync-close", Phase: lifecycle.PhaseClose, Run: func(context.Context) { contentChecks.close() }})
+	}
+}
+
+// ContentChecker returns the Manager-owned shared publication comparison cache.
+// Composition callers must not create a second checker for the same Manager.
+func ContentChecker(m *core.Manager) *contentsync.Checker { return contentChecks.checker(m) }

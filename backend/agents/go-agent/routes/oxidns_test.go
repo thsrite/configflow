@@ -119,7 +119,7 @@ func TestOxiDNSRejectManagedState(t *testing.T) {
 }
 
 func TestOxiDNSHealthCredentialsStayOnConfiguredEndpoint(t *testing.T) {
-	doc := map[string]interface{}{"api": map[string]interface{}{"http": map[string]interface{}{"listen": "0.0.0.0:9199", "auth": map[string]interface{}{"type": "basic", "username": "tester", "password": "secret"}}}}
+	doc := map[string]any{"api": map[string]any{"http": map[string]any{"listen": "0.0.0.0:9199", "auth": map[string]any{"type": "basic", "username": "tester", "password": "secret"}}}}
 	target, u, p, err := oxidnsHealthEndpoint(doc, "")
 	if err != nil || target != "http://127.0.0.1:9199/api/readyz" || u != "tester" || p != "secret" {
 		t.Fatalf("bad derived health: %s %v", target, err)
@@ -173,7 +173,7 @@ func TestOxiDNSSystemdDirectoryMustMatchManagedRoot(t *testing.T) {
 }
 
 func TestOxiDNSTLSHealthDoesNotDisableCertificateVerification(t *testing.T) {
-	doc := map[string]interface{}{"api": map[string]interface{}{"http": map[string]interface{}{"listen": "0.0.0.0:9199", "ssl": map[string]interface{}{"cert": "server.crt", "key": "server.key"}}}}
+	doc := map[string]any{"api": map[string]any{"http": map[string]any{"listen": "0.0.0.0:9199", "ssl": map[string]any{"cert": "server.crt", "key": "server.key"}}}}
 	target, _, _, err := oxidnsHealthEndpoint(doc, "")
 	if err != nil || target != "" {
 		t.Fatal("TLS auto health must use DNS/service rather than insecure loopback HTTPS")

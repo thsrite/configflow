@@ -1,0 +1,149 @@
+package setup
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+
+	"configflow/internal/gateway/onboarding"
+	"configflow/internal/repo"
+	routers "configflow/internal/routers/spec"
+	"configflow/internal/yamlx"
+)
+
+// DefaultDNSOwner returns the direct onboarding-backed DNSOwner (O17 D4).
+func DefaultDNSOwner() *DNSOwner {
+	return &DNSOwner{
+		LocalUpstreams: onboarding.LocalUpstreams,
+		PrepareMihomoDNS: func(document *yamlx.Node) (*yamlx.Node, error) {
+			return onboarding.PrepareMihomoDNS(document, nil, onboarding.CheckDNSLoop)
+		},
+		DefaultLocalDNS: onboarding.DefaultLocalDNS,
+		DNSTarget:       onboarding.DNSTarget,
+		Nameservers:     onboarding.DefaultMihomoNameservers,
+	}
+}
+
+// DNSOwner supplies A21's pure DNS helpers and defaults. The adapter supplies
+// the reviewed DNS-loop checker; documents are independently owned temporaries.
+type DNSOwner struct {
+	LocalUpstreams   func(string) (*yamlx.Node, error)
+	PrepareMihomoDNS func(*yamlx.Node) (*yamlx.Node, error)
+	DefaultLocalDNS  string
+	DNSTarget        string
+	Nameservers      func() []string
+}
+
+func (d *DNSOwner) ready() bool {
+	return d != nil && d.LocalUpstreams != nil && d.PrepareMihomoDNS != nil && d.DefaultLocalDNS != "" && d.DNSTarget != "" && d.Nameservers != nil
+}
+
+// InstalledAgent is the installation owner's freshness-checked public identity.
+type InstalledAgent struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Host    string `json:"host"`
+	Status  string `json:"status"`
+	Enabled *bool  `json:"enabled,omitempty"`
+}
+
+// AgentPair is the two services confirmed by A22 for this profile.
+type AgentPair struct {
+	Mihomo InstalledAgent `json:"mihomo"`
+	OxiDNS InstalledAgent `json:"oxidns"`
+}
+
+// InstallationState is real A22 publication evidence, not wizard state.
+type InstallationState struct {
+	ID            string    `json:"id"`
+	Phase         string    `json:"phase"`
+	ConfigChanged bool      `json:"config_changed"`
+	TargetChanged bool      `json:"target_changed"`
+	Agents        AgentPair `json:"agents"`
+}
+
+// ForwardingStatus is the host owner's IPv4 forwarding evidence.
+type ForwardingStatus struct {
+	Current   string `json:"current"`
+	Persisted *bool  `json:"persisted"`
+}
+
+// TUNStatus contains installed Mihomo TUN observations.
+type TUNStatus struct {
+	Configured    *bool  `json:"configured"`
+	Present       *bool  `json:"present"`
+	GatewayMarker bool   `json:"gateway_marker"`
+	Device        string `json:"device"`
+}
+
+// ManagedStatus is the existing gateway owner's journal evidence.
+type ManagedStatus struct {
+	Active  bool   `json:"active"`
+	Pending bool   `json:"pending"`
+	Healthy *bool  `json:"healthy"`
+	Error   string `json:"error"`
+}
+
+// GatewayStatus is a validated reply supplied by the gateway owner.
+type GatewayStatus struct {
+	IPv4Forwarding  *ForwardingStatus `json:"ipv4_forwarding"`
+	TUN             *TUNStatus        `json:"tun"`
+	Managed         ManagedStatus     `json:"managed"`
+	EnabledInConfig bool              `json:"enabled_in_config"`
+}
+
+// InstallationOwner supplies A22 state and the existing gateway status read.
+// A nil Latest result means no installation; a nil callback means unavailable.
+type InstallationOwner struct {
+	Latest          func(context.Context, *repo.Repository, string) (*InstallationState, error)
+	HasInstallation func(context.Context, *repo.Repository, string) (bool, error)
+	GatewayStatus   func(context.Context, *repo.Repository, string, string) (GatewayStatus, error)
+}
+
+// RouterVerification is the router owner's read-only inspection/plan result:
+// the plan's blockers and whether publishing it would change nothing.
+type RouterVerification struct {
+	Blockers []string
+	Empty    bool
+}
+
+// RouteReadOptions carries the wizard's shrinking download budget to C32.
+type RouteReadOptions struct {
+	AllowNetwork   bool
+	ConnectTimeout time.Duration
+	ReadTimeout    time.Duration
+}
+
+// ExternalOwners connects real shared owners. Missing callbacks fail closed503;
+// there is no substitute installation or router state.
+type ExternalOwners struct {
+	DNS              *DNSOwner
+	Installation     *InstallationOwner
+	ReadRouteContent func(context.Context, json.RawMessage, routers.RuleSet, *routers.LibraryRule, RouteReadOptions) (string, error)
+	// ReadOfflineRouteContent reads a rule set's cached or inline content for
+	// the gateway (not full TUN) completion check, never the network. The
+	// profile is the published configuration snapshot. Nil fails that check
+	// closed with device.ErrNotPorted when a rule set is selected.
+	ReadOfflineRouteContent func(ctx context.Context, profile json.RawMessage, item routers.RuleSet, library *routers.LibraryRule) (string, error)
+	// VerifyRouter inspects the device read-only and plans a release for the
+	// setup profile. A device failure is a *Error with status 502.
+	VerifyRouter func(ctx context.Context, r *repo.Repository, profileID string, config json.RawMessage, router *routers.Router) (RouterVerification, error)
+}
+
+func copyOwners(owners ExternalOwners) ExternalOwners {
+	if owners.DNS != nil {
+		dns := *owners.DNS
+		owners.DNS = &dns
+	}
+	if owners.Installation != nil {
+		installation := *owners.Installation
+		owners.Installation = &installation
+	}
+	return owners
+}
+
+func unavailable() error { return failure(msgAwaitOwner, 503) }
+
+// ownerValidation preserves a pure owner's error chain and the wizard's 400
+// boundary. Transport/status callbacks return *Error for their public status.
+func ownerValidation(err error) error { return &Error{Message: err.Error(), Status: 400, Cause: err} }

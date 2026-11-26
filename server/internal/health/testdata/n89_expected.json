@@ -1,0 +1,2633 @@
+{
+  "sources": {
+    "corpus.json": "fd4d97e9e02bf3be250c172f1a6397ee732a94191a8031d185d724ade3c5882d",
+    "review_c16.jsonl.gz": "f854cbde64cb254d5465f216b5d1da2f6301cd6b67d986f2d7b31b78e7f7ea81",
+    "c16_recorded.jsonl.gz": "580e77629b5420b15cf87a3d14053e66555f06ed266b80e7eebad2d1b0059188"
+  },
+  "expectations": [
+    {
+      "file": "corpus.json",
+      "row": 193,
+      "fn": "initialize_provider_health",
+      "contract": "model.String consumes legacy URL; original source fields retained",
+      "out": {
+        "health_check_url": 5,
+        "health_check": {
+          "enable": true,
+          "url": "5",
+          "interval": 300,
+          "timeout": 5000,
+          "lazy": true,
+          "expected-status": "204"
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 393,
+      "fn": "check_settings",
+      "contract": "native JSON refuses nonfinite worker output; explicit DNS error message",
+      "error_kind": "probe-unavailable",
+      "message": "DNS 检测组件返回了无效结果，请检查组件版本"
+    },
+    {
+      "file": "corpus.json",
+      "row": 476,
+      "fn": "settings",
+      "contract": "strconv environment timeout grammar; original setting error envelope",
+      "error_kind": "probe-unavailable",
+      "message": "节点测速设置无效，请检查测试地址及超时（500–10000 毫秒）"
+    },
+    {
+      "file": "corpus.json",
+      "row": 477,
+      "fn": "settings",
+      "contract": "strconv environment timeout grammar; original setting error envelope",
+      "error_kind": "probe-unavailable",
+      "message": "节点测速设置无效，请检查测试地址及超时（500–10000 毫秒）"
+    },
+    {
+      "file": "corpus.json",
+      "row": 506,
+      "fn": "region_of_name",
+      "contract": "model.String: numeric text and invalid root rejection",
+      "out": null
+    },
+    {
+      "file": "corpus.json",
+      "row": 507,
+      "fn": "region_of_name",
+      "contract": "model.String: numeric text and invalid root rejection",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "corpus.json",
+      "row": 531,
+      "fn": "region_label",
+      "contract": "model.String: numeric text and invalid root rejection",
+      "out": "0"
+    },
+    {
+      "file": "corpus.json",
+      "row": 533,
+      "fn": "region_label",
+      "contract": "model.String: numeric text and invalid root rejection",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "corpus.json",
+      "row": 546,
+      "fn": "evaluate_openai",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "status": "available",
+        "region": null,
+        "reason": "",
+        "evidence": [
+          "openai-compliance：HTTP 200，命中 consent",
+          "没有结果"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 547,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "available",
+          "region": null,
+          "reason": "",
+          "evidence": [
+            "openai-compliance：HTTP 200，命中 consent",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "unknown",
+          "region": null,
+          "reason": "请求失败",
+          "evidence": [
+            "没有结果"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 558,
+      "fn": "evaluate_openai",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "status": "unknown",
+        "region": null,
+        "reason": "响应不符合已知模式",
+        "evidence": [
+          "openai-compliance：HTTP None",
+          "没有结果"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 559,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "openai-compliance：HTTP None",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "unknown",
+          "region": null,
+          "reason": "请求失败",
+          "evidence": [
+            "没有结果"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 561,
+      "fn": "evaluate_openai",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "status": "unknown",
+        "region": null,
+        "reason": "响应不符合已知模式",
+        "evidence": [
+          "没有结果",
+          "openai-ios：HTTP None"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 562,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "openai-ios：HTTP None"
+          ]
+        },
+        "claude": {
+          "status": "unknown",
+          "region": null,
+          "reason": "请求失败",
+          "evidence": [
+            "没有结果"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 567,
+      "fn": "evaluate_openai",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "corpus.json",
+      "row": 568,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "corpus.json",
+      "row": 569,
+      "fn": "exit_info",
+      "contract": "RegionResult: required identity, nullable marker text, R5 auxiliary fields",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "corpus.json",
+      "row": 570,
+      "fn": "evaluate_openai",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "error_kind": "check",
+      "message": "区域检测结果缺少 id"
+    },
+    {
+      "file": "corpus.json",
+      "row": 571,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "error_kind": "check",
+      "message": "区域检测结果缺少 id"
+    },
+    {
+      "file": "corpus.json",
+      "row": 572,
+      "fn": "exit_info",
+      "contract": "RegionResult: required identity, nullable marker text, R5 auxiliary fields",
+      "error_kind": "check",
+      "message": "区域检测结果缺少 id"
+    },
+    {
+      "file": "corpus.json",
+      "row": 573,
+      "fn": "evaluate_openai",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "error_kind": "check",
+      "message": "区域检测结果的 id 必须是字符串，当前值：[\"x\"]"
+    },
+    {
+      "file": "corpus.json",
+      "row": 574,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "error_kind": "check",
+      "message": "区域检测结果的 id 必须是字符串，当前值：[\"x\"]"
+    },
+    {
+      "file": "corpus.json",
+      "row": 575,
+      "fn": "exit_info",
+      "contract": "RegionResult: required identity, nullable marker text, R5 auxiliary fields",
+      "error_kind": "check",
+      "message": "区域检测结果的 id 必须是字符串，当前值：[\"x\"]"
+    },
+    {
+      "file": "corpus.json",
+      "row": 582,
+      "fn": "evaluate_openai",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "status": "unknown",
+        "region": null,
+        "reason": "响应不符合已知模式",
+        "evidence": [
+          "openai-compliance：HTTP 200",
+          "没有结果"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 583,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "openai-compliance：HTTP 200",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "unknown",
+          "region": null,
+          "reason": "请求失败",
+          "evidence": [
+            "没有结果"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 609,
+      "fn": "evaluate_claude",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "status": "available",
+        "region": null,
+        "reason": "",
+        "evidence": [
+          "claude-web：HTTP 200"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 610,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "available",
+          "region": null,
+          "reason": "",
+          "evidence": [
+            "claude-web：HTTP 200"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 612,
+      "fn": "evaluate_claude",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "status": "available",
+        "region": null,
+        "reason": "",
+        "evidence": [
+          "claude-web：HTTP 200"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 613,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "available",
+          "region": null,
+          "reason": "",
+          "evidence": [
+            "claude-web：HTTP 200"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 615,
+      "fn": "evaluate_claude",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "status": "available",
+        "region": null,
+        "reason": "",
+        "evidence": [
+          "claude-web：HTTP 200"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 616,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "available",
+          "region": null,
+          "reason": "",
+          "evidence": [
+            "claude-web：HTTP 200"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 618,
+      "fn": "evaluate_claude",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "status": "available",
+        "region": null,
+        "reason": "",
+        "evidence": [
+          "claude-web：HTTP 200"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 619,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "available",
+          "region": null,
+          "reason": "",
+          "evidence": [
+            "claude-web：HTTP 200"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 648,
+      "fn": "evaluate_netflix",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "status": "available",
+        "region": null,
+        "reason": "完整解锁",
+        "evidence": [
+          "netflix-licensed-1：HTTP 200",
+          "没有结果",
+          "没有结果"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 649,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "unknown",
+          "region": null,
+          "reason": "请求失败",
+          "evidence": [
+            "没有结果"
+          ]
+        },
+        "netflix": {
+          "status": "available",
+          "region": null,
+          "reason": "完整解锁",
+          "evidence": [
+            "netflix-licensed-1：HTTP 200",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 663,
+      "fn": "evaluate_youtube",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "status": "available",
+        "region": "5",
+        "reason": "",
+        "evidence": [
+          "youtube-premium：HTTP 200，命中 gl"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 664,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "unknown",
+          "region": null,
+          "reason": "请求失败",
+          "evidence": [
+            "没有结果"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "available",
+          "region": "5",
+          "reason": "",
+          "evidence": [
+            "youtube-premium：HTTP 200，命中 gl"
+          ]
+        }
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 669,
+      "fn": "exit_info",
+      "contract": "RegionResult: required identity, nullable marker text, R5 auxiliary fields",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "corpus.json",
+      "row": 686,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "error",
+        "detail": "HTTP None",
+        "status": null,
+        "final_url": "https://x.test/d"
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 687,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "error",
+        "detail": "HTTP None",
+        "status": null,
+        "final_url": "https://x.test/d"
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 688,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "error",
+        "detail": "HTTP None",
+        "status": null,
+        "final_url": "https://x.test/d"
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 694,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "restricted",
+        "detail": "HTTP 451（因法律原因不可用）",
+        "status": 451,
+        "final_url": "https://x.test/d"
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 696,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "ok",
+        "detail": "HTTP 200",
+        "status": 200,
+        "final_url": "5"
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 697,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "corpus.json",
+      "row": 714,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "error_kind": "check",
+      "message": "区域检测目标缺少 name"
+    },
+    {
+      "file": "corpus.json",
+      "row": 715,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "error_kind": "check",
+      "message": "区域检测目标的 name 必须是字符串，当前值：[\"x\"]"
+    },
+    {
+      "file": "corpus.json",
+      "row": 716,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": []
+    },
+    {
+      "file": "corpus.json",
+      "row": 717,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "corpus.json",
+      "row": 718,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": []
+    },
+    {
+      "file": "corpus.json",
+      "row": 719,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": [
+        {
+          "name": "HK",
+          "kind": "node",
+          "region_hint": "HK"
+        }
+      ]
+    },
+    {
+      "file": "corpus.json",
+      "row": 720,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": [
+        {
+          "name": "HK",
+          "kind": "node",
+          "region_hint": "HK"
+        }
+      ]
+    },
+    {
+      "file": "corpus.json",
+      "row": 721,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "error_kind": "check",
+      "message": "区域检测目标的 name 必须是字符串，当前值：null"
+    },
+    {
+      "file": "corpus.json",
+      "row": 745,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "incomplete",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "有一条路径没有完成探测"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 746,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 85,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "多次探测结果一致"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 747,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 85,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "多次探测结果一致"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 748,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "incomplete",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "有一条路径没有完成探测"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 749,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 750,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "incomplete",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "有一条路径没有完成探测"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 754,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "corpus.json",
+      "row": 755,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 759,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "incomplete",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "有一条路径没有完成探测"
+        ]
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 767,
+      "fn": "probe_url",
+      "contract": "typed integer port: shared Int accepted forms, native validation otherwise",
+      "error_kind": "health",
+      "message": "port must be integer"
+    },
+    {
+      "file": "corpus.json",
+      "row": 774,
+      "fn": "domain_suggestion",
+      "contract": "Suggestion: nullable text/shared Int confidence; Python selects best typed probe",
+      "out": {
+        "host": "a",
+        "verdict": null,
+        "target": "x",
+        "confidence": null,
+        "reasons": null,
+        "checked_at": null
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 777,
+      "fn": "domain_suggestion",
+      "contract": "Suggestion: nullable text/shared Int confidence; Python selects best typed probe",
+      "out": {
+        "host": "b",
+        "verdict": null,
+        "target": "y",
+        "confidence": 6,
+        "reasons": null,
+        "checked_at": null
+      }
+    },
+    {
+      "file": "corpus.json",
+      "row": 778,
+      "fn": "domain_suggestion",
+      "contract": "Suggestion: nullable text/shared Int confidence; Python selects best typed probe",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "corpus.json",
+      "row": 779,
+      "fn": "domain_suggestion",
+      "contract": "Suggestion: nullable text/shared Int confidence; Python selects best typed probe",
+      "out": null
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 145,
+      "fn": "initialize_provider_health",
+      "contract": "model.String consumes legacy URL; original source fields retained",
+      "out": {
+        "health_check_url": 5,
+        "health_check": {
+          "enable": true,
+          "url": "5",
+          "interval": 300,
+          "timeout": 5000,
+          "lazy": true,
+          "expected-status": "204"
+        }
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 453,
+      "fn": "settings",
+      "contract": "strconv environment timeout grammar; original setting error envelope",
+      "error_kind": "probe-unavailable",
+      "message": "节点测速设置无效，请检查测试地址及超时（500–10000 毫秒）"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 458,
+      "fn": "settings",
+      "contract": "strconv environment timeout grammar; original setting error envelope",
+      "error_kind": "probe-unavailable",
+      "message": "节点测速设置无效，请检查测试地址及超时（500–10000 毫秒）"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 539,
+      "fn": "_run_probe",
+      "contract": "native JSON refuses nonfinite worker output; explicit unavailability message",
+      "error_kind": "probe-unavailable",
+      "message": "测速组件返回了无效结果，请检查组件版本"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 540,
+      "fn": "_run_probe",
+      "contract": "native JSON refuses nonfinite worker output; explicit unavailability message",
+      "error_kind": "probe-unavailable",
+      "message": "测速组件返回了无效结果，请检查组件版本"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 677,
+      "fn": "region_of_name",
+      "contract": "model.String: numeric text and invalid root rejection",
+      "out": null
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 678,
+      "fn": "region_of_name",
+      "contract": "model.String: numeric text and invalid root rejection",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 694,
+      "fn": "region_label",
+      "contract": "model.String: numeric text and invalid root rejection",
+      "out": "0"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 695,
+      "fn": "region_label",
+      "contract": "model.String: numeric text and invalid root rejection",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 698,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "ok",
+        "detail": "HTTP 200",
+        "status": 200,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 699,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "restricted",
+        "detail": "HTTP 200，页面提示：not available in your country",
+        "status": 200,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 700,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "error",
+        "detail": "HTTP None",
+        "status": null,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 701,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "error",
+        "detail": "HTTP None",
+        "status": null,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 702,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "ok",
+        "detail": "HTTP 200",
+        "status": 200,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 703,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "restricted",
+        "detail": "HTTP 200，页面提示：not available in your country",
+        "status": 200,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 710,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "restricted",
+        "detail": "HTTP 451（因法律原因不可用）",
+        "status": 451,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 711,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "restricted",
+        "detail": "HTTP 451（因法律原因不可用）",
+        "status": 451,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 720,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "error",
+        "detail": "HTTP 1000",
+        "status": 1000,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 721,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "error",
+        "detail": "HTTP 1000",
+        "status": 1000,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 722,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "error",
+        "detail": "HTTP None",
+        "status": null,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 723,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "error",
+        "detail": "HTTP None",
+        "status": null,
+        "final_url": ""
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 740,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "ok",
+        "detail": "HTTP 200",
+        "status": 200,
+        "final_url": "5"
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 741,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "out": {
+        "state": "ok",
+        "detail": "HTTP 200",
+        "status": 200,
+        "final_url": "5"
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 747,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 748,
+      "fn": "classify_domain_result",
+      "contract": "RegionResult: shared Int status and model.String URL/markers",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 764,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": [
+        {
+          "name": "DIRECT",
+          "kind": "direct",
+          "region_hint": null
+        },
+        {
+          "name": "B 香港",
+          "kind": "group",
+          "region_hint": "HK"
+        },
+        {
+          "name": "A",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "C",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "D",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "HK 2",
+          "kind": "node",
+          "region_hint": "HK"
+        },
+        {
+          "name": "TW",
+          "kind": "node",
+          "region_hint": "TW"
+        },
+        {
+          "name": "JP",
+          "kind": "node",
+          "region_hint": "JP"
+        },
+        {
+          "name": "SG",
+          "kind": "node",
+          "region_hint": "SG"
+        },
+        {
+          "name": "US",
+          "kind": "node",
+          "region_hint": "US"
+        },
+        {
+          "name": "KR",
+          "kind": "node",
+          "region_hint": "KR"
+        },
+        {
+          "name": "GB",
+          "kind": "node",
+          "region_hint": "GB"
+        },
+        {
+          "name": "DE",
+          "kind": "node",
+          "region_hint": "DE"
+        }
+      ]
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 780,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": [
+        {
+          "name": "DIRECT",
+          "kind": "direct",
+          "region_hint": null
+        },
+        {
+          "name": "C",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "B 香港",
+          "kind": "group",
+          "region_hint": "HK"
+        },
+        {
+          "name": "A",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "D",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "HK 2",
+          "kind": "node",
+          "region_hint": "HK"
+        },
+        {
+          "name": "TW",
+          "kind": "node",
+          "region_hint": "TW"
+        },
+        {
+          "name": "JP",
+          "kind": "node",
+          "region_hint": "JP"
+        },
+        {
+          "name": "SG",
+          "kind": "node",
+          "region_hint": "SG"
+        },
+        {
+          "name": "US",
+          "kind": "node",
+          "region_hint": "US"
+        },
+        {
+          "name": "KR",
+          "kind": "node",
+          "region_hint": "KR"
+        },
+        {
+          "name": "GB",
+          "kind": "node",
+          "region_hint": "GB"
+        },
+        {
+          "name": "DE",
+          "kind": "node",
+          "region_hint": "DE"
+        }
+      ]
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 796,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": [
+        {
+          "name": "DIRECT",
+          "kind": "direct",
+          "region_hint": null
+        },
+        {
+          "name": "E",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "B 香港",
+          "kind": "group",
+          "region_hint": "HK"
+        },
+        {
+          "name": "A",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "C",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "HK 2",
+          "kind": "node",
+          "region_hint": "HK"
+        },
+        {
+          "name": "TW",
+          "kind": "node",
+          "region_hint": "TW"
+        },
+        {
+          "name": "JP",
+          "kind": "node",
+          "region_hint": "JP"
+        },
+        {
+          "name": "SG",
+          "kind": "node",
+          "region_hint": "SG"
+        },
+        {
+          "name": "US",
+          "kind": "node",
+          "region_hint": "US"
+        },
+        {
+          "name": "KR",
+          "kind": "node",
+          "region_hint": "KR"
+        },
+        {
+          "name": "GB",
+          "kind": "node",
+          "region_hint": "GB"
+        },
+        {
+          "name": "DE",
+          "kind": "node",
+          "region_hint": "DE"
+        }
+      ]
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 812,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": [
+        {
+          "name": "DIRECT",
+          "kind": "direct",
+          "region_hint": null
+        },
+        {
+          "name": "B 香港",
+          "kind": "group",
+          "region_hint": "HK"
+        },
+        {
+          "name": "A",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "C",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "D",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "HK 2",
+          "kind": "node",
+          "region_hint": "HK"
+        },
+        {
+          "name": "TW",
+          "kind": "node",
+          "region_hint": "TW"
+        },
+        {
+          "name": "JP",
+          "kind": "node",
+          "region_hint": "JP"
+        },
+        {
+          "name": "SG",
+          "kind": "node",
+          "region_hint": "SG"
+        },
+        {
+          "name": "US",
+          "kind": "node",
+          "region_hint": "US"
+        },
+        {
+          "name": "KR",
+          "kind": "node",
+          "region_hint": "KR"
+        },
+        {
+          "name": "GB",
+          "kind": "node",
+          "region_hint": "GB"
+        },
+        {
+          "name": "DE",
+          "kind": "node",
+          "region_hint": "DE"
+        }
+      ]
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 828,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": [
+        {
+          "name": "DIRECT",
+          "kind": "direct",
+          "region_hint": null
+        },
+        {
+          "name": "B 香港",
+          "kind": "group",
+          "region_hint": "HK"
+        },
+        {
+          "name": "A",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "C",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "D",
+          "kind": "group",
+          "region_hint": null
+        },
+        {
+          "name": "HK 2",
+          "kind": "node",
+          "region_hint": "HK"
+        },
+        {
+          "name": "TW",
+          "kind": "node",
+          "region_hint": "TW"
+        },
+        {
+          "name": "JP",
+          "kind": "node",
+          "region_hint": "JP"
+        },
+        {
+          "name": "SG",
+          "kind": "node",
+          "region_hint": "SG"
+        },
+        {
+          "name": "US",
+          "kind": "node",
+          "region_hint": "US"
+        },
+        {
+          "name": "KR",
+          "kind": "node",
+          "region_hint": "KR"
+        },
+        {
+          "name": "GB",
+          "kind": "node",
+          "region_hint": "GB"
+        },
+        {
+          "name": "DE",
+          "kind": "node",
+          "region_hint": "DE"
+        }
+      ]
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 829,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "error_kind": "check",
+      "message": "区域检测目标的 name 必须是字符串，当前值：[\"x\"]"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 830,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "error_kind": "check",
+      "message": "区域检测目标缺少 name"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 831,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": []
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 832,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 833,
+      "fn": "region_of_name",
+      "contract": "model.String: numeric text and invalid root rejection",
+      "out": null
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 834,
+      "fn": "pick_targets",
+      "contract": "AvailableTarget: required textual identity, R5 type/alive defaults",
+      "out": [
+        {
+          "name": "5",
+          "kind": "group",
+          "region_hint": null
+        }
+      ]
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 842,
+      "fn": "summarize_domain",
+      "contract": "ordered TargetState records: absent/wrong state reads as zero",
+      "out": {
+        "verdict": "unreachable",
+        "restricted": [],
+        "usable": []
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 844,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "available",
+          "region": null,
+          "reason": "App 端可能受限（被识别为数据中心 IP）",
+          "evidence": [
+            "openai-compliance：HTTP 200，命中 consent",
+            "openai-ios：HTTP 200，命中 dc"
+          ]
+        },
+        "claude": {
+          "status": "blocked",
+          "region": null,
+          "reason": "跳转到「所在地区不可用」页面",
+          "evidence": [
+            "claude-web：HTTP 200 → https://claude.ai/"
+          ]
+        },
+        "netflix": {
+          "status": "partial",
+          "region": "HK",
+          "reason": "仅自制剧",
+          "evidence": [
+            "netflix-licensed-1：HTTP 404",
+            "没有结果",
+            "netflix-original：HTTP 200"
+          ]
+        },
+        "youtube": {
+          "status": "blocked",
+          "region": "CN",
+          "reason": "识别为中国大陆",
+          "evidence": [
+            "youtube-premium：HTTP 200，命中 gl"
+          ]
+        }
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 848,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "error_kind": "check",
+      "message": "区域检测结果的 id 必须是字符串，当前值：true"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 849,
+      "fn": "exit_info",
+      "contract": "RegionResult: required identity, nullable marker text, R5 auxiliary fields",
+      "error_kind": "check",
+      "message": "区域检测结果的 id 必须是字符串，当前值：true"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 850,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "available",
+          "region": null,
+          "reason": "",
+          "evidence": [
+            "claude-web：HTTP 200"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 852,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "available",
+          "region": null,
+          "reason": "",
+          "evidence": [
+            "claude-web：HTTP 200"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 854,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "error_kind": "check",
+      "message": "区域检测结果的 id 必须是字符串，当前值：[\"x\"]"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 855,
+      "fn": "exit_info",
+      "contract": "RegionResult: required identity, nullable marker text, R5 auxiliary fields",
+      "error_kind": "check",
+      "message": "区域检测结果的 id 必须是字符串，当前值：[\"x\"]"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 856,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "error_kind": "check",
+      "message": "区域检测结果缺少 id"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 857,
+      "fn": "exit_info",
+      "contract": "RegionResult: required identity, nullable marker text, R5 auxiliary fields",
+      "error_kind": "check",
+      "message": "区域检测结果缺少 id"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 858,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 859,
+      "fn": "exit_info",
+      "contract": "RegionResult: required identity, nullable marker text, R5 auxiliary fields",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 864,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "unknown",
+          "region": null,
+          "reason": "请求失败",
+          "evidence": [
+            "没有结果"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "youtube-premium：HTTP 200"
+          ]
+        }
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 868,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "openai-compliance：HTTP 200",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "unknown",
+          "region": null,
+          "reason": "请求失败",
+          "evidence": [
+            "没有结果"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 870,
+      "fn": "evaluate_services",
+      "contract": "RegionResult: required identity and shared scalar/R5 fields; real Python service verdict",
+      "out": {
+        "openai": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "openai-compliance：HTTP 200",
+            "没有结果"
+          ]
+        },
+        "claude": {
+          "status": "unknown",
+          "region": null,
+          "reason": "请求失败",
+          "evidence": [
+            "没有结果"
+          ]
+        },
+        "netflix": {
+          "status": "unknown",
+          "region": null,
+          "reason": "响应不符合已知模式",
+          "evidence": [
+            "没有结果",
+            "没有结果",
+            "没有结果"
+          ]
+        },
+        "youtube": {
+          "status": "unknown",
+          "region": null,
+          "reason": "页面里没有地区信息",
+          "evidence": [
+            "没有结果"
+          ]
+        }
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 878,
+      "fn": "path_healthy",
+      "contract": "PathStats: shared Int counts with R5 fallback; Python computes path health",
+      "out": false
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 879,
+      "fn": "path_healthy",
+      "contract": "PathStats: shared Int counts with R5 fallback; Python computes path health",
+      "out": true
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 880,
+      "fn": "path_healthy",
+      "contract": "PathStats: shared Int counts with R5 fallback; Python computes path health",
+      "out": true
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 881,
+      "fn": "path_healthy",
+      "contract": "PathStats: shared Int counts with R5 fallback; Python computes path health",
+      "out": false
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 883,
+      "fn": "path_healthy",
+      "contract": "PathStats: shared Int counts with R5 fallback; Python computes path health",
+      "out": false
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 884,
+      "fn": "path_healthy",
+      "contract": "PathStats: shared Int counts with R5 fallback; Python computes path health",
+      "out": false
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 902,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": "direct",
+        "confidence": 60,
+        "reasons": [
+          "直连 2/2，代理 2/2",
+          "延迟：直连 1000000000000000019884624838656 ms，代理 1000000000000000019884624838656 ms"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 903,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": "direct",
+        "confidence": 60,
+        "reasons": [
+          "直连 2/2，代理 2/2",
+          "延迟：直连 1000000000000000019884624838656 ms，代理 1000000000000000019884624838656 ms"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 904,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": "direct",
+        "confidence": 60,
+        "reasons": [
+          "直连 2/2，代理 2/2",
+          "延迟：直连 1000000000000000019884624838656 ms，代理 1000000000000000019884624838656 ms"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 905,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": "direct",
+        "confidence": 60,
+        "reasons": [
+          "直连 2/2，代理 2/2",
+          "延迟：直连 1000000000000000019884624838656 ms，代理 1000000000000000019884624838656 ms"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 906,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": "direct",
+        "confidence": 60,
+        "reasons": [
+          "直连 2/2，代理 2/2",
+          "延迟：直连 1000000000000000019884624838656 ms，代理 1000000000000000019884624838656 ms"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 907,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 908,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 909,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 910,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 911,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 917,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 918,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 919,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 920,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 921,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "both_ok",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 2/2，代理 2/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 937,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 85,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "多次探测结果一致"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 938,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 99,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "多次探测结果一致",
+          "真实流量中直连也大量失败"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 939,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "direct_down",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "直连对照目标也不通"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 940,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 85,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "多次探测结果一致"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 941,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "direct_down",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "直连对照目标也不通"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 962,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 85,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "多次探测结果一致"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 963,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 99,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "多次探测结果一致",
+          "真实流量中直连也大量失败"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 964,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "direct_down",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "直连对照目标也不通"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 965,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 85,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "多次探测结果一致"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 966,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "direct_down",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 0/2，代理 2/2",
+          "直连对照目标也不通"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 972,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 70,
+        "reasons": [
+          "直连 0/2，代理 1/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 973,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 85,
+        "reasons": [
+          "直连 0/2，代理 1/2",
+          "真实流量中直连也大量失败"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 974,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "direct_down",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 0/2，代理 1/2",
+          "直连对照目标也不通"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 975,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "needs_proxy",
+        "target": "proxy",
+        "confidence": 70,
+        "reasons": [
+          "直连 0/2，代理 1/2"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 976,
+      "fn": "judge",
+      "contract": "PathStats: shared Int counts, float64 delays, R5 fields; Python computes full verdict",
+      "out": {
+        "verdict": "direct_down",
+        "target": null,
+        "confidence": 0,
+        "reasons": [
+          "直连 0/2，代理 1/2",
+          "直连对照目标也不通"
+        ]
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 993,
+      "fn": "probe_url",
+      "contract": "typed integer port: shared Int accepted forms, native validation otherwise",
+      "error_kind": "health",
+      "message": "port must be integer"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 1000,
+      "fn": "domain_suggestion",
+      "contract": "Suggestion: nullable text/shared Int confidence; Python selects best typed probe",
+      "out": {
+        "host": null,
+        "verdict": null,
+        "target": "proxy",
+        "confidence": 50,
+        "reasons": null,
+        "checked_at": null
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 1003,
+      "fn": "domain_suggestion",
+      "contract": "Suggestion: nullable text/shared Int confidence; Python selects best typed probe",
+      "out": {
+        "host": null,
+        "verdict": null,
+        "target": "x",
+        "confidence": 5,
+        "reasons": null,
+        "checked_at": null
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 1004,
+      "fn": "domain_suggestion",
+      "contract": "Suggestion: nullable text/shared Int confidence; Python selects best typed probe",
+      "out": {
+        "host": null,
+        "verdict": null,
+        "target": "x",
+        "confidence": null,
+        "reasons": null,
+        "checked_at": null
+      }
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 1005,
+      "fn": "domain_suggestion",
+      "contract": "Suggestion: nullable text/shared Int confidence; Python selects best typed probe",
+      "error_kind": "decode",
+      "message": ""
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 1008,
+      "fn": "ProbeStore.save",
+      "contract": "write validation: object entry and explicitly textual checked_at",
+      "error_kind": "check",
+      "message": "探测记录必须为对象且 checked_at 为字符串"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 1009,
+      "fn": "ProbeStore.save",
+      "contract": "write validation: object entry and explicitly textual checked_at",
+      "error_kind": "check",
+      "message": "探测记录必须为对象且 checked_at 为字符串"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 1014,
+      "fn": "RegionStore.update",
+      "contract": "write validation: object sections/entries and explicitly textual checked_at",
+      "error_kind": "check",
+      "message": "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"
+    },
+    {
+      "file": "review_c16.jsonl.gz",
+      "row": 1015,
+      "fn": "RegionStore.update",
+      "contract": "write validation: object sections/entries and explicitly textual checked_at",
+      "error_kind": "check",
+      "message": "区域检测存储的 domains 与 websites 必须为对象且 checked_at 为字符串"
+    }
+  ]
+}

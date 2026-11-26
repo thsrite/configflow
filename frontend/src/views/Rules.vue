@@ -76,7 +76,7 @@
             class="h-[46px] font-mono text-[16px]"
             spellcheck="false"
             autocomplete="off"
-            placeholder="输入域名或 IP，例如 api.anthropic.com"
+            placeholder="输入域名或 IP，例如 api.example.com"
             aria-label="要模拟的域名或 IP"
           />
         </label>

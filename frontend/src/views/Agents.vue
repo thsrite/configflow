@@ -22,6 +22,13 @@
       </template>
     </PageHeader>
 
+    <Alert v-if="restoredAgents.length" class="mb-3.5 border-warning-accent/35 bg-warning-soft/40" role="status" data-state-restored>
+      <TriangleAlert class="size-4 text-warning-accent" aria-hidden="true" />
+      <AlertDescription class="text-[12.5px]">
+        运行记录未包含在备份里，各 Agent 需要重新发布一次。尚未重新发布：{{ restoredAgents.map(agent => agent.name || agent.id).join('、') }}
+      </AlertDescription>
+    </Alert>
+
     <SectionCard v-if="agents.length === 0" :padded="false">
       <EmptyState
         :icon="Server"
@@ -59,6 +66,9 @@
             <Badge variant="outline" :class="cn('chip font-mono', ['mosdns', 'oxidns'].includes(agent.service_type) && 'chip-sky')">{{ serviceTypeLabels[agent.service_type] || agent.service_type }}</Badge>
             <span class="font-mono text-[11px] text-muted-foreground">{{ agent.version || '' }}</span>
           </header>
+          <p v-if="agent.state_restored_at" class="mt-1 mb-0 text-[12px] text-warning-accent" data-agent-state-restored>
+            待重新发布：运行记录未包含在备份里
+          </p>
           <p class="mt-1 mb-0 truncate font-mono text-[11.5px] text-muted-foreground">
             {{ agent.host }}:{{ agent.port }}
             · {{ agent.deployment_method === 'shell' ? 'shell' : agent.deployment_method === 'docker' ? 'docker' : agent.deployment_method || '—' }}
@@ -434,7 +444,7 @@
             </FormField>
 
             <FormField :label="dockerDNSHA ? (scriptForm.haNetworkMode === 'host' ? '宿主机固定 IPv4（必填）' : '容器固定 IPv4（必填）') : 'Agent IP（可选）'" html-for="agent-ip" :hint="dockerDNSHA ? (scriptForm.haNetworkMode === 'host' ? '填写这台 Linux 主机的静态局域网地址，不是虚拟 IP。' : '使用未占用的局域网地址，与宿主机地址、虚拟 IP 分别不同。') : undefined" :class="scriptForm.installType === 'shell' && scriptForm.shellMode === 'single' ? 'col-span-2' : 'col-span-2 sm:col-span-1'">
-              <Input id="agent-ip" v-model="scriptForm.agent_ip" class="min-h-11 bg-background/50 font-mono" :placeholder="dockerDNSHA ? '例如：192.168.1.21' : '留空则自动获取'" :aria-required="dockerDNSHA" />
+              <Input id="agent-ip" v-model="scriptForm.agent_ip" class="min-h-11 bg-background/50 font-mono" :placeholder="dockerDNSHA ? '例如：192.0.2.21' : '留空则自动获取'" :aria-required="dockerDNSHA" />
             </FormField>
 
             <FormField v-if="scriptForm.installType === 'docker'" label="Agent 容器名" html-for="docker-container" class="col-span-2">
@@ -474,10 +484,10 @@
                   <Input id="docker-ha-parent" v-model="scriptForm.haParent" class="min-h-11 font-mono" placeholder="例如：eth0 或 enp1s0" aria-required="true" />
                 </FormField>
                 <FormField label="局域网网段（必填）" html-for="docker-ha-subnet">
-                  <Input id="docker-ha-subnet" v-model="scriptForm.haSubnet" class="min-h-11 font-mono" placeholder="例如：192.168.1.0/24" aria-required="true" />
+                  <Input id="docker-ha-subnet" v-model="scriptForm.haSubnet" class="min-h-11 font-mono" placeholder="例如：192.0.2.0/24" aria-required="true" />
                 </FormField>
                 <FormField label="局域网网关（可选）" html-for="docker-ha-gateway" hint="留空由 Docker 选择该网段的默认网关；建议填写实际路由器地址。" class="sm:col-span-2">
-                  <Input id="docker-ha-gateway" v-model="scriptForm.haGateway" class="min-h-11 font-mono" placeholder="例如：192.168.1.1" />
+                  <Input id="docker-ha-gateway" v-model="scriptForm.haGateway" class="min-h-11 font-mono" placeholder="例如：192.0.2.1" />
                 </FormField>
               </div>
               <p v-if="scriptForm.haNetworkMode === 'macvlan'" class="m-0 rounded-md border border-warning/30 bg-warning-soft p-3 text-[12px] leading-relaxed text-foreground">
@@ -866,6 +876,7 @@
 <script setup lang="ts">
 import { useChartPalette, withAlpha } from '@/lib/chartPalette'
 import PageHeader from '@/components/common/PageHeader.vue'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ref, shallowRef, computed, onMounted, onUnmounted, nextTick, watch, type ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import { consumeAction } from '@/lib/actions'
@@ -979,6 +990,7 @@ use([LineChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent
 
 
 const agents = ref<Agent[]>([])
+const restoredAgents = computed(() => agents.value.filter(agent => agent.state_restored_at))
 const ruleUpdateRefs = ref<Record<string, InstanceType<typeof OxiDNSRuleUpdate> | null>>({})
 function setRuleUpdateRef(id: string, instance: Element | ComponentPublicInstance | null) {
   ruleUpdateRefs.value[id] = instance as InstanceType<typeof OxiDNSRuleUpdate> | null
@@ -2353,6 +2365,7 @@ const generateScript = async () => {
       const serverUrl = localStorage.getItem('serverDomain') || window.location.origin
 
       const dockerParams = {
+        format: 'both',
         server_url: serverUrl,
         agent_name: scriptForm.value.containerName || scriptForm.value.name,
         agent_ip: scriptForm.value.agent_ip || '',
@@ -2378,14 +2391,11 @@ const generateScript = async () => {
       }
 
       // 使用统一的 Docker API
-      const [composeResponse, runResponse] = await Promise.all([
-        api.get('/agents/docker-agent-compose', { params: dockerParams }),
-        api.get('/agents/docker-agent-run', { params: dockerParams })
-      ])
+      const response = await api.get<{ compose: string; run: string }>('/agents/docker-agent-compose', { params: dockerParams })
 
       if (request !== scriptRequest || !scriptDialogVisible.value) return
-      dockerComposeContent.value = composeResponse.data
-      dockerRunCommand.value = runResponse.data
+      dockerComposeContent.value = response.data.compose
+      dockerRunCommand.value = response.data.run
       notify.success('Docker 部署命令已生成，请复制到目标机器执行')
     } else {
       let serverUrl = localStorage.getItem('serverDomain') || window.location.origin

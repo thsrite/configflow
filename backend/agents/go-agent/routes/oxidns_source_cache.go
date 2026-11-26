@@ -70,13 +70,6 @@ func (cache *oxSourceCache) clearLocked() {
 	cache.streams = make(map[string]*oxSourceStream)
 }
 
-func (cache *oxSourceCache) close() {
-	cache.mu.Lock()
-	defer cache.mu.Unlock()
-	cache.closed = true
-	cache.clearLocked()
-}
-
 func (cache *oxSourceCache) reset() {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
@@ -146,7 +139,7 @@ func oxSourceKey(record oxSourceRecord) ([32]byte, bool) {
 		return [32]byte{}, false
 	}
 	// A recorder can be cleared and IDs reused without restarting the core.
-	identity, err := json.Marshal([]interface{}{record.ID, record.Created, record.RequestID, record.Client, record.Questions})
+	identity, err := json.Marshal([]any{record.ID, record.Created, record.RequestID, record.Client, record.Questions})
 	if err != nil {
 		return [32]byte{}, false
 	}

@@ -1,0 +1,181 @@
+# Previously compared route templates; removals fail the gate.
+GENERATOR agent-mihomo
+GENERATOR agent-mihomo success
+GENERATOR agent-oxidns
+GENERATOR agent-oxidns success
+GENERATOR loon
+GENERATOR loon success
+GENERATOR mihomo
+GENERATOR mihomo success
+GENERATOR mihomo-providers
+GENERATOR mihomo-providers success
+GENERATOR mihomo-rules
+GENERATOR mihomo-rules success
+GENERATOR mosdns
+GENERATOR mosdns success
+GENERATOR mosdns-downloads
+GENERATOR mosdns-downloads success
+GENERATOR mosdns-files
+GENERATOR mosdns-files success
+GENERATOR oxidns
+GENERATOR oxidns success
+GENERATOR oxidns-downloads
+GENERATOR oxidns-downloads success
+GENERATOR oxidns-files
+GENERATOR oxidns-files success
+GENERATOR subscription-loon
+GENERATOR subscription-loon success
+GENERATOR subscription-mihomo
+GENERATOR subscription-mihomo success
+GENERATOR subscription-surge
+GENERATOR subscription-surge success
+GENERATOR surge
+GENERATOR surge success
+GET /api/agents/<agent_id>/address
+GET /api/agents/<agent_id>/address snapshot-parameter
+GET /api/agents/<agent_id>/config/logging
+GET /api/agents/<agent_id>/config/logging snapshot-parameter
+GET /api/agents/<agent_id>/logs
+GET /api/agents/<agent_id>/logs snapshot-parameter
+GET /api/agents/<agent_id>/logs/sources
+GET /api/agents/<agent_id>/logs/sources snapshot-parameter
+GET /api/agents/<agent_id>/metrics
+GET /api/agents/<agent_id>/metrics snapshot-parameter
+GET /api/agents/<agent_id>/metrics/history
+GET /api/agents/<agent_id>/metrics/history snapshot-parameter
+GET /api/agents/<agent_id>/metrics/summary
+GET /api/agents/<agent_id>/metrics/summary snapshot-parameter
+GET /api/agents/<agent_id>/mihomo/<path:resource>
+GET /api/agents/<agent_id>/mihomo/<path:resource> snapshot-parameter
+GET /api/agents/<agent_id>/oxidns/cache
+GET /api/agents/<agent_id>/oxidns/cache snapshot-parameter
+GET /api/agents/<agent_id>/oxidns/clients
+GET /api/agents/<agent_id>/oxidns/clients snapshot-parameter
+GET /api/agents/<agent_id>/oxidns/overview
+GET /api/agents/<agent_id>/oxidns/overview snapshot-parameter
+GET /api/agents/<agent_id>/oxidns/queries
+GET /api/agents/<agent_id>/oxidns/queries snapshot-parameter
+GET /api/agents/<agent_id>/oxidns/queries/<record_id>
+GET /api/agents/<agent_id>/oxidns/rules/update
+GET /api/agents/<agent_id>/oxidns/rules/update snapshot-parameter
+GET /api/agents/<agent_id>/status
+GET /api/agents/<agent_id>/status snapshot-parameter
+GET /api/agents/<agent_id>/traffic-history
+GET /api/agents/<agent_id>/traffic-history snapshot-parameter
+GET /api/agents/<agent_id>/traffic/stats
+GET /api/agents/<agent_id>/traffic/stats snapshot-parameter
+GET /api/agents/<agent_id>/traffic/trend
+GET /api/agents/<agent_id>/traffic/trend snapshot-parameter
+GET /api/agents/<agent_id>/upgrade
+GET /api/agents/<agent_id>/upgrade snapshot-parameter
+GET /api/agents/core-install-script
+GET /api/agents/core-install-script snapshot-parameter
+GET /api/agents/docker-agent-compose
+GET /api/agents/docker-agent-compose snapshot-parameter
+GET /api/agents/docker-agent-run
+GET /api/agents/docker-agent-run snapshot-parameter
+GET /api/agents/download/<filename>
+GET /api/agents/download/<filename> snapshot-parameter
+GET /api/agents/gateway-network-probe.sh
+GET /api/agents/gateway-network-probe.sh snapshot-parameter
+GET /api/agents/i/<token>
+GET /api/agents/i/<token> snapshot-parameter
+GET /api/agents/install-script
+GET /api/agents/install-script snapshot-parameter
+GET /api/agents/latest-version
+GET /api/agents/latest-version snapshot-parameter
+GET /api/auth/status
+GET /api/auth/status snapshot-parameter
+GET /api/auth/verify
+GET /api/auth/verify snapshot-parameter
+GET /api/backup/config
+GET /api/backup/config snapshot-parameter
+GET /api/config-token
+GET /api/config-token snapshot-parameter
+GET /api/domain-discovery/agents
+GET /api/domain-discovery/agents snapshot-parameter
+GET /api/domain-discovery/domains
+GET /api/domain-discovery/domains snapshot-parameter
+GET /api/domain-discovery/history
+GET /api/domain-discovery/history snapshot-parameter
+GET /api/domain-discovery/probe/<job_id>
+GET /api/domain-discovery/region
+GET /api/domain-discovery/region snapshot-parameter
+GET /api/domain-discovery/settings
+GET /api/domain-discovery/settings snapshot-parameter
+GET /api/logs/info
+GET /api/logs/info snapshot-parameter
+GET /api/logs/tail
+GET /api/logs/tail snapshot-parameter
+GET /api/mosdns/api-settings
+GET /api/mosdns/api-settings snapshot-parameter
+GET /api/mosdns/cache-settings
+GET /api/mosdns/cache-settings snapshot-parameter
+GET /api/mosdns/custom-matches
+GET /api/mosdns/custom-matches snapshot-parameter
+GET /api/mosdns/dns-servers
+GET /api/mosdns/dns-servers snapshot-parameter
+GET /api/mosdns/log-settings
+GET /api/mosdns/log-settings snapshot-parameter
+GET /api/mosdns/rule-proxy
+GET /api/mosdns/rule-proxy snapshot-parameter
+GET /api/mosdns/rulesets
+GET /api/mosdns/rulesets snapshot-parameter
+GET /api/nodes
+GET /api/nodes snapshot-parameter
+GET /api/nodes/latency
+GET /api/nodes/latency snapshot-parameter
+GET /api/nodes/latency/settings
+GET /api/nodes/latency/settings snapshot-parameter
+GET /api/profiles/<profile_id>/mosdns/rule-proxy
+GET /api/profiles/<profile_id>/mosdns/rule-proxy snapshot-parameter
+GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies
+GET /api/profiles/<profile_id>/subscriptions/<sub_id>/proxies snapshot-parameter
+GET /api/server-domain
+GET /api/server-domain snapshot-parameter
+GET /api/settings/dependencies
+GET /api/settings/dependencies snapshot-parameter
+GET /api/settings/rule-fetch-proxy
+GET /api/settings/rule-fetch-proxy snapshot-parameter
+GET /api/settings/subscription-aggregation
+GET /api/settings/subscription-aggregation snapshot-parameter
+GET /api/settings/web-port
+GET /api/settings/web-port snapshot-parameter
+GET /api/stats/overview
+GET /api/stats/overview snapshot-parameter
+GET /api/subscriptions
+GET /api/subscriptions snapshot-parameter
+GET /api/subscriptions/<resource_id>/health-impact
+GET /api/subscriptions/<resource_id>/health-impact snapshot-parameter
+GET /api/subscriptions/<sub_id>/nodes
+GET /api/subscriptions/<sub_id>/nodes snapshot-parameter
+GET /api/subscriptions/<sub_id>/proxies
+GET /api/subscriptions/<sub_id>/proxies snapshot-parameter
+GET /api/subscriptions/health
+GET /api/subscriptions/health snapshot-parameter
+GET /api/subscriptions/proxies
+GET /api/subscriptions/proxies snapshot-parameter
+GET /api/subscriptions/test
+GET /api/subscriptions/test snapshot-parameter
+GET /api/version
+GET /api/version snapshot-parameter
+POST /api/agents/docker-oxidns-ha-guide
+POST /api/agents/docker-oxidns-ha-guide snapshot-parameter
+GENERATOR agent-deployment-bundle
+GENERATOR agent-deployment-bundle success
+GENERATOR aggregation-provider
+GENERATOR aggregation-provider success
+GET /api/aggregations
+GET /api/aggregations snapshot-parameter
+GET /api/aggregations/<agg_id>
+GET /api/aggregations/<agg_id> snapshot-parameter
+GET /api/aggregations/<agg_id>/count
+GET /api/aggregations/<agg_id>/count snapshot-parameter
+GET /api/aggregations/<agg_id>/preview
+GET /api/aggregations/<agg_id>/preview snapshot-parameter
+GET /api/aggregations/<agg_id>/provider
+GET /api/aggregations/<agg_id>/provider snapshot-parameter
+GET /api/aggregations/<resource_id>/health-impact
+GET /api/aggregations/<resource_id>/health-impact snapshot-parameter
+GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider
+GET /api/profiles/<profile_id>/aggregations/<agg_id>/provider snapshot-parameter

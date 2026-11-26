@@ -84,7 +84,7 @@ func TestDNSFollowListenerUsesConfirmedLiveDNSListen(t *testing.T) {
 	cfg.Token = "private-agent-token"
 	confirmedDNSFixture(t, cfg, "secret: PRIVATE_CONTROLLER_TOKEN\ndns: {enable: true, listen: '[::1]:7874'}\ntun: {dns-hijack: ['any:53', 'tcp://any:5353']}\n", nil)
 	w := callDNSRoute(t, cfg, "/api/dns/listener?deployment_id=dns-source", cfg.Token)
-	var summary map[string]interface{}
+	var summary map[string]any
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &summary) != nil || summary["success"] != true ||
 		summary["agent_id"] != cfg.AgentID || summary["deployment_id"] != "dns-source" ||
 		summary["enabled"] != true || summary["listen"] != "[::1]:7874" || summary["host"] != "::1" || summary["port"] != float64(7874) {
@@ -342,7 +342,7 @@ func TestDNSFollowActiveRequiresRunningTarget(t *testing.T) {
 
 func TestDNSFollowPeerRequiresManagedSameNamespaceEvidence(t *testing.T) {
 	for _, native := range []bool{true, false} {
-		for _, scenario := range []string{"valid", "no-aio", "wrong-path", "wrong-service", "unregistered", "same-id", "other-panel", "unreadable", "wrong-manager"} {
+		for _, scenario := range []string{"valid", "no-aio", "wrong-path", "wrong-service", "unregistered", "same-id", "other-panel", "unreadable", "wrong-manager", "legacy-manager"} {
 			t.Run(fmt.Sprintf("native=%v/%s", native, scenario), func(t *testing.T) {
 				t.Setenv("ENABLE_MIHOMO", "true")
 				t.Setenv("ENABLE_OXIDNS", "true")
@@ -354,8 +354,8 @@ func TestDNSFollowPeerRequiresManagedSameNamespaceEvidence(t *testing.T) {
 					peer.AgentServiceUnit, peer.ServiceManager = "configflow-agent-mihomo", "systemd"
 					peerPath = "/opt/configflow-agent/mihomo/config.json"
 				} else {
-					cfg.AgentConfigFile, cfg.ServiceManager, cfg.ServiceUnit = "/opt/configflow-agent/config-oxidns.json", "supervisor", "oxidns"
-					peer.ServiceManager, peer.ServiceUnit = "supervisor", "mihomo"
+					cfg.AgentConfigFile, cfg.ServiceManager, cfg.ServiceUnit = "/opt/configflow-agent/config-oxidns.json", "s6", "oxidns"
+					peer.ServiceManager, peer.ServiceUnit = "s6", "mihomo"
 				}
 				switch scenario {
 				case "no-aio":
@@ -373,6 +373,11 @@ func TestDNSFollowPeerRequiresManagedSameNamespaceEvidence(t *testing.T) {
 					peer.ServerURL = "https://other.example"
 				case "wrong-manager":
 					peer.ServiceManager = "command"
+				case "legacy-manager":
+					// A peer configuration written by an image before 1.9.3-go.
+					if !native {
+						peer.ServiceManager = "supervisor"
+					}
 				}
 				read := func(path string) ([]byte, error) {
 					if path != peerPath {
@@ -384,10 +389,10 @@ func TestDNSFollowPeerRequiresManagedSameNamespaceEvidence(t *testing.T) {
 					return json.Marshal(peer)
 				}
 				id, err := sameNamespaceDNSPeer(cfg, read)
-				if scenario == "valid" && (err != nil || id != peer.AgentID) {
+				if (scenario == "valid" || scenario == "legacy-manager") && (err != nil || id != peer.AgentID) {
 					t.Fatalf("valid peer not detected: %s %v", id, err)
 				}
-				if scenario != "valid" && (err == nil || id != "") {
+				if scenario != "valid" && scenario != "legacy-manager" && (err == nil || id != "") {
 					t.Fatalf("unverified peer accepted: %s %v", id, err)
 				}
 			})

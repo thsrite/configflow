@@ -102,12 +102,15 @@ func parseFwmarkRules(output string) []fwmarkRule {
 	return rules
 }
 
-func collectReturnRouting(cfg *Config) map[string]interface{} {
-	result := map[string]interface{}{"success": true, "managed": managedReturnStatus(cfg)}
-	result["safety"] = returnSafetyStatus(cfg)
+func collectReturnRouting(cfg *Config) ReturnRoutingGetResponse {
+	result := ReturnRoutingGetResponse{
+		Managed: managedReturnStatus(cfg),
+		Safety:  returnSafetyStatus(cfg),
+		Success: true,
+	}
 
 	tablesOut, nftErr := runCommand("nft", "list", "tables")
-	result["nft_available"] = nftErr == nil
+	result.NFTAvailable = nftErr == nil
 	returnTables := []returnTable{}
 	allTables := []string{}
 	if nftErr == nil {
@@ -122,11 +125,11 @@ func collectReturnRouting(cfg *Config) map[string]interface{} {
 			}
 		}
 	}
-	result["nft_tables"] = allTables
-	result["return_tables"] = returnTables
+	result.NFTTables = allTables
+	result.ReturnTables = returnTables
 
 	rulesOut, ipErr := runCommand("ip", "-N", "-4", "rule", "show")
-	result["iproute_available"] = ipErr == nil
+	result.IPRouteAvailable = ipErr == nil
 	rules := []fwmarkRule{}
 	routes := map[string][]string{}
 	if ipErr == nil {
@@ -148,8 +151,8 @@ func collectReturnRouting(cfg *Config) map[string]interface{} {
 			routes[rule.Table] = lines
 		}
 	}
-	result["fwmark_rules"] = rules
-	result["table_routes"] = routes
+	result.FwmarkRules = rules
+	result.TableRoutes = routes
 
 	tun := []string{}
 	for _, name := range listInterfaces() {
@@ -157,7 +160,7 @@ func collectReturnRouting(cfg *Config) map[string]interface{} {
 			tun = append(tun, name)
 		}
 	}
-	result["tun_devices"] = tun
+	result.TunDevices = tun
 	return result
 }
 

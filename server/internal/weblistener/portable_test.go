@@ -1,0 +1,267 @@
+package weblistener
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"net"
+	"net/http"
+	"os"
+	"strconv"
+	"sync"
+	"testing"
+	"time"
+)
+
+func savedManager(t *testing.T, env map[string]string) *Manager {
+	t.Helper()
+	m := manager(t, env)
+	m.Spawner = listenerRuntime(t)
+	m.IPv6Available = func() bool { return false }
+	if err := os.WriteFile(m.statePath(), []byte(`{"port":`+strconv.Itoa(freePort(t))+`}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Listen(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func assertOldListener(t *testing.T, m *Manager, old *active, before []byte) {
+	t.Helper()
+	after, err := os.ReadFile(m.statePath())
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("saved selection changed", err)
+	}
+	if m.active != old || m.Server.ListenerToken() != old.token || !healthy(context.Background(), old.port, old.ipv6, old.token) {
+		t.Fatal("old listener no longer serves its token")
+	}
+}
+
+func TestIPv4OnlyKernelKeepsOneNativeSocketAcrossUpdate(t *testing.T) {
+	m := savedManager(t, map[string]string{})
+	if m.active.ipv6 || len(m.active.listeners) != 1 {
+		t.Fatal("IPv6 socket created without kernel support")
+	}
+	port := freePort(t)
+	status, err := m.ChangePort(context.Background(), port)
+	if err != nil || status.IPv6 || len(m.active.listeners) != 1 {
+		t.Fatal(status, err)
+	}
+	if !healthy(context.Background(), port, false, m.Server.ListenerToken()) {
+		t.Fatal("IPv4 listener unhealthy")
+	}
+}
+
+func TestNativeHealthFailureLeavesOldListenerAndStateUsable(t *testing.T) {
+	m := savedManager(t, map[string]string{})
+	old := m.active
+	before, _ := os.ReadFile(m.statePath())
+	port := freePort(t)
+	server := m.Server.(*tokenServer)
+	// Serve an actual unsuccessful response only on the new socket.
+	server.srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, p, _ := net.SplitHostPort(r.Host)
+		if p == strconv.Itoa(port) {
+			w.WriteHeader(503)
+			return
+		}
+		w.Write([]byte(server.ListenerToken() + "\n"))
+	})
+	m.HealthTimeout = 20 * time.Millisecond
+	_, err := m.ChangePort(context.Background(), port)
+	wantError(t, err, 503, msgHealthFailed)
+	assertOldListener(t, m, old, before)
+	if c, err := net.DialTimeout("tcp4", "127.0.0.1:"+strconv.Itoa(port), 100*time.Millisecond); err == nil {
+		c.Close()
+		t.Fatal("failed new socket leaked")
+	}
+}
+
+func TestPersistenceFailureStillRollsBackLiveSockets(t *testing.T) {
+	m := savedManager(t, map[string]string{})
+	old := m.active
+	before, _ := os.ReadFile(m.statePath())
+	m.HealthCheck = func(ctx context.Context, port int, ipv6 bool, token string) bool {
+		ok := healthy(ctx, port, ipv6, token)
+		if ok {
+			if err := os.Chmod(m.DataDir, 0500); err != nil {
+				t.Error(err)
+			}
+		}
+		return ok
+	}
+	t.Cleanup(func() { os.Chmod(m.DataDir, 0700) })
+	_, err := m.ChangePort(context.Background(), freePort(t))
+	if chmodErr := os.Chmod(m.DataDir, 0700); chmodErr != nil {
+		t.Fatal(chmodErr)
+	}
+	wantError(t, err, 503, msgSaveFailed)
+	assertOldListener(t, m, old, before)
+}
+
+func TestReviewStateReadFailureAfterHealthRollsBackWithSafeError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("requires the normal unprivileged test user")
+	}
+	m := savedManager(t, map[string]string{})
+	old := m.active
+	before, err := os.ReadFile(m.statePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.HealthCheck = func(ctx context.Context, port int, ipv6 bool, token string) bool {
+		ok := healthy(ctx, port, ipv6, token)
+		if ok {
+			if err := os.Chmod(m.DataDir, 0); err != nil {
+				t.Error(err)
+			}
+		}
+		return ok
+	}
+	t.Cleanup(func() { os.Chmod(m.DataDir, 0700) })
+	port := freePort(t)
+	_, err = m.ChangePort(context.Background(), port)
+	if chmodErr := os.Chmod(m.DataDir, 0700); chmodErr != nil {
+		t.Fatal(chmodErr)
+	}
+	wantError(t, err, 503, msgSaveFailed)
+	assertOldListener(t, m, old, before)
+	if c, err := net.DialTimeout("tcp4", "127.0.0.1:"+strconv.Itoa(port), 100*time.Millisecond); err == nil {
+		c.Close()
+		t.Fatal("failed new socket leaked")
+	}
+}
+
+func TestHealthyProbeCannotCommitAfterRuntimeShutdown(t *testing.T) {
+	for _, shutdown := range []bool{false, true} {
+		t.Run(map[bool]string{false: "disconnect completes", true: "shutdown after successful probe"}[shutdown], func(t *testing.T) {
+			m := savedManager(t, map[string]string{})
+			old := m.active
+			before, _ := os.ReadFile(m.statePath())
+			runtime := listenerRuntime(t)
+			request, cancel := context.WithCancel(runtime.BindRequest(context.Background()))
+			defer cancel()
+			cancel()
+			m.HealthCheck = func(ctx context.Context, port int, ipv6 bool, token string) bool {
+				ok := healthy(ctx, port, ipv6, token)
+				if ok && shutdown {
+					runtime.Shutdown(context.Background())
+				}
+				return ok
+			}
+			port := freePort(t)
+			_, err := m.ChangePort(request, port)
+			if shutdown {
+				if !errors.Is(err, context.Canceled) {
+					t.Fatal(err)
+				}
+				assertOldListener(t, m, old, before)
+			} else if err != nil || m.active.port != port || !healthy(context.Background(), port, false, m.Server.ListenerToken()) {
+				t.Fatal("disconnect aborted switch", err)
+			}
+		})
+	}
+}
+
+func TestReviewShutdownBetweenSavedStateAndActiveSwitchRestoresSelection(t *testing.T) {
+	m := savedManager(t, map[string]string{})
+	old := m.active
+	before, err := os.ReadFile(m.statePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := listenerRuntime(t)
+	checked := make(chan struct{})
+	var unlockOnce sync.Once
+	unlock := func() { unlockOnce.Do(m.mu.Unlock) }
+	m.HealthCheck = func(ctx context.Context, port int, ipv6 bool, token string) bool {
+		if !healthy(ctx, port, ipv6, token) {
+			return false
+		}
+		// The file commit remains real. Hold only the later active-pointer
+		// switch, then stop the owning generation after observing the new file.
+		m.mu.Lock()
+		close(checked)
+		return true
+	}
+	done := make(chan error, 1)
+	port := freePort(t)
+	go func() { _, err := m.ChangePort(runtime.BindRequest(context.Background()), port); done <- err }()
+	select {
+	case <-checked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("new listener never passed health")
+	}
+	t.Cleanup(unlock)
+	committed := false
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		data, err := os.ReadFile(m.statePath())
+		if err == nil && !bytes.Equal(before, data) {
+			committed = true
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if !committed {
+		t.Fatal("new selection was never committed")
+	}
+	runtime.Shutdown(context.Background())
+	unlock()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("active switch ignored shutdown", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("rollback did not finish")
+	}
+	assertOldListener(t, m, old, before)
+}
+
+func TestCustomReservedPortsAtStartupAndUpdate(t *testing.T) {
+	for _, key := range []string{"CONFIGFLOW_BACKEND_PORT", "SUB_STORE_BACKEND_API_PORT"} {
+		t.Run(key, func(t *testing.T) {
+			env := map[string]string{}
+			m := savedManager(t, env)
+			old := m.active
+			before, _ := os.ReadFile(m.statePath())
+			reserved := freePort(t)
+			env[key] = strconv.Itoa(reserved)
+			_, err := m.ChangePort(context.Background(), reserved)
+			wantError(t, err, 409, "")
+			assertOldListener(t, m, old, before)
+			env["CONFIGFLOW_WEB_PORT"] = strconv.Itoa(reserved)
+			_, err = m.Listen(context.Background())
+			wantError(t, err, 409, "")
+			delete(env, "CONFIGFLOW_WEB_PORT")
+			assertOldListener(t, m, old, before)
+		})
+	}
+}
+
+func TestInvalidInternalEnvironmentAndSharedPortPreserveActiveConfig(t *testing.T) {
+	for _, key := range []string{"CONFIGFLOW_BACKEND_PORT", "SUB_STORE_BACKEND_API_PORT"} {
+		for _, value := range []string{"", "invalid", "0", "65536", "-1", "１", "9999999999999999999"} {
+			t.Run(key+"/"+value, func(t *testing.T) {
+				env := map[string]string{}
+				m := savedManager(t, env)
+				old := m.active
+				before, _ := os.ReadFile(m.statePath())
+				env[key] = value
+				_, err := m.Listen(context.Background())
+				wantError(t, err, 400, key+" 须为 1–65535 的整数")
+				assertOldListener(t, m, old, before)
+			})
+		}
+	}
+	env := map[string]string{}
+	m := savedManager(t, env)
+	old := m.active
+	before, _ := os.ReadFile(m.statePath())
+	env["CONFIGFLOW_BACKEND_PORT"] = "15801"
+	env["SUB_STORE_BACKEND_API_PORT"] = "15801"
+	_, err := m.Listen(context.Background())
+	wantError(t, err, 409, "ConfigFlow 后端与 Sub-Store 须使用不同的端口")
+	assertOldListener(t, m, old, before)
+}

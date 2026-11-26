@@ -9,7 +9,7 @@ export function gatewayEnvironmentErrors(name: string, serverUrl: string, spec: 
     const url = new URL(serverUrl.trim())
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash
       || (url.pathname !== '/' && url.pathname !== '') || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new Error()
-  } catch { errors.push('填写目标 Linux 能访问的 ConfigFlow 服务地址，例如 http://192.168.1.10:8000，不带路径或登录凭据。') }
+  } catch { errors.push('填写目标 Linux 能访问的 ConfigFlow 服务地址，例如 http://192.0.2.10:5010，不带路径或登录凭据。') }
   return errors
 }
 export const onboardingSettingsKey = (settings: GatewayOnboardingSettings) => JSON.stringify({

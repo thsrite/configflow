@@ -67,8 +67,8 @@ export const EASYTIER_GROUPS: EasyTierGroup[] = [
     fields: [
       field('network-name', '网络名', 'text', '要加入的 EasyTier 网络名，和其他节点填写的一致。', { placeholder: '必填' }),
       { secret: 'network-secret', label: '网络密钥（network-secret）', help: help('网络密钥。网络名和密钥都相同的节点才在同一个虚拟网里。', '导出脱敏备份时会被隐去。') },
-      field('hostname', '主机名', 'text', '本节点在虚拟网里的名字，也用于 MagicDNS（如 phone.et.net）。', { help: '同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备同名，用名字访问时分不清是哪台。', placeholder: '自动' }),
-      field('ipv4', '虚拟 IPv4', 'text', '本节点的虚拟网地址，例如 10.144.144.10/24。', { help: '不填时自动分配（DHCP），每次重启可能变化；要固定地址就在这里填写。\n同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备抢同一个地址。', placeholder: '自动分配' }),
+      field('hostname', '主机名', 'text', '本节点在虚拟网里的名字，也用于 MagicDNS（使用默认后缀时如 phone.et.net）。', { help: '同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备同名，用名字访问时分不清是哪台。', placeholder: '自动' }),
+      field('ipv4', '虚拟 IPv4', 'text', '本节点的虚拟网地址，例如 192.0.2.10/24。', { help: '不填时自动分配（DHCP），每次重启可能变化；要固定地址就在这里填写。\n同一个配置空间的订阅被多台设备使用时请留空：大家拿到的是同一份配置，写死会让几台设备抢同一个地址。', placeholder: '自动分配' }),
       field('dhcp', '自动分配地址', 'bool', '是否通过 DHCP 自动获取虚拟 IPv4。', { help: '不填虚拟 IPv4 时默认开启；填了则默认关闭。' }),
       field('peers', '入网节点', 'list', '启动时主动连接的节点，可以写多个，例如中转 VPS 和家里节点。', {
         help: '每行一个，如 tcp://203.0.113.10:11010、udp://[2001:db8::1]:11010。都会同时连接，入网后 EasyTier 自动选择直连或中转。不会自动连接公共节点。不监听端口时至少填一个。',
@@ -90,15 +90,15 @@ export const EASYTIER_GROUPS: EasyTierGroup[] = [
   {
     id: 'route', title: '路由与出口', help: '子网代理、出口节点和选路方式。',
     fields: [
-      field('proxy-networks', '公布本地网段', 'list', '把本机所在的局域网公布给虚拟网里的其他节点访问，例如 192.168.50.0/24。', {
-        help: '不支持「->」映射写法，只能原样公布网段。访问别的节点公布的网段不需要填写这里。', placeholder: '192.168.50.0/24',
+      field('proxy-networks', '公布本地网段', 'list', '把本机所在的局域网公布给虚拟网里的其他节点访问，例如 198.51.100.0/24。', {
+        help: '不支持「->」映射写法，只能原样公布网段。访问别的节点公布的网段不需要填写这里。', placeholder: '198.51.100.0/24',
       }),
-      field('exit-nodes', '出口节点', 'list', '通过这些节点访问外部网络，填写它们的虚拟 IPv4。', { placeholder: '10.144.144.1' }),
+      field('exit-nodes', '出口节点', 'list', '通过这些节点访问外部网络，填写它们的虚拟 IPv4。', { placeholder: '192.0.2.1' }),
       field('enable-exit-node', '作为出口节点', 'bool', '允许其他节点把本节点当作出口。', { coreDefault: false }),
       field('latency-first', '延迟优先', 'bool', '选路时优先延迟最低的路径，而不是跳数最少的路径。', { coreDefault: false }),
       field('disable-p2p', '禁用直连', 'bool', '不尝试点对点直连，所有流量都经中转。', { coreDefault: false }),
       field('accept-dns', '接受网络下发的 DNS', 'bool', '是否使用网络推送的 DNS 设置。', { coreDefault: false }),
-      field('tld-dns-zone', 'MagicDNS 域名后缀', 'text', 'MagicDNS 使用的域名后缀。', { placeholder: 'et.net.' }),
+      field('tld-dns-zone', 'MagicDNS 域名后缀', 'text', 'MagicDNS 使用的域名后缀。留空使用默认后缀 et.net。', { placeholder: 'et.net' }),
     ],
   },
   {
@@ -156,12 +156,12 @@ export const OUTPUT_FIELDS = {
   },
   routes: {
     path: ['easytier', 'routes'], label: '走 EasyTier 的网段', type: 'list', help: help('这些 IPv4 网段的流量交给 EasyTier，规则排在最前面。',
-      '通常填虚拟网网段（如 10.144.144.0/24）和其他节点公布的网段（如 10.200.0.0/24）。'), placeholder: '10.144.144.0/24',
+      '通常填虚拟网网段（如 192.0.2.0/24）和其他节点公布的网段（如 198.51.100.0/24）。'), placeholder: '192.0.2.0/24',
   },
-  magic_dns: { path: ['easytier', 'magic_dns'], label: '解析组网设备名', type: 'bool', coreDefault: false, help: help('用主机名访问虚拟网设备，例如 nas.et.net。', '添加该域名后缀的分流规则，并把它的解析交给 EasyTier（nameserver-policy）。') },
+  magic_dns: { path: ['easytier', 'magic_dns'], label: '解析组网设备名', type: 'bool', coreDefault: false, help: help('用主机名访问虚拟网设备，使用默认后缀时如 nas.et.net。', '添加 MagicDNS 域名后缀的分流规则，并把它的解析交给 EasyTier（nameserver-policy）。') },
   keepalive: { path: ['easytier', 'keepalive', 'enabled'], label: '启动即连接', type: 'bool', coreDefault: false, help: help('Mihomo 启动后马上加入虚拟网，而不是等第一次访问时才连接。',
     '生成一个带健康检查的策略组，定时访问下面的地址来保持连接。需要别人连进来时（例如开启了监听）必须开启。') },
-  keepalive_url: { path: ['easytier', 'keepalive', 'url'], label: '检测地址', type: 'text', help: help('保持连接用的网址，填虚拟网里某台设备上的网页。', '访问失败也会触发连接。'), placeholder: 'http://10.144.144.1/' },
+  keepalive_url: { path: ['easytier', 'keepalive', 'url'], label: '检测地址', type: 'text', help: help('保持连接用的网址，填虚拟网里某台设备上的网页。', '访问失败也会触发连接。'), placeholder: 'http://192.0.2.1/' },
   keepalive_interval: { path: ['easytier', 'keepalive', 'interval'], label: '检测间隔', type: 'int', help: help('多久检测一次。'), unit: '秒', min: 10, max: 86400 },
 } satisfies Record<string, BaseFieldDef>
 
@@ -191,7 +191,7 @@ export function easyTierIssues(value: EasyTierSettings): Record<string, string> 
   const ipv4 = typeof options.ipv4 === 'string' ? options.ipv4.trim() : ''
   if (ipv4) {
     const [address, prefix] = ipv4.split('/')
-    if (!isIPv4(address) || (prefix !== undefined && !(/^\d+$/.test(prefix) && Number(prefix) <= 32))) set('ipv4', '应类似 10.144.144.10 或 10.144.144.10/24')
+    if (!isIPv4(address) || (prefix !== undefined && !(/^\d+$/.test(prefix) && Number(prefix) <= 32))) set('ipv4', '应类似 192.0.2.10 或 192.0.2.10/24')
   }
   if (typeof options.mtu === 'number' && (options.mtu < 576 || options.mtu > 9000)) set('mtu', 'MTU 需在 576 ~ 9000 之间')
   if (value.keepalive.interval < 10 || value.keepalive.interval > 86400 || !Number.isInteger(value.keepalive.interval)) set('keepalive.interval', '需为 10 ~ 86400 秒的整数')

@@ -50,11 +50,11 @@ type ipv6Interface struct {
 	Addresses []ipv6Address `json:"addresses"`
 }
 type ipv6Route struct {
-	Interface string      `json:"interface"`
-	Gateway   string      `json:"gateway"`
-	Protocol  string      `json:"protocol"`
-	Expires   interface{} `json:"expires,omitempty"`
-	Metric    int         `json:"metric"`
+	Interface string `json:"interface"`
+	Gateway   string `json:"gateway"`
+	Protocol  string `json:"protocol"`
+	Expires   any    `json:"expires,omitempty"`
+	Metric    int    `json:"metric"`
 }
 type ipv6Check struct {
 	ID      string `json:"id"`
@@ -85,26 +85,26 @@ type ipv6Connectivity struct {
 	Interface string `json:"interface,omitempty"`
 }
 type ipv6Report struct {
-	Success            bool                   `json:"success"`
-	Supported          bool                   `json:"supported"`
-	CanPrepare         bool                   `json:"can_prepare"`
-	Reason             string                 `json:"reason,omitempty"`
-	Interface          string                 `json:"interface"`
-	InterfaceIndex     int                    `json:"interface_index"`
-	Interfaces         []ipv6Interface        `json:"interfaces"`
-	Addresses          []ipv6Address          `json:"addresses"`
-	DefaultRoutes      []ipv6Route            `json:"default_routes"`
-	Runtime            map[string]int         `json:"runtime"`
-	Persistence        ipv6Persistence        `json:"persistence"`
-	Checks             []ipv6Check            `json:"checks"`
-	ConfigurationReady bool                   `json:"configuration_ready"`
-	Connectivity       ipv6Connectivity       `json:"connectivity"`
-	RebootVerified     bool                   `json:"reboot_verified"`
-	RARequired         bool                   `json:"ra_required"`
-	Core               map[string]interface{} `json:"core"`
-	TUNIPv6            ipv6TUNReport          `json:"tun_ipv6"`
-	Changed            bool                   `json:"changed,omitempty"`
-	Message            string                 `json:"message,omitempty"`
+	Success            bool             `json:"success"`
+	Supported          bool             `json:"supported"`
+	CanPrepare         bool             `json:"can_prepare"`
+	Reason             string           `json:"reason,omitempty"`
+	Interface          string           `json:"interface"`
+	InterfaceIndex     int              `json:"interface_index"`
+	Interfaces         []ipv6Interface  `json:"interfaces"`
+	Addresses          []ipv6Address    `json:"addresses"`
+	DefaultRoutes      []ipv6Route      `json:"default_routes"`
+	Runtime            map[string]int   `json:"runtime"`
+	Persistence        ipv6Persistence  `json:"persistence"`
+	Checks             []ipv6Check      `json:"checks"`
+	ConfigurationReady bool             `json:"configuration_ready"`
+	Connectivity       ipv6Connectivity `json:"connectivity"`
+	RebootVerified     bool             `json:"reboot_verified"`
+	RARequired         bool             `json:"ra_required"`
+	Core               map[string]any   `json:"core"`
+	TUNIPv6            ipv6TUNReport    `json:"tun_ipv6"`
+	Changed            bool             `json:"changed,omitempty"`
+	Message            string           `json:"message,omitempty"`
 }
 
 type ipv6Network struct {
@@ -144,15 +144,15 @@ func detectIPv6Network() (ipv6Network, error) {
 		MAC   string `json:"address"`
 		Type  string `json:"link_type"`
 		Info  []struct {
-			Local      string      `json:"local"`
-			Prefix     int         `json:"prefixlen"`
-			Scope      string      `json:"scope"`
-			Flags      []string    `json:"flags"`
-			Tentative  bool        `json:"tentative"`
-			DadFailed  bool        `json:"dadfailed"`
-			Deprecated bool        `json:"deprecated"`
-			Temporary  bool        `json:"temporary"`
-			Valid      interface{} `json:"valid_life_time"`
+			Local      string   `json:"local"`
+			Prefix     int      `json:"prefixlen"`
+			Scope      string   `json:"scope"`
+			Flags      []string `json:"flags"`
+			Tentative  bool     `json:"tentative"`
+			DadFailed  bool     `json:"dadfailed"`
+			Deprecated bool     `json:"deprecated"`
+			Temporary  bool     `json:"temporary"`
+			Valid      any      `json:"valid_life_time"`
 		} `json:"addr_info"`
 	}
 	if err := json.Unmarshal([]byte(raw), &links); err != nil {
@@ -206,8 +206,8 @@ func detectIPv6Network() (ipv6Network, error) {
 	var routes []struct {
 		Dev       string          `json:"dev"`
 		Gateway   string          `json:"gateway"`
-		Protocol  interface{}     `json:"protocol"`
-		Expires   interface{}     `json:"expires"`
+		Protocol  any             `json:"protocol"`
+		Expires   any             `json:"expires"`
 		Metric    int             `json:"metric"`
 		Type      string          `json:"type"`
 		Multipath json.RawMessage `json:"multipath"`
@@ -332,13 +332,13 @@ func ipv6PersistenceFor(desired map[string]string, pending map[string][]byte) ip
 	return result
 }
 
-func ipv6CoreSettings(cfg *Config) map[string]interface{} {
-	result := map[string]interface{}{}
+func ipv6CoreSettings(cfg *Config) map[string]any {
+	result := map[string]any{}
 	if cfg == nil {
 		return result
 	}
 	data, err := os.ReadFile(cfg.ConfigPath)
-	doc := map[string]interface{}{}
+	doc := map[string]any{}
 	if err == nil {
 		err = yaml.Unmarshal(data, &doc)
 	}
@@ -352,7 +352,7 @@ func ipv6CoreSettings(cfg *Config) map[string]interface{} {
 			result[key] = v
 		}
 	}
-	if dns, ok := doc["dns"].(map[string]interface{}); ok {
+	if dns, ok := doc["dns"].(map[string]any); ok {
 		if v, ok := dns["ipv6"].(bool); ok {
 			result["dns.ipv6"] = v
 		}
@@ -360,7 +360,7 @@ func ipv6CoreSettings(cfg *Config) map[string]interface{} {
 			result["dns.fake-ip-range6"] = v
 		}
 	}
-	if tun, ok := doc["tun"].(map[string]interface{}); ok {
+	if tun, ok := doc["tun"].(map[string]any); ok {
 		for _, key := range []string{"enable", "auto-route"} {
 			if v, ok := tun[key].(bool); ok {
 				result["tun."+key] = v
@@ -528,21 +528,21 @@ func IPv6ReadinessHandler(cfg *Config, action string) http.HandlerFunc {
 			InterfaceIndex int    `json:"interface_index"`
 		}
 		if err := decodeIPv6Request(w, r, &request); err != nil {
-			JsonResponse(w, 400, map[string]interface{}{"success": false, "message": err.Error()})
+			JsonResponse(w, 400, MessageResponse{Success: false, Message: err.Error()})
 			return
 		}
 		if !ipv6InterfacePattern.MatchString(request.Interface) || request.Interface == "lo" || request.InterfaceIndex <= 0 {
-			JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "请先检查并选择有效上联网卡"})
+			JsonResponse(w, 400, MessageResponse{Success: false, Message: "请先检查并选择有效上联网卡"})
 			return
 		}
 		// Unsupported platforms must not even create a deployment lock file.
 		if err := gatewayPlatform(cfg); err != nil {
-			JsonResponse(w, 409, map[string]interface{}{"success": false, "message": err.Error()})
+			JsonResponse(w, 409, MessageResponse{Success: false, Message: err.Error()})
 			return
 		}
 		release, err := AcquireServiceOperation(cfg)
 		if err != nil {
-			JsonResponse(w, 409, map[string]interface{}{"success": false, "message": err.Error()})
+			JsonResponse(w, 409, MessageResponse{Success: false, Message: err.Error()})
 			return
 		}
 		defer release()
@@ -572,13 +572,13 @@ func IPv6ReadinessHandler(cfg *Config, action string) http.HandlerFunc {
 		JsonResponse(w, 200, report)
 	}
 }
-func decodeIPv6Request(w http.ResponseWriter, r *http.Request, value interface{}) error {
+func decodeIPv6Request(w http.ResponseWriter, r *http.Request, value any) error {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(value); err != nil {
 		return fmt.Errorf("IPv6 请求参数无效：%w", err)
 	}
-	if err := decoder.Decode(new(interface{})); err != io.EOF {
+	if err := decoder.Decode(new(any)); err != io.EOF {
 		return fmt.Errorf("请求只能包含一个 JSON 对象")
 	}
 	return nil
@@ -590,22 +590,22 @@ func ipv6ProbeHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 		Port int    `json:"port"`
 	}
 	if err := decodeIPv6Request(w, r, &request); err != nil {
-		JsonResponse(w, 400, map[string]interface{}{"success": false, "message": err.Error()})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: err.Error()})
 		return
 	}
 	if cfg == nil || cfg.ServiceType != "mihomo" || gatewayOS != "linux" {
-		JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "仅支持 Linux Mihomo 主机连接检查"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "仅支持 Linux Mihomo 主机连接检查"})
 		return
 	}
 	host := strings.TrimSpace(request.Host)
 	ip := net.ParseIP(host)
 	domain := regexp.MustCompile(`^(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.?$`)
 	if request.Port < 1 || request.Port > 65535 || len(host) > 253 || (ip == nil && !domain.MatchString(host)) || (ip != nil && (ip.To4() != nil || !ip.IsGlobalUnicast())) {
-		JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "需要有效的 IPv6 节点地址或域名及端口（1–65535）"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "需要有效的 IPv6 节点地址或域名及端口（1–65535）"})
 		return
 	}
 	result := ipv6Connectivity{Status: "error", Message: "节点 IPv6 TCP 连接未成功，请核对真实节点地址、端口和上联网卡绑定权限", Protocol: "tcp", Scope: "node_transport", Port: request.Port}
-	finish := func() { JsonResponse(w, 200, map[string]interface{}{"success": true, "connectivity": result}) }
+	finish := func() { JsonResponse(w, 200, IPv6ConnectivityResponse{Connectivity: result, Success: true}) }
 	network, err := detectIPv6Network()
 	if err != nil || network.Upstream == "" {
 		result.Message = "无法确认实际 IPv6 上联网卡，未进行可能被 TUN 接管的连接测试"
@@ -615,7 +615,7 @@ func ipv6ProbeHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	result.Interface = network.Upstream
 	excluded := network.Excluded
 	configData, err := os.ReadFile(cfg.ConfigPath)
-	doc := map[string]interface{}{}
+	doc := map[string]any{}
 	if err == nil {
 		err = yaml.Unmarshal(configData, &doc)
 	}
@@ -624,7 +624,7 @@ func ipv6ProbeHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 		finish()
 		return
 	}
-	if dns, ok := doc["dns"].(map[string]interface{}); ok {
+	if dns, ok := doc["dns"].(map[string]any); ok {
 		if raw, ok := dns["fake-ip-range6"].(string); ok && raw != "" {
 			_, prefix, e := net.ParseCIDR(raw)
 			if e != nil || prefix.IP.To4() != nil {

@@ -1,0 +1,32 @@
+{
+  "stored": {
+    "subscriptions": [
+      {
+        "id": 5
+      }
+    ]
+  },
+  "projection": {
+    "subscriptions": [
+      {
+        "id": "5"
+      }
+    ]
+  },
+  "files": {
+    "5.json": "synthetic-five",
+    "drop.json": "synthetic-drop",
+    "keep.json": "synthetic-keep",
+    "notes.txt": "synthetic-note"
+  },
+  "python": {
+    "removed": [
+      "drop.json",
+      "keep.json"
+    ],
+    "files": {
+      "5.json": "synthetic-five",
+      "notes.txt": "synthetic-note"
+    }
+  }
+}

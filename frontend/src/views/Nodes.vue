@@ -522,7 +522,7 @@
               v-model="batchForm.nodes_text"
               class="min-h-[300px] bg-background/50 font-mono text-[12px]"
               :rows="16"
-              placeholder="支持 URI、JSON、YAML，以及 Surge / Loon 节点行（如 HK = snell, 1.2.3.4, 443, psk=xxx, version=4），自动忽略空行和 // 注释"
+              placeholder="支持 URI、JSON、YAML，以及 Surge / Loon 节点行（如 HK = snell, 203.0.113.10, 443, psk=xxx, version=4），自动忽略空行和 // 注释"
             />
           </div>
           <div class="flex items-center gap-2.5">

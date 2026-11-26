@@ -37,9 +37,10 @@ const enableUnknown = ref(false)
 const signature = computed(() => {
   const task = props.agent.oxidns_ha_publication
   const value = enabled.value ? props.agent.oxidns_ha! : null
-  if (!value) return task ? `${task.id}|${task.status}` : ''
+  const auto = task?.auto_complete?.status || ''
+  if (!value) return task ? `${task.id}|${task.status}|${auto}` : ''
   return [props.agent.id, value.group_id, value.peer_id, value.vip, value.vrid, value.role,
-    props.agent.status, peerAgent.value?.status || '', haState.value?.status || '', haState.value?.updated_at || '', task?.id || '', task?.status || ''].join('|')
+    props.agent.status, peerAgent.value?.status || '', haState.value?.status || '', haState.value?.updated_at || '', task?.id || '', task?.status || '', auto].join('|')
 })
 let generation = 0
 let disposed = false
@@ -76,7 +77,9 @@ async function readStatus() {
     if (!disposed && current === generation) statusError.value = errorMessage(failure)
   } finally {
     if (!disposed && current === generation) statusLoading.value = false
-    if (!disposed && current === generation && (publishing.value || enableUnknown.value)) {
+    // 自动补完开始时旧任务仍是 failed，继续读取直到新的主备发布出现。
+    const autoStarting = publication.value?.auto_complete?.status === 'running'
+    if (!disposed && current === generation && (publishing.value || enableUnknown.value || autoStarting)) {
       pollTimer = setTimeout(() => { void readStatus() }, 2000)
     }
   }
@@ -104,6 +107,8 @@ const row = computed<{ status: string; tone: 'success' | 'warning' | 'danger' | 
   if (publication.value?.status === 'unknown') return { status: publication.value.phase === 'handoff' ? '虚拟 IP 迁移待确认' : '同步结果待确认', tone: 'warning' }
   if (publishing.value && publication.value?.phase === 'handoff') return { status: '正在迁移虚拟 IP', tone: 'progress' }
   if (publishing.value) return { status: '正在同步主备', tone: 'progress' }
+  if (publication.value?.status === 'failed' && publication.value.auto_complete?.status === 'waiting') return { status: '等待设备恢复后自动完成发布', tone: 'warning' }
+  if (publication.value?.status === 'failed' && publication.value.auto_complete?.status === 'running') return { status: '正在自动完成主备发布', tone: 'progress' }
   if (publication.value && publication.value.status !== 'succeeded') return { status: '主备同步失败', tone: 'danger' }
   if (haState.value?.status === 'applying') return { status: '正在开启', tone: 'progress' }
   if (haState.value?.status === 'failed') return { status: '操作失败', tone: 'danger' }
@@ -170,7 +175,7 @@ const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]
 const vipError = computed(() => {
   const value = vip.value.trim()
   if (!value) return ''
-  if (!IPV4.test(value)) return '请填写 IPv4 地址，如 192.168.0.2。'
+  if (!IPV4.test(value)) return '请填写 IPv4 地址，如 192.0.2.53。'
   const first = Number(value.split('.')[0])
   if (first === 0 || first === 127 || first >= 224) return '虚拟 IP 需为局域网单播地址。'
   if (value === props.agent.host || value === selectedPeer.value?.host) return '虚拟 IP 不能与两台 OxiDNS 的地址相同。'
@@ -297,7 +302,7 @@ async function disable(force: boolean) {
         <Button variant="ghost" size="sm" class="min-h-11 text-xs" :disabled="!!action" aria-label="设置 DNS 高可用" @click="open = true">设置</Button>
       </template>
       <template #notice>
-        <AgentHAPublication v-if="publication && (publishing || publication.status !== 'succeeded')" :publication="publication" />
+        <AgentHAPublication v-if="publication && (publishing || publication.status !== 'succeeded' || publication.auto_complete?.attempt)" :publication="publication" />
         <div class="flex min-w-0 flex-wrap items-center gap-1.5 text-muted-foreground">
           <span v-if="holdsVip" class="chip chip-ok shrink-0" data-dns-ha-holder>主 · VIP <span class="font-mono">{{ config.vip }}</span></span>
           <span v-else-if="standby" class="chip shrink-0">备</span>
@@ -373,7 +378,7 @@ async function disable(force: boolean) {
               <p v-if="!candidates.length" class="m-0 text-xs text-warning-accent">同一配置空间内没有可用的另一台 OxiDNS（需尚未加入其他高可用组）。</p>
             </FormField>
             <FormField label="虚拟 IP" :html-for="`dns-ha-vip-${agent.id}`" v-bind="oxidnsHaCopy.vip">
-              <Input :id="`dns-ha-vip-${agent.id}`" v-model="vip" class="min-h-11 font-mono" placeholder="192.168.0.2" autocomplete="off" spellcheck="false" inputmode="decimal" :aria-invalid="!!vipError || undefined" />
+              <Input :id="`dns-ha-vip-${agent.id}`" v-model="vip" class="min-h-11 font-mono" placeholder="192.0.2.53" autocomplete="off" spellcheck="false" inputmode="decimal" :aria-invalid="!!vipError || undefined" />
               <p v-if="vipError" class="m-0 text-xs text-destructive-accent">{{ vipError }}</p>
             </FormField>
             <details class="rounded-md border border-border text-xs text-muted-foreground" data-dns-ha-advanced>

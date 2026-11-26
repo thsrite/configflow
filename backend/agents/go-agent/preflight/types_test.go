@@ -41,7 +41,7 @@ func TestReportShowsAllFailuresAndRepairsWithoutTerminalInjection(t *testing.T) 
 		{Name: "配置\n[通过]fake", Level: "pass", Message: "path\x1b[2J"},
 	}
 	var output bytes.Buffer
-	report.Print(&output)
+	report.PrintWithOptions(&output, clioutput.Options{Verbose: true}, false)
 	text := output.String()
 	if !report.HasErrors() || !strings.Contains(text, "1 项错误，1 项提醒") || !strings.Contains(text, "在 PVE 添加设备") || !strings.Contains(text, "按网关用途开启") {
 		t.Fatalf("missing aggregated diagnostics: %s", text)

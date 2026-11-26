@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 const activationCheckScript = `#!/bin/sh
@@ -33,19 +32,9 @@ func activateReadyCandidate(t *testing.T, cfg *Config, id string) *DeploymentSta
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("activation request: %d %s", response.Code, response.Body)
 	}
-	deadline := time.Now().Add(8 * time.Second)
-	for time.Now().Before(deadline) {
-		state, err := loadDeployment(cfg, id)
-		if err == nil && (state.Status == "failed" || state.Status == "succeeded" || state.Status == "rolled_back" || state.Status == "rollback_failed") {
-			if release, err := AcquireServiceOperation(cfg); err == nil {
-				release()
-				return state
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("activation worker did not finish")
-	return nil
+	return waitDeploymentState(t, cfg, id, true, func(state *DeploymentState) bool {
+		return state.Status == "failed" || state.Status == "succeeded" || state.Status == "rolled_back" || state.Status == "rollback_failed"
+	}, "activation "+id)
 }
 
 func TestOxiDNSReadyActivationRechecksCurrentCoreBeforeTouchingLive(t *testing.T) {

@@ -1,0 +1,132 @@
+package rulefetch
+
+import (
+	"bufio"
+	"compress/gzip"
+	"os"
+	"strings"
+	"testing"
+)
+
+// reviewRow answers one row of testdata/review_c14.jsonl.gz.
+func reviewRow(fn string, args []any) (any, error) {
+	str := func(i int) string { s, _ := args[i].(string); return s }
+	obj := func(i int) *orderedObj { o, _ := args[i].(*orderedObj); return o }
+	switch fn {
+	case "unescape":
+		return pyUnescape(str(0)), nil
+	case "meta_content":
+		return metaContent(str(0)), nil
+	case "clean_text":
+		return CleanText(str(0), asIntArg(args[1])), nil
+	case "is_github_url":
+		return IsGithubURL(str(0)), nil
+	case "is_internal_rule_url":
+		return InternalURL(str(0), decodeSourceConfig(obj(1), false), "")
+	case "github_download_candidates":
+		candidates, err := DownloadCandidates(str(0), decodeSourceConfig(obj(1), false), "")
+		var out []any
+		for _, c := range candidates {
+			out = append(out, []any{c.Label, c.URL})
+		}
+		return out, err
+	case "rule_request_options":
+		proxy, err := ProxyFor(str(0), decodeSourceConfig(obj(1), false), "")
+		return newOrderedObj("proxies", newOrderedObj("http", proxy, "https", proxy)), err
+	case "page_identity":
+		return runPageIdentity(obj(0), "example.com", "now"), nil
+	}
+	return runCorpusRow(fn, args)
+}
+
+// reviewAccepted lists the rows whose difference is documented in PROGRESS
+// (section C14, accepted differences).
+func reviewAccepted(fn string, args []any, want string) bool {
+	content, _ := args[0].(string)
+	last, _ := args[len(args)-1].(string)
+	if urlAccepted(fn, content, args[0]) || fn == "urljoin" && urlAccepted(fn, last, nil) {
+		return true
+	}
+	switch {
+	case fn == "normalize_yaml" && (strings.Contains(content, "!!set") || strings.Contains(content, "!!omap")):
+		// yamlx cannot hold !!set / !!omap values; Python re-dumps them.
+		return true
+	case fn == "append" && content == "payload: x\npayload: [a.com]\n":
+		// A first payload key that is not a list: Python's append raises
+		// AttributeError. Unreachable: validate_domain_content refuses a
+		// document without a unique payload list before it is stored.
+		return true
+	}
+	return false
+}
+
+// TestReviewC14Corpus replays testdata/review_c14.jsonl.gz
+// (testdata/gen_review_c14.py, real CPython 3.11.17).
+func TestReviewC14Corpus(t *testing.T) {
+	f, err := os.Open("testdata/review_c14.jsonl.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc := bufio.NewScanner(zr)
+	sc.Buffer(make([]byte, 1<<20), 1<<28)
+	rows, failures, accepted := 0, map[string]int{}, 0
+	classes := map[string]int{}
+	for sc.Scan() {
+		value, err := parseOrderedJSON(sc.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		row := value.(*orderedObj)
+		rows++
+		fn := row.str("fn")
+		if droppedURLRow(fn) {
+			continue
+		}
+		got, gotErr := reviewRow(fn, row.list("args"))
+		var gotText, wantText string
+		if want, isErr := row.get("err"); isErr {
+			wantText = encode(classOnly(want))
+			if gotErr != nil {
+				gotText = encode(classOnly(recordedError(gotErr)))
+			} else {
+				gotText = "ok " + encode(got)
+			}
+		} else {
+			want, _ := wantURLRow(fn, row.val("ok"))
+			wantText = encode(want)
+			if gotErr != nil {
+				gotText = "error " + encode(recordedError(gotErr))
+			} else {
+				gotText = encode(got)
+			}
+		}
+		if gotText == wantText {
+			continue
+		}
+		if reviewAccepted(fn, row.list("args"), wantText) {
+			accepted++
+			continue
+		}
+		if category := nativeReplayDifference(t, "review", fn, row.val("args"), gotText, wantText); category != "" {
+			classes[category]++
+			continue
+		}
+		failures[fn]++
+		if failures[fn] <= 4 {
+			t.Errorf("%s%.400s\n got %.600s\nwant %.600s", fn, encode(row.val("args")), gotText, wantText)
+		}
+	}
+	t.Logf("N7-3b classifications: %v", classes)
+	if err := sc.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) > 0 {
+		t.Errorf("differences by function: %v (of %d rows)", failures, rows)
+	}
+	t.Logf("%d rows, %d accepted differences", rows, accepted)
+}

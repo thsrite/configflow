@@ -1,0 +1,696 @@
+package clients
+
+import (
+	"configflow/internal/jsondecode"
+	"configflow/internal/routers/clientlist"
+	"configflow/internal/routers/device"
+	"configflow/internal/routers/fixedip"
+	"configflow/internal/routers/ikuai"
+	"configflow/internal/routers/oplock"
+	"configflow/internal/routers/ros"
+	"configflow/internal/routers/rospolicy"
+	"configflow/internal/routers/spec"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+
+	"configflow/internal/auth"
+	"configflow/internal/devicenotes"
+	"configflow/internal/lifecycle"
+	"configflow/internal/oxidns"
+	"configflow/internal/repo"
+	"configflow/internal/routerdoc"
+)
+
+// FixedIPDevice identifies one saved IPv4 host and the router that discovered it.
+type FixedIPDevice struct {
+	IP       string `json:"ip"`
+	MAC      string `json:"mac"`
+	RouterID string `json:"router_id"`
+	Name     string `json:"name"`
+}
+
+// FixedIPIntent is a validated batch. Profile selection is supplied separately.
+type FixedIPIntent struct {
+	Operation string          `json:"operation"`
+	Devices   []FixedIPDevice `json:"devices"`
+}
+
+// NormalizeFixedIPRequest validates exact JSON keys before contacting any router.
+// The submitted profile_id is returned undecoded: its type is not a batch
+// format error, and the caller rejects any non-matching value as a profile switch.
+func NormalizeFixedIPRequest(raw json.RawMessage) (json.RawMessage, FixedIPIntent, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || len(fields) != 3 || fields["profile_id"] == nil || fields["operation"] == nil || fields["devices"] == nil {
+		return nil, FixedIPIntent{}, settingsError(messageFixedSelect)
+	}
+	var operation string
+	var rows []json.RawMessage
+	if json.Unmarshal(fields["operation"], &operation) != nil || (operation != "add" && operation != "delete") || json.Unmarshal(fields["devices"], &rows) != nil || len(rows) < 1 || len(rows) > 64 {
+		return nil, FixedIPIntent{}, settingsError(messageFixedSelect)
+	}
+	profile := fields["profile_id"]
+	intent := FixedIPIntent{Operation: operation, Devices: []FixedIPDevice{}}
+	ips, macs := map[string]bool{}, map[string]bool{}
+	for _, raw := range rows {
+		var row map[string]json.RawMessage
+		if json.Unmarshal(raw, &row) != nil || len(row) != 4 || row["ip"] == nil || row["mac"] == nil || row["router_id"] == nil || row["name"] == nil {
+			return nil, intent, settingsError(messageFixedFields)
+		}
+		// Identity and duplicates are reported before the name, as the page
+		// shows the first rule a row breaks.
+		var item FixedIPDevice
+		for _, v := range []struct {
+			key    string
+			target *string
+		}{{"ip", &item.IP}, {"mac", &item.MAC}, {"router_id", &item.RouterID}} {
+			if string(row[v.key]) == "null" || json.Unmarshal(row[v.key], v.target) != nil {
+				return nil, intent, settingsError(messageFixedIdentity)
+			}
+		}
+		item.IP = routerdoc.IPv4(item.IP)
+		item.MAC = routerdoc.NormalizeMAC(item.MAC)
+		if item.IP == "" || item.MAC == "" || item.RouterID == "" || ips[item.IP] {
+			return nil, intent, settingsError(messageFixedIdentity)
+		}
+		key := item.RouterID + "\n" + item.MAC
+		if macs[key] {
+			return nil, intent, settingsError(messageFixedDuplicateMAC)
+		}
+		if string(row["name"]) == "null" || json.Unmarshal(row["name"], &item.Name) != nil {
+			return nil, intent, settingsError(devicenotes.NameMessage)
+		}
+		change, err := NormalizeChange(Change{IP: item.IP, Name: item.Name})
+		if err != nil {
+			return nil, intent, err
+		}
+		item.Name = change.Name
+		ips[item.IP] = true
+		macs[key] = true
+		intent.Devices = append(intent.Devices, item)
+	}
+	return profile, intent, nil
+}
+
+// FixedIPPlanned binds one preview to its complete router connection revision.
+type FixedIPPlanned struct {
+	RouterID   string             `json:"router_id"`
+	Connection string             `json:"connection"`
+	Op         *fixedip.Operation `json:"op"`
+}
+
+// FixedIPAction is the human-readable preview, without connection credentials.
+type FixedIPAction struct {
+	IP          string `json:"ip"`
+	RouterID    string `json:"router_id"`
+	RouterName  string `json:"router_name"`
+	RouterType  string `json:"router_type"`
+	Description string `json:"description"`
+}
+
+// FixedIPPreview contains an authenticated 10 minute token and explicit actions.
+type FixedIPPreview struct {
+	Token   string          `json:"token"`
+	Actions []FixedIPAction `json:"actions"`
+}
+type fixedIPApproval struct {
+	ProfileID  string        `json:"profile_id"`
+	Intent     FixedIPIntent `json:"intent"`
+	Operations []string      `json:"operations"`
+}
+
+// fixedApprovalProofs keeps device before-images out of the readable signed
+// token. Apply still rebuilds and compares every field, including private ones.
+func fixedApprovalProofs(operations []FixedIPPlanned) ([]string, error) {
+	proofs := make([]string, 0, len(operations))
+	for _, operation := range operations {
+		raw, err := json.Marshal(operation)
+		if err != nil {
+			return nil, err
+		}
+		proof, err := rospolicy.ROSPolicyDigest(raw)
+		if err != nil {
+			return nil, err
+		}
+		proofs = append(proofs, proof)
+	}
+	return proofs, nil
+}
+
+// FixedIPService owns device locks, preview rebuilding and metadata transactions.
+// GuardSetup must be wired to C36; a missing collaborator fails closed.
+type FixedIPService struct {
+	Repo       *repo.Repository
+	Open       func(*spec.Router) fixedip.Device
+	GuardSetup func(context.Context, *repo.Repository, string) error
+	Signer     *FixedIPToken
+	Cache      *DiscoveryCache
+}
+
+func (s *FixedIPService) signer() FixedIPToken {
+	if s.Signer != nil {
+		return *s.Signer
+	}
+	return FixedIPToken{Secret: auth.Current().SecretKey}
+}
+func fixedError(kind device.ErrorKind, message string) error {
+	return &device.RouterError{Kind: kind, Message: message}
+}
+func (s *FixedIPService) guard(ctx context.Context, profile string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.GuardSetup == nil {
+		return fixedError(device.KindConflict, messageFixedSetupMissing)
+	}
+	return s.GuardSetup(ctx, s.Repo, profile)
+}
+func fixedConfig(ctx context.Context, r *repo.Repository, profile string) (json.RawMessage, error) {
+	doc, err := r.ConfigWithOxiDNSAgents(ctx, profile, repo.ResourceRoots{})
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(doc)
+}
+func fixedRouter(config json.RawMessage, id string) (*spec.Router, error) {
+	for _, r := range spec.RoutersOf(config) {
+		if r.ID == id && (r.Type == "routeros" || r.Type == "ikuai") {
+			return r, nil
+		}
+	}
+	return nil, fixedError(device.KindConflict, messageFixedRouter)
+}
+func fixedBindings(config json.RawMessage) map[string]*fixedip.Binding {
+	var doc struct {
+		Bindings map[string]*fixedip.Binding `json:"client_fixed_ips"`
+	}
+	_ = jsondecode.Unmarshal(config, &doc)
+	if doc.Bindings == nil {
+		doc.Bindings = map[string]*fixedip.Binding{}
+	}
+	return doc.Bindings
+}
+func fixedIDs(intent FixedIPIntent) []string {
+	set := map[string]bool{}
+	for _, item := range intent.Devices {
+		set[item.RouterID] = true
+	}
+	ids := []string{}
+	for id := range set {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+func (s *FixedIPService) open(config json.RawMessage, intent FixedIPIntent) (map[string]fixedip.Device, func(), error) {
+	drivers := map[string]fixedip.Device{}
+	ids := fixedIDs(intent)
+	close := func() {
+		for i := len(ids) - 1; i >= 0; i-- {
+			if d := drivers[ids[i]]; d != nil {
+				d.Close()
+			}
+		}
+	}
+	for _, id := range ids {
+		r, err := fixedRouter(config, id)
+		if err != nil {
+			close()
+			return nil, nil, err
+		}
+		if err := r.ValidateForDevice(); err != nil {
+			close()
+			return nil, nil, fixedError(device.KindConflict, err.Error())
+		}
+		var d fixedip.Device
+		if s.Open != nil {
+			d = s.Open(r)
+		} else {
+			d = fixedip.Open(r)
+		}
+		if d == nil || !d.SupportsWrite() {
+			if d != nil {
+				d.Close()
+			}
+			close()
+			return nil, nil, fixedError(device.KindRouter, messageFixedWrite)
+		}
+		drivers[id] = d
+	}
+	return drivers, close, nil
+}
+func (s *FixedIPService) plan(ctx context.Context, config json.RawMessage, intent FixedIPIntent, drivers map[string]fixedip.Device) ([]FixedIPPlanned, error) {
+	bindings := fixedBindings(config)
+	result := []FixedIPPlanned{}
+	for _, item := range intent.Devices {
+		r, err := fixedRouter(config, item.RouterID)
+		if err != nil {
+			return nil, err
+		}
+		d := drivers[item.RouterID]
+		var op *fixedip.Operation
+		if intent.Operation == "add" {
+			seen, err := d.SeenFixedIP(ctx, item.IP, item.MAC)
+			if err != nil {
+				return nil, err
+			}
+			if !seen {
+				return nil, fixedError(device.KindConflict, fmt.Sprintf(messageFixedSeen, item.IP))
+			}
+			op, err = d.PreviewFixedIP(ctx, item.IP, item.MAC, item.Name)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			b := bindings[item.IP]
+			if b == nil {
+				snapshot, e := d.ReadFixedIP(ctx)
+				if e != nil {
+					return nil, e
+				}
+				state := fixedip.Inspect(snapshot, item.IP, item.MAC)
+				if state.Owned && state.Binding != nil {
+					copy := *state.Binding
+					copy.RouterID = item.RouterID
+					b = &copy
+				}
+			}
+			if b == nil || b.RouterID != item.RouterID || b.MAC != item.MAC {
+				return nil, fixedError(device.KindConflict, messageFixedNotOwned)
+			}
+			op, err = d.PreviewDeleteFixedIP(ctx, b)
+			if err != nil {
+				return nil, err
+			}
+		}
+		record, err := r.StoredRecord()
+		if err != nil {
+			return nil, err
+		}
+		digest, err := rospolicy.ROSPolicyDigest(record)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, FixedIPPlanned{item.RouterID, digest, op})
+	}
+	return result, nil
+}
+
+// Preview checks C36 and reads only the explicitly selected routers.
+func (s *FixedIPService) Preview(ctx context.Context, profile string, intent FixedIPIntent) (FixedIPPreview, error) {
+	if len(intent.Devices) < 1 || len(intent.Devices) > 64 {
+		return FixedIPPreview{}, settingsError(messageFixedSelect)
+	}
+	if err := s.guard(ctx, profile); err != nil {
+		return FixedIPPreview{}, err
+	}
+	config, err := fixedConfig(ctx, s.Repo, profile)
+	if err != nil {
+		return FixedIPPreview{}, err
+	}
+	drivers, close, err := s.open(config, intent)
+	if err != nil {
+		return FixedIPPreview{}, err
+	}
+	defer close()
+	operations, err := s.plan(ctx, config, intent, drivers)
+	if err != nil {
+		return FixedIPPreview{}, err
+	}
+	actions := []FixedIPAction{}
+	for i, item := range intent.Devices {
+		r, err := fixedRouter(config, item.RouterID)
+		if err != nil {
+			return FixedIPPreview{}, err
+		}
+		name := r.Name
+		if name == "" {
+			name = r.ID
+		}
+		actions = append(actions, FixedIPAction{item.IP, item.RouterID, name, r.Type, operations[i].Op.Summary})
+	}
+	proofs, err := fixedApprovalProofs(operations)
+	if err != nil {
+		return FixedIPPreview{}, err
+	}
+	raw, err := json.Marshal(fixedIPApproval{profile, intent, proofs})
+	if err != nil {
+		return FixedIPPreview{}, err
+	}
+	token, err := s.signer().Sign(raw)
+	return FixedIPPreview{token, actions}, err
+}
+func fixedPublic(b *fixedip.Binding, id string) *fixedip.Binding {
+	out := *b
+	out.RouterID = id
+	out.Undo = nil
+	return &out
+}
+func fixedDeviceMap(config json.RawMessage) (map[string]Device, error) {
+	list, err := ListDevices(config)
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]Device{}
+	for _, d := range list.Devices {
+		result[d.IP] = d
+	}
+	return result, nil
+}
+func fixedEqual(a, b any) bool {
+	left, e1 := json.Marshal(a)
+	right, e2 := json.Marshal(b)
+	return e1 == nil && e2 == nil && string(left) == string(right)
+}
+func fixedRouterEqual(a, b *spec.Router) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	x, e1 := a.StoredRecord()
+	y, e2 := b.StoredRecord()
+	if e1 != nil || e2 != nil {
+		return false
+	}
+	var left, right map[string]json.RawMessage
+	_ = json.Unmarshal(x, &left)
+	_ = json.Unmarshal(y, &right)
+	return fixedEqual(left, right)
+}
+func fixedWriteBindings(current json.RawMessage, bindings map[string]*fixedip.Binding) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(current, &fields); err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(bindings)
+	if err != nil {
+		return nil, err
+	}
+	fields["client_fixed_ips"] = raw
+	return json.Marshal(fields)
+}
+
+// Apply owns L1/L2, re-plans authenticated intent, writes the devices and commits
+// metadata with an optimistic guard. Ordinary failures reverse the batch.
+func (s *FixedIPService) Apply(ctx context.Context, profile, token string) (err error) {
+	ctx = lifecycle.Detach(ctx)
+	defer func() {
+		if err != nil && ctx.Err() != nil {
+			err = ctx.Err()
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if token == "" || len(token) > 1000000 {
+		return fixedError(device.KindConflict, messageFixedTokenMissing)
+	}
+	raw, err := s.signer().Verify(token)
+	if err != nil {
+		return fixedError(device.KindConflict, messageFixedTokenInvalid)
+	}
+	var approved fixedIPApproval
+	if jsondecode.Unmarshal(raw, &approved) != nil || len(approved.Intent.Devices) < 1 || len(approved.Intent.Devices) > 64 || len(approved.Operations) != len(approved.Intent.Devices) || (approved.Intent.Operation != "add" && approved.Intent.Operation != "delete") {
+		return fixedError(device.KindConflict, messageFixedTokenInvalid)
+	}
+	if approved.ProfileID != profile {
+		return fixedError(device.KindConflict, messageFixedProfile)
+	}
+	if err = s.guard(ctx, profile); err != nil {
+		return err
+	}
+	if s.Cache != nil {
+		s.Cache.Invalidate(profile)
+		defer s.Cache.Invalidate(profile)
+	}
+	initial, err := fixedConfig(ctx, s.Repo, profile)
+	if err != nil {
+		return err
+	}
+	unlocks := []func(){}
+	defer func() {
+		for i := len(unlocks) - 1; i >= 0; i-- {
+			unlocks[i]()
+		}
+	}()
+	connections := map[string]bool{}
+	lockRouters := []*spec.Router{}
+	for _, id := range fixedIDs(approved.Intent) {
+		r, err := fixedRouter(initial, id)
+		if err != nil {
+			return err
+		}
+		key := r.Type + "\n" + strings.TrimRight(r.Endpoint, "/")
+		if connections[key] {
+			continue
+		}
+		connections[key] = true
+		held, release, lockErr := oplock.RouterJobLock(ctx, profile, id, r)
+		if lockErr != nil {
+			var conflict *device.RouterError
+			if errors.As(lockErr, &conflict) && conflict.Kind == device.KindConflict {
+				return fixedError(device.KindConflict, messageFixedBusy)
+			}
+			return lockErr
+		}
+		unlocks = append(unlocks, release)
+		lockRouters = append(lockRouters, r)
+		ctx = held
+	}
+	held, release, err := oplock.RouterOperationLocks(ctx, lockRouters, true)
+	if err != nil {
+		return err
+	}
+	unlocks = append(unlocks, release)
+	ctx = held
+
+	config, err := fixedConfig(ctx, s.Repo, profile)
+	if err != nil {
+		return err
+	}
+	if err = s.guard(ctx, profile); err != nil {
+		return err
+	}
+	for _, item := range approved.Intent.Devices {
+		a, e1 := fixedRouter(initial, item.RouterID)
+		b, e2 := fixedRouter(config, item.RouterID)
+		if e1 != nil || e2 != nil || !fixedRouterEqual(a, b) {
+			return fixedError(device.KindConflict, messageFixedConnection)
+		}
+	}
+	drivers, close, err := s.open(config, approved.Intent)
+	if err != nil {
+		return err
+	}
+	defer close()
+	operations, err := s.plan(ctx, config, approved.Intent, drivers)
+	if err != nil {
+		return err
+	}
+	proofs, err := fixedApprovalProofs(operations)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(proofs, approved.Operations) {
+		return fixedError(device.KindConflict, messageFixedStale)
+	}
+	beforeRows, err := fixedDeviceMap(config)
+	if err != nil {
+		return err
+	}
+	for _, item := range approved.Intent.Devices {
+		if _, ok := beforeRows[item.IP]; !ok {
+			return fixedError(device.KindConflict, messageFixedSaveFirst)
+		}
+	}
+	beforeBindings := fixedBindings(config)
+	type finished struct {
+		item    FixedIPDevice
+		driver  fixedip.Device
+		receipt *fixedip.Binding
+	}
+	completed := []finished{}
+	results := map[string]*fixedip.Binding{}
+	err = func() error {
+		for i, item := range approved.Intent.Devices {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			d := drivers[item.RouterID]
+			var b *fixedip.Binding
+			var err error
+			if approved.Intent.Operation == "add" {
+				b, err = d.ApplyFixedIP(ctx, operations[i].Op)
+			} else {
+				b, err = d.DeleteFixedIP(ctx, operations[i].Op)
+			}
+			if err != nil {
+				return err
+			}
+			completed = append(completed, finished{item, d, b})
+			if approved.Intent.Operation == "add" {
+				results[item.IP] = fixedPublic(b, item.RouterID)
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		err := updateFixedProfile(ctx, s.Repo, profile, func(work context.Context, raw json.RawMessage) (json.RawMessage, error) {
+			if err := work.Err(); err != nil {
+				return nil, err
+			}
+			rows, err := fixedDeviceMap(raw)
+			if err != nil {
+				return nil, err
+			}
+			bindings := fixedBindings(raw)
+			for _, item := range approved.Intent.Devices {
+				a, e1 := fixedRouter(raw, item.RouterID)
+				b, e2 := fixedRouter(config, item.RouterID)
+				if e1 != nil || e2 != nil || !fixedEqual(rows[item.IP], beforeRows[item.IP]) || !fixedEqual(bindings[item.IP], beforeBindings[item.IP]) || !fixedRouterEqual(a, b) {
+					return nil, fixedError(device.KindConflict, messageFixedConcurrent)
+				}
+			}
+			updated := maps.Clone(bindings)
+			for _, item := range approved.Intent.Devices {
+				if approved.Intent.Operation == "add" {
+					updated[item.IP] = results[item.IP]
+				} else {
+					delete(updated, item.IP)
+				}
+			}
+			if err = work.Err(); err != nil {
+				return nil, err
+			}
+			return fixedWriteBindings(raw, updated)
+		})
+		return err
+	}()
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	} // No post-shutdown device I/O or metadata commits.
+	failures := []string{}
+	restored := map[string]*fixedip.Binding{}
+	dynamic := false
+	for i := len(completed) - 1; i >= 0; i-- {
+		step := completed[i]
+		var undoErr error
+		if approved.Intent.Operation == "add" {
+			undoErr = step.driver.RollbackFixedIP(ctx, step.receipt)
+		} else {
+			var b *fixedip.Binding
+			b, undoErr = step.driver.RestoreDeletedFixedIP(ctx, step.receipt)
+			if b != nil {
+				restored[step.item.IP] = fixedPublic(b, step.item.RouterID)
+			}
+		}
+		if step.receipt.Undo != nil && step.receipt.Undo.Kind == "make_static" {
+			dynamic = true
+		}
+		if undoErr != nil {
+			failures = append(failures, step.item.IP+"："+undoErr.Error())
+		}
+	}
+	if len(restored) > 0 {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		saveErr := updateFixedProfile(ctx, s.Repo, profile, func(work context.Context, raw json.RawMessage) (json.RawMessage, error) {
+			if err := work.Err(); err != nil {
+				return nil, err
+			}
+			rows, err := fixedDeviceMap(raw)
+			if err != nil {
+				return nil, err
+			}
+			updated := fixedBindings(raw)
+			for ip, b := range restored {
+				_, present := rows[ip]
+				a, e1 := fixedRouter(raw, b.RouterID)
+				previous, e2 := fixedRouter(config, b.RouterID)
+				if present && e1 == nil && e2 == nil && fixedEqual(updated[ip], beforeBindings[ip]) && fixedRouterEqual(a, previous) {
+					updated[ip] = b
+				}
+			}
+			return fixedWriteBindings(raw, updated)
+		})
+		if saveErr != nil {
+			failures = append(failures, fmt.Sprintf(messageFixedRestoreSave, saveErr))
+		}
+	}
+	if len(failures) > 0 {
+		return fixedError(device.KindRollback, fmt.Sprintf(messageFixedRollback, err, strings.Join(failures, "；")))
+	}
+	note := ""
+	if dynamic {
+		note = messageFixedDynamicNote
+	}
+	var re *device.RouterError
+	if errors.As(err, &re) {
+		return &device.RouterError{Kind: re.Kind, Message: re.Message + note}
+	}
+	var validation *oxidns.SettingsError
+	if errors.As(err, &validation) {
+		return settingsError(validation.Error() + note)
+	}
+	return fixedError(device.KindRouter, messageFixedSaveFailure+note)
+}
+
+// EnrichFixedIP reads controls with the same reader as discovery. Failed evidence
+// disables reservation actions without hiding healthy client sightings.
+func EnrichFixedIP(ctx context.Context, reader clientlist.Reader, reading *routerdoc.Reading, routerID string) {
+	var d fixedip.Device
+	switch v := reader.(type) {
+	case fixedip.Device:
+		d = v
+	case interface{ ROSClient() *ros.Client }:
+		d = fixedip.NewROS(v.ROSClient())
+	case interface{ IkuaiClient() *ikuai.Client }:
+		d = fixedip.NewIkuai(v.IkuaiClient())
+	}
+	var err error
+	var snapshot *fixedip.Snapshot
+	if d == nil || !d.SupportsWrite() {
+		err = fixedError(device.KindRouter, messageFixedEnrichWrite)
+	} else {
+		snapshot, err = d.ReadFixedIP(ctx)
+	}
+	for ip, sighting := range reading.Sightings {
+		value := struct {
+			Eligible bool             `json:"eligible"`
+			Reason   string           `json:"reason"`
+			Status   string           `json:"status"`
+			Owned    bool             `json:"owned"`
+			RouterID string           `json:"router_id"`
+			Binding  *fixedip.Binding `json:"binding,omitempty"`
+		}{Status: "none", RouterID: routerID}
+		if err != nil {
+			value.Reason = messageFixedRead
+			var re *device.RouterError
+			if errors.As(err, &re) {
+				value.Reason = re.Message
+			}
+		} else {
+			state := fixedip.Inspect(snapshot, ip, sighting.MAC)
+			value.Eligible = state.Eligible
+			value.Reason = state.Reason
+			value.Owned = state.Owned
+			if state.Fixed {
+				value.Status = "static"
+			} else if state.Dynamic {
+				value.Status = "dynamic"
+			}
+			if state.Owned && state.Binding != nil {
+				value.Binding = fixedPublic(state.Binding, routerID)
+			}
+		}
+		sighting.FixedIP, _ = json.Marshal(value)
+		reading.Sightings[ip] = sighting
+	}
+}

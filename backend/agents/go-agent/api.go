@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	// 导入路由模块
@@ -24,10 +23,10 @@ func StartAPIServer(cfg *Config) {
 	mux.HandleFunc(mihomoPanelPrefix, routes.AuthMiddleware(routesCfg, mihomoPanelHandler(cfg)))
 
 	listenAddr := fmt.Sprintf("%s:%d", cfg.AgentHost, cfg.AgentPort)
-	log.Printf("Starting API server on %s", listenAddr)
+	logger.Infof("Starting API server on %s", listenAddr)
 
 	if err := http.ListenAndServe(listenAddr, mux); err != nil {
-		log.Fatalf("Fatal: API server failed to start: %v", err)
+		logger.Fatalf("Fatal: API server failed to start: %v", err)
 	}
 }
 

@@ -13,7 +13,7 @@ const wrappers: ReturnType<typeof mount>[] = []
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   vi.mocked(githubProxyDomainApi.get).mockResolvedValue(response({ proxy_domains: '' }))
-  vi.mocked(ruleFetchProxyApi.get).mockResolvedValue(response({ rule_fetch_proxy: 'http://10.0.0.2:7890' }))
+  vi.mocked(ruleFetchProxyApi.get).mockResolvedValue(response({ rule_fetch_proxy: 'http://192.0.2.2:7890' }))
   vi.mocked(githubProxyDomainApi.update).mockImplementation(async value => response({ success: true, proxy_domains: value }))
   vi.mocked(ruleFetchProxyApi.update).mockImplementation(async data => response({ success: true, ...data }))
 })
@@ -35,11 +35,11 @@ const saveButton = (wrapper: ReturnType<typeof mount>) =>
 describe('RuleDownloadRemedy', () => {
   it('saves only the changed setting, then asks to retry', async () => {
     const wrapper = await render()
-    expect((wrapper.get('#remedy-rule-proxy').element as HTMLInputElement).value).toBe('http://10.0.0.2:7890')
+    expect((wrapper.get('#remedy-rule-proxy').element as HTMLInputElement).value).toBe('http://192.0.2.2:7890')
     expect(saveButton(wrapper).attributes('disabled')).toBeDefined()
-    await wrapper.get('#remedy-github-proxy').setValue(' https://gh-proxy.com ')
+    await wrapper.get('#remedy-github-proxy').setValue(' https://mirror.example.com ')
     await saveButton(wrapper).trigger('click'); await flushPromises()
-    expect(githubProxyDomainApi.update).toHaveBeenCalledWith('https://gh-proxy.com')
+    expect(githubProxyDomainApi.update).toHaveBeenCalledWith('https://mirror.example.com')
     expect(ruleFetchProxyApi.update).not.toHaveBeenCalled()
     expect(wrapper.emitted('retry')).toHaveLength(1)
   })

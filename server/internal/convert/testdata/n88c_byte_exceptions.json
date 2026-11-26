@@ -1,0 +1,2245 @@
+{
+  "source": "surge_loon_corpus.jsonl.gz",
+  "source_sha256": "0b83d1df81649ade20448bbf4ec4d58713c7a3d3fbf4a013b4e3fcf274f52918",
+  "provenance": "Exact, individually reviewed edits to the immutable real-Python output. Every prior output SHA also equals the frozen pre-migration Go SHA. The recorded native audit is diagnostic evidence only; tests apply these exact line edits to Python output and reject any unmatched line or unexplained byte. No golden or original manifest changed. See n8-8c.md for approvals.",
+  "counts": {
+    "group.interval null/follow missing": 27,
+    "group.url null/follow missing": 78,
+    "hysteria2.down non-ASCII digits": 1,
+    "node.tls strict bool": 7,
+    "node.udp strict bool": 8,
+    "tuic.alpn null absent": 1,
+    "wireguard.reserved numeric list": 1,
+    "wireguard.udp null absent": 2
+  },
+  "cases": [
+    {
+      "row": 460,
+      "fn": "surge",
+      "old_sha256": "479818f8f23c71362edf4c5dae8e67f38341295de45c5f7dd6bd076b1ce2334f",
+      "native_sha256": "fafdd4201ab5acb73c7735f1415faf00683d183c0fb5b6e9c89dc0c2cb485f24",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Final = smart, DIRECT, url = None, interval = 0\n"
+          ],
+          "new": [
+            "Final = smart, DIRECT, url = https://www.gstatic.com/generate_204, interval = 0\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 530,
+      "fn": "surge",
+      "old_sha256": "9753c100957ad3bd138c6303eba003ffe2248e9bece12ff76f68f7d2085d5acc",
+      "native_sha256": "f4f4cc854b01e271ed03272ec3c68568ffdbe43e8a63d171e1c2db646cf4df17",
+      "patches": [
+        {
+          "line": 23,
+          "old": [
+            "Fallback = url-test,  spaced  1, url = https://www.gstatic.com/generate_204, interval = None\n"
+          ],
+          "new": [
+            "Fallback = url-test,  spaced  1, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 664,
+      "fn": "surge",
+      "old_sha256": "04392130cb4d8c18e318142f707fb8a4930c860620b8c69eae9d9465b6062722",
+      "native_sha256": "dd849d0d5412eecd9766f6250d4d6c14677ee32ac2bbb1408db14ae7d0484062",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "♻️ 自动选择 = smart, url = None, interval = 300, policy-path = http://[2001:db8::2]:8080/api/profiles/p-1/aggregations/a0/provider?format=surge&regex=%28%3Fi%29hk%7C%E9%A6%99%E6%B8%AF, update-interval = 86400\n"
+          ],
+          "new": [
+            "♻️ 自动选择 = smart, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://[2001:db8::2]:8080/api/profiles/p-1/aggregations/a0/provider?format=surge&regex=%28%3Fi%29hk%7C%E9%A6%99%E6%B8%AF, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        },
+        {
+          "line": 24,
+          "old": [
+            "on = fallback, Media, ♻️ 自动选择, url = None, interval = 300, policy-path = http://[2001:db8::2]:8080/api/profiles/p-1/subscriptions/s0/proxies?format=surge&exclude_regex=US%60JP, update-interval = 86400\n"
+          ],
+          "new": [
+            "on = fallback, Media, ♻️ 自动选择, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://[2001:db8::2]:8080/api/profiles/p-1/subscriptions/s0/proxies?format=surge&exclude_regex=US%60JP, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 792,
+      "fn": "surge",
+      "old_sha256": "0cebe77960724f27611fda654e0a4cef0f0d1b80d4542963548b098e217241e5",
+      "native_sha256": "49183e94332772dc6a329e8f80ed71ff114fb8712cdf97605080f8c6abcb150c",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "on = load-balance, Final, url = None, interval = 300\n"
+          ],
+          "new": [
+            "on = load-balance, Final, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 806,
+      "fn": "surge",
+      "old_sha256": "bc8c3e4088456af0e680564eb84058f4b8e43b488d9a0c824114c95d54ae3fcb",
+      "native_sha256": "cc641f20ae25c550c53186007c139fb81ec8f725cb60e8fa5daa59436fa76b61",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Auto = load-balance, url = None, interval = 300, policy-path = http://cf.example.test/sub/subscriptions/s2/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400, policy-path = http://cf.example.test/sub/subscriptions/s1/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "new": [
+            "Auto = load-balance, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://cf.example.test/sub/subscriptions/s2/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400, policy-path = http://cf.example.test/sub/subscriptions/s1/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 982,
+      "fn": "surge",
+      "old_sha256": "358e25efb8b41b9dfe0074f278bc297736683782999379bbc21c49b03868f863",
+      "native_sha256": "6ee033b6f4cfbd11ab7336730865f74ea3739e329a93f75c7cd908b860359e77",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Auto = smart, REJECT, url = None, interval = 300\n"
+          ],
+          "new": [
+            "Auto = smart, REJECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1084,
+      "fn": "surge",
+      "old_sha256": "76d2ce4eb087080a5e14f58316df7ebc31f00a318b08f07de2f3873c5393fd32",
+      "native_sha256": "315ecd58c9ce97213d991064be8d6c50d27a93eb0d32f33baa296967775b268a",
+      "patches": [
+        {
+          "line": 10,
+          "old": [
+            "♻️ 自动选择 = url-test, Auto, url = None, interval = 300, policy-path = https://cf.example.test/api/profiles/default/subscriptions/s0/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "♻️ 自动选择 = url-test, Auto, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/api/profiles/default/subscriptions/s0/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1136,
+      "fn": "surge",
+      "old_sha256": "5fe77a4ff1cd04bf84a4befe19b9930d3fbcd2368f2d35df69e032127a86128b",
+      "native_sha256": "03629e461270e1d58c4c6dea4bad2b31464977aee35fff004596cd547a6b7d49",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "LB = fallback, 🚀 节点选择, url = None, interval = 300, policy-path = http://cf.example.test:5000/subscriptions/s0/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "LB = fallback, 🚀 节点选择, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://cf.example.test:5000/subscriptions/s0/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1294,
+      "fn": "surge",
+      "old_sha256": "b6ae27a6b647b7a2747e9d69afe48e311880660e9336ac20d4a13715be5eed5a",
+      "native_sha256": "73b1fd432270401ca47f2cf431da98582f0e0d41e47c3908023df7f57ea73fce",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Fallback = smart, 🚀 节点选择, DIRECT, url = https://www.gstatic.com/generate_204, interval = None, policy-path = http://[2001:db8::2]:8080/api/profiles/家里/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Fallback = smart, 🚀 节点选择, DIRECT, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://[2001:db8::2]:8080/api/profiles/家里/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1300,
+      "fn": "surge",
+      "old_sha256": "7e71f93c8c8b5d25ed21b1cda0aa7fca4f033e9708c6fa688a3bbb5fc0e7b806",
+      "native_sha256": "48515270a3986e081ba9090075f9ed2436a6a2592d4721a87c65c172410c1e47",
+      "patches": [
+        {
+          "line": 11,
+          "old": [
+            "PROXY = url-test, DIRECT, url = None, interval = 300\n"
+          ],
+          "new": [
+            "PROXY = url-test, DIRECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1315,
+      "fn": "loon",
+      "old_sha256": "a02140d56bf6af24aa27b348010f7850232e4b5ec2b7d92879032cea152a6f9c",
+      "native_sha256": "a38cd42b3ac601b21423528660449449bc19acb70f60c9209f0798b59b9891f5",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "a b 2 = Hysteria2,,8388,\"p\\\"w\",sni=\"a,b.example.test\",skip-cert-verify=true,alpn=\"h3\",server-ports=\"20000-30000\",download-bandwidth=٣٠,fast-open=false,udp=true\n"
+          ],
+          "new": [
+            "a b 2 = Hysteria2,,8388,\"p\\\"w\",sni=\"a,b.example.test\",skip-cert-verify=true,alpn=\"h3\",server-ports=\"20000-30000\",fast-open=false,udp=true\n"
+          ],
+          "classes": [
+            "hysteria2.down non-ASCII digits"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1434,
+      "fn": "surge",
+      "old_sha256": "2560878f231f12051727aa02c188b6ed512b2447d8ac14dce538268fa18190a4",
+      "native_sha256": "371ff93809703549f46014eae1df189a8bfd727e375187a86bbf6ec4d4aed50d",
+      "patches": [
+        {
+          "line": 10,
+          "old": [
+            "PROXY = fallback, DIRECT, REJECT, HK 01 0, url = None, interval = 300, policy-path = /api/profiles/p-1/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = /api/profiles/p-1/subscriptions/s1/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "PROXY = fallback, DIRECT, REJECT, HK 01 0, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = /api/profiles/p-1/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = /api/profiles/p-1/subscriptions/s1/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1652,
+      "fn": "surge",
+      "old_sha256": "5b87e23aa2867ce46c5b449d0bbbeeeede8929dc66721bbcb8ade91a445f40e4",
+      "native_sha256": "191e263470d731e470a2e7ae2365b8ad3d737abb19204c2080701c6740656377",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Chain = url-test, url = , interval = None, policy-path = http://cf.example.test:5000/api/profiles/p-1/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = http://cf.example.test:5000/api/profiles/p-1/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Chain = url-test, url = , interval = 300, policy-path = http://cf.example.test:5000/api/profiles/p-1/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = http://cf.example.test:5000/api/profiles/p-1/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1670,
+      "fn": "surge",
+      "old_sha256": "2b3cbf7dec85c255de0774d87f115dcea6f60ad932a351ff95a2b77583ae68cd",
+      "native_sha256": "e7ceefd6736a49376a3d35b3cf27c82e62e48496ba5b4ea3f94e53a41aa7667f",
+      "patches": [
+        {
+          "line": 10,
+          "old": [
+            "on = smart, REJECT, url = None, interval = 300\n"
+          ],
+          "new": [
+            "on = smart, REJECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1724,
+      "fn": "surge",
+      "old_sha256": "13e528dca2f7ef02557d63bf8b4728a3163e9bb5266a5a65cbc25cce791a7965",
+      "native_sha256": "4772ca8cf6b677b2f8b0b253ca60aac5cfc10e3aef781ca584268ab4012b455c",
+      "patches": [
+        {
+          "line": 25,
+          "old": [
+            "LB = url-test, 日本 #1 1, DIRECT, Relay 3, url = None, interval = 300\n"
+          ],
+          "new": [
+            "LB = url-test, 日本 #1 1, DIRECT, Relay 3, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1730,
+      "fn": "surge",
+      "old_sha256": "456cab739de12ed180beba63a3bf78bf02621eb765f895c6d5d15b1958543359",
+      "native_sha256": "d95002adf2b010f26001da9e95d9a63ddc112350ce5f4e20af46f534b9e022ac",
+      "patches": [
+        {
+          "line": 33,
+          "old": [
+            "peer = (public-key = cHVibGlj, endpoint = e.example.test:51820, allowed-ips = \"10.0.0.0/8\", client-id = [1, 2, 3])"
+          ],
+          "new": [
+            "peer = (public-key = cHVibGlj, endpoint = e.example.test:51820, allowed-ips = \"10.0.0.0/8\", client-id = 1/2/3)"
+          ],
+          "classes": [
+            "wireguard.reserved numeric list"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 1770,
+      "fn": "surge",
+      "old_sha256": "9a51e70836745c659c2c88d076e0876c87194282fb4e68155cde9bd70a52b858",
+      "native_sha256": "c1bdd0ce75fde52a19e5f3dc89a71fb2ba804f0a3c940eabb7f9e673cd4f0e1d",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "on = smart, JP_Tokyo 3 0, REJECT, DIRECT, url = None, interval = 600\n"
+          ],
+          "new": [
+            "on = smart, JP_Tokyo 3 0, REJECT, DIRECT, url = https://www.gstatic.com/generate_204, interval = 600\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 2190,
+      "fn": "surge",
+      "old_sha256": "fa0ddea48649ded35e736fb074018a8c1ff1d74939f2b945b46ae19c26a7eaaf",
+      "native_sha256": "7ae19fb05e36f957453578b16f79a777f100437c440b324039ba2b751ede2f9b",
+      "patches": [
+        {
+          "line": 24,
+          "old": [
+            "Fallback = smart, policy-priority=HK:1.5;US:0.8, url = None, interval = 300, policy-path = http://cf.example.test/sub/subscriptions/s1/proxies?format=surge, update-interval = 86400, policy-path = http://cf.example.test/sub/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Fallback = smart, policy-priority=HK:1.5;US:0.8, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://cf.example.test/sub/subscriptions/s1/proxies?format=surge, update-interval = 86400, policy-path = http://cf.example.test/sub/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 2236,
+      "fn": "surge",
+      "old_sha256": "7fbcab4c706c74440a43623131ab44f920548146fffbb003907bc8dff3b4c137",
+      "native_sha256": "c6b6162e45a6f28ee6fb7744e77241b7497a2fdc4323b046bf616418351515a3",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "🚀 节点选择 = load-balance, DIRECT, REJECT, url = None, interval = 0\n"
+          ],
+          "new": [
+            "🚀 节点选择 = load-balance, DIRECT, REJECT, url = https://www.gstatic.com/generate_204, interval = 0\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 2246,
+      "fn": "surge",
+      "old_sha256": "a412b1fb501bf56adba7066319c5d02789ab19879600b39366e15522edfa8109",
+      "native_sha256": "b77414e1ef612cc4f7f9920227b84194809f1983efe8f5c8f6421611d6a21729",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "♻️ 自动选择 = url-test, DIRECT,  spaced , REJECT, url = None, interval = 300\n"
+          ],
+          "new": [
+            "♻️ 自动选择 = url-test, DIRECT,  spaced , REJECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 2304,
+      "fn": "surge",
+      "old_sha256": "ed49008798af015edae9c0814c2dd41ad52133195b9883056f5f6cdb474fe9a5",
+      "native_sha256": "67d7e531422d7aa1dda47ec11e2d508cbdc01db1145fa6bf60df9d8cdc322b67",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "on = url-test, on, on, on, REJECT, url = None, interval = 300, policy-path = /aggregations/a1/provider?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "new": [
+            "on = url-test, on, on, on, REJECT, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = /aggregations/a1/provider?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 2306,
+      "fn": "surge",
+      "old_sha256": "07cbf899bf5a0772f22e5080c43365c9b254db61b713fd6dcd5266849639084a",
+      "native_sha256": "c785296b385f1587f6cd8200e059583ca4a3507e985abc09c6f2dbc04c09d086",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "on = url-test, Chain, url = None, interval = 300\n"
+          ],
+          "new": [
+            "on = url-test, Chain, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 2416,
+      "fn": "surge",
+      "old_sha256": "c7dd172dbe1a55fded996eaab30b93a387fe7964839b111e51fde0b7407b09eb",
+      "native_sha256": "9b9097a7d983f8a784410fddde5a3f24b382ad9d9bb4a8093fa829bada1c496b",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Auto = load-balance, DIRECT, url = None, interval = None\n"
+          ],
+          "new": [
+            "Auto = load-balance, DIRECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 2772,
+      "fn": "surge",
+      "old_sha256": "0c2dbddbc9d455682b8c24f53b8b26a3fe2d05712a37ba9cd4ec2bc5bad2fd64",
+      "native_sha256": "f0659c1d3dfb1cee2bf67ad68a7ac125828393461be0fc7f5f053d0bd17b4b45",
+      "patches": [
+        {
+          "line": 10,
+          "old": [
+            "PROXY = fallback, JP_Tokyo 3, Fallback, url = None, interval = 300\n"
+          ],
+          "new": [
+            "PROXY = fallback, JP_Tokyo 3, Fallback, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 2894,
+      "fn": "surge",
+      "old_sha256": "819a041047cf09502bccd566ca5f46e4763dfed1702e1c23b1fea4a245c1930c",
+      "native_sha256": "7ff329671eddcd7f13a268e670ff3889797a02846e2f1ba73cb65c79c8901f64",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Fallback = url-test, REJECT, DIRECT, url = None, interval = 300\n"
+          ],
+          "new": [
+            "Fallback = url-test, REJECT, DIRECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 2952,
+      "fn": "surge",
+      "old_sha256": "b5476ce7139be10fe6bf6c8c27cf3d910c51bd57123fcd50415ad357536ecb6f",
+      "native_sha256": "2c373984b1348e6a701b67bbe6d7438861ae35aca6e8c05a7f633774d4e36869",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Auto = smart, url = None, interval = 300, policy-path = /aggregations/a1/provider?format=surge&regex=%28%3F%3D.%2A0%29, update-interval = 86400\n"
+          ],
+          "new": [
+            "Auto = smart, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = /aggregations/a1/provider?format=surge&regex=%28%3F%3D.%2A0%29, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 3258,
+      "fn": "surge",
+      "old_sha256": "bb2af30805a1461ceca61810691a19bcdabb6ea4dad1be30bd57265b067023f9",
+      "native_sha256": "287d33547027c6b0f9b36212ea5182d6bd34b0c0e19d0de668acd7a6916e6090",
+      "patches": [
+        {
+          "line": 18,
+          "old": [
+            "a\"b 1 = hysteria2, , 8388, password=p\"w, sni=a,b.example.test, skip-cert-verify=true, udp-relay=true\n"
+          ],
+          "new": [
+            "a\"b 1 = hysteria2, , 8388, password=p\"w, sni=a,b.example.test, skip-cert-verify=true\n"
+          ],
+          "classes": [
+            "node.udp strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 3534,
+      "fn": "surge",
+      "old_sha256": "93c409f85870bda7c720a8b352024a52d9c1291e3f81282f5bf6e558e245e8cf",
+      "native_sha256": "f814d3312e303dc5c7c588ce24b243c03b875a75f599714a1b60f2484e058f6a",
+      "patches": [
+        {
+          "line": 23,
+          "old": [
+            "Auto = load-balance, REJECT, DIRECT, url = None, interval = None\n"
+          ],
+          "new": [
+            "Auto = load-balance, REJECT, DIRECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 3552,
+      "fn": "surge",
+      "old_sha256": "785cfa0d215141d3ca073ccfc9a0cf13b69677bf81abe9992e8ecf50d9e71b30",
+      "native_sha256": "ad072bbad7c4ca3f2b1db2653825d619d060d142590749768bdab0c537610753",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "🚀 节点选择 = load-balance, US=02, DIRECT, REJECT, url = None, interval = 300\n",
+            "Auto = load-balance, 🚀 节点选择, PROXY, LB, url = None, interval = 300, policy-path = https://cf.example.test/aggregations/a0/provider?format=surge&regex=%5E%28%3F%21.%2A%28US%7CJP%29%29, update-interval = 86400\n"
+          ],
+          "new": [
+            "🚀 节点选择 = load-balance, US=02, DIRECT, REJECT, url = https://www.gstatic.com/generate_204, interval = 300\n",
+            "Auto = load-balance, 🚀 节点选择, PROXY, LB, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/aggregations/a0/provider?format=surge&regex=%5E%28%3F%21.%2A%28US%7CJP%29%29, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 3708,
+      "fn": "surge",
+      "old_sha256": "7e7d482a05a8b436b3568fdff2badc9304c4e92063ab69b300a62a81dbc999a6",
+      "native_sha256": "4a06e07ce033665288b25341df9f7e0ecaf63586b0b3cae5511b1fd09019d4d2",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "Fallback = load-balance, url = , interval = None, policy-path = https://cf.example.test/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Fallback = load-balance, url = , interval = 300, policy-path = https://cf.example.test/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 3822,
+      "fn": "surge",
+      "old_sha256": "e5cf9e344d289ae38c7e7127187c01eaaea4bb498a0a1f4b18b0dea306bd0642",
+      "native_sha256": "12dab0fe3e42987fcf153eca5bf2595fd6d3146ce8097b9383215a4f3a3ae528",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "♻️ 自动选择 = url-test, on, Auto, url = None, interval = None, policy-path = /api/profiles/default/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = /api/profiles/default/subscriptions/s1/proxies?format=surge, update-interval = 86400, policy-path = /api/profiles/default/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "♻️ 自动选择 = url-test, on, Auto, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = /api/profiles/default/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = /api/profiles/default/subscriptions/s1/proxies?format=surge, update-interval = 86400, policy-path = /api/profiles/default/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 4194,
+      "fn": "surge",
+      "old_sha256": "3815a2063763dcfd5d545847d203418c6f3d7d97b3b68c21ff18a910389947a0",
+      "native_sha256": "1c8c0aac8967c4a06ffbb481c6d7a41c64c63600b054c7f34a47f04e0a194296",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Fallback = smart, on, Fallback, url = None, interval = 0, policy-path = https://cf.example.test/aggregations/a0/provider?format=surge&exclude_regex=%28%3F%3C%3D%E6%B8%AF%29%5Cd%2B, update-interval = 86400\n"
+          ],
+          "new": [
+            "Fallback = smart, on, Fallback, url = https://www.gstatic.com/generate_204, interval = 0, policy-path = https://cf.example.test/aggregations/a0/provider?format=surge&exclude_regex=%28%3F%3C%3D%E6%B8%AF%29%5Cd%2B, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 4302,
+      "fn": "surge",
+      "old_sha256": "f14101476ac8ef9e0ce4776a3105fed996265a59abcf94f8a935bfc4189ad092",
+      "native_sha256": "465fdd9792a04ab443515de6a634d327a87e349e29bb29973e2546a6faa876e1",
+      "patches": [
+        {
+          "line": 13,
+          "old": [
+            "🚀 节点选择 = fallback, US-02 5, url = None, interval = 300\n"
+          ],
+          "new": [
+            "🚀 节点选择 = fallback, US-02 5, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 4314,
+      "fn": "surge",
+      "old_sha256": "30a49f7c670e0112438988512684c4b52191c793d9e92618f85f156e0e70098f",
+      "native_sha256": "95aed26eb24d965b95316479bcc7b82b71a6a5ae575a2606d77236875d22b23a",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "Fallback = smart, ♻️ 自动选择, url = None, interval = 300\n"
+          ],
+          "new": [
+            "Fallback = smart, ♻️ 自动选择, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 4370,
+      "fn": "surge",
+      "old_sha256": "db8b97ea41a48944d6524d2ee784645a3b689f062c9cc6756c1d8e242a0fa6a6",
+      "native_sha256": "0ca96bfccf43e9b46c95094ce0d3a57176895127152e98afc512a9886af5554b",
+      "patches": [
+        {
+          "line": 11,
+          "old": [
+            "Final = load-balance, url = None, interval = 300, policy-path = http://cf.example.test:5000/subscriptions/s1/proxies?format=surge, update-interval = 86400, policy-path = http://cf.example.test:5000/subscriptions/s2/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Final = load-balance, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://cf.example.test:5000/subscriptions/s1/proxies?format=surge, update-interval = 86400, policy-path = http://cf.example.test:5000/subscriptions/s2/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 4786,
+      "fn": "surge",
+      "old_sha256": "43240c4fa4fc0373a516ce2c9ad0ae5fd934505acdf7030e3e18a118ed4f72f5",
+      "native_sha256": "5c2cd170e651a4130402f8575678ebbd27ca9547757a937efa76bb443ae64bf5",
+      "patches": [
+        {
+          "line": 10,
+          "old": [
+            "Media = fallback, DIRECT, REJECT, url = None, interval = 300\n"
+          ],
+          "new": [
+            "Media = fallback, DIRECT, REJECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 4804,
+      "fn": "surge",
+      "old_sha256": "aa62b0c7b1520531f35e67650cce5237a11669007b0fa681af8764a0e48ffd1e",
+      "native_sha256": "2a4a55e5d3bf95a08e65d28030c0c9d34e9c93c0c4d6e0109842deed9e3629b4",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "Media = fallback, url = None, interval = 300, policy-path = https://cf.example.test/api/profiles/家里/subscriptions/s2/proxies?format=surge, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/家里/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/家里/subscriptions/s1/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Media = fallback, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/api/profiles/家里/subscriptions/s2/proxies?format=surge, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/家里/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/家里/subscriptions/s1/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 4874,
+      "fn": "surge",
+      "old_sha256": "c2530671b3727b52433f18bdbdebed57a4a256054b83b09e4114c70077b98d1d",
+      "native_sha256": "2798f114721cddfe20fe3d56abf00f35f6c57017044f7156f305cf863eda0087",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Fallback = fallback, Fallback, Auto, PROXY, url = None, interval = 0, policy-path = http://cf.example.test:5000/subscriptions/s1/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400, policy-path = http://cf.example.test:5000/subscriptions/s0/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "new": [
+            "Fallback = fallback, Fallback, Auto, PROXY, url = https://www.gstatic.com/generate_204, interval = 0, policy-path = http://cf.example.test:5000/subscriptions/s1/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400, policy-path = http://cf.example.test:5000/subscriptions/s0/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 4958,
+      "fn": "surge",
+      "old_sha256": "31ca898d909881e0644795e83685f5c61ae89c227c4847ff1204763f97dc3cad",
+      "native_sha256": "0b2ba7e2cbd5a1fc562663d1abe8db50249e46160c09fc1fa788c6ba6858e86f",
+      "patches": [
+        {
+          "line": 23,
+          "old": [
+            "Fallback = fallback, 🇭🇰 香港 0, it's 1, url = None, interval = None, policy-path = https://cf.example.test/subscriptions/s1/proxies?format=surge, update-interval = 86400, policy-path = https://cf.example.test/aggregations/a1/provider?format=surge, update-interval = 86400, policy-path = https://cf.example.test/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Fallback = fallback, 🇭🇰 香港 0, it's 1, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/subscriptions/s1/proxies?format=surge, update-interval = 86400, policy-path = https://cf.example.test/aggregations/a1/provider?format=surge, update-interval = 86400, policy-path = https://cf.example.test/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 4964,
+      "fn": "surge",
+      "old_sha256": "c9b20689f4622f3c0ba583595a6658261eb227522735888a92566fd3c2ddfe7b",
+      "native_sha256": "cca742bdc12445f714b6d03a9e15c3c2961dcc0ed97ab903fba9dd094efd83ca",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "♻️ 自动选择 = fallback, DIRECT, REJECT, url = None, interval = 300\n"
+          ],
+          "new": [
+            "♻️ 自动选择 = fallback, DIRECT, REJECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5259,
+      "fn": "loon",
+      "old_sha256": "49c8c3c62577474677cf1bae4ba08b86bffa835ac8938f104aae5d5543443c3c",
+      "native_sha256": "e58f892fdb3a733535f41579c573ac8282847c89507cc36e9d38caa082a053d7",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "it's 1 = WireGuard,interface-ip=10.0.0.2,private-key=\"cHJpdmF0ZQ==\",peers=[{public-key=\"cGVlcg==\",allowed-ips=\"0.0.0.0/0\",endpoint=s.example.test:8388}],udp=false\n"
+          ],
+          "new": [
+            "it's 1 = WireGuard,interface-ip=10.0.0.2,private-key=\"cHJpdmF0ZQ==\",peers=[{public-key=\"cGVlcg==\",allowed-ips=\"0.0.0.0/0\",endpoint=s.example.test:8388}],udp=true\n"
+          ],
+          "classes": [
+            "wireguard.udp null absent"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5398,
+      "fn": "surge",
+      "old_sha256": "baeec90a851551195c368d5ce4612fac00dbfe5ccf271b9dba446fae396b2d74",
+      "native_sha256": "4ff577d49b646052a83c5de812649d710b9c7e6ad020b16210d95568ba3791b4",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Auto = load-balance, url = None, interval = 300, policy-path = https://cf.example.test/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Auto = load-balance, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5468,
+      "fn": "surge",
+      "old_sha256": "e9e68e7d4e0911b61ddaa7f426c2b47953408ee560ff1f0162a65db1554dc94c",
+      "native_sha256": "8b0ffd917a251aca266c13ecd081589d7ca72d1264233d744593db22f1ce1067",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "Fallback = smart, JP 1, 🇭🇰 香港 0, url = None, interval = 300\n"
+          ],
+          "new": [
+            "Fallback = smart, JP 1, 🇭🇰 香港 0, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5480,
+      "fn": "surge",
+      "old_sha256": "26ceaa28b6734ed781dc2dbfe730f8f6870dd10e323405eb853fe1f1093872fa",
+      "native_sha256": "d6e2f0347f49fe6686f5286cc86e830b5fc8ad345beadf5c73b04e3603aaf734",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "LB = load-balance, REJECT, Auto, Final, url = None, interval = 600\n"
+          ],
+          "new": [
+            "LB = load-balance, REJECT, Auto, Final, url = https://www.gstatic.com/generate_204, interval = 600\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5546,
+      "fn": "surge",
+      "old_sha256": "0c53c622cfa1d66b9454bd67da098153c486406988c5d3277b32e1224b5233e0",
+      "native_sha256": "bc2d6d0bffaab6932d67be3630da1b350b111216c7c82cf92f58e9c132c61622",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Final = smart, policy-priority=HK:1.5;US:0.8, url = None, interval = 300, policy-path = https://cf.example.test/api/profiles/p-1/subscriptions/s0/proxies?format=surge&exclude_regex=%28%3F%3C%3D%E6%B8%AF%29%5Cd%2B, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/p-1/subscriptions/s1/proxies?format=surge&exclude_regex=%28%3F%3C%3D%E6%B8%AF%29%5Cd%2B, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/p-1/aggregations/a1/provider?format=surge&regex=HK, update-interval = 86400\n"
+          ],
+          "new": [
+            "Final = smart, policy-priority=HK:1.5;US:0.8, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/api/profiles/p-1/subscriptions/s0/proxies?format=surge&exclude_regex=%28%3F%3C%3D%E6%B8%AF%29%5Cd%2B, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/p-1/subscriptions/s1/proxies?format=surge&exclude_regex=%28%3F%3C%3D%E6%B8%AF%29%5Cd%2B, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/p-1/aggregations/a1/provider?format=surge&regex=HK, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5574,
+      "fn": "surge",
+      "old_sha256": "1e9d292488b4ddb0d4c3c8a35de05008ada9b140db5b016d53311fd9b724d8bb",
+      "native_sha256": "0aedf2b98c68ae3c75d458810e590e1920e57bdae4ba105094659553edae46d2",
+      "patches": [
+        {
+          "line": 18,
+          "old": [
+            "it's = trojan, 203.0.113.1, 8388, password=123, udp-relay=true\n"
+          ],
+          "new": [
+            "it's = trojan, 203.0.113.1, 8388, password=123\n"
+          ],
+          "classes": [
+            "node.udp strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5575,
+      "fn": "loon",
+      "old_sha256": "d5d84be24813f4188b1049121cca7413a5b0ea13898ee761c01d33a8682b8127",
+      "native_sha256": "ff21ed0382b4f027dd8a8b8f02e0a44ab9a7a4e92b1e650d1351c155cc7d8f07",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "it's = Trojan,203.0.113.1,8388,\"123\",transport=tcp,skip-cert-verify=false,fast-open=false,udp=true\n"
+          ],
+          "new": [
+            "it's = Trojan,203.0.113.1,8388,\"123\",transport=tcp,skip-cert-verify=false,fast-open=false,udp=false\n"
+          ],
+          "classes": [
+            "node.udp strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5608,
+      "fn": "surge",
+      "old_sha256": "a786b620a3ea2344fb7bef8c1aa3e7b43ef4334b150fa810f8dd3dc9327c56bb",
+      "native_sha256": "69fc6c4e3806e3ccbd32b7e6151ebb85214a8aa1118e1c78e33eedf361847308",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Auto = fallback, 🚀 节点选择, on, url = None, interval = 0, policy-path = http://192.168.1.2:5000/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Auto = fallback, 🚀 节点选择, on, url = https://www.gstatic.com/generate_204, interval = 0, policy-path = http://192.168.1.2:5000/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        },
+        {
+          "line": 22,
+          "old": [
+            "🚀 节点选择 = fallback, url = None, interval = 600, policy-path = http://192.168.1.2:5000/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "🚀 节点选择 = fallback, url = https://www.gstatic.com/generate_204, interval = 600, policy-path = http://192.168.1.2:5000/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5636,
+      "fn": "surge",
+      "old_sha256": "d12c45d688069075479e7e1a8302d0d6ec7cc792588f6f28e03fa22c436a8482",
+      "native_sha256": "6c66116dc1dc95db463c3cbac17ab7fc5dd1a679cd3b32841c060e063771c650",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "LB = fallback, yes, DIRECT, a\"b, url = None, interval = None\n"
+          ],
+          "new": [
+            "LB = fallback, yes, DIRECT, a\"b, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        },
+        {
+          "line": 24,
+          "old": [
+            "♻️ 自动选择 = fallback, Fallback, url = , interval = None\n"
+          ],
+          "new": [
+            "♻️ 自动选择 = fallback, Fallback, url = , interval = 300\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5664,
+      "fn": "surge",
+      "old_sha256": "e305f3b808e6ed58a3bcddec1e600494c3ea16fa9c31af071a871bd5477b3ed8",
+      "native_sha256": "056de81b7aa64b469113e70af92db1357b08ea0a5bb2c7e437e64d85a9aab48e",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Auto = smart, REJECT, DIRECT, url = https://www.gstatic.com/generate_204, interval = None, policy-path = http://cf.example.test:5000/api/profiles/p-1/subscriptions/s0/proxies?format=surge&regex=HK&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400, policy-path = http://cf.example.test:5000/api/profiles/p-1/subscriptions/s1/proxies?format=surge&regex=HK&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "Auto = smart, REJECT, DIRECT, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://cf.example.test:5000/api/profiles/p-1/subscriptions/s0/proxies?format=surge&regex=HK&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400, policy-path = http://cf.example.test:5000/api/profiles/p-1/subscriptions/s1/proxies?format=surge&regex=HK&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 5688,
+      "fn": "surge",
+      "old_sha256": "dbb0ef9b5edb0aa2b38120fad0c0c1458f57ccdb80f78a84e8e01d89a59c4a75",
+      "native_sha256": "0d42df7c5bda79e7f7d732cb1a216f446bb04548c3466275bdd088132275bb3b",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "PROXY = fallback, url = None, interval = 300, policy-path = http://[2001:db8::2]:8080/subscriptions/s2/proxies?format=surge&exclude_regex=%E6%97%A5%E6%9C%AC%7CJP&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400, policy-path = http://[2001:db8::2]:8080/subscriptions/s1/proxies?format=surge&exclude_regex=%E6%97%A5%E6%9C%AC%7CJP&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400, policy-path = http://[2001:db8::2]:8080/aggregations/a1/provider?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "PROXY = fallback, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://[2001:db8::2]:8080/subscriptions/s2/proxies?format=surge&exclude_regex=%E6%97%A5%E6%9C%AC%7CJP&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400, policy-path = http://[2001:db8::2]:8080/subscriptions/s1/proxies?format=surge&exclude_regex=%E6%97%A5%E6%9C%AC%7CJP&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400, policy-path = http://[2001:db8::2]:8080/aggregations/a1/provider?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6060,
+      "fn": "surge",
+      "old_sha256": "6f0b924e1d255870db33f2dc9bf4a196021da7e27d846508cb5e54063d27bf1d",
+      "native_sha256": "0618f790e56edef0e18fd8a0a9f09db049f3ee9f92ab1fd2156a7f2ff9c4ec2a",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Auto = url-test, url = None, interval = 300, policy-path = http://192.168.1.2:5000/subscriptions/s0/proxies?format=surge&regex=US%60JP, update-interval = 86400\n"
+          ],
+          "new": [
+            "Auto = url-test, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://192.168.1.2:5000/subscriptions/s0/proxies?format=surge&regex=US%60JP, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6496,
+      "fn": "surge",
+      "old_sha256": "e5ece6bf18e8f36c4c92c2d9776776b69ad5401b487a28b20da8c9d6e5bad850",
+      "native_sha256": "c8d845032e6647287c647a26e594f0c1c7c3430f68ce40685b0fb89bdb61dbfb",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "PROXY = fallback, 🇭🇰 香港 0, JP_Tokyo 3 1, url = http://cp.example.test/204, interval = None, policy-path = http://[2001:db8::2]:8080/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = http://[2001:db8::2]:8080/subscriptions/s1/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "PROXY = fallback, 🇭🇰 香港 0, JP_Tokyo 3 1, url = http://cp.example.test/204, interval = 300, policy-path = http://[2001:db8::2]:8080/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = http://[2001:db8::2]:8080/subscriptions/s1/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6592,
+      "fn": "surge",
+      "old_sha256": "f51cf79d148fc78ece79cb07321e973219c457d2e9bfc42bf3b764e61bcebda0",
+      "native_sha256": "89116a9690660ef6361bb6ebde893a6ddd8d9d9dcd29b7371a562088aa9713ae",
+      "patches": [
+        {
+          "line": 19,
+          "old": [
+            "a,b 3 = hysteria2, relay.invalid, 8388, password=, udp-relay=true\n"
+          ],
+          "new": [
+            "a,b 3 = hysteria2, relay.invalid, 8388, password=\n"
+          ],
+          "classes": [
+            "node.udp strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6764,
+      "fn": "surge",
+      "old_sha256": "17d242b7a06c9549cca833a8c6be54912cb3cde893d49e336777d766de15c45c",
+      "native_sha256": "602dd36b254d93b0bc9329165368a90df3883c75bd267985c9cfe2552c3587a4",
+      "patches": [
+        {
+          "line": 18,
+          "old": [
+            "a,b 0 = snell, 2001:db8::1, 8388, psk=, version=4, udp-relay=true\n"
+          ],
+          "new": [
+            "a,b 0 = snell, 2001:db8::1, 8388, psk=, version=4\n"
+          ],
+          "classes": [
+            "node.udp strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6790,
+      "fn": "surge",
+      "old_sha256": "5525871b51455c22a26b9af393cba5230251bccaa0ccf7d1a27984f56727f2e6",
+      "native_sha256": "cac282196145b51a077b0c92ecfd58a6c4b6a7451bf1feb14b45d4250c3c663f",
+      "patches": [
+        {
+          "line": 18,
+          "old": [
+            "JP_Tokyo 3 1 = hysteria2, s.example.test, 8388, password=, udp-relay=true\n"
+          ],
+          "new": [
+            "JP_Tokyo 3 1 = hysteria2, s.example.test, 8388, password=\n"
+          ],
+          "classes": [
+            "node.udp strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6874,
+      "fn": "surge",
+      "old_sha256": "fec9d0c909ea61d82d293a2b1124dee8d6ce21a689cfb43fc5acb527a8c3059c",
+      "native_sha256": "cffe6c5c84dd81b4965f46d9001e35a91263b232817fb73e50cbc1ad4322a6cb",
+      "patches": [
+        {
+          "line": 11,
+          "old": [
+            "Chain = url-test, 🚀 节点选择, on, url = None, interval = None, policy-path = http://192.168.1.2:5000/api/profiles/家里/aggregations/a1/provider?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "Chain = url-test, 🚀 节点选择, on, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://192.168.1.2:5000/api/profiles/家里/aggregations/a1/provider?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6916,
+      "fn": "surge",
+      "old_sha256": "2725b4b66e97e60a519cc26c2acf5d62a03b57290ff146f0561ad8a29fd91eac",
+      "native_sha256": "b920cf8fa11eaef446cd9c34a3f9e87220c850456b4697ed27dbfb274dc785c6",
+      "patches": [
+        {
+          "line": 18,
+          "old": [
+            "HK 01 = vmess, 203.0.113.1, 8388, username=, tls=true, udp-relay=true\n"
+          ],
+          "new": [
+            "HK 01 = vmess, 203.0.113.1, 8388, username=, udp-relay=true\n"
+          ],
+          "classes": [
+            "node.tls strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6917,
+      "fn": "loon",
+      "old_sha256": "d0ea73270a68c956a60d89e164be74dadb9d5a0c37af79dea2c96c75cc2632c6",
+      "native_sha256": "d84af45d6ee41c5279321c4abbee8809c0fb7479adccdfc59a37331f9242eae2",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "HK 01 = VMess,203.0.113.1,8388,auto,\"\",transport=http,path=/,alterId=0,over-tls=true,sni=sni.example.test,skip-cert-verify=false,udp=true\n"
+          ],
+          "new": [
+            "HK 01 = VMess,203.0.113.1,8388,auto,\"\",transport=http,path=/,alterId=0,over-tls=false,udp=true\n"
+          ],
+          "classes": [
+            "node.tls strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6956,
+      "fn": "surge",
+      "old_sha256": "a253cdfa09e55b14a7c3348ea65d9cf78372df24dd1201e87c08f92724840e10",
+      "native_sha256": "4b564a1f9794ec6917b28b966fec4a93e88bd53d2bc4bc0244ab7c17c4e3e0fb",
+      "patches": [
+        {
+          "line": 13,
+          "old": [
+            "on = url-test, url = None, interval = 300, policy-path = http://cf.example.test:5000/api/profiles/家里/subscriptions/s2/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "new": [
+            "on = url-test, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://cf.example.test:5000/api/profiles/家里/subscriptions/s2/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6962,
+      "fn": "surge",
+      "old_sha256": "8b7ad968c7848c9822da2c88745c04624ff828136936c95db546595cf8e4d58f",
+      "native_sha256": "6d169ef18f86ab66195d7384d0b13b25ae6f8d6a95c0b1ce543dc3f0fcd4f4b5",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Auto = fallback, url = None, interval = 300, policy-path = https://cf.example.test/subscriptions/s0/proxies?format=surge&exclude_regex=%28, update-interval = 86400\n"
+          ],
+          "new": [
+            "Auto = fallback, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/subscriptions/s0/proxies?format=surge&exclude_regex=%28, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6968,
+      "fn": "surge",
+      "old_sha256": "42864dbb7933cdcc7c59b897b49dd703c4992953a25b24fb5f109113ad5b3bf7",
+      "native_sha256": "0dc38215fcea07f3470c7955c1a47e559b695bbb26076f24c32ff36dd8187f70",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Final = load-balance, url = None, interval = 300, policy-path = http://cf.example.test/sub/api/profiles/default/aggregations/a0/provider?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "Final = load-balance, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://cf.example.test/sub/api/profiles/default/aggregations/a0/provider?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 6980,
+      "fn": "surge",
+      "old_sha256": "870afd8e539a0a4f8c55c46d9fe877d6d2900fc4bb7c59c72f764de9343230f2",
+      "native_sha256": "c8a334f3850a6f2ea8d13847bb459badf6f4ac4f531e1583722119df73d1977f",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "Fallback = load-balance, HK 01 0, url = None, interval = None\n"
+          ],
+          "new": [
+            "Fallback = load-balance, HK 01 0, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 7085,
+      "fn": "loon",
+      "old_sha256": "21986ee84d2b7ba5e43a65a920b8e20e7a9b0047d36f6f827d5246cf8e0b2917",
+      "native_sha256": "9295299f6ec45bf921d38f5a8164e8f3b1f79cb609a5ddf4b835992ebfcc23b5",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "it's 0 = socks5,2001:db8::1,8388,over-tls=true,skip-cert-verify=true,udp=false\n",
+            "it's 2 = WireGuard,private-key=\"cHJpdmF0ZQ==\",peers=[{public-key=\"cHVibGlj\",preshared-key=\"cHNrMw==\",allowed-ips=\"0.0.0.0/0\",endpoint=203.0.113.1:8388}],udp=false\n"
+          ],
+          "new": [
+            "it's 0 = socks5,2001:db8::1,8388,over-tls=false,udp=false\n",
+            "it's 2 = WireGuard,private-key=\"cHJpdmF0ZQ==\",peers=[{public-key=\"cHVibGlj\",preshared-key=\"cHNrMw==\",allowed-ips=\"0.0.0.0/0\",endpoint=203.0.113.1:8388}],udp=true\n"
+          ],
+          "classes": [
+            "wireguard.udp null absent",
+            "node.tls strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 7160,
+      "fn": "surge",
+      "old_sha256": "c8173893aa09f1579212fb93ba115ee4d455fc31b835746a6faa3f4348079cda",
+      "native_sha256": "ef8c2dca98d0ad639a012157f6b3acfbd0d38bd6174c9c2a365363c2c9d561d3",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "on = fallback, REJECT, url = None, interval = 0, policy-path = http://cf.example.test:5000/subscriptions/s1/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400, policy-path = http://cf.example.test:5000/subscriptions/s0/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "on = fallback, REJECT, url = https://www.gstatic.com/generate_204, interval = 0, policy-path = http://cf.example.test:5000/subscriptions/s1/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400, policy-path = http://cf.example.test:5000/subscriptions/s0/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 7180,
+      "fn": "surge",
+      "old_sha256": "1a7f9ba72d85cedd52f1544f3d22b058ee5d0347b7a107b8c29aec2d83d84cf6",
+      "native_sha256": "42023ab3ac63a023bca021e2c10290e883a8ccc517a8449cfb1e127d31625370",
+      "patches": [
+        {
+          "line": 18,
+          "old": [
+            "it's 4 = vmess, 2001:db8::1, 8388, username=00000000-0000-4000-8000-000000000001, tls=true, sni=sni.example.test\n"
+          ],
+          "new": [
+            "it's 4 = vmess, 2001:db8::1, 8388, username=00000000-0000-4000-8000-000000000001\n"
+          ],
+          "classes": [
+            "node.tls strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 7326,
+      "fn": "surge",
+      "old_sha256": "1fbb084fe7027d329caad7e36a0955ac5afb0be7252e755fd998ae9c76feba6f",
+      "native_sha256": "6c8d2c575aaa3f609b64586714de7fe4205ec63acbb9d430fe505b0b00aea8e1",
+      "patches": [
+        {
+          "line": 12,
+          "old": [
+            "🚀 节点选择 = url-test, REJECT, url = None, interval = None\n"
+          ],
+          "new": [
+            "🚀 节点选择 = url-test, REJECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 7466,
+      "fn": "surge",
+      "old_sha256": "da9f019878f5e3254d1612bdabc4fc82d0896e4a19edaace631d53a68d64232c",
+      "native_sha256": "c43967662206f65c11131272d9a0c209b727a90cf3569e07f11d329c3053a65f",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "PROXY = smart, Fallback, US=02 1, DIRECT, url = None, interval = 300\n"
+          ],
+          "new": [
+            "PROXY = smart, Fallback, US=02 1, DIRECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 7580,
+      "fn": "surge",
+      "old_sha256": "35c1257b8c6e43a857084e898195796893eba2a4b0e5bad662ef1b8b184717fd",
+      "native_sha256": "991527c1e12085b5c55b9d1edc964d4203797baabf51c8d90634bf6cdb56cc75",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "LB = smart, -dash 1, url = None, interval = 300\n"
+          ],
+          "new": [
+            "LB = smart, -dash 1, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 7976,
+      "fn": "surge",
+      "old_sha256": "f41cbf03d1386e3ce6d44423625d3cb4957d304e3e1f8833a92bc6ddcf0fa1e0",
+      "native_sha256": "b6635a7c3cfbf27e651f134664d5ca0144ee3d8fbd323b0c2383f371e9de2650",
+      "patches": [
+        {
+          "line": 12,
+          "old": [
+            "LB = fallback, DIRECT, url = None, interval = None\n"
+          ],
+          "new": [
+            "LB = fallback, DIRECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8012,
+      "fn": "surge",
+      "old_sha256": "3ae82883cc7db5431f4ce17f4303a2fff4f3aafddabc2a5e927a286ef6d157ca",
+      "native_sha256": "2e5bd34b4b4daec34bd5ce5ef675d5f5d9caf1b887d3646e34ec92ce672ffa7c",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "Chain = load-balance, on, PROXY, Chain, url = None, interval = None\n"
+          ],
+          "new": [
+            "Chain = load-balance, on, PROXY, Chain, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8050,
+      "fn": "surge",
+      "old_sha256": "bc7b760d3e839237230b9b35601942289a38bb6f34d32ad77668160b4d953c8d",
+      "native_sha256": "b8cad109a3223e9c2d6508cebdad5462a80de57449216d75d397da32ac3d3cea",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Auto = smart, 🇭🇰 香港 3, ♻️ 自动选择, url = None, interval = 300\n"
+          ],
+          "new": [
+            "Auto = smart, 🇭🇰 香港 3, ♻️ 自动选择, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8156,
+      "fn": "surge",
+      "old_sha256": "0a73c7c46a771318e62b666d7a555a1e474ef07dc08c7502b637d9493addca08",
+      "native_sha256": "c43be80bdeccec5867a26fc5695eb32e602d464006545ccdfefd408db88cfdb5",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Final = smart, HK 01 1, url = None, interval = 600\n"
+          ],
+          "new": [
+            "Final = smart, HK 01 1, url = https://www.gstatic.com/generate_204, interval = 600\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8588,
+      "fn": "surge",
+      "old_sha256": "f6efe08452351b825f9054629714b560453d69da8f06f049758cc8a8b59b2057",
+      "native_sha256": "85248c24251fb69ad940ffbfc07c8d38cab6c1b7bd582fcc7c3c914b46460968",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "PROXY = load-balance, PROXY, url = None, interval = None\n"
+          ],
+          "new": [
+            "PROXY = load-balance, PROXY, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8686,
+      "fn": "surge",
+      "old_sha256": "e85887b5f769499c220305d5447d6d50192751b3b51182a4e24b20e18f603029",
+      "native_sha256": "07828a21c2e59058bc079358f31127a849f50782ddcea65d41eac4f53ff8ab89",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Fallback = load-balance, DIRECT, REJECT, url = None, interval = 300\n"
+          ],
+          "new": [
+            "Fallback = load-balance, DIRECT, REJECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        },
+        {
+          "line": 23,
+          "old": [
+            "LB = load-balance, DIRECT, REJECT, url = None, interval = None\n"
+          ],
+          "new": [
+            "LB = load-balance, DIRECT, REJECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8758,
+      "fn": "surge",
+      "old_sha256": "46940a8f499c27a14f0d919cf492d9c864593327c5dfebbab32495b1efc3b519",
+      "native_sha256": "62b1c40ef4132e29fcdc6b54f72a4cd1ec6cd80009fcb584b60e11b908775b52",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Chain = smart, DIRECT, HK 01 3, JP_Tokyo 3 1, url = None, interval = 300, policy-path = https://cf.example.test/subscriptions/s1/proxies?format=surge, update-interval = 86400, policy-path = https://cf.example.test/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Chain = smart, DIRECT, HK 01 3, JP_Tokyo 3 1, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/subscriptions/s1/proxies?format=surge, update-interval = 86400, policy-path = https://cf.example.test/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8801,
+      "fn": "loon",
+      "old_sha256": "6df7a09e4f5f2721febb81259f4854ae15b09ae0863f41cb2cc2440cbedd9833",
+      "native_sha256": "f04b3e3ab4663f02901777e379d0a904e414ce050850417d8a234396cca90bf3",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "a b 5 = socks5,s.example.test,443,,\"pw\",over-tls=true,skip-cert-verify=false,udp=false\n"
+          ],
+          "new": [
+            "a b 5 = socks5,s.example.test,443,,\"pw\",over-tls=false,udp=false\n"
+          ],
+          "classes": [
+            "node.tls strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8804,
+      "fn": "surge",
+      "old_sha256": "4920344015215f0baa5e01d5d93303464695f0ef853ad4764339c3063414ceab",
+      "native_sha256": "f4b0ba993acbe9b933cf8556972f6255d54d180c22098a30d7e67f26c106d5e3",
+      "patches": [
+        {
+          "line": 18,
+          "old": [
+            "US=02 = vmess, 2001:db8::1, 443, username=, udp-relay=true\n"
+          ],
+          "new": [
+            "US=02 = vmess, 2001:db8::1, 443, username=\n"
+          ],
+          "classes": [
+            "node.udp strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8836,
+      "fn": "surge",
+      "old_sha256": "bba630d865bad3293ef78ce01c097333ebd2da89ecd2a6595ddfa97e418845b7",
+      "native_sha256": "2125012e267edaa2aafb12ec71e6b7af6e4aa972d3ac86a4c8551a092cb0bce9",
+      "patches": [
+        {
+          "line": 23,
+          "old": [
+            "🚀 节点选择 = smart, 🇭🇰 香港 01 0, REJECT, url = http://cp.example.test/204, interval = None, policy-path = /api/profiles/p-1/subscriptions/s1/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "🚀 节点选择 = smart, 🇭🇰 香港 01 0, REJECT, url = http://cp.example.test/204, interval = 300, policy-path = /api/profiles/p-1/subscriptions/s1/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8953,
+      "fn": "loon",
+      "old_sha256": "2bc28e435eefa2b7c20bc70651791ccf334080238a2157b3fdc6d8f7e96c4e74",
+      "native_sha256": "c5c0e9d127e691a535b747792d5c0a16faaedd593a73c5c38963d86bad1baf83",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "HK 01 0 = socks5,203.0.113.1,443,over-tls=true,skip-cert-verify=false,udp=false\n"
+          ],
+          "new": [
+            "HK 01 0 = socks5,203.0.113.1,443,over-tls=false,udp=false\n"
+          ],
+          "classes": [
+            "node.tls strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 8956,
+      "fn": "surge",
+      "old_sha256": "f0aa9e6e6b6ec713c70089f9c9b73001463b8f569a7b52db616af3414ad49842",
+      "native_sha256": "07c68c11c8a602536a7c811b9631d1250765008e6cca9284785aa8077743dc9d",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Chain = url-test, REJECT, DIRECT, url = None, interval = 600, policy-path = http://cf.example.test:5000/subscriptions/s1/proxies?format=surge&regex=%28%3F%3D.%2A0%29&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n",
+            "Final = url-test, url = None, interval = 600, policy-path = http://cf.example.test:5000/aggregations/a0/provider?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "Chain = url-test, REJECT, DIRECT, url = https://www.gstatic.com/generate_204, interval = 600, policy-path = http://cf.example.test:5000/subscriptions/s1/proxies?format=surge&regex=%28%3F%3D.%2A0%29&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n",
+            "Final = url-test, url = https://www.gstatic.com/generate_204, interval = 600, policy-path = http://cf.example.test:5000/aggregations/a0/provider?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9000,
+      "fn": "surge",
+      "old_sha256": "2dbbd99f77d03f40fe27a49471e7a7a432c6d57cc33221c041b495a081c489e1",
+      "native_sha256": "229cfe13b1bca35dc2f49a9dd047219b5febc503767ddd8883b8bcfc4232305b",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "LB = smart, JP 0, policy-priority=HK:1.5;US:0.8, url = None, interval = 300, policy-path = https://cf.example.test/api/profiles/p-1/subscriptions/s1/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "LB = smart, JP 0, policy-priority=HK:1.5;US:0.8, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/api/profiles/p-1/subscriptions/s1/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9054,
+      "fn": "surge",
+      "old_sha256": "e8dee96a21f079dc7ba9755818000ffc6ec64f857df435001365db137238040e",
+      "native_sha256": "dfa5ce3178a8ef107e24d9f4942b43f213466647821ae92e472494441929dafa",
+      "patches": [
+        {
+          "line": 10,
+          "old": [
+            "on = load-balance, DIRECT, Chain, Fallback, Final, url = None, interval = 300\n"
+          ],
+          "new": [
+            "on = load-balance, DIRECT, Chain, Fallback, Final, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9114,
+      "fn": "surge",
+      "old_sha256": "be47fef058eb54e69cc3f8d423a63bc0a498072a26ad6a54dcf002b55f844d6d",
+      "native_sha256": "f72d8190b7d87418d47f9e916fb88ff832cfa06e119a72a4995be3f238f01ce3",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Final = fallback, url = None, interval = None, policy-path = http://cf.example.test:5000/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = http://cf.example.test:5000/aggregations/a1/provider?format=surge, update-interval = 86400, policy-path = http://cf.example.test:5000/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Final = fallback, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://cf.example.test:5000/subscriptions/s0/proxies?format=surge, update-interval = 86400, policy-path = http://cf.example.test:5000/aggregations/a1/provider?format=surge, update-interval = 86400, policy-path = http://cf.example.test:5000/aggregations/a0/provider?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9256,
+      "fn": "surge",
+      "old_sha256": "f1013729850fc0b06f913107f6cb6ac55f6f58b440d0ad80e71ccf28977f3ed8",
+      "native_sha256": "3a63971b173472409208a78eaa5a44c390b66f3dd7f71253b631c63bd0ced64e",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Chain = fallback, JP 2, US=02 0, url = None, interval = 300, policy-path = /subscriptions/s1/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Chain = fallback, JP 2, US=02 0, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = /subscriptions/s1/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9366,
+      "fn": "surge",
+      "old_sha256": "072e721daa08e2aa079d6c1a3328cef93d2057334170b6e5465b63af14572a8e",
+      "native_sha256": "18d3760d49fa68dfc97125dbd4bfb5913e8a1801d635d46895709794d1cb43ad",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "PROXY = smart, HK 01 0, url = None, interval = 300, policy-path = /subscriptions/s0/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400, policy-path = /subscriptions/s1/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "PROXY = smart, HK 01 0, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = /subscriptions/s0/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400, policy-path = /subscriptions/s1/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9424,
+      "fn": "surge",
+      "old_sha256": "121f8db79013f7c0d14c6509a428324238167da94ec0d973596a7615288320d0",
+      "native_sha256": "8ecd1e44bb6ae331006cea71267ca556041ea37c5440c654bb02bf9d6228f9f7",
+      "patches": [
+        {
+          "line": 11,
+          "old": [
+            "Auto = load-balance, REJECT, url = None, interval = 300, policy-path = http://192.168.1.2:5000/api/profiles/default/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "new": [
+            "Auto = load-balance, REJECT, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = http://192.168.1.2:5000/api/profiles/default/subscriptions/s0/proxies?format=surge, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9460,
+      "fn": "surge",
+      "old_sha256": "2ea6329f1eee60fec7ab15224b0988d0531c3598966fb787163873c4db419338",
+      "native_sha256": "c36c7c4fe5f04e3abcbadd224f926f61a54d324c2675b422673c58047843c0a7",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Media = smart, HK 01 4, HK 01, url = None, interval = 300\n"
+          ],
+          "new": [
+            "Media = smart, HK 01 4, HK 01, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9472,
+      "fn": "surge",
+      "old_sha256": "0749995188f2936709181d84fb8218cc27ff55a15f69a5d0464c2958bcecb31b",
+      "native_sha256": "7ea49f394dd1f47ef380112a30ea670574e9c30ef440cfff76df262db127fb65",
+      "patches": [
+        {
+          "line": 18,
+          "old": [
+            "a\"b 1 = tuic-v5, s.example.test, 443, password=p,w, skip-cert-verify=true, udp-relay=true\n"
+          ],
+          "new": [
+            "a\"b 1 = tuic-v5, s.example.test, 443, password=p,w, skip-cert-verify=true\n"
+          ],
+          "classes": [
+            "node.udp strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9644,
+      "fn": "surge",
+      "old_sha256": "4b4196c832b924b5e10e7675371b9fb1d40d935877dbb14c9840a1ba2e8f84a4",
+      "native_sha256": "43061804f9c2f362bed168a0ef5e114544c38d7784de95c454c2f436cca93708",
+      "patches": [
+        {
+          "line": 24,
+          "old": [
+            "♻️ 自动选择 = fallback, url = None, interval = 300, policy-path = https://cf.example.test/api/profiles/p-1/subscriptions/s0/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/p-1/aggregations/a0/provider?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "new": [
+            "♻️ 自动选择 = fallback, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/api/profiles/p-1/subscriptions/s0/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/p-1/aggregations/a0/provider?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9688,
+      "fn": "surge",
+      "old_sha256": "764ce74ee0aef8efc716da3de3c893ff33fc51409b9393dfb15894f137fd3139",
+      "native_sha256": "ba57e011aad1b6d3cdd91a5747a09f7b84522c1d799e8f4131d797d7e43e3a49",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "🚀 节点选择 = fallback, DIRECT, url = None, interval = None, policy-path = https://cf.example.test/api/profiles/default/subscriptions/s0/proxies?format=surge&token=tok-123, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/default/subscriptions/s2/proxies?format=surge&token=tok-123, update-interval = 86400\n"
+          ],
+          "new": [
+            "🚀 节点选择 = fallback, DIRECT, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/api/profiles/default/subscriptions/s0/proxies?format=surge&token=tok-123, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/default/subscriptions/s2/proxies?format=surge&token=tok-123, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9748,
+      "fn": "surge",
+      "old_sha256": "b7e371916c0185f6cf452a6a10ba06d7f4e98c09776cf7d36f573100d4aabde1",
+      "native_sha256": "83facc41d29d955d9763f8a0395ecfd247c3de90b4c715e47f09f00e332c9f64",
+      "patches": [
+        {
+          "line": 23,
+          "old": [
+            "Media = load-balance, HK 01 0, url = https://www.gstatic.com/generate_204, interval = None\n"
+          ],
+          "new": [
+            "Media = load-balance, HK 01 0, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9778,
+      "fn": "surge",
+      "old_sha256": "63f3bf1918874813c442fd1354b91f2509a7ddb2e7431ddac82d644b5e7af6b7",
+      "native_sha256": "731a7fe26f7c016586d9b1e1927a0e1694ccd3f7414750f2e49a16b3f32c9dd4",
+      "patches": [
+        {
+          "line": 24,
+          "old": [
+            "Auto = smart, DIRECT, REJECT, a\"b, url = None, interval = 300\n"
+          ],
+          "new": [
+            "Auto = smart, DIRECT, REJECT, a\"b, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 9971,
+      "fn": "loon",
+      "old_sha256": "41cad166fac0d0fc17008a58f768c4b53a9b970f347357dd2c0b69e37f13f13e",
+      "native_sha256": "2a27c5fce55b7793cf3c067a5197eddb935e76883559a7065d649fa1e6a62ed2",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "spaced = socks5,203.0.113.1,8388,,\"p\\\"w\",over-tls=true,sni=sni.example.test,skip-cert-verify=false,udp=false\n"
+          ],
+          "new": [
+            "spaced = socks5,203.0.113.1,8388,,\"p\\\"w\",over-tls=false,udp=false\n"
+          ],
+          "classes": [
+            "node.tls strict bool"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 10022,
+      "fn": "surge",
+      "old_sha256": "f30b998d2809076f9319675fef16e66c4b13e8439fb72c3b98841473fc91bfe0",
+      "native_sha256": "290a0f2d790f4eb56fa28582134e870653a33262535c833ad6a2bb52fc65a66c",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "LB = load-balance,  spaced , JP 0, url = None, interval = 600, policy-path = http://192.168.1.2:5000/api/profiles/default/subscriptions/s2/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "new": [
+            "LB = load-balance,  spaced , JP 0, url = https://www.gstatic.com/generate_204, interval = 600, policy-path = http://192.168.1.2:5000/api/profiles/default/subscriptions/s2/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 10322,
+      "fn": "surge",
+      "old_sha256": "275e11d441052675669fecbe157143fb6ea49758ba33c144abb4ea241582d765",
+      "native_sha256": "530458af2dd75f03ec6edb325695355638231d97def5243e6e1f256652bb1e83",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "LB = fallback, HK 01, a,b 2, a\"b, url = None, interval = 300\n"
+          ],
+          "new": [
+            "LB = fallback, HK 01, a,b 2, a\"b, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 10474,
+      "fn": "surge",
+      "old_sha256": "3c48efe1d62504d59f043059d3ede2bedaa1377c780745c4bfac3c06daceb42e",
+      "native_sha256": "11f1a9a2adf3a015d0f843b1ca4d3cf980fd125b85e6047f941802290534a96e",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "🚀 节点选择 = smart, Final, url = None, interval = None\n"
+          ],
+          "new": [
+            "🚀 节点选择 = smart, Final, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 10482,
+      "fn": "surge",
+      "old_sha256": "3666947ba0cd05ee3423663d3772728f14317d8d88d25907b3eefd7516dea521",
+      "native_sha256": "155937b8ec6b4957f79ffe22d95017c275014ea6cab7b81f5c9b5a81ebd4ac9b",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Auto = fallback, DIRECT, url = None, interval = None\n"
+          ],
+          "new": [
+            "Auto = fallback, DIRECT, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 10710,
+      "fn": "surge",
+      "old_sha256": "3f26a5f96b87c0898228b536a870f359990417a5ac1df238acae7467d6e7c8b6",
+      "native_sha256": "7f7f20ed7f2e6d2423d8e3bd0af3274b36bfb3ce83982982975646a934096f67",
+      "patches": [
+        {
+          "line": 11,
+          "old": [
+            "PROXY = url-test, REJECT, url = None, interval = 600, policy-path = http://192.168.1.2:5000/api/profiles/家里/subscriptions/s1/proxies?format=surge&regex=US%60JP&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n",
+            "on = fallback, Auto, PROXY, LB, url = None, interval = 300\n",
+            "Auto = url-test, Auto, REJECT, 🇭🇰 香港, url = None, interval = 300\n"
+          ],
+          "new": [
+            "PROXY = url-test, REJECT, url = https://www.gstatic.com/generate_204, interval = 600, policy-path = http://192.168.1.2:5000/api/profiles/家里/subscriptions/s1/proxies?format=surge&regex=US%60JP&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n",
+            "on = fallback, Auto, PROXY, LB, url = https://www.gstatic.com/generate_204, interval = 300\n",
+            "Auto = url-test, Auto, REJECT, 🇭🇰 香港, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 10850,
+      "fn": "surge",
+      "old_sha256": "b6513314bec50dbf3f4874defb6fc4b90382465199bb0e17123a29fe563cfb2f",
+      "native_sha256": "37682f580d172c971a11db376e1a5963002b5c2521e21f478c7f7bc8dd92fa51",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "on = fallback, url = None, interval = 600, policy-path = http://cf.example.test/sub/api/profiles/家里/subscriptions/s2/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "new": [
+            "on = fallback, url = https://www.gstatic.com/generate_204, interval = 600, policy-path = http://cf.example.test/sub/api/profiles/家里/subscriptions/s2/proxies?format=surge&token=a%20b%2Fc%3Fd%3De%26f, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 10946,
+      "fn": "surge",
+      "old_sha256": "aa7874a099441ac9d4516a69446ace33d23ff1234888afe9578e84ad0b42820b",
+      "native_sha256": "24f109096a7005ecd7c7a514c3a7ba8a6357d51607c888982b6231fd2a1ffe5f",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "on = load-balance, DIRECT, REJECT, on, url = http://cp.example.test/204, interval = None\n"
+          ],
+          "new": [
+            "on = load-balance, DIRECT, REJECT, on, url = http://cp.example.test/204, interval = 300\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 10978,
+      "fn": "surge",
+      "old_sha256": "693b9c3a07082f398c217987977a83fe7995406e3ca3b6c759e448c3eaa11959",
+      "native_sha256": "31e97f5df4bf4937686512248aa75ac06ad1796d4d86e9cb118037b0d4168931",
+      "patches": [
+        {
+          "line": 18,
+          "old": [
+            " spaced  0 = tuic-v5, s.example.test, 443, password=p\"w\n"
+          ],
+          "new": [
+            " spaced  0 = tuic-v5, s.example.test, 443, password=p\"w, alpn=h3\n"
+          ],
+          "classes": [
+            "tuic.alpn null absent"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 11032,
+      "fn": "surge",
+      "old_sha256": "136328399c8bbc26b6845fa180106deb8a521f358fee7b1059b18fcfc3d058c2",
+      "native_sha256": "aa1f0b605b58ed76f3475de056ca30e61ce333bb568c1850e9bc150096f8e940",
+      "patches": [
+        {
+          "line": 20,
+          "old": [
+            "Final = smart, REJECT, url = None, interval = 0\n"
+          ],
+          "new": [
+            "Final = smart, REJECT, url = https://www.gstatic.com/generate_204, interval = 0\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 11060,
+      "fn": "surge",
+      "old_sha256": "909d0da779cc53aff3eacf611cd9e7c6e08ed1ed047de2efb6fcdc0b4b587a63",
+      "native_sha256": "527fd0e6664f9383f07a62e00f0775ef60c65baabfb464c599afa4cb787ecf88",
+      "patches": [
+        {
+          "line": 10,
+          "old": [
+            "Final = smart, DIRECT, HK 01 1, REJECT, Final, Fallback, url = None, interval = None\n"
+          ],
+          "new": [
+            "Final = smart, DIRECT, HK 01 1, REJECT, Final, Fallback, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing",
+            "group.interval null/follow missing"
+          ]
+        },
+        {
+          "line": 14,
+          "old": [
+            "Fallback = url-test, url = None, interval = 300, policy-path = https://cf.example.test/api/profiles/家里/subscriptions/s0/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/家里/aggregations/a1/provider?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "new": [
+            "Fallback = url-test, url = https://www.gstatic.com/generate_204, interval = 300, policy-path = https://cf.example.test/api/profiles/家里/subscriptions/s0/proxies?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400, policy-path = https://cf.example.test/api/profiles/家里/aggregations/a1/provider?format=surge&token=%E4%BB%A4%E7%89%8C, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 11098,
+      "fn": "surge",
+      "old_sha256": "b9ed319bef5ec95a54acffb25997686a40339dcfdb9c03305f3a71eb9a69101d",
+      "native_sha256": "8a71f283932ae30231e714a2b605e3ce5622ad64ce8194a434bdc7128850c7a3",
+      "patches": [
+        {
+          "line": 21,
+          "old": [
+            "Media = smart, url = , interval = None, policy-path = http://cf.example.test:5000/api/profiles/家里/subscriptions/s2/proxies?format=surge&token=tok-123, update-interval = 86400\n"
+          ],
+          "new": [
+            "Media = smart, url = , interval = 300, policy-path = http://cf.example.test:5000/api/profiles/家里/subscriptions/s2/proxies?format=surge&token=tok-123, update-interval = 86400\n"
+          ],
+          "classes": [
+            "group.interval null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 11472,
+      "fn": "surge",
+      "old_sha256": "410e2b970bafe2856448a2bb34af4cb6e24d0c320813378c4954e86c5db9cf8a",
+      "native_sha256": "cc90d22cec5ca75d5d3919c0c8dbdea86c29d317e8a5f31a4853b3a4c29d893e",
+      "patches": [
+        {
+          "line": 9,
+          "old": [
+            "🚀 节点选择 = url-test, DIRECT, node: x 1, on, LB, url = None, interval = 300\n"
+          ],
+          "new": [
+            "🚀 节点选择 = url-test, DIRECT, node: x 1, on, LB, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    },
+    {
+      "row": 11922,
+      "fn": "surge",
+      "old_sha256": "70120dd621400c271c1afff58245e2a41322ef20b339312d1b36e286902e4959",
+      "native_sha256": "23fc0ba3518bab6b19bba0b62732aa3e7c00553aa82d76298a88f260b8a7a3ca",
+      "patches": [
+        {
+          "line": 22,
+          "old": [
+            "PROXY = smart, DIRECT, policy-priority=HK:1.5;US:0.8, url = None, interval = 300\n"
+          ],
+          "new": [
+            "PROXY = smart, DIRECT, policy-priority=HK:1.5;US:0.8, url = https://www.gstatic.com/generate_204, interval = 300\n"
+          ],
+          "classes": [
+            "group.url null/follow missing"
+          ]
+        }
+      ]
+    }
+  ]
+}

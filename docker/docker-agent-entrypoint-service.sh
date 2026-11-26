@@ -3,7 +3,7 @@ set -e
 
 case "${SERVICE_TYPE:-}" in
     oxidns-ha-host|oxidns-ha-macvlan)
-        exec python3 /usr/local/lib/configflow/docker-compose-compact.py "$@"
+        exec /usr/local/bin/configflow-agent ha-compact "$@"
         ;;
     ha-companion-compact)
         export CONFIGFLOW_DNS_HA=1 CONFIGFLOW_DNS_HA_NETWORK=host CONFIGFLOW_DNS_HA_IDENTITY=installation
@@ -23,9 +23,15 @@ fi
 #   2. AIO 模式：设置 ENABLE_MIHOMO/ENABLE_MOSDNS/ENABLE_OXIDNS（aio 镜像使用）
 # ==============================================================================
 
-SUPERVISORCTL_CMD="supervisorctl -c /etc/supervisor/supervisord.conf"
 AGENT_DIR="/opt/configflow-agent"
 mkdir -p "$AGENT_DIR"
+# Containers created by older images or Compose files may still pass the
+# former Supervisor command; s6-overlay (/init) supervises the services now.
+if [ "${1:-}" = /usr/bin/supervisord ]; then
+    set -- /init
+fi
+# Cores enabled in this container (s6 starts each with its Agent).
+CORES=""
 
 # --- 创建默认 Mihomo 配置 ---
 create_default_mihomo_config() {
@@ -161,95 +167,18 @@ EOFOXIDNS
     fi
 }
 
-# --- 生成 Agent 配置文件 ---
+# --- 生成 Agent 配置文件（保留已登记的 agent_id/token）---
 generate_agent_config() {
-    _service_type=$1
-    _agent_name=$2
-    _agent_port=$3
-    _config_path=$4
-
-    _config_file="${AGENT_DIR}/config-${_service_type}.json"
-    # Python already ships in this Supervisor image. JSON serialization keeps
-    # quotes/newlines in environment values from corrupting credentials/config.
-    SERVER_URL="${SERVER_URL:-}" HEARTBEAT_INTERVAL="${HEARTBEAT_INTERVAL:-60}" python3 - "$_config_file" "$_service_type" "$_agent_name" "$_agent_port" "$_config_path" <<'PYCONFIG'
-import json
-import os
-import sys
-from pathlib import Path
-
-path, service, name, port, config_path = sys.argv[1:]
-path = Path(path)
-existing = json.loads(path.read_text()) if path.exists() else {}
-prefix = service.upper()
-cfg = {
-    "server_url": os.environ.get("SERVER_URL", ""),
-    "agent_name": name,
-    "agent_host": os.environ.get("AGENT_HOST", "0.0.0.0"),
-    "agent_port": int(port),
-    "agent_ip": os.environ.get("AGENT_IP", ""),
-    "service_type": service,
-    "deployment_method": "docker",
-    "service_name": service,
-    "config_path": config_path,
-    "restart_command": "supervisorctl -c /etc/supervisor/supervisord.conf restart " + service,
-    "service_manager": "supervisor",
-    "service_unit": service,
-    "service_binary": "/usr/local/bin/" + service,
-    "health_url": os.environ.get(prefix + "_HEALTH_URL", ""),
-    "health_dns_address": os.environ.get(prefix + "_HEALTH_DNS_ADDRESS", ""),
-    "health_dns_name": os.environ.get(prefix + "_HEALTH_DNS_NAME", ""),
-    "deployment_health_timeout": int(os.environ.get("DEPLOYMENT_HEALTH_TIMEOUT", "30")),
-    "heartbeat_interval": int(os.environ.get("HEARTBEAT_INTERVAL", "60")),
-}
-for key in ("agent_id", "token"):
-    if existing.get(key):
-        cfg[key] = existing[key]
-tmp = path.with_name(path.name + ".tmp")
-with tmp.open("w") as output:
-    os.chmod(tmp, 0o600)
-    json.dump(cfg, output, indent=2)
-    output.flush()
-    os.fsync(output.fileno())
-os.replace(tmp, path)
-parent = os.open(path.parent, os.O_RDONLY)
-try:
-    os.fsync(parent)
-finally:
-    os.close(parent)
-PYCONFIG
-    echo "Agent config generated at $_config_file"
+    SERVER_URL="${SERVER_URL:-}" HEARTBEAT_INTERVAL="${HEARTBEAT_INTERVAL:-60}" \
+        /usr/local/bin/configflow-agent docker-config agent -dir "$AGENT_DIR" "$1" "$2" "$3" "$4"
+    echo "Agent config generated at ${AGENT_DIR}/config-$1.json"
 }
 
-configure_supervisor_core() {
-    python3 - "$1" "$2" <<'PYSUPERVISOR'
-import shlex
-import sys
-from pathlib import Path
-service, config = sys.argv[1:]
-path = Path("/etc/supervisor/conf.d") / (service + ".conf")
-if path.exists():
-    args = ["/usr/local/bin/" + service]
-    args += (["-d", str(Path(config).parent), "-f", config] if service == "mihomo"
-             else ["start", "-c", config, "-d", str(Path(config).parent)])
-    command = "command=" + " ".join(shlex.quote(arg) for arg in args)
-    # Supervisor interpolates percent signs in config values.
-    command = command.replace("%", "%%")
-    lines = path.read_text().splitlines()
-    path.write_text("\n".join(command if line.startswith("command=") else line for line in lines) + "\n")
-PYSUPERVISOR
-}
-
-# --- 设置 supervisor autostart ---
-set_supervisor_autostart() {
-    _conf_file=$1
-    _enabled=$2
-    if [ -f "$_conf_file" ]; then
-        if [ "$_enabled" = "true" ]; then
-            sed -i 's/autostart=false/autostart=true/' "$_conf_file"
-        else
-            sed -i 's/autostart=true/autostart=false/' "$_conf_file"
-        fi
-    fi
+# --- 启用一个核心（及其 Agent）；可选指定核心配置文件 ---
+# CORES holds one entry per line, so configuration paths may contain spaces.
+enable_core() {
+    CORES="${CORES}${CORES:+
+}$1"
 }
 
 # ==============================================================================
@@ -274,8 +203,7 @@ case "${CONFIGFLOW_DNS_HA:-0}" in
         ;;
     *) echo "CONFIGFLOW_DNS_HA must be 0 or 1." >&2; exit 1 ;;
 esac
-# No journal means no keepalived: Agent recovery owns startup after Supervisor.
-set_supervisor_autostart /etc/supervisor/conf.d/configflow-keepalived.conf false
+# No journal means no keepalived: Agent recovery starts it after boot.
 
 if [ -n "$SERVICE_TYPE" ]; then
     # ---- 单服务模式 ----
@@ -287,24 +215,18 @@ if [ -n "$SERVICE_TYPE" ]; then
             "${AGENT_PORT:-8080}" \
             "${CONFIG_PATH:-/etc/mihomo/config.yaml}"
         create_default_mihomo_config "${CONFIG_PATH:-/etc/mihomo/config.yaml}"
-        configure_supervisor_core mihomo "${CONFIG_PATH:-/etc/mihomo/config.yaml}"
-        set_supervisor_autostart /etc/supervisor/conf.d/agent-mihomo.conf true
-        set_supervisor_autostart /etc/supervisor/conf.d/mihomo.conf true
+        enable_core "mihomo=${CONFIG_PATH:-/etc/mihomo/config.yaml}"
     elif [ "$SERVICE_TYPE" = "mosdns" ]; then
         generate_agent_config "mosdns" \
             "${AGENT_NAME:-mosdns-agent}" \
             "${AGENT_PORT:-8080}" \
             "${CONFIG_PATH:-/etc/mosdns/config.yaml}"
         create_default_mosdns_config "${CONFIG_PATH:-/etc/mosdns/config.yaml}"
-        configure_supervisor_core mosdns "${CONFIG_PATH:-/etc/mosdns/config.yaml}"
-        set_supervisor_autostart /etc/supervisor/conf.d/agent-mosdns.conf true
-        set_supervisor_autostart /etc/supervisor/conf.d/mosdns.conf true
+        enable_core "mosdns=${CONFIG_PATH:-/etc/mosdns/config.yaml}"
     elif [ "$SERVICE_TYPE" = "oxidns" ]; then
         generate_agent_config "oxidns" "${AGENT_NAME:-oxidns-agent}" "${AGENT_PORT:-8082}" "${CONFIG_PATH:-/etc/oxidns/config.yaml}"
         create_default_oxidns_config "${CONFIG_PATH:-/etc/oxidns/config.yaml}"
-        configure_supervisor_core oxidns "${CONFIG_PATH:-/etc/oxidns/config.yaml}"
-        set_supervisor_autostart /etc/supervisor/conf.d/agent-oxidns.conf true
-        set_supervisor_autostart /etc/supervisor/conf.d/oxidns.conf true
+        enable_core "oxidns=${CONFIG_PATH:-/etc/oxidns/config.yaml}"
     else
         echo "Unsupported SERVICE_TYPE: $SERVICE_TYPE" >&2
         exit 1
@@ -327,39 +249,41 @@ else
     create_default_mosdns_config
     if [ "${ENABLE_OXIDNS:-false}" = "true" ]; then
         create_default_oxidns_config
-        configure_supervisor_core oxidns /etc/oxidns/config.yaml
+        enable_core oxidns=/etc/oxidns/config.yaml
     fi
-    set_supervisor_autostart /etc/supervisor/conf.d/agent-oxidns.conf "${ENABLE_OXIDNS:-false}"
-    set_supervisor_autostart /etc/supervisor/conf.d/oxidns.conf "${ENABLE_OXIDNS:-false}"
 
     # Mihomo
     if [ "${ENABLE_MIHOMO}" = "true" ]; then
         echo "Mihomo is enabled."
-        set_supervisor_autostart /etc/supervisor/conf.d/agent-mihomo.conf true
-        set_supervisor_autostart /etc/supervisor/conf.d/mihomo.conf true
+        enable_core mihomo
     else
         echo "Mihomo is disabled."
-        set_supervisor_autostart /etc/supervisor/conf.d/agent-mihomo.conf false
-        set_supervisor_autostart /etc/supervisor/conf.d/mihomo.conf false
     fi
 
     # MosDNS
     if [ "${ENABLE_MOSDNS}" = "true" ]; then
         echo "MosDNS is enabled."
-        set_supervisor_autostart /etc/supervisor/conf.d/agent-mosdns.conf true
-        set_supervisor_autostart /etc/supervisor/conf.d/mosdns.conf true
+        enable_core mosdns
     else
         echo "MosDNS is disabled."
-        set_supervisor_autostart /etc/supervisor/conf.d/agent-mosdns.conf false
-        set_supervisor_autostart /etc/supervisor/conf.d/mosdns.conf false
     fi
 
 fi
 
-chmod -R 755 /etc/supervisor
+# s6 definitions for this container: the enabled cores with their Agents;
+# a macvlan HA container also stops keepalived before them at shutdown.
+HA_FLAG=""
+if [ "${CONFIGFLOW_DNS_HA:-0}" = 1 ] && [ "${CONFIGFLOW_DNS_HA_NETWORK:-}" = macvlan ]; then
+    HA_FLAG=-macvlan-ha
+fi
+SAVED_IFS=$IFS
+IFS='
+'
+set -f
+# shellcheck disable=SC2086 # split CORES at newlines only
+/usr/local/bin/configflow-agent docker-config services $HA_FLAG $CORES
+set +f
+IFS=$SAVED_IFS
 
-echo "Log directory status:"
-ls -la /var/log/supervisor/ 2>/dev/null || true
-
-echo "Executing supervisord..."
+echo "Starting services (s6-overlay)..."
 exec "$@"

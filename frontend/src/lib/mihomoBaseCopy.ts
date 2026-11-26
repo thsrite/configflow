@@ -116,7 +116,7 @@ export const externalUiUrlHelp = settingHelp({
 export const dnsPresetHelp = settingHelp({
   what: '一次设置 Mihomo 自己解析域名所用的上游。「国内 DoH」与初始模板一致：default-nameserver、direct-nameserver 使用 IP 形式的阿里、腾讯 DoH，nameserver、proxy-server-nameserver 使用 doh.pub、阿里 DoH，并开启 respect-rules。「国内外分开解析」：国内和私有域名（geosite:cn,private）用国内 DoH，其他域名用 Google、Cloudflare DoH，并按规则经代理查询（respect-rules），直连域名也遵循该策略（direct-nameserver-follow-policy）。',
   recommend: '大多数国内网络用「国内 DoH」。境外域名常被污染、节点稳定时可选「国内外分开解析」。当前写法与两种预设都不同时显示「自定义」，可以逐项编辑各列表。',
-  effect: '切换预设只改 default-nameserver、nameserver、proxy-server-nameserver、direct-nameserver、respect-rules、direct-nameserver-follow-policy，并删除旧的 fallback、fallback-filter；nameserver-policy 只增删「geosite:cn,private」这一条（追加在最后），你自己写的其他条目（例如 +.115.com）原样保留，并且排在前面优先匹配。保存并发布后生效。',
+  effect: '切换预设只改 default-nameserver、nameserver、proxy-server-nameserver、direct-nameserver、respect-rules、direct-nameserver-follow-policy，并删除旧的 fallback、fallback-filter；nameserver-policy 只增删「geosite:cn,private」这一条（追加在最后），你自己写的其他条目（例如 +.example.org）原样保留，并且排在前面优先匹配。保存并发布后生效。',
   risk: '「国内外分开解析」依赖 GeoSite 数据（Mihomo 首次使用时自动下载）和可用节点：节点都不可用时境外域名无法解析。DNS 上游不能指向本机（127.0.0.1、localhost、本机 OxiDNS）或 system，否则会形成解析循环，保存会被拒绝。',
 })
 export const DNS_LIST_COPY: Record<string, { label: string; help: string }> = {
@@ -181,10 +181,10 @@ export const fakeIpFilterModeField: BaseFieldDef = {
   }),
 }
 export const fakeIpFilterField: BaseFieldDef = {
-  path: ['dns', 'fake-ip-filter'], label: 'Fake-IP 过滤列表', type: 'list', wide: true, placeholder: '*.lan\n+.pool.ntp.org',
+  path: ['dns', 'fake-ip-filter'], label: 'Fake-IP 过滤列表', type: 'list', wide: true, placeholder: '*.lan\n+.ntp.example.com',
   help: settingHelp({
     what: 'blacklist 方式下，这些域名不使用 Fake-IP、直接返回真实 IP。每行一个，支持 +.example.com、*.lan、rule-set:名称、geosite:名称 等写法。',
-    recommend: '局域网域名（*.lan、*.local）、对时服务器（+.pool.ntp.org、time.*.com）、联网检测、游戏主机等需要真实地址的服务。',
+    recommend: '填入需要真实地址的服务域名，例如局域网域名（*.lan、*.local）、对时服务器、联网检测和游戏主机。对时服务器可参照 +.ntp.example.com 的写法，填写实际使用的域名。',
     effect: '保存并发布后生效。清空会删除该项，改用 Mihomo 自带的默认名单。',
     risk: '写入此项会替换 Mihomo 自带的默认名单。列入的域名返回真实 IP，在网关方案中如果该 IP 不在接管范围，连接会直连。',
   }),
@@ -200,7 +200,7 @@ export const snifferEnableField: BaseFieldDef = {
   }),
 }
 export const skipDomainField: BaseFieldDef = {
-  path: ['sniffer', 'skip-domain'], label: '跳过嗅探的域名', type: 'list', wide: true, placeholder: '+.push.apple.com',
+  path: ['sniffer', 'skip-domain'], label: '跳过嗅探的域名', type: 'list', wide: true, placeholder: '+.push.example.com',
   help: settingHelp({
     what: '嗅探到这些域名时不改写连接目标，保持原来的连接方式。每行一个，支持 +.example.com 等写法。',
     recommend: '苹果推送、微信、远程控制等被嗅探改写后会异常的服务。初始模板已列出常见项。',
@@ -208,7 +208,7 @@ export const skipDomainField: BaseFieldDef = {
   }),
 }
 export const forceDomainField: BaseFieldDef = {
-  path: ['sniffer', 'force-domain'], label: '强制嗅探的域名', type: 'list', wide: true, placeholder: '+.v2ex.com',
+  path: ['sniffer', 'force-domain'], label: '强制嗅探的域名', type: 'list', wide: true, placeholder: '+.example.org',
   help: settingHelp({
     what: '无论连接是否已有域名，都对这些域名嗅探并按嗅探结果改写目标。每行一个。',
     recommend: '通常留空或只列少数需要按真实域名分流的网站。',

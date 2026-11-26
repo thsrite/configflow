@@ -22,7 +22,7 @@ func haWriteTestInstallation(t *testing.T, directory, identity string) {
 	if err := os.WriteFile(filepath.Join(directory, haInstallationIdentityFile), []byte(identity+"\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	data, err := json.Marshal(map[string]interface{}{"protocol": 2, "ready": true, "installation_id": identity})
+	data, err := json.Marshal(map[string]any{"protocol": 2, "ready": true, "installation_id": identity})
 	if err != nil {
 		t.Fatal(err)
 	}

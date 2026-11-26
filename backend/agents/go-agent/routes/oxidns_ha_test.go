@@ -106,7 +106,7 @@ func (f *haFixture) writeOxiDNS(t *testing.T, listen string) {
 	}
 }
 
-func (f *haFixture) preview(t *testing.T, spec OxiDNSHASpec) map[string]interface{} {
+func (f *haFixture) preview(t *testing.T, spec OxiDNSHASpec) map[string]any {
 	t.Helper()
 	body, _ := json.Marshal(spec)
 	recorder := httptest.NewRecorder()
@@ -114,7 +114,7 @@ func (f *haFixture) preview(t *testing.T, spec OxiDNSHASpec) map[string]interfac
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("preview status %d: %s", recorder.Code, recorder.Body.String())
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +271,7 @@ func TestOxiDNSHAPreviewBlockers(t *testing.T) {
 			os.WriteFile(haMainConfigPath(), []byte(haBlockBegin+"\ninclude x\n"), 0644)
 		}, []string{"标记不完整"}},
 		{"not-root", func(_ *testing.T, _ *haFixture, _ *OxiDNSHASpec) { haGeteuid = func() int { return 1000 } }, []string{"root 权限"}},
-		{"container", func(_ *testing.T, f *haFixture, _ *OxiDNSHASpec) { f.cfg.ServiceManager = "supervisor" }, []string{"未显式启用 DNS 高可用"}},
+		{"container", func(_ *testing.T, f *haFixture, _ *OxiDNSHASpec) { f.cfg.ServiceManager = "s6" }, []string{"未显式启用 DNS 高可用"}},
 		{"not-linux", func(_ *testing.T, _ *haFixture, _ *OxiDNSHASpec) { haOS = "darwin" }, []string{"仅支持 Linux"}},
 		{"unsafe-script-path", func(_ *testing.T, _ *haFixture, _ *OxiDNSHASpec) {
 			haExecutable = func() (string, error) { return "/opt/it's/agent", nil }
@@ -428,7 +428,10 @@ func TestOxiDNSHAApplyIsIdempotentAndRemoveRestores(t *testing.T) {
 		t.Fatal("reapply lost ownership or original service state")
 	}
 
+	// Removal verifies that the virtual IP left the host; stopping keepalived
+	// releases it.
 	f.commands = nil
+	f.addresses = `[{"ifname":"eth0","addr_info":[{"local":"192.168.0.20","prefixlen":24}]}]`
 	removed, err := removeOxiDNSHA(f.cfg)
 	if err != nil || !removed {
 		t.Fatalf("remove: %v %v", removed, err)
@@ -609,8 +612,8 @@ func TestOxiDNSHAStatus(t *testing.T) {
 	f := newHAFixture(t)
 	f.writeOxiDNS(t, "127.0.0.1:1") // the health probe gets a fast refusal
 	status := haStatus(f.cfg)
-	runtime := status["runtime"].(map[string]interface{})
-	if status["managed"] != nil || status["protocol"] != 1 || runtime["role"] != "unknown" || runtime["keepalived_running"] != false || runtime["healthy"] != false {
+	runtime := status.Runtime
+	if status.Managed != nil || status.Protocol != 1 || runtime.Role != "unknown" || runtime.KeepalivedRunning || runtime.Healthy {
 		t.Fatalf("unmanaged status: %#v", status)
 	}
 	f.writeOxiDNS(t, "0.0.0.0:53")
@@ -619,17 +622,17 @@ func TestOxiDNSHAStatus(t *testing.T) {
 	}
 	f.writeOxiDNS(t, "0.0.0.0:1")
 	status = haStatus(f.cfg)
-	runtime = status["runtime"].(map[string]interface{})
-	managed := status["managed"].(map[string]interface{})
-	if managed["active"] != true || runtime["role"] != "backup" || runtime["vip_present"] != false || runtime["keepalived_running"] != true || status["error"] != "" {
+	runtime = status.Runtime
+	managed := status.Managed
+	if managed == nil || !managed.Active || runtime.Role != "backup" || runtime.VIPPresent || !runtime.KeepalivedRunning || status.Error != "" {
 		t.Fatalf("backup status: %#v", status)
 	}
 	f.addresses = `[{"ifname":"eth0","addr_info":[{"local":"192.168.0.20","prefixlen":24},{"local":"192.168.0.2","prefixlen":24}]}]`
-	if runtime := haStatus(f.cfg)["runtime"].(map[string]interface{}); runtime["role"] != "master" || runtime["vip_present"] != true {
+	if runtime := haStatus(f.cfg).Runtime; runtime.Role != "master" || !runtime.VIPPresent {
 		t.Fatalf("master status: %#v", runtime)
 	}
 	os.Remove(haConfigPath())
-	if status := haStatus(f.cfg); !strings.Contains(status["error"].(string), "缺失或与记录不一致") {
+	if status := haStatus(f.cfg); !strings.Contains(status.Error, "缺失或与记录不一致") {
 		t.Fatalf("drift not reported: %#v", status)
 	}
 }
@@ -730,7 +733,7 @@ func TestOxiDNSHARoutesAndCapabilities(t *testing.T) {
 			mux.ServeHTTP(recorder, request)
 			return recorder
 		}
-		var capabilities map[string]interface{}
+		var capabilities map[string]any
 		json.Unmarshal(get("/api/capabilities").Body.Bytes(), &capabilities)
 		_, advertised := capabilities["oxidns_ha_protocols"]
 		status := get("/api/oxidns-ha").Code

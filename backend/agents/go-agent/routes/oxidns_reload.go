@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -43,12 +42,12 @@ type oxidnsReloader struct {
 	client   *http.Client
 }
 
-func readYAMLDocument(name string) (map[string]interface{}, []byte, error) {
+func readYAMLDocument(name string) (map[string]any, []byte, error) {
 	data, err := os.ReadFile(name)
 	if err != nil {
 		return nil, nil, err
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err = yaml.Unmarshal(data, &doc); err != nil {
 		return nil, nil, err
 	}
@@ -68,7 +67,7 @@ func prepareOxiDNSReload(cfg *Config, s *DeploymentState, running bool) *oxidnsR
 		return nil
 	}
 	skip := func(reason string) *oxidnsReloader {
-		log.Printf("OxiDNS release %s: native reload unavailable (%s)", s.DeploymentID, reason)
+		logger.Infof("OxiDNS release %s: native reload unavailable (%s)", s.DeploymentID, reason)
 		return nil
 	}
 	api, apiErr := loadOxiDNSMonitorConfig(cfg)

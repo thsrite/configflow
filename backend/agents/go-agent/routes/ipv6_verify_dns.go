@@ -181,8 +181,8 @@ func ipv6LocalDNSListener(raw string) (string, error) {
 	return net.JoinHostPort(host, port), nil
 }
 
-func ipv6VerifyDNS(ctx context.Context, report *ipv6VerifyReport, doc map[string]interface{}, host string) {
-	dns, _ := doc["dns"].(map[string]interface{})
+func ipv6VerifyDNS(ctx context.Context, report *ipv6VerifyReport, doc map[string]any, host string) {
+	dns, _ := doc["dns"].(map[string]any)
 	listen, _ := dns["listen"].(string)
 	address, err := ipv6LocalDNSListener(listen)
 	if dns["enable"] != true || err != nil || net.ParseIP(host) != nil {

@@ -91,7 +91,7 @@
               <Input v-model="search" class="min-h-11 pl-9" aria-label="搜索设备" placeholder="搜索名称、IP 或 MAC…" />
             </div>
             <div v-if="tab === 'added'" class="flex min-w-0 items-center gap-1 max-sm:w-full sm:ml-auto">
-              <Input id="client-device-ip" v-model="newIP" :disabled="previewing" aria-label="手动添加 IP / 网段" class="min-h-11 min-w-0 flex-1 font-mono sm:w-60" :placeholder="phone ? 'IP / 网段' : '192.168.50.0/24 或 IPv6'"
+              <Input id="client-device-ip" v-model="newIP" :disabled="previewing" aria-label="手动添加 IP / 网段" class="min-h-11 min-w-0 flex-1 font-mono sm:w-60" :placeholder="phone ? 'IP / 网段' : '198.51.100.0/24 或 IPv6'"
                 @keydown.enter.prevent="add(newIP)" />
               <FieldHelp label="手动添加 IP / 网段" :text="rangeHelp" />
               <Button variant="outline" class="min-h-11" :disabled="previewing || !newIP.trim()" @click="add(newIP)"><Plus class="size-4" />添加</Button>
@@ -346,7 +346,7 @@ const modeHelp = [
   '同一台设备被多条设置覆盖时，范围越小越优先：单个 IP 优先于网段，小网段优先于大网段，与添加顺序无关。',
 ].join('\n\n')
 const rangeHelp = [
-  '支持单个 IPv4 / IPv6 和 CIDR 网段，例如 192.168.50.50、192.168.50.0/24，网段会整理为标准写法。',
+  '支持单个 IPv4 / IPv6 和 CIDR 网段，例如 198.51.100.50、198.51.100.0/24，网段会整理为标准写法。',
   '设备需使用 OxiDNS 作为 DNS，且 OxiDNS 能识别真实客户端 IP；填写地址不会修改设备的 DNS。',
 ].join('\n\n')
 const foundHelp = computed(() => (policyEditable.value ? '添加后默认设为智能分流，名称取设备主机名。' : '添加时只写入名称（取设备主机名），不设置 DNS 策略。')
@@ -715,7 +715,7 @@ function add(value: string) {
   try {
     ip = normalizeClientRange(ip)
   } catch {
-    notify.error('请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 192.168.50.0/24。')
+    notify.error('请输入有效的客户端 IPv4、IPv6 或 CIDR 网段，例如 198.51.100.0/24。')
     return
   }
   newIP.value = ''

@@ -12,7 +12,7 @@ func TestLinuxGatewayRequiresCoreThatUnderstandsSelectiveRouting(t *testing.T) {
 	original := gatewayCoreVersion
 	t.Cleanup(func() { gatewayCoreVersion = original })
 	config := &Config{ServiceType: "mihomo", ServiceBinary: "/custom/mihomo"}
-	doc := map[string]interface{}{"x-configflow-linux-gateway": map[string]interface{}{"enabled": true, "version": 1}}
+	doc := map[string]any{"x-configflow-linux-gateway": map[string]any{"enabled": true, "version": 1}}
 	for _, test := range []struct {
 		output string
 		accept bool
@@ -77,8 +77,8 @@ func TestLinuxGatewayCoreCheckIsOptIn(t *testing.T) {
 		t.Fatal("disabled gateway caused a core command")
 		return "", nil
 	}
-	for _, doc := range []map[string]interface{}{
-		{}, {"x-configflow-linux-gateway": map[string]interface{}{"enabled": false}},
+	for _, doc := range []map[string]any{
+		{}, {"x-configflow-linux-gateway": map[string]any{"enabled": false}},
 	} {
 		if err := checkLinuxGatewayCore(&Config{}, doc); err != nil {
 			t.Fatal(err)

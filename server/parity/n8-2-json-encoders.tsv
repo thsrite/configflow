@@ -1,0 +1,81 @@
+path	line	encoder	category	function	decision
+internal/agents/metrics/history.go	333	Compact	file content	func parseLines(lines []string, limit time.Time) ([]point, int)	generated/exported/persisted JSON content
+internal/agents/metrics/history.go	430	Compact	file content	func (h *History) readLegacy(agentID string, limit time.Time) ([]point, error)	generated/exported/persisted JSON content
+internal/agents/metrics/history.go	605	Compact	file content	func (h *History) AddMetrics(agentID string, systemMetrics any) (bool, error)	generated/exported/persisted JSON content
+internal/agents/monitor/cache.go	202	Default	Agent payload	func CacheCall(ctx context.Context, m Manager, agentID, method string, tags any) (*jsonx.Object, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/agents/monitor/metrics.go	411	Compact	transient key	func identity(row *jsonx.Object, labels []string) string	typed bridge / comparison; no persisted identity
+internal/agents/monitor/monitor.go	445	Encode	persisted identity	func target(agent *jsonx.Object) (string, error)	D2: migrate to Go-native encoding in owning consumer step; warm rule caches at switch
+internal/agents/monitor/monitor.go	514	Compact	transient key	func publicUpstreams(rows []any, labels []any) ([]any, error)	typed bridge / comparison; no persisted identity
+internal/agents/monitor/monitor.go	521	Encode	persisted identity	func publicUpstreams(rows []any, labels []any) ([]any, error)	D2: migrate to Go-native encoding in owning consumer step; warm rule caches at switch
+internal/agents/monitor/monitor.go	526	Compact	transient key	func publicUpstreams(rows []any, labels []any) ([]any, error)	typed bridge / comparison; no persisted identity
+internal/agents/monitor/monitor.go	619	Compact	transient key	func overviewSnapshot(ctx context.Context, m Manager, agent *jsonx.Object, dashboard bool) (*snapshotResult, error)	typed bridge / comparison; no persisted identity
+internal/agents/monitor/monitor.go	763	Compact	transient key	func compactKey(parts ...any) string	typed bridge / comparison; no persisted identity
+internal/agents/monitor/panel.go	805	Default	Agent payload	func PanelCall(ctx context.Context, m Manager, agentID, resource, method string, args [][2]string, body any, minVersion string) (*jsonx.Object, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/agents/monitor/ruleupdate.go	264	Default	Agent payload	func RuleUpdateCall(ctx context.Context, m Manager, agentID, method string, paths any) (*jsonx.Object, int, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/agents/monitor/state.go	366	Compact	file content	func (s *StateStore) CompareAndSet(agentID, expected string, replacement *jsonx.Object, verify func() error) (*jsonx.Object, error)	generated/exported/persisted JSON content
+internal/agents/remote.go	118	Default	Agent payload	func jsonBody(value any) (http.Header, []byte, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/agents/remote.go	237	Encode	Agent payload	func (m *Manager) PushConfigToAgent(ctx context.Context, agentID, configContent string, push PushConfig) (*jsonx.Object, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/agents/trafficstore/store.go	386	Encode	Agent payload	func cacheableStatus(status any) bool	status serialization-size validation for memory cache; not an identity
+internal/agents/upgrades/address.go	245	Default	Agent payload	func ask(m *agents.Manager, agent *jsonx.Object, host, method string, body *jsonx.Object) (int, *jsonx.Object, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/agents/upgrades/testhooks.go	57	Default	Agent payload	func AgentResponse(payload any, status int) *agents.Response	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/agents/upgrades/upgrades.go	89	Default	Agent payload	func request(ctx context.Context, m *agents.Manager, agent *jsonx.Object, method, path string, payload *jsonx.Object) (*agents.Response, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/api/agents/agents.go	389	Encode	Agent payload	func ValidateSystemMetrics(value any) (bool, error)	system-metrics serialization-size validation; not response bytes or identity
+internal/api/nodes/adapter.go	18	Compact	stored document	func decodeStored(value any, target any) error	temporary storage/typed DTO bridge (not identity)
+internal/api/nodes/adapter.go	103	Compact	stored document	func parseLine(ctx context.Context, line string) json.RawMessage	temporary storage/typed DTO bridge (not identity)
+internal/api/settings/backup_adapter.go	36	Compact	stored document	func connectionSettings(c *httpx.Ctx, inheritRetention bool) (webdav.Settings, *httpx.Response, error)	temporary storage/typed DTO bridge (not identity)
+internal/api/settings/backup_adapter.go	46	Compact	stored document	func retentionSettings(settings *jsonx.Object) (any, any)	temporary storage/typed DTO bridge (not identity)
+internal/api/settings/backup_adapter.go	47	Compact	stored document	func retentionSettings(settings *jsonx.Object) (any, any)	temporary storage/typed DTO bridge (not identity)
+internal/api/subscriptions/adapter.go	45	Compact	stored document	func native(value any, target any) error	temporary storage/typed DTO bridge (not identity)
+internal/auth/jwt.go	46	Encode	Agent payload	func EncodeHS256(claims *jsonx.Object, key string) (string, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/discovery/bridge.go	27	Compact	response	func decode(v any, out any) error	response or response DTO bridge
+internal/discovery/bridge.go	369	Compact	response	func knownService(host string) json.RawMessage	response or response DTO bridge
+internal/discovery/bridge.go	382	Compact	response	func publicServices() json.RawMessage	response or response DTO bridge
+internal/discovery/bridge.go	511	Compact	response	func exitInfo(rows []RegionResult) (json.RawMessage, error)	response or response DTO bridge
+internal/discovery/bridge.go	523	Compact	response	func serviceMatrix(rows []RegionResult) (json.RawMessage, error)	response or response DTO bridge
+internal/discovery/bridge.go	539	Compact	response	func classifyRegion(result *RegionResult, url string) (json.RawMessage, error)	response or response DTO bridge
+internal/health/dns.go	371	Default	Agent payload	func CheckSettings(ctx context.Context, value any) (*jsonx.Object, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/health/latency.go	123	Encode	persisted identity	func (c *candidates) add(node any, identity []any) error	D2: source key is stored in node-latency history/results; owning health step migrates it
+internal/health/latency.go	243	Encode	Agent payload	func runProbe(ctx context.Context, proxies []*jsonx.Object, options *jsonx.Object) (*jsonx.Object, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/installer/aio.go	249	Encode	file content	func GenerateGoAIOInstallScript(o AIOOptions) (string, error)	generated/exported/persisted JSON content
+internal/installer/docker_ha_compose.go	32	Encode	persisted identity	func pyJSONHash(value any, compact bool) (string, error)	D2 inventory: HA installation owner labels and compact Agent identity; HR installer migration owns adoption/reinstall compatibility
+internal/installer/docker_ha_compose.go	87	Default	file content	func composePrepare(params, request *jsonx.Object, owner, project string, compose *jsonx.Object) (string, error)	generated/exported/persisted JSON content
+internal/installer/docker_ha_compose.go	223	Encode	file content	func GenerateBundle(params, request *jsonx.Object, enrollment *Enrollment) (string, *jsonx.Object, error)	generated/exported/persisted JSON content
+internal/installer/docker_ha_compose_direct.go	109	Encode	file content	func GenerateDirect(params, request *jsonx.Object, enrollment *Enrollment) (string, *jsonx.Object, error)	generated/exported/persisted JSON content
+internal/installer/docker_ha_compose_direct.go	124	Encode	file content	func GenerateDirect(params, request *jsonx.Object, enrollment *Enrollment) (string, *jsonx.Object, error)	generated/exported/persisted JSON content
+internal/installer/docker_ha_enrollment.go	215	Encode	persisted identity	func IssueEnrollment(dataDir string, body *jsonx.Object, profileID string) (*Enrollment, error)	D2 inventory: enrollment spec SHA-256 selects on-disk .index; N8-10 installer owner must account for session reuse
+internal/installer/docker_ha_enrollment.go	296	Default	file content	func IssueEnrollment(dataDir string, body *jsonx.Object, profileID string) (*Enrollment, error)	generated/exported/persisted JSON content
+internal/installer/docker_ha_enrollment.go	564	Encode	file content	func BootstrapCommand(enrollment *Enrollment, request *jsonx.Object) (string, error)	generated/exported/persisted JSON content
+internal/installer/docker_ha_guide.go	561	Encode	persisted identity	func newInstall(params, request *jsonx.Object, enrollment *Enrollment) (string, string, error)	D2 inventory: .ha-install and container ownership label; HR installer migration owns adoption/reinstall compatibility
+internal/installer/docker_ha_guide.go	839	Default	file content	func migration(params, request *jsonx.Object) (string, string, string, error)	generated/exported/persisted JSON content
+internal/installer/goagent.go	195	Encode	file content	func GenerateGoAgentInstallScript(o GoAgentOptions) (string, error)	generated/exported/persisted JSON content
+internal/jsonstore/jsonstore.go	78	Compact	file content	func (s *Store) Write(id string, data any, verifySignature bool) (*Signature, error)	generated/exported/persisted JSON content
+internal/mosdns/archive.go	72	Compact	stored document	func viaJSON(value any, target any) error	typed settings/catalog DTO bridge; not an archive writer
+internal/notifications/notifications.go	423	Encode	persisted identity	func RouterSignature(config, router *jsonx.Object) string	D2: migrate to Go-native encoding in owning consumer step; warm rule caches at switch
+internal/notifications/store.go	52	Encode	persisted identity	func Fingerprint(key string, item *jsonx.Object) string	D2: migrate to Go-native encoding in owning consumer step; warm rule caches at switch
+internal/notifications/store.go	129	Compact	file content	func Transaction(dataDir string, fn func(items *jsonx.Object) error) error	notification state file
+internal/provider/delivery.go	109	Encode	file content	func Capture(profileID string, main, profile *jsonx.Object) (*Snapshot, error)	generated/exported/persisted JSON content
+internal/provider/response.go	141	Encode	transient key	func configDigest(configData any) string	single-flight config digest; retained only in memory
+internal/repo/compat_oxidns.go	90	Compact	stored document	func validateBindings(value any) error	temporary storage/typed DTO bridge (not identity)
+internal/repo/files.go	151	Indent2	file content	func fileJSON(data any) ([]byte, error)	generated/exported/persisted JSON content
+internal/repo/importexport.go	281	Encode	transient key	func sortedJSON(value any) string	typed bridge / comparison; no persisted identity
+internal/repo/importexport.go	441	Encode	stored document	func scopeLegacyDialers(source *jsonx.Object) (*jsonx.Object, error)	inner JSON text stored in node proxy_string after dialer rewrite
+internal/repo/merge.go	70	Encode	transient key	func listItemKey(value any) string	typed bridge / comparison; no persisted identity
+internal/repo/store_rows.go	91	Compact	stored document	func encodeRows(doc *jsonx.Object, base *store.Document) (*store.Document, error)	temporary storage/typed DTO bridge (not identity)
+internal/repo/store_rows.go	100	Compact	stored document	func encodeRows(doc *jsonx.Object, base *store.Document) (*store.Document, error)	temporary storage/typed DTO bridge (not identity)
+internal/repo/store_rows.go	172	Compact	stored document	func encodeMeta(meta *jsonx.Object) (map[string]json.RawMessage, error)	temporary storage/typed DTO bridge (not identity)
+internal/routers/wire.go	17	Compact	stored document	func redactHook(routers any) any	temporary storage/typed DTO bridge (not identity)
+internal/rulefetch/pystr.go	69	Encode	file content	func jsonDumps(value string, ascii bool) string	quoted rule/YAML output strings; not an identity
+internal/rules/groups.go	326	Compact	transient key	func sameJSON(a, b any) bool	typed bridge / comparison; no persisted identity
+internal/rules/groups.go	327	Compact	transient key	func sameJSON(a, b any) bool	typed bridge / comparison; no persisted identity
+internal/rules/matchercache.go	416	Sorted	persisted identity	func (c *MatcherCache) signature(config *jsonx.Object, rulesDir string) ([32]byte, map[string]*fileStamp, map[readKey]string)	D2: migrate to Go-native encoding in owning consumer step; warm rule caches at switch
+internal/rules/ruleutils.go	77	Encode	persisted identity	func RuleCacheFilename(rule *jsonx.Object) string	D2: migrate to Go-native encoding in owning consumer step; warm rule caches at switch
+internal/subs/hosts.go	310	Encode	persisted identity	func HostsDigest(record *jsonx.Object) string	D2: migrate to Go-native encoding in owning consumer step; warm rule caches at switch
+internal/subs/hosts.go	956	Encode	transient key	func LogReport(profileID string, report *jsonx.Object)	per-profile log dedup digest; bounded in-memory map only
+internal/substore/httpclient.go	380	Default	Agent payload	func (RequestsClient) Do(ctx context.Context, request *Request) (*Response, error)	outbound HTTP/JWT/probe payload (includes non-Agent peers)
+internal/substore/runtime.go	246	Default	file content	func (r *Runtime) write(pairs ...any) error	generated/exported/persisted JSON content
+internal/taskstatus/taskstatus.go	116	Compact	file content	func write(path string, value *jsonx.Object) error	generated/exported/persisted JSON content
+internal/webdav/adapter.go	53	Indent2	file content	func (s repositorySource) Snapshot(ctx context.Context) (Snapshot, error)	generated/exported/persisted JSON content
+internal/webdav/adapter.go	58	Compact	stored document	func (s repositorySource) Snapshot(ctx context.Context) (Snapshot, error)	backup settings DTO bridge from stored document
+internal/webdav/adapter.go	126	Compact	transient key	func registerHook(worker *Worker)	before/after comparison for commit debounce
+internal/webdav/adapter.go	131	Compact	transient key	func registerHook(worker *Worker)	before/after comparison for commit debounce
+tools/proddiff/generator/main.go	87	Compact	file content	func encodeLegacy(value []any, err error) (string, error)	test harness generated comparison artifact

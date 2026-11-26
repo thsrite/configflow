@@ -4,7 +4,7 @@ import { AxiosError, AxiosHeaders, type AxiosResponse, type InternalAxiosRequest
 import DomainDiscovery from '@/views/DomainDiscovery.vue'
 import api from '@/api'
 import { scopedRequests, setActiveProfileId } from '@/profileContext'
-import { notify } from '@/lib/feedback'
+import { confirmState, notify, settleConfirm } from '@/lib/feedback'
 
 vi.mock('@/router', () => ({ default: { push: vi.fn() } }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
@@ -24,7 +24,8 @@ const response = (config: InternalAxiosRequestConfig, data: unknown): AxiosRespo
 })
 const agent = (overrides: Record<string, unknown> = {}) => ({
   id: 'collector', name: 'Existing Mihomo', enabled: true, supported: true, probe_supported: true,
-  status: 'running', version: '1.6.0-go', mihomo_version: '1.19.32', last_report: '2026-10-11T12:00:00Z', ...overrides
+  status: 'running', version: '1.6.0-go', mihomo_version: '1.19.32', last_report: '2026-10-11T12:00:00Z',
+  store_state: 'ok', store_message: '', ...overrides
 })
 const agentsPayload = (agents: unknown[] = [agent()]) => ({
   agents, min_agent_version: '1.6.0-go', min_probe_agent_version: '1.6.0-go'
@@ -80,6 +81,7 @@ beforeEach(() => {
     if (config.url === '/domain-discovery/history') return response(config, { items: [] })
     if (config.url === '/domain-discovery/region') return response(config, { enabled: false, domains: {}, services: [] })
     if (config.url === '/agents/collector/domain-discovery') return response(config, { success: true })
+    if (config.url === '/agents/collector/domain-discovery/clear') return response(config, { success: true })
     throw new Error(`Unexpected request: ${config.url}`)
   }
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
@@ -140,7 +142,7 @@ describe('domain discovery request and empty states', () => {
     expect(requestCount('agents')).toBe(1)
   })
 
-  it.each(['missing ruleset', 'inactive ruleset', 'unwritable ruleset', 'missing probe path', 'collector failed', 'unsupported collector'])('keeps configuration needing attention expanded: %s', async issue => {
+  it.each(['missing ruleset', 'inactive ruleset', 'unwritable ruleset', 'missing probe path', 'collector failed', 'unsupported collector', 'damaged store'])('keeps configuration needing attention expanded: %s', async issue => {
     const data = settingsPayload(true)
     if (issue === 'missing ruleset') data.direct = null
     if (issue === 'inactive ruleset') data.proxy!.active = false
@@ -149,10 +151,59 @@ describe('domain discovery request and empty states', () => {
     settingsHandler = async config => response(config, data)
     if (issue === 'collector failed') agentHandler = async config => response(config, agentsPayload([agent({ status: 'unreachable' })]))
     if (issue === 'unsupported collector') agentHandler = async config => response(config, agentsPayload([agent({ supported: false })]))
+    if (issue === 'damaged store') agentHandler = async config => response(config, agentsPayload([agent({
+      status: 'no_data', last_report: null, store_state: 'damaged',
+      store_message: '域名数据文件已损坏，上报已暂停。清除后可恢复采集（已采集数据将丢失）。'
+    })]))
     const wrapper = await render()
     expect(wrapper.find('button[aria-controls="domain-discovery-configuration"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('采集设备')
     expect(wrapper.text()).toContain('默认规则集')
+  })
+
+  it('shows damaged traffic store alert with one-click clear and recovery', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const damagedMessage = '域名数据文件已损坏，上报已暂停。清除后可恢复采集（已采集数据将丢失）。'
+    let damaged = true
+    agentHandler = async config => response(config, agentsPayload([agent(damaged ? {
+      status: 'no_data', last_report: null, mihomo_version: '',
+      store_state: 'damaged', store_message: damagedMessage
+    } : {
+      status: 'no_data', last_report: null, mihomo_version: '',
+      store_state: 'ok', store_message: ''
+    })]))
+    const wrapper = await render()
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain(damagedMessage)
+    expect(wrapper.text()).toContain('上报已暂停')
+    expect(wrapper.find('button[aria-label="清除 Existing Mihomo 已采集的数据"]').exists()).toBe(false)
+
+    // Damaged agent does not run useless 15s first-report polling until cleared.
+    await vi.advanceTimersByTimeAsync(30000)
+    expect(requestCount('agents')).toBe(1)
+
+    // Cancelling confirmation keeps the damaged alert and sends no clear request.
+    await click(wrapper, '清除并恢复')
+    expect(confirmState.open).toBe(true)
+    expect(confirmState.title).toBe('清除损坏的域名数据')
+    expect(confirmState.confirmText).toBe('清除并恢复')
+    expect(confirmState.danger).toBe(true)
+    expect(confirmState.description).toContain('Existing Mihomo')
+    expect(confirmState.description).toContain('历史域名数据将丢失')
+    settleConfirm('cancel')
+    await flushPromises()
+    expect(requests.some(item => item.url === '/agents/collector/domain-discovery/clear')).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+
+    // Confirming clears the file, reloads agents/domains, and restores normal waiting state.
+    damaged = false
+    await click(wrapper, '清除并恢复')
+    expect(confirmState.open).toBe(true)
+    settleConfirm('confirm')
+    await flushPromises()
+    expect(requests.some(item => item.url === '/agents/collector/domain-discovery/clear')).toBe(true)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('等待首次上报')
   })
 
   it('reveals retained settings when a refresh fails instead of leaving the error inside a collapsed section', async () => {

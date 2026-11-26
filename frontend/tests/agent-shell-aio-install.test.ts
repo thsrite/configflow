@@ -49,7 +49,7 @@ beforeEach(async () => {
   vi.mocked(profileApi.list).mockResolvedValue({ data: [{ id: 'default', name: 'Default' }] } as any)
   vi.mocked(agentApi.generateInstallCommand).mockResolvedValue(commandResponse('#!/bin/sh\necho installed') as any)
   vi.mocked(agentApi.generateCoreInstallCommand).mockResolvedValue(commandResponse('#!/bin/sh\n# ConfigFlow core installer interface: 1\necho cores-installed') as any)
-  vi.mocked(api.get).mockResolvedValue({ data: 'docker output' } as any)
+  vi.mocked(api.get).mockResolvedValue({ data: { compose: 'docker compose output', run: 'docker run output' } } as any)
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/agents', component: { render: () => null } }] })
   await router.push('/agents')
   await router.isReady()
@@ -517,8 +517,12 @@ describe('Shell Mihomo + OxiDNS installation', () => {
     expect(document.getElementById('oxidns-agent-port')).not.toBeNull()
     await click('生成 Docker 部署命令')
     expect(api.get).toHaveBeenCalledWith('/agents/docker-agent-compose', { params: expect.objectContaining({
-      enable_mihomo: true, enable_mosdns: false, enable_oxidns: true, mihomo_port: 8080, oxidns_port: 8082
+      format: 'both', enable_mihomo: true, enable_mosdns: false, enable_oxidns: true, mihomo_port: 8080, oxidns_port: 8082
     }) })
+    expect(api.get).toHaveBeenCalledTimes(1)
+    const commands = [...document.querySelectorAll<HTMLTextAreaElement>('[aria-label="一键安装命令"] textarea')].map(element => element.value)
+    expect(commands).toContain('docker compose output')
+    expect(commands).toContain('docker run output')
     expect(agentApi.generateInstallCommand).not.toHaveBeenCalled()
   })
 })
@@ -540,13 +544,12 @@ describe('Docker OxiDNS HA installation', () => {
     expect(document.body.textContent).toContain('独立的高可用容器')
     await input('agent-ip', '192.168.50.20')
     await click('生成 Docker 部署命令')
-    for (const endpoint of ['compose', 'run']) {
-      expect(api.get).toHaveBeenCalledWith(`/agents/docker-agent-${endpoint}`, { params: expect.objectContaining({
+    expect(api.get).toHaveBeenCalledTimes(1)
+    expect(api.get).toHaveBeenCalledWith('/agents/docker-agent-compose', { params: expect.objectContaining({
         network_mode: 'host', agent_ip: '192.168.50.20', enable_dns_ha: true,
         enable_mihomo: false, enable_mosdns: false, enable_oxidns: true,
         ha_host_id_path: '/etc/machine-id',
       }) })
-    }
     const params = vi.mocked(api.get).mock.calls.at(-1)![1]!.params
     expect(params).not.toHaveProperty('ha_parent')
     expect(params).not.toHaveProperty('ha_subnet')
@@ -578,7 +581,7 @@ describe('Docker OxiDNS HA installation', () => {
     await input('docker-ha-subnet', '192.168.50.0/24')
     await input('docker-ha-gateway', '192.168.50.1')
     await click('生成 Docker 部署命令')
-    expect(api.get).toHaveBeenCalledWith('/agents/docker-agent-run', { params: expect.objectContaining({
+    expect(api.get).toHaveBeenCalledWith('/agents/docker-agent-compose', { params: expect.objectContaining({
       network_mode: 'macvlan', ha_parent: 'enp1s0', ha_subnet: '192.168.50.0/24', ha_gateway: '192.168.50.1',
     }) })
   })

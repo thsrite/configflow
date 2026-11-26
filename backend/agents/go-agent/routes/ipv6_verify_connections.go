@@ -71,7 +71,7 @@ func ipv6VerifyConnectionsHandler(cfg *Config, w http.ResponseWriter, r *http.Re
 		RequestID string `json:"request_id"`
 	}
 	if decodeIPv6Request(w, r, &request) != nil || (request.SourceIP != "" && net.ParseIP(request.SourceIP) == nil) || len(request.Host) > 253 || !ipv6VerifyDomain.MatchString(request.Host) || (request.RequestID != "" && !ipv6VerifyRequestID.MatchString(request.RequestID)) || !ipv6VerifySupported(cfg) || cfg.ServiceType != "mihomo" {
-		JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "连接观察参数无效"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "连接观察参数无效"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -176,7 +176,7 @@ func ipv6VerifyConnectionsHandler(cfg *Config, w http.ResponseWriter, r *http.Re
 	finish()
 }
 
-func ipv6ConnectionTransport(ctx context.Context, cfg *Config, match ipv6ConnectionMatch, node map[string]interface{}, proxy ipv6RuntimeProxy) bool {
+func ipv6ConnectionTransport(ctx context.Context, cfg *Config, match ipv6ConnectionMatch, node map[string]any, proxy ipv6RuntimeProxy) bool {
 	// For these TCP adapters RemoteDestination comes from the connected socket.
 	// Other adapters can expose a synthetic address (QUIC/multiplexing/tunnels),
 	// so leave them unknown until an equally strong correlation is implemented.

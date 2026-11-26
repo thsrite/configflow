@@ -194,7 +194,7 @@ const ERROR_AT = /\berror:/
 // 避免把 don't 这类缩写当成字符串）。
 // 规则写法有 RuleSet(google)（连接日志）和 RuleSet/google（拨号失败）两种
 const MESSAGE_TOKEN = /-->|\bmatch ([A-Z][\w-]*(?:\([^)]*\)|\/[^\s)]+)?)|\busing (\S(?:.*\S)?)|"[^"\n]*"|(?<![\w'])'[^'\n]+'(?![\w'])/g
-// 来源可能带进程名：192.168.1.5:51234(chrome)
+// 来源可能带进程名：192.0.2.5:51234(chrome)
 const ADDRESS_BEFORE = /([^\s()/[\]]+(?:\([^)]*\))?)(\s*)$/
 const ADDRESS_AFTER = /^(\s*)([^\s()[\]]+)/
 

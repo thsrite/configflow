@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Copy } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -9,13 +9,26 @@ import FormField from '@/components/common/FormField.vue'
 import InfoNote from '@/components/common/InfoNote.vue'
 import { notify } from '@/lib/feedback'
 import { copyText } from '@/lib/clipboard'
+import { systemApi } from '@/api'
 import type { Agent } from '@/types'
 
 defineProps<{ agent: Agent }>()
 const emit = defineEmits<{ close: []; refresh: [] }>()
 const method = ref('compose')
 const service = ref('agent')
-const image = ref('thsrite/config-flow-agent:latest')
+// Default to the Agent image paired with this panel (`latest` stays on the last
+// Python-era Agent until the maintainer moves it); the server falls back to the
+// major-version tag for builds without a paired image.
+const fallbackImage = 'thsrite/config-flow-agent:3'
+const image = ref(fallbackImage)
+onMounted(async () => {
+  try {
+    const paired = (await systemApi.getVersion()).data?.agent_image
+    if (typeof paired === 'string' && paired && image.value === fallbackImage) image.value = paired
+  } catch {
+    // Keep the major-version default; the field stays editable.
+  }
+})
 // Restrict generated commands to one argument; never interpolate arbitrary shell text.
 const validService = computed(() => /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(service.value.trim()))
 const validImage = computed(() => /^[a-zA-Z0-9][a-zA-Z0-9._:/@-]*$/.test(image.value.trim()))

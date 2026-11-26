@@ -1,0 +1,358 @@
+package ikuai
+
+// iKuai DHCP DNS (ikuai.py read_dhcp_dns/_dhcp_apply).
+//
+// The dhcp_server edit form was verified against the vendor UI and backend of
+// official firmware 4.0.120 (dhcp_server.sh edit(), config_db.conf; dns2=""
+// is allowed). It is a full form: a field left out resets that DHCP setting,
+// so only a row with exactly the verified fields and types is ever written,
+// and every write is read back whole.
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"maps"
+	"net/netip"
+	"slices"
+	"strconv"
+	"strings"
+
+	"configflow/internal/jsondecode"
+	"configflow/internal/netipx"
+	"configflow/internal/routers/device"
+)
+
+var (
+	ikuaiDHCPOptions   = []int{15, 28, 43, 60, 66, 67, 80, 119, 125, 128, 138, 121}
+	ikuaiDHCPIntFields = append([]string{"lease", "delay", "check_addr_valid", "check_relay_only"},
+		prefixed("opt_type", ikuaiDHCPOptions)...)
+	ikuaiDHCPFields = slices.Concat([]string{"id", "enabled", "tagname", "interface", "phy_ifnames", "addr_pool",
+		"exclude_pool", "netmask", "gateway", "next_server", "dns1", "dns2", "domain", "wins1", "wins2"},
+		ikuaiDHCPIntFields, prefixed("opt", ikuaiDHCPOptions))
+)
+
+func prefixed(prefix string, numbers []int) []string {
+	out := make([]string, len(numbers))
+	for i, n := range numbers {
+		out[i] = prefix + strconv.Itoa(n)
+	}
+	return out
+}
+
+func (d *Client) dhcpList(ctx context.Context, funcName, prefix string) ([]Row, error) {
+	// The vendor's include/sqlite.sh prints a literal [] for an empty query.
+	rows, err := d.ListAll(ctx, funcName, prefix, false, fmt.Sprintf(messageIkuaiDHCPIncomplete, funcName))
+	if err != nil {
+		return nil, err
+	}
+	return DecodeRows(rows), nil
+}
+
+func withoutKeys(row Row, keys ...string) Row {
+	out := maps.Clone(row)
+	for _, key := range keys {
+		delete(out, key)
+	}
+	return out
+}
+
+// ReadDHCPDNS reads every DHCP server and static binding. A network is
+// writable only without blockers: unknown or missing fields, a relay-only or
+// interface-limited service, an unclear address pool, or static bindings
+// that could hand out their own DNS.
+func (d *Client) ReadDHCPDNS(ctx context.Context) (*device.DhcpDnsState, error) {
+	rows, err := d.dhcpList(ctx, "dhcp_server", "")
+	if err != nil {
+		return nil, err
+	}
+	// The vendor's dhcp_lease.sh writes these DNS fields into ik_dhcpd_static.conf:
+	// per-client overrides must not silently defeat a network-level change.
+	bindings, err := d.dhcpList(ctx, "dhcp_static", "static_")
+	if err != nil {
+		return nil, err
+	}
+	servers, static := make([]Row, len(rows)), make([]Row, len(bindings))
+	for i, row := range rows {
+		servers[i] = withoutKeys(row, "available")
+	}
+	for i, binding := range bindings {
+		static[i] = withoutKeys(binding, "termname", "hostname", "ip_addr_int")
+	}
+	evidence, err := json.Marshal(map[string]any{"servers": servers, "static": static})
+	if err != nil {
+		return nil, fmt.Errorf("routers: iKuai DHCP evidence: %w", err)
+	}
+	state := &device.DhcpDnsState{Entries: []*device.DhcpDnsEntry{}, Evidence: evidence}
+	for _, row := range rows {
+		entry, err := ikuaiDHCPEntry(row, bindings)
+		if err != nil {
+			return nil, err
+		}
+		state.Entries = append(state.Entries, entry)
+	}
+	return state, nil
+}
+
+func ikuaiDHCPEntry(row Row, bindings []Row) (*device.DhcpDnsEntry, error) {
+	var blockers []string
+	var missing, unknown []string
+	for _, key := range ikuaiDHCPFields {
+		if !row.Has(key) {
+			missing = append(missing, key)
+		}
+	}
+	for key := range row {
+		if !slices.Contains(ikuaiDHCPFields, key) && key != "status" && key != "available" {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(missing) > 0 || len(unknown) > 0 {
+		list := func(keys []string) string {
+			slices.Sort(keys)
+			return cmpOrNone(strings.Join(keys, ","))
+		}
+		blockers = append(blockers, fmt.Sprintf(messageIkuaiDHCPFields, list(missing), list(unknown)))
+	}
+	attributes := Row{}
+	for _, key := range ikuaiDHCPFields {
+		value, ok := row[key]
+		if !ok {
+			continue
+		}
+		attributes[key] = value
+		valid := false
+		if key == "id" || slices.Contains(ikuaiDHCPIntFields, key) {
+			_, valid = JSONInt(value)
+		} else {
+			_, valid = value.(string)
+		}
+		if !valid {
+			blockers = append(blockers, fmt.Sprintf(messageIkuaiDHCPFieldType, key))
+		}
+	}
+	if !row.Is("enabled", "yes") && !row.Is("enabled", "no") {
+		blockers = append(blockers, messageIkuaiDHCPEnabled)
+	}
+	if status, ok := JSONInt(row["status"]); !ok || status != 1 {
+		blockers = append(blockers, messageIkuaiDHCPStatus)
+	}
+	if !NumberEquals(row["check_relay_only"], 0) {
+		blockers = append(blockers, messageIkuaiDHCPRelay)
+	}
+	if !row.Is("phy_ifnames", "all") {
+		blockers = append(blockers, messageIkuaiDHCPInterfaces)
+	}
+	subnet, network := ikuaiDHCPSubnet(row)
+	if !network {
+		blockers = append(blockers, messageIkuaiDHCPNetwork)
+	}
+	dns := []string{}
+	for _, field := range []string{"dns1", "dns2"} {
+		if row.Is(field, "") {
+			continue
+		}
+		text, _ := row[field].(string)
+		address, ok := netipx.ParseAddr4(text)
+		if !ok {
+			blockers = append(blockers, messageIkuaiDHCPDNSInherited)
+		} else if !slices.Contains(dns, address.String()) {
+			dns = append(dns, address.String())
+		}
+	}
+	for _, binding := range bindings {
+		blockers = append(blockers, ikuaiBindingBlockers(binding, subnet, network)...)
+	}
+	encoded, err := json.Marshal(attributes)
+	if err != nil {
+		return nil, fmt.Errorf("routers: iKuai DHCP attributes: %w", err)
+	}
+	entry := &device.DhcpDnsEntry{ID: row.Text("id"), Network: "", DNS: dns, Enabled: !row.Is("enabled", "no"),
+		DNSExplicit: row.filled("dns1") && row.filled("dns2"), Attributes: encoded,
+		Blockers: device.Unique(blockers)}
+	if network {
+		entry.Network = subnet.String()
+	}
+	return entry, nil
+}
+
+func cmpOrNone(text string) string {
+	if text == "" {
+		return messageIkuaiDHCPNone
+	}
+	return text
+}
+
+// ikuaiDHCPSubnet is the one network the address pool, netmask and gateway
+// agree on.
+func ikuaiDHCPSubnet(row Row) (netip.Prefix, bool) {
+	first, last, ok := strings.Cut(row.Text("addr_pool"), "-")
+	if !ok || strings.Contains(last, "-") {
+		return netip.Prefix{}, false
+	}
+	start, ok1 := netipx.ParseAddr4(first)
+	end, ok2 := netipx.ParseAddr4(last)
+	gateway, ok3 := netipx.ParseAddr4(row.Text("gateway"))
+	if !ok1 || !ok2 || !ok3 {
+		return netip.Prefix{}, false
+	}
+	subnet, ok := netipx.ParseNetwork4(start.String()+"/"+row.Text("netmask"), false)
+	if !ok || !subnet.Contains(end) || start.Compare(end) > 0 || !subnet.Contains(gateway) {
+		return netip.Prefix{}, false
+	}
+	return subnet, true
+}
+
+// ikuaiBindingBlockers are the reasons a static binding inside the network
+// (or anywhere, when the network is unknown) could defeat the DHCP DNS.
+func ikuaiBindingBlockers(binding Row, subnet netip.Prefix, network bool) []string {
+	if binding.Is("enabled", "no") {
+		return nil
+	}
+	text, isString := binding["ip_addr"].(string)
+	address, ok := netipx.ParseAddr4(text)
+	if !isString || !ok {
+		return []string{messageIkuaiDHCPStaticAddress}
+	}
+	if network && !subnet.Contains(address) {
+		return nil
+	}
+	var blockers []string
+	complete := binding.Is("enabled", "yes")
+	for _, key := range IkuaiDHCPStaticFields {
+		if !binding.Has(key) {
+			complete = false
+		} else if _, ok := binding[key].(string); !ok && key != "id" {
+			complete = false
+		}
+	}
+	if !complete {
+		blockers = append(blockers, messageIkuaiDHCPStaticPartial)
+	} else if !binding.Is("dns1", "") || !binding.Is("dns2", "") {
+		blockers = append(blockers, messageIkuaiDHCPStaticDNS)
+	}
+	for key := range binding {
+		if !slices.Contains(IkuaiDHCPStaticFields, key) && key != "termname" && key != "hostname" && key != "ip_addr_int" {
+			blockers = append(blockers, messageIkuaiDHCPStaticFields)
+			break
+		}
+	}
+	return blockers
+}
+
+func ikuaiDHCPTarget(state *device.DhcpDnsState, id string) (*device.DhcpDnsEntry, error) {
+	var found []*device.DhcpDnsEntry
+	for _, e := range state.Entries {
+		if e.ID == id {
+			found = append(found, e)
+		}
+	}
+	if len(found) != 1 {
+		return nil, device.Error(messageIkuaiDHCPTarget)
+	}
+	return found[0], nil
+}
+
+// dhcpEditVerified writes a complete dhcp_server form and proves the
+// read-back holds exactly it, without blockers.
+func (d *Client) dhcpEditVerified(ctx context.Context, payload Row) error {
+	if _, err := d.Write(ctx, "dhcp_server", "edit", payload, 0); err != nil {
+		return err
+	}
+	state, err := d.ReadDHCPDNS(ctx)
+	if err != nil {
+		return err
+	}
+	actual, err := ikuaiDHCPTarget(state, payload.Text("id"))
+	if err != nil {
+		return err
+	}
+	if !device.JSONEqual(json.RawMessage(actual.Attributes), payload) || len(actual.Blockers) > 0 {
+		return device.Error(messageIkuaiDHCPReadback)
+	}
+	return nil
+}
+
+type ikuaiDHCPScope struct {
+	ID      any `json:"id"`
+	Network any `json:"network"`
+	Gateway any `json:"gateway"`
+}
+
+// dhcpApply runs dhcp_dns_update (the selected DNS into both slots of the
+// previewed network) and dhcp_dns_restore (a complete before-image). A failed
+// write is read back and, when anything changed, restored at once.
+func (d *Client) dhcpApply(ctx context.Context, op ikuaiOp) (any, error) {
+	if op.Kind == "dhcp_dns_restore" {
+		var keys []string
+		for key := range op.Record {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		if op.Record == nil || !slices.Equal(keys, slices.Sorted(slices.Values(ikuaiDHCPFields))) {
+			return nil, device.Error(messageIkuaiDHCPUndoRecord)
+		}
+		// A rollback has a complete before-image and a known ID; it must work
+		// even when the failed release cannot read state.
+		if err := d.dhcpEditVerified(ctx, op.Record); err != nil {
+			return nil, err
+		}
+		return ikuaiRecord{Kind: "dhcp_dns_restore", Record: op.Record}, nil
+	}
+	state, err := d.ReadDHCPDNS(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var scope ikuaiDHCPScope
+	scopeOK := len(op.Scope) > 0 && jsondecode.Unmarshal(op.Scope, &scope) == nil && strings.HasPrefix(strings.TrimSpace(string(op.Scope)), "{")
+	text := func(v any) string { s, _ := v.(string); return s }
+	if !scopeOK || text(scope.ID) == "" || text(scope.Network) == "" || text(scope.Gateway) == "" {
+		return nil, device.Error(messageIkuaiDHCPScope)
+	}
+	entry, err := device.CheckedDNSTarget(device.DNSCheck{ID: text(scope.ID), Network: text(scope.Network), Gateway: text(scope.Gateway)}, state)
+	if err != nil {
+		return nil, err
+	}
+	// A missing "expected" never matches: the write needs the previewed form.
+	if entry.ID != op.ID.String() || op.Expected == nil || !device.JSONEqual(json.RawMessage(entry.Attributes), op.Expected) {
+		return nil, device.Error(messageIkuaiDHCPDrift)
+	}
+	var target []any
+	if json.Unmarshal(op.DNS, &target) != nil || len(target) != 1 {
+		return nil, device.Error(messageIkuaiDHCPAddress)
+	}
+	server, _ := target[0].(string)
+	address, ok := netipx.ParseAddr4(server)
+	if !ok || address.IsUnspecified() || address.IsMulticast() || address.IsLoopback() ||
+		address == netip.AddrFrom4([4]byte{255, 255, 255, 255}) {
+		return nil, device.Error(messageIkuaiDHCPAddress)
+	}
+	// The stored iKuai record keeps its numbers (decoded as float64, as the
+	// before-image has always been).
+	var before Row
+	if entry != nil {
+		_ = json.Unmarshal(entry.Attributes, &before)
+	}
+	// The UI requires both fields. Both are set to the same DNS so no blank
+	// value can inherit a firmware-specific fallback resolver; the read-back
+	// lists the server once.
+	payload := maps.Clone(before)
+	payload["dns1"], payload["dns2"] = address.String(), address.String()
+	if err := d.dhcpEditVerified(ctx, payload); err != nil {
+		changed := true
+		if state, readErr := d.ReadDHCPDNS(ctx); readErr == nil {
+			// An unreachable read does not prove the edit failed; the known
+			// ID and complete before-image still permit the restore.
+			if actual, findErr := ikuaiDHCPTarget(state, payload.Text("id")); findErr == nil {
+				changed = !device.JSONEqual(json.RawMessage(actual.Attributes), before)
+			}
+		}
+		if changed {
+			if rollbackErr := d.dhcpEditVerified(ctx, before); rollbackErr != nil {
+				return nil, &device.RouterError{Kind: device.KindRollback, Message: fmt.Sprintf(messageIkuaiDHCPRollback, err, rollbackErr)}
+			}
+		}
+		return nil, err
+	}
+	return ikuaiRecord{Kind: "dhcp_dns_restore", Record: before}, nil
+}

@@ -1,0 +1,7 @@
+# Route template	key path	difference type	reason (Go baseline vs Go candidate; entries marked open must be triaged before commit)
+POST /api/generate/loon	header.ETag	value	PD-1：两个进程各自生成磁盘文件，ETag 由各自的 mtime/私有副本路径派生；同进程稳定性和失效由 httpx.TestGeneratedFileETagStabilityAndInvalidation 保证
+POST /api/generate/mihomo	header.ETag	value	PD-1：两个进程各自生成磁盘文件，ETag 由各自的 mtime/私有副本路径派生；同进程稳定性和失效由 httpx.TestGeneratedFileETagStabilityAndInvalidation 保证
+POST /api/generate/surge	header.ETag	value	PD-1：两个进程各自生成磁盘文件，ETag 由各自的 mtime/私有副本路径派生；同进程稳定性和失效由 httpx.TestGeneratedFileETagStabilityAndInvalidation 保证
+POST /api/profiles/<profile_id>/generate/loon	header.ETag	value	PD-1：两个进程各自生成磁盘文件，ETag 由各自的 mtime/私有副本路径派生；同进程稳定性和失效由 httpx.TestGeneratedFileETagStabilityAndInvalidation 保证
+POST /api/profiles/<profile_id>/generate/mihomo	header.ETag	value	PD-1：两个进程各自生成磁盘文件，ETag 由各自的 mtime/私有副本路径派生；同进程稳定性和失效由 httpx.TestGeneratedFileETagStabilityAndInvalidation 保证
+POST /api/profiles/<profile_id>/generate/surge	header.ETag	value	PD-1：两个进程各自生成磁盘文件，ETag 由各自的 mtime/私有副本路径派生；同进程稳定性和失效由 httpx.TestGeneratedFileETagStabilityAndInvalidation 保证

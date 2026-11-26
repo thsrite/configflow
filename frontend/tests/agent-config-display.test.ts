@@ -96,6 +96,27 @@ describe('Agent page layout', () => {
   })
 })
 
+describe('Agents restored without run records', () => {
+  it('asks to publish each restored Agent once and marks its card', async () => {
+    const { wrapper } = await render([
+      agent({ state_restored_at: '2026-11-23T00:00:00Z', latest_deployment: undefined }),
+      agent({ id: 'published-agent', name: 'Published test' })
+    ] as any)
+    const banner = wrapper.get('[data-state-restored]')
+    expect(banner.attributes('role')).toBe('status')
+    expect(banner.text()).toContain('运行记录未包含在备份里，各 Agent 需要重新发布一次')
+    expect(banner.text()).toContain('Config display test')
+    expect(banner.text()).not.toContain('Published test')
+    expect(wrapper.findAll('[data-agent-state-restored]')).toHaveLength(1)
+  })
+
+  it('shows no banner when every Agent has its run records', async () => {
+    const { wrapper } = await render()
+    expect(wrapper.find('[data-state-restored]').exists()).toBe(false)
+    expect(wrapper.find('[data-agent-state-restored]').exists()).toBe(false)
+  })
+})
+
 describe('Agent configuration status wording', () => {
   it('polls real preparation steps before the push request returns', async () => {
     vi.useFakeTimers()
@@ -273,7 +294,8 @@ describe('Docker installation choices', () => {
   it('generates Mihomo + OxiDNS AIO commands while retaining standalone MosDNS and existing Agents', async () => {
     const existing = agent()
     const { wrapper } = await render(existing)
-    vi.mocked(api.get).mockImplementation(async path => ({ data: path.endsWith('compose') ? 'generated-compose' : 'generated-run' }) as any)
+    // One authenticated request returns both outputs so they share one bootstrap proof (de2f440d2).
+    vi.mocked(api.get).mockImplementation(async path => ({ data: path === '/agents/docker-agent-compose' ? { compose: 'generated-compose', run: 'generated-run' } : 'unexpected' }) as any)
     const click = async (selector: string) => {
       const element = document.querySelector<HTMLElement>(selector)
       expect(element).not.toBeNull()
@@ -309,12 +331,11 @@ describe('Docker installation choices', () => {
     port('OxiDNS Agent 端口')!.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
     await generate()
-    for (const endpoint of ['/agents/docker-agent-compose', '/agents/docker-agent-run']) {
-      expect(api.get).toHaveBeenCalledWith(endpoint, { params: expect.objectContaining({
-        enable_mihomo: true, enable_oxidns: true, enable_mosdns: false,
-        mihomo_port: 8080, oxidns_port: 8182, data_dir: './aio_data'
-      }) })
-    }
+    expect(api.get).toHaveBeenCalledTimes(1)
+    expect(api.get).toHaveBeenCalledWith('/agents/docker-agent-compose', { params: expect.objectContaining({
+      format: 'both', enable_mihomo: true, enable_oxidns: true, enable_mosdns: false,
+      mihomo_port: 8080, oxidns_port: 8182, data_dir: './aio_data'
+    }) })
     expect(Array.from(dialog.querySelectorAll('textarea')).map(input => input.value))
       .toEqual(expect.arrayContaining(['generated-compose', 'generated-run']))
     vi.mocked(api.get).mockClear()
@@ -322,12 +343,11 @@ describe('Docker installation choices', () => {
     expect(port('MosDNS Agent 端口')?.value).toBe('8081')
     expect(port('OxiDNS Agent 端口')).toBeUndefined()
     await generate()
-    for (const endpoint of ['/agents/docker-agent-compose', '/agents/docker-agent-run']) {
-      expect(api.get).toHaveBeenCalledWith(endpoint, { params: expect.objectContaining({
-        enable_mihomo: false, enable_oxidns: false, enable_mosdns: true,
-        mosdns_port: 8081, data_dir: './mosdns_data'
-      }) })
-    }
+    expect(api.get).toHaveBeenCalledTimes(1)
+    expect(api.get).toHaveBeenCalledWith('/agents/docker-agent-compose', { params: expect.objectContaining({
+      format: 'both', enable_mihomo: false, enable_oxidns: false, enable_mosdns: true,
+      mosdns_port: 8081, data_dir: './mosdns_data'
+    }) })
     expect(api.post).not.toHaveBeenCalled()
     expect(api.put).not.toHaveBeenCalled()
     expect(api.delete).not.toHaveBeenCalled()

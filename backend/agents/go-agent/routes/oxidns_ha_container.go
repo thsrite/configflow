@@ -3,6 +3,7 @@ package routes
 // Docker HA is explicitly opted in. Host mode delegates only keepalived to
 // an independent companion; macvlan owns it in the isolated LAN namespace.
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -17,11 +18,12 @@ import (
 	"syscall"
 	"time"
 
+	"agent/svc"
+
 	"golang.org/x/sys/unix"
 )
 
 const oxidnsHAContainerProtocol = 1
-const haSupervisorProgram = "configflow-keepalived"
 const haDockerDirectory = "/var/lib/configflow-ha"
 const haHostIDPath = "/run/configflow-host-machine-id"
 const haHostIdentityDirectory = "/run/configflow-host-identity"
@@ -73,23 +75,29 @@ func defaultHAKeepalivedDirectory() string {
 	return "/etc/keepalived"
 }
 
-func haCompanionSocket() string { return filepath.Join(haKeepalivedDir, "run", "supervisor.sock") }
+// haCompanionSocket is the host-mode companion's control socket.
+func haCompanionSocket() string { return filepath.Join(haKeepalivedDir, "run", "control.sock") }
 
-func haSupervisorArgs(action string) []string {
-	args := []string{"-c", "/etc/supervisor/supervisord.conf"}
+// haContainerManager controls the managed keepalived program of Docker HA:
+// the host-mode companion's through its control socket, otherwise this
+// container's own.
+var haContainerManager = func() svc.Manager {
 	if haDockerNetwork() == "host" {
-		args = []string{"-s", "unix://" + haCompanionSocket()}
+		return svc.Remote{Socket: haCompanionSocket()}
 	}
-	return append(args, action, haSupervisorProgram)
+	return containerServices
 }
 
-func haSupervisorState() string {
-	out, _ := haRun("supervisorctl", haSupervisorArgs("status")...)
-	fields := strings.Fields(out)
-	if len(fields) >= 2 && fields[0] == haSupervisorProgram {
-		return fields[1]
+// haContainerState is the managed keepalived program state ("RUNNING",
+// "STOPPED", ...), or "" when the program cannot be reached.
+func haContainerState() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	status, err := haContainerManager().Status(ctx, svc.Keepalived)
+	if err != nil {
+		return ""
 	}
-	return ""
+	return string(status.State)
 }
 
 func haHostIdentity(path string) string {
@@ -246,7 +254,7 @@ func checkHACompanionPeer(path string) error {
 		return err
 	}
 	// A sibling container's PID is not mapped into this PID namespace. A
-	// local Supervisor (or shared host PID namespace) must not impersonate
+	// local process supervisor (or shared host PID namespace) must not impersonate
 	// the independent component that survives the application's termination.
 	if credentialErr != nil || credentials == nil || credentials.Uid != 0 || credentials.Pid != 0 {
 		return fmt.Errorf("HA 辅助服务必须位于独立容器 PID 命名空间，不能使用本容器或 host PID 模式")
@@ -304,7 +312,7 @@ func haContainerInterface(cfg *Config, macvlan bool) (string, error) {
 
 func haEnvironment(cfg *Config) haEnvironmentInfo {
 	result := haEnvironmentInfo{Kind: "native", Ready: true, HostIDSource: "file", Blockers: []string{}}
-	if cfg == nil || cfg.ServiceManager != "supervisor" {
+	if cfg == nil || cfg.ServiceManager != svc.ContainerManager {
 		result.HostBootID = haBootIdentity(haNativeBootIDPath)
 		result.HostID = haHostIdentity("/etc/machine-id")
 		if result.HostID == "" {
@@ -390,8 +398,8 @@ func haEnvironment(cfg *Config) haEnvironmentInfo {
 			add(err.Error())
 		}
 	}
-	if _, err := haLookPath("supervisorctl"); err != nil || haSupervisorState() == "" {
-		add("受管 keepalived Supervisor 程序尚未就绪")
+	if haContainerState() == "" {
+		add("受管 keepalived 程序尚未就绪")
 	}
 	result.Ready = len(result.Blockers) == 0
 	return result
@@ -400,12 +408,12 @@ func haEnvironment(cfg *Config) haEnvironmentInfo {
 // Both directions matter: a native journal copied into Docker must not invoke
 // host service commands, and a container journal cannot run as a native pair.
 func haContainerOwnership(cfg *Config, state *haState, environment haEnvironmentInfo) error {
-	container := cfg != nil && cfg.ServiceManager == "supervisor"
+	container := cfg != nil && cfg.ServiceManager == svc.ContainerManager
 	if container && !environment.Ready {
 		return fmt.Errorf("%s", strings.Join(environment.Blockers, "；"))
 	}
-	if state != nil && (container || state.Service.Manager == "supervisor") &&
-		(!container || state.Service.Manager != "supervisor" || state.ContainerHostID != environment.HostID) {
+	if state != nil && (container || state.Service.Manager == svc.ContainerManager) &&
+		(!container || state.Service.Manager != svc.ContainerManager || state.ContainerHostID != environment.HostID) {
 		return fmt.Errorf("HA 状态属于其他宿主或安装方式，已保留记录且未自动恢复")
 	}
 	return nil

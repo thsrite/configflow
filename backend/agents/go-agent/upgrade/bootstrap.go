@@ -1,11 +1,11 @@
 package upgrade
 
 import (
+	"agent/internal/logx"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 )
+
+var logger = logx.Get("agent/upgrade")
 
 type bootstrapJournal struct {
 	Complete  bool       `json:"complete"`
@@ -31,6 +33,13 @@ func ensureInstalled(configPath, binary, systemRoot string) error {
 		return err
 	}
 	if c.Docker() {
+		return nil
+	}
+	// command describes the core's custom lifecycle, not the Agent's init
+	// system. There are no managed core units/recovery gates to migrate, and
+	// guessing OpenRC here would modify unrelated service files. Keep native
+	// online-update eligibility in InferLifecycle; Shell reinstalls work too.
+	if c.String("service_manager") == "command" {
 		return nil
 	}
 	if Pending(binary) {
@@ -163,6 +172,9 @@ func migrationReadyStrict(configPath, binary, systemRoot string) (bool, error) {
 	if c.Docker() {
 		return false, nil
 	}
+	if c.String("service_manager") == "command" {
+		return true, nil
+	}
 	if value, ok := c.Values["upgrade_schema"].(float64); !ok || value != migrationSchema {
 		return false, nil
 	}
@@ -192,7 +204,7 @@ func deferMigration(configPath, binary, systemRoot string) {
 	for {
 		done, err := finishDeferredMigration(configPath, binary, systemRoot)
 		if err != nil {
-			log.Printf("Warning: could not remove legacy startup recovery dependencies after Agent update: %v", err)
+			logger.Warnf("Could not remove legacy startup recovery dependencies after Agent update: %v", err)
 			return
 		}
 		if done {

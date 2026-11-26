@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.agent
-    image: thsrite/config-flow-agent:latest
+    image: thsrite/config-flow-agent:3
     restart: always
 
     ports:

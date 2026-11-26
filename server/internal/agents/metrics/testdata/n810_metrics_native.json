@@ -1,0 +1,633 @@
+[
+  {
+    "group": "summary",
+    "name": "string value",
+    "source": "{\n   \"name\": \"string value\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"cpu\\\":{\\\"usage_percent\\\":\\\"x\\\"}}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: unsupported operand type(s) for +: 'int' and 'str'\"\n  }",
+    "sha256": "26372dd14f72a4d13029297c75ce4b727f2f9076b001294cb1dc1ab8dad80b20",
+    "expected": {
+      "cpu": {
+        "avg": null,
+        "max": null,
+        "min": null
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "string after float",
+    "source": "{\n   \"name\": \"string after float\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"cpu\\\":{\\\"usage_percent\\\":1.5}}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:09:00\\\",\\\"cpu\\\":{\\\"usage_percent\\\":\\\"x\\\"}}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: unsupported operand type(s) for +: 'float' and 'str'\"\n  }",
+    "sha256": "1250282fecbacfb66744d4c3392f12c357052e24c15f5c76601d8c7452bc021a",
+    "expected": {
+      "cpu": {
+        "avg": 1.5,
+        "max": 1.5,
+        "min": 1.5
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 2,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "list value",
+    "source": "{\n   \"name\": \"list value\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"disk\\\":{\\\"used_percent\\\":[1]}}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: unsupported operand type(s) for +: 'int' and 'list'\"\n  }",
+    "sha256": "dc468c1c743b279d121f8138aa654bc21c08415407b05341b3c3a9ebdae26977",
+    "expected": {
+      "cpu": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": null,
+        "max": null,
+        "min": null
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "dict value",
+    "source": "{\n   \"name\": \"dict value\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"disk\\\":{\\\"used_percent\\\":{}}}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: unsupported operand type(s) for +: 'int' and 'dict'\"\n  }",
+    "sha256": "ec5975eed71c42f8a21b54b0e0358b03c5ddeaa1325e654eae23159754882348",
+    "expected": {
+      "cpu": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": null,
+        "max": null,
+        "min": null
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "cpu list with key",
+    "source": "{\n   \"name\": \"cpu list with key\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"cpu\\\":[\\\"usage_percent\\\"]}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: list indices must be integers or slices, not str\"\n  }",
+    "sha256": "08e5beaaf1917950aa421c2b04d8271a729f1647ad8580349921c7c9687ae6a0",
+    "expected": {
+      "cpu": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "cpu string with key",
+    "source": "{\n   \"name\": \"cpu string with key\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"cpu\\\":\\\"xusage_percentx\\\"}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: string indices must be integers, not 'str'\"\n  }",
+    "sha256": "9a249a5dbb16b334f75aa4882c7e84bbf896ecdef48e0012beda3076e43b0ce1",
+    "expected": {
+      "cpu": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "cpu null",
+    "source": "{\n   \"name\": \"cpu null\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"cpu\\\":null}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: argument of type 'NoneType' is not iterable\"\n  }",
+    "sha256": "5bd564e68cf79ea37414748d6bf4205ea234c36ab0edf646fd9e6e854008e176",
+    "expected": {
+      "cpu": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "cpu int",
+    "source": "{\n   \"name\": \"cpu int\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"cpu\\\":5}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: argument of type 'int' is not iterable\"\n  }",
+    "sha256": "83c64256b4d1955bcd1b3d05979cc2bed915f2adb9da7092543d273aabc8c9e4",
+    "expected": {
+      "cpu": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "cpu float",
+    "source": "{\n   \"name\": \"cpu float\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"cpu\\\":1.5}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: argument of type 'float' is not iterable\"\n  }",
+    "sha256": "5ccbcbf2bc93bb2c4ac2a0bae47eb8670b7795cf01695936ea7b53fcc6973cbc",
+    "expected": {
+      "cpu": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "cpu bool",
+    "source": "{\n   \"name\": \"cpu bool\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"cpu\\\":true}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: argument of type 'bool' is not iterable\"\n  }",
+    "sha256": "0a7cc1222ceb2b347be27f5cd712faf87032fdef20502949bfe29a905c5804a8",
+    "expected": {
+      "cpu": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "memory bad before disk",
+    "source": "{\n   \"name\": \"memory bad before disk\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:08:00\\\",\\\"memory\\\":5,\\\"disk\\\":null}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: argument of type 'int' is not iterable\"\n  }",
+    "sha256": "8d5a0e9986ff9f39b9ec427ff9f4ab2ebfad47476b010436b941dc1d533a5486",
+    "expected": {
+      "cpu": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "float overflow",
+    "source": "{\n   \"name\": \"float overflow\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:09:00\\\",\\\"cpu\\\":{\\\"usage_percent\\\":1e+308}}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:10:00\\\",\\\"cpu\\\":{\\\"usage_percent\\\":1e+308}}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"{\\\"cpu\\\":{\\\"avg\\\":Infinity,\\\"max\\\":1e+308,\\\"min\\\":1e+308},\\\"data_points\\\":2,\\\"disk\\\":{\\\"avg\\\":0,\\\"max\\\":0,\\\"min\\\":0},\\\"memory\\\":{\\\"avg\\\":0,\\\"max\\\":0,\\\"min\\\":0},\\\"network_recv\\\":{\\\"avg\\\":0,\\\"max\\\":0,\\\"min\\\":0},\\\"network_sent\\\":{\\\"avg\\\":0,\\\"max\\\":0,\\\"min\\\":0},\\\"time_range_hours\\\":1}\"\n  }",
+    "sha256": "caff9468182b40d25a6bc049479789a6ab783301648555281398d6114429abfe",
+    "expected": {
+      "cpu": {
+        "avg": null,
+        "max": 1e+308,
+        "min": 1e+308
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 2,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "network null",
+    "source": "{\n   \"name\": \"network null\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:01:00\\\",\\\"cpu\\\":{\\\"usage_percent\\\":1},\\\"network\\\":null}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: argument of type 'NoneType' is not iterable\"\n  }",
+    "sha256": "0f4da2589916455ab37364d3a34959076a51ad81e828be123410437343ae3aa6",
+    "expected": {
+      "cpu": {
+        "avg": 1.0,
+        "max": 1,
+        "min": 1
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "summary",
+    "name": "cpu null network null",
+    "source": "{\n   \"name\": \"cpu null network null\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:01:00\\\",\\\"cpu\\\":null,\\\"network\\\":null}\"\n   ],\n   \"hours\": 1,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: argument of type 'NoneType' is not iterable\"\n  }",
+    "sha256": "f76e123eb5f7c392d66d306c2de2796400ab64975a0b907db4e6f7f7f807f9e4",
+    "expected": {
+      "cpu": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "memory": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "disk": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_sent": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "network_recv": {
+        "avg": 0,
+        "max": 0,
+        "min": 0
+      },
+      "data_points": 1,
+      "time_range_hours": 1
+    }
+  },
+  {
+    "group": "traffic_stats",
+    "name": "network list",
+    "source": "{\n   \"name\": \"network list\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:01:00\\\",\\\"network\\\":[1]}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:02:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":1,\\\"bytes_recv\\\":2}}\"\n   ],\n   \"period\": \"total\",\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"AttributeError: 'list' object has no attribute 'get'\"\n  }",
+    "sha256": "92ea0a3877f117c32867e785095f18d9e13f823b1ac27ef087c35ebc1a917f06",
+    "expected": {
+      "bytes_sent": 1,
+      "bytes_recv": 2,
+      "bytes_sent_delta": 0,
+      "bytes_recv_delta": 0,
+      "avg_speed_sent": 0,
+      "avg_speed_recv": 0,
+      "period": "total",
+      "start_time": "2026-11-15T11:02:00",
+      "end_time": "2026-11-15T11:02:00",
+      "data_points": 1
+    }
+  },
+  {
+    "group": "traffic_stats",
+    "name": "latest network list",
+    "source": "{\n   \"name\": \"latest network list\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:01:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":1,\\\"bytes_recv\\\":2}}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:02:00\\\",\\\"network\\\":[1]}\"\n   ],\n   \"period\": \"total\",\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"AttributeError: 'list' object has no attribute 'get'\"\n  }",
+    "sha256": "50c79749cc620034b1b7731a1d9544d9fe24fc86f3b0bcd92141499a03a9c8a8",
+    "expected": {
+      "bytes_sent": 1,
+      "bytes_recv": 2,
+      "bytes_sent_delta": 0,
+      "bytes_recv_delta": 0,
+      "avg_speed_sent": 0,
+      "avg_speed_recv": 0,
+      "period": "total",
+      "start_time": "2026-11-15T11:01:00",
+      "end_time": "2026-11-15T11:01:00",
+      "data_points": 1
+    }
+  },
+  {
+    "group": "traffic_stats",
+    "name": "strings",
+    "source": "{\n   \"name\": \"strings\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:01:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":\\\"a\\\",\\\"bytes_recv\\\":\\\"b\\\"}}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:02:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":\\\"c\\\",\\\"bytes_recv\\\":\\\"d\\\"}}\"\n   ],\n   \"period\": \"total\",\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: unsupported operand type(s) for -: 'str' and 'str'\"\n  }",
+    "sha256": "36607b44aef6dab5b34e84a4fd621d6f01396b0fd117d57395d206efdb348911",
+    "expected": {
+      "bytes_sent": 0,
+      "bytes_recv": 0,
+      "bytes_sent_delta": 0,
+      "bytes_recv_delta": 0,
+      "avg_speed_sent": 0,
+      "avg_speed_recv": 0,
+      "period": "total",
+      "start_time": null,
+      "end_time": null
+    }
+  },
+  {
+    "group": "traffic_stats",
+    "name": "string minus int",
+    "source": "{\n   \"name\": \"string minus int\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:01:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":1,\\\"bytes_recv\\\":2}}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:02:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":\\\"c\\\",\\\"bytes_recv\\\":2}}\"\n   ],\n   \"period\": \"total\",\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: unsupported operand type(s) for -: 'str' and 'int'\"\n  }",
+    "sha256": "3dc83baeecb7b64d0d0a7e580dd2e4020594addb3c858121b41412e3a124cd65",
+    "expected": {
+      "bytes_sent": 1,
+      "bytes_recv": 2,
+      "bytes_sent_delta": 0,
+      "bytes_recv_delta": 0,
+      "avg_speed_sent": 0,
+      "avg_speed_recv": 0,
+      "period": "total",
+      "start_time": "2026-11-15T11:01:00",
+      "end_time": "2026-11-15T11:01:00",
+      "data_points": 1
+    }
+  },
+  {
+    "group": "traffic_stats",
+    "name": "network null",
+    "source": "{\n   \"name\": \"network null\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:01:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":1,\\\"bytes_recv\\\":1}}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:02:00\\\",\\\"network\\\":null}\"\n   ],\n   \"period\": \"total\",\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"AttributeError: 'NoneType' object has no attribute 'get'\"\n  }",
+    "sha256": "54ca93abc3a14d9d834bec7b5e0cf2a32770df6bf37b45df391af2b908b84b06",
+    "expected": {
+      "bytes_sent": 1,
+      "bytes_recv": 1,
+      "bytes_sent_delta": 0,
+      "bytes_recv_delta": 0,
+      "avg_speed_sent": 0,
+      "avg_speed_recv": 0,
+      "period": "total",
+      "start_time": "2026-11-15T11:01:00",
+      "end_time": "2026-11-15T11:01:00",
+      "data_points": 1
+    }
+  },
+  {
+    "group": "trend",
+    "name": "network list",
+    "source": "{\n   \"name\": \"network list\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:00:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":1,\\\"bytes_recv\\\":1}}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:06:00\\\",\\\"network\\\":[1]}\"\n   ],\n   \"hours\": 24,\n   \"interval\": 5,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"AttributeError: 'list' object has no attribute 'get'\"\n  }",
+    "sha256": "bcb7241c2e4718def790aadb995b21b833478c449e45077d0689781abe55399c",
+    "expected": [
+      {
+        "timestamp": "2026-11-15T11:00:00",
+        "bytes_sent": 1,
+        "bytes_recv": 1,
+        "speed_sent": 0,
+        "speed_recv": 0
+      }
+    ]
+  },
+  {
+    "group": "trend",
+    "name": "prev network list",
+    "source": "{\n   \"name\": \"prev network list\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:00:00\\\",\\\"network\\\":[1]}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:06:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":1,\\\"bytes_recv\\\":1}}\"\n   ],\n   \"hours\": 24,\n   \"interval\": 5,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"AttributeError: 'list' object has no attribute 'get'\"\n  }",
+    "sha256": "7bb116247ad10edab93a8ae10999317cf1f97330b5d0518375dffc56a8b51358",
+    "expected": [
+      {
+        "timestamp": "2026-11-15T11:06:00",
+        "bytes_sent": 1,
+        "bytes_recv": 1,
+        "speed_sent": 0,
+        "speed_recv": 0
+      }
+    ]
+  },
+  {
+    "group": "trend",
+    "name": "last network list",
+    "source": "{\n   \"name\": \"last network list\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:00:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":1,\\\"bytes_recv\\\":1}}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:01:00\\\",\\\"network\\\":[1]}\"\n   ],\n   \"hours\": 24,\n   \"interval\": 5,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"AttributeError: 'list' object has no attribute 'get'\"\n  }",
+    "sha256": "b37faef913ecd0c0ab805374e459d7f9331a20aac899b69a8c07cb9ee5ceafe8",
+    "expected": [
+      {
+        "timestamp": "2026-11-15T11:00:00",
+        "bytes_sent": 1,
+        "bytes_recv": 1,
+        "speed_sent": 0,
+        "speed_recv": 0
+      }
+    ]
+  },
+  {
+    "group": "trend",
+    "name": "strings",
+    "source": "{\n   \"name\": \"strings\",\n   \"points\": [\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:00:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":\\\"a\\\",\\\"bytes_recv\\\":\\\"b\\\"}}\",\n    \"{\\\"timestamp\\\":\\\"2026-11-15T11:06:00\\\",\\\"network\\\":{\\\"bytes_sent\\\":\\\"c\\\",\\\"bytes_recv\\\":\\\"d\\\"}}\"\n   ],\n   \"hours\": 24,\n   \"interval\": 5,\n   \"now\": \"2026-11-15T12:00:00\",\n   \"result\": \"TypeError: unsupported operand type(s) for -: 'str' and 'str'\"\n  }",
+    "sha256": "22572516b4a6ebcba9e44ae5d4d775e8c690bbe129003be07d7f09b56eb99482",
+    "expected": []
+  }
+]

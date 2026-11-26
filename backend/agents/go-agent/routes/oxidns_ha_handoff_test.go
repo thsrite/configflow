@@ -178,15 +178,15 @@ func TestHAHandoffStatusProbesVIPFromBackupAndHidesPrivateOwnership(t *testing.T
 		return nil
 	}
 	result := haStatus(f.cfg)
-	runtime := result["runtime"].(map[string]interface{})
-	if runtime["vip_present"] != false || runtime["vip_healthy"] != true || vipProbes != 1 {
+	runtime := result.Runtime
+	if runtime.VIPPresent || !runtime.VIPHealthy || vipProbes != 1 {
 		t.Fatalf("backup did not test the remote VIP network path: %v %d", runtime, vipProbes)
 	}
 	data, _ := json.Marshal(result)
 	if strings.Contains(string(data), mustHAState(t, f.cfg).Token) || strings.Contains(string(data), `"token"`) {
 		t.Fatal("handoff status exposed private ownership")
 	}
-	if result["handoff"].(map[string]interface{})["operation_id"] != "publish-1" {
+	if result.Handoff.(map[string]any)["operation_id"] != "publish-1" {
 		t.Fatal("public handoff status lost its operation identity")
 	}
 }

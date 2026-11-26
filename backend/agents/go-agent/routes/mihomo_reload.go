@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -53,7 +52,7 @@ type mihomoReloader struct {
 // Only contact this machine. Wildcard listeners are reached through loopback;
 // configured hostnames and remote addresses are never resolved or contacted.
 // A dedicated transport ignores proxy environment variables and redirects.
-func newMihomoReloader(doc map[string]interface{}) (*mihomoReloader, error) {
+func newMihomoReloader(doc map[string]any) (*mihomoReloader, error) {
 	secret := ""
 	if raw, ok := doc["secret"]; ok && raw != nil {
 		var valid bool
@@ -110,7 +109,7 @@ func prepareMihomoReload(cfg *Config, s *DeploymentState, running bool) *mihomoR
 		return nil
 	}
 	skip := func(reason string) *mihomoReloader {
-		log.Printf("Mihomo release %s: native reload unavailable (%s)", s.DeploymentID, reason)
+		logger.Infof("Mihomo release %s: native reload unavailable (%s)", s.DeploymentID, reason)
 		return nil
 	}
 	live, _, err := readYAMLDocument(cfg.ConfigPath)
@@ -141,7 +140,7 @@ func prepareMihomoReload(cfg *Config, s *DeploymentState, running bool) *mihomoR
 		return skip("controller preflight failed")
 	}
 	code, data, err = r.request(http.MethodGet, "/configs", nil, 5*time.Second)
-	var current map[string]interface{}
+	var current map[string]any
 	if err != nil || code != http.StatusOK || json.Unmarshal(data, &current) != nil || current == nil {
 		return skip("configuration API preflight failed")
 	}
@@ -197,7 +196,7 @@ func (r *mihomoReloader) reload(cfg *Config) error {
 	return nil
 }
 
-func mihomoUnixControllerProbe(doc map[string]interface{}) error {
+func mihomoUnixControllerProbe(doc map[string]any) error {
 	r, err := newMihomoReloader(doc)
 	if err != nil {
 		return err
@@ -210,7 +209,7 @@ func mihomoUnixControllerProbe(doc map[string]interface{}) error {
 		return fmt.Errorf("Mihomo Unix controller health probe failed")
 	}
 	for kind, endpoint := range map[string]string{"proxy-providers": "/providers/proxies", "rule-providers": "/providers/rules"} {
-		expected, _ := doc[kind].(map[string]interface{})
+		expected, _ := doc[kind].(map[string]any)
 		if len(expected) == 0 {
 			continue
 		}

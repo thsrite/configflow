@@ -1,0 +1,398 @@
+{
+  "03167031b941bb00dbff4cf241e50aa845479495e54be0dd6a9a4200bb770a59": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "0574a0f4dcb13de927146e6716a3ea6a759d1a3a590eb544bd6a911f14f04433": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "0604a9fe67ebb93fe35744e091a96438298cae5ec73d8aec85a52fc9b4e5af99": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "07f06fca49afddb16101f2ac5d7cf59c854f1ae571f6e568dee7087fc35cbf4d": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "095b4a014dc64179b401c9bd8fc5da70b9f2186cc1d7faefc40bef7d287f0553": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "0a2a8b1f1e6c383efbc129e57784c76558d66a0da1d90e3115a3bb8630a82064": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "0b3d6077dc4f94ffd9884fcf7de716b2254295ca4bd77a9ec1c89e8f0a75b667": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "0ebb10ea58e6fc7afa6d4c3b7c1540c4f804855b4aa4523620ab4df623be07bf": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "102d960325b9b5958572be2427b1b51513672ba20a1f9b109db66da0d3da18b4": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "1a117da1ff0664b1b83d27ab9b6b601981c0de19ec6168c73ec690fd494709c8": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "1c084c55ca92bc4eea70ca104d8f265f76ae62702827d93b5d60e4fbe7aa8994": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "1ef128b4b90323bf3799c6bb5adef669523ff94705b07686970bafb1e620a605": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "20ba01f0d5bfe02bb0f66c4c36efada4493d7972bcde2219e4992620c1ef2a84": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "21a3481083062f272084ee17834ed94b1cce607ca26564b4aa13e2df70580354": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "22052add5ccf97b35fc301044c97502bf64a6635adf4c9d078524b878007e683": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "3393ec9162ef1dc4b32dd71e9a69c7585299fd50985bf9a3cd563e795db7a516": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "35190f01c3e78e0628e652013dae91cd57034d0533ca435a209b375343664034": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "397bcfc0f23ed5fe5487885a82b147f62a7da5464e6cc3d4d2dfe8b67eaaf6cc": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "39c2d47b9caf7cbc231768bd81fb9b2c7363ae15da08ab1a19cff64cce11c9bc": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "3b02c13fcb32eddc81b7c0df63334bdaf0407d5eaaa8b511d2999f1890128ee8": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "3bd7ea8e5215079cc4f2ae543eb6a860112d56e5660b6ae08a00ccd66d708403": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "3fb872e73b815f0f324eb11fe0d7b9177cd2dc697514c1dead1414d4630d7fbe": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "44a42c4c91668a17d73886a3d56d8182bfd43ebf8181fd75470025f270aa134d": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "4696ce60dec90a4c95ce95a2a7f4f7713e731d49010d847bfc51eade71040e76": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "485b29138f832434744482369d06fa8484a8efece4e37eab86e3cfd1ba24797f": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "48b425f784688a7e232e8b00e43a0db9c487124b2fa67a059b8293c4e21227e2": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "4bef8151f0f7ec3bdf0f781cf1782de99d3d3ee309c61657e290320e2e1de7fe": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "4d5023fd92b499e2b4305a45944d4256bada98b87741a07c91c8710e46d46b26": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "5408e3909d984db31262adf3c52912bb91b10b14998988190b6e0f4abdd124f4": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "564c343bf662a51113863a1e666b085e849c98325b778015caa068d4365e48fe": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "59abe67068d5fb2214e17688b0e75318e5463f8724a43d27d14b591458b5019c": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "5a268d4dd4f847bfdd6e0517f0f849c0f32adee39dddd4e6c444ecb863d008a2": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "5b347ba52dc100a38b2c69cde370e0187f33bea606aeb52f6d4f9c796aed8b4c": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "5fafb97e238cf1e393158490cc0afd59a83ef76800e9c3b6f0990dffd5d15ea5": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "601147f03b0c4a6628ae755139cdb1905c88dab957fc3d375f228b29d255ac16": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "6187791abd267cf8d9dd5e9ef41e75604cf3a5c51b4c24e9592691a8b0882587": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "6305852b04ad93f86f4a5ce440adcd53c04450709ae5d6954a902ce167a74656": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "66f57e49fdfbfd057886435ca5c87146254a785ced99878cbe35b0e99b39129c": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "698b2a645462c3acd10d687c0c1cbfcec0da26fd55e51ac2342f5f40902fbb92": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "6adc5eeaa572a5c0f30ffe1adcb6c1e310c61d67956695e020c7ca093816a06a": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "6c2d5ea0f1871cf270c109858f01c52ce5d62b3dc211820c0ec7f6354ba3183d": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "6d88df213b2093e881391e7decdd1962584940df36c74b91d1a72e2f41aeb57d": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "6f1e1d702bde0cde482bb0eadae97bf37529c1ef5452df1a5098f820ee706397": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "713a74c27b8345f347bf567e989a9660c205cbeca75af9011b15c196fbed058b": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "71ff298909b75e1b112dff8c6d5587597ea11ba5a49821162756fb159c96237e": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "74c2e659d8ae3231a712dfa9f96bb1495b0973edb3109ace90fb6763929e8642": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "798bcf36bfb3b5a825b56ab6cf77052a9631aa7aa233b2c2b78fb66e8cdec71f": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "79fb4a4241fcc69b208fc1cb3a9f829c65a7c2567f28ff95c1e68f4833ada433": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "7cbd0988b619173bcd8b62a400fdce96804431d5d4867643c39807e453f527af": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "7e4b2b2e25c2cbae162ba8cc93ab95b7858021f4b9b5338d6ec09c1d92392bd4": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "80c30e15f3c7c3853ae2aaf24c1e25e392bc8bfe084b6a788f086fd3be37b80f": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "87842bc841983c966bc55ac5d65c9e9eba0c5827913dd7fbfbcaf0f116dec98b": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "899d08071f24ddb6112cf03a752de28815cfd0e82c7bf61cf546a8886a60b0b4": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "8f7a0c75382be5919c58a12c8f13060f249666504b1e0971a6dd46e89e356546": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "923524f650d5147826cb38045d6d43cd0feef82b77a3c44c1d7cad9073db0f08": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "94cad125821c3295f599210719c22a366b019fa3b311ed6402cfaa5ac95d08dc": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "9500fe84652f2585e1bcdabf1da2b8232a91dd404bb4fb44f3c80e7c27d52401": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "954b812aa254f2915b438c1bca494361f9945d0d4a0fc37201363487fdcf423d": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "9584821c1be5aa9292f481bfb7260ed429ecf634c83970526daba32fe270e0cd": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "9634fd82472cfc2f0dd0ae2a9edd902d5da326a88e1851cd91535b9aa6297857": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "987491fd6ca92bc8d0f0a03674ab87d121b2437a7f06ea8952983152ea36ed81": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "994455b18952595cbc6f755ff2d1fc31210afd8527ee6d8a83104931d05322d4": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "9a4d038a6a23c54a8df14cc049b9ccc561d230964f1c8803757fec29f157102a": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "9af40eace0b3a7db9a055a93e2ed41f556a50744e95c41ab1764329401296781": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "9b1aa8979df446cf089586585f02e7476e8f841b2ddc68e73150eb80d9ea7993": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "a3c8a57e842cf9a249657700dfccfb6e9ce77900d1a6499a90472978098b182e": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "b0cb8f8bda7ccaaf96f217fa71e6b548031f5bc7241ac69d0ffa007385dfcfba": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "b4e27dad527f924011bdd5080f28b59613b41390e63df23d9940b39a4af7a202": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "b970827e52e91e9065ba7597cf807f5937c763e8510093275192fce58b193c5a": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "bb15ef2ebac0af161d5c508ad6d441653b287abddcd901457214193f97efb035": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "bdeb5156c76c479dac0d1f3a37023123e1f3f102a11ae82025ef18f31088e9ff": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "bf49a1b6798a45ef2b6849cc5e40086195b2fec6aec1f96d21c5338f10afc357": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "bf6a89e272f38cbf5dc3704d52a83c6872391cb22de98abf156d8a5a820ed06b": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "c00d11c63c0b008689e6489e51ca181fae9d0aee0c457d1bafe574eb6fdac86e": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "c6368935aa7f0e776ca5fc811da5e58c21bb9e2c740843975a58b927867223b2": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "c754fa6d3196161204a1dcb4c6290f510f421e19fee94c67415f0d93805a17bf": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "c8623b77fe6be4ab5f399650404f07a7682ddb54bcae95d79ea93f5c4edd844e": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "c99ae2e298a3d9809e0daed270a4c42db0d26e42c0793c1832aa56fa2ac7412f": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "cae8075a28fccfdfafc01ecc1b80c54ee3a186ec8655d1b8db4b199dfd83a1fb": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "ce0d8408985b0c9f35beada7cab9ee0618ae31ed5a29f18635908c7e319967bc": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "d0cb536f0761fe966a1efcad46f00548e10ed82fa9e32068915e251197969b22": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "d123aa5e09016fe38369bd7aea654fe8f8ea68fb311a35f638b907de9b48914b": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "d4db6ce098b28f8939e04eaef7d6a40e04627d93381f07b9a178777c77b25e77": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "d797687efd88b0b5f6f9d8d8043a8fded6d7c07298925b6e3a1f548eed1585a2": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "d8a3effbb53e89b3d60306a243ebce014774e09667741a59812140390265689b": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "d9578a2112a336ef82ba25c9e6da037631a841c1f901515c53bcaf21d44ff84b": {
+    "message": "自定义匹配 enabled 必须为布尔值",
+    "reason": "request custom_matches.enabled rejects non-bool"
+  },
+  "da2b1a4b9c514bf1dd1e6b70a1555843560a24c92a24e198a488b9f1eb3e7172": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "da624d9c021bdfb1730776a00fecfddd4a23c6cc9d69ad2d4007d7ec008e5f51": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "e26d8ed21348a04732c3caff775709f4bd54d3c13186591a1aa8273da0a0741a": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "e50668512713a78a2e29ee747da6094b2d4686786182fb6dcaf0cd28bf6295d3": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "e65ed2b6e44ab7de435f957ada668d9aa0b07598cfd510be7470cd1a120fcb12": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "e69a5fe8441e9f925e07b1736b6af758aefebac68653a5b78920f64ce9b20987": {
+    "message": "RouterOS gateway4 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "ea9d0fa050d05dbafc497a3386f54beb30f6cccb4d2f1bb823297b251145f517": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "ebf7854b6dcd6e4eef99428cdcc457019cf3e8eec0e682333850f16850ca3de9": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "ecd3ef583523e2d91a63c65697ddd78c300ac2f9b20262bea1dbf10905d27845": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "eceb86d6ea687998f6b35180c6e759736133e87bbed9b9e5f79d549747cbce3d": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "f2a50b708059ce24d19eae61e970000593bbb2b87746f326883c4481e6978ea9": {
+    "message": "RouterOS gateway6 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "fde6efc503728c75e9a0bde41c6eb5d87238ffc13d30ac0f77f90f56a1933f54": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  },
+  "ffe67e074dcb8ce0e28f7f86410fdf2597b568760f1c592c7e4a64c15564fd80": {
+    "message": "RouterOS routing_table 必须为文本",
+    "reason": "request RouterOS route fields reject non-text"
+  }
+}

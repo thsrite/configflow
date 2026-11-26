@@ -1,0 +1,59 @@
+{
+  "corpus_sha256": "82281a960707379c8ce0ddc54da84992c81e3820968e55998bf3d7772747368a",
+  "rows": [
+    {
+      "index": 9,
+      "sha256": "83300404d75db01f0a82e795fdfe40ea6382ff42de3cb66f7ba0749d77be4b14",
+      "python_want": -1,
+      "native_want": 1
+    },
+    {
+      "index": 10,
+      "sha256": "e39bc2f79e5d35892bc0254d902abbf24ef686d460022f884cb7c24c435cf620",
+      "python_want": -1,
+      "native_want": 1
+    },
+    {
+      "index": 11,
+      "sha256": "c19b8bd75489ad6fa8d6f57313d652a4fd010f5395081ccbfad8cb25ba0af453",
+      "python_want": 0,
+      "native_want": 1
+    },
+    {
+      "index": 13,
+      "sha256": "3339e17faabd9af8e5e8fe5cf7e7733d2292fee7aaa7de00149d8e559ba137a1",
+      "python_want": -1,
+      "native_want": 1
+    },
+    {
+      "index": 14,
+      "sha256": "2fd69fc88dc3647c5e15369398dfd2aae1253bd7c41c32b72e66b8dbcc1a49a0",
+      "python_want": -1,
+      "native_want": 1
+    },
+    {
+      "index": 16,
+      "sha256": "b3a3830f71095a685f83f147382d99f7d9559bb4db2e85bfc166d22124ddf69b",
+      "python_want": -1,
+      "native_want": 1
+    },
+    {
+      "index": 17,
+      "sha256": "c198ddf1666637b193e31de61e53c3d728e472b706994daf81062158ed4d4d60",
+      "python_want": -1,
+      "native_want": 1
+    },
+    {
+      "index": 27,
+      "sha256": "1e9ef293dbbdf8d4d378e96d8ab53fda049cd74893198e7e488dcff534204aa4",
+      "python_want": -1,
+      "native_want": 1
+    },
+    {
+      "index": 38,
+      "sha256": "980108b3fadf0e589172500f6235ed474eca77840fe4b2e2df3f7e875df8936f",
+      "python_want": 0,
+      "native_want": 1
+    }
+  ]
+}

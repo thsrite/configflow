@@ -241,12 +241,12 @@ func TestOxiDNSReloadOnlyRefusesRestartAndRestoresRejectedCandidate(t *testing.T
 
 func TestMihomoReloadControllerTransport(t *testing.T) {
 	for _, address := range []string{"example.com:9090", "192.0.2.1:9090", "127.0.0.1:0", "127.0.0.1:65536", "http://127.0.0.1:9090"} {
-		if _, err := newMihomoReloader(map[string]interface{}{"external-controller": address}); err == nil {
+		if _, err := newMihomoReloader(map[string]any{"external-controller": address}); err == nil {
 			t.Errorf("accepted unsafe controller %q", address)
 		}
 	}
 	for _, address := range []string{"0.0.0.0:9090", "[::]:9090", "localhost:9090", "[::1]:9090"} {
-		if _, err := newMihomoReloader(map[string]interface{}{"external-controller": address}); err != nil {
+		if _, err := newMihomoReloader(map[string]any{"external-controller": address}); err != nil {
 			t.Errorf("rejected local controller %q: %v", address, err)
 		}
 	}
@@ -257,7 +257,7 @@ func TestMihomoReloadControllerTransport(t *testing.T) {
 		}))
 		defer server.Close()
 		t.Setenv("HTTP_PROXY", "http://192.0.2.1:1")
-		r, err := newMihomoReloader(map[string]interface{}{"external-controller": strings.TrimPrefix(server.URL, "http://")})
+		r, err := newMihomoReloader(map[string]any{"external-controller": strings.TrimPrefix(server.URL, "http://")})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -287,7 +287,7 @@ func TestMihomoReloadControllerTransport(t *testing.T) {
 		})}
 		go server.Serve(listener)
 		defer server.Close()
-		if err := mihomoUnixControllerProbe(map[string]interface{}{"external-controller-unix": socket, "secret": "secret"}); err != nil {
+		if err := mihomoUnixControllerProbe(map[string]any{"external-controller-unix": socket, "secret": "secret"}); err != nil {
 			t.Fatal(err)
 		}
 	})

@@ -6,12 +6,12 @@ package routes
 // reinstalling. The installers and this file must produce identical artifacts:
 // the shared sysctl.d file, the boot hook and the in-place patched Agent service.
 import (
+	"agent/internal/atomicfile"
 	"agent/preflight"
 	"agent/upgrade"
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -182,11 +182,6 @@ func aioForwardingTargetFor(cfg *Config) (aioForwardingTarget, error) {
 	}, nil
 }
 
-// The zero-argument forms describe the native AIO Mihomo Agent.
-func aioForwardingHookPath() string { return aioDefaultTarget().Hook() }
-func aioSystemdHookLine() string    { return aioDefaultTarget().SystemdHookLine() }
-func aioOpenRCHookLine() string     { return aioDefaultTarget().OpenRCHookLine() }
-
 // The first line of start_pre() in OpenRC scripts written before the installer
 // reserved a hook line; the hook is inserted above it, as the installer does now.
 const aioOpenRCLegacyFirstLine = "    checkpath --directory --mode 0755 /var/log"
@@ -326,8 +321,8 @@ func aioStartupHookState(t aioForwardingTarget) (string, error) {
 	return "unknown", nil
 }
 
-func aioForwardingStatus(cfg *Config) map[string]interface{} {
-	result := map[string]interface{}{"protocol": 1, "current": "", "supported": true}
+func aioForwardingStatus(cfg *Config) map[string]any {
+	result := map[string]any{"protocol": 1, "current": "", "supported": true}
 	errs := []string{}
 	target, supportErr := aioInstallation(cfg)
 	if supportErr != nil {
@@ -384,8 +379,8 @@ var aioDevicePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$`)
 
 // aioTUNStatus describes the deployed configuration; the device name is never
 // assumed because old gateway profiles used Mihomo and full TUN uses Meta.
-func aioTUNStatus(cfg *Config) map[string]interface{} {
-	result := map[string]interface{}{"configured": false, "device": "Meta", "present": false, "gateway_marker": false}
+func aioTUNStatus(cfg *Config) map[string]any {
+	result := map[string]any{"configured": false, "device": "Meta", "present": false, "gateway_marker": false}
 	if cfg == nil || cfg.ServiceType != "mihomo" {
 		result["error"] = "仅 Mihomo Agent 使用 TUN"
 		return result
@@ -400,7 +395,7 @@ func aioTUNStatus(cfg *Config) map[string]interface{} {
 		result["error"] = err.Error()
 		return result
 	}
-	tun, _ := doc["tun"].(map[string]interface{})
+	tun, _ := doc["tun"].(map[string]any)
 	result["device"], result["gateway_marker"] = routing.tunDevice, marker
 	result["configured"] = routing.tunEnabled && tun["auto-route"] == true && tun["auto-redirect"] == true
 	if aioDevicePattern.MatchString(routing.tunDevice) {
@@ -509,7 +504,7 @@ func aioForwardingFailure(message string, err error) error {
 	return fmt.Errorf("%s：%w。请检查当前 Linux/容器的 CAP_NET_ADMIN 和 /proc/sys 写权限；LXC 权限受限时需由宿主机管理员调整", message, err)
 }
 
-func summarizeTUNPrepare(report preflight.Report) map[string]interface{} {
+func summarizeTUNPrepare(report preflight.Report) map[string]any {
 	level, messages := "pass", []string{}
 	for _, check := range report {
 		switch check.Level {
@@ -526,14 +521,14 @@ func summarizeTUNPrepare(report preflight.Report) map[string]interface{} {
 		}
 		messages = append(messages, message)
 	}
-	return map[string]interface{}{"level": level, "message": strings.Join(messages, "\n")}
+	return map[string]any{"level": level, "message": strings.Join(messages, "\n")}
 }
 
 // persistAIOForwarding enables and persists IPv4 forwarding the way the
 // ordinary AIO and single-service Mihomo installers do. The caller holds gatewayMu, returnRoutingMu and
 // the service operation lock. Every step is checked first, so a retry after
 // any interruption converges. Forwarding is never written to 0.
-func persistAIOForwarding(cfg *Config, prepareTUN bool) (result map[string]interface{}, resultErr error) {
+func persistAIOForwarding(cfg *Config, prepareTUN bool) (result map[string]any, resultErr error) {
 	instance, err := aioInstallation(cfg)
 	if err != nil {
 		return nil, err
@@ -678,7 +673,7 @@ func persistAIOForwarding(cfg *Config, prepareTUN bool) (result map[string]inter
 	if err := aioEnsureSysctlBoot(); err != nil {
 		return nil, err
 	}
-	result = map[string]interface{}{"tun_prepare": nil}
+	result = map[string]any{"tun_prepare": nil}
 	if prepareTUN {
 		// TUN preparation is advisory here: forwarding is already persisted.
 		result["tun_prepare"] = summarizeTUNPrepare(aioPrepareTUN(deploymentDNSConfig(cfg)))
@@ -687,33 +682,35 @@ func persistAIOForwarding(cfg *Config, prepareTUN bool) (result map[string]inter
 }
 
 // The hard link is an atomic commit that refuses a file created concurrently.
+// Each stage keeps its own message: the panel shows them to the user.
 func aioCommitForwardingConfig(target string) error {
-	file, err := os.CreateTemp(aioSysctlDir, ".configflow-aio-forward.")
-	if err != nil {
+	var created, written, linked bool
+	err := atomicfile.WriteWith(target, []byte(aioForwardingContent), 0o644, atomicfile.Options{
+		CreateTemp: func(dir string) (*os.File, error) {
+			file, err := os.CreateTemp(dir, ".configflow-aio-forward.")
+			created = err == nil
+			return file, err
+		},
+		Exclusive:    true,
+		BeforeCommit: func() error { written = true; return nil },
+		SyncDir:      func(dir string) error { linked = true; return syncDirectory(dir) },
+	})
+	switch {
+	case err == nil:
+		return nil
+	case !created:
 		return fmt.Errorf("IPv4 转发持久化目录不可写：%w", err)
-	}
-	temp := file.Name()
-	defer os.Remove(temp)
-	_, err = file.WriteString(aioForwardingContent)
-	if err == nil {
-		err = file.Chmod(0644)
-	}
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
+	case !written:
 		return fmt.Errorf("无法写入 IPv4 转发持久化文件：%w", err)
-	}
-	if err := os.Link(temp, target); err != nil {
+	case !linked:
+		// Any link failure is fine when a managed file is already in place.
 		if aioForwardingConfigManaged() {
 			return nil
 		}
 		return fmt.Errorf("无法提交 IPv4 转发持久化配置：%w", err)
+	default:
+		return err
 	}
-	return syncDirectory(aioSysctlDir)
 }
 
 func aioSysctlBootNotice(boot preflight.SysctlBootState) string {
@@ -760,15 +757,15 @@ func ReapplyForwardingBoot(cfg *Config) {
 func reapplyForwardingBoot(cfg *Config) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			log.Printf("IPv4 forwarding boot check skipped after an internal error: %v", recovered)
+			logger.Errorf("IPv4 forwarding boot check skipped after an internal error: %v", recovered)
 		}
 	}()
 	repaired, err := aioRepairSysctlBoot(cfg)
 	switch {
 	case err != nil:
-		log.Printf("IPv4 forwarding boot check needs attention: %v", err)
+		logger.Warnf("IPv4 forwarding boot check needs attention: %v", err)
 	case repaired:
-		log.Printf("IPv4 forwarding persisted by ConfigFlow: added the OpenRC sysctl service to the boot runlevel so %s applies at boot", aioForwardingConfigPath())
+		logger.Infof("IPv4 forwarding persisted by ConfigFlow: added the OpenRC sysctl service to the boot runlevel so %s applies at boot", aioForwardingConfigPath())
 	}
 }
 

@@ -1,0 +1,61 @@
+package rules
+
+import (
+	"encoding/json"
+	"os"
+	"testing"
+
+	"configflow/internal/model"
+	"configflow/internal/testjson/modeldirt"
+)
+
+func TestHistoricalMigrationFilenameReference(t *testing.T) {
+	data, err := os.ReadFile("testdata/n89_migration_expected.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows []struct {
+		Input    string `json:"input"`
+		Filename string `json:"filename"`
+	}
+	if json.Unmarshal(data, &rows) != nil || len(rows) != 6 {
+		t.Fatal("independent migration evidence missing")
+	}
+	accepted := 0
+	for _, row := range rows {
+		var rule model.RuleConfig
+		if err := json.Unmarshal([]byte(row.Input), &rule); err != nil {
+			t.Fatal(err)
+		}
+		name, ok := LegacyCacheFilename(rule)
+		if !ok || name != row.Filename {
+			if !modeldirt.HasDirt([]byte(row.Input), model.RuleConfig{}, modeldirt.DirtEmptyText, modeldirt.DirtNull) {
+				t.Fatalf("historical address got %q/%v want %q", name, ok, row.Filename)
+			}
+			// Accepted O18 T1c difference: the old key hashed the stored
+			// members, and a plain record cannot keep "id": "" (or null)
+			// apart from a missing ID, so such a rule's old cache file is
+			// not found and the source is fetched again.
+			accepted++
+		}
+		// Equivalent spelling is ownership evidence; numeric coercions are not.
+		var canonical model.RuleConfig
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal([]byte(row.Input), &fields)
+		for _, key := range []string{"behavior", "source_type", "url"} {
+			var text string
+			if json.Unmarshal(fields[key], &text) == nil && text != "" {
+				fields[key], _ = json.Marshal(text)
+			}
+		}
+		raw, _ := json.Marshal(fields)
+		_ = json.Unmarshal(raw, &canonical)
+		if !SameSourceDeclaration(rule, canonical) {
+			t.Fatal("escaped string lost current ownership")
+		}
+	}
+	// Exactly the rows with "id": "" and with "id"/"behavior": null.
+	if accepted != 2 {
+		t.Fatalf("%d rows differ only by \"\"/null presence, want 2", accepted)
+	}
+}

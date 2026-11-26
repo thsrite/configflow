@@ -1,0 +1,128 @@
+diff --git a/server/internal/repo/batch_paths_test.go b/server/internal/repo/batch_paths_test.go
+index 9376220a6..7afab1a46 100644
+--- a/server/internal/repo/batch_paths_test.go
++++ b/server/internal/repo/batch_paths_test.go
+@@ -6,45 +6,99 @@ import (
+ 	"go/token"
+ 	"os"
+ 	"path/filepath"
++	"strconv"
+ 	"strings"
+ 	"testing"
+ )
+ 
+ func TestCommitBatchMarkersMatchDesign(t *testing.T) {
+-	allowed := map[string]int{"DeleteProfile": 0, "ImportAll": 0, "CreateRuleLibraryItem": 0}
+-	files, err := filepath.Glob("*.go")
+-	if err != nil {
+-		t.Fatal(err)
++	// One canonical whitelist for the three O3-6c repo batches and the fourth
++	// explicitly approved domain exception, Clarified in R12. The AST proves
++	// location and cardinality; Runtime tests prove the side-effect condition.
++	allowed := map[string]int{
++		"repo:DeleteProfile:beginCommitBatch":                 0,
++		"repo:ImportAll:beginCommitBatch":                     0,
++		"repo:CreateRuleLibraryItem:beginCommitBatch":         0,
++		"routers:saveAbortedPublication:ctxx.Uninterruptible": 0,
+ 	}
+-	for _, name := range files {
+-		if strings.HasSuffix(name, "_test.go") {
+-			continue
++	for _, pkg := range []string{"repo", "routers"} {
++		dir := "."
++		if pkg != "repo" {
++			dir = filepath.Join("..", pkg)
+ 		}
+-		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
++		files, err := filepath.Glob(filepath.Join(dir, "*.go"))
+ 		if err != nil {
+ 			t.Fatal(err)
+ 		}
+-		for _, declaration := range file.Decls {
+-			owner := ""
+-			if fn, ok := declaration.(*ast.FuncDecl); ok {
+-				owner = fn.Name.Name
++		for _, name := range files {
++			if strings.HasSuffix(name, "_test.go") {
++				continue
+ 			}
+-			ast.Inspect(declaration, func(node ast.Node) bool {
+-				call, ok := node.(*ast.CallExpr)
+-				if !ok {
+-					return true
++			file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
++			if err != nil {
++				t.Fatal(err)
++			}
++			ctxxAliases := map[string]bool{}
++			dotCtxx := false
++			for _, imp := range file.Imports {
++				path, err := strconv.Unquote(imp.Path.Value)
++				if err != nil {
++					t.Fatal(err)
+ 				}
+-				name, ok := call.Fun.(*ast.Ident)
+-				if !ok || name.Name != "beginCommitBatch" {
+-					return true
++				if path != "configflow/internal/ctxx" {
++					continue
+ 				}
+-				if _, found := allowed[owner]; !found {
+-					t.Errorf("batch marker in unapproved path %s: update Clarified in O3-6c", owner)
++				alias := "ctxx"
++				if imp.Name != nil {
++					alias = imp.Name.Name
++				}
++				if alias == "." {
++					dotCtxx = true
+ 				} else {
+-					allowed[owner]++
++					ctxxAliases[alias] = true
++				}
++			}
++			for _, decl := range file.Decls {
++				owner := ""
++				if fn, ok := decl.(*ast.FuncDecl); ok {
++					owner = fn.Name.Name
++					// The repo batches are *Repository methods (O3-6c); in routers a
++					// method must not pass for the approved plain function.
++					if fn.Recv != nil && pkg != "repo" {
++						owner = "method:" + owner
++					}
+ 				}
+-				return true
+-			})
++				ast.Inspect(decl, func(node ast.Node) bool {
++					callee := ""
++					switch value := node.(type) {
++					case *ast.CallExpr:
++						if name, ok := value.Fun.(*ast.Ident); ok && pkg == "repo" && name.Name == "beginCommitBatch" {
++							callee = "beginCommitBatch"
++						}
++						if name, ok := value.Fun.(*ast.Ident); ok && pkg == "routers" && dotCtxx && name.Name == "Uninterruptible" {
++							callee = "ctxx.Uninterruptible"
++						}
++					case *ast.SelectorExpr:
++						// Count references as well as direct calls: assigning the
++						// function to a variable must not bypass the whitelist.
++						if pkg == "routers" && value.Sel.Name == "Uninterruptible" {
++							if alias, ok := value.X.(*ast.Ident); ok && ctxxAliases[alias.Name] {
++								callee = "ctxx.Uninterruptible"
++							}
++						}
++					}
++					if callee == "" {
++						return true
++					}
++					key := pkg + ":" + owner + ":" + callee
++					if _, ok := allowed[key]; !ok {
++						t.Errorf("unapproved batch marker %s in %s: update the coordinator-approved design", key, name)
++					} else {
++						allowed[key]++
++					}
++					return true
++				})
++			}
+ 		}
+ 	}
+ 	design, err := os.ReadFile(filepath.Join("..", "..", "design", "o3-concurrency.md"))

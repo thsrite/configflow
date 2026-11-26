@@ -1,0 +1,27 @@
+// Deliberately invalid architectural boundaries; parsed as source, never compiled.
+package example
+
+import (
+ j "configflow/internal/jsonx"
+ _ "configflow/internal/pystr"
+ _ "configflow/internal/pyyaml"
+ _ "configflow/internal/testjson"
+)
+
+type PyError struct{}
+type pyError struct{}
+type PyErrorClass interface { PythonClass() string }
+
+func raise() {}
+func catch() {}
+func must() {}
+func mustValue() {}
+func dictGet() {}
+func dictItem() {}
+func PyTypeName() {}
+func PyParseInt() {}
+func pyTruthy() {}
+
+// Function references must be detected, even without CallExpr.
+var callbacks = []any{raise, catch, must, mustValue, dictGet, dictItem,
+ PyTypeName, PyParseInt, pyTruthy, other.PythonClass, j.Parse}

@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -25,6 +24,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"agent/svc"
 )
 
 const oxidnsHAProtocol = 1
@@ -170,10 +171,13 @@ func loadHAState(cfg *Config) (*haState, error) {
 			return nil, fmt.Errorf("DNS 高可用状态的文件摘要无效，保留现有 keepalived 配置")
 		}
 	}
-	if (state.Service.Manager != "systemd" && state.Service.Manager != "openrc" && state.Service.Manager != "supervisor") || state.Service.Unit != haServiceUnit {
+	// Journals written before 1.9.3-go record the container manager as
+	// "supervisor"; the next save records "s6".
+	state.Service.Manager = svc.NormalizeManager(state.Service.Manager)
+	if (state.Service.Manager != "systemd" && state.Service.Manager != "openrc" && state.Service.Manager != svc.ContainerManager) || state.Service.Unit != haServiceUnit {
 		return nil, fmt.Errorf("DNS 高可用状态的服务记录无效，保留现有 keepalived 配置")
 	}
-	if state.Service.Manager == "supervisor" && !haDigestPattern.MatchString(state.ContainerHostID) {
+	if state.Service.Manager == svc.ContainerManager && !haDigestPattern.MatchString(state.ContainerHostID) {
 		return nil, fmt.Errorf("容器 HA 状态缺少有效的宿主归属信息")
 	}
 	return &state, nil
@@ -225,7 +229,7 @@ func haPlatform(cfg *Config) error {
 	if cfg == nil || cfg.ServiceType != "oxidns" {
 		return fmt.Errorf("DNS 高可用只能在 OxiDNS Agent 上配置")
 	}
-	if cfg.ServiceManager == "supervisor" {
+	if cfg.ServiceManager == svc.ContainerManager {
 		environment := haEnvironment(cfg)
 		if !environment.Ready {
 			return fmt.Errorf("%s", strings.Join(environment.Blockers, "；"))
@@ -344,15 +348,15 @@ type haListener struct {
 }
 
 // haListeners reads OxiDNS UDP servers from the active configuration.
-func haListeners(doc map[string]interface{}) []haListener {
-	plugins, _ := doc["plugins"].([]interface{})
+func haListeners(doc map[string]any) []haListener {
+	plugins, _ := doc["plugins"].([]any)
 	result := []haListener{}
 	for _, value := range plugins {
-		plugin, _ := value.(map[string]interface{})
+		plugin, _ := value.(map[string]any)
 		if plugin["type"] != "udp_server" {
 			continue
 		}
-		args, _ := plugin["args"].(map[string]interface{})
+		args, _ := plugin["args"].(map[string]any)
 		listen, _ := args["listen"].(string)
 		entry, _ := args["entry"].(string)
 		host, port, err := net.SplitHostPort(strings.TrimSpace(listen))
@@ -368,12 +372,12 @@ func haListeners(doc map[string]interface{}) []haListener {
 	return result
 }
 
-func readOxiDNSDocument(path string) (map[string]interface{}, error) {
+func readOxiDNSDocument(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, err
 	}
@@ -410,12 +414,12 @@ func haPreflight(cfg *Config, spec OxiDNSHASpec, state *haState) ([]string, stri
 		}
 	}
 	add(haPlatform(cfg))
-	if cfg != nil && cfg.ServiceManager == "supervisor" {
+	if cfg != nil && cfg.ServiceManager == svc.ContainerManager {
 		environment := haEnvironment(cfg)
 		if spec.SelfIP != cfg.AgentIP {
 			add(fmt.Errorf("HA 本机地址必须与容器固定 AGENT_IP 一致"))
 		}
-		if state != nil && (state.Service.Manager != "supervisor" || state.ContainerHostID != environment.HostID) {
+		if state != nil && (state.Service.Manager != svc.ContainerManager || state.ContainerHostID != environment.HostID) {
 			add(fmt.Errorf("HA 记录属于其他宿主或安装方式，已保留原记录，请先确认并停用"))
 		}
 	}
@@ -447,16 +451,20 @@ func haPreflight(cfg *Config, spec OxiDNSHASpec, state *haState) ([]string, stri
 	return blockers, iface, cidr
 }
 
-func haStatus(cfg *Config) map[string]interface{} {
+func haStatus(cfg *Config) OxiDNSHAStatusResponse {
 	environment := haEnvironment(cfg)
-	result := map[string]interface{}{"success": true, "protocol": oxidnsHAProtocol, "managed": nil, "handoff": nil, "error": "", "environment": environment}
+	result := OxiDNSHAStatusResponse{
+		Environment: environment,
+		Protocol:    oxidnsHAProtocol,
+		Success:     true,
+	}
 	haMu.Lock()
 	state, err := loadHAState(cfg)
 	haMu.Unlock()
 	if err != nil {
-		result["error"] = err.Error()
+		result.Error = err.Error()
 	} else if ownershipErr := haContainerOwnership(cfg, state, environment); ownershipErr != nil {
-		result["error"] = ownershipErr.Error()
+		result.Error = ownershipErr.Error()
 	}
 	running := false
 	if _, lookErr := haLookPath("keepalived"); lookErr == nil && cfg != nil {
@@ -464,20 +472,27 @@ func haStatus(cfg *Config) map[string]interface{} {
 	}
 	vipPresent, role := false, "unknown"
 	if state != nil {
-		result["managed"] = map[string]interface{}{"spec": state.Spec, "active": state.Active, "pending": state.Pending, "applied_at": state.AppliedAt, "interface": state.Interface, "cidr": state.CIDR}
+		result.Managed = &OxiDNSHAManagedStatus{
+			Active:    state.Active,
+			AppliedAt: state.AppliedAt,
+			CIDR:      state.CIDR,
+			Interface: state.Interface,
+			Pending:   state.Pending,
+			Spec:      state.Spec,
+		}
 		if addresses, addrErr := readHAAddresses(); addrErr == nil {
 			vipPresent = haVIPPresent(state.Spec, addresses)
 		} else if err == nil {
-			result["error"] = addrErr.Error()
+			result.Error = addrErr.Error()
 		}
 		if vipPresent {
 			role = "master"
 		} else if running {
 			role = "backup"
 		}
-		if err == nil && result["error"] == "" {
+		if err == nil && result.Error == "" {
 			if driftErr := haFilesDrift(cfg, state); driftErr != nil {
-				result["error"] = driftErr.Error()
+				result.Error = driftErr.Error()
 			}
 		}
 	}
@@ -488,19 +503,24 @@ func haStatus(cfg *Config) map[string]interface{} {
 		vipHealthy = haHandoffProbe(net.JoinHostPort(state.Spec.VIP, "53"), name, haCheckTimeout) == nil
 	}
 	if handoff, handoffErr := haHandoffPublic(cfg, state, localHealthy); handoffErr != nil {
-		if result["error"] == "" {
-			result["error"] = handoffErr.Error()
+		if result.Error == "" {
+			result.Error = handoffErr.Error()
 		}
 	} else {
-		result["handoff"] = handoff
+		result.Handoff = handoff
 	}
-	result["runtime"] = map[string]interface{}{"keepalived_running": running, "vip_present": vipPresent, "role": role,
-		"healthy": localHealthy, "vip_healthy": vipHealthy}
+	result.Runtime = OxiDNSHARuntimeStatus{
+		Healthy:           localHealthy,
+		KeepalivedRunning: running,
+		Role:              role,
+		VIPHealthy:        vipHealthy,
+		VIPPresent:        vipPresent,
+	}
 	return result
 }
 
 func haFailure(w http.ResponseWriter, code int, err error) {
-	JsonResponse(w, code, map[string]interface{}{"success": false, "message": err.Error(), "error": err.Error()})
+	JsonResponse(w, code, OxiDNSHAErrorResponse{Error: err.Error(), Message: err.Error(), Success: false})
 }
 
 func decodeHASpec(w http.ResponseWriter, r *http.Request) (OxiDNSHASpec, bool) {
@@ -511,7 +531,7 @@ func decodeHASpec(w http.ResponseWriter, r *http.Request) (OxiDNSHASpec, bool) {
 		haFailure(w, http.StatusBadRequest, fmt.Errorf("请求格式错误：%w", err))
 		return spec, false
 	}
-	if err := decoder.Decode(new(interface{})); err != io.EOF {
+	if err := decoder.Decode(new(any)); err != io.EOF {
 		haFailure(w, http.StatusBadRequest, fmt.Errorf("请求只能包含一个 JSON 对象"))
 		return spec, false
 	}
@@ -558,7 +578,7 @@ func OxiDNSHAHandler(cfg *Config) http.HandlerFunc {
 				haFailure(w, code, err)
 				return
 			}
-			JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "removed": removed})
+			JsonResponse(w, http.StatusOK, OxiDNSHARemoveResponse{Removed: removed, Success: true})
 		default:
 			w.Header().Set("Allow", "GET, PUT, DELETE")
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -585,7 +605,14 @@ func OxiDNSHAPreviewHandler(cfg *Config) http.HandlerFunc {
 		if err != nil {
 			blockers = append(blockers, err.Error())
 		}
-		JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "ok": len(blockers) == 0, "blockers": blockers, "interface": iface, "cidr": cidr, "environment": haEnvironment(cfg)})
+		JsonResponse(w, http.StatusOK, OxiDNSHAPreviewResponse{
+			Blockers:    blockers,
+			CIDR:        cidr,
+			Environment: haEnvironment(cfg),
+			Interface:   iface,
+			OK:          len(blockers) == 0,
+			Success:     true,
+		})
 	}
 }
 
@@ -604,7 +631,7 @@ func ReapplyOxiDNSHA(cfg *Config) {
 	if cfg == nil || cfg.ServiceType != "oxidns" || cfg.AgentConfigFile == "" {
 		return
 	}
-	if cfg.ServiceManager == "supervisor" && haDockerOptIn() {
+	if cfg.ServiceManager == svc.ContainerManager && haDockerOptIn() {
 		// A companion can be recreated long after the application started.
 		// Only an owned active journal may restart its one managed program.
 		go func() {
@@ -612,7 +639,7 @@ func ReapplyOxiDNSHA(cfg *Config) {
 			for {
 				if err := reconcileOxiDNSHA(cfg); err != nil {
 					if message := err.Error(); message != lastMessage {
-						log.Printf("oxidns ha: container recovery pending: %s", message)
+						logger.Infof("oxidns ha: container recovery pending: %s", message)
 						lastMessage = message
 					}
 				} else {
@@ -628,7 +655,7 @@ func ReapplyOxiDNSHA(cfg *Config) {
 	}
 	go func() {
 		if err := reapplyOxiDNSHA(cfg, 10, func() { haSleep(3 * time.Second) }); err != nil {
-			log.Printf("oxidns ha: boot replay refused: %v", err)
+			logger.Warnf("oxidns ha: boot replay refused: %v", err)
 		}
 	}()
 }

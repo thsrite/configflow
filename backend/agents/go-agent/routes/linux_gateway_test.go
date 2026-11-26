@@ -16,7 +16,7 @@ import (
 type gatewayFixture struct {
 	cfg       *Config
 	spec      LinuxGatewaySpec
-	nft       []map[string]interface{}
+	nft       []map[string]any
 	mutations int
 	handle    int
 	failWrite bool
@@ -49,7 +49,7 @@ func newGatewayFixture(t *testing.T) *gatewayFixture {
 	aioSysctlDir = filepath.Join(root, "sysctl.d")
 	gatewayOS, gatewayGeteuid, gatewaySysctlRoot = "linux", func() int { return 0 }, filepath.Join(root, "proc")
 	gatewayCoreVersion = func(string) (string, error) { return "Mihomo Meta v1.19.0", nil }
-	fixture := &gatewayFixture{cfg: &Config{AgentConfigFile: filepath.Join(root, "agent.json"), ConfigPath: filepath.Join(root, "mihomo.yaml"), ServiceType: "mihomo", ServiceManager: "systemd"}, spec: LinuxGatewaySpec{Interface: "eth0", Address: "192.168.1.2", LANCIDR: "192.168.1.0/24", UpstreamGateway: "192.168.1.1"}, nft: []map[string]interface{}{}, addresses: `[{"ifname":"eth0","addr_info":[{"local":"192.168.1.2","prefixlen":24}]}]`, routes: `[{"dev":"eth0","gateway":"192.168.1.1"}]`}
+	fixture := &gatewayFixture{cfg: &Config{AgentConfigFile: filepath.Join(root, "agent.json"), ConfigPath: filepath.Join(root, "mihomo.yaml"), ServiceType: "mihomo", ServiceManager: "systemd"}, spec: LinuxGatewaySpec{Interface: "eth0", Address: "192.168.1.2", LANCIDR: "192.168.1.0/24", UpstreamGateway: "192.168.1.1"}, nft: []map[string]any{}, addresses: `[{"ifname":"eth0","addr_info":[{"local":"192.168.1.2","prefixlen":24}]}]`, routes: `[{"dev":"eth0","gateway":"192.168.1.1"}]`}
 	initial := gatewayStateSysctls(&gatewayState{Spec: fixture.spec, TunDevice: "Meta"})
 	initial["net/ipv4/conf/all/accept_redirects"] = "1"
 	for key, value := range initial {
@@ -75,7 +75,7 @@ func newGatewayFixture(t *testing.T) *gatewayFixture {
 		case "ip -j -4 route show default":
 			return fixture.routes, nil
 		case "nft -j list ruleset":
-			b, err := json.Marshal(map[string]interface{}{"nftables": fixture.nft})
+			b, err := json.Marshal(map[string]any{"nftables": fixture.nft})
 			return string(b), err
 		default:
 			return "", fmt.Errorf("unexpected command: %s %v", name, args)
@@ -93,7 +93,7 @@ func newGatewayFixture(t *testing.T) *gatewayFixture {
 			return "", fmt.Errorf("simulated transaction failure")
 		}
 		var doc struct {
-			NFT []map[string]map[string]map[string]interface{} `json:"nftables"`
+			NFT []map[string]map[string]map[string]any `json:"nftables"`
 		}
 		if err := json.Unmarshal([]byte(input), &doc); err != nil {
 			t.Fatal(err)
@@ -111,7 +111,7 @@ func newGatewayFixture(t *testing.T) *gatewayFixture {
 				if body == nil || body["family"] != "ip" || body["handle"] == nil {
 					t.Fatalf("unsafe delete: %s", input)
 				}
-				fixture.nft = []map[string]interface{}{}
+				fixture.nft = []map[string]any{}
 			}
 		}
 		return "", nil
@@ -169,7 +169,7 @@ func TestLinuxGatewayPreviewIsReadOnlyAndShowsDeploymentBlocker(t *testing.T) {
 	f := newGatewayFixture(t)
 	f.writeConfig(t, false)
 	preview := gatewayPreview(f.cfg, f.spec, "test-profile")
-	if preview["ready"] != false || len(preview["commands"].([]string)) == 0 || len(preview["blockers"].([]string)) == 0 {
+	if preview.Ready || len(preview.Commands) == 0 || len(preview.Blockers) == 0 {
 		t.Fatalf("invalid preview: %+v", preview)
 	}
 	if f.mutations != 0 {
@@ -182,7 +182,7 @@ func TestLinuxGatewayPreviewIsReadOnlyAndShowsDeploymentBlocker(t *testing.T) {
 	if string(data) != "0" {
 		t.Fatal("preview enabled forwarding")
 	}
-	detection := preview["detection"].(gatewayDetection)
+	detection := preview.Detection
 	if detection.Suggested == nil || *detection.Suggested != f.spec {
 		t.Fatalf("bad detection: %+v", detection)
 	}
@@ -196,7 +196,7 @@ func TestLinuxGatewayApplyRequiresOptInProfileAndMatchingNetwork(t *testing.T) {
 		{"disabled", func(f *gatewayFixture) { f.writeConfig(t, false) }},
 		{"platform", func(f *gatewayFixture) { gatewayOS = "darwin" }},
 		{"oxidns", func(f *gatewayFixture) { f.cfg.ServiceType = "oxidns" }},
-		{"docker", func(f *gatewayFixture) { f.cfg.ServiceManager = "supervisor" }},
+		{"docker", func(f *gatewayFixture) { f.cfg.ServiceManager = "s6" }},
 		{"address", func(f *gatewayFixture) { f.spec.Address = "192.168.1.3" }},
 		{"default route", func(f *gatewayFixture) { f.routes = `[{"dev":"eth0","gateway":"192.168.1.254"}]` }},
 	} {
@@ -232,7 +232,7 @@ func TestLinuxGatewayApplyIsIdempotentAndRemovalRestores(t *testing.T) {
 	if err != nil || state == nil || !state.Active || state.Pending {
 		t.Fatalf("invalid state: %+v %v", state, err)
 	}
-	if result := gatewayManaged(f.cfg); result["healthy"] != true {
+	if result := gatewayManaged(f.cfg); !result.Healthy {
 		t.Fatalf("not healthy: %+v", result)
 	}
 	if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {
@@ -264,8 +264,8 @@ func TestLinuxGatewayRebootRecreatesOnlyOwnedTable(t *testing.T) {
 	if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {
 		t.Fatal(err)
 	}
-	f.nft = []map[string]interface{}{} // A host reboot clears the runtime nftables state.
-	if result := gatewayManaged(f.cfg); result["healthy"] != false {
+	f.nft = []map[string]any{} // A host reboot clears the runtime nftables state.
+	if result := gatewayManaged(f.cfg); result.Healthy {
 		t.Fatal("missing nft falsely healthy")
 	}
 	if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {
@@ -282,7 +282,7 @@ func TestLinuxGatewayRebootRecreatesOnlyOwnedTable(t *testing.T) {
 func TestLinuxGatewayPreservesExternalChanges(t *testing.T) {
 	t.Run("foreign table", func(t *testing.T) {
 		f := newGatewayFixture(t)
-		f.nft = []map[string]interface{}{nftObject("table", map[string]interface{}{"family": "ip", "name": gatewayTable, "handle": 2})}
+		f.nft = []map[string]any{nftObject("table", map[string]any{"family": "ip", "name": gatewayTable, "handle": 2})}
 		if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err == nil {
 			t.Fatal("adopted foreign table")
 		}
@@ -295,7 +295,7 @@ func TestLinuxGatewayPreservesExternalChanges(t *testing.T) {
 		if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {
 			t.Fatal(err)
 		}
-		f.nft = append(f.nft, nftObject("rule", map[string]interface{}{"family": "ip", "table": gatewayTable, "chain": "forward", "expr": []interface{}{map[string]interface{}{"drop": nil}}}))
+		f.nft = append(f.nft, nftObject("rule", map[string]any{"family": "ip", "table": gatewayTable, "chain": "forward", "expr": []any{map[string]any{"drop": nil}}}))
 		if err := removeLinuxGateway(f.cfg); err == nil {
 			t.Fatal("deleted externally edited table")
 		}
@@ -325,7 +325,7 @@ func TestLinuxGatewayPreservesExternalChanges(t *testing.T) {
 		if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {
 			t.Fatal(err)
 		}
-		f.nft[0]["table"].(map[string]interface{})["handle"] = 9000
+		f.nft[0]["table"].(map[string]any)["handle"] = 9000
 		if err := removeLinuxGateway(f.cfg); err == nil {
 			t.Fatal("deleted replacement resource with different identity")
 		}
@@ -338,7 +338,7 @@ func TestLinuxGatewayPreservesExternalChanges(t *testing.T) {
 func TestLinuxGatewayRejectsConflictingFirewallAndReturnRouting(t *testing.T) {
 	t.Run("forward drop", func(t *testing.T) {
 		f := newGatewayFixture(t)
-		f.nft = []map[string]interface{}{nftObject("chain", map[string]interface{}{"family": "inet", "table": "filter", "name": "forward", "hook": "forward", "policy": "drop"})}
+		f.nft = []map[string]any{nftObject("chain", map[string]any{"family": "inet", "table": "filter", "name": "forward", "hook": "forward", "policy": "drop"})}
 		if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err == nil {
 			t.Fatal("ignored forward drop")
 		}
@@ -474,7 +474,7 @@ func TestLinuxGatewayAcceptOnlyForwardChainsRemainCompatible(t *testing.T) {
 	// the forwarding allowances installed alongside a transparent proxy.
 	raw := `{"nftables":[{"chain":{"family":"inet","table":"mihomo","name":"forward","type":"filter","hook":"forward","prio":0,"policy":"accept"}},{"rule":{"family":"inet","table":"mihomo","chain":"forward","expr":[{"match":{"op":"in","left":{"ct":{"key":"state"}},"right":{"set":["established","related"]}}},{"counter":{"packets":42,"bytes":1000}},{"accept":null}]}}]}`
 	var parsed struct {
-		NFT []map[string]interface{} `json:"nftables"`
+		NFT []map[string]any `json:"nftables"`
 	}
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
 		t.Fatal(err)
@@ -483,8 +483,8 @@ func TestLinuxGatewayAcceptOnlyForwardChainsRemainCompatible(t *testing.T) {
 	if _, err := gatewayPreflightResources(f.cfg, nil); err != nil {
 		t.Fatal(err)
 	}
-	rule := f.nft[1]["rule"].(map[string]interface{})
-	rule["expr"] = []interface{}{map[string]interface{}{"jump": map[string]interface{}{"target": "other"}}}
+	rule := f.nft[1]["rule"].(map[string]any)
+	rule["expr"] = []any{map[string]any{"jump": map[string]any{"target": "other"}}}
 	if _, err := gatewayPreflightResources(f.cfg, nil); err == nil {
 		t.Fatal("trusted unknown jump target")
 	}
@@ -573,7 +573,7 @@ func TestLinuxGatewayBootWaitsForLateTunWithoutPartialMutation(t *testing.T) {
 	if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {
 		t.Fatal(err)
 	}
-	f.nft = []map[string]interface{}{}
+	f.nft = []map[string]any{}
 	tunPath := filepath.Join(gatewaySysctlRoot, "net/ipv4/conf/Meta/forwarding")
 	if err := os.Remove(tunPath); err != nil {
 		t.Fatal(err)
@@ -598,7 +598,7 @@ func TestLinuxGatewayBootWaitsForLateTunWithoutPartialMutation(t *testing.T) {
 	if waits != 1 || f.mutations != 2 {
 		t.Fatalf("bad bounded replay waits=%d mutations=%d", waits, f.mutations)
 	}
-	if result := gatewayManaged(f.cfg); result["healthy"] != true {
+	if result := gatewayManaged(f.cfg); !result.Healthy {
 		t.Fatalf("late TUN replay unhealthy: %+v", result)
 	}
 }
@@ -608,7 +608,7 @@ func TestLinuxGatewayBootDoesNotRetryOwnershipConflict(t *testing.T) {
 	if err := applyLinuxGateway(f.cfg, f.spec, "test-profile"); err != nil {
 		t.Fatal(err)
 	}
-	f.nft[0]["table"].(map[string]interface{})["handle"] = 8000
+	f.nft[0]["table"].(map[string]any)["handle"] = 8000
 	waits := 0
 	err := reapplyLinuxGateway(f.cfg, 3, func() { waits++ })
 	if err == nil || waits != 0 || f.mutations != 1 {
@@ -643,7 +643,7 @@ func TestLinuxGatewayRemovalPreservesPersistedAIOForwarding(t *testing.T) {
 			if err := os.WriteFile(aioForwardingConfigPath(), []byte(test.content), 0644); err != nil {
 				t.Fatal(err)
 			}
-			if gatewayManaged(f.cfg)["preserves_forwarding"] != test.keep {
+			if gatewayManaged(f.cfg).PreservesForwarding != test.keep {
 				t.Fatal("managed status does not report forwarding preservation")
 			}
 			// Deploying a full TUN configuration drops the gateway marker.

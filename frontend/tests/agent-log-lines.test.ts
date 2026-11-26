@@ -5,7 +5,7 @@ import { markLogTokens, parseAgentLogLine, parseAgentLogs, splitFields, tokenize
 
 const OXIDNS_DOWNLOAD = '2026-10-20T23:22:20+08:00 T+341494.611 INFO oxidns::plugin::executor::download:184:download completed plugin=rules_download url=https://cf.example/api/profiles/default/mosdns/rule-proxy?url=https%3A%2F%2Fcf.example%2Fx&part=domain&token=[REDACTED] target=rules/rule_27b8_domain.txt timeout_ms=60000 socks5=""'
 const OXIDNS_WARN = '2026-10-20T23:48:57+08:00 T+343092.132 WARN oxidns::plugin::server::udp:232:Error receiving message on UDP socket: DNS protocol error: dns compression pointer exceeds packet length'
-const MIHOMO = 'time="2026-10-21T00:01:02.123456789+08:00" level=warning msg="[TCP] dial Proxy (match RuleSet(google)) 192.168.0.5:51234 --> www.google.com:443 error: i/o timeout"'
+const MIHOMO = 'time="2026-10-21T00:01:02.123456789+08:00" level=warning msg="[TCP] dial Proxy (match RuleSet(google)) 192.0.2.5:51234 --> www.example.org:443 error: i/o timeout"'
 const AGENT = '2026/10/20 23:39:47 Heartbeat sent successfully (service status:  -> active)'
 
 describe('agent log parsing', () => {
@@ -43,7 +43,7 @@ describe('agent log parsing', () => {
       date: '2026-10-21',
       time: '00:01:02',
       level: 'WARN',
-      message: '[TCP] dial Proxy (match RuleSet(google)) 192.168.0.5:51234 --> www.google.com:443 error: i/o timeout'
+      message: '[TCP] dial Proxy (match RuleSet(google)) 192.0.2.5:51234 --> www.example.org:443 error: i/o timeout'
     })
   })
 
@@ -108,11 +108,11 @@ describe('log message colouring', () => {
   })
 
   it('colours the reason after error: in dial failures', () => {
-    const message = '[TCP] dial Proxy (match RuleSet(google)) 192.168.0.5:51234 --> www.example.com:443 error: i/o timeout'
+    const message = '[TCP] dial Proxy (match RuleSet(google)) 192.0.2.5:51234 --> www.example.com:443 error: i/o timeout'
     const tokens = tokenizeLogMessage(message)
     expect(tokens.map(token => token.text).join('')).toBe(message)
     expect(kinds(tokens)).toEqual([
-      ['tag', '[TCP]'], ['kw', 'match'], ['rule', 'RuleSet(google)'], ['src', '192.168.0.5:51234'], ['arrow', '-->'],
+      ['tag', '[TCP]'], ['kw', 'match'], ['rule', 'RuleSet(google)'], ['src', '192.0.2.5:51234'], ['arrow', '-->'],
       ['dst', 'www.example.com:443'], ['err', 'error: i/o timeout']
     ])
   })
@@ -152,11 +152,11 @@ describe('log message colouring', () => {
 
   it('renders coloured tokens and search marks', () => {
     const wrapper = mount(AgentLogLines, {
-      props: { text: 'time="2026-10-21T00:01:02+08:00" level=info msg="[TCP] 192.168.0.5:1 --> www.example.com:443 match Match using DIRECT"', highlight: 'example' }
+      props: { text: 'time="2026-10-21T00:01:02+08:00" level=info msg="[TCP] 192.0.2.5:1 --> www.example.com:443 match Match using DIRECT"', highlight: 'example' }
     })
     expect(wrapper.find('.log-tk-dst').text()).toBe('www.')
     expect(wrapper.find('mark.log-hit.log-tk-dst').text()).toBe('example')
     expect(wrapper.find('.log-tk-direct').text()).toBe('DIRECT')
-    expect(wrapper.find('.log-message').text()).toBe('[TCP] 192.168.0.5:1 --> www.example.com:443 match Match using DIRECT')
+    expect(wrapper.find('.log-message').text()).toBe('[TCP] 192.0.2.5:1 --> www.example.com:443 match Match using DIRECT')
   })
 })

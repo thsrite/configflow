@@ -20,7 +20,7 @@ ConfigFlow 管理面板负责保存和分发设置；**Mihomo、OxiDNS 等“核
 | 需要准备 | 怎么选 |
 | --- | --- |
 | 一台能运行 Docker 的服务器或 NAS | 安装并启动 Docker。选择 Compose 时还需 Docker Compose；也可以选下面的 `docker run` 命令。NAS 的“项目／Compose”功能也可以。 |
-| 这台设备的局域网 IP | 例如 `192.168.1.10`。建议在主路由中为它保留地址，避免重启后变化。 |
+| 这台设备的局域网 IP | 例如 `192.0.2.10`。建议在主路由中为它保留地址，避免重启后变化。 |
 | 一个长期保存数据的目录 | 例如 NAS 的 `/volume1/docker/configflow/data`。这是示例，需换成自己的实际路径。 |
 | 未被占用的端口 | Bridge 示例从 `5010` 访问，Host 示例从 `8088` 访问。Host 示例另用 `15801` 作为后端端口、`15802` 作为内置 Sub-Store 端口；三个端口都要空闲。 |
 | 管理账号、密码和登录密钥 | 自己设置，不要原样使用示例里的占位文字。 |
@@ -63,7 +63,7 @@ cd "$HOME/configflow"
 ```yaml [Bridge 模式（推荐）]
 services:
   config-flow:
-    image: thsrite/config-flow:latest
+    image: thsrite/config-flow:3
     container_name: config-flow
     ports:
       - "5010:80"
@@ -75,13 +75,14 @@ services:
       ADMIN_USERNAME: "your-admin-name"
       ADMIN_PASSWORD: "replace-with-your-own-password"
       JWT_SECRET_KEY: "replace-with-at-least-32-random-characters"
+    stop_grace_period: 10s
     restart: unless-stopped
 ```
 
 ```yaml [Host 模式]
 services:
   config-flow:
-    image: thsrite/config-flow:latest
+    image: thsrite/config-flow:3
     container_name: config-flow
     network_mode: host
     volumes:
@@ -96,6 +97,7 @@ services:
       ADMIN_USERNAME: "your-admin-name"
       ADMIN_PASSWORD: "replace-with-your-own-password"
       JWT_SECRET_KEY: "replace-with-at-least-32-random-characters"
+    stop_grace_period: 10s
     restart: unless-stopped
 ```
 
@@ -130,10 +132,10 @@ docker compose ps
 
 | 采用的示例 | 浏览器地址 |
 | --- | --- |
-| Bridge | `http://192.168.1.10:5010` |
-| Host | `http://192.168.1.10:8088` |
+| Bridge | `http://192.0.2.10:5010` |
+| Host | `http://192.0.2.10:8088` |
 
-将 `192.168.1.10` 换成安装设备的实际 IP；改过端口就使用新端口。用刚设置的账号密码登录。只有浏览器和容器运行在同一台电脑上时，才可以把设备 IP 写成 `localhost`。
+将 `192.0.2.10` 换成安装设备的实际 IP；改过端口就使用新端口。用刚设置的账号密码登录。只有浏览器和容器运行在同一台电脑上时，才可以把设备 IP 写成 `localhost`。
 
 </template>
 
@@ -161,7 +163,7 @@ docker run -d \
   -e ADMIN_USERNAME='your-admin-name' \
   -e ADMIN_PASSWORD='replace-with-your-own-password' \
   -e JWT_SECRET_KEY='replace-with-at-least-32-random-characters' \
-  thsrite/config-flow:latest
+  thsrite/config-flow:3
 ```
 
 ```bash [Host 模式]
@@ -181,7 +183,7 @@ docker run -d \
   -e ADMIN_USERNAME='your-admin-name' \
   -e ADMIN_PASSWORD='replace-with-your-own-password' \
   -e JWT_SECRET_KEY='replace-with-at-least-32-random-characters' \
-  thsrite/config-flow:latest
+  thsrite/config-flow:3
 ```
 
 :::
@@ -217,7 +219,7 @@ NAS 不同系统的按钮名称不完全相同，按功能找到对应入口即�
 
 | 容器管理器字段 | Bridge 模式 | Host 模式 |
 | --- | --- | --- |
-| 镜像 | `thsrite/config-flow:latest` | `thsrite/config-flow:latest` |
+| 镜像 | `thsrite/config-flow:3` | `thsrite/config-flow:3` |
 | 网络 | bridge／桥接 | host／主机网络；NAS 不支持时用 Bridge |
 | 端口映射 | 主机 TCP `5010` → 容器 TCP `80` | 不填写映射 |
 | 目录挂载 | NAS 的实际数据目录 → `/data`，可读写 | 同左 |
@@ -239,15 +241,15 @@ NAS 不同系统的按钮名称不完全相同，按功能找到对应入口即�
 
 ### 单独运行源码：各服务分别设置端口
 
-这一项用于**已经准备好源码、Python / Node 依赖和独立 Sub-Store 的开发环境**，不是只启动 Python 就完成网页安装的步骤。普通安装选择前面的 Docker 方式；开发环境继续沿用自己的账号、密钥和数据目录。
+这一项用于**已经准备好源码、Go / Node 依赖和独立 Sub-Store 的开发环境**，不是普通安装步骤。普通安装选择前面的 Docker 方式；开发环境继续沿用自己的账号、密钥和数据目录。
 
-源码方式没有镜像里的 Nginx，`CONFIGFLOW_WEB_PORT` 和网页中的监听端口管理不会替你修改 Python、前端开发服务或独立 Sub-Store。三个服务要分别启动，端口仍须互不相同且空闲，不会自动避让。
+源码开发模式如果不指定 `-frontend` / `CONFIGFLOW_FRONTEND_DIR`，Go 服务只监听后端 API 端口，不会替你修改前端开发服务或独立 Sub-Store。三个服务要分别启动，端口仍须互不相同且空闲，不会自动避让。
 
 | 服务 | 本例地址／端口 | 哪里修改 |
 | --- | --- | --- |
 | 前端开发页面 | `http://127.0.0.1:15800` | Vite 的 `--port` 或 `server.port` |
-| Python 后端 | `127.0.0.1:15801` | 启动 Python 前设置 `CONFIGFLOW_BACKEND_HOST` / `CONFIGFLOW_BACKEND_PORT` |
-| 独立 Sub-Store | `127.0.0.1:15802` | Sub-Store 自己的启动参数；Python 另用 `SUB_STORE_URL` 指向这个地址 |
+| Go 后端 | `127.0.0.1:15801` | 启动前设置 `CONFIGFLOW_BACKEND_HOST` / `CONFIGFLOW_BACKEND_PORT` |
+| 独立 Sub-Store | `127.0.0.1:15802` | Sub-Store 自己的启动参数；后端另用 `SUB_STORE_URL` 指向这个地址 |
 
 **1. 独立 Sub-Store：**沿用它原来的数据目录、工作目录及其他环境变量，在运行它的终端设置端口，并使用自己的实际 bundle 路径启动，例如：
 
@@ -259,16 +261,17 @@ node /absolute/path/to/sub-store.bundle.js
 
 若 Sub-Store 由其他容器或服务管理器运行，在那个服务中修改端口并重建／重启；不能只改 ConfigFlow 的变量。它运行在另一台设备时，`SUB_STORE_URL` 使用该服务实际可达的地址。
 
-**2. Python 后端：**在仓库根目录、已经激活的 Python 环境中运行：
+**2. Go 后端：**在仓库的 `server/` 目录运行：
 
 ```bash
+cd server
 CONFIGFLOW_BACKEND_HOST=127.0.0.1 \
 CONFIGFLOW_BACKEND_PORT=15801 \
 SUB_STORE_URL=http://127.0.0.1:15802 \
-python -m backend.app
+go run ./cmd/configflow
 ```
 
-这需要支持后端端口参数的源码版本；旧源码要先更新。`SUB_STORE_URL` 用于没有内置 bundle 的源码环境；官方镜像始终使用内置 Sub-Store，请按 Docker 示例修改内部端口。
+`SUB_STORE_URL` 用于没有内置 bundle 的源码环境；官方镜像始终使用内置 Sub-Store，请按 Docker 示例修改内部端口。
 
 **3. 前端开发服务：**先在 `frontend/vite.config.mts` 中把 `server.proxy['/api'].target` 改为 `http://127.0.0.1:15801`，其余配置保留。它原来指向 `http://localhost:5001`，不会自动读取后端端口变量。然后在另一个终端运行：
 
@@ -279,7 +282,7 @@ npm run dev -- --host 127.0.0.1 --port 15800 --strictPort
 
 在这台开发机的浏览器打开 `http://127.0.0.1:15800`。Vite 原默认 `3001` 与独立 Sub-Store 的默认端口相同，本例将三者分开；`--strictPort` 会让占用直接报错，避免访问地址悄悄变化。
 
-改端口后，要停止并重新启动对应进程，且同步调整调用方：后端变更要改 Vite 的 `/api` 代理，Sub-Store 变更要改 Python 的 `SUB_STORE_URL`。如果使用自己配置的 Nginx 等反向代理，也要同步改它的上游，不能套用 Docker 自动同步的说明。
+改端口后，要停止并重新启动对应进程，且同步调整调用方：后端变更要改 Vite 的 `/api` 代理，Sub-Store 变更要改后端的 `SUB_STORE_URL`。如果使用自己配置的 Nginx 等反向代理，也要同步改它的上游，不能套用 Docker 自动同步的说明。
 
 </template>
 
@@ -292,34 +295,48 @@ npm run dev -- --host 127.0.0.1 --port 15800 --strictPort
 
 | 设置 | 本例值／默认行为 | 什么时候修改 | 修改后的结果与生效时间 |
 | --- | --- | --- | --- |
-| `image` | `thsrite/config-flow:latest` | 普通安装使用这个官方面板镜像；需要固定版本时使用已发布的具体标签或摘要 | 拉取镜像、重新创建容器后生效。它不是 Agent 镜像。 |
+| `image` | `thsrite/config-flow:3` | 普通安装使用这个官方面板镜像，`3` 跟随 3.x 正式版；需要固定版本时使用已发布的具体标签（如 `3.0.0`）或摘要。`latest` 暂时仍是最后一个 Python 版本（v2.2.0），不要用它安装新面板 | 拉取镜像、重新创建容器后生效。它不是 Agent 镜像。 |
 | `ports`（Bridge） | `5010:80` | 访问端口冲突时，只把左边 `5010` 改成其他空闲端口 | 左边是设备对外端口，右边是容器内端口。重新创建后按新端口打开浏览器。Host 版不填写此项。 |
 | `network_mode`（Host） | `host` | 选择 Host 版时保留 | 共用宿主机网络；不是额外创建一个独立 IP。Bridge 版无需填写此项。 |
 | `CONFIGFLOW_WEB_PORT`（Host） | 本例为 `8088` | `8088` 已被占用时改成其他空闲端口 | 明确指定实际 Web 端口，优先于网页保存值；网页端口只读。重建容器后生效。 |
-| `CONFIGFLOW_BACKEND_PORT`（Host） | 本例 `15801`，未指定默认 `5001` | 后端端口被 DSM 等服务占用时 | Nginx 与后端使用相同端口；重建生效，Web 地址不变。不会自动选择空闲值。 |
+| `CONFIGFLOW_BACKEND_PORT`（Host） | 本例 `15801`，未指定默认 `5001` | 后端端口被 DSM 等服务占用时 | 内部后端监听该端口；重建生效，Web 地址不变。不会自动选择空闲值。 |
 | `CONFIGFLOW_BACKEND_HOST`（Host） | 本例 `127.0.0.1` | Docker 只支持 `127.0.0.1` / `0.0.0.0`，Host 建议保持本例 | 将后端限制在主机内部，通过 Web 入口访问；重建生效。 |
 | `SUB_STORE_BACKEND_API_PORT`（Host） | 本例 `15802`，未指定默认 `3001` | 内置 Sub-Store 的端口被占用时 | 启动、就绪检查和转换请求同步改端口；重建生效，Web 地址不变。 |
-| `volumes` | `./data:/data` | NAS 或迁移旧实例时，改成自己的实际数据目录 | 左边的文件保存在设备上，右边 `/data` 保持不变。更新时必须继续使用同一个目录。 |
+| `volumes` | `./data:/data` | NAS 或迁移旧实例时，改成自己的实际数据目录 | 左边的文件保存在设备上，右边 `/data` 保持不变。更新时必须继续使用同一个目录。`DATA_DIR` 必须与右边一致（保持 `/data`）：旧 Python 镜像会忽略另设的 `DATA_DIR`，Go 镜像会按它读写。 |
 | `DATA_DIR` | `/data` | 按本例挂载时保持不变 | 告诉程序把数据存到容器的 `/data`；它应与挂载右侧一致。 |
 | `ADMIN_USERNAME`、`ADMIN_PASSWORD` | 仓库示例默认不启用；本例已填写，建议保留登录保护 | 首次安装时设置自己的账号和密码 | 两项都非空才启用登录。只设置一项不会启用。修改后需重新创建容器。 |
-| `JWT_SECRET_KEY` | 本例要求自行填写 | 首次安装设置足够长的随机字符串 | 用于保护登录会话。更新容器时保留原值；更换后原登录会话失效。 |
+| `JWT_SECRET_KEY` | 本例要求自行填写 | 首次安装设置足够长的随机字符串 | 用于保护登录会话。请填写至少 32 字节的随机密钥，例如用 `openssl rand -hex 32` 生成。未设置、照抄示例占位值或不足 32 字节时，服务使用本次启动的临时随机密钥；开启登录时会警告，且登录会话在重启后失效。密钥也用于固定 IP 操作的预览确认，详见下方说明。更新容器时保留正式密钥；更换后原登录会话失效。 |
 | `TZ` | `Asia/Shanghai` | 希望服务使用其他时区时 | 重新创建容器后生效。 |
 | `restart` | `unless-stopped` | 普通安装保留 | Docker 启动后会按此策略恢复容器；你主动停止的容器需自行启动。 |
 
 `./data` 是部署文件所在目录下面的 `data`，不是浏览器所在电脑的目录。已有实例不要随意换目录，否则会像新安装一样显示空配置。
 
-一般不需要另外设置 `CONFIGFLOW_HTTP_THREADS`（默认 `8`，允许 `1–64`，控制服务同时处理请求的数量）或 `LOG_LEVEL`（默认 `INFO`，控制日志详细程度）。`LOG_LEVEL=DEBUG` 会启用开发调试模式，不建议普通部署长期开启。修改环境变量后需重新创建容器。
+一般不需要另外设置 `LOG_LEVEL`（默认 `INFO`，控制日志详细程度）；`LOG_LEVEL=DEBUG` 会输出更详细的调试日志，不建议普通部署长期开启。Go 镜像不再使用旧 Python 版的 `CONFIGFLOW_HTTP_THREADS` 和 `CONFIGFLOW_MEMORY_TUNING` 等调优变量，默认按容器内存上限自动调节内存（可通过 `GOMEMLIMIT` 或 `CONFIGFLOW_MEMORY_LIMIT_RATIO` 覆盖）。镜像默认时区为 `Asia/Shanghai` 并已内置系统 CA 证书（`ca-certificates`、`tzdata`）；如需信任私有或自签 CA 证书，请挂载证书并设置 Go 原生环境变量 `SSL_CERT_FILE`（单个 PEM 文件）或 `SSL_CERT_DIR`（证书目录），旧 Python 版的 `REQUESTS_CA_BUNDLE` 不再生效。修改环境变量后需重新创建容器。
+
+### JWT 密钥与固定 IP 预览确认
+
+`JWT_SECRET_KEY` 同时用于网页登录会话和「来源设备」固定 IP 操作的预览确认令牌。预览令牌只在确认新增或删除 DHCP 静态绑定时使用，有效期为 10 分钟；它不是客户端持续联网所需的凭据。
+
+升级后，如果仍使用短于 32 字节的密钥或示例占位值，服务会改用临时随机密钥，升级时及此后每次重启都会使之前的预览令牌失效；未设置密钥时也有相同的重启影响。尚未确认的固定/取消固定操作提交时会提示“固定 IP 预览无效或已过期，请重新预览确认。”，该操作不会写入路由器。已生效的 DHCP 静态绑定和已保存设备记录保留，客户端正常联网不受影响。
+
+即使不启用网页登录，也建议使用 `openssl rand -hex 32` 生成正式密钥，设置为 `JWT_SECRET_KEY` 并在更新、重建容器时保留。首次换成正式密钥同样会使旧令牌失效：重启完成后，如启用了登录则重新登录，在「来源设备」重新载入设备，再发起所需的固定 IP 或删除固定 IP 操作，重新预览并确认即可。不要重用重启前尚未确认的预览。
+
+### Go 服务的请求安全边界
+
+跨域请求不再获得 CORS 许可头，同源前端不变。通过反向代理访问时，即使代理终止 HTTPS 或改写 Host，正常请求仍按原有认证和业务规则处理；服务不会因 Origin 不匹配而拒绝 POST 或 PUT，也不会使用客户端提供的 `X-Forwarded-*` 来放宽 CORS。
+
+开启登录后，受保护入口先检查登录凭据，再解析配置空间；未登录时不会通过不同错误暴露配置空间是否存在。Web 与后端端口共用请求体上限：通常为 1 MiB，OxiDNS settings/render 为 96 MiB。静态文件和文本下载带有 `X-Content-Type-Options: nosniff`。
 
 <a id="initial-settings"></a>
 ## 第一次打开后的设置
 
 1. 进入「系统 → 系统设置 → 常规」。
-2. 在「服务配置 → 服务域名」填写**其他设备能访问到的完整地址**：Bridge 示例为 `http://192.168.1.10:5010`，Host 示例为 `http://192.168.1.10:8088`。改过端口时填实际值，移开输入焦点后保存。
+2. 在「服务配置 → 服务域名」填写**其他设备能访问到的完整地址**：Bridge 示例为 `http://192.0.2.10:5010`，Host 示例为 `http://192.0.2.10:8088`。改过端口时填实际值，移开输入焦点后保存。
 3. 如需保护配置下载链接，在「访问令牌」输入自己的令牌，或点击生成按钮。之后从页面复制完整配置链接，不要手工漏掉令牌。
 
 ![服务配置中的服务域名与访问令牌](../img/guide/panel-service-settings.jpg)
 
-图中是当前真实界面的隔离演示：`192.168.1.10:5010` 是 Bridge 示例地址；使用本页 Host 示例时应填 `8088`。截图使用独立开发服务，所以 Web 监听端口显示“不支持”；官方 Docker 容器里的端口设置按下一节操作。服务域名与监听端口始终是两项不同设置。
+图中是当前真实界面的隔离演示：`192.0.2.10:5010` 是 Bridge 示例地址；使用本页 Host 示例时应填 `8088`。截图使用独立开发服务，所以 Web 监听端口显示“不支持”；官方 Docker 容器里的端口设置按下一节操作。服务域名与监听端口始终是两项不同设置。
 
 | 选项 | 默认／建议 | 设置后的作用 | 不设置时 |
 | --- | --- | --- | --- |
@@ -328,6 +345,8 @@ npm run dev -- --host 127.0.0.1 --port 15800 --strictPort
 | Web 监听端口 | Bridge 示例内部为 `80`；Host 示例被环境变量指定为 `8088`，页面只读 | 改的是容器实际监听端口，详见下一节 | 沿用当前启动设置；不是服务域名里的地址文本 |
 
 内置 Sub-Store 是转换订阅用的程序，默认按需启动，空闲约 5 分钟后休眠。首次转换需要等待启动；看到“休眠中”不代表故障。Docker 镜像无需另装 Sub-Store，也无需对外开放其内部端口（默认 `3001`，本页 Host 示例为 `15802`）。
+
+镜像里只有 ConfigFlow 服务和它管理的 Sub-Store 两个常驻程序，不含 Python。Sub-Store 意外退出时会自动拉起；ConfigFlow 服务本身退出时容器随之停止，由 Docker 的重启策略（本页示例为 `unless-stopped`）重新启动，所以不要去掉 `restart` 设置。
 
 <a id="network"></a>
 ## 选择网络方式和修改端口
@@ -399,7 +418,7 @@ IPv6 访问地址需加方括号，例如 `http://[2001:db8::10]:8088`，示例�
 2. 下载新版镜像。此时还不会替换正在使用的容器：
 
    ```bash
-   docker pull thsrite/config-flow:latest
+   docker pull thsrite/config-flow:3
    ```
 
 3. 确认下载成功后，停止并移除旧容器：
@@ -421,7 +440,9 @@ IPv6 访问地址需加方括号，例如 `http://[2001:db8::10]:8088`，示例�
 
 更新前，先从「系统设置」导出全部数据；如需完整保留运行文件，再正常停服并复制**整个实际数据目录**。不要在运行中单独复制数据库文件。JSON 导出不含端口文件和监控历史，具体看 [哪些内容需要另外备份](../manual/system-settings.md#backup-scope)。
 
-更新后配置看似丢失时，先检查是否挂载了另一个空目录，保留原文件，不要立即重置。需要退回镜像时，应使用事先记录的旧版本及对应数据备份；不要盲目让旧版本打开已经迁移的数据。
+更新后配置看似丢失时，先检查是否挂载了另一个空目录，保留原文件，不要立即重置。如果原数据目录中只有 SQLite 之前的旧版配置文件（如 `config.json` 或 `system.json`）而没有 `configflow.sqlite3`，Go 镜像会拒绝启动并给出中文提示，不会改动其中的配置数据（只会新建日志文件 `app.log`）：请先使用最后一个 Python 版本（`v2.2.0`，镜像 `thsrite/config-flow:2.2.0`）启动一次完成旧格式迁移，再升级到 v3.0.0。v3.0.0 首次打开旧版数据库前会自动备份到 `DATA_DIR/backups/configflow-v1-<时间>.sqlite3`，升级为存储 v2 后不能再退回 `v2.2.0` 及以前版本；完整说明见 [v3.0.0 升级说明](upgrade-v3.md)。
+
+如使用自动更新标签镜像（`3-autoupdate`），容器启动时会按 `CONFIGFLOW_UPDATE_REPO` / `CONFIGFLOW_UPDATE_BRANCH` 检查源码，并按源码指纹仅重建有变动的组件（Go 服务、前端、Agent、独立测速组件），构建缓存保存在 `/data/.auto-update`（旧版镜像留下的构建可以继续沿用，换到本版镜像不会因此全部重建）。若网络不可达或构建失败，会自动回退到上一次可用构建或镜像自带版本，不会阻塞服务启动；若检测到数据目录中只有 SQLite 之前的旧版配置文件而没有 `configflow.sqlite3`，自动更新会跳过切换并保持镜像自带版本且给出中文提示，避免跳过最后一个 Python 版本（`v2.2.0`）的迁移。
 
 <a id="next"></a>
 ## 下一步

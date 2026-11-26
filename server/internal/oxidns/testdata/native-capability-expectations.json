@@ -1,0 +1,2182 @@
+{
+  "apply_common_settings:c09209c447c2df8b0624a26c9c576c96b10b83c5bfcd13a73f1b5718b9608f78": {
+    "fn": "apply_common_settings",
+    "out": {
+      "capabilities": {
+        "adguard.content": {
+          "absent": true,
+          "editable": true,
+          "target": "adguard_rules"
+        },
+        "adguard.enabled": {
+          "editable": true,
+          "target": "adguard_rules"
+        },
+        "adguard.mode": {
+          "absent": true,
+          "editable": true,
+          "target": "adguard_block"
+        },
+        "adguard.urls": {
+          "absent": true,
+          "editable": true,
+          "target": "adguard_rules"
+        },
+        "aggregate_rules": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "always_standby": {
+          "editable": true,
+          "target": "fallback"
+        },
+        "api.enabled": {
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.listen": {
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.password": {
+          "absent": true,
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.ssl.cert": {
+          "absent": true,
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.ssl.key": {
+          "absent": true,
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.username": {
+          "absent": true,
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.webui_root": {
+          "absent": true,
+          "editable": true,
+          "target": "api.http"
+        },
+        "block_qtypes": {
+          "editable": true,
+          "target": "sequence_main"
+        },
+        "cache_dump_enabled": {
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "cache_dump_file": {
+          "absent": true,
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "cache_dump_interval": {
+          "absent": true,
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "cache_enabled": {
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "cache_lazy_ttl": {
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "cache_size": {
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "custom_hosts": {
+          "absent": true,
+          "editable": true,
+          "target": "custom_hosts"
+        },
+        "custom_match_position": {
+          "editable": false,
+          "reason": "请先添加自定义匹配，再设置执行顺序。",
+          "target": "sequence_main"
+        },
+        "custom_matches": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "default_forward": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "direct_rules": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "direct_rulesets": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "dynamic_domain_set.args.batch_size": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.args.bootstrap_rules": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.args.flush_interval_ms": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.args.path": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.args.queue_size": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.learn": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.answer_required": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.async": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.error_mode": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.phase": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.qtypes": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.questions": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.rule_kind": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.success_only": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.timeout": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.route": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "fallback_concurrent": {
+          "editable": true,
+          "target": "forward_fallback"
+        },
+        "fallback_dns": {
+          "editable": true,
+          "target": "forward_fallback"
+        },
+        "fallback_threshold": {
+          "editable": true,
+          "target": "fallback"
+        },
+        "ip_selector.args.cache.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.cache.failure_ttl": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.cache.size": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.cache.ttl": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.dnssec_policy": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.max_parallel_probes": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.max_wait": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.probe_methods": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.probe_stagger": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.probe_timeout": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.selection_mode": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.top_n": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "listen": {
+          "editable": true,
+          "target": "server_udp"
+        },
+        "local_concurrent": {
+          "editable": true,
+          "target": "forward_local"
+        },
+        "local_dns": {
+          "editable": true,
+          "target": "forward_local"
+        },
+        "log.file": {
+          "editable": true,
+          "target": "log.file"
+        },
+        "log.level": {
+          "editable": true,
+          "target": "log.level"
+        },
+        "log.max_files": {
+          "editable": true,
+          "target": "log.rotation.max_files"
+        },
+        "log.rotation": {
+          "editable": true,
+          "target": "log.rotation.type"
+        },
+        "metrics_enabled": {
+          "editable": true,
+          "target": "sequence_main"
+        },
+        "prefer_ipv4": {
+          "editable": true,
+          "target": "sequence_main"
+        },
+        "probe_cache_enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "local_probe_cache"
+        },
+        "probe_cache_size": {
+          "absent": true,
+          "editable": true,
+          "target": "local_probe_cache"
+        },
+        "proxy_rules": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "proxy_rulesets": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "query_recorder.args.batch_size": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.cleanup_interval_hours": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.flush_interval_ms": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.memory_tail": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.path": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.queue_size": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.reader_concurrency": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.retention_days": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "remote_concurrent": {
+          "editable": true,
+          "target": "forward_remote"
+        },
+        "remote_dns": {
+          "editable": true,
+          "target": "forward_remote"
+        },
+        "remote_ttl": {
+          "editable": true,
+          "target": "remote_dns"
+        },
+        "ros_address_list.args.address": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.address_list4": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.address_list6": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.async": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.cleanup_on_shutdown": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.comment_prefix": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.max_ttl": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.min_ttl": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.password": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.queue_capacity": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.tls": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.tls.ca": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.tls.insecure": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.tls.server_name": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.username": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.enabled": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_route.args.address": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.async": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.cleanup_on_shutdown": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.comment_prefix": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.distance": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.gateway4": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.gateway6": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.max_ttl": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.min_ttl": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.password": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.queue_capacity": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.routing_table": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.tls": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.tls.ca": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.tls.insecure": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.tls.server_name": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.username": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "rule_actions": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "rule_dns_follow": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "rule_update.args.outbound": {
+          "absent": true,
+          "editable": true,
+          "target": "rules_download"
+        },
+        "rule_update.args.schedule": {
+          "absent": true,
+          "editable": true,
+          "target": "rules_cron"
+        },
+        "rule_update.args.socks5": {
+          "absent": true,
+          "editable": true,
+          "target": "rules_download"
+        },
+        "rule_update.args.timeout": {
+          "editable": true,
+          "target": "rules_download"
+        },
+        "rule_update.args.timezone": {
+          "absent": true,
+          "editable": true,
+          "target": "rules_cron"
+        },
+        "rule_update.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "rules_cron"
+        },
+        "tcp_enabled": {
+          "editable": false,
+          "reason": "缺少可复用的 UDP 监听地址和处理入口，请在监听服务中配置 TCP",
+          "target": "server_tcp"
+        },
+        "worker_threads": {
+          "editable": true,
+          "target": "runtime.worker_threads"
+        }
+      },
+      "custom_match_target_tags": [
+        "rules_domain_1",
+        "lazy_cache",
+        "forward_local",
+        "forward_remote",
+        "forward_fallback",
+        "ros_address_list",
+        "china_dns",
+        "local_probe",
+        "remote_dns",
+        "fallback_dns",
+        "fallback",
+        "proxy_dns_seq",
+        "default_direct_ip",
+        "direct_ip",
+        "ip_requery_proxy",
+        "sequence_main",
+        "server_udp",
+        "rules_download",
+        "rules_reload",
+        "rules_refresh"
+      ],
+      "custom_match_targets": [
+        {
+          "exec": "$lazy_cache",
+          "source": "config.yaml",
+          "tag": "lazy_cache",
+          "type": "cache"
+        },
+        {
+          "exec": "$forward_local",
+          "source": "config.yaml",
+          "tag": "forward_local",
+          "type": "forward"
+        },
+        {
+          "exec": "$forward_remote",
+          "source": "config.yaml",
+          "tag": "forward_remote",
+          "type": "forward"
+        },
+        {
+          "exec": "$forward_fallback",
+          "source": "config.yaml",
+          "tag": "forward_fallback",
+          "type": "forward"
+        },
+        {
+          "exec": "$ros_address_list",
+          "source": "config.yaml",
+          "tag": "ros_address_list",
+          "type": "ros_address_list"
+        },
+        {
+          "exec": "goto china_dns",
+          "source": "config.yaml",
+          "tag": "china_dns",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto local_probe",
+          "source": "config.yaml",
+          "tag": "local_probe",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto remote_dns",
+          "source": "config.yaml",
+          "tag": "remote_dns",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto fallback_dns",
+          "source": "config.yaml",
+          "tag": "fallback_dns",
+          "type": "sequence"
+        },
+        {
+          "exec": "$fallback",
+          "source": "config.yaml",
+          "tag": "fallback",
+          "type": "fallback"
+        },
+        {
+          "exec": "goto proxy_dns_seq",
+          "source": "config.yaml",
+          "tag": "proxy_dns_seq",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto default_direct_ip",
+          "source": "config.yaml",
+          "tag": "default_direct_ip",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto direct_ip",
+          "source": "config.yaml",
+          "tag": "direct_ip",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto ip_requery_proxy",
+          "source": "config.yaml",
+          "tag": "ip_requery_proxy",
+          "type": "sequence"
+        },
+        {
+          "exec": "$rules_download",
+          "source": "config.yaml",
+          "tag": "rules_download",
+          "type": "download"
+        },
+        {
+          "exec": "$rules_reload",
+          "source": "config.yaml",
+          "tag": "rules_reload",
+          "type": "reload_provider"
+        },
+        {
+          "exec": "goto rules_refresh",
+          "source": "config.yaml",
+          "tag": "rules_refresh",
+          "type": "sequence"
+        }
+      ],
+      "settings": {
+        "_common_disabled": {
+          "ip_selector": {
+            "args": {
+              "cache": {
+                "enabled": true,
+                "failure_ttl": 60,
+                "size": 4096,
+                "ttl": 3600
+              },
+              "dnssec_policy": "reorder_only",
+              "max_parallel_probes": 64,
+              "max_wait": 1000,
+              "probe_methods": [],
+              "probe_stagger": 200,
+              "probe_timeout": 600,
+              "selection_mode": "background",
+              "top_n": 0
+            },
+            "tag": "ip_selector",
+            "type": "ip_selector"
+          }
+        },
+        "additional_files": [],
+        "adguard": {
+          "content": "",
+          "enabled": false,
+          "mode": "nxdomain",
+          "urls": []
+        },
+        "aggregate_rules": true,
+        "always_standby": false,
+        "api": {
+          "enabled": true,
+          "listen": "127.0.0.1:9199",
+          "password": "",
+          "ssl": {},
+          "username": "",
+          "webui_root": ""
+        },
+        "block_qtypes": [
+          64,
+          28
+        ],
+        "cache_dump_enabled": false,
+        "cache_dump_file": "./state/cache.dump",
+        "cache_dump_interval": 300,
+        "cache_enabled": true,
+        "cache_lazy_ttl": 3600,
+        "cache_size": 10240,
+        "config_mode": "native",
+        "custom_config": "",
+        "custom_hosts": "",
+        "custom_match_position": "tail",
+        "custom_matches": [],
+        "default_forward": "forward_remote",
+        "device_policies": [],
+        "direct_rules": [
+          "a"
+        ],
+        "direct_rulesets": [
+          "rs",
+          "rs2"
+        ],
+        "dynamic_domain_set": {
+          "args": {
+            "batch_size": 256,
+            "bootstrap_rules": [],
+            "flush_interval_ms": 200,
+            "path": "./state/learned-domains.txt",
+            "queue_size": 1024
+          },
+          "enabled": false,
+          "learn": false,
+          "learn_args": {
+            "answer_required": true,
+            "async": true,
+            "error_mode": "continue",
+            "phase": "after",
+            "qtypes": [
+              "A",
+              "AAAA"
+            ],
+            "questions": "first",
+            "rule_kind": "full",
+            "success_only": true,
+            "timeout": "1s"
+          },
+          "route": "direct"
+        },
+        "fallback_concurrent": 2,
+        "fallback_dns": "udp://192.0.2.53",
+        "fallback_threshold": 500,
+        "ip_selector": {
+          "args": {
+            "cache": {
+              "enabled": true,
+              "failure_ttl": 60,
+              "size": 4096,
+              "ttl": 3600
+            },
+            "dnssec_policy": "reorder_only",
+            "max_parallel_probes": 64,
+            "max_wait": 1000,
+            "probe_methods": [
+              "tcp:443",
+              "tcp:80"
+            ],
+            "probe_stagger": 200,
+            "probe_timeout": 600,
+            "selection_mode": "background",
+            "top_n": 0
+          },
+          "enabled": false
+        },
+        "listen": "0.0.0.0:53",
+        "local_concurrent": 2,
+        "local_dns": "- addr: udp://192.0.2.11\n",
+        "log": {
+          "file": "./state/oxidns.log",
+          "level": "debug",
+          "max_files": 7,
+          "rotation": "never"
+        },
+        "metrics_enabled": true,
+        "native_config": "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\nlog:\n  level: debug\n  file: ./state/oxidns.log\n  rotation:\n    type: daily\n    max_files: 3\nplugins:\n- tag: rules_domain_1\n  type: domain_set\n  args:\n    exps:\n    - full:a.example.test\n    files:\n    - ./rules/rule_571b0e3555013658_domain.txt\n    - ./rules/rule_b604257892f6c012_domain.txt\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://192.0.2.11\n- tag: forward_remote\n  type: forward\n  args:\n    concurrent: 1\n    upstreams:\n    - addr: https://1.1.1.1/dns-query\n    - addr: https://8.8.8.8/dns-query\n- tag: forward_fallback\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://192.0.2.53\n- tag: ros_address_list\n  type: ros_address_list\n  args:\n    address: https://192.0.2.1\n    username: u\n    password: p\n    async: true\n    address_list4: oxidns\n    address_list6: oxidns\n    min_ttl: 60\n    max_ttl: 3600\n    queue_capacity: 16384\n    comment_prefix: configflow\n    cleanup_on_shutdown: true\n- tag: china_dns\n  type: sequence\n  args:\n  - exec: $ros_address_list\n  - exec: $lazy_cache\n  - exec: $forward_local\n  - matches:\n    - '!has_resp'\n    exec: reject 3\n- tag: local_probe\n  type: sequence\n  args:\n  - matches:\n    - '!has_resp'\n    exec: $forward_local\n  - exec: return\n- tag: remote_dns\n  type: sequence\n  args:\n  - exec: $forward_remote\n  - matches:\n    - '!has_resp'\n    exec: reject 3\n  - exec: ttl 1\n- tag: fallback_dns\n  type: sequence\n  args:\n  - exec: $forward_fallback\n  - matches:\n    - '!has_resp'\n    exec: reject 3\n- tag: fallback\n  type: fallback\n  args:\n    primary: remote_dns\n    secondary: fallback_dns\n    threshold: 500\n    always_standby: false\n- tag: proxy_dns_seq\n  type: sequence\n  args:\n  - exec: $fallback\n  - exec: accept\n- tag: default_direct_ip\n  type: sequence\n  args:\n  - exec: $ros_address_list\n  - exec: accept\n- tag: direct_ip\n  type: sequence\n  args:\n  - exec: $ros_address_list\n  - exec: accept\n- tag: ip_requery_proxy\n  type: sequence\n  args:\n  - exec: drop_resp\n  - exec: goto proxy_dns_seq\n- tag: sequence_main\n  type: sequence\n  args:\n  - exec: metrics_collector metrics\n  - exec: prefer_ipv4\n  - matches:\n    - qtype 64 28\n    exec: black_hole nodata short_circuit=true\n  - matches:\n    - qname $rules_domain_1\n    exec: goto china_dns\n  - exec: goto proxy_dns_seq\n- tag: server_udp\n  type: udp_server\n  args:\n    listen: 0.0.0.0:53\n    entry: 5\n- tag: rules_download\n  type: download\n  args:\n    timeout: 60s\n    downloads:\n    - url: http://config.test/api/mosdns/rule-proxy?url=https%3A%2F%2Fexample.test%2Flist.txt&part=domain&token=test-only\n      dir: rules\n      filename: rule_571b0e3555013658_domain.txt\n    - url: http://config.test/api/mosdns/rule-proxy?url=https%3A%2F%2Fexample.test%2Fother.txt&part=domain&token=test-only\n      dir: rules\n      filename: rule_b604257892f6c012_domain.txt\n- tag: rules_reload\n  type: reload_provider\n  args:\n  - $rules_domain_1\n- tag: rules_refresh\n  type: sequence\n  args:\n  - exec: $rules_download\n  - exec: $rules_reload\n",
+        "prefer_ipv4": true,
+        "probe_cache_enabled": false,
+        "probe_cache_size": 2048,
+        "proxy_rules": [],
+        "proxy_rulesets": [],
+        "query_recorder": {
+          "args": {
+            "batch_size": 256,
+            "cleanup_interval_hours": 1,
+            "flush_interval_ms": 200,
+            "memory_tail": 1024,
+            "path": "./state/queries.db",
+            "queue_size": 8192,
+            "reader_concurrency": 2,
+            "retention_days": 7
+          },
+          "enabled": false
+        },
+        "remote_concurrent": 1,
+        "remote_dns": "",
+        "remote_ttl": 1,
+        "ros_address_list": {
+          "args": {
+            "address": "https://192.0.2.1",
+            "address_list4": "oxidns",
+            "address_list6": "oxidns",
+            "async": true,
+            "cleanup_on_shutdown": true,
+            "comment_prefix": "configflow",
+            "max_ttl": 3600,
+            "min_ttl": 60,
+            "password": "p",
+            "queue_capacity": 16384,
+            "username": "u"
+          },
+          "enabled": true
+        },
+        "ros_route": {
+          "args": {
+            "address": "",
+            "async": true,
+            "cleanup_on_shutdown": true,
+            "comment_prefix": "configflow",
+            "distance": 100,
+            "gateway4": "",
+            "gateway6": "",
+            "max_ttl": 3600,
+            "min_ttl": 60,
+            "password": "",
+            "queue_capacity": 16384,
+            "routing_table": "",
+            "username": ""
+          },
+          "enabled": false
+        },
+        "rule_actions": {},
+        "rule_dns_follow": [],
+        "rule_dns_parked": {},
+        "rule_update": {
+          "args": {
+            "outbound": "",
+            "schedule": "30 3 * * *",
+            "socks5": "",
+            "timeout": "60s",
+            "timezone": "Asia/Shanghai"
+          },
+          "enabled": false
+        },
+        "tcp_enabled": false,
+        "template_base_config": "runtime:\n  worker_threads: 2\napi:\n  http:\n    listen: 127.0.0.1:9199\nlog:\n  level: debug\n  file: ./state/oxidns.log\n  rotation:\n    type: never\n    max_files: 7\nplugins:\n- tag: rules_domain_1\n  type: domain_set\n  args:\n    exps:\n    - full:a.example.test\n    files:\n    - ./rules/rule_571b0e3555013658_domain.txt\n    - ./rules/rule_b604257892f6c012_domain.txt\n- tag: lazy_cache\n  type: cache\n  args:\n    size: 10240\n    lazy_cache_ttl: 3600\n    short_circuit: true\n- tag: forward_local\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://192.0.2.11\n- tag: forward_remote\n  type: forward\n  args:\n    concurrent: 1\n    upstreams:\n    - addr: https://1.1.1.1/dns-query\n    - addr: https://8.8.8.8/dns-query\n- tag: forward_fallback\n  type: forward\n  args:\n    concurrent: 2\n    upstreams:\n    - addr: udp://192.0.2.53\n- tag: ros_address_list\n  type: ros_address_list\n  args:\n    address: https://192.0.2.1\n    username: u\n    password: p\n    async: true\n    address_list4: oxidns\n    address_list6: oxidns\n    min_ttl: 60\n    max_ttl: 3600\n    queue_capacity: 16384\n    comment_prefix: configflow\n    cleanup_on_shutdown: true\n- tag: china_dns\n  type: sequence\n  args:\n  - exec: $ros_address_list\n  - exec: $lazy_cache\n  - exec: $forward_local\n  - matches:\n    - '!has_resp'\n    exec: reject 3\n- tag: local_probe\n  type: sequence\n  args:\n  - matches:\n    - '!has_resp'\n    exec: $forward_local\n  - exec: return\n- tag: remote_dns\n  type: sequence\n  args:\n  - exec: $forward_remote\n  - matches:\n    - '!has_resp'\n    exec: reject 3\n  - exec: ttl 1\n- tag: fallback_dns\n  type: sequence\n  args:\n  - exec: $forward_fallback\n  - matches:\n    - '!has_resp'\n    exec: reject 3\n- tag: fallback\n  type: fallback\n  args:\n    primary: remote_dns\n    secondary: fallback_dns\n    threshold: 500\n    always_standby: false\n- tag: proxy_dns_seq\n  type: sequence\n  args:\n  - exec: $fallback\n  - exec: accept\n- tag: default_direct_ip\n  type: sequence\n  args:\n  - exec: $ros_address_list\n  - exec: accept\n- tag: direct_ip\n  type: sequence\n  args:\n  - exec: $ros_address_list\n  - exec: accept\n- tag: ip_requery_proxy\n  type: sequence\n  args:\n  - exec: drop_resp\n  - exec: goto proxy_dns_seq\n- tag: sequence_main\n  type: sequence\n  args:\n  - exec: metrics_collector metrics\n  - exec: prefer_ipv4\n  - matches:\n    - qtype 64 28\n    exec: black_hole nodata short_circuit=true\n  - matches:\n    - qname $rules_domain_1\n    exec: goto china_dns\n  - exec: goto proxy_dns_seq\n- tag: server_udp\n  type: udp_server\n  args:\n    listen: 0.0.0.0:53\n    entry: sequence_main\n- tag: rules_download\n  type: download\n  args:\n    timeout: 60s\n    downloads:\n    - url: http://config.test/api/mosdns/rule-proxy?url=https%3A%2F%2Fexample.test%2Flist.txt&part=domain&token=test-only\n      dir: rules\n      filename: rule_571b0e3555013658_domain.txt\n    - url: http://config.test/api/mosdns/rule-proxy?url=https%3A%2F%2Fexample.test%2Fother.txt&part=domain&token=test-only\n      dir: rules\n      filename: rule_b604257892f6c012_domain.txt\n- tag: rules_reload\n  type: reload_provider\n  args:\n  - $rules_domain_1\n- tag: rules_refresh\n  type: sequence\n  args:\n  - exec: $rules_download\n  - exec: $rules_reload\n",
+        "template_settings": {
+          "adguard": {
+            "content": "",
+            "enabled": false,
+            "mode": "nxdomain",
+            "urls": []
+          },
+          "aggregate_rules": true,
+          "always_standby": false,
+          "api": {
+            "enabled": true,
+            "listen": "127.0.0.1:9199",
+            "password": "",
+            "ssl": {},
+            "username": "",
+            "webui_root": ""
+          },
+          "block_qtypes": [
+            64,
+            28
+          ],
+          "cache_dump_enabled": false,
+          "cache_dump_file": "./state/cache.dump",
+          "cache_dump_interval": 300,
+          "cache_enabled": true,
+          "cache_lazy_ttl": 3600,
+          "cache_size": 10240,
+          "custom_config": "",
+          "custom_hosts": "",
+          "custom_match_position": "tail",
+          "custom_matches": [],
+          "default_forward": "forward_remote",
+          "device_policies": [],
+          "direct_rules": [
+            "a"
+          ],
+          "direct_rulesets": [
+            "rs",
+            "rs2"
+          ],
+          "dynamic_domain_set": {
+            "args": {
+              "batch_size": 256,
+              "bootstrap_rules": [],
+              "flush_interval_ms": 200,
+              "path": "./state/learned-domains.txt",
+              "queue_size": 1024
+            },
+            "enabled": false,
+            "learn": false,
+            "learn_args": {
+              "answer_required": true,
+              "async": true,
+              "error_mode": "continue",
+              "phase": "after",
+              "qtypes": [
+                "A",
+                "AAAA"
+              ],
+              "questions": "first",
+              "rule_kind": "full",
+              "success_only": true,
+              "timeout": "1s"
+            },
+            "route": "direct"
+          },
+          "fallback_concurrent": 2,
+          "fallback_dns": "udp://192.0.2.53",
+          "fallback_threshold": 500,
+          "ip_selector": {
+            "args": {
+              "cache": {
+                "enabled": true,
+                "failure_ttl": 60,
+                "size": 4096,
+                "ttl": 3600
+              },
+              "dnssec_policy": "reorder_only",
+              "max_parallel_probes": 64,
+              "max_wait": 1000,
+              "probe_methods": [
+                "tcp:443",
+                "tcp:80"
+              ],
+              "probe_stagger": 200,
+              "probe_timeout": 600,
+              "selection_mode": "background",
+              "top_n": 0
+            },
+            "enabled": false
+          },
+          "listen": "0.0.0.0:53",
+          "local_concurrent": 2,
+          "local_dns": "- addr: udp://192.0.2.11\n",
+          "log": {
+            "file": "./state/oxidns.log",
+            "level": "debug",
+            "max_files": 7,
+            "rotation": "never"
+          },
+          "metrics_enabled": true,
+          "prefer_ipv4": true,
+          "probe_cache_enabled": false,
+          "probe_cache_size": 2048,
+          "proxy_rules": [],
+          "proxy_rulesets": [],
+          "query_recorder": {
+            "args": {
+              "batch_size": 256,
+              "cleanup_interval_hours": 1,
+              "flush_interval_ms": 200,
+              "memory_tail": 1024,
+              "path": "./state/queries.db",
+              "queue_size": 8192,
+              "reader_concurrency": 2,
+              "retention_days": 7
+            },
+            "enabled": false
+          },
+          "remote_concurrent": 1,
+          "remote_dns": "",
+          "remote_ttl": 1,
+          "ros_address_list": {
+            "args": {
+              "address": "https://192.0.2.1",
+              "address_list4": "oxidns",
+              "address_list6": "oxidns",
+              "async": true,
+              "cleanup_on_shutdown": true,
+              "comment_prefix": "configflow",
+              "max_ttl": 3600,
+              "min_ttl": 60,
+              "password": "p",
+              "queue_capacity": 16384,
+              "username": "u"
+            },
+            "enabled": true
+          },
+          "ros_route": {
+            "args": {
+              "address": "",
+              "async": true,
+              "cleanup_on_shutdown": true,
+              "comment_prefix": "configflow",
+              "distance": 100,
+              "gateway4": "",
+              "gateway6": "",
+              "max_ttl": 3600,
+              "min_ttl": 60,
+              "password": "",
+              "queue_capacity": 16384,
+              "routing_table": "",
+              "username": ""
+            },
+            "enabled": false
+          },
+          "rule_actions": {},
+          "rule_dns_follow": [],
+          "rule_dns_parked": {},
+          "rule_update": {
+            "args": {
+              "outbound": "",
+              "schedule": "30 3 * * *",
+              "socks5": "",
+              "timeout": "60s",
+              "timezone": "Asia/Shanghai"
+            },
+            "enabled": false
+          },
+          "tcp_enabled": false,
+          "worker_threads": 2
+        },
+        "worker_threads": 2
+      },
+      "values": {
+        "adguard": {
+          "content": "",
+          "enabled": false,
+          "mode": null,
+          "urls": []
+        },
+        "aggregate_rules": true,
+        "always_standby": false,
+        "api": {
+          "enabled": true,
+          "listen": "127.0.0.1:9199",
+          "password": "",
+          "ssl": {
+            "cert": "",
+            "key": ""
+          },
+          "username": "",
+          "webui_root": ""
+        },
+        "block_qtypes": [
+          64,
+          28
+        ],
+        "cache_dump_enabled": false,
+        "cache_dump_file": null,
+        "cache_dump_interval": null,
+        "cache_enabled": true,
+        "cache_lazy_ttl": 3600,
+        "cache_size": 10240,
+        "custom_hosts": "",
+        "custom_match_position": null,
+        "custom_matches": [],
+        "default_forward": "forward_remote",
+        "device_policies": [],
+        "direct_rules": [
+          "a"
+        ],
+        "direct_rulesets": [
+          "rs",
+          "rs2"
+        ],
+        "dynamic_domain_set": {
+          "args": {
+            "batch_size": null,
+            "bootstrap_rules": null,
+            "flush_interval_ms": null,
+            "path": null,
+            "queue_size": null
+          },
+          "enabled": false,
+          "learn": false,
+          "learn_args": {
+            "answer_required": null,
+            "async": null,
+            "error_mode": null,
+            "phase": null,
+            "qtypes": null,
+            "questions": null,
+            "rule_kind": null,
+            "success_only": null,
+            "timeout": null
+          },
+          "route": null
+        },
+        "fallback_concurrent": 2,
+        "fallback_dns": "- addr: udp://192.0.2.53\n",
+        "fallback_threshold": 500,
+        "ip_selector": {
+          "args": {
+            "cache": {
+              "enabled": true,
+              "failure_ttl": 60,
+              "size": 4096,
+              "ttl": 3600
+            },
+            "dnssec_policy": "reorder_only",
+            "max_parallel_probes": 64,
+            "max_wait": 1000,
+            "probe_methods": [],
+            "probe_stagger": 200,
+            "probe_timeout": 600,
+            "selection_mode": "background",
+            "top_n": 0
+          },
+          "enabled": false
+        },
+        "listen": "0.0.0.0:53",
+        "local_concurrent": 2,
+        "local_dns": "- addr: udp://192.0.2.11\n",
+        "log": {
+          "file": "./state/oxidns.log",
+          "level": "debug",
+          "max_files": 3,
+          "rotation": "daily"
+        },
+        "metrics_enabled": true,
+        "prefer_ipv4": true,
+        "probe_cache_enabled": false,
+        "probe_cache_size": null,
+        "proxy_rules": [],
+        "proxy_rulesets": [],
+        "query_recorder": {
+          "args": {
+            "batch_size": null,
+            "cleanup_interval_hours": null,
+            "flush_interval_ms": null,
+            "memory_tail": null,
+            "path": null,
+            "queue_size": null,
+            "reader_concurrency": null,
+            "retention_days": null
+          },
+          "enabled": false
+        },
+        "remote_concurrent": 1,
+        "remote_dns": "- addr: https://1.1.1.1/dns-query\n- addr: https://8.8.8.8/dns-query\n",
+        "remote_ttl": 1,
+        "ros_address_list": {
+          "args": {
+            "address": "https://192.0.2.1",
+            "address_list4": "oxidns",
+            "address_list6": "oxidns",
+            "async": true,
+            "cleanup_on_shutdown": true,
+            "comment_prefix": "configflow",
+            "max_ttl": 3600,
+            "min_ttl": 60,
+            "password": "p",
+            "queue_capacity": 16384,
+            "tls": null,
+            "username": "u"
+          },
+          "enabled": true
+        },
+        "ros_route": {
+          "args": {
+            "address": null,
+            "async": null,
+            "cleanup_on_shutdown": null,
+            "comment_prefix": null,
+            "distance": null,
+            "gateway4": null,
+            "gateway6": null,
+            "max_ttl": null,
+            "min_ttl": null,
+            "password": null,
+            "queue_capacity": null,
+            "routing_table": null,
+            "tls": null,
+            "username": null
+          },
+          "enabled": false
+        },
+        "rule_actions": {},
+        "rule_dns_follow": [],
+        "rule_update": {
+          "args": {
+            "outbound": null,
+            "schedule": null,
+            "socks5": null,
+            "timeout": "60s",
+            "timezone": null
+          },
+          "enabled": false
+        },
+        "tcp_enabled": false,
+        "worker_threads": 2
+      }
+    },
+    "reason": "do not construct TCP server from non-text UDP entry"
+  },
+  "read_common_settings:6e4423802dfa745003c4ce7d70a3f59c1a51d0faed8df72211c3123f1029e45c": {
+    "fn": "read_common_settings",
+    "out": {
+      "capabilities": {
+        "adguard.content": {
+          "absent": true,
+          "editable": true,
+          "target": "adguard_rules"
+        },
+        "adguard.enabled": {
+          "editable": true,
+          "target": "adguard_rules"
+        },
+        "adguard.mode": {
+          "absent": true,
+          "editable": true,
+          "target": "adguard_block"
+        },
+        "adguard.urls": {
+          "absent": true,
+          "editable": true,
+          "target": "adguard_rules"
+        },
+        "aggregate_rules": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "always_standby": {
+          "editable": true,
+          "target": "fallback"
+        },
+        "api.enabled": {
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.listen": {
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.password": {
+          "absent": true,
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.ssl.cert": {
+          "absent": true,
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.ssl.key": {
+          "absent": true,
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.username": {
+          "absent": true,
+          "editable": true,
+          "target": "api.http"
+        },
+        "api.webui_root": {
+          "absent": true,
+          "editable": true,
+          "target": "api.http"
+        },
+        "block_qtypes": {
+          "editable": true,
+          "target": "sequence_main"
+        },
+        "cache_dump_enabled": {
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "cache_dump_file": {
+          "absent": true,
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "cache_dump_interval": {
+          "absent": true,
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "cache_enabled": {
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "cache_lazy_ttl": {
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "cache_size": {
+          "editable": true,
+          "target": "lazy_cache"
+        },
+        "custom_hosts": {
+          "absent": true,
+          "editable": true,
+          "target": "custom_hosts"
+        },
+        "custom_match_position": {
+          "editable": false,
+          "reason": "请先添加自定义匹配，再设置执行顺序。",
+          "target": "sequence_main"
+        },
+        "custom_matches": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "default_forward": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "direct_rules": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "direct_rulesets": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "dynamic_domain_set.args.batch_size": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.args.bootstrap_rules": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.args.flush_interval_ms": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.args.path": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.args.queue_size": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "dynamic_domain_set.learn": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.answer_required": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.async": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.error_mode": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.phase": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.qtypes": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.questions": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.rule_kind": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.success_only": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.learn_args.timeout": {
+          "absent": true,
+          "editable": true,
+          "target": "learn_classified_domain"
+        },
+        "dynamic_domain_set.route": {
+          "absent": true,
+          "editable": true,
+          "target": "dynamic_domains"
+        },
+        "fallback_concurrent": {
+          "editable": true,
+          "target": "forward_fallback"
+        },
+        "fallback_dns": {
+          "editable": true,
+          "target": "forward_fallback"
+        },
+        "fallback_threshold": {
+          "editable": true,
+          "target": "fallback"
+        },
+        "ip_selector.args.cache.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.cache.failure_ttl": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.cache.size": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.cache.ttl": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.dnssec_policy": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.max_parallel_probes": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.max_wait": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.probe_methods": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.probe_stagger": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.probe_timeout": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.selection_mode": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.args.top_n": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "ip_selector.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "ip_selector"
+        },
+        "listen": {
+          "editable": true,
+          "target": "server_udp"
+        },
+        "local_concurrent": {
+          "editable": true,
+          "target": "forward_local"
+        },
+        "local_dns": {
+          "editable": true,
+          "target": "forward_local"
+        },
+        "log.file": {
+          "editable": true,
+          "target": "log.file"
+        },
+        "log.level": {
+          "editable": true,
+          "target": "log.level"
+        },
+        "log.max_files": {
+          "editable": true,
+          "target": "log.rotation.max_files"
+        },
+        "log.rotation": {
+          "editable": true,
+          "target": "log.rotation.type"
+        },
+        "metrics_enabled": {
+          "editable": true,
+          "target": "sequence_main"
+        },
+        "prefer_ipv4": {
+          "editable": true,
+          "target": "sequence_main"
+        },
+        "probe_cache_enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "local_probe_cache"
+        },
+        "probe_cache_size": {
+          "absent": true,
+          "editable": true,
+          "target": "local_probe_cache"
+        },
+        "proxy_rules": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "proxy_rulesets": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "query_recorder.args.batch_size": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.cleanup_interval_hours": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.flush_interval_ms": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.memory_tail": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.path": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.queue_size": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.reader_concurrency": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.args.retention_days": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "query_recorder.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "query_recorder"
+        },
+        "remote_concurrent": {
+          "editable": true,
+          "target": "forward_remote"
+        },
+        "remote_dns": {
+          "editable": true,
+          "target": "forward_remote"
+        },
+        "remote_ttl": {
+          "editable": true,
+          "target": "remote_dns"
+        },
+        "ros_address_list.args.address": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.address_list4": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.address_list6": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.async": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.cleanup_on_shutdown": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.comment_prefix": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.max_ttl": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.min_ttl": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.password": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.queue_capacity": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.tls": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.tls.ca": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.tls.insecure": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.tls.server_name": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.args.username": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_address_list.enabled": {
+          "editable": true,
+          "target": "ros_address_list"
+        },
+        "ros_route.args.address": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.async": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.cleanup_on_shutdown": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.comment_prefix": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.distance": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.gateway4": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.gateway6": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.max_ttl": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.min_ttl": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.password": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.queue_capacity": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.routing_table": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.tls": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.tls.ca": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.tls.insecure": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.tls.server_name": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.args.username": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "ros_route.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "ros_route"
+        },
+        "rule_actions": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "rule_dns_follow": {
+          "editable": true,
+          "reason": "",
+          "target": "sequence_main"
+        },
+        "rule_update.args.outbound": {
+          "absent": true,
+          "editable": true,
+          "target": "rules_download"
+        },
+        "rule_update.args.schedule": {
+          "absent": true,
+          "editable": true,
+          "target": "rules_cron"
+        },
+        "rule_update.args.socks5": {
+          "absent": true,
+          "editable": true,
+          "target": "rules_download"
+        },
+        "rule_update.args.timeout": {
+          "editable": true,
+          "target": "rules_download"
+        },
+        "rule_update.args.timezone": {
+          "absent": true,
+          "editable": true,
+          "target": "rules_cron"
+        },
+        "rule_update.enabled": {
+          "absent": true,
+          "editable": true,
+          "target": "rules_cron"
+        },
+        "tcp_enabled": {
+          "editable": false,
+          "reason": "缺少可复用的 UDP 监听地址和处理入口，请在监听服务中配置 TCP",
+          "target": "server_tcp"
+        },
+        "worker_threads": {
+          "editable": true,
+          "target": "runtime.worker_threads"
+        }
+      },
+      "custom_match_target_tags": [
+        "rules_domain_1",
+        "lazy_cache",
+        "forward_local",
+        "forward_remote",
+        "forward_fallback",
+        "ros_address_list",
+        "china_dns",
+        "local_probe",
+        "remote_dns",
+        "fallback_dns",
+        "fallback",
+        "proxy_dns_seq",
+        "default_direct_ip",
+        "direct_ip",
+        "ip_requery_proxy",
+        "sequence_main",
+        "server_udp",
+        "rules_download",
+        "rules_reload",
+        "rules_refresh"
+      ],
+      "custom_match_targets": [
+        {
+          "exec": "$lazy_cache",
+          "source": "config.yaml",
+          "tag": "lazy_cache",
+          "type": "cache"
+        },
+        {
+          "exec": "$forward_local",
+          "source": "config.yaml",
+          "tag": "forward_local",
+          "type": "forward"
+        },
+        {
+          "exec": "$forward_remote",
+          "source": "config.yaml",
+          "tag": "forward_remote",
+          "type": "forward"
+        },
+        {
+          "exec": "$forward_fallback",
+          "source": "config.yaml",
+          "tag": "forward_fallback",
+          "type": "forward"
+        },
+        {
+          "exec": "$ros_address_list",
+          "source": "config.yaml",
+          "tag": "ros_address_list",
+          "type": "ros_address_list"
+        },
+        {
+          "exec": "goto china_dns",
+          "source": "config.yaml",
+          "tag": "china_dns",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto local_probe",
+          "source": "config.yaml",
+          "tag": "local_probe",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto remote_dns",
+          "source": "config.yaml",
+          "tag": "remote_dns",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto fallback_dns",
+          "source": "config.yaml",
+          "tag": "fallback_dns",
+          "type": "sequence"
+        },
+        {
+          "exec": "$fallback",
+          "source": "config.yaml",
+          "tag": "fallback",
+          "type": "fallback"
+        },
+        {
+          "exec": "goto proxy_dns_seq",
+          "source": "config.yaml",
+          "tag": "proxy_dns_seq",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto default_direct_ip",
+          "source": "config.yaml",
+          "tag": "default_direct_ip",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto direct_ip",
+          "source": "config.yaml",
+          "tag": "direct_ip",
+          "type": "sequence"
+        },
+        {
+          "exec": "goto ip_requery_proxy",
+          "source": "config.yaml",
+          "tag": "ip_requery_proxy",
+          "type": "sequence"
+        },
+        {
+          "exec": "$rules_download",
+          "source": "config.yaml",
+          "tag": "rules_download",
+          "type": "download"
+        },
+        {
+          "exec": "$rules_reload",
+          "source": "config.yaml",
+          "tag": "rules_reload",
+          "type": "reload_provider"
+        },
+        {
+          "exec": "goto rules_refresh",
+          "source": "config.yaml",
+          "tag": "rules_refresh",
+          "type": "sequence"
+        }
+      ],
+      "values": {
+        "adguard": {
+          "content": "",
+          "enabled": false,
+          "mode": null,
+          "urls": []
+        },
+        "aggregate_rules": true,
+        "always_standby": false,
+        "api": {
+          "enabled": true,
+          "listen": "127.0.0.1:9199",
+          "password": "",
+          "ssl": {
+            "cert": "",
+            "key": ""
+          },
+          "username": "",
+          "webui_root": ""
+        },
+        "block_qtypes": [
+          64,
+          28
+        ],
+        "cache_dump_enabled": false,
+        "cache_dump_file": null,
+        "cache_dump_interval": null,
+        "cache_enabled": true,
+        "cache_lazy_ttl": 3600,
+        "cache_size": 10240,
+        "custom_hosts": "",
+        "custom_match_position": null,
+        "custom_matches": [],
+        "default_forward": "forward_remote",
+        "device_policies": [],
+        "direct_rules": [
+          "a"
+        ],
+        "direct_rulesets": [
+          "rs",
+          "rs2"
+        ],
+        "dynamic_domain_set": {
+          "args": {
+            "batch_size": null,
+            "bootstrap_rules": null,
+            "flush_interval_ms": null,
+            "path": null,
+            "queue_size": null
+          },
+          "enabled": false,
+          "learn": false,
+          "learn_args": {
+            "answer_required": null,
+            "async": null,
+            "error_mode": null,
+            "phase": null,
+            "qtypes": null,
+            "questions": null,
+            "rule_kind": null,
+            "success_only": null,
+            "timeout": null
+          },
+          "route": null
+        },
+        "fallback_concurrent": 2,
+        "fallback_dns": "- addr: udp://192.0.2.53\n",
+        "fallback_threshold": 500,
+        "ip_selector": {
+          "args": {
+            "cache": {
+              "enabled": null,
+              "failure_ttl": null,
+              "size": null,
+              "ttl": null
+            },
+            "dnssec_policy": null,
+            "max_parallel_probes": null,
+            "max_wait": null,
+            "probe_methods": null,
+            "probe_stagger": null,
+            "probe_timeout": null,
+            "selection_mode": null,
+            "top_n": null
+          },
+          "enabled": false
+        },
+        "listen": "0.0.0.0:53",
+        "local_concurrent": 2,
+        "local_dns": "- addr: udp://192.0.2.11\n",
+        "log": {
+          "file": "./state/oxidns.log",
+          "level": "debug",
+          "max_files": 3,
+          "rotation": "daily"
+        },
+        "metrics_enabled": true,
+        "prefer_ipv4": true,
+        "probe_cache_enabled": false,
+        "probe_cache_size": null,
+        "proxy_rules": [],
+        "proxy_rulesets": [],
+        "query_recorder": {
+          "args": {
+            "batch_size": null,
+            "cleanup_interval_hours": null,
+            "flush_interval_ms": null,
+            "memory_tail": null,
+            "path": null,
+            "queue_size": null,
+            "reader_concurrency": null,
+            "retention_days": null
+          },
+          "enabled": false
+        },
+        "remote_concurrent": 1,
+        "remote_dns": "- addr: https://1.1.1.1/dns-query\n- addr: https://8.8.8.8/dns-query\n",
+        "remote_ttl": 1,
+        "ros_address_list": {
+          "args": {
+            "address": "https://192.0.2.1",
+            "address_list4": "oxidns",
+            "address_list6": "oxidns",
+            "async": true,
+            "cleanup_on_shutdown": true,
+            "comment_prefix": "configflow",
+            "max_ttl": 3600,
+            "min_ttl": 60,
+            "password": "p",
+            "queue_capacity": 16384,
+            "tls": null,
+            "username": "u"
+          },
+          "enabled": true
+        },
+        "ros_route": {
+          "args": {
+            "address": null,
+            "async": null,
+            "cleanup_on_shutdown": null,
+            "comment_prefix": null,
+            "distance": null,
+            "gateway4": null,
+            "gateway6": null,
+            "max_ttl": null,
+            "min_ttl": null,
+            "password": null,
+            "queue_capacity": null,
+            "routing_table": null,
+            "tls": null,
+            "username": null
+          },
+          "enabled": false
+        },
+        "rule_actions": {},
+        "rule_dns_follow": [],
+        "rule_update": {
+          "args": {
+            "outbound": null,
+            "schedule": null,
+            "socks5": null,
+            "timeout": "60s",
+            "timezone": null
+          },
+          "enabled": false
+        },
+        "tcp_enabled": false,
+        "worker_threads": 2
+      }
+    },
+    "reason": "do not construct TCP server from non-text UDP entry"
+  }
+}

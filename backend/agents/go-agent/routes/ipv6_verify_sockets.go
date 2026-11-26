@@ -99,7 +99,7 @@ func ipv6ProcessHasSocket(pid int, address net.IP, port int) bool {
 
 // Observation is intentionally an independent check: even a matching live
 // socket does not attribute one HTTP request to that socket or prove a LAN path.
-func ipv6ObserveNodeSockets(parent context.Context, cfg *Config, node map[string]interface{}, dialerProxy string) func() ipv6VerifyCheck {
+func ipv6ObserveNodeSockets(parent context.Context, cfg *Config, node map[string]any, dialerProxy string) func() ipv6VerifyCheck {
 	result := ipv6VerifyCheck{ID: "node_ipv6_transport", Label: "Mihomo IPv6 连接", Status: "unknown", Message: "尚未观察到能确认由 Mihomo 发起的节点 IPv6 连接", Scope: "mihomo_ipv6_socket"}
 	server, _ := node["server"].(string)
 	address := net.ParseIP(server)

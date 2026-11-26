@@ -17,7 +17,7 @@ vi.mock('@/api', () => ({
   routerApi: {}
 }))
 
-const proxy = 'http://proxy-user:proxy-secret@192.168.0.3:7890'
+const proxy = 'http://proxy-user:proxy-secret@192.0.2.3:7890'
 const wrappers: ReturnType<typeof mount>[] = []
 beforeEach(() => {
   vi.clearAllMocks()
@@ -76,11 +76,11 @@ describe('rule download proxy setting', () => {
     expect(input.attributes('type')).toBe('password')
     await input.trigger('blur')
     expect(ruleFetchProxyApi.update).not.toHaveBeenCalled()
-    await input.setValue(' http://192.168.0.3:7890 ')
+    await input.setValue(' http://192.0.2.3:7890 ')
     await input.trigger('blur')
     await flushPromises()
-    expect(ruleFetchProxyApi.update).toHaveBeenCalledWith({ rule_fetch_proxy: 'http://192.168.0.3:7890' })
-    expect(input.element.value).toBe('http://192.168.0.3:7890')
+    expect(ruleFetchProxyApi.update).toHaveBeenCalledWith({ rule_fetch_proxy: 'http://192.0.2.3:7890' })
+    expect(input.element.value).toBe('http://192.0.2.3:7890')
     expect(notify.success).toHaveBeenCalledWith('规则下载代理已保存')
   })
 
@@ -109,7 +109,7 @@ describe('rule download proxy setting', () => {
     expect(notify.error).toHaveBeenCalledWith('代理地址无效，请填写 HTTP/HTTPS 代理地址或留空')
     expect(notify.success).not.toHaveBeenCalled()
     expect(consoleError).not.toHaveBeenCalled()
-    await input.setValue('http://192.168.0.3:7890')
+    await input.setValue('http://192.0.2.3:7890')
     await input.trigger('blur')
     await flushPromises()
     expect(notify.success).toHaveBeenCalledWith('规则下载代理已保存')

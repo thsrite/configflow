@@ -7,14 +7,13 @@ on:
     branches:
       - main
     paths:
-      - 'backend/**'
+      - 'server/**'
+      - 'backend/agents/go-agent/**'
+      - 'backend/node-probe/**'
       - 'frontend/**'
       - 'docker/Dockerfile'
-      - 'docker/nginx.conf'
-      - 'docker/supervisord.conf'
-      - 'docker/sub-store-start.sh'
       - 'docker/configflow-start.sh'
-      - 'docker/auto_update.py'
+      - 'docker/configflow-healthcheck.sh'
       - '.github/workflows/docker.yml'
   workflow_dispatch:
 
@@ -43,12 +42,13 @@ jobs:
       - name: Get version
         id: version
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           else
             VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           fi
+          echo "git_commit=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -68,9 +68,34 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+          # metadata-action 默认 latest=auto 会在推正式版本标签时自动加 latest，
+          # 绕过下面的 PUBLISH_LATEST 开关（O14 D3）；latest 只由下面的 raw 规则决定。
+          # 标签：`<版本>`（含预发布）；正式版另推主版本号 `3`（{{major}} 不作用于预发布）；
+          # `latest` 冻结在最后一个 Python 版本，维护者确认稳定后设 PUBLISH_LATEST=true 才移动。
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=latest
+            type=semver,pattern={{major}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ vars.PUBLISH_LATEST == 'true' && !contains(github.ref_name, '-') }}
+
+      # 面板生成的 Docker Agent 命令/Compose/HA 使用与本次面板同一提交构建的 Agent 镜像：
+      # 版本标签（含预发布）用 docker-agent.yml 按同一 semver 规则推送的 `config-flow-agent:<版本>`；
+      # 分支/手动构建没有版本标签，用 Agent 的主版本号浮动标签 `3`（与 version.DefaultAgentImage 一致；
+      # `latest` 在观察期内仍是 Python 时期的 Agent，不能配 Go 面板）。
+      - name: Pair Docker Agent image
+        id: agent_image
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          AGENT_REPO: ${{ vars.DOCKERHUB_NAMESPACE || 'thsrite' }}/config-flow-agent
+        run: |
+          tag=3
+          if [[ "$GITHUB_REF" == refs/tags/v* ]] && [ -n "$VERSION" ] && grep -qxF "${REGISTRY_DOCKERHUB}/${IMAGE_NAME}:${VERSION}" <<<"$TAGS"; then
+            tag="$VERSION"
+          fi
+          echo "image=${AGENT_REPO}:${tag}" >> "$GITHUB_OUTPUT"
+          echo "Docker Agent image: ${AGENT_REPO}:${tag}"
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -80,10 +105,48 @@ jobs:
           target: runtime
           platforms: linux/amd64,linux/arm64
           pull: true
-          push: true
+          push: ${{ steps.meta.outputs.tags != '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
+            GIT_COMMIT=${{ steps.version.outputs.git_commit }}
+            AGENT_IMAGE=${{ steps.agent_image.outputs.image }}
+
+      # autoupdate 镜像（target: autoupdate，容器启动时按分支源码重建 Go server/前端/Agent）。
+      # 标签与 runtime 同一套 D3 规则：
+      # - 版本标签（含预发布）推 `<版本>-autoupdate`，例如 `3.0.0-rc.1-autoupdate`，固定且可回溯；
+      # - 正式版另推 `3-autoupdate`，跟随 3.x；
+      # - 浮动标签 `autoupdate` 是旧 Python autoupdate 用户正在跟的那个，与 `latest` 同一开关
+      #   （PUBLISH_LATEST=true 且不是预发布）才移动：观察期结束前它不会指向 Go 版。
+      - name: Extract autoupdate metadata
+        id: meta_autoupdate
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_DOCKERHUB }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
+          tags: |
+            type=semver,pattern={{version}},suffix=-autoupdate,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=semver,pattern={{major}},suffix=-autoupdate,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=autoupdate,enable=${{ vars.PUBLISH_LATEST == 'true' && !contains(github.ref_name, '-') }}
+
+      - name: Build and push autoupdate
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          target: autoupdate
+          platforms: linux/amd64,linux/arm64
+          pull: true
+          push: ${{ steps.meta_autoupdate.outputs.tags != '' }}
+          tags: ${{ steps.meta_autoupdate.outputs.tags }}
+          labels: ${{ steps.meta_autoupdate.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            GIT_COMMIT=${{ steps.version.outputs.git_commit }}
+            AGENT_IMAGE=${{ steps.agent_image.outputs.image }}

@@ -1,0 +1,235 @@
+package aggregations
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+
+	"configflow/internal/convert"
+	"configflow/internal/jsondecode"
+	"configflow/internal/lifecycle"
+	"configflow/internal/model"
+	"configflow/internal/provider"
+	"configflow/internal/refresh"
+	"configflow/internal/repo"
+	"configflow/internal/yamlx"
+)
+
+// Fetch provides one subscription body without publishing a provider artifact.
+type Fetch = refresh.FetchSourceFn
+
+// generateJSON decodes the native JSON entry point retained for export consumers.
+// Resource and profile records keep unknown stored members through model codecs.
+func (s *Service) generateJSON(ctx context.Context, rawAggregation, rawConfig json.RawMessage, options Options) (*Result, error) {
+	var agg model.Aggregation
+	if err := json.Unmarshal(rawAggregation, &agg); err != nil {
+		return nil, err
+	}
+	var profile model.Profile
+	if err := json.Unmarshal(rawConfig, &profile); err != nil {
+		return nil, err
+	}
+	// Decode the captured flat API document using each model owner's codec.
+	var shared model.Shared
+	if err := json.Unmarshal(rawConfig, &shared); err != nil {
+		return nil, err
+	}
+	var system model.System
+	if err := json.Unmarshal(rawConfig, &system); err != nil {
+		return nil, err
+	}
+	var identity struct {
+		ProfileID string `json:"profile_id"`
+	}
+	if err := jsondecode.Unmarshal(rawConfig, &identity); err != nil {
+		return nil, err
+	}
+	config := &model.Config{Profile: &profile, ProfileID: identity.ProfileID, SystemConfig: system.SystemConfig, Backup: system.Backup, Subscriptions: shared.Subscriptions, Nodes: shared.Nodes, Aggregations: shared.Aggregations, RuleLibrary: shared.RuleLibrary}
+	if !options.Persist {
+		var request map[string]json.RawMessage
+		if err := json.Unmarshal(rawAggregation, &request); err != nil {
+			return nil, err
+		}
+		var name string
+		if value := request["name"]; len(value) == 0 || string(value) == "null" || json.Unmarshal(value, &name) != nil {
+			return nil, errors.New("aggregation name must be a string")
+		}
+		if value, present := request["subscriptions"]; present && string(value) == "null" {
+			return nil, errors.New("aggregation subscriptions must be an array")
+		}
+		if value, present := request["regex_filter"]; present {
+			var filter string
+			if string(value) == "null" || json.Unmarshal(value, &filter) != nil {
+				return nil, errors.New("aggregation regex must be a string")
+			}
+		}
+	}
+	return s.generateConfig(ctx, agg, config, options)
+}
+
+// generateConfig validates a frozen main before fetching sources. Persist uses
+// the shared all-or-nothing provider bundle; dry renders never commit.
+func (s *Service) generateConfig(ctx context.Context, agg model.Aggregation, config *model.Config, options Options) (*Result, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if options.Format != "" {
+		ctx = WithFormat(ctx, options.Format)
+	} else {
+		options.Format, _ = ctx.Value(formatKey{}).(string)
+	}
+	if config == nil || config.Profile == nil {
+		return nil, errors.New("aggregation config must include a profile")
+	}
+	if err := convert.ConfigDialers(config); err != nil {
+		return nil, convert.DialerFailure(err)
+	}
+	profileID := config.ProfileID
+	var err error
+	if options.Persist {
+		if s.repo == nil {
+			return nil, errors.New("aggregations: repository is nil")
+		}
+		profileID, err = s.repo.ResolveProfileID(ctx, profileID)
+	} else if profileID == "" {
+		if s.repo == nil {
+			return nil, errors.New("aggregations: repository is nil")
+		}
+		profileID, err = s.repo.DefaultProfileID(ctx)
+	}
+	if err != nil {
+		return nil, err
+	}
+	ctx = convert.EnsureConversions(ctx)
+	var main *yamlx.Node
+	if len(options.Main) > 0 && string(options.Main) != "null" {
+		main, err = yamlx.FromJSON(options.Main)
+	} else {
+		main, err = convert.MihomoDocument(ctx, config, convert.MihomoOptions{SkipProviderPreflight: true})
+	}
+	if err != nil {
+		return nil, err
+	}
+	if options.Persist {
+		return s.publish(ctx, agg, config, main, profileID, options)
+	}
+	// The aggregation is a plain record (O18 T1c): a stored name of another
+	// type reads as text, selectors of the wrong type as no selection.
+	a := aggregation{resource: typedResource(agg.ID, agg.Name, agg.Enabled), Subscriptions: agg.Subscriptions, Nodes: agg.Nodes}
+	if agg.RegexFilter != nil {
+		a.Regex, err = json.Marshal(*agg.RegexFilter)
+		if err != nil {
+			return nil, err
+		}
+	}
+	snapshot, err := provider.CaptureDelivery(profileID, main, config.Profile)
+	if err != nil {
+		return nil, err
+	}
+	d := newTypedDelivery(config, main, snapshot)
+	d.provider = s.provider
+	d.repo = s.repo
+	d.substore = s.substore
+	d.refresh = s.refreshSvc()
+	return render(ctx, a, d, options)
+}
+
+func (s *Service) publish(ctx context.Context, agg model.Aggregation, config *model.Config, main *yamlx.Node, profileID string, options Options) (*Result, error) {
+	if s.provider == nil {
+		return nil, errors.New("aggregations: provider service is nil")
+	}
+	if s.repo == nil {
+		return nil, errors.New("aggregations: repository is nil")
+	}
+	bundle, err := s.provider.PrepareBundle(ctx, config, main, provider.DeliveryOptions{Requested: &provider.BundleRequest{Kind: "aggregation", Aggregation: &agg}, SubscriptionFetch: options.Fetch})
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var found *provider.Artifact
+	for _, item := range bundle {
+		if item.Name == agg.Name {
+			found = item
+			break
+		}
+	}
+	if found == nil {
+		return nil, errors.New("aggregation absent from validated provider bundle")
+	}
+	if err := s.provider.CommitArtifacts(ctx, profileID, bundle); err != nil {
+		return nil, err
+	}
+	path, err := s.repo.ProfilePath(profileID, "providers/"+agg.ID+".yaml")
+	if err != nil {
+		return nil, err
+	}
+	result := &Result{Name: found.Name, Content: found.Content, FilePath: &path, SubscriptionNodeCounts: map[string]int{}}
+	if len(found.Extra) > 0 {
+		if err := json.Unmarshal(found.Extra, result); err != nil {
+			return nil, err
+		}
+		result.FilePath, result.Content = &path, found.Content
+	}
+	values, err := s.provider.ParseNodes(found.Content, found.Name, path)
+	if err != nil {
+		return nil, err
+	}
+	result.Proxies = make([]Proxy, 0, len(values))
+	for _, value := range values {
+		proxy, err := graphProxy(value)
+		if err != nil {
+			return nil, err
+		}
+		result.Proxies = append(result.Proxies, proxy)
+	}
+	result.TotalCount = len(result.Proxies)
+	return result, nil
+}
+
+func loadCatalogWith(ctx context.Context, r *repo.Repository) (*model.Shared, error) {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if r == nil {
+		return nil, errors.New("aggregations: repository is nil")
+	}
+	return r.ScopedSharedConfig(ctx)
+}
+
+func saveCatalogWith(ctx context.Context, r *repo.Repository, document *model.Shared) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r == nil {
+		return errors.New("aggregations: repository is nil")
+	}
+	return r.SaveScopedSharedRecord(ctx, document, nil)
+}
+
+func appendCatalogWith(ctx context.Context, r *repo.Repository, raw json.RawMessage) error {
+	ctx = lifecycle.Detach(ctx)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r == nil {
+		return errors.New("aggregations: repository is nil")
+	}
+	var shared model.Shared
+	list := append(append([]byte("["), raw...), ']')
+	if err := shared.SetJSON("subscription_aggregations", list); err != nil {
+		return repo.InputError(err)
+	}
+	if len(shared.Aggregations) != 1 {
+		return repo.InputError(&model.MemberTypeError{Record: "shared", Member: "subscription_aggregations", Value: list, Err: model.ErrType})
+	}
+	item := shared.Aggregations[0]
+	return r.UpdateShared(ctx, func(ctx context.Context, shared *model.Shared) error {
+		shared.Aggregations = append(shared.Aggregations, item)
+		return ctx.Err()
+	})
+}

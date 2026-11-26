@@ -5,7 +5,6 @@ import (
 	"agent/upgrade"
 	"errors"
 	"io"
-	"log"
 	"os"
 	"time"
 
@@ -81,7 +80,7 @@ func startDiskCleanup(cfg *Config) {
 		defer ticker.Stop()
 		for {
 			if err := cleanupDisk(cfg); err != nil {
-				log.Printf("Disk cleanup deferred: %v", err)
+				logger.Warnf("Disk cleanup deferred: %v", err)
 			}
 			<-ticker.C
 		}

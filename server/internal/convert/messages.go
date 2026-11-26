@@ -1,0 +1,207 @@
+package convert
+
+// AfterMatchNote explains why a rule after MATCH is omitted from Surge/Loon.
+const AfterMatchNote = "仅 Mihomo 生效（位于 MATCH 之后，只匹配节点不支持 UDP 而跳过的连接），已忽略"
+
+const (
+	msgIPv6Boolean       = "ipv6 必须为 true 或 false，不能是字符串或拼写错误的值"
+	msgDNSIPv6Boolean    = "dns 下的 ipv6 必须为 true 或 false，不能是字符串或拼写错误的值"
+	msgCustomYAMLInvalid = "mihomo.custom_config YAML 解析失败: "
+	msgCustomYAMLMapping = "mihomo.custom_config 不是 mapping，得到 "
+	// msgCustomConfigNotText: a stored custom_config that is not text (read
+	// as model.DamagedText) is refused, never generated as an empty base.
+	msgCustomConfigNotText   = "%s.custom_config 不是文本，请在配置页重新填写后保存"
+	msgProxyYAMLInvalid      = "代理 YAML 校验失败"
+	msgProxyYAMLNode         = "代理 YAML 节点无效"
+	msgProxyYAMLScalar       = "代理 YAML 标量无法转换"
+	msgProxyTypeString       = "代理 type 必须是非空字符串"
+	msgNodeParamsObject      = "节点 params 必须是对象，不能为 null"
+	msgProxyConverterMissing = "节点转换器不可用"
+	msgProxyLocalLog         = "节点 '%s' 为 JSON/YAML 格式，本地解析"
+	msgProxyRemoteLog        = "节点 '%s' 为 URI/base64 格式，使用 Sub-Store 的转换结果"
+)
+
+const (
+	msgETSettingsObject   = "EasyTier 设置必须是对象"
+	msgETText             = "%s 必须是文本"
+	msgETRequired         = "请填写%s"
+	msgETTextLimit        = "%s 过长或包含控制字符"
+	msgETList             = "%s 必须是列表，最多 %d 项"
+	msgETBoolean          = "%s 必须是布尔值"
+	msgETSwitch           = "%s 必须是开或关"
+	msgETInteger          = "%s 必须是整数"
+	msgETRange            = "%s 需在 %d ~ %d 之间"
+	msgETNetworkMap       = "%s「%s」：Mihomo 的 EasyTier 不支持「->」网段映射，只能原样填写网段"
+	msgETNetwork          = "%s「%s」不是有效的网段"
+	msgETIPv4Network      = "%s「%s」：EasyTier 虚拟网只支持 IPv4"
+	msgETPeer             = "%s「%s」格式不对，应类似 tcp://203.0.113.10:11010（支持 %s 等）"
+	msgETExitNode         = "exit-nodes「%s」应填写出口节点的虚拟 IPv4 地址"
+	msgETIPVersion        = "ip-version 只能是 %s"
+	msgETIPv4             = "ipv4「%s」应类似 10.144.144.10 或 10.144.144.10/24"
+	msgETOnlyIPv4         = "ipv4 只能填写 IPv4 地址"
+	msgETHostname         = "hostname 只能包含字母、数字和连字符，不超过 63 个字符"
+	msgETName             = "节点名称"
+	msgETNameComma        = "节点名称不能包含英文逗号，否则规则无法引用"
+	msgETApply            = "下发范围只能是 subscription、agent 或 all"
+	msgETRoutes           = "走 EasyTier 的网段"
+	msgETKeepObject       = "keepalive 必须是对象"
+	msgETKeepURLLabel     = "保活检测地址"
+	msgETInterval         = "保活检测间隔需为 10 ~ 86400 秒的整数"
+	msgETKeepURL          = "保活检测地址应为 http:// 或 https:// 开头的网址"
+	msgETKeepRequired     = "开启保活时请填写检测地址，例如虚拟网内某台设备上的网页"
+	msgETOptionsObject    = "options 必须是对象"
+	msgETUnknown          = "不认识的 EasyTier 参数：%s"
+	msgETNetworkName      = "请填写 network-name（EasyTier 网络名）"
+	msgETListenerConflict = "填写了 listeners 时不能同时开启 no-listener"
+	msgETPeersRequired    = "不监听端口时至少要填写一个 peers（入网节点）"
+	msgETPrivateKey       = "local-public-key 需要和 local-private-key 一起填写"
+	msgETKeepSuffix       = " 保活"
+	msgETVersionType      = "Mihomo 内核版本必须是字符串"
+	msgETVersion          = "设备上的 Mihomo %s 不支持 EasyTier 节点（需要 v1.19.31 或更新），请先更新内核，或在 EasyTier 设置里不再下发到 Agent"
+	msgETDocument         = "EasyTier 生成配置的 proxies、proxy-groups 和 rules 必须是数组"
+	msgETNameConflict     = "EasyTier 节点名「%s」与已有节点或策略组重名，请在 EasyTier 设置里改名"
+	msgETDialerMissing    = "EasyTier 的 dialer-proxy「%s」不在生成的节点或策略组里"
+)
+
+const (
+	msgResourceField            = "资源 %s 必须是非空字符串"
+	msgProxyStringType          = "节点 proxy_string 必须是字符串"
+	msgGroupStringList          = "策略组 %s 必须是字符串数组"
+	msgGroupOrder               = "策略组 proxies_order 必须是含 type/id 字符串的对象数组"
+	msgIdentityString           = "%s 必须是字符串，当前值：%s"
+	msgNodeTypeField            = "节点 type"
+	msgRuleTypeField            = "规则 rule_type"
+	msgRuleValueField           = "规则 value"
+	msgDialerIncludeAll         = "拨号拓扑不支持 include-all 隐式全局来源，请显式选择来源"
+	msgGroupUse                 = "策略组 use 引用不存在或名称不唯一"
+	msgGroupSourceMissing       = "拨号策略组来源不存在或未启用"
+	msgGroupEmpty               = "拨号策略组不能为空"
+	msgDialerRef                = "dialer_ref 必须为 {type: node|group, id: 非空字符串}"
+	msgRawDialerName            = "原始 dialer-proxy 必须是非空名称"
+	msgRawDialerMissing         = "原始 dialer-proxy '%s' 不存在、未启用或名称不唯一，请改用稳定引用"
+	msgChainFollow              = "跟随模式不能引用代理链，请使用策略组引用"
+	msgChainGroupMissing        = "策略组引用不存在或未启用"
+	msgChainShape               = "代理链 chain 必须包含 entry 和 exit"
+	msgChainEndpoint            = "代理链端点必须为 {type: node|group, id: 非空字符串}"
+	msgChainMissing             = "代理链依赖不存在或未启用"
+	msgChainManual              = "代理链仅支持共享手动节点，订阅请通过策略组使用"
+	msgChainSame                = "代理链前置与落地不能是同一资源"
+	msgChainSources             = "代理链不能同时配置普通策略组来源"
+	msgChainBuiltin             = "代理链落地组不能包含 DIRECT/REJECT 等无法施加前置代理的候选"
+	msgChainExitMissing         = "代理链落地候选不存在或未启用"
+	msgChainSubscribed          = "订阅节点请通过策略组 Provider 使用"
+	msgChainAggregationEmpty    = "代理链落地聚合不能为空"
+	msgDialerMissing            = "拨号依赖不存在或未启用"
+	msgDialerAggregationEmpty   = "拨号策略组聚合来源不能为空"
+	msgDialerCycle              = "拨号代理依赖存在循环"
+	msgDialerUniqueID           = "拨号引用要求资源 ID 唯一"
+	msgDialerNames              = "拨号代理要求代理/策略组名称非空、唯一且不与内置策略冲突"
+	msgDialerRefMissing         = "拨号引用不存在、未启用或不在当前配置空间"
+	msgDialerSelf               = "节点不能引用自身作为拨号代理"
+	msgDialerAbsent             = "拨号依赖不存在"
+	msgDialerManual             = "稳定拨号引用仅支持手动节点，不能使用订阅节点"
+	msgDialerConversion         = "拨号拓扑参与节点转换失败，不能省略节点"
+	msgTopologyShape            = "拨号拓扑字段类型无效"
+	msgProviderFilter           = "Provider 正则过滤无效或不受支持"
+	msgProviderNameRule         = "Provider 名称转换规则无效"
+	msgProviderMarker           = "Provider 原始节点名称与代理链私有排序标记冲突"
+	msgEmittedNames             = "生成的代理/策略组名称重复或与内置策略冲突"
+	msgProviderPayloadMissing   = "拨号拓扑缺少已验证的 Provider 内容"
+	msgProviderDuplicate        = "Provider 节点名称重复"
+	msgProviderFilteredEmpty    = "拨号拓扑 Provider 过滤后不能为空"
+	msgProviderConflict         = "Provider 节点名称与代理拓扑冲突"
+	msgProviderTarget           = "Provider 节点「%s」的 dialer-proxy「%s」引用了不存在的代理或策略组；若它是机场订阅自带的中转分组，在「订阅来源」刷新该订阅后 ConfigFlow 会自动补上"
+	msgGroupCandidatesDuplicate = "策略组候选名称重复"
+	msgEmittedCandidateMissing  = "拨号拓扑中的策略组引用了未生成的代理或策略组"
+	msgEmittedTargetMissing     = "生成的 dialer-proxy 引用了不存在的代理或策略组"
+	msgEmittedProviderMissing   = "策略组引用了未生成的 Provider"
+	msgEmittedGroupEmpty        = "拨号策略组过滤后没有可用候选"
+	msgClientChain              = "%s 暂不支持代理链，请使用 Mihomo 或禁用代理链"
+	msgClientDialer             = "%s 暂不支持 Mihomo 拨号代理拓扑，请使用 Mihomo 或显式移除拨号配置"
+	msgClientConvertedDialer    = "%s 暂不支持转换结果中的 dialer-proxy"
+)
+
+const (
+	msgResourceArray  = "%s 必须是数组"
+	msgResourceObject = "资源必须是 JSON 对象"
+)
+
+const (
+	msgBaseBoolean          = "%s 只能填写 true 或 false，不要加引号"
+	msgBaseInteger          = "%s 需为 %d–%d 的整数"
+	msgBaseEnum             = "%s 只能是 %s 之一"
+	msgBaseList             = "%s 需为文本列表，每行一项，不能有空项"
+	msgBaseText             = "%s 需为非空文本；不需要时删除该项"
+	msgBaseSniffObject      = "sniffer.sniff 需为对象，按协议 HTTP / TLS / QUIC 分别填写"
+	msgBaseSniffProtocol    = "sniffer.sniff 只支持 HTTP / TLS / QUIC，「%s」无法识别，Mihomo 会拒绝加载"
+	msgBaseSniffPorts       = "sniffer.sniff.%s.ports：%s"
+	msgBaseSniffOverride    = "sniffer.sniff.%s.override-destination 只能填写 true 或 false，不要加引号"
+	msgTemplateSecret       = "不能使用初始模板的默认密码 123456，请自己设置一个"
+	msgControllerSecret     = "控制面板密码需为 8–64 个字母、数字或符号，不含空格"
+	msgBaseController       = "external-controller 需写成「地址:端口」，例如 0.0.0.0:9090 或 127.0.0.1:9090，端口 1–65535"
+	msgBaseControllerScope  = "external-controller 只能监听 0.0.0.0 / ::（局域网可访问）或 127.0.0.1 / ::1（仅本机）：Agent 经本机回环地址读取连接、流量并热重载配置，监听其他地址时这些功能不可用"
+	msgBaseSecretType       = "控制面板密码（secret）必须是文本，纯数字等请加引号"
+	msgBaseSecretRequired   = "控制面板对局域网开放（external-controller 监听所有地址）时必须设置控制面板密码（secret）"
+	msgBaseUIURL            = "external-ui-url 需为 http(s) 下载地址，例如 https://github.com/…/gh-pages.zip"
+	msgBaseBind             = "bind-address 只能填写 *（所有地址）或本机的一个 IP 地址"
+	msgBaseUnnamed          = "未命名"
+	msgBaseListener         = "listeners（%s）"
+	msgBasePortDuplicate    = "端口 %d 同时被 %s 和 %s 使用，请改用不同端口"
+	msgBasePortReserved     = "%s 使用端口 %d，与%s冲突，请改用其他端口"
+	msgBaseDNSLoop          = "dns.%s 中的 %s 指向本机或系统 DNS，会形成解析循环；请改用外部 DNS，例如 https://223.5.5.5/dns-query"
+	msgBaseDNSRequired      = "dns.nameserver 至少填写一个上游"
+	msgBaseProxyDNSRequired = "开启 dns.respect-rules 时必须填写 dns.proxy-server-nameserver，否则 Mihomo 无法启动"
+	msgBaseFakeRange        = "dns.fake-ip-range 需为 IPv4 网段（/8 至 /30），例如 198.18.0.1/16，不能是回环、多播或链路本地地址"
+	msgBaseAgentPort        = "%s Agent「%s」的端口"
+)
+
+const (
+	msgMihomoConfig   = "Mihomo 配置必须包含有效的配置空间"
+	msgMihomoRules    = "规则列表必须为规则对象数组"
+	msgMihomoHosts    = "订阅 hosts 协作未返回有效结果"
+	msgMihomoSections = "生成的代理和策略组必须为数组"
+	msgMihomoName     = "生成的代理和策略组名称必须为字符串"
+	msgMihomoURL      = "Invalid IPv6 URL"
+	msgMihomoDownload = "Mihomo 下载项 %s 的 URL 和 path 必须为文本"
+	msgRegionPort     = "区域检测端口必须为 1–65535 的整数"
+	msgRegionConflict = "区域检测入口端口 %d 与已有入站冲突，本次未注入"
+)
+
+const msgMihomoDownloadObject = "Mihomo 下载节 %s 必须为对象"
+
+// msgMihomoStoredText rejects a wrong-typed stored member that would become a
+// generated key or rule text: resource kind, id, member name, stored JSON value.
+const msgMihomoStoredText = "%s %s 的 %s 必须是字符串，当前值：%s"
+
+// Resource kinds named by msgMihomoStoredText.
+
+const (
+	msgClientText    = "节点文本字段必须为字符串或数值"
+	msgClientOptions = "节点参数必须为对象"
+	msgClientBoolean = "节点布尔字段 %s 类型错误，已使用缺省值"
+)
+
+const (
+	msgSurgePortList  = "# Surge 不支持一条规则写多个端口，已忽略: "
+	msgLoonPortList   = "# Loon 不支持一条规则写多个端口，已忽略: "
+	msgLoonRuleType   = "# Loon 不支持的规则类型，已忽略: "
+	msgLoonRuleFormat = "# Loon 不支持 YAML/MRS 规则集，已忽略: "
+)
+
+const (
+	msgClientConfig        = "客户端配置必须包含有效的配置空间"
+	msgLoonUnsupportedNode = "Loon 不支持该节点类型，已跳过: "
+)
+
+const (
+	msgSurgeDeliveryDialer = "Surge policy-path 暂不支持 dialer-proxy，不能静默移除拨号配置"
+	msgLoonDeliveryDialer  = "Loon 订阅暂不支持 dialer-proxy，不能静默移除拨号配置"
+	msgSurgeNodeFailure    = "转换节点到 Surge 格式失败: %s, 错误: %v"
+	msgLoonNodeFailure     = "转换节点到 Loon 格式失败: %s, 错误: %v"
+)
+
+const msgSurgeALPN = "节点 %s 的 Surge ALPN 列表无法表达，已省略 alpn 参数：%s"
+
+const msgClientProxyObject = "代理节点必须为对象"
+
+const kindNode = "节点"

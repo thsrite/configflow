@@ -24,7 +24,17 @@ func selectReturnAllocation(state *returnRoutingState, resources *returnResource
 			return allocation, fmt.Errorf("已有回流状态缺少可验证归属，拒绝重新分配或自动接管")
 		}
 		if state.Ownership.Pending {
-			return allocation, fmt.Errorf("上次回流事务未完成，不能重新分配资源")
+			// Preview only: Apply records the same token-proven objects before
+			// it replays the transaction.
+			manifest, err := pendingNFTManifest(state.Ownership, resources)
+			if err != nil {
+				return allocation, fmt.Errorf("上次回流事务未完成，不能重新分配资源：%w", err)
+			}
+			state = cloneReturnState(state)
+			state.Ownership.NFT = manifest
+			if !validReturnOwner(state) {
+				return allocation, fmt.Errorf("上次回流事务未完成，不能重新分配资源")
+			}
 		}
 		spec, err := validateSpec(state.Spec)
 		if err != nil {

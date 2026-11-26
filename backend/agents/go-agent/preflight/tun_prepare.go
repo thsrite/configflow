@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"agent/internal/atomicfile"
 )
 
 const tunModulesFile = "/etc/modules-load.d/99-configflow-tun.conf"
@@ -507,29 +509,9 @@ func persistTUNFile(path string, before, after []byte, existed bool) error {
 	if err := check(); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".configflow-tun-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
-	if _, err := tmp.Write(after); err != nil {
-		return err
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := check(); err != nil {
-		return err
-	}
-	if existed {
-		return os.Rename(tmp.Name(), path)
-	}
-	return os.Link(tmp.Name(), path)
+	return atomicfile.WriteWith(path, after, mode, atomicfile.Options{
+		Pattern:      ".configflow-tun-*",
+		Exclusive:    !existed,
+		BeforeCommit: check,
+	})
 }

@@ -13,15 +13,15 @@ import (
 	"time"
 )
 
-func oxSourceTestRecord(id int, tag string) map[string]interface{} {
-	return map[string]interface{}{"id": id, "created_at_ms": int64(1792100000123), "request_id": id,
-		"client_ip": "192.0.2.1", "questions_json": []interface{}{}, "answers_json": []interface{}{},
+func oxSourceTestRecord(id int, tag string) map[string]any {
+	return map[string]any{"id": id, "created_at_ms": int64(1792100000123), "request_id": id,
+		"client_ip": "192.0.2.1", "questions_json": []any{}, "answers_json": []any{},
 		"elapsed_ms": 1, "has_response": true, "error": nil, "rcode": "No Error",
 		"steps": []oxSourceStep{{Sequence: "main", Kind: "executor", Tag: tag, Outcome: "entered"},
 			{Sequence: "main", Kind: "executor", Tag: tag, Outcome: "next"}}}
 }
 
-func oxSourceTestJSON(value interface{}) []byte { data, _ := json.Marshal(value); return data }
+func oxSourceTestJSON(value any) []byte { data, _ := json.Marshal(value); return data }
 
 func TestOxSourceSSEListReusesOneStreamForFiftyRows(t *testing.T) {
 	var streams, details, lists atomic.Int32
@@ -47,13 +47,13 @@ func TestOxSourceSSEListReusesOneStreamForFiftyRows(t *testing.T) {
 			<-r.Context().Done()
 		case "/api/plugins/records/records":
 			lists.Add(1)
-			rows := []interface{}{}
+			rows := []any{}
 			for i := 1; i <= 50; i++ {
 				row := oxSourceTestRecord(i, "")
 				delete(row, "steps")
 				rows = append(rows, row)
 			}
-			w.Write(oxSourceTestJSON(map[string]interface{}{"ok": true, "records": rows, "next_cursor": nil}))
+			w.Write(oxSourceTestJSON(map[string]any{"ok": true, "records": rows, "next_cursor": nil}))
 		default:
 			details.Add(1)
 			http.NotFound(w, r)
@@ -71,7 +71,7 @@ func TestOxSourceSSEListReusesOneStreamForFiftyRows(t *testing.T) {
 		w := httptest.NewRecorder()
 		handler(w, r)
 		var response struct {
-			Records []map[string]interface{} `json:"records"`
+			Records []map[string]any `json:"records"`
 		}
 		if json.Unmarshal(w.Body.Bytes(), &response) != nil || w.Code != 200 || len(response.Records) != 50 {
 			t.Fatalf("bad list: %s", w.Body.String())
@@ -170,9 +170,9 @@ func TestOxSourceContinuousStreamBeyondTailLimit(t *testing.T) {
 	old, newest := oxSourceTestRecord(1, ""), oxSourceTestRecord(total, "")
 	delete(old, "steps")
 	delete(newest, "steps")
-	list := oxSourceTestJSON(map[string]interface{}{"records": []interface{}{old, newest}})
+	list := oxSourceTestJSON(map[string]any{"records": []any{old, newest}})
 	var response struct {
-		Records []map[string]interface{} `json:"records"`
+		Records []map[string]any `json:"records"`
 	}
 	if json.Unmarshal(s.enrich(context.Background(), list), &response) != nil || len(response.Records) != 2 {
 		t.Fatal("cache eviction removed history from the list")
@@ -313,7 +313,7 @@ func TestOxSourceCacheIdentityBoundAndInvalidation(t *testing.T) {
 	row := oxSourceTestRecord(oxSourceEntries+1, "")
 	delete(row, "steps")
 	list := func() []byte {
-		return oxSourceTestJSON(map[string]interface{}{"ok": true, "records": []interface{}{row}, "next_cursor": nil})
+		return oxSourceTestJSON(map[string]any{"ok": true, "records": []any{row}, "next_cursor": nil})
 	}
 	if !strings.Contains(string(a.enrich(context.Background(), list())), `"resolution_source":"local"`) {
 		t.Fatal("missing cache hit")
@@ -394,9 +394,9 @@ func TestOxSourceCacheIPv4SuppressionSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	delete(row, "steps")
-	list := oxSourceTestJSON(map[string]interface{}{"ok": true, "records": []interface{}{row}, "next_cursor": nil})
+	list := oxSourceTestJSON(map[string]any{"ok": true, "records": []any{row}, "next_cursor": nil})
 	var response struct {
-		Records []map[string]interface{} `json:"records"`
+		Records []map[string]any `json:"records"`
 	}
 	if err := json.Unmarshal(stream.enrich(context.Background(), list), &response); err != nil {
 		t.Fatal(err)
@@ -404,4 +404,11 @@ func TestOxSourceCacheIPv4SuppressionSummary(t *testing.T) {
 	if len(response.Records) != 1 || response.Records[0]["resolution_source"] != "ipv4_preferred" || response.Records[0]["steps"] != nil {
 		t.Fatalf("expected compact IPv4 policy summary, got %v", response.Records)
 	}
+}
+
+func (cache *oxSourceCache) close() {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	cache.closed = true
+	cache.clearLocked()
 }

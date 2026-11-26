@@ -1,0 +1,224 @@
+From ffcffdc47f27909933110b40664a72ebf6cd21f4 Mon Sep 17 00:00:00 2001
+From: sunbroke <yangxiang0227@gmail.com>
+Date: Wed, 18 Nov 2026 03:01:14 +0800
+Subject: [PATCH] go(deploy): A14-4 propose shared final-commit cancellation
+ guards
+
+Prototype for O3-6c: preserve cancellation through row serialization and the final SQLite COMMIT; check file replacement commits.
+
+Co-Authored-By: GPT-6 <noreply@openai.com>
+---
+ server/internal/repo/files.go              | 31 +++++++++++++++++-----
+ server/internal/repo/multi_profile_test.go |  2 +-
+ server/internal/repo/repository.go         |  2 +-
+ server/internal/repo/store_rows.go         |  5 ++--
+ server/internal/store/store.go             | 16 +++++++++++
+ 5 files changed, 46 insertions(+), 10 deletions(-)
+
+diff --git a/server/internal/repo/files.go b/server/internal/repo/files.go
+index c4ecad6f..877ee51e 100644
+--- a/server/internal/repo/files.go
++++ b/server/internal/repo/files.go
+@@ -109,6 +109,13 @@ func writeTemp(path string, content []byte) (string, error) {
+ // refresh "<path>.bak" with the previous content, also through a temporary
+ // file; a failed backup refresh keeps the old backup and is not an error.
+ func writeAtomic(path string, content []byte) error {
++	return writeAtomicContext(context.Background(), path, content)
++}
++
++func writeAtomicContext(ctx context.Context, path string, content []byte) error {
++	if err := ctx.Err(); err != nil {
++		return err
++	}
+ 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+ 		return err
+ 	}
+@@ -123,6 +130,10 @@ func writeAtomic(path string, content []byte) error {
+ 	if err != nil {
+ 		return err
+ 	}
++	if err := ctx.Err(); err != nil {
++		os.Remove(temporary)
++		return err
++	}
+ 	if err := os.Rename(temporary, path); err != nil {
+ 		os.Remove(temporary)
+ 		return err
+@@ -138,6 +149,10 @@ func writeAtomic(path string, content []byte) error {
+ 	if err != nil {
+ 		return nil
+ 	}
++	if err := ctx.Err(); err != nil {
++		os.Remove(backupTemporary)
++		return err
++	}
+ 	if err := os.Rename(backupTemporary, backup); err != nil {
+ 		os.Remove(backupTemporary)
+ 		return nil
+@@ -156,11 +171,15 @@ func fileJSON(data any) ([]byte, error) {
+ }
+ 
+ func writeJSON(path string, data any) error {
++	return writeJSONContext(context.Background(), path, data)
++}
++
++func writeJSONContext(ctx context.Context, path string, data any) error {
+ 	text, err := fileJSON(data)
+ 	if err != nil {
+ 		return err
+ 	}
+-	return writeAtomic(path, text)
++	return writeAtomicContext(ctx, path, text)
+ }
+ 
+ // SharedPath is shared_path: a path below DATA_DIR/shared; a relative path
+@@ -227,7 +246,7 @@ func (r *Repository) WriteSharedJSON(ctx context.Context, relativePath string, d
+ 	if err != nil {
+ 		return "", err
+ 	}
+-	return path, withLock(ctx, path+".lock", func(context.Context) error { return writeJSON(path, data) })
++	return path, withLock(ctx, path+".lock", func(context.Context) error { return writeJSONContext(ctx, path, data) })
+ }
+ 
+ // WriteSharedText is write_shared_text; it returns the file's path.
+@@ -236,7 +255,7 @@ func (r *Repository) WriteSharedText(ctx context.Context, relativePath string, c
+ 	if err != nil {
+ 		return "", err
+ 	}
+-	return path, withLock(ctx, path+".lock", func(context.Context) error { return writeAtomic(path, content) })
++	return path, withLock(ctx, path+".lock", func(context.Context) error { return writeAtomicContext(ctx, path, content) })
+ }
+ 
+ // ProfileDir is profile_dir: DATA_DIR/profiles/<id>.
+@@ -334,7 +353,7 @@ func (r *Repository) WriteGenerated(ctx context.Context, profileID, filename str
+ 		return "", err
+ 	}
+ 	path := filepath.Join(directory, filename)
+-	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomic(path, content) })
++	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomicContext(ctx, path, content) })
+ }
+ 
+ // WriteProfileJSON is write_profile_json.
+@@ -343,7 +362,7 @@ func (r *Repository) WriteProfileJSON(ctx context.Context, profileID, relativePa
+ 	if err != nil {
+ 		return "", err
+ 	}
+-	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeJSON(path, data) })
++	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeJSONContext(ctx, path, data) })
+ }
+ 
+ // ReadProfileJSON is read_profile_json (no lock).
+@@ -361,5 +380,5 @@ func (r *Repository) WriteProfileText(ctx context.Context, profileID, relativePa
+ 	if err != nil {
+ 		return "", err
+ 	}
+-	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomic(path, content) })
++	return path, r.writeProfileFile(ctx, profileID, path, func() error { return writeAtomicContext(ctx, path, content) })
+ }
+diff --git a/server/internal/repo/multi_profile_test.go b/server/internal/repo/multi_profile_test.go
+index ab0b9997..00451979 100644
+--- a/server/internal/repo/multi_profile_test.go
++++ b/server/internal/repo/multi_profile_test.go
+@@ -415,7 +415,7 @@ func TestRestartAtomicallyRotatesRuleProxyTokenEqualToConfigToken(t *testing.T)
+ 	document := must(repository.ExportAll(bg, false))(t)
+ 	document.Set("system", system)
+ 	// Persist a raw document that skips the repository's token rule.
+-	if _, _, err := repository.commitStore(must(decodeEntry(must(repository.Store().Load())(t)))(t), document, nil); err != nil {
++	if _, _, err := repository.commitStore(context.Background(), must(decodeEntry(must(repository.Store().Load())(t)))(t), document, nil); err != nil {
+ 		t.Fatal(err)
+ 	}
+ 	mpFixedToken(t, "rotated-internal-token")
+diff --git a/server/internal/repo/repository.go b/server/internal/repo/repository.go
+index 4299a54d..a6e31a20 100644
+--- a/server/internal/repo/repository.go
++++ b/server/internal/repo/repository.go
+@@ -594,7 +594,7 @@ func (r *Repository) writeLocked(ctx context.Context, options writeOptions,
+ 		return err
+ 	}
+ 	defer release()
+-	committed, changed, err := r.commitStore(base, document, options.meta)
++	committed, changed, err := r.commitStore(ctx, base, document, options.meta)
+ 	if err != nil {
+ 		r.dropCache()
+ 		if errors.Is(err, store.ErrConflict) {
+diff --git a/server/internal/repo/store_rows.go b/server/internal/repo/store_rows.go
+index c1191f4d..8edf13d8 100644
+--- a/server/internal/repo/store_rows.go
++++ b/server/internal/repo/store_rows.go
+@@ -6,6 +6,7 @@ package repo
+ 
+ import (
+ 	"bytes"
++	"context"
+ 	"encoding/json"
+ 	"fmt"
+ 
+@@ -190,7 +191,7 @@ func (r *Repository) createStore(doc, meta *jsonx.Object) (storedEntry, error) {
+ 	return decodeEntry(entry)
+ }
+ 
+-func (r *Repository) commitStore(base storedEntry, doc, meta *jsonx.Object) (storedEntry, bool, error) {
++func (r *Repository) commitStore(ctx context.Context, base storedEntry, doc, meta *jsonx.Object) (storedEntry, bool, error) {
+ 	raw, err := encodeRows(doc, base.Entry.Document)
+ 	if err != nil {
+ 		return storedEntry{}, false, err
+@@ -199,7 +200,7 @@ func (r *Repository) commitStore(base storedEntry, doc, meta *jsonx.Object) (sto
+ 	if err != nil {
+ 		return storedEntry{}, false, err
+ 	}
+-	entry, changed, err := r.store.Commit(base.Entry, raw, extra)
++	entry, changed, err := r.store.CommitContext(ctx, base.Entry, raw, extra)
+ 	if err != nil || !changed {
+ 		return storedEntry{}, changed, err
+ 	}
+diff --git a/server/internal/store/store.go b/server/internal/store/store.go
+index 295327ab..99cd6e3c 100644
+--- a/server/internal/store/store.go
++++ b/server/internal/store/store.go
+@@ -16,6 +16,7 @@ package store
+ 
+ import (
+ 	"bytes"
++	"context"
+ 	"crypto/rand"
+ 	"crypto/sha256"
+ 	"database/sql"
+@@ -254,6 +255,15 @@ func (s *Store) Fingerprint() (Fingerprint, error) {
+ // A document that cannot be stored fails with ErrDocument before anything
+ // is written; SQLite failures are ErrStorage.
+ func (s *Store) Commit(base Entry, document *Document, meta map[string]json.RawMessage) (entry Entry, committed bool, err error) {
++	return s.CommitContext(context.Background(), base, document, meta)
++}
++
++// CommitContext commits only while ctx permits writing, including a check at
++// the SQLite COMMIT boundary after serialization and BeforeCommit callbacks.
++func (s *Store) CommitContext(ctx context.Context, base Entry, document *Document, meta map[string]json.RawMessage) (entry Entry, committed bool, err error) {
++	if err := ctx.Err(); err != nil {
++		return Entry{}, false, err
++	}
+ 	// Serialize first: a non-JSON value must fail before anything is written.
+ 	target, err := documentRows(document)
+ 	if err != nil {
+@@ -274,6 +284,9 @@ func (s *Store) Commit(base Entry, document *Document, meta map[string]json.RawM
+ 
+ 	var head Head
+ 	err = func() error {
++		if err := ctx.Err(); err != nil {
++			return err
++		}
+ 		if err := connection.begin("BEGIN IMMEDIATE"); err != nil {
+ 			return err
+ 		}
+@@ -327,6 +340,9 @@ func (s *Store) Commit(base Entry, document *Document, meta map[string]json.RawM
+ 				return err
+ 			}
+ 		}
++		if err := ctx.Err(); err != nil {
++			return err
++		}
+ 		return connection.commit()
+ 	}()
+ 	if err != nil {
+-- 
+2.54.0 (Apple Git-157)
+

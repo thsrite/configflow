@@ -17,9 +17,9 @@ import (
 
 const refreshGatewayTUN = "tun: {enable: true, auto-route: true, auto-redirect: true, dns-hijack: [], route-address-set: [cf_gateway_fake_ip], route-exclude-address: [127.0.0.0/8, 192.168.8.2/32%s]}\n"
 
-func refreshDoc(t *testing.T, content string) map[string]interface{} {
+func refreshDoc(t *testing.T, content string) map[string]any {
 	t.Helper()
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func testAIOPeerReload(t *testing.T) (*Config, *fakeReloadCore) {
 		strings.TrimPrefix(server.URL, "http://"), aioUpstreamOxiDNS)
 	writeActivationFixture(t, oxidnsCfg.ConfigPath, []byte(live), 0600)
 	core.running = sha256Hex([]byte(live))
-	metadata, _ := json.Marshal(map[string]interface{}{"service_type": "oxidns", "native_aio": true, "config_path": oxidnsCfg.ConfigPath})
+	metadata, _ := json.Marshal(map[string]any{"service_type": "oxidns", "native_aio": true, "config_path": oxidnsCfg.ConfigPath})
 	original := readAIOPeerDNS
 	readAIOPeerDNS = func(name string) ([]byte, error) {
 		if name == "/opt/configflow-agent/oxidns/config.json" {

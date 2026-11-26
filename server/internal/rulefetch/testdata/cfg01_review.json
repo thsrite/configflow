@@ -1,0 +1,1513 @@
+{
+  "network": [
+    {
+      "name": "init-dot-slash-dot",
+      "start": "{origin}/api/./../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-encoded-single-dot",
+      "start": "{origin}/api/%2e/../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-half-encoded",
+      "start": "{origin}/api/.%2e/redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/../redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-mixed-case",
+      "start": "{origin}/api/%2E%2e/redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/../redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-double-upper",
+      "start": "{origin}/api/%252E%252E/redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/%252E%252E/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-triple",
+      "start": "{origin}/api/%25252e%25252e/redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/%25252e%25252e/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-encoded-slash",
+      "start": "{origin}/api/..%2fredirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/..%2Fredirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-encoded-slash-upper",
+      "start": "{origin}/api/..%2Fredirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/..%2Fredirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-encoded-backslash-lead",
+      "start": "{origin}/api/%5c..%5credirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/%5C..%5Credirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-double-slash",
+      "start": "{origin}/api//../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-many-slashes",
+      "start": "{origin}/api///../../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-semicolon",
+      "start": "{origin}/api/..;/redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/..;/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-fragment",
+      "start": "{origin}/api/../redirect#frag",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-userinfo",
+      "start": "http://user:secret@{host}/api/../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-port-leading-zero",
+      "start": "http://{hostname}:0{port}/api/../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "init-localhost-case",
+      "start": "http://LocalHost:{port}/api/../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "http://localhost:{port}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "alias-ip-for-localhost",
+      "start": "{origin}/api/../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "http://localhost:{port}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/redirect"
+        ],
+        "external_paths": [
+          "/landing"
+        ],
+        "forbidden": 1
+      }
+    },
+    {
+      "name": "v6-same",
+      "start": "{origin}/api/../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v6",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "v6-expanded",
+      "start": "http://[0:0:0:0:0:0:0:1]:{port}/api/../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v6",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/redirect"
+        ],
+        "external_paths": [
+          "/landing"
+        ],
+        "forbidden": 1
+      }
+    },
+    {
+      "name": "redir-dot-slash-dot",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/./../landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-encoded-mixed",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/%2E%2e/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/../landing"
+        ],
+        "external_paths": [],
+        "forbidden": 1
+      }
+    },
+    {
+      "name": "redir-encoded-slash",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/..%2flanding"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/..%2Flanding"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-encoded-backslash",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/..%5Clanding"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/..%5Clanding"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-scheme-relative",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "//{ehost}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-backslash-scheme-relative",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "\\\\{ehost}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/%5C%5C127.0.0.1:44173/landing"
+        ],
+        "external_paths": [],
+        "forbidden": 1
+      }
+    },
+    {
+      "name": "redir-slash-backslash",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/\\{ehost}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-userinfo-external",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "http://{host}@{ehost}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-file",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "file:///landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Invalid HTTP/HTTPS URL",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-data",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "data:text/plain,landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Invalid HTTP/HTTPS URL",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-gopher",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "gopher://{ehost}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Invalid HTTP/HTTPS URL",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-ftp",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "ftp://{ehost}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Invalid HTTP/HTTPS URL",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-http-colon-slash",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "http:/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-relative-up",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "../landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-tab",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/\t../landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-status-301",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 301,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-status-303",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 303,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-status-307",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 307,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-status-308",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 308,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-hop-4-dot",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/s1",
+        "/api/s2",
+        "/api/s3",
+        "/api/../landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start",
+          "/api/s1",
+          "/api/s2",
+          "/api/s3"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-hop-3-external",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/s1",
+        "/api/s2",
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/start",
+          "/api/s1",
+          "/api/s2"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-http-colon-relative",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "http:ok"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/ok"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-userinfo-same",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "http://user@{host}/api/ok"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/ok"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-port-leading-zero-same",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "http://{hostname}:0{port}/api/ok"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/ok"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-absolute-dot-back-into-api",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "{origin}/api/../api/ok"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/ok"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-fragment",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/ok#/../../landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/ok"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-query-nested",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/ok?next={external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/ok?next=http://127.0.0.1:42113/landing"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-relative-ok",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "ok"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/ok"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "ext-into-api-dot",
+      "start": "{external}/source",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [
+        "{origin}/api/../redirect"
+      ],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/redirect"
+        ],
+        "external_paths": [
+          "/source"
+        ],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "ext-into-api-scheme-relative",
+      "start": "{external}/source",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [
+        "//{host}/api/../redirect"
+      ],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/redirect"
+        ],
+        "external_paths": [
+          "/source"
+        ],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "ext-into-api-encoded",
+      "start": "{external}/source",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [
+        "{origin}/api/%2e%2e/redirect"
+      ],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/api/../redirect"
+        ],
+        "external_paths": [
+          "/source"
+        ],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "ext-into-api-ok",
+      "start": "{external}/source",
+      "source_locations": [],
+      "external_locations": [
+        "{origin}/api/ok"
+      ],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/ok"
+        ],
+        "external_paths": [
+          "/source"
+        ],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "prefix-ok",
+      "start": "{origin}/cf/api/ok",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}/cf",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/cf/api/ok"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "prefix-redirect-outside",
+      "start": "{origin}/cf/api/start",
+      "source_locations": [
+        "/api/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}/cf",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/cf/api/start"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "prefix-dot-redirect",
+      "start": "{origin}/cf/api/../redirect",
+      "source_locations": [
+        "{external}/landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}/cf",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": true,
+        "error_class": "ValueError",
+        "error": "Internal API redirect leaves its origin",
+        "source_paths": [
+          "/cf/redirect"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "prefix-dot-out-no-redirect",
+      "start": "{origin}/cf/api/../../api/ok",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}/cf",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/ok"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-query",
+      "start": "{origin}/api/rules?url=http%3A%2F%2Fexample.com%2Fa&x=1",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/rules?url=http%3A%2F%2Fexample.com%2Fa&x=1"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-encoded-slash",
+      "start": "{origin}/api/a%2Fb",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/a%2Fb"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-percent",
+      "start": "{origin}/api/50%25off",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/50%25off"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-backslash-name",
+      "start": "{origin}/api/rules/local/a\\b",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/rules/local/a%5Cb"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-encoded-backslash-name",
+      "start": "{origin}/api/rules/local/a%5Cb",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/rules/local/a%5Cb"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-backslash-dot-inside",
+      "start": "{origin}/api/a\\..\\b",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/a%5C..%5Cb"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "redir-backslash-traversal",
+      "start": "{origin}/api/start",
+      "source_locations": [
+        "/api/x\\..\\..\\landing"
+      ],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [
+          "/api/start",
+          "/api/x%5C..%5C..%5Clanding"
+        ],
+        "external_paths": [],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-external-query",
+      "start": "{external}/rules.txt?token=abc&v=1",
+      "source_locations": [],
+      "external_locations": [],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [],
+        "external_paths": [
+          "/rules.txt?token=abc&v=1"
+        ],
+        "forbidden": 0
+      }
+    },
+    {
+      "name": "legit-external-redirect",
+      "start": "{external}/source",
+      "source_locations": [],
+      "external_locations": [
+        "/rules.txt"
+      ],
+      "server_domain": "{origin}",
+      "family": "v4",
+      "status": 302,
+      "python": {
+        "refused": false,
+        "status": 200,
+        "body": "ok",
+        "source_paths": [],
+        "external_paths": [
+          "/source",
+          "/rules.txt"
+        ],
+        "forbidden": 0
+      }
+    }
+  ],
+  "classify": [
+    {
+      "name": "idn-upper",
+      "server_domain": "http://bücher.example",
+      "url": "http://BÜCHER.example/api/../redirect",
+      "python_internal": true,
+      "python_error": null
+    },
+    {
+      "name": "idn-punycode",
+      "server_domain": "http://bücher.example",
+      "url": "http://xn--bcher-kva.example/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "idn-fullwidth",
+      "server_domain": "http://panel.example",
+      "url": "http://ｐａｎｅｌ.example/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "trailing-dot",
+      "server_domain": "http://panel.example",
+      "url": "http://panel.example./api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "ascii-upper",
+      "server_domain": "http://panel.example",
+      "url": "http://PANEL.Example/api/../redirect",
+      "python_internal": true,
+      "python_error": null
+    },
+    {
+      "name": "explicit-default-port",
+      "server_domain": "http://panel.example",
+      "url": "http://panel.example:80/api/../redirect",
+      "python_internal": true,
+      "python_error": null
+    },
+    {
+      "name": "leading-zero-default-port",
+      "server_domain": "http://panel.example",
+      "url": "http://panel.example:080/api/../redirect",
+      "python_internal": true,
+      "python_error": null
+    },
+    {
+      "name": "https-explicit-default-port",
+      "server_domain": "https://panel.example",
+      "url": "https://panel.example:443/api/../redirect",
+      "python_internal": true,
+      "python_error": null
+    },
+    {
+      "name": "scheme-mismatch",
+      "server_domain": "http://panel.example",
+      "url": "https://panel.example/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "userinfo",
+      "server_domain": "http://panel.example",
+      "url": "http://u:p@panel.example/api/../redirect",
+      "python_internal": true,
+      "python_error": null
+    },
+    {
+      "name": "percent-host",
+      "server_domain": "http://panel.example",
+      "url": "http://panel%2Eexample/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "ipv4-decimal",
+      "server_domain": "http://127.0.0.1:8080",
+      "url": "http://2130706433:8080/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "ipv4-octal",
+      "server_domain": "http://127.0.0.1:8080",
+      "url": "http://0177.0.0.1:8080/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "ipv4-hex",
+      "server_domain": "http://127.0.0.1:8080",
+      "url": "http://0x7f.0.0.1:8080/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "ipv4-short",
+      "server_domain": "http://127.0.0.1:8080",
+      "url": "http://127.1:8080/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "ipv4-any",
+      "server_domain": "http://127.0.0.1:8080",
+      "url": "http://0.0.0.0:8080/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "ipv4-mapped-v6",
+      "server_domain": "http://127.0.0.1:8080",
+      "url": "http://[::ffff:127.0.0.1]:8080/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "localhost-for-ip",
+      "server_domain": "http://127.0.0.1:8080",
+      "url": "http://localhost:8080/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "v6-expanded",
+      "server_domain": "http://[::1]:8080",
+      "url": "http://[0:0:0:0:0:0:0:1]:8080/api/../redirect",
+      "python_internal": false,
+      "python_error": null
+    },
+    {
+      "name": "v6-upper",
+      "server_domain": "http://[fd00::a]:8080",
+      "url": "http://[FD00::A]:8080/api/../redirect",
+      "python_internal": true,
+      "python_error": null
+    }
+  ]
+}

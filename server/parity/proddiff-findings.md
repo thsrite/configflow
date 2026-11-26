@@ -1,0 +1,33 @@
+# Production-data differential: Go findings
+
+Differences found by `server/scripts/proddiff.sh` that are Go behaviour, not harness artefacts.
+Reported by route template, key path and type only (no snapshot values). Each open finding has
+matching entries in `proddiff-baseline.txt` whose reason names it; fixing the finding turns those
+entries `stale` and the baseline must then be re-recorded.
+
+| ID | Route template | Key path / type | Status |
+|---|---|---|---|
+| F1 | `GET /api/agents/<agent_id>/oxidns/rules/update` | `status` value, `Content-Type` value, `body` type, `header.Cache-Control` missing-in-go | closed (A18) |
+
+## F1 — OxiDNS rule update returns 500 for HA members (A18 not ported)
+
+- Found by: O2 review (2026-11-17), via the new default-profile case (request without `profile_id`).
+  Every earlier run sent `?profile_id=…`; the route rejects any query argument with
+  `400 INVALID_REQUEST` on both sides, so its working branch had never been compared.
+- Python: `200 application/json`, `{"success": true, "task": {…}}` (starts the rule-update task).
+- Go: `500 text/html` (generic error page, no `Cache-Control`) for the snapshot's OxiDNS Agents that are
+  HA members (2 of the snapshot's OxiDNS Agents). Go log: `oxidns_ha_publish.rules is not ported yet (A18)`
+  (`monitor.ErrHARulesNotPorted`, `internal/agents/monitor/ruleupdate.go`).
+- Type: missing dependency behind a registered route. The route is registered in the Go router and counted
+  as implemented, but its HA branch depends on module A18 (DNS HA), which is still `missing`.
+- Consequence entries: `GET /api/logs/info body.size` and `GET /api/logs/tail` (`total_lines`,
+  `filtered_lines`, `logs` length, `logs[0]`, `logs[1]`) differ because Go logs the two request exceptions.
+- Owner: agents domain (A18). Until A18 lands, the route should not be treated as accepted.
+
+## F1 closure — A18（2026-11-18）
+
+A18 已注册真实 HA rules owner，最终配置生成会验证两端适配并记录两个目标身份。
+在隔离网络及只读源快照内执行 `server/scripts/proddiff.sh --a18-proof`，仅选择 HA 成员的
+rules/update、generate-config 与日志后果：`cases=6 new=0 stale=12 remaining=0 self-check=PASS`。
+负控更改 task.status 会被原比较器识别。已删掉全部 12 条 `deferred → A18`，其他基线行未变；
+删除理由 `F1 closed by A18-2`。完整门禁仍由协调者在合并批次执行。

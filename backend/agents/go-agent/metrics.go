@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -28,18 +27,18 @@ type CPUMetrics struct {
 
 // MemoryMetrics 内存监控数据
 type MemoryMetrics struct {
-	Total       uint64  `json:"total"`         // 总内存 (bytes)
-	Used        uint64  `json:"used"`          // 已用内存 (bytes)
-	Available   uint64  `json:"available"`     // 可用内存 (bytes)
-	UsedPercent float64 `json:"used_percent"`  // 使用率百分比
+	Total       uint64  `json:"total"`        // 总内存 (bytes)
+	Used        uint64  `json:"used"`         // 已用内存 (bytes)
+	Available   uint64  `json:"available"`    // 可用内存 (bytes)
+	UsedPercent float64 `json:"used_percent"` // 使用率百分比
 }
 
 // DiskMetrics 磁盘监控数据
 type DiskMetrics struct {
-	Total       uint64  `json:"total"`         // 总容量 (bytes)
-	Used        uint64  `json:"used"`          // 已用容量 (bytes)
-	Free        uint64  `json:"free"`          // 可用容量 (bytes)
-	UsedPercent float64 `json:"used_percent"`  // 使用率百分比
+	Total       uint64  `json:"total"`        // 总容量 (bytes)
+	Used        uint64  `json:"used"`         // 已用容量 (bytes)
+	Free        uint64  `json:"free"`         // 可用容量 (bytes)
+	UsedPercent float64 `json:"used_percent"` // 使用率百分比
 }
 
 // NetworkMetrics 网络监控数据
@@ -73,7 +72,7 @@ func NewMetricsCollector() *MetricsCollector {
 func (m *MetricsCollector) CollectSystemMetrics() (*SystemMetrics, error) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Critical: Metrics collection panic: %v", r)
+			logger.Errorf("Critical: Metrics collection panic: %v", r)
 		}
 	}()
 
@@ -87,14 +86,14 @@ func (m *MetricsCollector) CollectSystemMetrics() (*SystemMetrics, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Warning: CPU collection panic: %v", r)
+				logger.Warnf("Warning: CPU collection panic: %v", r)
 			}
 		}()
 		if cpuMetrics, err := m.collectCPU(); err == nil {
 			metrics.CPU = cpuMetrics
 			collectedCount++
 		} else {
-			log.Printf("Warning: Failed to collect CPU metrics: %v", err)
+			logger.Warnf("Warning: Failed to collect CPU metrics: %v", err)
 		}
 	}()
 
@@ -102,14 +101,14 @@ func (m *MetricsCollector) CollectSystemMetrics() (*SystemMetrics, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Warning: Memory collection panic: %v", r)
+				logger.Warnf("Warning: Memory collection panic: %v", r)
 			}
 		}()
 		if memMetrics, err := m.collectMemory(); err == nil {
 			metrics.Memory = memMetrics
 			collectedCount++
 		} else {
-			log.Printf("Warning: Failed to collect memory metrics: %v", err)
+			logger.Warnf("Warning: Failed to collect memory metrics: %v", err)
 		}
 	}()
 
@@ -117,14 +116,14 @@ func (m *MetricsCollector) CollectSystemMetrics() (*SystemMetrics, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Warning: Disk collection panic: %v", r)
+				logger.Warnf("Warning: Disk collection panic: %v", r)
 			}
 		}()
 		if diskMetrics, err := m.collectDisk(); err == nil {
 			metrics.Disk = diskMetrics
 			collectedCount++
 		} else {
-			log.Printf("Warning: Failed to collect disk metrics: %v", err)
+			logger.Warnf("Warning: Failed to collect disk metrics: %v", err)
 		}
 	}()
 
@@ -132,14 +131,14 @@ func (m *MetricsCollector) CollectSystemMetrics() (*SystemMetrics, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("Warning: Network collection panic: %v", r)
+				logger.Warnf("Warning: Network collection panic: %v", r)
 			}
 		}()
 		if netMetrics, err := m.collectNetwork(); err == nil {
 			metrics.Network = netMetrics
 			collectedCount++
 		} else {
-			log.Printf("Warning: Failed to collect network metrics: %v", err)
+			logger.Warnf("Warning: Failed to collect network metrics: %v", err)
 		}
 	}()
 

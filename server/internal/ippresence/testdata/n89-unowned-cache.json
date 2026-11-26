@@ -1,0 +1,1661 @@
+{
+  "r02_recorded.jsonl.gz": {
+    "archive_sha256": "e8b0211e97e0c3b5b9a2fa1253c04befd9792721dec76698da5d841fa4be45ab",
+    "rows": {
+      "d371281c0306d804cffbcda2f7aeb03ac21429dd2bf6bc7734d5a33dfab6e89d": {
+        "index": 1907,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "1c78578858315d956b518b469fe45b3eb0162891c7949ff293afb34fb69ea456": {
+        "index": 1908,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7b6ee784798624bdaaa9d03fe0bd43d0ea2d301c167b5262ec0277de97d25038": {
+        "index": 1909,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "49e81e800313c37726a42f82e1c47b61fc99cc0ebb3aeab4203f6c1b17ae95e5": {
+        "index": 1910,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "5071cafff2bb1c535c88520959d48e9c1e3ea937b227752049bc51cfe38f54eb": {
+        "index": 1911,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "12ecb9526f751281df06124c1197e0b4920bfd606ddab8a6db91ce989570083a": {
+        "index": 1912,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "cda0418297cc9178ee4b44b975e39c70d5bc3fa2658dedfc5661c7f4fac6df93": {
+        "index": 1913,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      }
+    }
+  },
+  "r02_corpus.jsonl.gz": {
+    "archive_sha256": "a7db28eaa488952cfc2194bf88a9f82c66c76526f111c819d1cf6e86e20baa99",
+    "rows": {
+      "a6ccc1a13c1b9231c3b23570753e2052778bd240ddb444fbd061533e710c30cc": {
+        "index": 6002,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "21f0acf5ed85a0e555712099e5e77dbcc29f1bf92117c58097a9ac93562968b9": {
+        "index": 6006,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "761316a406ebd6240b31c8c97bb37bba05ff31545001821c3218445635fe8f57": {
+        "index": 6014,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b14acd4d3354802f64b3180783d7b50f7369d4251bc1c3692c8d419a37f1e8c0": {
+        "index": 6022,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2c13f14d0b03a836d850e762bd351c5033c09c9c6216bb5bdcdd39309c8c3ee7": {
+        "index": 6041,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7bb0c896043f351985b5a898b87133af97259d6fea4995c5a679e4dbef089f4b": {
+        "index": 6048,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d01ea05bc9bc245ef3a086708b48ad0ecd82a8bbe83c8009ae0675993a9095db": {
+        "index": 6059,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "280c681f7ccb1cfa5771934a25c2f49a9cbba9fc291b73a6021b139a8bdbfcdc": {
+        "index": 6060,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "58cd94db49aa06da7d75610a3499fdf587769ba3523958d42e27835cd236e743": {
+        "index": 6079,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d50893c904e31ac5597efd43eef64cd34347502ab23293e035b38e6113f1d221": {
+        "index": 6089,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b4f5ea02f8d97c9a34295f36a54c9b9c5a75afd4cf7ad2397a855ee08e5b07fc": {
+        "index": 6090,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "8a938955c21fe5cff4d26ad41c008f6d904b439d9e6c1b3f20f540187a604b4a": {
+        "index": 6091,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "0589d7eba5c6a5b149de995d078caf0a4d56226cc04b4aa8412af87c9a494e50": {
+        "index": 6093,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "52a543f95ec799852d4ad12e533ba2aa527a4bfa1f048ffafc8fb6c958e54495": {
+        "index": 6096,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "904145194fa19ef2dbc3e40d7d0a704fc745047ce3f9170c5555b0d0dff3f679": {
+        "index": 6102,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "af191eda8e5991513580e2d35c9fe5d0d40dab79ad906dad665b40810513b719": {
+        "index": 6115,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2cbb2446dbde83e2f5ffbfa39014b7886b3af4a77f4ec777830421409ff694a0": {
+        "index": 6123,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "21aae2e6138a81023ff5d330d361c5317b4384629815653f29a657b9a4ca256c": {
+        "index": 6127,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "25debbd326354739bce363c0d1c7781c43e976e5f6d9b782ebeea05cc9e888dd": {
+        "index": 6137,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7113dc77af8d4f9a69c7f88b04f142147678f9f0bd2d4a11db4f4d30c3518aa8": {
+        "index": 6151,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "72d874e47aa7c1636ecce09db7de7b201e6b763b7476656c277663fee31352a1": {
+        "index": 6160,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "6e2e7172b5002a18dc665b63c60fba3f0fa5eaaaa5917984b3d46cf5840bedf5": {
+        "index": 6161,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "e80e6c9f154b3f75d787860c8a478e63be462edc8e07dda8eeb68d50715b342c": {
+        "index": 6165,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "16760e6dd983b46939b3e4289d3b7d244b4b8afab07110de0a122c16dd0ff229": {
+        "index": 6173,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "cb19016fed33502a7045026223cf5e99ed11003337d668f16199cf4e3dd86687": {
+        "index": 6174,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "0fafeb2a283d4dd258ee1010c8bc16549caf6d468eeaa349f390b4f7d7446547": {
+        "index": 6175,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "a09ca564cbae305806376786d7a6cc912b84d462fb5931fcc091aed53da68a08": {
+        "index": 6176,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "c4be38e39678fa98dd3721299385f777dc22229eb5cad2e5f864a8715683df45": {
+        "index": 6179,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "ccdf51264df0849516af4da888466fa27b3a220978eb312c6d6d0102490203cb": {
+        "index": 6192,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "834c0b735759cdc21a1c96f9e5d538fb6d97991fdd1b38f3c79e484c2bb35a99": {
+        "index": 6201,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "ee4680f8d27edf6c7b72984e6a7bb45bd5b046744eda9e234c2cd891a64285e7": {
+        "index": 6202,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "47a5ca77b053c99818bef5b331784a12738b06a16188ef3816cb2a19d462b6c2": {
+        "index": 6207,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "219ecb41ca2bab78cfcaa38515e59eec2fe65911ea8a2d73bff7fc2cc5f63d6f": {
+        "index": 6210,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "bb16e9a9f8d002b3b0b003bd1729777450f64c4ccab94ba95cfe3b920dd232c5": {
+        "index": 6212,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "22125e3f6b6d98d040df24346b6efe58359007aad2091f3d2aaad11500388e7a": {
+        "index": 6214,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2b20e274412f589e45798d352e7ef846cf6b89dfc477e2bddb67668ab07b127a": {
+        "index": 6249,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "6128f64fb378cf771056bb3dad4b6bf70b4196d881fe5f76f727e8e0abf3cf4b": {
+        "index": 6260,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "fc15dbc95e1985a8d27d99c4f7948360add43471a37c55f1917ced8deaa29af6": {
+        "index": 6276,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "0b4f18699d29177daa11790ddef06d0c7aa1dffb1dd7c568dabe3c5c7cb8603e": {
+        "index": 6290,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "1d056448d7070d713f4ee273514f4c5af3b2fe36ec95db7eca66ca02c0fadf83": {
+        "index": 6291,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "e21f1da3e42df4f0e42bf922a9e798e2a0cd77f35407882096e6308f38399470": {
+        "index": 6301,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "44887de0492b613b45f5b02416ad0a7c47d3cc78db014e853a2df593df851020": {
+        "index": 6319,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b574049ed077e771bec5af1ff6a406078169ddb86f8167bf4f3f7d571604f351": {
+        "index": 6331,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "ddaab545ad88e5ece3015691a41d2c1651108de6f28dd4e0b518ebe072977fc7": {
+        "index": 6332,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "236fe507815c18b93c26461ff3aeea72aa2f671dd0e4c282fedf8833cfe4ac63": {
+        "index": 6340,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "54cd2ee4e0dac0c8289ab0da02efca3623869ce57cc1d7dadfc35a72e12de2b3": {
+        "index": 6342,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "57a59ddbddd977ed00d230cf84efaceb5fa228f71e979fbe1f01723949bf5467": {
+        "index": 6348,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "db8fe3f30b7a15137d52797f831d3a0b0ddc97d3317c140cf544128d13c5daa9": {
+        "index": 6363,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "4bff81e3adfc1ed79b814e25f921d6bb6c9e3d0e68c784b5d3f5063a80c75854": {
+        "index": 6365,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "a5a3b95d648fdfc98380cb24cd546a6ecc68b624b689c8a29f74a4c175065158": {
+        "index": 6367,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "e95c6fa6d2726cde1a4a99f5860b3aa09f8412a0d8d367badb8a5c8641c387bd": {
+        "index": 6379,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "ef45fe88ed82880679a3a25fe9850e15cf12dbd15e22fa6dfbc63309986867f5": {
+        "index": 6395,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d4e1d255e6871911ec9f2dcd8d3dbae32b2d2b5fa08402afacedf7e953b4befe": {
+        "index": 6399,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "401ad7baf3c5e8ba8852f5a6bdf476502cacd4d3e4feef313ff59a3d1d7d0f38": {
+        "index": 6401,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "1d8e23234675165037940128c84105d91b9d762c5efa74d6c46d172cc26b41f9": {
+        "index": 6406,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "3b35c0dfe12de64677c5b838721cb610cbfe13690b76c08524432b12bf7fbdcb": {
+        "index": 6423,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "1cac0888f1b9f4c923400d71a5e9534b63d325e3812abbab0eae5623748891b5": {
+        "index": 6436,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7082cd7b2ec383d9d18c40bbcde293a32e5be613b619384d802c36fd8a760e1b": {
+        "index": 6446,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "26a486b23ce21e6df0c4bb6d7db8f96e02e2c9113555e4eb3efd67d802f7a8ed": {
+        "index": 6456,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "cad1313f51bf1a71f151dc91f474ff0b71ba9e676f769151f66bd3a28cd9d50b": {
+        "index": 6475,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d25bf81b7adcd580c8c6b20328215659c9b8122e1068ab9e1d0b6b8678ec6dcd": {
+        "index": 6478,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "86d1e2de7dd24ecbb23537e46aa68d28e64c6d833f0818491f84abdb3256415e": {
+        "index": 6517,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "95d149f80ee742122b777988afcba1ab31ccbbcd66f58920acd3eb5881aa7b94": {
+        "index": 6518,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "9cf5d6b9279d0d7c1dada9cf46894e03122b6891dd0a757349550dc07159a7b1": {
+        "index": 6523,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "071d704ab44bc787d02af691df668b9ab6f7106aeb8944f314de1de199199bc1": {
+        "index": 6525,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "fac3dfd97b792351736ef60b34837925f750ab51d07ef079eec4ba98d4832b6e": {
+        "index": 6547,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "609ea637d3a23929ed2f5580c1926aab151e87c2000377eb0316a5487dea219c": {
+        "index": 6549,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "a079f686ca2da34d488dc3ee88eb5a91cc08d2c88a7f3e8dbe531526fb58e70d": {
+        "index": 6552,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "c3cdcb764fff52ed78e966c80b7454ef1d2bf18acc7d58e7b3ecc0abb48d6c2c": {
+        "index": 6557,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "a538013ee80faac5d4bcbd0d8b2fee9b0edff5b9e36499d75a0a75c214c49b02": {
+        "index": 6581,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "c0f4d068f3b1dae91a17e16e9c577968f4644d399a41344ad50995ffb5279360": {
+        "index": 6592,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "22170e58072722799c8762f9fe7d678c322d7e21824a6fdf994960b8daf4e2d9": {
+        "index": 6608,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d2beab0fa71120f8cf171f4802129b5e07426370c04f965bcb0a0e2e059894b3": {
+        "index": 6610,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "8c1c12520c914cc45c7e199eef34afb8bfe68941e962a49f93a55988745c1cfb": {
+        "index": 6615,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "fcd659f5046f020e0b0f16b07770de54771573e797dc5ed14ce913bed223420e": {
+        "index": 6617,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "61088d90ca72cb8a64fbe42a063acef39f5bffc4b937af81f744cc24f9c76a2f": {
+        "index": 6624,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "c579b93aca60f2793184721072bbc203e82397faf34aeba96caab173bd7c9f9e": {
+        "index": 6627,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "075a55a274d61cb53bac3ee303f85f51721193d817dfdf3494b7fde9613b1948": {
+        "index": 6628,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "683dcf80f891e6c887b03b8b3d896b5219ef847be610e2ea2bbc1a96903025c2": {
+        "index": 6629,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "0f88768f72488e8394c76d321d803e93b1717603800a4316859ee527aebed749": {
+        "index": 6635,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "08d3130e35adc0211501874d01845a42b0a7dcd327d576944816ba00fd085e0f": {
+        "index": 6643,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "6dd93c8146097f142278175005b40ea101919a5a0c8283d96fbd4bf3c8376d23": {
+        "index": 6649,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "45de8732586ea6687807920ad3a7319306d5f88a8b3c033dd8166f9d566cbc24": {
+        "index": 6657,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b0ba531ccb9aadc3023675033dce032cd1d08664a02dad02341e84428b244f7a": {
+        "index": 6661,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "e5a4aba32038fdacdb910b776e75b7329f1cb07984cf9855cd2e3f62a425e02d": {
+        "index": 6662,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "839bc5de1a7b6af5cd46480ad66ff1d704ed7eb2ed6d0060160e47e761970b8f": {
+        "index": 6664,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "edb3209be96fcd503b605e192caa254aa859423e9b9e0bfc6fdf61746f8d8e92": {
+        "index": 6667,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "980b83ab582e1dc38a6151176c81af4103e28abc8eaee049c74323975434588c": {
+        "index": 6671,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "fd3f37fa55b72f3a0be1b23b3d1336919d174c6a7838649e7b8630c6e6fc0e58": {
+        "index": 6681,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7fa40fb86ab17bf0695159e9fbb8966d7c68ff25756973141b0087ac7e6ac4df": {
+        "index": 6695,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "27957b535c9a96b31d9a25aa7f63be3fdd8b755fb1d1641744a26c05282384cd": {
+        "index": 6696,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "e4476ee6b0f6c6c0efcc5b753b43d844e6ef46484ad796dcebccd985b1d29bab": {
+        "index": 6702,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "04eaab241796281ae7ea84dae95019a1c53c1d79f1977d432f1bbe199bcf780f": {
+        "index": 6704,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "1141075c4e68ffeac58abb535702cde4dee5efc81fa559a335a2149a775c08d4": {
+        "index": 6715,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "abb5d57f08e56c113b334c993bd2c6dc92bb79065da3a8bd1a91c900aa9c74be": {
+        "index": 6717,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "927c16d0edacafb3df1b795a90141e99fab9d0c2938174b4d2f3e7dcb77e1c24": {
+        "index": 6719,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b47fef1ef700ac3716faa34601d65f144c896b6e82c0b8dd58f6190dea92cd39": {
+        "index": 6728,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "57db652ad0689bd2c3c30cf4697c0a66e717a21eed3a616e986abd2b1ceb3ceb": {
+        "index": 6754,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "00738fa6064fb636cb7bce98b8da0514ae6d0e3631714698c9bf091b0ac331d7": {
+        "index": 6756,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "bac20b142bf6d2f1e71f39bf4b9382e112f2690ac9531144bec2f39e17ba92b7": {
+        "index": 6786,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "9c61a9e70c7a9366b0810afa5fcd19bd2d18ce736a58dd366acd6827779e8d63": {
+        "index": 6797,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d61fef4bd8525388079c9c066a428a28e8083bf8567db802570755b4d67d7a50": {
+        "index": 6811,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "0e807282e6cf601f9c389458aa68134930bf7e3c0b6634cec7ac8e445f55f90c": {
+        "index": 6822,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "48ae7a5e6592838396a9c663f7f1cb97335861b72f46859fe596c7c8e934547d": {
+        "index": 6834,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "57e265d03c42b32de1d7fcab3f96bda05e001e701c2aefd9e720f2aa96c3e264": {
+        "index": 6838,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2b1a269624016091c5221e305b140bd5e25ace83c1a492948b9babd4faccf43d": {
+        "index": 6840,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "c3278f92f83438f2a624caadc9c4a53f184973ac5641e6de13c37fc7f46bb83b": {
+        "index": 6841,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "54c8d848185093b5f9da6d8700be0c0c9ea4d8688f11f800f8f5cf4202a04182": {
+        "index": 6869,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "8c6d032854da0848984477a7e5e39df6a5c1943407ef2bfd349e790b88392dbf": {
+        "index": 6880,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "3beef4e92a01e16bcfedf4624c1bb084ff3af0fedc13a3c150041c9d588604ee": {
+        "index": 6883,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b088c4366d26886de35dc692ce2b362ecc6d944bb3ec54aa61773329c649543c": {
+        "index": 6884,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "117779eb4bc19957163cc0deb7564d2265ed8ff15b2a479046f2b666ccf4aec1": {
+        "index": 6892,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "247f9b24407692a18573f5e20ac83b527e14ee5cb005f344d068e48bea3c737d": {
+        "index": 6913,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "91a59dc8252a09b8a4a84417915a1431834129489df6a7ef9414e78cbc5314f0": {
+        "index": 6931,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d60fd1c292da15585e4f35e7a54f3cd4defd6222c6ac1ec7f2be417d5a0d188a": {
+        "index": 6945,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "51fac7ca28e740986a349f5e348114473941f21a61ab6cd0bf6b42a61d9e454d": {
+        "index": 6950,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "3e980d50a7c759bf82a508477d9a876b4dff212404f4913f1433499b2b65fb6e": {
+        "index": 6953,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7bd126c5380dfb0b0acc0e7dd74ed4b10d2f2575cd2ae3f7e53b32aa8f784ddc": {
+        "index": 6957,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "10640e6b2dfa1894c7a55be1cd7171d8a8b465001412f72424f638eb27afe792": {
+        "index": 6967,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "5efa7bdf17ec285fdf497f3792aca978827d760c6ae0bdd5bf0fa1253d62733d": {
+        "index": 6972,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "107faeaad21547f7366adc844b511092353acb827fdc86a94afbf205e103b579": {
+        "index": 6979,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7ec596b1442431c2d6514573e90e93b47bba8100168679f6161a8c6e76d34a95": {
+        "index": 6996,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "628683c222d294f40c91c99c8ba9493940098a6030cb12d9eb419f03c7299fee": {
+        "index": 7002,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "a034ac9cfe28484892d47ad4aa6798db69ca8ed3bc5c4d309127b21cff3063a8": {
+        "index": 7022,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "638e3126613cb68d0c8f5717077c6cb5ffe8688c62f1b8b650ec568bfd824d9f": {
+        "index": 7034,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "a6c56f34898aae226b2686b0d13ae37a7caa591fb104e51668d9d0b4249720ef": {
+        "index": 7035,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2f0e1f6f659a699f743995ce42d0793b145a28d41f23642659c4ca41d162aefa": {
+        "index": 7037,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2a4880223129313b0584062712814a42da74a7d524a207c60418c5ac17461d88": {
+        "index": 7038,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "93069f5ad11f13156c73bf92d38b77dcd494226ff267a5dae9e3f1bd4b1fdd9d": {
+        "index": 7048,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "dca2c0b83c97468b64865a6213254ff38a71a4bbbb613bb90d69ab5b4fec42c3": {
+        "index": 7055,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "20759a9365f754720ad574ea261d10180304a572b96dd3e3de9ccad68189b0eb": {
+        "index": 7083,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "756b4132236291791ca486405bcafb7c5bcdb5f31dbfbb5a336d9b5374d00478": {
+        "index": 7089,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "e46ef7cf76c5fd7fdf6f8de3f0dce18ab2df1fe162610f19e2cd5b248129d4b1": {
+        "index": 7090,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "8388733f46e9878f70cba8fe0166fc2492227b4586c551c24a8d6e748159498d": {
+        "index": 7099,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "16cc2d916c5bfac956871e1d92319683b2ed85945b533a56a90a2e60f1fbf29f": {
+        "index": 7105,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "c5e00de184cad658e7e848542a543add3ad95b8ba7ee8c6664de600606c0d80b": {
+        "index": 7112,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "be1823886ace1ac93953c8dee8cb4a53633ee9707ea410e238483a2a23fd403e": {
+        "index": 7116,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "487d7800204547d3601024a17e4ea1bae1fa76c1da8f9d17f76d6b890b500097": {
+        "index": 7118,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "9792a155981408bd8afd77e72267b21da6eb706dbc0627e64a03468872a73d3d": {
+        "index": 7124,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "cf508f89ba4baa2c1e5b58eaefd1f8215149aaba62eb0d033620c11caa16fbed": {
+        "index": 7142,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "8b9ae8db58500d57fde3bc43a4dcec16a21ab31b4a8078ae2ccd4184abab94e3": {
+        "index": 7164,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "6a40ff3b80c17d12d93c3c2a96b252ddfe2d40a978fe10fa7877640c4023378e": {
+        "index": 7165,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "79b6150c53ba7d031f9fb3ca995c7363711a946b633074bf6eb060f6a3f73cb9": {
+        "index": 7169,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d1c9dc32c2549819e3d126a8278be104e16cdab9c189d672e286f7d29d609caf": {
+        "index": 7174,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b8ebbd3ad64bfdd1318304eff70c0cc2e9b0d91fc160fa7c63623a7bcaecf4b4": {
+        "index": 7187,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2c6eac09705e76d524b2cd2d1b01b75e79bd1332c7aacdaaf775e6b9542c35c7": {
+        "index": 7195,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "3638dda191e87f49da0d0339d13bd779e5a04f75a3da42903911072d902ee67b": {
+        "index": 7213,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "1f6dc6c5ae7ffe4e53f1848c7bec33a1c6cc747a59963e06682ef1eff4113b54": {
+        "index": 7214,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "42353324b56009073d600f900fc7c3b8365f766d7d09305f8f35001f2258c112": {
+        "index": 7216,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "f9a5860d155fd3ca8b6af7f5f28aa4842e986f95668d137e2b515586d05b78c6": {
+        "index": 7218,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d455442c0a41ac9adbd2a69a13083e3575ce252d72e69d8be0e9087aceeabbc1": {
+        "index": 7219,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "038b208d61edb16788f72ec104c65ab8478e7905bf871e895411c0d99e4d1bac": {
+        "index": 7221,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "5ab3491026f9611e0f438a6ca99f017b192a7346266e65fe228640c670b70742": {
+        "index": 7230,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "fba5ec620f73e195a2f80ed85e5a5c6057f00ed20157a83b7e3eafe5067bfe9c": {
+        "index": 7233,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "631d8df1af9cefffab84f36eb93017a3d743701eb9b08de44d6345a9de2a3d8e": {
+        "index": 7234,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "599b79aa3515e31174cb4241d35a973cd79311d33fa08b64d90096408e753615": {
+        "index": 7235,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "c7a91242610e65590b02d31aec23e0c721bc9c5a551e3982329778554e8afd9a": {
+        "index": 7250,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "0cf213dcdd842e9619b22264d16ffc329a7aa4d11489769861fc631206c31c2f": {
+        "index": 7254,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "f79a6903cba4ebd559ca9ebbaf8a5de4d18eec084b155eb3063acb4c7c31a8e3": {
+        "index": 7258,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b01ee10df4e5f8bb3ec02848c14475b575d7570d89c259aa2565f12e13fdefa8": {
+        "index": 7260,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "4773c282186b9286586a1685073447ca22f90ca48942421deef17b4e9c56b91d": {
+        "index": 7261,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "6efdbac2478f749bbb7a237def53a9d01da4653115becb25a0d2f0facce3b10a": {
+        "index": 7267,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "275f151f66d0f45593310d5e813c848f5a115898e71fa4e84f9b30190066e59d": {
+        "index": 7268,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7f30455b9b61521db8869d81613f323fa2c6587b5291f1f83c25ae1a8731561a": {
+        "index": 7290,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "13c63220ee78c9bd97dd9dea5fa126573c59fbb25f1ce461f60ae9652e1b0310": {
+        "index": 7292,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "04416959f55e3c0ab1025c52ff894992f4e9baa4ace024ce0d464c5198b00ae8": {
+        "index": 7306,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "cc543fbc8c41420f832f85531a0466246a493f1b7c9f66c456c89d05a0c097f8": {
+        "index": 7311,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "86d4a7b36ccdcb7bf38ddf17ab2aafb8b4681fe525745ad127b8f7c6df0430b8": {
+        "index": 7314,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "dd1e24970009c34e3be6445caaaf78cac42cf40843966daeeab33ac74ee87444": {
+        "index": 7319,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "5444f16bbd164a35a382ad9946ac0fcbce9c37e291727930e7efe75a6d775cd9": {
+        "index": 7330,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "a98cec8cce5d1249cbabe438953679a8dbf84a795f497ebab4e0d9e4a200e839": {
+        "index": 7331,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "6ce7478154adda6fff2a8f8e864144ed71823bfa03d6f34cf725d24531fcee0e": {
+        "index": 7332,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "49aa4c6bcd12b8fbc8d4862ca571106816dd5e1e165f332013f906cbae5f0d03": {
+        "index": 7339,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "a4082a7e46838e5478262e31fd65a9883cad9c31315518573dc3e4c7625b5eaf": {
+        "index": 7347,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "97d3f4bee2ab933b6a0ec71aadff4dab3fa4ef74adc51aa737ce5910548a2a49": {
+        "index": 7354,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "5fd4ec3df1a2a4653e7763f526a0adbe9c6df4b65398748771e18148248b7eb7": {
+        "index": 7377,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "8a766ceccc5c7c537c732be729494e1062af605207cd39787c62190c1f7d4b33": {
+        "index": 7386,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "6244ff959016ba7147f9b9fbb653f56c19f3262b7c4d0ee359b17b5f6078ab64": {
+        "index": 7388,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d4fe81936eaec1fa146ff6d3df52f053efdf3fd2cb34c8667570df52b4056ca0": {
+        "index": 7390,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "63220a435d3305b9085ff1f9655d05a2b52c5baefb58d3f2e7b7e7d638f39731": {
+        "index": 7399,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "69ba842c7e4b028e578ef127477528cf35ca252a0f82eaea81008144e6aa9edb": {
+        "index": 7410,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "3c18aa73fc99f4bd6a87b87be471111a92e025752ca16bb89445d1a2c5976234": {
+        "index": 7417,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "51056876af2836eb10d87c84e241e4f9413c45248ed2b40e388f71c02fea5567": {
+        "index": 7422,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "fd62bf0793a938099e359dbd7986f976dba016bca135dbafc3ed934d4d6bd0fb": {
+        "index": 7430,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "43a295dd36aec15bbeb9e3dc9f2267f39fe48aa463b503a4cb4b0b299fd34d8e": {
+        "index": 7451,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "f2dd71d0290c8e8732317e95eb559fd97f5d994d542174cd671b2fd9123450ab": {
+        "index": 7456,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "02ae616a46637f1a074e870b78b5d2bd84a3f684b80441ea092f20421105a004": {
+        "index": 7466,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "a3f1bcff4eeaf5bcad1fdcc8367c82fbf25e4df54a243abf08cc5fee25b7ad01": {
+        "index": 7472,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "87c9dc9f12eea0f7dcd7e3b2020502cbbcb9bb822153b8bb602cb7750c926dbd": {
+        "index": 7489,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2501cf1c374ef7af000b4209328de8411f10e0bd5462ab68474ffba34c605c43": {
+        "index": 7492,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d94d81eea029282d13cfe62d8af61d5bd2f3836959ace048f5df191ecb9d69de": {
+        "index": 7493,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7f586bbfcfb2c0e3f8e98c9b8211c8026152485bfc09b0e7d10f94d38340bf3e": {
+        "index": 7496,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2b487919dda5584f46e72d8ac7e726f1a5d141f925aac8cbc9c2f7e0ac18aeec": {
+        "index": 7504,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "169882dbb0b5482c1eeabf869d9677c2577827fbae24e76d38071b867a522945": {
+        "index": 7507,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d0572ec8f2af1e0518718a751ddc64c7059f306f21aa9c389378968ae3c0d1e9": {
+        "index": 7517,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "6ec75ebf49187b29ba15d218f7ccedeb8092873e5c02367ae2d8a53cd2109447": {
+        "index": 7521,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "fbb2c8db777a73ef72bcca5b71c7a0ac3ca5dff1c1de8fcd851480253d9f78b2": {
+        "index": 7525,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "20e501dcb21d57f6751ff44cbd51c233b8f6138eff656a96ef7aaec6d72f68df": {
+        "index": 7546,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b93e5127e29bc9d12e6bd4bc40f3eccfcf149f2db7e58dd3cdea3608cb28f73f": {
+        "index": 7560,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "4832cd1e4b86e4f7a1042d5ee9e8ea52346d8662661cca08ffd79561d4299ffe": {
+        "index": 7561,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2537f00ce4b79930fbb9f69ba5a480f7fbcae3c63473fc1818f6c5dafe540f3a": {
+        "index": 7563,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7ca1a2c5455e2f007d768bc2f3071649f43642d212b6339dc093cdf49e472b55": {
+        "index": 7566,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "3f087c79ebf08aed1f7a4da2a42848d7b624e2b3cc1d178e5ea1d7a8f0295039": {
+        "index": 7580,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "1ed03af9ebb65f67fe368fa5ab2d604a83997a91eed474fdc1767926f5e9f43c": {
+        "index": 7624,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "94665292aa739a8167b292af451275282dc617a35959be0da6f81030f71a5669": {
+        "index": 7636,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "1f324c7911f94a34b5103ff65790428fb2bd5fde565a021d61493a4c5f49ad88": {
+        "index": 7660,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "8d4e2a3e7737976cf7959ce96079e5365f0f239b87b7efac03deb1a0babafc23": {
+        "index": 7665,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "981b8c2052b0f0ba31f286af227dca6e7f56c46603dac9581714ca6e9b417c42": {
+        "index": 7683,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "a0ae791aa311efd6a756ca0c262bb393c6e6da9299d9196bb810a07f7d795182": {
+        "index": 7700,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7bb4a56d5edc8bd2ec6782b250fedd7508c4d2daa759e5af2cb55f3081813db2": {
+        "index": 7702,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "f74c47320f964803e0b46d88645a3daf42bab5b70d39a3e4f5f5c45833cd1d01": {
+        "index": 7708,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "6c6033d456b5abb1929b2cdd9771e9a48c39496081e40bdb688ef7b861042b90": {
+        "index": 7714,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "dc2b5893822d61d3ac64487759107af99cd234bb1c684c903531b02178ce9b9f": {
+        "index": 7739,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "45cd6a0ef3ac5df74d8cf2227e958516af3510531d9add37c9b74646fdd83e91": {
+        "index": 7770,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b461fe56b840ff30532fbf0fd0c8275d86f9aacbb2e4d7a258807082d312b057": {
+        "index": 7776,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "5a06dffb73b1f32f8a4ead39c710f84fe13d4847270c3924560d25855c8cb694": {
+        "index": 7790,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "853c16e6c73f2cd141fad5089ad3f7ce0b7ff7b5cddb4c0db37c003fc848a6ea": {
+        "index": 7794,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b25dd8c58f7920afbd174217fa32d60e12d2e865b00ef40d0baa41a30501860a": {
+        "index": 7801,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "c8cffaac840ba09f6ed11a9248d78025b7a051fc30f60eb832ca211a66bb5149": {
+        "index": 7820,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "68964788930f3be81542ce9f6fa0a4394d6b71c6c0e69a9c6fd00c0bd16abb86": {
+        "index": 7826,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "9d341c85663ebf6c801bbff2c2c42155fa48edb524b6b3e8f623b95f801db734": {
+        "index": 7828,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "f72a454d1fe73f4e05013823cb6d364e2e318abb7767317b6dfe7529f7bf74dc": {
+        "index": 7832,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "4f06a3ab121d6682038991881b8ee8013fe09e3d850f92adcead85ee534c6e0c": {
+        "index": 7841,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "9a6134b9353b4d3aed1389bce31b28c47ae0be6e99ef9d9553d8df2e939692ec": {
+        "index": 7861,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "cf617a8e4471280e32a55b833cfe2700ae7dbaf910bfe30579df2d7b49c923ca": {
+        "index": 7888,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d9592096fa79291660168d58a607b1f57c3c1f1c179d4f9aa90c9db7a0cfed59": {
+        "index": 7891,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7c2baf992d9f8729e145a74e344f6f5f995fbb15e02e1c4f0bc59f2dff1ad227": {
+        "index": 7893,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "afcc92387fe83e77a2a5a8b62f065d0f5ee9fbfa973d6ca21851364b4635a524": {
+        "index": 7905,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "64c9701274b181708b076cb9e61036952979d87c7bb24172e3c3fdf94690588f": {
+        "index": 7922,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "1f8cab19e74b5fd4c8cfd66666923c67e420e682e3cf1ea27b8f0ee113e07ed5": {
+        "index": 7944,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d9612af0563998fb511dadbaf04e391c42efd014194441766eab11831601170d": {
+        "index": 7958,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "ef4bb5c8f8751da4f708a66dd6137073f1ab68ae569e5ecf7861623493280938": {
+        "index": 7963,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "9c670c854e9e1163365e5636d68b8a65bb428f62cbb6444ef1a0e311cf5c05af": {
+        "index": 7967,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2acf54ba384bced3fb3ec42ce1a1d9c41ce43a74f1ab8a69c9ca63469dfb7a15": {
+        "index": 7976,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "913a8fc07fe27eb1eeb335a65fd1cd8daf0126729a3202e10e6120ddf7c2ae27": {
+        "index": 7977,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "937c7254cf1009d784905835198783b8f0af5e14b575049972d38a0c0e0fd97b": {
+        "index": 7988,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2db3d59b2393bcaef0217a7fb4387945a4b69558899786645b9fa4ee30a3ba9d": {
+        "index": 7992,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      }
+    }
+  },
+  "r02_edge.jsonl.gz": {
+    "archive_sha256": "7b1662fcd6d1de4cdcf96e037a14824d14d7cecda1833d8be7e2904a181586e5",
+    "rows": {
+      "c7313343ae1a91ed700db53d71eb9c4903ab07ecde809506d10f7730dd181eb6": {
+        "index": 2364,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "baaf368b449b36af10b757ea39db47e36abe75737eb174ee03e7d46f7fb371e9": {
+        "index": 2366,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "b42b1596d557b27925b1f0a7e4a371f4170bd246289a1478f523502c50c659e4": {
+        "index": 2368,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "3e1aa6b003e4d77fd23ee550da3fd3c7b2a83d7607ab76e763de823e1af6cead": {
+        "index": 2370,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "0f55acc91e3aa9d5ddbba7950a2b8d1251a7d0859462f6742c12a6284ff789e4": {
+        "index": 2372,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "937fbb800e5f300914d1ace6d08c608d34e5e611352f8ea7d00ae227063bcf78": {
+        "index": 2420,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7d7524fb44cdaf0778c1f8c760003cc204ff1fe94b3937fd8916481c95e5b91c": {
+        "index": 2422,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "c26c9bc9404e187b18d4d3d273aea5346e6f45cf41561441eeb5682114eaa17f": {
+        "index": 2424,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "14e099242051490e646a204c4e6e1c87eb08189dc23ff355b4d62342d0eb1c2a": {
+        "index": 2426,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "0d13f5ac7785c18cd07788cf5e94d84897551ce450a02b7c53738c506f700f91": {
+        "index": 2428,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "3324ef2baacfc136831b988f4e1e8bc4fa274ec62a3d70f511b28b731c675dc7": {
+        "index": 2430,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "8d3b7c512d7afd76d2a3490b40587585f691e4eb5ab42394d0331fa1ed4c53d1": {
+        "index": 2452,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "1a78d34dda44b447eae7af6a640bb2a1ca05e2d92d55227d83c8fa4d17c799ee": {
+        "index": 2454,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "810d8a667e10901def8d20427ec1ee396ec4b1cc16ffe8cc9166ec1a718d5709": {
+        "index": 2456,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "dd10c92572223e517c6e8d38c6903c4638996577535a0ad69e4e59e37765d846": {
+        "index": 2458,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "bc018c4cac6a9125b993fa70b11cfcd91eeb1b54b44da2649fe72a122de0132a": {
+        "index": 2460,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "5581bdc2547b74fe29b7115ebf50beff58a7422f80c0941a145073a3ddb398f0": {
+        "index": 2462,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "269aab3beb8fdf106e37790f1f9c646949220b9ad87095f858d14ef0a683bea1": {
+        "index": 2464,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "9f7c1867db485f6a36a34783daac0c571dfeb55a83f9b35ca29d400b9e7683e2": {
+        "index": 2466,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "2c2399d98d1fce2ab5f040d17c0aa354a76ea636ca271a9c13990b59c34ee6a9": {
+        "index": 2468,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d16c2ba31f5ef7ac67157de6d9916dc43cfe8606074f664f075b7af1e1676be5": {
+        "index": 2470,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "d869acb709f494c180f1260ada942e5602cf35c3b7cf0f35bf4f94d1e5ff090c": {
+        "index": 2476,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "bbb44016e42c63dba1b929e990d132bff6210df927140d9db35189ac0689f39e": {
+        "index": 2480,
+        "python_output": false,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "471ebe37ac1d8e861c009dfc5334792b091d210a14995db4dfecbe243b56b672": {
+        "index": 2481,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "979b7f490bddea702db3d2f0fd8c466eea9c6a845cb82fb8ebc6d66c27a48396": {
+        "index": 2488,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "66956db87291503a298c01b5b04b47f67c03c581568679af3e40a99041758a14": {
+        "index": 2501,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "f75e850f69ec511e75945cbceca9d314952a572696575d51bf276223d24e2698": {
+        "index": 2503,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "832df3f9cff6b98b9e040459f2fb044a81905aa6d31eb493836aee6089a3c6be": {
+        "index": 2513,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "7fe5245fd984acd21e21dc511e2399c3ca5d2e4d224d529f2d17f80c896e0844": {
+        "index": 2514,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      },
+      "6746a75e9b86e09f82065080af141f390d42c8babdb3367935e3296c605d3011": {
+        "index": 2515,
+        "python_output": true,
+        "native_output": null,
+        "kind": "D2 unowned legacy cache"
+      }
+    }
+  }
+}

@@ -1,0 +1,2015 @@
+[
+ {
+  "fn": "parse_userinfo",
+  "input": "",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload=1; download=2; total=100",
+  "output": {
+   "upload": 1,
+   "download": 2,
+   "total": 100
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload=1; download=2; total=3; expire=4",
+  "output": {
+   "upload": 1,
+   "download": 2,
+   "total": 3,
+   "expire": 4
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "UPLOAD=5; Download = 6 ;TOTAL=7",
+  "output": {
+   "upload": 5,
+   "download": 6,
+   "total": 7
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload=1.9; download=2e3; total=1E+2",
+  "output": {
+   "upload": 1,
+   "download": 2000,
+   "total": 100
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload=.5; download=5.; total=+3",
+  "output": {
+   "upload": 0,
+   "download": 5,
+   "total": 3
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload=1e400",
+  "error": "OverflowError",
+  "message": "cannot convert float infinity to integer"
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload=x; total=7",
+  "output": {
+   "total": 7
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=1.2.3; expire=9",
+  "output": {
+   "expire": 9
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload==1",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload=; total=1",
+  "output": {
+   "total": 1
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "xupload=1; total=2",
+  "output": {
+   "total": 2
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "我upload=1; total=2",
+  "output": {
+   "total": 2
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload_x=1",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload=1,download=2",
+  "output": {
+   "upload": 1,
+   "download": 2
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=123456789012345678901234567890",
+  "output": {
+   "total": 123456789012345677877719597056
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=1e20",
+  "output": {
+   "total": 100000000000000000000
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=1e16",
+  "output": {
+   "total": 10000000000000000
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=9007199254740993",
+  "output": {
+   "total": 9007199254740992
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "expire=1700000000; total=0",
+  "output": {
+   "expire": 1700000000,
+   "total": 0
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "a=1; b=2",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total\t=\t5",
+  "output": {
+   "total": 5
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total　=　5",
+  "output": {
+   "total": 5
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total\u001c=1",
+  "output": {
+   "total": 1
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upload=1; upload=9",
+  "output": {
+   "upload": 9
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=e5",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=+",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=.",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "expire=1e-5",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "téotal=1; total=4",
+  "output": {
+   "total": 4
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "TOTAL=1;total=2",
+  "output": {
+   "total": 2
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "upİload=1",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=12abc",
+  "output": {
+   "total": 12
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=1e5e5",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=0001",
+  "output": {
+   "total": 1
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "download=99999999999999999999999.5",
+  "output": {
+   "download": 99999999999999991611392
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "k=1 total=2",
+  "output": {
+   "total": 2
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total=1 2",
+  "output": {
+   "total": 1
+  }
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "Σtotal=1",
+  "output": null
+ },
+ {
+  "fn": "parse_userinfo",
+  "input": "total = 1.0e+300",
+  "output": {
+   "total": 1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160
+  }
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.42.3",
+  "output": [
+   2,
+   42,
+   3
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "v2.42.3",
+  "output": [
+   2,
+   42,
+   3
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "V2.42",
+  "output": [
+   2,
+   42
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": " 2.42.3 ",
+  "output": [
+   2,
+   42,
+   3
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.42.3\n",
+  "output": [
+   2,
+   42,
+   3
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "bad",
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": "",
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": "2..3",
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.42.x",
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": "２.４２",
+  "output": [
+   2,
+   42
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2. 3",
+  "output": [
+   2,
+   3
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.\u001c3",
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": "2. 3",
+  "output": [
+   2,
+   3
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.3",
+  "output": [
+   2,
+   3
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.-1",
+  "output": [
+   2,
+   -1
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.+1",
+  "output": [
+   2,
+   1
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.1_0",
+  "output": [
+   2,
+   10
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.1__0",
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": "2._1",
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.1_",
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": "vv2.1",
+  "output": [
+   2,
+   1
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.42.3.0",
+  "output": [
+   2,
+   42,
+   3,
+   0
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "𝟘.1",
+  "output": [
+   0,
+   1
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "٣.٤",
+  "output": [
+   3,
+   4
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.999999999999999999999999999999",
+  "output": [
+   2,
+   999999999999999999999999999999
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999",
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": "\u001c2.1",
+  "output": [
+   2,
+   1
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "2.1 ",
+  "output": [
+   2,
+   1
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "0",
+  "output": [
+   0
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "-0",
+  "output": [
+   0
+  ]
+ },
+ {
+  "fn": "parse_version",
+  "input": "1.2.3-beta",
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": null,
+  "output": null
+ },
+ {
+  "fn": "parse_version",
+  "input": 5,
+  "output": null
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "2.42.3",
+   "2.42.2"
+  ],
+  "output": true
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "v2.43.0",
+   "2.42.10"
+  ],
+  "output": true
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "2.42.3",
+   "2.42.3"
+  ],
+  "output": false
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "bad",
+   "2.42.3"
+  ],
+  "output": false
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "2.42.3",
+   ""
+  ],
+  "output": true
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "2.42",
+   "2.42.0"
+  ],
+  "output": false
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "2.42.0",
+   "2.42"
+  ],
+  "output": true
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "2.42.1",
+   "bad"
+  ],
+  "output": true
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "",
+   ""
+  ],
+  "output": false
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "10.0",
+   "9.9"
+  ],
+  "output": true
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "２.43",
+   "2.42"
+  ],
+  "output": true
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "2.-1",
+   "2.0"
+  ],
+  "output": false
+ },
+ {
+  "fn": "is_newer",
+  "input": [
+   "1.0.0",
+   "1"
+  ],
+  "output": true
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "3001",
+  "output": "http://127.0.0.1:3001"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "0",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "1",
+  "output": "http://127.0.0.1:1"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "65535",
+  "output": "http://127.0.0.1:65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "65536",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "-1",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "+3001",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "30.01",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "3001/path",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "３００１",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": " 3001 ",
+  "output": "http://127.0.0.1:3001"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "03001",
+  "output": "http://127.0.0.1:3001"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "003001",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": " 3001",
+  "output": "http://127.0.0.1:3001"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "3001\u001c",
+  "output": "http://127.0.0.1:3001"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "1e3",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "0x10",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "٣٠٠١",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "99999",
+  "error": "ValueError",
+  "message": "SUB_STORE_BACKEND_API_PORT must be an integer between 1 and 65535"
+ },
+ {
+  "fn": "builtin_sub_store_url",
+  "input": "15802",
+  "output": "http://127.0.0.1:15802"
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "proxies: []",
+  "output": true
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "  proxies:\n  - a",
+  "output": true
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "<!DOCTYPE html>",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "<html><body>",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "xxxxxxxxxx<head>",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx<head>",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "mixed-port: 1\nproxies: []",
+  "output": true
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "{\"proxies\": []}",
+  "output": true
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "a: 1",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "[1, 2]",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "   ",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "ss://abc",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nproxies: []",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "proxies",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "{proxies: 1}",
+  "output": true
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": ": : :",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "a: [",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "﻿proxies: []",
+  "output": true
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "#c\nproxies:\n",
+  "output": true
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中proxies:",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中proxies: []",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "Proxies: []",
+  "output": false
+ },
+ {
+  "fn": "is_yaml_response",
+  "input": "\u001cproxies: []",
+  "output": true
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies:\n  - {name: A, type: SS, server: s, port: 1, cipher: c, password: p}\n",
+  "output": [
+   {
+    "name": "A",
+    "type": "SS",
+    "server": "s",
+    "port": 1,
+    "cipher": "c",
+    "password": "p"
+   }
+  ]
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies:\n  - {name: A, type: SS, server: s, port: 1, cipher: c, password: p}\n",
+  "output": [
+   {
+    "name": "A",
+    "type": "ss",
+    "server": "s",
+    "port": 1,
+    "params": {
+     "cipher": "c",
+     "password": "p"
+    }
+   }
+  ]
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies:\n  - {name: V, type: vless, server: s, port: 443, uuid: u, reality-opts: {public-key: k}}\n",
+  "output": [
+   {
+    "name": "V",
+    "type": "vless",
+    "server": "s",
+    "port": 443,
+    "uuid": "u",
+    "reality-opts": {
+     "public-key": "k",
+     "short-id": ""
+    },
+    "encryption": "none"
+   }
+  ]
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies:\n  - {name: V, type: vless, server: s, port: 443, uuid: u, reality-opts: {public-key: k}}\n",
+  "output": [
+   {
+    "name": "V",
+    "type": "vless",
+    "server": "s",
+    "port": 443,
+    "params": {
+     "uuid": "u",
+     "reality-opts": {
+      "public-key": "k",
+      "short-id": ""
+     },
+     "encryption": "none"
+    }
+   }
+  ]
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies:\n  - {name: V, type: vless, encryption: zero}\n",
+  "output": [
+   {
+    "name": "V",
+    "type": "vless",
+    "encryption": "none"
+   }
+  ]
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies:\n  - {name: V, type: vless, encryption: zero}\n",
+  "output": [
+   {
+    "name": "V",
+    "type": "vless",
+    "server": "",
+    "port": 0,
+    "params": {
+     "encryption": "none"
+    }
+   }
+  ]
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies: []",
+  "output": []
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies: []",
+  "output": []
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "a: 1",
+  "output": []
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "a: 1",
+  "output": []
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "[1]",
+  "output": []
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "[1]",
+  "output": []
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies: null",
+  "error": "TypeError",
+  "message": "'NoneType' object is not iterable"
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies: null",
+  "error": "TypeError",
+  "message": "'NoneType' object is not iterable"
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies: 5",
+  "error": "TypeError",
+  "message": "'int' object is not iterable"
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies: 5",
+  "error": "TypeError",
+  "message": "'int' object is not iterable"
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies: \"\"",
+  "output": {
+   "non_list": ""
+  }
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies: \"\"",
+  "output": []
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies: abc",
+  "error": "AttributeError",
+  "message": "'str' object has no attribute 'get'"
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies: abc",
+  "error": "AttributeError",
+  "message": "'str' object has no attribute 'get'"
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies: {}",
+  "output": {
+   "non_list": {}
+  }
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies: {}",
+  "output": []
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies: {a: 1}",
+  "error": "AttributeError",
+  "message": "'str' object has no attribute 'get'"
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies: {a: 1}",
+  "error": "AttributeError",
+  "message": "'str' object has no attribute 'get'"
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies: [null, 0, \"\"]",
+  "output": [
+   null,
+   0,
+   ""
+  ]
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies: [null, 0, \"\"]",
+  "error": "AttributeError",
+  "message": "'NoneType' object has no attribute 'get'"
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies: [x]",
+  "error": "AttributeError",
+  "message": "'str' object has no attribute 'get'"
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies: [x]",
+  "error": "AttributeError",
+  "message": "'str' object has no attribute 'get'"
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies:\n  - {type: Ünïcode, name: n}\n",
+  "output": [
+   {
+    "type": "Ünïcode",
+    "name": "n"
+   }
+  ]
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies:\n  - {type: Ünïcode, name: n}\n",
+  "output": [
+   {
+    "name": "n",
+    "type": "ünïcode",
+    "server": "",
+    "port": 0,
+    "params": {}
+   }
+  ]
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies:\n  - {type: 5}\n",
+  "output": [
+   {
+    "type": 5
+   }
+  ]
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies:\n  - {type: 5}\n",
+  "error": "AttributeError",
+  "message": "'int' object has no attribute 'lower'"
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies:\n  - {}\n",
+  "output": [
+   {}
+  ]
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies:\n  - {}\n",
+  "output": [
+   {
+    "name": "Unnamed",
+    "type": "",
+    "server": "",
+    "port": 0,
+    "params": {}
+   }
+  ]
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies:\n  - {name: A, port: 1, extra: [1, 2], server: s}\n",
+  "output": [
+   {
+    "name": "A",
+    "port": 1,
+    "extra": [
+     1,
+     2
+    ],
+    "server": "s"
+   }
+  ]
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies:\n  - {name: A, port: 1, extra: [1, 2], server: s}\n",
+  "output": [
+   {
+    "name": "A",
+    "type": "",
+    "server": "s",
+    "port": 1,
+    "params": {
+     "extra": [
+      1,
+      2
+     ]
+    }
+   }
+  ]
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "a: [",
+  "error": "ParserError",
+  "message": "while parsing a flow node\nexpected the node content, but found '<stream end>'\n  in \"<unicode string>\", line 1, column 5:\n    a: [\n        ^"
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "a: [",
+  "error": "ParserError",
+  "message": "while parsing a flow node\nexpected the node content, but found '<stream end>'\n  in \"<unicode string>\", line 1, column 5:\n    a: [\n        ^"
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "",
+  "output": []
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "",
+  "output": []
+ },
+ {
+  "fn": "parse_proxies_from_yaml",
+  "input": "proxies:\n  - {type: VMESS, z: 1, a: 2}\n",
+  "output": [
+   {
+    "type": "VMESS",
+    "z": 1,
+    "a": 2
+   }
+  ]
+ },
+ {
+  "fn": "proxies_to_nodes",
+  "input": "proxies:\n  - {type: VMESS, z: 1, a: 2}\n",
+  "output": [
+   {
+    "name": "Unnamed",
+    "type": "vmess",
+    "server": "",
+    "port": 0,
+    "params": {
+     "z": 1,
+     "a": 2
+    }
+   }
+  ]
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "vless://x",
+  "output": "节点转换开始: proxy_type=vless input_length=9"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "SS://x",
+  "output": "节点转换开始: proxy_type=ss input_length=6"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "ss+obfs://x",
+  "output": "节点转换开始: proxy_type=ss+obfs input_length=11"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "hysteria2://x",
+  "output": "节点转换开始: proxy_type=hysteria2 input_length=13"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "a.b-c://x",
+  "output": "节点转换开始: proxy_type=a.b-c input_length=9"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "://x",
+  "output": "节点转换开始: proxy_type=unknown input_length=4"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "no-scheme",
+  "output": "节点转换开始: proxy_type=unknown input_length=9"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "Ünïcode://x",
+  "output": "节点转换开始: proxy_type=ünïcode input_length=11"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "İ://x",
+  "output": "节点转换开始: proxy_type=unknown input_length=5"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "ΣΑΣ://x",
+  "output": "节点转换开始: proxy_type=σας input_length=7"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "a b://x",
+  "output": "节点转换开始: proxy_type=unknown input_length=7"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "x_y://x",
+  "output": "节点转换开始: proxy_type=unknown input_length=7"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa://x",
+  "output": "节点转换开始: proxy_type=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa input_length=44"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "中文://x",
+  "output": "节点转换开始: proxy_type=中文 input_length=6"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "１２://x",
+  "output": "节点转换开始: proxy_type=１２ input_length=6"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "ss://a://b",
+  "output": "节点转换开始: proxy_type=ss input_length=10"
+ },
+ {
+  "fn": "proxy_type_line",
+  "input": "++://x",
+  "output": "节点转换开始: proxy_type=unknown input_length=6"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://127.0.0.1:3001/download/_cf_tmp_x/ClashMeta",
+   [
+    [
+     "noFlow",
+     "true"
+    ]
+   ]
+  ],
+  "output": "http://127.0.0.1:3001/download/_cf_tmp_x/ClashMeta?noFlow=true"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://127.0.0.1:3001/download/a%2Fb/ClashMeta",
+   [
+    [
+     "content",
+     "vless://u@h:1?a=b&c=d#frag ment"
+    ]
+   ]
+  ],
+  "output": "http://127.0.0.1:3001/download/a%2Fb/ClashMeta?content=vless%3A%2F%2Fu%40h%3A1%3Fa%3Db%26c%3Dd%23frag+ment"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h/sub?token=1",
+   [
+    [
+     "noFlow",
+     "true"
+    ]
+   ]
+  ],
+  "output": "http://h/sub?token=1&noFlow=true"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h/sub?",
+   [
+    [
+     "a",
+     "b"
+    ]
+   ]
+  ],
+  "output": "http://h/sub?a=b"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h/sub#frag",
+   [
+    [
+     "a",
+     "b"
+    ]
+   ]
+  ],
+  "output": "http://h/sub?a=b#frag"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h/a b/中文?q=1 2&x=%41%2F%zz",
+   []
+  ],
+  "output": "http://h/a%20b/%E4%B8%AD%E6%96%87?q=1%202&x=%2541%252F%25zz"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h/%7e%41%2f",
+   []
+  ],
+  "output": "http://h/~A%2F"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h/p",
+   [
+    [
+     "k",
+     "中 文+&=/"
+    ]
+   ]
+  ],
+  "output": "http://h/p?k=%E4%B8%AD+%E6%96%87%2B%26%3D%2F"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h/p?x=[1]",
+   []
+  ],
+  "output": "http://h/p?x=%5B1%5D"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "https://h/p|q",
+   []
+  ],
+  "output": "https://h/p%7Cq"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "HTTP://Example.TEST:8080/a/./b/../c?x=1#f g",
+   [
+    [
+     "k",
+     "v"
+    ]
+   ]
+  ],
+  "output": "http://example.test:8080/a/c?x=1&k=v#f%20g"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h/a/..",
+   []
+  ],
+  "output": "http://h/"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h",
+   [
+    [
+     "a",
+     "1"
+    ]
+   ]
+  ],
+  "output": "http://h/?a=1"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h?x",
+   []
+  ],
+  "output": "http://h/?x"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h/%zz%41?q=%4a%zz",
+   []
+  ],
+  "output": "http://h/%25zz%2541?q=%254A%25zz"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://user:p w@h/p",
+   []
+  ],
+  "output": "http://user:p%20w@h/p"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h/p?q=a^b`c{d}",
+   []
+  ],
+  "output": "http://h/p?q=a%5Eb%60c%7Bd%7D"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://[::1]:3001/p",
+   []
+  ],
+  "output": "http://[::1]:3001/p"
+ },
+ {
+  "fn": "prepare_url",
+  "input": [
+   "http://h:/p",
+   []
+  ],
+  "output": "http://h/p"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "text/plain",
+   [
+    112,
+    114,
+    111,
+    120,
+    105,
+    101,
+    115,
+    58,
+    32,
+    228,
+    184,
+    173,
+    230,
+    150,
+    135
+   ]
+  ],
+  "output": "proxies: ä¸­æ"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "text/plain",
+   [
+    112,
+    114,
+    111,
+    120,
+    105,
+    101,
+    115,
+    58,
+    32,
+    228,
+    184,
+    173,
+    230,
+    150,
+    135
+   ]
+  ],
+  "error": "JSONDecodeError",
+  "message": "Expecting value: line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "text/plain; charset=utf-8",
+   [
+    112,
+    114,
+    111,
+    120,
+    105,
+    101,
+    115,
+    58,
+    32,
+    228,
+    184,
+    173,
+    230,
+    150,
+    135
+   ]
+  ],
+  "output": "proxies: 中文"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "text/plain; charset=utf-8",
+   [
+    112,
+    114,
+    111,
+    120,
+    105,
+    101,
+    115,
+    58,
+    32,
+    228,
+    184,
+    173,
+    230,
+    150,
+    135
+   ]
+  ],
+  "error": "JSONDecodeError",
+  "message": "Expecting value: line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "",
+   [
+    112,
+    114,
+    111,
+    120,
+    105,
+    101,
+    115,
+    58,
+    32,
+    228,
+    184,
+    173,
+    230,
+    150,
+    135
+   ]
+  ],
+  "output": "proxies: 中文"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "",
+   [
+    112,
+    114,
+    111,
+    120,
+    105,
+    101,
+    115,
+    58,
+    32,
+    228,
+    184,
+    173,
+    230,
+    150,
+    135
+   ]
+  ],
+  "error": "JSONDecodeError",
+  "message": "Expecting value: line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "application/json",
+   [
+    123,
+    34,
+    97,
+    34,
+    58,
+    32,
+    34,
+    228,
+    184,
+    173,
+    34,
+    125
+   ]
+  ],
+  "output": "{\"a\": \"中\"}"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "application/json",
+   [
+    123,
+    34,
+    97,
+    34,
+    58,
+    32,
+    34,
+    228,
+    184,
+    173,
+    34,
+    125
+   ]
+  ],
+  "output": {
+   "a": "中"
+  }
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "application/json",
+   [
+    239,
+    187,
+    191,
+    123,
+    34,
+    97,
+    34,
+    58,
+    32,
+    49,
+    125
+   ]
+  ],
+  "output": "﻿{\"a\": 1}"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "application/json",
+   [
+    239,
+    187,
+    191,
+    123,
+    34,
+    97,
+    34,
+    58,
+    32,
+    49,
+    125
+   ]
+  ],
+  "error": "JSONDecodeError",
+  "message": "Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "",
+   [
+    239,
+    187,
+    191,
+    123,
+    34,
+    97,
+    34,
+    58,
+    32,
+    49,
+    125
+   ]
+  ],
+  "output": "{\"a\": 1}"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "",
+   [
+    239,
+    187,
+    191,
+    123,
+    34,
+    97,
+    34,
+    58,
+    32,
+    49,
+    125
+   ]
+  ],
+  "output": {
+   "a": 1
+  }
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "text/yaml; charset=\"UTF-8\"",
+   [
+    97,
+    58,
+    32,
+    226,
+    130
+   ]
+  ],
+  "output": "a: �"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "text/yaml; charset=\"UTF-8\"",
+   [
+    97,
+    58,
+    32,
+    226,
+    130
+   ]
+  ],
+  "error": "JSONDecodeError",
+  "message": "Expecting value: line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "",
+   [
+    97,
+    58,
+    32,
+    226,
+    130,
+    120,
+    255
+   ]
+  ],
+  "output": "a: в‚xя"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "",
+   [
+    97,
+    58,
+    32,
+    226,
+    130,
+    120,
+    255
+   ]
+  ],
+  "error": "JSONDecodeError",
+  "message": "Expecting value: line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "text/plain; charset=latin-1",
+   [
+    99,
+    97,
+    102,
+    233
+   ]
+  ],
+  "output": "café"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "text/plain; charset=latin-1",
+   [
+    99,
+    97,
+    102,
+    233
+   ]
+  ],
+  "error": "JSONDecodeError",
+  "message": "Expecting value: line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "text/plain; charset=ascii",
+   [
+    99,
+    97,
+    102,
+    233
+   ]
+  ],
+  "output": "caf�"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "text/plain; charset=ascii",
+   [
+    99,
+    97,
+    102,
+    233
+   ]
+  ],
+  "error": "JSONDecodeError",
+  "message": "Expecting value: line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "application/octet-stream",
+   [
+    97,
+    98,
+    99
+   ]
+  ],
+  "output": "abc"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "application/octet-stream",
+   [
+    97,
+    98,
+    99
+   ]
+  ],
+  "error": "JSONDecodeError",
+  "message": "Expecting value: line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "",
+   []
+  ],
+  "output": ""
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "",
+   []
+  ],
+  "error": "JSONDecodeError",
+  "message": "Expecting value: line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "application/json",
+   [
+    110,
+    111,
+    116,
+    32,
+    106,
+    115,
+    111,
+    110
+   ]
+  ],
+  "output": "not json"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "application/json",
+   [
+    110,
+    111,
+    116,
+    32,
+    106,
+    115,
+    111,
+    110
+   ]
+  ],
+  "error": "JSONDecodeError",
+  "message": "Expecting value: line 1 column 1 (char 0)"
+ },
+ {
+  "fn": "response_text",
+  "input": [
+   "",
+   [
+    123,
+    34,
+    118,
+    101,
+    114,
+    115,
+    105,
+    111,
+    110,
+    34,
+    58,
+    32,
+    34,
+    50,
+    46,
+    52,
+    48,
+    46,
+    48,
+    34,
+    125
+   ]
+  ],
+  "output": "{\"version\": \"2.40.0\"}"
+ },
+ {
+  "fn": "response_json",
+  "input": [
+   "",
+   [
+    123,
+    34,
+    118,
+    101,
+    114,
+    115,
+    105,
+    111,
+    110,
+    34,
+    58,
+    32,
+    34,
+    50,
+    46,
+    52,
+    48,
+    46,
+    48,
+    34,
+    125
+   ]
+  ],
+  "output": {
+   "version": "2.40.0"
+  }
+ }
+]

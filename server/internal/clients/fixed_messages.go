@@ -1,0 +1,28 @@
+package clients
+
+const (
+	messageFixedSelect       = "请选择 1 至 64 台设备预览固定 IP 操作。"
+	messageFixedFields       = "固定 IP 请求需要 IP、MAC、来源路由器和设备名称。"
+	messageFixedIdentity     = "固定 IP 只支持有 MAC 和明确来源路由器的单个 IPv4，且不能重复选择。"
+	messageFixedDuplicateMAC = "同一路由器上的同一 MAC 只能选择一个固定 IP。"
+	messageFixedSetup        = "配置向导进行中，只允许命名；请完成向导后再固定或删除固定 IP。"
+	messageFixedSetupMissing = "固定 IP 配置向导检查尚未接线"
+	messageFixedRouter       = "发现这台设备的路由器已不存在或不支持写入，请刷新设备列表。"
+	messageFixedWrite        = "此来源路由器不支持写入 DHCP 静态租约。"
+	messageFixedSeen         = "%s 的 MAC 或来源路由器已变化，请重新发现设备。"
+	messageFixedNotOwned     = "没有这台设备由 ConfigFlow 创建的固定 IP 记录，不会删除其他静态租约。"
+	messageFixedTokenMissing = "缺少固定 IP 预览确认，请重新预览。"
+	messageFixedTokenInvalid = "固定 IP 预览无效或已过期，请重新预览确认。"
+	messageFixedProfile      = "配置空间已切换，请重新预览。"
+	messageFixedBusy         = "此路由器正在发布或同步，请稍后重新预览。"
+	messageFixedConnection   = "路由器连接在等待期间发生变化，请重新预览。"
+	messageFixedStale        = "路由器或 DHCP 绑定在预览后发生变化，请重新预览确认。"
+	messageFixedSaveFirst    = "请先保存设备名称或 DNS 策略，再固定 IP。"
+	messageFixedConcurrent   = "设备或路由器设置已被其他页面修改，已撤销固定 IP 操作，请刷新。"
+	messageFixedRestoreSave  = "恢复绑定标识保存失败：%s"
+	messageFixedRollback     = "%s；回滚未完成，请检查路由器：%s"
+	messageFixedDynamicNote  = "；RouterOS 已移除本次静态预留，客户端续租恢复动态 DHCP，IP 可能变化。"
+	messageFixedSaveFailure  = "固定 IP 记录保存失败，已撤销本次路由器变更，请重试。"
+	messageFixedEnrichWrite  = "此来源路由器不支持写入。"
+	messageFixedRead         = "固定 IP 状态读取失败，无法确认归属"
+)

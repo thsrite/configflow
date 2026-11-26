@@ -13,16 +13,16 @@ func TestReturnRoutingBootReplaySkipsCompleteCurrentResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	beforeState := jsonText(readStateJSON(t, cfg))
-	beforeHost := jsonText([]interface{}{host.routes, host.rules, host.nft})
+	beforeHost := jsonText([]any{host.routes, host.rules, host.nft})
 	host.mutations = nil
 
 	reapplyReturnRouting(cfg) // Agent restart with everything still in place
 
 	assertNoWrites(t, host)
-	if beforeState != jsonText(readStateJSON(t, cfg)) || beforeHost != jsonText([]interface{}{host.routes, host.rules, host.nft}) {
+	if beforeState != jsonText(readStateJSON(t, cfg)) || beforeHost != jsonText([]any{host.routes, host.rules, host.nft}) {
 		t.Fatal("skipped replay must leave resources and ownership untouched")
 	}
-	if status := managedReturnStatus(cfg); status["table_present"] != true {
+	if status, ok := managedReturnStatus(cfg).(*ReturnRoutingManagedDetail); !ok || !status.TablePresent {
 		t.Fatalf("resources must stay healthy: %v", status)
 	}
 }
@@ -46,7 +46,7 @@ func TestReturnRoutingBootReplayStillRunsWhenRouterMACChanged(t *testing.T) {
 	if text := jsonText(host.nft); !strings.Contains(text, "00:11:22:33:44:55") || strings.Contains(text, "00:e0:b4:66:d5:f9") {
 		t.Fatalf("replayed rule must match the new router MAC: %s", text)
 	}
-	if status := managedReturnStatus(cfg); status["table_present"] != true {
+	if status, ok := managedReturnStatus(cfg).(*ReturnRoutingManagedDetail); !ok || !status.TablePresent {
 		t.Fatalf("replayed resources must pass readback: %v", status)
 	}
 }

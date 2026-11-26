@@ -1,0 +1,82 @@
+{
+  "archive_sha256": "03a933f0c6f2598fc6b0f0f997733a5908cfd51c87a897c4cabe176b54e1aef2",
+  "rows": [
+    {
+      "index": 72,
+      "test": "backend/test_mosdns_archive.py::test_local_cache_callback_resolves_original_url_without_self_http",
+      "input_sha256": "e87b8f775c77ab3a6e2950e5c0cb8dd8b4460109344ee21bcee4055ea76f8792",
+      "kind": "unowned_refusal",
+      "error": "规则“测试规则”下载失败：exception_type=Timeout"
+    },
+    {
+      "index": 78,
+      "test": "backend/test_mosdns_archive.py::test_remote_timeout_falls_back_only_to_matching_cached_source[True]",
+      "input_sha256": "db0de24d127d68227c931811fb85ff16695e5cb4fe4efdce9a7207b59d69dc5c",
+      "kind": "unowned_refusal",
+      "error": "规则“测试规则”下载失败：exception_type=Timeout"
+    },
+    {
+      "index": 102,
+      "test": "backend/test_mosdns_regex_delivery.py::test_generated_zip_and_web_download_keep_regex_and_split_ip[text-url-classical]",
+      "input_sha256": "06d660b4c0658311e5f6c4dfad2691585499bd3a886fc995c5cd2411d6eda101",
+      "kind": "native_cache",
+      "old": "rules/by-source/d7a5ca1b2b3e06be133bda82f485efd6f0cd6ee4dd8e27953ea9966a0031f26b.list",
+      "native": "rules/by-source/19c291f4e409f20113e42c29c9081013b8c2c3f657dd7cafe06742bfd32517d4.list",
+      "retain_old": false
+    },
+    {
+      "index": 103,
+      "test": "backend/test_mosdns_regex_delivery.py::test_generated_zip_and_web_download_keep_regex_and_split_ip[text-url-classical]",
+      "input_sha256": "948d3673180e69e9d67d02ee4999c4d205d4eb6c17a28d40a9ac2e61413aff95",
+      "kind": "native_cache",
+      "old": "rules/by-source/d7a5ca1b2b3e06be133bda82f485efd6f0cd6ee4dd8e27953ea9966a0031f26b.list",
+      "native": "rules/by-source/19c291f4e409f20113e42c29c9081013b8c2c3f657dd7cafe06742bfd32517d4.list",
+      "retain_old": true
+    },
+    {
+      "index": 113,
+      "test": "backend/test_mosdns_regex_delivery.py::test_generated_zip_and_web_download_keep_regex_and_split_ip[yaml-url-classical]",
+      "input_sha256": "d66a3654f34a88a6041f3795bdae102cb4b9f71543b1add93e891583ef584f41",
+      "kind": "native_cache",
+      "old": "rules/by-source/6c6064ec248ecbc371405595b97a3c0a336d23820827104538e8ed481062c40e.list",
+      "native": "rules/by-source/9745b71fbda5f8bbf1e7c55e591422f8154514350a60cc767eae8d99c9493d5c.list",
+      "retain_old": false
+    },
+    {
+      "index": 114,
+      "test": "backend/test_mosdns_regex_delivery.py::test_generated_zip_and_web_download_keep_regex_and_split_ip[yaml-url-classical]",
+      "input_sha256": "46c8a97bec66816858a32fcf2ce2bbdf44db8bc63ff6db89167fcdaa64c8f23c",
+      "kind": "native_cache",
+      "old": "rules/by-source/6c6064ec248ecbc371405595b97a3c0a336d23820827104538e8ed481062c40e.list",
+      "native": "rules/by-source/9745b71fbda5f8bbf1e7c55e591422f8154514350a60cc767eae8d99c9493d5c.list",
+      "retain_old": true
+    },
+    {
+      "index": 249,
+      "test": "backend/test_oxidns_archive.py::test_complete_mixed_archive_deduplicates_fetch_and_excludes_runtime_state",
+      "input_sha256": "6d7e3bc54d74072aeb83b5e3b2a279db87f758f98122c0c5ed9684fc06bc74d8",
+      "kind": "native_cache",
+      "old": "rules/by-source/a7ffad0ca3cde1bcd903e7fba336c229c53a27585ea76c118674c5e11d03c585.list",
+      "native": "rules/by-source/ddbb2a0be440b2bb7c38cc707510740632629e25e52dfc2e3f82c044696d35f1.list",
+      "retain_old": false
+    },
+    {
+      "index": 305,
+      "test": "backend/test_remote_rule_consumers.py::test_archive_validates_before_converting_and_keeps_cache[True]",
+      "input_sha256": "754460293db8a599419ff996adb8747e5ec571848a42475d3137cff077b8f485",
+      "kind": "native_cache",
+      "old": "rules/by-source/32da75d710a6b6d90e9f6cf71e4e6839a03e7227f5ceaf7e22cfad5ba1b31fcd.list",
+      "native": "rules/by-source/d1009e629c5c247f96bf2fe891f34b85bb887173f3b9956651edbf067b7af263.list",
+      "retain_old": true
+    },
+    {
+      "index": 338,
+      "test": "backend/test_rule_proxy_freshness.py::test_explicit_offline_zip_still_uses_matching_cache",
+      "input_sha256": "ae17a18930354e15d1cf29e41a6abe3fc6a7cbae6f43addf1454c0a01c57884a",
+      "kind": "native_cache",
+      "old": "rules/by-source/c24d037e5014fac822a08356511bb3d171ee65a586ba9338b3fbfb3da75c0949.list",
+      "native": "rules/by-source/f23f654d21acbec2a36d7938017ecb9999f3a541d55ab07eff920d7233cc3a4e.list",
+      "retain_old": true
+    }
+  ]
+}

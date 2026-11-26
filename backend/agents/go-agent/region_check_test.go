@@ -34,13 +34,13 @@ func (f *fakeRegionMihomo) controller() http.Handler {
 		defer f.mu.Unlock()
 		switch {
 		case r.URL.Path == "/proxies":
-			proxies := map[string]interface{}{regionProbeGroup: map[string]interface{}{"type": "Selector", "all": f.all, "now": f.now}}
-			proxies["DIRECT"] = map[string]interface{}{"type": "Direct", "alive": true}
-			proxies["🇺🇸 美国 01"] = map[string]interface{}{"type": "Socks5", "alive": true}
-			proxies["🇭🇰 香港 01"] = map[string]interface{}{"type": "Socks5", "alive": false}
-			json.NewEncoder(w).Encode(map[string]interface{}{"proxies": proxies})
+			proxies := map[string]any{regionProbeGroup: map[string]any{"type": "Selector", "all": f.all, "now": f.now}}
+			proxies["DIRECT"] = map[string]any{"type": "Direct", "alive": true}
+			proxies["🇺🇸 美国 01"] = map[string]any{"type": "Socks5", "alive": true}
+			proxies["🇭🇰 香港 01"] = map[string]any{"type": "Socks5", "alive": false}
+			json.NewEncoder(w).Encode(map[string]any{"proxies": proxies})
 		case r.URL.Path == "/proxies/"+regionProbeGroup && r.Method == http.MethodGet:
-			json.NewEncoder(w).Encode(map[string]interface{}{"now": f.now, "all": f.all})
+			json.NewEncoder(w).Encode(map[string]any{"now": f.now, "all": f.all})
 		case r.URL.Path == "/proxies/"+regionProbeGroup && r.Method == http.MethodPut:
 			var body struct{ Name string }
 			json.NewDecoder(r.Body).Decode(&body)

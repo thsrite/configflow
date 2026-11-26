@@ -44,7 +44,7 @@ const oxRankingTestPlugins = `- {tag: records, type: query_recorder, args: {rete
 
 func oxRankingConfigForTest(t *testing.T, yamlText string) oxRankingConfig {
 	t.Helper()
-	var plugins []interface{}
+	var plugins []any
 	if err := yaml.Unmarshal([]byte(yamlText), &plugins); err != nil {
 		t.Fatal(err)
 	}
@@ -381,9 +381,9 @@ func TestOxiDNSMonitorRuntimeRevisionChangesAfterSameFileReload(t *testing.T) {
 	}))
 	defer core.Close()
 	cfg = oxMonitorTestConfig(t, core.URL, "- {tag: records, type: query_recorder}\n")
-	read := func() map[string]interface{} {
+	read := func() map[string]any {
 		response := oxMonitorTestRequest(cfg, "GET", "/api/oxidns/overview")
-		var body map[string]interface{}
+		var body map[string]any
 		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != 200 {
 			t.Fatalf("overview: %d %s", response.Code, response.Body.String())
 		}
@@ -507,7 +507,7 @@ func TestRankingsCountRuleBlocks(t *testing.T) {
 }
 
 func TestRankingsMergeRuleBlockSamples(t *testing.T) {
-	rows := func(pairs ...interface{}) []oxRankingRow {
+	rows := func(pairs ...any) []oxRankingRow {
 		result := []oxRankingRow{}
 		for i := 0; i < len(pairs); i += 2 {
 			result = append(result, oxRankingRow{Key: pairs[i].(string), Count: uint64(pairs[i+1].(int))})
@@ -704,4 +704,3 @@ func TestOxiDNSRankingsReturnMoreRowsOnRequest(t *testing.T) {
 		t.Fatalf("eleven rows for eleven: %v", err)
 	}
 }
-

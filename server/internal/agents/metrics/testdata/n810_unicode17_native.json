@@ -1,0 +1,5295 @@
+{
+  "corpus_sha256": "0e2e8016db1a1976c3af5f4d0c9c3d1dae3e7befe6bf190985df44235a17cca7",
+  "unicode_version": "17.0.0",
+  "sources": {
+    "UnicodeData.txt": {
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt",
+      "sha256": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c"
+    },
+    "SpecialCasing.txt": {
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/SpecialCasing.txt",
+      "sha256": "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588"
+    },
+    "DerivedCoreProperties.txt": {
+      "url": "https://www.unicode.org/Public/17.0.0/ucd/DerivedCoreProperties.txt",
+      "sha256": "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08"
+    }
+  },
+  "lower": [
+    {
+      "original": {
+        "codepoint": "1C89",
+        "lower": "Ᲊ"
+      },
+      "sha256": "c1a9deb50a1b5aea0be82ee2b3e1caac5be8ad02b743c67de1eeaa4f9f170be2",
+      "native": {
+        "lower": "ᲊ"
+      },
+      "evidence": "1C89;CYRILLIC CAPITAL LETTER TJE;Lu;0;L;;;;;N;;;;1C8A;"
+    },
+    {
+      "original": {
+        "codepoint": "A7CB",
+        "lower": "Ɤ"
+      },
+      "sha256": "745af7398dbe6a60ac3bb9d32ea70c6557d17933d0a636c39ba87a39780f3f4e",
+      "native": {
+        "lower": "ɤ"
+      },
+      "evidence": "A7CB;LATIN CAPITAL LETTER RAMS HORN;Lu;0;L;;;;;N;;;;0264;"
+    },
+    {
+      "original": {
+        "codepoint": "A7CC",
+        "lower": "Ꟍ"
+      },
+      "sha256": "7b1c1575b419048c4e830af9bd4562eb6b951071d67a391172924020906ba79e",
+      "native": {
+        "lower": "ꟍ"
+      },
+      "evidence": "A7CC;LATIN CAPITAL LETTER S WITH DIAGONAL STROKE;Lu;0;L;;;;;N;;;;A7CD;"
+    },
+    {
+      "original": {
+        "codepoint": "A7CE",
+        "lower": "꟎"
+      },
+      "sha256": "5c47bd67be96dba8ed9a8914dedc3f4ee1385ba2ff5c5b7b68235928fc402cc8",
+      "native": {
+        "lower": "꟏"
+      },
+      "evidence": "A7CE;LATIN CAPITAL LETTER PHARYNGEAL VOICED FRICATIVE;Lu;0;L;;;;;N;;;;A7CF;"
+    },
+    {
+      "original": {
+        "codepoint": "A7D2",
+        "lower": "꟒"
+      },
+      "sha256": "67c71dd4e82acb6a75b889b41f73d05d3f5d29535b569c8af145c40bf0294e95",
+      "native": {
+        "lower": "ꟓ"
+      },
+      "evidence": "A7D2;LATIN CAPITAL LETTER DOUBLE THORN;Lu;0;L;;;;;N;;;;A7D3;"
+    },
+    {
+      "original": {
+        "codepoint": "A7D4",
+        "lower": "꟔"
+      },
+      "sha256": "1a61e81ad9b6a3c4dc86a5b26f25d0b3e3657123178ae48c8321426cddf8f2c9",
+      "native": {
+        "lower": "ꟕ"
+      },
+      "evidence": "A7D4;LATIN CAPITAL LETTER DOUBLE WYNN;Lu;0;L;;;;;N;;;;A7D5;"
+    },
+    {
+      "original": {
+        "codepoint": "A7DA",
+        "lower": "Ꟛ"
+      },
+      "sha256": "a677ac041467795fd61ad2e22328b4e794c83b75a2d427a053648b6b4b8b399b",
+      "native": {
+        "lower": "ꟛ"
+      },
+      "evidence": "A7DA;LATIN CAPITAL LETTER LAMBDA;Lu;0;L;;;;;N;;;;A7DB;"
+    },
+    {
+      "original": {
+        "codepoint": "A7DC",
+        "lower": "Ƛ"
+      },
+      "sha256": "299e218459577658d9c668e4c97b23dee4fe392fa7d76f54a06d46411b42abc1",
+      "native": {
+        "lower": "ƛ"
+      },
+      "evidence": "A7DC;LATIN CAPITAL LETTER LAMBDA WITH STROKE;Lu;0;L;;;;;N;;;;019B;"
+    },
+    {
+      "original": {
+        "codepoint": "10D50",
+        "lower": "𐵐"
+      },
+      "sha256": "4a1ccda7b0210593df60e7c2e92de667692391cb1052bb0751aefffa8d343d23",
+      "native": {
+        "lower": "𐵰"
+      },
+      "evidence": "10D50;GARAY CAPITAL LETTER A;Lu;0;R;;;;;N;;;;10D70;"
+    },
+    {
+      "original": {
+        "codepoint": "10D51",
+        "lower": "𐵑"
+      },
+      "sha256": "5cb0a1a5ea29d1925134a9b48df190b1b0d9494f25241ab692fe0f166eb6a4c7",
+      "native": {
+        "lower": "𐵱"
+      },
+      "evidence": "10D51;GARAY CAPITAL LETTER CA;Lu;0;R;;;;;N;;;;10D71;"
+    },
+    {
+      "original": {
+        "codepoint": "10D52",
+        "lower": "𐵒"
+      },
+      "sha256": "f56b588d27232316b9c892ed9337c9bc24c94029b6fda5bb18e50de8bce37cce",
+      "native": {
+        "lower": "𐵲"
+      },
+      "evidence": "10D52;GARAY CAPITAL LETTER MA;Lu;0;R;;;;;N;;;;10D72;"
+    },
+    {
+      "original": {
+        "codepoint": "10D53",
+        "lower": "𐵓"
+      },
+      "sha256": "764bb0cc95938ebecc9752f49c0d84fed70479d5213d3197b4cdd835fc467ecb",
+      "native": {
+        "lower": "𐵳"
+      },
+      "evidence": "10D53;GARAY CAPITAL LETTER KA;Lu;0;R;;;;;N;;;;10D73;"
+    },
+    {
+      "original": {
+        "codepoint": "10D54",
+        "lower": "𐵔"
+      },
+      "sha256": "f0699b51c15749dfce5535de9e51a55f5b325f6ec7d57741cee516619564bc61",
+      "native": {
+        "lower": "𐵴"
+      },
+      "evidence": "10D54;GARAY CAPITAL LETTER BA;Lu;0;R;;;;;N;;;;10D74;"
+    },
+    {
+      "original": {
+        "codepoint": "10D55",
+        "lower": "𐵕"
+      },
+      "sha256": "c2de3753fe6c0ddf3b67543fd8d5d57d53f88e5f4fc4c7aa1afbea58cf6f1b8c",
+      "native": {
+        "lower": "𐵵"
+      },
+      "evidence": "10D55;GARAY CAPITAL LETTER JA;Lu;0;R;;;;;N;;;;10D75;"
+    },
+    {
+      "original": {
+        "codepoint": "10D56",
+        "lower": "𐵖"
+      },
+      "sha256": "c2754dfeb1541712a6a51bee4c3cbceb36fdd7cb0c237f0c7893ab42d711e78e",
+      "native": {
+        "lower": "𐵶"
+      },
+      "evidence": "10D56;GARAY CAPITAL LETTER SA;Lu;0;R;;;;;N;;;;10D76;"
+    },
+    {
+      "original": {
+        "codepoint": "10D57",
+        "lower": "𐵗"
+      },
+      "sha256": "f7b62396dc92bae7b881cab495d2162cdb890b267142d7f148bed3f09a9e1aa9",
+      "native": {
+        "lower": "𐵷"
+      },
+      "evidence": "10D57;GARAY CAPITAL LETTER WA;Lu;0;R;;;;;N;;;;10D77;"
+    },
+    {
+      "original": {
+        "codepoint": "10D58",
+        "lower": "𐵘"
+      },
+      "sha256": "7658f653d90e888fca41534a116c884b26f1bc5921dde968c9c1016930c3dbd6",
+      "native": {
+        "lower": "𐵸"
+      },
+      "evidence": "10D58;GARAY CAPITAL LETTER LA;Lu;0;R;;;;;N;;;;10D78;"
+    },
+    {
+      "original": {
+        "codepoint": "10D59",
+        "lower": "𐵙"
+      },
+      "sha256": "f26d0e9b538a6f3856c75f9c2d192659f7acd5fc2ae6787c9fb0ae676a79b557",
+      "native": {
+        "lower": "𐵹"
+      },
+      "evidence": "10D59;GARAY CAPITAL LETTER GA;Lu;0;R;;;;;N;;;;10D79;"
+    },
+    {
+      "original": {
+        "codepoint": "10D5A",
+        "lower": "𐵚"
+      },
+      "sha256": "569800f21ec6936791f0cd0084291d5940e7d98c93ca6599f7e0061f0a93b5c5",
+      "native": {
+        "lower": "𐵺"
+      },
+      "evidence": "10D5A;GARAY CAPITAL LETTER DA;Lu;0;R;;;;;N;;;;10D7A;"
+    },
+    {
+      "original": {
+        "codepoint": "10D5B",
+        "lower": "𐵛"
+      },
+      "sha256": "eec031d1361a6643627186d6bae7d9503cdbdfd3eee9a5ce1b1f4d28cfe59071",
+      "native": {
+        "lower": "𐵻"
+      },
+      "evidence": "10D5B;GARAY CAPITAL LETTER XA;Lu;0;R;;;;;N;;;;10D7B;"
+    },
+    {
+      "original": {
+        "codepoint": "10D5C",
+        "lower": "𐵜"
+      },
+      "sha256": "eb6f8f00864af5842281956025dacfe6896fa85e9280b9653ba857c752dc218f",
+      "native": {
+        "lower": "𐵼"
+      },
+      "evidence": "10D5C;GARAY CAPITAL LETTER YA;Lu;0;R;;;;;N;;;;10D7C;"
+    },
+    {
+      "original": {
+        "codepoint": "10D5D",
+        "lower": "𐵝"
+      },
+      "sha256": "c1f03727f7425b5500df185d6a78e253ce1a8319b0e7c85364750164a1351c33",
+      "native": {
+        "lower": "𐵽"
+      },
+      "evidence": "10D5D;GARAY CAPITAL LETTER TA;Lu;0;R;;;;;N;;;;10D7D;"
+    },
+    {
+      "original": {
+        "codepoint": "10D5E",
+        "lower": "𐵞"
+      },
+      "sha256": "ac66f99fba64f7215172739ed6fe2ba0d63bf0e621a86872303ed9a803050741",
+      "native": {
+        "lower": "𐵾"
+      },
+      "evidence": "10D5E;GARAY CAPITAL LETTER RA;Lu;0;R;;;;;N;;;;10D7E;"
+    },
+    {
+      "original": {
+        "codepoint": "10D5F",
+        "lower": "𐵟"
+      },
+      "sha256": "87104e35adc8ea4c696003e79887bebfdefe53193e07efeaecf2f94ee9be929d",
+      "native": {
+        "lower": "𐵿"
+      },
+      "evidence": "10D5F;GARAY CAPITAL LETTER NYA;Lu;0;R;;;;;N;;;;10D7F;"
+    },
+    {
+      "original": {
+        "codepoint": "10D60",
+        "lower": "𐵠"
+      },
+      "sha256": "b1c3ce7ccadd8d5f542371212badd5e0bf3a200224a5fc64b99f6042ffaa97d3",
+      "native": {
+        "lower": "𐶀"
+      },
+      "evidence": "10D60;GARAY CAPITAL LETTER FA;Lu;0;R;;;;;N;;;;10D80;"
+    },
+    {
+      "original": {
+        "codepoint": "10D61",
+        "lower": "𐵡"
+      },
+      "sha256": "53972a08d8cd457ff089dbf63072f89dde592f013b84e6ac52c3130a169b63f8",
+      "native": {
+        "lower": "𐶁"
+      },
+      "evidence": "10D61;GARAY CAPITAL LETTER NA;Lu;0;R;;;;;N;;;;10D81;"
+    },
+    {
+      "original": {
+        "codepoint": "10D62",
+        "lower": "𐵢"
+      },
+      "sha256": "5178098147d3703b7132d50a00b5681bb9e2afb33e4bc6c161c5c51835f25187",
+      "native": {
+        "lower": "𐶂"
+      },
+      "evidence": "10D62;GARAY CAPITAL LETTER PA;Lu;0;R;;;;;N;;;;10D82;"
+    },
+    {
+      "original": {
+        "codepoint": "10D63",
+        "lower": "𐵣"
+      },
+      "sha256": "6ea3ac845818e0a95db07b38e2fa953c6aff1a26e2f9d03c91ba739e47433913",
+      "native": {
+        "lower": "𐶃"
+      },
+      "evidence": "10D63;GARAY CAPITAL LETTER HA;Lu;0;R;;;;;N;;;;10D83;"
+    },
+    {
+      "original": {
+        "codepoint": "10D64",
+        "lower": "𐵤"
+      },
+      "sha256": "40219e0a7db2faf5bf84496bdfc9c40c97f3fc7014a876e1dbebbf759a864457",
+      "native": {
+        "lower": "𐶄"
+      },
+      "evidence": "10D64;GARAY CAPITAL LETTER OLD KA;Lu;0;R;;;;;N;;;;10D84;"
+    },
+    {
+      "original": {
+        "codepoint": "10D65",
+        "lower": "𐵥"
+      },
+      "sha256": "7de37a1e0577ced741feb3288a4589650ff8b8313011ca95eef906042eccd935",
+      "native": {
+        "lower": "𐶅"
+      },
+      "evidence": "10D65;GARAY CAPITAL LETTER OLD NA;Lu;0;R;;;;;N;;;;10D85;"
+    },
+    {
+      "original": {
+        "codepoint": "16EA0",
+        "lower": "𖺠"
+      },
+      "sha256": "bb86ac58d5a36472def1b40cfd3f2befcd474d3197f8e2cbd0f78631552b6889",
+      "native": {
+        "lower": "𖺻"
+      },
+      "evidence": "16EA0;BERIA ERFE CAPITAL LETTER ARKAB;Lu;0;L;;;;;N;;;;16EBB;"
+    },
+    {
+      "original": {
+        "codepoint": "16EA1",
+        "lower": "𖺡"
+      },
+      "sha256": "5fa2fd456afba0b77f69d916943c50c3079155058f5000a0a3d321b9c443a71b",
+      "native": {
+        "lower": "𖺼"
+      },
+      "evidence": "16EA1;BERIA ERFE CAPITAL LETTER BASIGNA;Lu;0;L;;;;;N;;;;16EBC;"
+    },
+    {
+      "original": {
+        "codepoint": "16EA2",
+        "lower": "𖺢"
+      },
+      "sha256": "bae34a1c594b166e574507dea5af78ef31b73cedc6cf235c715624d2b2d52318",
+      "native": {
+        "lower": "𖺽"
+      },
+      "evidence": "16EA2;BERIA ERFE CAPITAL LETTER DARBAI;Lu;0;L;;;;;N;;;;16EBD;"
+    },
+    {
+      "original": {
+        "codepoint": "16EA3",
+        "lower": "𖺣"
+      },
+      "sha256": "6aa21d55930f2328ecf78a758a8d3a05f22f8ab9ea3a3a7eab489c66e56c4668",
+      "native": {
+        "lower": "𖺾"
+      },
+      "evidence": "16EA3;BERIA ERFE CAPITAL LETTER EH;Lu;0;L;;;;;N;;;;16EBE;"
+    },
+    {
+      "original": {
+        "codepoint": "16EA4",
+        "lower": "𖺤"
+      },
+      "sha256": "f75088e81ba6b60bab2ead452ea755e17cc2ad3ff8f014cb873a2628b07c823a",
+      "native": {
+        "lower": "𖺿"
+      },
+      "evidence": "16EA4;BERIA ERFE CAPITAL LETTER FITKO;Lu;0;L;;;;;N;;;;16EBF;"
+    },
+    {
+      "original": {
+        "codepoint": "16EA5",
+        "lower": "𖺥"
+      },
+      "sha256": "87bb70316aa5b1ff766119a15ae2b969110ea4a3a12951a65eba3c1d646c5932",
+      "native": {
+        "lower": "𖻀"
+      },
+      "evidence": "16EA5;BERIA ERFE CAPITAL LETTER GOWAY;Lu;0;L;;;;;N;;;;16EC0;"
+    },
+    {
+      "original": {
+        "codepoint": "16EA6",
+        "lower": "𖺦"
+      },
+      "sha256": "ce372663e6134f1edc034816fffc6564ae2cfc9341a2747abb6190ef3bd39447",
+      "native": {
+        "lower": "𖻁"
+      },
+      "evidence": "16EA6;BERIA ERFE CAPITAL LETTER HIRDEABO;Lu;0;L;;;;;N;;;;16EC1;"
+    },
+    {
+      "original": {
+        "codepoint": "16EA7",
+        "lower": "𖺧"
+      },
+      "sha256": "7e344ee8e3fc2fd74faaebb7eb8489b0b4b06331d061c54890dcfa440a168894",
+      "native": {
+        "lower": "𖻂"
+      },
+      "evidence": "16EA7;BERIA ERFE CAPITAL LETTER I;Lu;0;L;;;;;N;;;;16EC2;"
+    },
+    {
+      "original": {
+        "codepoint": "16EA8",
+        "lower": "𖺨"
+      },
+      "sha256": "745fa8c9b83bad6aba939ab2c3cb4c742f01cf0e1be49233be28308b446d9631",
+      "native": {
+        "lower": "𖻃"
+      },
+      "evidence": "16EA8;BERIA ERFE CAPITAL LETTER DJAI;Lu;0;L;;;;;N;;;;16EC3;"
+    },
+    {
+      "original": {
+        "codepoint": "16EA9",
+        "lower": "𖺩"
+      },
+      "sha256": "508e095652070852dfcdda9fe744528c77ce63b737b2b3a9b62e3ddc9bfbba59",
+      "native": {
+        "lower": "𖻄"
+      },
+      "evidence": "16EA9;BERIA ERFE CAPITAL LETTER KOBO;Lu;0;L;;;;;N;;;;16EC4;"
+    },
+    {
+      "original": {
+        "codepoint": "16EAA",
+        "lower": "𖺪"
+      },
+      "sha256": "c735131c44d17a9154610493f1e2e5290761c9a908b0fec685d7fba7241cc3de",
+      "native": {
+        "lower": "𖻅"
+      },
+      "evidence": "16EAA;BERIA ERFE CAPITAL LETTER LAKKO;Lu;0;L;;;;;N;;;;16EC5;"
+    },
+    {
+      "original": {
+        "codepoint": "16EAB",
+        "lower": "𖺫"
+      },
+      "sha256": "57eede4e5c63eec69435520594526a9df2a73e0ba63b179c697892956940e74a",
+      "native": {
+        "lower": "𖻆"
+      },
+      "evidence": "16EAB;BERIA ERFE CAPITAL LETTER MERI;Lu;0;L;;;;;N;;;;16EC6;"
+    },
+    {
+      "original": {
+        "codepoint": "16EAC",
+        "lower": "𖺬"
+      },
+      "sha256": "b6afe315e9414413a046f4d70a95e7b4c83424a3c1171961d863cda0aff89348",
+      "native": {
+        "lower": "𖻇"
+      },
+      "evidence": "16EAC;BERIA ERFE CAPITAL LETTER NINI;Lu;0;L;;;;;N;;;;16EC7;"
+    },
+    {
+      "original": {
+        "codepoint": "16EAD",
+        "lower": "𖺭"
+      },
+      "sha256": "360f3b125e1207b202c07799d5b7805881759d5de3beaabb1a886c08e84f18d0",
+      "native": {
+        "lower": "𖻈"
+      },
+      "evidence": "16EAD;BERIA ERFE CAPITAL LETTER GNA;Lu;0;L;;;;;N;;;;16EC8;"
+    },
+    {
+      "original": {
+        "codepoint": "16EAE",
+        "lower": "𖺮"
+      },
+      "sha256": "d175ed851c6f45f344a38c9fddf715ca03c52ab972ecd76295156b39fde6c700",
+      "native": {
+        "lower": "𖻉"
+      },
+      "evidence": "16EAE;BERIA ERFE CAPITAL LETTER NGAY;Lu;0;L;;;;;N;;;;16EC9;"
+    },
+    {
+      "original": {
+        "codepoint": "16EAF",
+        "lower": "𖺯"
+      },
+      "sha256": "7229c663d31243224a7a43e87e5ea0548f0fd398a5d94184980984ec5e757c54",
+      "native": {
+        "lower": "𖻊"
+      },
+      "evidence": "16EAF;BERIA ERFE CAPITAL LETTER OI;Lu;0;L;;;;;N;;;;16ECA;"
+    },
+    {
+      "original": {
+        "codepoint": "16EB0",
+        "lower": "𖺰"
+      },
+      "sha256": "1a879e24582d310ea3fa3547a5fef3a24486ed81cc3e55369798d0889e479b14",
+      "native": {
+        "lower": "𖻋"
+      },
+      "evidence": "16EB0;BERIA ERFE CAPITAL LETTER PI;Lu;0;L;;;;;N;;;;16ECB;"
+    },
+    {
+      "original": {
+        "codepoint": "16EB1",
+        "lower": "𖺱"
+      },
+      "sha256": "27cedb8305863f6a07cfb26c0556364659a7343b6b3f8b47c3625986511de759",
+      "native": {
+        "lower": "𖻌"
+      },
+      "evidence": "16EB1;BERIA ERFE CAPITAL LETTER ERIGO;Lu;0;L;;;;;N;;;;16ECC;"
+    },
+    {
+      "original": {
+        "codepoint": "16EB2",
+        "lower": "𖺲"
+      },
+      "sha256": "dfa42abe1b497b89452ae004f96e436ab17c593259f8400db9c6fc46d7ec797d",
+      "native": {
+        "lower": "𖻍"
+      },
+      "evidence": "16EB2;BERIA ERFE CAPITAL LETTER ERIGO TAMURA;Lu;0;L;;;;;N;;;;16ECD;"
+    },
+    {
+      "original": {
+        "codepoint": "16EB3",
+        "lower": "𖺳"
+      },
+      "sha256": "978815aa905825b508b5d73944da296931098d51cebdc6a72caac80b4d1b3dc6",
+      "native": {
+        "lower": "𖻎"
+      },
+      "evidence": "16EB3;BERIA ERFE CAPITAL LETTER SERI;Lu;0;L;;;;;N;;;;16ECE;"
+    },
+    {
+      "original": {
+        "codepoint": "16EB4",
+        "lower": "𖺴"
+      },
+      "sha256": "0626a98d084a63855def9569c202ceca6e1a77529ce1e6a952d2a77d10a61f6b",
+      "native": {
+        "lower": "𖻏"
+      },
+      "evidence": "16EB4;BERIA ERFE CAPITAL LETTER SHEP;Lu;0;L;;;;;N;;;;16ECF;"
+    },
+    {
+      "original": {
+        "codepoint": "16EB5",
+        "lower": "𖺵"
+      },
+      "sha256": "b602a371e921411daac61372505ee923e664e1f63a4fe92510ab66106eb85326",
+      "native": {
+        "lower": "𖻐"
+      },
+      "evidence": "16EB5;BERIA ERFE CAPITAL LETTER TATASOUE;Lu;0;L;;;;;N;;;;16ED0;"
+    },
+    {
+      "original": {
+        "codepoint": "16EB6",
+        "lower": "𖺶"
+      },
+      "sha256": "3a5d51f83bee559566072fe368d2673c31278492426ac52d6256a54dcf5b4e18",
+      "native": {
+        "lower": "𖻑"
+      },
+      "evidence": "16EB6;BERIA ERFE CAPITAL LETTER UI;Lu;0;L;;;;;N;;;;16ED1;"
+    },
+    {
+      "original": {
+        "codepoint": "16EB7",
+        "lower": "𖺷"
+      },
+      "sha256": "96b86eef072cf41ad8d7b7e9c43a4c6ccc085e8d70dcc03130d601a507f7c38f",
+      "native": {
+        "lower": "𖻒"
+      },
+      "evidence": "16EB7;BERIA ERFE CAPITAL LETTER WASSE;Lu;0;L;;;;;N;;;;16ED2;"
+    },
+    {
+      "original": {
+        "codepoint": "16EB8",
+        "lower": "𖺸"
+      },
+      "sha256": "efdf7364261d34e8b80da0ad50d04e8bf7061d28e9983c689364f8a30627c8ee",
+      "native": {
+        "lower": "𖻓"
+      },
+      "evidence": "16EB8;BERIA ERFE CAPITAL LETTER AY;Lu;0;L;;;;;N;;;;16ED3;"
+    }
+  ],
+  "sigma": [
+    {
+      "original": {
+        "codepoint": "0295",
+        "after": true,
+        "before": true
+      },
+      "sha256": "57aa75dd250948c4b09834efe15e81626986f8cfbd51a98d965d0e0c70c9fa9f",
+      "native": {
+        "after": false,
+        "before": false
+      },
+      "evidence": [
+        "UnicodeData: 0295;LATIN LETTER PHARYNGEAL VOICED FRICATIVE;Lo;0;L;;;;;N;LATIN LETTER REVERSED GLOTTAL STOP;;;;"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "0897",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c23a1edd054bb0f951d22f051d234f0ee70b9acc5e1d4e9bf33b75a1d98540d3",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "0897..089F    ; Case_Ignorable # Mn   [9] ARABIC PEPET..ARABIC HALF MADDA OVER MADDA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "0ECE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "4aa7aba1731cf178373c5173ef3f8c1244aafaa4132c18c1e2d78da5d95b5770",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "0EC8..0ECE    ; Case_Ignorable # Mn   [7] LAO TONE MAI EK..LAO YAMAKKAN"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1ACF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "66a2a6879bb46fed2bcecc2c8217be603fd5f30c9e3a7d630adbf28136f135d0",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AD0",
+        "after": false,
+        "before": false
+      },
+      "sha256": "1d7aa57862b7f8d23003fa188bc06667bc048fd09a3437d00f92582bd604a91c",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AD1",
+        "after": false,
+        "before": false
+      },
+      "sha256": "44d515be796d7010534b8963537584eaa467d6fd614594a7eedc2bb2ef7bfde1",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AD2",
+        "after": false,
+        "before": false
+      },
+      "sha256": "58d68925d731aac04742b4744fe5b1a86ce96ccbc09c0767b72161d6cb46a002",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AD3",
+        "after": false,
+        "before": false
+      },
+      "sha256": "7064d70fbed90f5bd3d77b23e9ab0064b191d9e902990ed4a4ca1841329b478b",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AD4",
+        "after": false,
+        "before": false
+      },
+      "sha256": "4ceb66a6e0cfb16873b9d54a4be47da7860d4dc3306c07fac74f52101736e3a6",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AD5",
+        "after": false,
+        "before": false
+      },
+      "sha256": "2ffe72483cfef593958aa5f4c266c0441b7c7e76b9255eaf46e204e9b9a10267",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AD6",
+        "after": false,
+        "before": false
+      },
+      "sha256": "56bdcde4a95f0a208f12f2a279e69605408feb62a23b1583fdd215f67ddcc779",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AD7",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c8f63671bcb58341a305901f4e7a4b1a4c7b7d75995c453b31b50f11b7100515",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AD8",
+        "after": false,
+        "before": false
+      },
+      "sha256": "9cce0d54e6941e7f54c63efb77d6800e00923cfd5405dc89a3bd1dc7a9d2ed67",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AD9",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e8d62bf3c80ae3ec836e57cf54661d0ea6399f6f792bbf69c9bae10f5e97e1c5",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1ADA",
+        "after": false,
+        "before": false
+      },
+      "sha256": "f9b54b8d345713019f03c5be099de5e5d5d207a765d379a8df3ebead9d957c92",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1ADB",
+        "after": false,
+        "before": false
+      },
+      "sha256": "60adcb5d1e02220693bda0ab07a6fb0fc4a0929b546ba03914a9919b784a0007",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1ADC",
+        "after": false,
+        "before": false
+      },
+      "sha256": "941becdf677e24e45f81a2ff80e99fcc90f976e4909f8c048c470d26478f1b92",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1ADD",
+        "after": false,
+        "before": false
+      },
+      "sha256": "96bbcdb721a9bf9ced6ea46f9009c774cfb05a7ddd6d16745bd2066ecd6efe59",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1ABF..1ADD    ; Case_Ignorable # Mn  [31] COMBINING LATIN SMALL LETTER W BELOW..COMBINING DOT-AND-RING BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AE0",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e9b29e76ce51f0fa11fee67f98f30b72aacb1fe6c33d83431ff1814eb5e8645a",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AE1",
+        "after": false,
+        "before": false
+      },
+      "sha256": "859c93cdf1bf8c7455a74fb1e6c49527bbadde8f1e8bd5c05da1552a4f004fda",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AE2",
+        "after": false,
+        "before": false
+      },
+      "sha256": "eb8055afe0f67b27b46f45b5d321d4c2d21b2d541ee4cd4030fb76c802422699",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AE3",
+        "after": false,
+        "before": false
+      },
+      "sha256": "313e135f64a472102466dc6814887aa9ad02bc7db293f3b469161bcbd02d15c7",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AE4",
+        "after": false,
+        "before": false
+      },
+      "sha256": "2f60079009063011b90c1fa1326fbc695f641558fa6c77ca75339c9e04c024be",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AE5",
+        "after": false,
+        "before": false
+      },
+      "sha256": "da60ea4124f5e22d6f51e21bdbbed9093293968f6f0b719a3500931778278664",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AE6",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ece5fed7e280b6e662ade165d29e33b3c89bac880d6159a05afb7c03c592d71b",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AE7",
+        "after": false,
+        "before": false
+      },
+      "sha256": "1fce835aada059dc1aaca772812477f4f59d7dd4a364ed5462a20940b84864d3",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AE8",
+        "after": false,
+        "before": false
+      },
+      "sha256": "4397531c68d7b5b225f8a55d3478060c39f76e3156cbc5ff29e7ca22a97b1824",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AE9",
+        "after": false,
+        "before": false
+      },
+      "sha256": "3841af1600f1804232a63feae5a52c4622ee85811e12e69e6ee8af9cdfeb9eb9",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AEA",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0437ba28661adda1e23199ac2de9c1a46a5f9332bca9ee03c2520ab5d5bfc9a6",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1AEB",
+        "after": false,
+        "before": false
+      },
+      "sha256": "9070dc0fb5d0bdfc5b7ea26cb979c8bb9ebd5f119d6614a5a46129d8d7269c99",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1AE0..1AEB    ; Case_Ignorable # Mn  [12] COMBINING LEFT TACK ABOVE..COMBINING DOUBLE RIGHTWARDS ARROW ABOVE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1C89",
+        "after": false,
+        "before": false
+      },
+      "sha256": "614a5f78ce720e94e3c2f0b5947ce74e81e1da19dfbfbf22acbfd441ecbcb323",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "1C80..1C8A    ; Cased # L&  [11] CYRILLIC SMALL LETTER ROUNDED VE..CYRILLIC SMALL LETTER TJE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1C8A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "dc190f0127a1daf785b8b81061d0e7974725d9b7d20d60ef7ec6675d2d73c3f6",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "1C80..1C8A    ; Cased # L&  [11] CYRILLIC SMALL LETTER ROUNDED VE..CYRILLIC SMALL LETTER TJE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7CB",
+        "after": false,
+        "before": false
+      },
+      "sha256": "3b740e73b3fa2a08dadd1acf634f3191664957ede896e352482dd959529da308",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "A790..A7DC    ; Cased # L&  [77] LATIN CAPITAL LETTER N WITH DESCENDER..LATIN CAPITAL LETTER LAMBDA WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7CC",
+        "after": false,
+        "before": false
+      },
+      "sha256": "60f70c675dcb361eeb90a2a2d9d4fe62e59a51b0fccc6d7a6bbab1171caff955",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "A790..A7DC    ; Cased # L&  [77] LATIN CAPITAL LETTER N WITH DESCENDER..LATIN CAPITAL LETTER LAMBDA WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7CD",
+        "after": false,
+        "before": false
+      },
+      "sha256": "8572266f0ac79f1faa100321a02c2a9f0fe89120e1dcbc9cee2659a15ddcd4c9",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "A790..A7DC    ; Cased # L&  [77] LATIN CAPITAL LETTER N WITH DESCENDER..LATIN CAPITAL LETTER LAMBDA WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7CE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ab2d196ef65c99eb63171ab0cf4c684d57145f9a7fbc945011c20465c0c513a3",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "A790..A7DC    ; Cased # L&  [77] LATIN CAPITAL LETTER N WITH DESCENDER..LATIN CAPITAL LETTER LAMBDA WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7CF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d4395d1b66dcc1b6937eef7cd1c926e1336304057c148146051b4d8af42e948d",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "A790..A7DC    ; Cased # L&  [77] LATIN CAPITAL LETTER N WITH DESCENDER..LATIN CAPITAL LETTER LAMBDA WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7D2",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a0dda02ed41b00c35dfeedbc8c6c6ee1551f0ef6b552e4cb70ed4abd24e0c220",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "A790..A7DC    ; Cased # L&  [77] LATIN CAPITAL LETTER N WITH DESCENDER..LATIN CAPITAL LETTER LAMBDA WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7D4",
+        "after": false,
+        "before": false
+      },
+      "sha256": "05486aa5a89b0c21a09310ebaee97501410d593f2dca338080736d102e0b99d8",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "A790..A7DC    ; Cased # L&  [77] LATIN CAPITAL LETTER N WITH DESCENDER..LATIN CAPITAL LETTER LAMBDA WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7DA",
+        "after": false,
+        "before": false
+      },
+      "sha256": "2c6f8eb99b79b9acf561f828b437ba3d1335b03570d41826eb3c19f157a64783",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "A790..A7DC    ; Cased # L&  [77] LATIN CAPITAL LETTER N WITH DESCENDER..LATIN CAPITAL LETTER LAMBDA WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7DB",
+        "after": false,
+        "before": false
+      },
+      "sha256": "02b003cd2ca2d92b5c7ebcf84fa0c7dc72a57afd61c25be9b8ed4ebbcd898bfb",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "A790..A7DC    ; Cased # L&  [77] LATIN CAPITAL LETTER N WITH DESCENDER..LATIN CAPITAL LETTER LAMBDA WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7DC",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a38c4c69ab7258dca920a46285e245c4a1354093f1ca78d8d4668260776a907e",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "A790..A7DC    ; Cased # L&  [77] LATIN CAPITAL LETTER N WITH DESCENDER..LATIN CAPITAL LETTER LAMBDA WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "A7F1",
+        "after": false,
+        "before": false
+      },
+      "sha256": "9d85cc9acdac06b3dbb85882799db1da47fd07f13bc841ef514ae4ae03de2932",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "A7F1..A7F4    ; Cased # Lm   [4] MODIFIER LETTER CAPITAL S..MODIFIER LETTER CAPITAL Q",
+        "A7F1..A7F4    ; Case_Ignorable # Lm   [4] MODIFIER LETTER CAPITAL S..MODIFIER LETTER CAPITAL Q"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D4E",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e7ab25469149cdeb8a71ec81b5254df055cd2685bc41adff476024eea7a78423",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10D4E         ; Case_Ignorable # Lm       GARAY VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D50",
+        "after": false,
+        "before": false
+      },
+      "sha256": "8f2acba7ace274cbc1762a0b47e7873aba15f80f2cc94b4d7e102a05663b610b",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D51",
+        "after": false,
+        "before": false
+      },
+      "sha256": "7bc48ad6b24d7431c0247f845807cd1656bcbff6b55f68a371004ce495d3e177",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D52",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d0b4738976c41df18fd56d1636b76e51e9e66df6c0e0cea13dcfc8b6510b3369",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D53",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6a57b5ef91cefaf1712b6c4e61ae29897ecca9e7a11ff7b460dbf82969beed22",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D54",
+        "after": false,
+        "before": false
+      },
+      "sha256": "fb909e9eaf1517ac89004f570d36add11188392189e360c42dda4e750ed5727b",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D55",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ba2c6eb7ed4eb43608c5d44fd6b6d74ed15bef39ddf6cb8b0857d9218e1b05ac",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D56",
+        "after": false,
+        "before": false
+      },
+      "sha256": "14c038b139caa554f2f62491840b1b4bef1eb06c5cf708cf5c9a22e1ff2e10f2",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D57",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e0390215058a7228b53e277273fea2fd196aeb3bc07fd1e9a543d0619d763356",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D58",
+        "after": false,
+        "before": false
+      },
+      "sha256": "2457703904aefe5e2e8ef0cdb02a9fdaf3fbd91ecb67e13b20b028331c74998e",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D59",
+        "after": false,
+        "before": false
+      },
+      "sha256": "67a37017774d04d2fadf44e10ab1f66abda051bfc33c2c1cf9786df46eb1b814",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D5A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ac5c50934f27a340601b72fe57c528e14cc97b593dcc2e6533c86d4c201964f3",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D5B",
+        "after": false,
+        "before": false
+      },
+      "sha256": "65917b85de244c3796b162a8074d59b597d674e077e97c9f97ba962715687fbc",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D5C",
+        "after": false,
+        "before": false
+      },
+      "sha256": "bab4233649e6f311175e8ecbdad3fead3253bf3559f0b2dcf0172b4d91aa3b80",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D5D",
+        "after": false,
+        "before": false
+      },
+      "sha256": "3b69058005d3946e865809b141c929de11ebc8104809e52d8be7ee7b223a3ff5",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D5E",
+        "after": false,
+        "before": false
+      },
+      "sha256": "81417471992402d13281d584b7d0b0746dab9179f715fbc5ca70e5806e0cdb0f",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D5F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "12e87daa0eec3e23ebf61be4b9977c881144fdb155ac880fe565bf15c62406e0",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D60",
+        "after": false,
+        "before": false
+      },
+      "sha256": "7853c2d99eaf107408c144d56a5f593ec9ec0cc3f6b0bfd677f36ceac4f92a1e",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D61",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c1e73bfc8c4e57bf8b3e55fe0f83f2166ad842bb6e773f5eaf9d21d72347b5ad",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D62",
+        "after": false,
+        "before": false
+      },
+      "sha256": "feff7eb647a17a92a1628d877d8555a9f739da95317a174037703b1e0cc8c805",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D63",
+        "after": false,
+        "before": false
+      },
+      "sha256": "b14a73e093e1dbfddabcdfbfe65a17131d5e7cec0da86ba4b598372eb82fee85",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D64",
+        "after": false,
+        "before": false
+      },
+      "sha256": "19ba1d158e4928a677cb82267e99841303ccf8921d9af16a48817140b8ef5d78",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D65",
+        "after": false,
+        "before": false
+      },
+      "sha256": "17a6d69a190f9abb7043579bf485fde483c6d3fd041cdc5b269228a2c96f89ed",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D50..10D65  ; Cased # L&  [22] GARAY CAPITAL LETTER A..GARAY CAPITAL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D69",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ed629f9be1c17383ac87203f9e81edfd861fa449a7f9bb136cb346284f4920de",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10D69..10D6D  ; Case_Ignorable # Mn   [5] GARAY VOWEL SIGN E..GARAY CONSONANT NASALIZATION MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D6A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e3f8f5b713cd919d0de6e57eee51247cd10c84fcdd9b3ee9f25d4d2ea847a62f",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10D69..10D6D  ; Case_Ignorable # Mn   [5] GARAY VOWEL SIGN E..GARAY CONSONANT NASALIZATION MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D6B",
+        "after": false,
+        "before": false
+      },
+      "sha256": "aa5bd8954710f85b7992d9f83053e2d99bc85c1a1ce6cc4571722ecfa5239f62",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10D69..10D6D  ; Case_Ignorable # Mn   [5] GARAY VOWEL SIGN E..GARAY CONSONANT NASALIZATION MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D6C",
+        "after": false,
+        "before": false
+      },
+      "sha256": "07b077d1a15c17bde45b052dd6e53d5a1441b79ac1b49357deb0e7b40e6d026e",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10D69..10D6D  ; Case_Ignorable # Mn   [5] GARAY VOWEL SIGN E..GARAY CONSONANT NASALIZATION MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D6D",
+        "after": false,
+        "before": false
+      },
+      "sha256": "895114762422d3935fb90820be9601f028728ea35cbc1d13001e5558b008e467",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10D69..10D6D  ; Case_Ignorable # Mn   [5] GARAY VOWEL SIGN E..GARAY CONSONANT NASALIZATION MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D6F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "fafd3cfdc7a3426768b5a58d2cd3f950fd1839a0b59343e5d3e6821f401a516b",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10D6F         ; Case_Ignorable # Lm       GARAY REDUPLICATION MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D70",
+        "after": false,
+        "before": false
+      },
+      "sha256": "7388c3749ec7e0475c96fdcd9049500e0fd4a3ee74f76c10cf71f67925c39723",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D71",
+        "after": false,
+        "before": false
+      },
+      "sha256": "5978e8284cdb9d789c506ec5a781dc1eee3e46c8f223db7c4ffa57cd4fc8f4d9",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D72",
+        "after": false,
+        "before": false
+      },
+      "sha256": "bb248ffacf33a12782630bcc3cd0a4963fde176cc4786c061a2fe79d05e5657f",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D73",
+        "after": false,
+        "before": false
+      },
+      "sha256": "70cd4e60135f9fb9e39a079758439b966a244f0f8d6ab994cc30950178162ca3",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D74",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e54447202f2a006a0314ccef976e2697aa6d3a71b81722d1d0b033288a2a3d23",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D75",
+        "after": false,
+        "before": false
+      },
+      "sha256": "4172152d325ef883b0cea160c07a0b4219bab0bc9ebea31b1b87c8d36aefcc86",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D76",
+        "after": false,
+        "before": false
+      },
+      "sha256": "592abb59a6af9c6d217dfe4d212e57422d2fa538c7a48b762c03ecad30ba3408",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D77",
+        "after": false,
+        "before": false
+      },
+      "sha256": "11eb27aa65b540afda7def2684797388e615b0585f7259701c52f739d2d807c2",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D78",
+        "after": false,
+        "before": false
+      },
+      "sha256": "b53744c926fe6217aa5d3b742e46eecdfb501a4b8e5e50adf7db50c3787edccd",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D79",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0f7086d16ad1e4a19c61a5c4ac84c816696b852db7e1d7533275b8c0321860c2",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D7A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "aecfdb8176b433a007c18bd5706373c5f709b877679bccbd241f592ff4bdcf4e",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D7B",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c895c8e81c7acc248c8e72231e3c834b26728d8826e7aac60ed532b8086aef27",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D7C",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0cd0e19bafa2d11782d9861b617d28d15a96496fcc25fedd24bfea19ed0b9e14",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D7D",
+        "after": false,
+        "before": false
+      },
+      "sha256": "08d502a8d257bbf33c7a83e0d8eba88e4a186d6c1858b4417032a2b0d3026b3f",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D7E",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6f9030fdf0083e49c6da96b8e78b4e3162ebf6c0a67c262c6de030b57c2bf04c",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D7F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "57282664ad2641eed37b307ee14f38ce4e325cf99c49fcfdab6d72af28b199a7",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D80",
+        "after": false,
+        "before": false
+      },
+      "sha256": "804245742570d9b2cee23be8094e272ce6d8995c75277d32f797341d139a68a3",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D81",
+        "after": false,
+        "before": false
+      },
+      "sha256": "fc7cfbe674addbd1688fc967cd8ce67a00a3470a588dd5fcf52c87cd8a78e752",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D82",
+        "after": false,
+        "before": false
+      },
+      "sha256": "44e27a499e2bf8a725739fb080f333fc4fc26e22109aafd54170a127c4bfa725",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D83",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0a9f4a23efc4642c57243f148851ca7e9663900114fe0e0d6bb2d32858719cab",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D84",
+        "after": false,
+        "before": false
+      },
+      "sha256": "72a21604c521567b649694ff1e8d06eac080f742962ba86febe7aaff006e3688",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10D85",
+        "after": false,
+        "before": false
+      },
+      "sha256": "42aeccb313e9fad6ff1258763c5cc01bf0128afe0acc6acea45a4ef7862201e7",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "10D70..10D85  ; Cased # L&  [22] GARAY SMALL LETTER A..GARAY SMALL LETTER OLD NA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10EC5",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6418769ad3dcbb49ef612995cce33a7a5228085667520992e5388960b9d33f6e",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10EC5         ; Case_Ignorable # Lm       ARABIC SMALL YEH BARREE WITH TWO DOTS BELOW"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10EFA",
+        "after": false,
+        "before": false
+      },
+      "sha256": "7ad639d5eedb5f21ed2a77c8bc8f66bbada4b943a431bd8558ce9bb79b770bf8",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10EFA..10EFF  ; Case_Ignorable # Mn   [6] ARABIC DOUBLE VERTICAL BAR BELOW..ARABIC SMALL LOW WORD MADDA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10EFB",
+        "after": false,
+        "before": false
+      },
+      "sha256": "32532b34eed7eb66f77077a95df9b40272b64f48a08aff58eee28332c8853156",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10EFA..10EFF  ; Case_Ignorable # Mn   [6] ARABIC DOUBLE VERTICAL BAR BELOW..ARABIC SMALL LOW WORD MADDA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10EFC",
+        "after": false,
+        "before": false
+      },
+      "sha256": "85d3a05ea28b07012cebc5d625b30ded8d0afb45527b3f8283fcc14ffcda12ae",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10EFA..10EFF  ; Case_Ignorable # Mn   [6] ARABIC DOUBLE VERTICAL BAR BELOW..ARABIC SMALL LOW WORD MADDA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10EFD",
+        "after": false,
+        "before": false
+      },
+      "sha256": "2a6bf431af40d5c5370d46db58f5f59d7a75dce0cf260c24942a33ff1c3198dc",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10EFA..10EFF  ; Case_Ignorable # Mn   [6] ARABIC DOUBLE VERTICAL BAR BELOW..ARABIC SMALL LOW WORD MADDA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10EFE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "f5116c3651912d47985b370517829b0755ccb4fb08652b826ab23f18e54076c8",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10EFA..10EFF  ; Case_Ignorable # Mn   [6] ARABIC DOUBLE VERTICAL BAR BELOW..ARABIC SMALL LOW WORD MADDA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "10EFF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "06ac03433a9d1bb6ae1013a98d743f0aa006a166bd6a29c590189afe46bf40b6",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "10EFA..10EFF  ; Case_Ignorable # Mn   [6] ARABIC DOUBLE VERTICAL BAR BELOW..ARABIC SMALL LOW WORD MADDA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11241",
+        "after": false,
+        "before": false
+      },
+      "sha256": "51049b1cd3c10d6876abc2e6823543628e47a50d3372d4dc08f1b5b485096cdc",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11241         ; Case_Ignorable # Mn       KHOJKI VOWEL SIGN VOCALIC R"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113BB",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d72deb40a892bfa17057b4ebd094213fc1735b5a77870038274d3c334b82f10f",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113BB..113C0  ; Case_Ignorable # Mn   [6] TULU-TIGALARI VOWEL SIGN U..TULU-TIGALARI VOWEL SIGN VOCALIC LL"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113BC",
+        "after": false,
+        "before": false
+      },
+      "sha256": "322d58781caeb459d72972dfcc0e7eebb4a4b15a50a49188d14f912007a8859b",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113BB..113C0  ; Case_Ignorable # Mn   [6] TULU-TIGALARI VOWEL SIGN U..TULU-TIGALARI VOWEL SIGN VOCALIC LL"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113BD",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a08a900dff8d6ce23a47328d27eca7331bc1374a896c15eb345b3201baa633a0",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113BB..113C0  ; Case_Ignorable # Mn   [6] TULU-TIGALARI VOWEL SIGN U..TULU-TIGALARI VOWEL SIGN VOCALIC LL"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113BE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "210ac1fed5949ed1e4f955255f1dbe6e64845341f48800f6565d9b8e8fa71372",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113BB..113C0  ; Case_Ignorable # Mn   [6] TULU-TIGALARI VOWEL SIGN U..TULU-TIGALARI VOWEL SIGN VOCALIC LL"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113BF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "bbea256d09e4ca9f073acc99d39902dadc801cfd66e3c02cf8bac82e6a28d35c",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113BB..113C0  ; Case_Ignorable # Mn   [6] TULU-TIGALARI VOWEL SIGN U..TULU-TIGALARI VOWEL SIGN VOCALIC LL"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113C0",
+        "after": false,
+        "before": false
+      },
+      "sha256": "4f2cca0f0867ca7ad2a7a85c57c1fff477f64efb960512540c84dfcd66fd6d3e",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113BB..113C0  ; Case_Ignorable # Mn   [6] TULU-TIGALARI VOWEL SIGN U..TULU-TIGALARI VOWEL SIGN VOCALIC LL"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113CE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d77c11f746b4447dc97badd9397b0ba2d61a647e7fbc2f6282dc112d291a2904",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113CE         ; Case_Ignorable # Mn       TULU-TIGALARI SIGN VIRAMA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113D0",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e0b9e26d7d57e8e055ab07a5d04ea06fd77d1063e234e0d6936d8abc5163fb33",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113D0         ; Case_Ignorable # Mn       TULU-TIGALARI CONJOINER"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113D2",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d51d3c963921f8c678671a1cc4898cfe5553b6a6c0d69a7a7ef38b025f53b278",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113D2         ; Case_Ignorable # Mn       TULU-TIGALARI GEMINATION MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113E1",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c3e34ad7f64e7009e8fd3d30679d402d7a3cb4a31d2b4ca2de752827299dc56b",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113E1..113E2  ; Case_Ignorable # Mn   [2] TULU-TIGALARI VEDIC TONE SVARITA..TULU-TIGALARI VEDIC TONE ANUDATTA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "113E2",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d105d78372576fc617ff45cbf6db8f902e06beb30e9f8fb0b21047dc220b61f4",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "113E1..113E2  ; Case_Ignorable # Mn   [2] TULU-TIGALARI VEDIC TONE SVARITA..TULU-TIGALARI VEDIC TONE ANUDATTA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1171E",
+        "after": false,
+        "before": true
+      },
+      "sha256": "f75e6b2864654682a22f77807d3cbc37556a0f76ada2ae4a8f39ad2b7df3ee31",
+      "native": {
+        "after": false,
+        "before": false
+      },
+      "evidence": [
+        "UnicodeData: 1171E;AHOM CONSONANT SIGN MEDIAL RA;Mc;0;L;;;;;N;;;;;"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11B60",
+        "after": false,
+        "before": false
+      },
+      "sha256": "79805d92090bb1e7aca60c1f006a629e68cf027347245f34c8843648e76db89d",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11B60         ; Case_Ignorable # Mn       SHARADA VOWEL SIGN OE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11B62",
+        "after": false,
+        "before": false
+      },
+      "sha256": "b58bb87d362e09403ada95f5eca72fa8c70820af077594c7244bfbf956ed891b",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11B62..11B64  ; Case_Ignorable # Mn   [3] SHARADA VOWEL SIGN UE..SHARADA VOWEL SIGN SHORT E"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11B63",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a95e56f68dfd3217aa9b3dc661be288c0b5bbae51bc73a15ceb682ffbcc2e909",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11B62..11B64  ; Case_Ignorable # Mn   [3] SHARADA VOWEL SIGN UE..SHARADA VOWEL SIGN SHORT E"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11B64",
+        "after": false,
+        "before": false
+      },
+      "sha256": "69506525429d82c7dc3d70a325081bcd2e01d01cd8fbf2bcc3d548823679ef8a",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11B62..11B64  ; Case_Ignorable # Mn   [3] SHARADA VOWEL SIGN UE..SHARADA VOWEL SIGN SHORT E"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11B66",
+        "after": false,
+        "before": false
+      },
+      "sha256": "aa5248d352efdf615820b922faa9e98954cd93b2782011a87c77471c6b910eab",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11B66         ; Case_Ignorable # Mn       SHARADA VOWEL SIGN CANDRA E"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11DD9",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ac736f20eae25220a037794bd49b32743539658f30074762c6e51d07511daf73",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11DD9         ; Case_Ignorable # Lm       TOLONG SIKI SIGN SELA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11F00",
+        "after": false,
+        "before": false
+      },
+      "sha256": "993e2c86c9f5db15a704250fe5ace9cc6e8e3b400f2335b3d0459fb1bb08c265",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11F00..11F01  ; Case_Ignorable # Mn   [2] KAWI SIGN CANDRABINDU..KAWI SIGN ANUSVARA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11F01",
+        "after": false,
+        "before": false
+      },
+      "sha256": "bdcbd904a769c01593ebec86961e7de19a89881787060eb9b3e282182a171c19",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11F00..11F01  ; Case_Ignorable # Mn   [2] KAWI SIGN CANDRABINDU..KAWI SIGN ANUSVARA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11F36",
+        "after": false,
+        "before": false
+      },
+      "sha256": "8688a867eb7cfb74cadb41e0c77c51b2b5d76e3a370276033cdbc1229709f752",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11F36..11F3A  ; Case_Ignorable # Mn   [5] KAWI VOWEL SIGN I..KAWI VOWEL SIGN VOCALIC R"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11F37",
+        "after": false,
+        "before": false
+      },
+      "sha256": "80aff37d0afd8b3e55306d903d11048d126a37e95d189e1097489b32cb749d02",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11F36..11F3A  ; Case_Ignorable # Mn   [5] KAWI VOWEL SIGN I..KAWI VOWEL SIGN VOCALIC R"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11F38",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6ba394392646b560a44e5ba505350aff3e227f10795c4387aa24d46899f7ddee",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11F36..11F3A  ; Case_Ignorable # Mn   [5] KAWI VOWEL SIGN I..KAWI VOWEL SIGN VOCALIC R"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11F39",
+        "after": false,
+        "before": false
+      },
+      "sha256": "af4773fb264b905e57abee504f07fd633ff9463ed794d47f730c5a4dbcf78067",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11F36..11F3A  ; Case_Ignorable # Mn   [5] KAWI VOWEL SIGN I..KAWI VOWEL SIGN VOCALIC R"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11F3A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "31cbc18dd676a70472064513b2ea31bae8c23eb6bf14a8f4fc1fa7a58c62a195",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11F36..11F3A  ; Case_Ignorable # Mn   [5] KAWI VOWEL SIGN I..KAWI VOWEL SIGN VOCALIC R"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11F40",
+        "after": false,
+        "before": false
+      },
+      "sha256": "3a5b5fc367e0257f46218a1bd0128db604202e09ac49ccb1dce10dcce11399cf",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11F40         ; Case_Ignorable # Mn       KAWI VOWEL SIGN EU"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11F42",
+        "after": false,
+        "before": false
+      },
+      "sha256": "2b288ebf3848de0a092aee8e5e1e47b4b0bc4376c7959f029fe0158d7185f98c",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11F42         ; Case_Ignorable # Mn       KAWI CONJOINER"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "11F5A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "38d8cb2fe27f1e92565c1a0531b77ade5b6017ff9b7e533d79ea61f8f3cca7c3",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "11F5A         ; Case_Ignorable # Mn       KAWI SIGN NUKTA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13439",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e1c16798bd8e0c08722ee512e4d50e14c842c14595c1f540d558fc6bb7f749ea",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13430..1343F  ; Case_Ignorable # Cf  [16] EGYPTIAN HIEROGLYPH VERTICAL JOINER..EGYPTIAN HIEROGLYPH END WALLED ENCLOSURE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1343A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c97ea9bbf3b6857a68cea99ab98ee3b04d7c4ba72530063de85a85cdcab94c93",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13430..1343F  ; Case_Ignorable # Cf  [16] EGYPTIAN HIEROGLYPH VERTICAL JOINER..EGYPTIAN HIEROGLYPH END WALLED ENCLOSURE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1343B",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d3e701cca03e34a773ddca2d1b420f0b69fec2a3795537161f5a020cb197c085",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13430..1343F  ; Case_Ignorable # Cf  [16] EGYPTIAN HIEROGLYPH VERTICAL JOINER..EGYPTIAN HIEROGLYPH END WALLED ENCLOSURE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1343C",
+        "after": false,
+        "before": false
+      },
+      "sha256": "35b52e3f6e60df45b863694cb3af499bf84f3509088a442e06a9adba92d1891d",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13430..1343F  ; Case_Ignorable # Cf  [16] EGYPTIAN HIEROGLYPH VERTICAL JOINER..EGYPTIAN HIEROGLYPH END WALLED ENCLOSURE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1343D",
+        "after": false,
+        "before": false
+      },
+      "sha256": "f1110b7221ef0ca7535a8f72a021f7dd8d2868ff06f7f249c6e43ed1d9b9ff4c",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13430..1343F  ; Case_Ignorable # Cf  [16] EGYPTIAN HIEROGLYPH VERTICAL JOINER..EGYPTIAN HIEROGLYPH END WALLED ENCLOSURE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1343E",
+        "after": false,
+        "before": false
+      },
+      "sha256": "b23ce54663cec365f18ffd5063637b3dfa383219ece0f07082974d6e13bb413b",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13430..1343F  ; Case_Ignorable # Cf  [16] EGYPTIAN HIEROGLYPH VERTICAL JOINER..EGYPTIAN HIEROGLYPH END WALLED ENCLOSURE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1343F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "664c08e5a4553f9328e2201e6707c97bebcf304a523c575f4bf62ecb0974c614",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13430..1343F  ; Case_Ignorable # Cf  [16] EGYPTIAN HIEROGLYPH VERTICAL JOINER..EGYPTIAN HIEROGLYPH END WALLED ENCLOSURE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13440",
+        "after": false,
+        "before": false
+      },
+      "sha256": "7ed9b76101500730fe551c6f4c6a6cd40e6efe4a7a80a3ebd05f4d59b46fc7da",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13440         ; Case_Ignorable # Mn       EGYPTIAN HIEROGLYPH MIRROR HORIZONTALLY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13447",
+        "after": false,
+        "before": false
+      },
+      "sha256": "40bf1973ac45e2b176112b462c90e3105653f3570c8d3f37890d0318e38797e2",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13448",
+        "after": false,
+        "before": false
+      },
+      "sha256": "50f3340ca508e8ce63baeff419d28afc9d02232a4bb56cb9f42f54fe7fa22b55",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13449",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a83c572b3c1328625c5658716d79853ec23443ddd9416055c4c8ba0342ffa838",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1344A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6f854c25054472d4565f2acfd86694ede29ca6cfbe3f097832a4e64a38e167ff",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1344B",
+        "after": false,
+        "before": false
+      },
+      "sha256": "66c5cb06b66341e09dc79d02e59931b4d40ccfd226d4c4a0263d4b7468792d46",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1344C",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ba399e44636c902363c4b2841e6d2cc57ed91c9beb01eeba86e57a3b901fea4c",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1344D",
+        "after": false,
+        "before": false
+      },
+      "sha256": "41bf107b093ccb90e7c0e7e10f4bac678e793eb69da955d16953f4dadb4de30c",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1344E",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e038c9b378870e59eb78d6d4e2d7cbbeec7ff2a7cb69fd7aadffbd811a284a88",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1344F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "b0d60837cdb7a795deb61a7932ac178e61167a4e7c99bb522d5f249689fd25d8",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13450",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6cfcdb727632cb0347b0f24fa5f825238c42253fcde9e747d0b5fb172a3f683d",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13451",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c557be1bf223ab60c0c8a8cbb0b904fd1a613e8afa26e8e1f27fdea92d54612d",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13452",
+        "after": false,
+        "before": false
+      },
+      "sha256": "dcd5e610a8d4d1f04e5dfed503b1696fa380fddb6b8e57b6e63b3a80b7a157ab",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13453",
+        "after": false,
+        "before": false
+      },
+      "sha256": "1629dba440aedf1b6ef79eb6ee7da69132df3388eba8a4b1a1ad02e978419602",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13454",
+        "after": false,
+        "before": false
+      },
+      "sha256": "effd3501fe135aabb149ac04626fa393501e7d73f5788975fabf3f379462d461",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "13455",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c4cd78114addad64bbe65a81f0df310c5b7c3d7c42d2f5fb5ad810ed0931791d",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "13447..13455  ; Case_Ignorable # Mn  [15] EGYPTIAN HIEROGLYPH MODIFIER DAMAGED AT TOP START..EGYPTIAN HIEROGLYPH MODIFIER DAMAGED"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1611E",
+        "after": false,
+        "before": false
+      },
+      "sha256": "1aadbc34f6baf6aba4a2305706a404eb558fef30f97ab66b0b4ec35fbb885dec",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1611F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "bd6c8591817f4149b8b5e45e0ebedc40555ba472f4e4a0e730933be275c55adf",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16120",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e2ad1fbc8aa5e57401b9dccee0d45b6a5f54fbd3b5775839b8f22fa05b7bf190",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16121",
+        "after": false,
+        "before": false
+      },
+      "sha256": "8d5cd994ebafe4f99e0c46ef3f517ef694ba8ef2bfbcfc34c7aa0d90edacbb71",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16122",
+        "after": false,
+        "before": false
+      },
+      "sha256": "4c0c454cf9a2a010c2ceb0134df7850cbc73bd145df622c0fd5f3b1a683acb03",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16123",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c9b0dba37394d9931ff1f8195388852ee4480d332bacb5f121b35d61557829b3",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16124",
+        "after": false,
+        "before": false
+      },
+      "sha256": "4a912b5cc9fccf992d51d737068b8972ae9925d4d29259251d339de1e5f8536c",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16125",
+        "after": false,
+        "before": false
+      },
+      "sha256": "703760b08521fd4cdf27ceb4b485644e10632d5bb21f65a03ec6225f365a02c4",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16126",
+        "after": false,
+        "before": false
+      },
+      "sha256": "9162c23be835f141c4fd03bc9a8b56db301cbcd018a2e97632e7069a72e5420d",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16127",
+        "after": false,
+        "before": false
+      },
+      "sha256": "88775e573ec31aaa6f05dae805ba38be70e804f15249237e2b91df987a998e31",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16128",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d43a28ce16403aa87756a2cca6f99d28d6246839bb756f31ee9291177e8aea9b",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16129",
+        "after": false,
+        "before": false
+      },
+      "sha256": "2f4848ff77bc96bafada0855260ba3fb057700347da96213fbff331fd3ea0ab5",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1611E..16129  ; Case_Ignorable # Mn  [12] GURUNG KHEMA VOWEL SIGN AA..GURUNG KHEMA VOWEL LENGTH MARK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1612D",
+        "after": false,
+        "before": false
+      },
+      "sha256": "b57ce003234ac4c2fbbaa55da682e3b4668adfe85a4b7651fdc1f219bc87c2f3",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1612D..1612F  ; Case_Ignorable # Mn   [3] GURUNG KHEMA SIGN ANUSVARA..GURUNG KHEMA SIGN THOLHOMA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1612E",
+        "after": false,
+        "before": false
+      },
+      "sha256": "58872ba8867d09bddc546db0cff13a14ea4d6bc2b224e306dee2f53bbc9b6e5f",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1612D..1612F  ; Case_Ignorable # Mn   [3] GURUNG KHEMA SIGN ANUSVARA..GURUNG KHEMA SIGN THOLHOMA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1612F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "8cdcfe443ad69a65fe1b2f0950b43e1bc4eb40927fa82bff4d5bba759d16a654",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1612D..1612F  ; Case_Ignorable # Mn   [3] GURUNG KHEMA SIGN ANUSVARA..GURUNG KHEMA SIGN THOLHOMA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16D40",
+        "after": false,
+        "before": false
+      },
+      "sha256": "fa614f5d34cea6ca103a574ba8d1fd34e37ff1602912bc7dba76a7a27daa7536",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "16D40..16D42  ; Case_Ignorable # Lm   [3] KIRAT RAI SIGN ANUSVARA..KIRAT RAI SIGN VISARGA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16D41",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c5f1bf540c04d4b670774036b9556761c623f42f0b703f173e7b2f3555922275",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "16D40..16D42  ; Case_Ignorable # Lm   [3] KIRAT RAI SIGN ANUSVARA..KIRAT RAI SIGN VISARGA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16D42",
+        "after": false,
+        "before": false
+      },
+      "sha256": "1f6ee57f1657a34b5175b82f87c5ec189339e0c7ed54bab0b489d050993d7cf1",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "16D40..16D42  ; Case_Ignorable # Lm   [3] KIRAT RAI SIGN ANUSVARA..KIRAT RAI SIGN VISARGA"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16D6B",
+        "after": false,
+        "before": false
+      },
+      "sha256": "35bcc948470f8caba5f93ca3ab30eee91cb7e0dd1e322e98c3e9843be78610ea",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "16D6B..16D6C  ; Case_Ignorable # Lm   [2] KIRAT RAI SIGN VIRAMA..KIRAT RAI SIGN SAAT"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16D6C",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e009043085e94fd274ca017947add449e5d7a15d519a1764b500868cd79a9a98",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "16D6B..16D6C  ; Case_Ignorable # Lm   [2] KIRAT RAI SIGN VIRAMA..KIRAT RAI SIGN SAAT"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EA0",
+        "after": false,
+        "before": false
+      },
+      "sha256": "74730dc46464354a22b78ba3c3e575d22360509ba1d4b521b898acefdbe3bb42",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EA1",
+        "after": false,
+        "before": false
+      },
+      "sha256": "21b35b3df514936e70c3be9588ab34118b934bcf2f9cd67655b94d07ba975f79",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EA2",
+        "after": false,
+        "before": false
+      },
+      "sha256": "fa459aa33b71103b9cf8550a19d7f35d62f1a7b3a804ad639838f5cc5bf8387b",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EA3",
+        "after": false,
+        "before": false
+      },
+      "sha256": "57651114b936265e5ef331025a34cd84074b0da75c18dcdebf05f08fed6f2469",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EA4",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0abb343aeea726b078d6741db0588f0ebf56020cf791e47113ad0be50556c92e",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EA5",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a4ac7c6b2f3dbe6d4279ee22a068930727efe201e38b7590ccf2e55cab37c000",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EA6",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c37b0dfac5216d9ecc484ef7dc178669b3e33efdc7f05e4cd49b64eb5eff8c79",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EA7",
+        "after": false,
+        "before": false
+      },
+      "sha256": "11af5749da3853886ce6d5b9ca70ebc3ebd716f1bdcc0f5f18925aeb284b47a2",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EA8",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c45d3153a646427587eef4bd9f1645dd0c942f74b99f118a4c7593de9e72ddba",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EA9",
+        "after": false,
+        "before": false
+      },
+      "sha256": "eab37a4d34f1ec73ed1c802eab4bd30c2a4caecd449b2bcf19dd61d6bfc41c9b",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EAA",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0de497749435f286b3295d3d7b83096177a041afea53a4818ce45e4164b09417",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EAB",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0d5301510563eac11089589daa9571941a7e3ce8a462fb7bcdc5622a8949b51e",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EAC",
+        "after": false,
+        "before": false
+      },
+      "sha256": "fe5a49fdbe6f97b4dc691a33c01da11c6fbd77f77b015c91bee91fe3c98ed88f",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EAD",
+        "after": false,
+        "before": false
+      },
+      "sha256": "950d3a3d796cfdb3c248245275ae407eda0e4883ad8907932ae12aaba4053b7d",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EAE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e9c24bd998969e61d89588996757103d75000000c335310ed0ed9ed57bb10f2a",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EAF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e2028eb3e25e27935a7839681483740d76cb55bb0a5bf2eb66ec1a1de92d5f04",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EB0",
+        "after": false,
+        "before": false
+      },
+      "sha256": "fb76216d962b57628b8b879d6288f9fc55a1b568a9d78d53b07d5b51bd57c1d3",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EB1",
+        "after": false,
+        "before": false
+      },
+      "sha256": "97cc259dae3f1dbe5f192bb7b4a270ab730619492b996377ae6806a04323c2bf",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EB2",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d4328a8a80ac94ae8c383458e343b5d5cebff1528a740db36ef0a4b3f1c32bc8",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EB3",
+        "after": false,
+        "before": false
+      },
+      "sha256": "075a78c444ca1bb98fab3e10315e71ce58f03450cf2a96bde814ccc7ecdd4cb1",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EB4",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6ccef02bc6d8bed366bf70b4f91c6dc8d99bd51a20b194069c0e60b4cbe86300",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EB5",
+        "after": false,
+        "before": false
+      },
+      "sha256": "7e98d4714e865b0f75a7131a72e9748fcd8cdbb6c95613dc90c94340fde067d9",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EB6",
+        "after": false,
+        "before": false
+      },
+      "sha256": "1341be35ea1ec6c112d231e98742dd09d5d34868cc149156466ab99909f5f90a",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EB7",
+        "after": false,
+        "before": false
+      },
+      "sha256": "57cdd050dea1392c8c9497631651dff8f61688940515a41eff822ccf7d5b8216",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EB8",
+        "after": false,
+        "before": false
+      },
+      "sha256": "820c303ebefada2c9ad110dda592cc366b1c8e0a5b19026d55a9e8002ed4ec6d",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EA0..16EB8  ; Cased # L&  [25] BERIA ERFE CAPITAL LETTER ARKAB..BERIA ERFE CAPITAL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EBB",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ff5d856084700cb074707f6c18c4e98957009e1797fba11a7f9693e7219411e6",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EBC",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d21f0936af99b39223c60e5768e907847c3a392b24195c3ede6edf23a5d452c4",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EBD",
+        "after": false,
+        "before": false
+      },
+      "sha256": "69aafcc6a2ae4a5d55ffa5687dd6b938f7ebad759e952d5dd4d345562a6091f4",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EBE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "b2badd2cc7b547dda51af3b9c9fea028be3edd7cc4d989cfea08af27664a21aa",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EBF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "df9feca10af5ab274ca76fe6cb6089f94b54b13e8ed02328571392ac45fbe42f",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EC0",
+        "after": false,
+        "before": false
+      },
+      "sha256": "625f0d7a1d5ef5f44728b3b7b3332220cd6acd73dc2cdc6ac258378de312dc93",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EC1",
+        "after": false,
+        "before": false
+      },
+      "sha256": "2e0dc985afa651e2ef2f4e28ddbf26ed2032bfa05f16e608e1187c949c465331",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EC2",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0114d445927d2741329fde55052e282909b0e3694037489d8223f2d0c29c1447",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EC3",
+        "after": false,
+        "before": false
+      },
+      "sha256": "f08a9551bcf8e032a5c5d34281e15b6862afe59f748ec8ca1ad796db4529038b",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EC4",
+        "after": false,
+        "before": false
+      },
+      "sha256": "47e283526953190ecf24cfbfde2ef1b38ed475e6be62c2680aa54a51cc24cd79",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EC5",
+        "after": false,
+        "before": false
+      },
+      "sha256": "46d270fbd2123ec3be9fe6b35cbb40f8cc87fac070f235a156d30b648f0b2030",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EC6",
+        "after": false,
+        "before": false
+      },
+      "sha256": "51cfc38116da429a494b2f5cb928f03184d724651ce2fc197ec0a607fbd98e4e",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EC7",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d5980da1be24e5cd800362f04543a2f335ce023371c7d42294ec82dfaa83d8d4",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EC8",
+        "after": false,
+        "before": false
+      },
+      "sha256": "f82feb1109a16aed91a474fc837e8cdf721b702c855f3ab38f37bd9a12527e6c",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16EC9",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0a102de1257cff9d2be6222be552efbf7d311c3ddc65f1577120b3cddc6872a9",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16ECA",
+        "after": false,
+        "before": false
+      },
+      "sha256": "26861892106664db90401bede1080ca126e7ed9c9a9dc59d3c852bbab9601bad",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16ECB",
+        "after": false,
+        "before": false
+      },
+      "sha256": "10272e9b7343d7ee746f3c19431abacd15346af08d7ac56e8471d0743f499b2f",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16ECC",
+        "after": false,
+        "before": false
+      },
+      "sha256": "870f428367a8e98cfb02d988321ed8b5b14969d9d0b333e5f458096fd3df5391",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16ECD",
+        "after": false,
+        "before": false
+      },
+      "sha256": "43dc0b3bf7924d5339157f7446d03a12801ce72a1fe5f647dcfb8e79820ea389",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16ECE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "f11c4e53eb5cfedbbfccca016b6dd9069d1bd71136c21d2a508a356c7965ea41",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16ECF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "26fb50bff566084e01ad7eb1f5f56850f7e2f334c518653b46778078eccc7624",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16ED0",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a14cdbf7f1e4b3a7f207ed76568581fd3bf769d9f574044ea9e42a9c905a1ae2",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16ED1",
+        "after": false,
+        "before": false
+      },
+      "sha256": "72d20c40a55df30eda1c770051b78a0bc35dee6756a5da8e35fa8d6084c8001c",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16ED2",
+        "after": false,
+        "before": false
+      },
+      "sha256": "312bf29adcc0dde2d6af3f310b8f67e218171c02c71b959f74a21c99b2b2e0a2",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16ED3",
+        "after": false,
+        "before": false
+      },
+      "sha256": "3df68ead14f62fb82fe9b7561b675c50e868270172f5804174a9cc532c9866e9",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "16EBB..16ED3  ; Cased # L&  [25] BERIA ERFE SMALL LETTER ARKAB..BERIA ERFE SMALL LETTER AY"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16FF2",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0cf1590bba532b9814aa51ad817132e12e7fcd174669d921a83df1e9cf754a8e",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "16FF2..16FF3  ; Case_Ignorable # Lm   [2] CHINESE SMALL SIMPLIFIED ER..CHINESE SMALL TRADITIONAL ER"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "16FF3",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d7ccbe6aad0f02622c2a1d93b828be526e5266d98559e830aaa4f806a31539ea",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "16FF2..16FF3  ; Case_Ignorable # Lm   [2] CHINESE SMALL SIMPLIFIED ER..CHINESE SMALL TRADITIONAL ER"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1DF25",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c98528d903baab28576334450cad0a10e7bcfd76ef8ef668fb8653eadf20186c",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "1DF25..1DF2A  ; Cased # L&   [6] LATIN SMALL LETTER D WITH MID-HEIGHT LEFT HOOK..LATIN SMALL LETTER T WITH MID-HEIGHT LEFT HOOK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1DF26",
+        "after": false,
+        "before": false
+      },
+      "sha256": "39d51937c20f1f87b4e2914b66ebe02dd1a6cdaef258c5f5832df4367060ae10",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "1DF25..1DF2A  ; Cased # L&   [6] LATIN SMALL LETTER D WITH MID-HEIGHT LEFT HOOK..LATIN SMALL LETTER T WITH MID-HEIGHT LEFT HOOK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1DF27",
+        "after": false,
+        "before": false
+      },
+      "sha256": "395d5d3160e441411c45d1709128edddee8913feef82ec5e2dbecb0d63183a78",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "1DF25..1DF2A  ; Cased # L&   [6] LATIN SMALL LETTER D WITH MID-HEIGHT LEFT HOOK..LATIN SMALL LETTER T WITH MID-HEIGHT LEFT HOOK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1DF28",
+        "after": false,
+        "before": false
+      },
+      "sha256": "b3fdecbe528561b6b9719bb3f1a80dff69090c4124171614ef3cc559410b4756",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "1DF25..1DF2A  ; Cased # L&   [6] LATIN SMALL LETTER D WITH MID-HEIGHT LEFT HOOK..LATIN SMALL LETTER T WITH MID-HEIGHT LEFT HOOK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1DF29",
+        "after": false,
+        "before": false
+      },
+      "sha256": "aa10238d392ee7ab57f72f8b722adfcceb8c123fe391cf3ff135215fb5acb80b",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "1DF25..1DF2A  ; Cased # L&   [6] LATIN SMALL LETTER D WITH MID-HEIGHT LEFT HOOK..LATIN SMALL LETTER T WITH MID-HEIGHT LEFT HOOK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1DF2A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "60e34e110b2460170d95f6ebd324aaef1c750ae293c44fcbace94b9eec25d67a",
+      "native": {
+        "after": true,
+        "before": true
+      },
+      "evidence": [
+        "1DF25..1DF2A  ; Cased # L&   [6] LATIN SMALL LETTER D WITH MID-HEIGHT LEFT HOOK..LATIN SMALL LETTER T WITH MID-HEIGHT LEFT HOOK"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E030",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c15c25e23def021ebca4af9af395f292630ff665c7f73864d5a0acab66d4bde7",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E031",
+        "after": false,
+        "before": false
+      },
+      "sha256": "13b6d65c2b576f16f1205d6ce82d89218673fcbf2ee6a2f0e8020c422069ea52",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E032",
+        "after": false,
+        "before": false
+      },
+      "sha256": "90c8353250757e94a6ac3f22540632ed01b34e554e1b560fbc60d21608b360b4",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E033",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d4f9bccade3457cff9756a7f93eda0bd497df86673e0d96c7d1c3719b54c42c6",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E034",
+        "after": false,
+        "before": false
+      },
+      "sha256": "3a429ceaaf021f66e79cbdf20abd5d3ed50d4873baa160140977f7e67e440c20",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E035",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a13c27fdeff66b121ba222c8c3f9d1cd3ca732ec07e513478eee95fa7dc1cb96",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E036",
+        "after": false,
+        "before": false
+      },
+      "sha256": "35d9445cbcaf703d5d43aa25ce4b39fcb6a85c290273835a27cc0fc3ceea7f8f",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E037",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e4fceef088bb5535e22518b97be7850828cb499ce596e4f5d1ba0a135e6fbbce",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E038",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c935c3b916b5a02102663b0e6f5ccc569517ec1d3120b71cbc5f350470d67cdc",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E039",
+        "after": false,
+        "before": false
+      },
+      "sha256": "584760bceda4515b5539f2e6ebcbbb8aac8d4a2d82a9753b18d97dd42aca6817",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E03A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "27701be1f37a2e366598d192f70c7aadb714cfce62bcc1b8a1bb28ae5063cc6f",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E03B",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0f8c461d801e07fc8b9e846f79b1cd03648fcc410a87c912dfae8fec5eb2b9e5",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E03C",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ca4cf4d51c8066e65c89ed02c1ea0ec8c711a310ef67244ab6f5afd39d4c4acb",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E03D",
+        "after": false,
+        "before": false
+      },
+      "sha256": "b25c09cb4ada7ec0bf652b8a3c4be3cf548e62f85c061d726c7318baca04ac1c",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E03E",
+        "after": false,
+        "before": false
+      },
+      "sha256": "25651a114ebe06f2a1ad0b6b2a4a445d2554a0a5ac09cbf153297daa2b6b4ed9",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E03F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "f5e544d9dd40e7096ae1bfc5e660e5180cad19eb882175cc565e94fb9716a06e",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E040",
+        "after": false,
+        "before": false
+      },
+      "sha256": "2aa255fb0d8e8eae1edb5e0ef734af4c47e5f140a5b4cd9e6667073abc5acbb1",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E041",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6a0d8bfd5ddfcab57307ff5487e6e0c55b111bc309cc937d7092d9375958fdd4",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E042",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a972dd37ee0c3938151ce2f63076670142dd5b2e28c70d09cc2b5ca4d0a30fe4",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E043",
+        "after": false,
+        "before": false
+      },
+      "sha256": "91524a8c7950f6690c4ebc44a41ccdb07a6bdaa37cf52be6d9210b7b5b86e4b5",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E044",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a847719cc7b826ea88252fc7def4dd0d3d321a9d2b7db3dffa08f903b5101367",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E045",
+        "after": false,
+        "before": false
+      },
+      "sha256": "0bb491b47a4db9a9a28bfb5dc36037f33dba3c15224397293946cf9f0e1ceee2",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E046",
+        "after": false,
+        "before": false
+      },
+      "sha256": "77dc888ce621a62f0b7e37e2571c415c6f2a34c9a52e0499390c0e719853ffa6",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E047",
+        "after": false,
+        "before": false
+      },
+      "sha256": "4ef675a5832adba8675180c40df4389304ee27b1606a29fe68926c38ee408f7e",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E048",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ea00d4004586fc95968d6470cd216c10117f11d5d87a353b760af3ce0c96d263",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E049",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6ca4ca4ae7a0f1264b80bd2aac18a00a75be15a9452c74d36c439f36b66c9854",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E04A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "29172a4e0fad4b3bb6f34eb33e3ccec4c7408b5958a9a5f3971eebf0a3fae285",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E04B",
+        "after": false,
+        "before": false
+      },
+      "sha256": "00a90e6484a667ac990eb8be265a75dc82693c2cd4dc58862f63cdd53771a746",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E04C",
+        "after": false,
+        "before": false
+      },
+      "sha256": "9f8c46c6c6c3d09b4d12cca3f5f96e1700634df8b97e4baa651d3896b074f60b",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E04D",
+        "after": false,
+        "before": false
+      },
+      "sha256": "fd945eccdc93daaf2a0185766dc1c84bcb805bb3050650f5c1e8b887b105e0b5",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E04E",
+        "after": false,
+        "before": false
+      },
+      "sha256": "53e1beab0d70d88975e2193c21e77026c7561366f460affa244b413a1d08c8db",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E04F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "4c10efc6b55d50a12b4e632f458be9a172b6addff473b967f2b6bfbe3b3ba9e5",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E050",
+        "after": false,
+        "before": false
+      },
+      "sha256": "5880f862827269699ae5c3b5ae780d1423295da31d146a9e2c0291855b563961",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E051",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c76502e869fcc2c32b91461a9cb7cf01ff3e54819d7af6557d1f7ef6d8925988",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E052",
+        "after": false,
+        "before": false
+      },
+      "sha256": "68c98a117a3554da25b85caf74398b272c2dcc10b0e99c651436532aeccf62f4",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E053",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6ed931d835a9db7a335fb9cb6482eab2b0ae513804928d6ccc4506e8f88ecb34",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E054",
+        "after": false,
+        "before": false
+      },
+      "sha256": "02ed0687604cf5ce7c691dbc92103776aa57fa67221a679d064312f697a6130e",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E055",
+        "after": false,
+        "before": false
+      },
+      "sha256": "dc41e08c0b1360b4cba39643e785bfbe2d041b84d91d917cf6d245ecdc2675c3",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E056",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ed4b42be9447835401d541c72a33b6f7d9e6d85cc10379fc003c1501c6cf6b72",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E057",
+        "after": false,
+        "before": false
+      },
+      "sha256": "f79640b22711937d54a016a633b6af9a2054940a1cbc8a07a3cf858167810e58",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E058",
+        "after": false,
+        "before": false
+      },
+      "sha256": "3173e4f05dc93e93256d644a26c3601890969ccfaa41498c5ec37626c16788cd",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E059",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e13294ee18786b8efb452472d8802f10c01ac0f1edee88a1f951cde8240887d0",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E05A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "9ca3e6b9c6374317cde4df3446d2dca2b9931c1f50ff80fb336b3890b7340ad6",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E05B",
+        "after": false,
+        "before": false
+      },
+      "sha256": "c0ba8e61ff53e6347469c0ea28c888c3d511d131ba868994c8d29cd04337ce03",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E05C",
+        "after": false,
+        "before": false
+      },
+      "sha256": "85be13992bccbb673e46fe08533c4f09855f489874bbc92f9ef37f9e6869d7f0",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E05D",
+        "after": false,
+        "before": false
+      },
+      "sha256": "27c4d39fb7738c57da929184803b7274ba2b83d135b32ff649866892a91be40a",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E05E",
+        "after": false,
+        "before": false
+      },
+      "sha256": "d55e46f2bb9c725d235edf63c76daf733835ac3d13db7f1e943071fe6517e4bb",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E05F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "2fc4647f90555b8b09ae11f9445a96679126578ae33dae29a8ae5197b341e7eb",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E060",
+        "after": false,
+        "before": false
+      },
+      "sha256": "17080fba6381eee5544a93f907bb89e53e64b94b1a2a60671e47e480685f28af",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E061",
+        "after": false,
+        "before": false
+      },
+      "sha256": "5189d95019ab5af92d6a1c6ef8f6954ad76f0b77a91ac950b092058773ca3a72",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E062",
+        "after": false,
+        "before": false
+      },
+      "sha256": "bacfbcf97368efd094ca6056d812934d127603c695addbd7a17fe61d99ee6155",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E063",
+        "after": false,
+        "before": false
+      },
+      "sha256": "68f7735ea64d294281f77f4b2b8287dd55fc3029cfc35e8cc72115addf0ffc3d",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E064",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a9fc6d75702a92c9c3967a21344ed20c372d002592ce104f219192e41e6b0d17",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E065",
+        "after": false,
+        "before": false
+      },
+      "sha256": "282307a55939b017e46c1c65d680840d9b20160cd902c2c5b4abef00253770ef",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E066",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ff3f940f70ccf50de78dc83b148ddf7a8950499fd76df4c785ebafc93f4c759f",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E067",
+        "after": false,
+        "before": false
+      },
+      "sha256": "96b71c2b9bde00561e8df4df06ffcd9692b6cb836ee826ae4db70d53525c7ff2",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E068",
+        "after": false,
+        "before": false
+      },
+      "sha256": "f086ba19a1366915182d4ce9c45bd5f3602ed5ef4c489197e35bc877817a8ce9",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E069",
+        "after": false,
+        "before": false
+      },
+      "sha256": "1963cb722e7330816822e472fe43b718372784432d0f08eabb0b0096d3b4b3c4",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E06A",
+        "after": false,
+        "before": false
+      },
+      "sha256": "10cb056ed28a43fcb101199bfafd905f260dc5802cbd071f6965686952f272bc",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E06B",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6724bc12aaf790867a1ea82f839f41548f61d1d5e7849298668e804a17542e0f",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E06C",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ae3bd6f507c8ea37098b19c566fc5a6c28bd2263799866294aeb27b9a318185d",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E06D",
+        "after": false,
+        "before": false
+      },
+      "sha256": "9c2b5288b35b6aae27503c84277c4ed5f3f3ad06789bb3362fcd020aaba0554d",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E030..1E06D  ; Cased # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE",
+        "1E030..1E06D  ; Case_Ignorable # Lm  [62] MODIFIER LETTER CYRILLIC SMALL A..MODIFIER LETTER CYRILLIC SMALL STRAIGHT U WITH STROKE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E08F",
+        "after": false,
+        "before": false
+      },
+      "sha256": "a65438bf718bbc18aee5299ba105be13bbf7a50940c134a427583eb4e39f900e",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E08F         ; Case_Ignorable # Mn       COMBINING CYRILLIC SMALL LETTER BYELORUSSIAN-UKRAINIAN I"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E4EB",
+        "after": false,
+        "before": false
+      },
+      "sha256": "98c1903de4a4942b11bbcfcb3ba899deb26dffac39e498e346ddab5e1294a9c2",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E4EB         ; Case_Ignorable # Lm       NAG MUNDARI SIGN OJOD"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E4EC",
+        "after": false,
+        "before": false
+      },
+      "sha256": "39569786f8162e332271016d60d887527444092d26ad8cd9b1706f88f11334b3",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E4EC..1E4EF  ; Case_Ignorable # Mn   [4] NAG MUNDARI SIGN MUHOR..NAG MUNDARI SIGN SUTUH"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E4ED",
+        "after": false,
+        "before": false
+      },
+      "sha256": "197fb8379ff57b4a3e88b0f3a5d0dd60c559ef097b79fcbe482c799b786d7da4",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E4EC..1E4EF  ; Case_Ignorable # Mn   [4] NAG MUNDARI SIGN MUHOR..NAG MUNDARI SIGN SUTUH"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E4EE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "aa638b59dd203944b30eac9469bf66ea7ad5234ee72401f2c84e3c7320803c03",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E4EC..1E4EF  ; Case_Ignorable # Mn   [4] NAG MUNDARI SIGN MUHOR..NAG MUNDARI SIGN SUTUH"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E4EF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "42ca3ef87eb7dd2d1b61db714dd4f3f2eb83d3632f0e7b6d1e8d70fe6783ad11",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E4EC..1E4EF  ; Case_Ignorable # Mn   [4] NAG MUNDARI SIGN MUHOR..NAG MUNDARI SIGN SUTUH"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E5EE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "430c49b493cff98720366e6083756aab46af3ac953feca66bb1b598550f63c88",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E5EE..1E5EF  ; Case_Ignorable # Mn   [2] OL ONAL SIGN MU..OL ONAL SIGN IKIR"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E5EF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "e66682019968b397f867f75e9e1e2bf5f35dcc2c0893b12ef84fd43281f1da27",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E5EE..1E5EF  ; Case_Ignorable # Mn   [2] OL ONAL SIGN MU..OL ONAL SIGN IKIR"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E6E3",
+        "after": false,
+        "before": false
+      },
+      "sha256": "6736de8496fe118eaa2128becbb2d3c0879da1210283a4118898d2b7120dbc04",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E6E3         ; Case_Ignorable # Mn       TAI YO SIGN UE"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E6E6",
+        "after": false,
+        "before": false
+      },
+      "sha256": "513db7d5de6d987cff01fdc43489eaa0beed27c9ae0293c0e1913694ec49defa",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E6E6         ; Case_Ignorable # Mn       TAI YO SIGN AU"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E6EE",
+        "after": false,
+        "before": false
+      },
+      "sha256": "64356d98c1e70e933496f898fad5aab62134cb6ccc4fb373c2668de798881ac6",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E6EE..1E6EF  ; Case_Ignorable # Mn   [2] TAI YO SIGN AY..TAI YO SIGN ANG"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E6EF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "13e10f573c0de89fc527576a20500af333d2ba2d08a337211f9b9638a942a68a",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E6EE..1E6EF  ; Case_Ignorable # Mn   [2] TAI YO SIGN AY..TAI YO SIGN ANG"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E6F5",
+        "after": false,
+        "before": false
+      },
+      "sha256": "ea9faba410c514e197efcba1935796d19c809f5248d2f21307fce08f7531251a",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E6F5         ; Case_Ignorable # Mn       TAI YO SIGN OM"
+      ]
+    },
+    {
+      "original": {
+        "codepoint": "1E6FF",
+        "after": false,
+        "before": false
+      },
+      "sha256": "7b4278ff1c875c4429f39537ed565ef39f03b5df76ffb42a19f852cf3a1a1ad3",
+      "native": {
+        "after": false,
+        "before": true
+      },
+      "evidence": [
+        "1E6FF         ; Case_Ignorable # Lm       TAI YO XAM LAI"
+      ]
+    }
+  ]
+}

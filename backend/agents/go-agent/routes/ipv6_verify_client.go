@@ -257,14 +257,14 @@ func ipv6VerifyClientHandler(cfg *Config, w http.ResponseWriter, r *http.Request
 		RequestID     string `json:"request_id"`
 	}
 	if err := decodeIPv6Request(w, r, &request); err != nil {
-		JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "客户端验收参数无效"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "客户端验收参数无效"})
 		return
 	}
 	target, err := ipv6VerificationURL(request.TestURL)
 	range4, e4 := ipv6ClientRange(request.FakeIPv4Range, false)
 	range6, e6 := ipv6ClientRange(request.FakeIPv6Range, true)
 	if err != nil || e4 != nil || e6 != nil || !ipv6VerifyRequestID.MatchString(request.RequestID) || !ipv6VerifySupported(cfg) || target != nil && net.ParseIP(target.Hostname()) != nil {
-		JsonResponse(w, 400, map[string]interface{}{"success": false, "message": "需要原生 Linux Agent、域名形式的已保存验收地址及有效请求编号/网段"})
+		JsonResponse(w, 400, MessageResponse{Success: false, Message: "需要原生 Linux Agent、域名形式的已保存验收地址及有效请求编号/网段"})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 28*time.Second)

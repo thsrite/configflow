@@ -1,0 +1,124 @@
+[
+  {
+    "original": {
+      "method": "push",
+      "body": "null",
+      "status": 200,
+      "python_result": {
+        "success": false,
+        "message": "Invalid Agent response"
+      }
+    },
+    "sha256": "ab102240e6c690cd1ad3fd2938b9b6200e70112c4ac3eac217fa78b45a887bac"
+  },
+  {
+    "original": {
+      "method": "push",
+      "body": "[]",
+      "status": 200,
+      "python_result": {
+        "success": false,
+        "message": "Invalid Agent response"
+      }
+    },
+    "sha256": "88c992dd222a73e2ee20ce56d7625a242d2e339cd17cc78476dd68624cffb99d"
+  },
+  {
+    "original": {
+      "method": "push",
+      "body": "\"unexpected text\"",
+      "status": 200,
+      "python_result": {
+        "success": false,
+        "message": "Invalid Agent response"
+      }
+    },
+    "sha256": "be6b184f0c7da59a88d73924d8f039acfd1541b8aa4189b336970e512017a9d7"
+  },
+  {
+    "original": {
+      "method": "push",
+      "body": "17",
+      "status": 200,
+      "python_result": {
+        "success": false,
+        "message": "Invalid Agent response"
+      }
+    },
+    "sha256": "3eb9f7b88154fe002d18cf39814d7946b7d0b3cda19c3768a9becd6525004e2a"
+  },
+  {
+    "original": {
+      "method": "push",
+      "body": "upstream service unavailable\npassword=do-not-display",
+      "status": 200,
+      "python_result": {
+        "success": false,
+        "message": "Invalid Agent response",
+        "error_details": "upstream service unavailable\npassword=[REDACTED]"
+      }
+    },
+    "sha256": "2111b1b7bf7312c0b03f2d97e167cf7b658659253919cbf33a8c2522f4c4dabc"
+  },
+  {
+    "original": {
+      "method": "restart",
+      "body": "null",
+      "status": 200,
+      "python_result": {
+        "success": false,
+        "message": "Invalid Agent response"
+      }
+    },
+    "sha256": "01db37bec535bfb272e1c1063deb4210fe3b614d765f681f9e89ee4a90d4e5f3"
+  },
+  {
+    "original": {
+      "method": "restart",
+      "body": "[]",
+      "status": 200,
+      "python_result": {
+        "success": false,
+        "message": "Invalid Agent response"
+      }
+    },
+    "sha256": "5183aca95bd395d3e6668e02ba0603cd3354ebfd2f6bfb9782b73e8d135b5772"
+  },
+  {
+    "original": {
+      "method": "restart",
+      "body": "\"unexpected text\"",
+      "status": 200,
+      "python_result": {
+        "success": false,
+        "message": "Invalid Agent response"
+      }
+    },
+    "sha256": "7356a3a7af73a5bb0099bb3c7e394057a039cb2fafca77fed565dbbb15c9e928"
+  },
+  {
+    "original": {
+      "method": "restart",
+      "body": "17",
+      "status": 200,
+      "python_result": {
+        "success": false,
+        "message": "Invalid Agent response"
+      }
+    },
+    "sha256": "3102bcc60f25c40748fb48d2f4d641455a0ef4dd817c425daa9c9e6de6e557a5"
+  },
+  {
+    "original": {
+      "method": "restart",
+      "body": "upstream service unavailable\npassword=do-not-display",
+      "status": 200,
+      "python_result": {
+        "success": false,
+        "message": "Invalid Agent response",
+        "error_details": "upstream service unavailable\npassword=[REDACTED]"
+      }
+    },
+    "sha256": "4db494958aaeec281fab82cec25939e0c7c5ecdf32bec54c0636df26df265232"
+  }
+]

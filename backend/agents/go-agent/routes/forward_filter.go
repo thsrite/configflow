@@ -59,7 +59,7 @@ func forwardFilterTarget(cfg *Config) (netfilter.Target, *netfilter.Result) {
 		return netfilter.Target{}, &result
 	}
 	data, err := os.ReadFile(cfg.ConfigPath)
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err == nil {
 		err = yaml.Unmarshal(data, &doc)
 	}
@@ -71,13 +71,13 @@ func forwardFilterTarget(cfg *Config) (netfilter.Target, *netfilter.Result) {
 		result := forwardFilterNotApplicable("linux_gateway")
 		return netfilter.Target{}, &result
 	}
-	tun, _ := doc["tun"].(map[string]interface{})
+	tun, _ := doc["tun"].(map[string]any)
 	if tun["enable"] != true || tun["auto-route"] != true {
 		result := forwardFilterNotApplicable("no_full_tun")
 		return netfilter.Target{}, &result
 	}
 	for _, key := range []string{"route-address", "route-address-set", "inet4-route-address"} {
-		if entries, ok := tun[key].([]interface{}); ok && len(entries) > 0 {
+		if entries, ok := tun[key].([]any); ok && len(entries) > 0 {
 			result := forwardFilterNotApplicable("route_restricted")
 			return netfilter.Target{}, &result
 		}
@@ -127,7 +127,10 @@ func forwardFilterStatus(cfg *Config) netfilter.Result {
 	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
 	done := make(chan netfilter.Result, 1)
-	go func() { done <- forwardFilterInspect(ctx, target) }()
+	// Read the replaceable inspector now: the goroutine may outlive this call
+	// (a hung inspection) and must not read the variable afterwards.
+	inspect := forwardFilterInspect
+	go func() { done <- inspect(ctx, target) }()
 	var result netfilter.Result
 	select {
 	case result = <-done:

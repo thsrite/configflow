@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"agent/internal/atomicfile"
 	"golang.org/x/sys/unix"
 )
 
@@ -162,7 +162,7 @@ func (j *Job) save(path, stage string) error {
 		}
 	}
 	if err == nil {
-		log.Printf("Agent update %s: %s — %s", j.ID, stage, j.Message)
+		logger.Infof("Agent update %s: %s — %s", j.ID, stage, j.Message)
 	}
 	return err
 }
@@ -582,13 +582,7 @@ func Run(path string) (result error) {
 	if err = os.Rename(candidate, job.Binary); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(job.Binary))
-	if err != nil {
-		return err
-	}
-	err = dir.Sync()
-	dir.Close()
-	if err != nil {
+	if err = atomicfile.SyncDir(filepath.Dir(job.Binary)); err != nil {
 		return err
 	}
 	if err = job.save(path, "restarting"); err != nil {

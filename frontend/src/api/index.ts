@@ -551,11 +551,7 @@ export const agentApi = {
   getDockerHAEnvironment: (id: string) =>
     api.get<import('@/types/dockerHAGuide').DockerHAEnvironment>(`/agents/${encodeURIComponent(id)}/oxidns-ha-environment`, { timeout: 60000 }),
   generateCoreInstallCommand: (target: 'both' | 'mihomo' | 'oxidns') =>
-    api.post<InstallCommandResult>('/agents/core-install-command', { target }),
-  generateDockerCompose: (params: any) =>
-    api.get('/agents/docker-compose', { params, responseType: 'text' }),
-  generateDockerRun: (params: any) =>
-    api.get('/agents/docker-run', { params, responseType: 'text' })
+    api.post<InstallCommandResult>('/agents/core-install-command', { target })
 }
 
 export const clientToolsApi = {

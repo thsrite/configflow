@@ -1,0 +1,23 @@
+{
+  "input": [
+    {
+      "id": "s1",
+      "goal": "router",
+      "completed": 1
+    }
+  ],
+  "original": {
+    "session_goal": "router",
+    "session_id": "s1",
+    "session_completed": true,
+    "has_gateway_session": false,
+    "mihomo_agent_ids": []
+  },
+  "native": {
+    "session_goal": "router",
+    "session_id": "s1",
+    "session_completed": false,
+    "has_gateway_session": false,
+    "mihomo_agent_ids": []
+  }
+}

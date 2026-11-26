@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -11,6 +10,8 @@ import (
 	"sync/atomic"
 
 	"agent/routes"
+
+	"agent/svc"
 )
 
 // Set once the server's heartbeat reply says it reads "host". An older server
@@ -57,7 +58,7 @@ func hostHasAddress(value string) (present, known bool) {
 // A container's AGENT_IP is its operator's statement and is never second-guessed.
 func (c *Config) effectiveAgentIP() string {
 	value := c.configuredAgentIP()
-	if value == "" || c.ServiceManager == "supervisor" {
+	if value == "" || c.ServiceManager == svc.ContainerManager {
 		return value
 	}
 	present, known := hostHasAddress(value)
@@ -67,7 +68,7 @@ func (c *Config) effectiveAgentIP() string {
 	staleAgentIP.Lock()
 	if staleAgentIP.logged != value {
 		staleAgentIP.logged = value
-		log.Printf("Configured agent_ip %s is no longer on any interface of this host; detecting the address automatically instead. Update agent_ip in the Agent config to silence this.", value)
+		logger.Warnf("Configured agent_ip %s is no longer on any interface of this host; detecting the address automatically instead. Update agent_ip in the Agent config to silence this.", value)
 	}
 	staleAgentIP.Unlock()
 	return ""
@@ -76,7 +77,7 @@ func (c *Config) effectiveAgentIP() string {
 // heartbeatHost is the address the server should use to reach this Agent, or
 // "" to leave the server's record alone.
 func (c *Config) heartbeatHost() string {
-	if c.ServiceManager == "supervisor" {
+	if c.ServiceManager == svc.ContainerManager {
 		// Inside a bridge container the local address is not reachable from
 		// the LAN; only an explicit AGENT_IP is worth reporting.
 		return c.configuredAgentIP()
@@ -123,7 +124,7 @@ func (c *Config) setAgentIP(value string) error {
 // host has it. An install that never pinned an address stays automatic.
 func (c *Config) adoptConfirmedHost(confirmed string) {
 	confirmed = strings.TrimSpace(confirmed)
-	if confirmed == "" || c.ServiceManager == "supervisor" {
+	if confirmed == "" || c.ServiceManager == svc.ContainerManager {
 		return
 	}
 	configured := c.configuredAgentIP()
@@ -134,10 +135,10 @@ func (c *Config) adoptConfirmedHost(confirmed string) {
 		return
 	}
 	if err := c.setAgentIP(confirmed); err != nil {
-		log.Printf("Could not write the confirmed address %s to the Agent config: %v", confirmed, err)
+		logger.Warnf("Could not write the confirmed address %s to the Agent config: %v", confirmed, err)
 		return
 	}
-	log.Printf("agent_ip in the Agent config changed from %s to %s: the server confirmed it reaches this Agent at the new address.", configured, confirmed)
+	logger.Infof("agent_ip in the Agent config changed from %s to %s: the server confirmed it reaches this Agent at the new address.", configured, confirmed)
 }
 
 // localAgentAddresses lists the LAN IPv4 addresses this Agent may be reached
@@ -170,16 +171,20 @@ func (c *Config) localAgentAddresses() ([]string, error) {
 // so it is reported but cannot be written here.
 func agentAddressHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		supervised := cfg.ServiceManager == "supervisor"
+		supervised := cfg.ServiceManager == svc.ContainerManager
 		switch r.Method {
 		case http.MethodGet:
 			addresses, err := cfg.localAgentAddresses()
 			if err != nil {
 				addresses = []string{}
 			}
-			routes.JsonResponse(w, http.StatusOK, map[string]interface{}{
-				"success": true, "protocol": 1, "configured": cfg.configuredAgentIP(), "reported": cfg.heartbeatHost(),
-				"addresses": addresses, "writable": !supervised,
+			routes.JsonResponse(w, http.StatusOK, agentAddressGetResponse{
+				Addresses:  addresses,
+				Configured: cfg.configuredAgentIP(),
+				Protocol:   1,
+				Reported:   cfg.heartbeatHost(),
+				Success:    true,
+				Writable:   !supervised,
 			})
 		case http.MethodPost:
 			var body struct {
@@ -187,17 +192,17 @@ func agentAddressHandler(cfg *Config) http.HandlerFunc {
 			}
 			data, err := io.ReadAll(io.LimitReader(r.Body, 4096))
 			if err != nil || json.Unmarshal(data, &body) != nil {
-				routes.JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": "请求内容无效"})
+				routes.JsonResponse(w, http.StatusBadRequest, routes.MessageResponse{Success: false, Message: "请求内容无效"})
 				return
 			}
 			if supervised {
-				routes.JsonResponse(w, http.StatusConflict, map[string]interface{}{"success": false, "message": "容器的地址由 AGENT_IP 环境变量决定，请修改后重建容器"})
+				routes.JsonResponse(w, http.StatusConflict, routes.MessageResponse{Success: false, Message: "容器的地址由 AGENT_IP 环境变量决定，请修改后重建容器"})
 				return
 			}
 			host := strings.TrimSpace(body.Host)
 			addresses, err := cfg.localAgentAddresses()
 			if err != nil {
-				routes.JsonResponse(w, http.StatusInternalServerError, map[string]interface{}{"success": false, "message": "读取本机网络地址失败：" + err.Error()})
+				routes.JsonResponse(w, http.StatusInternalServerError, routes.MessageResponse{Success: false, Message: "读取本机网络地址失败：" + err.Error()})
 				return
 			}
 			found := false
@@ -205,18 +210,22 @@ func agentAddressHandler(cfg *Config) http.HandlerFunc {
 				found = found || value == host
 			}
 			if !found {
-				routes.JsonResponse(w, http.StatusBadRequest, map[string]interface{}{"success": false, "message": "这台设备没有地址 " + host + "，只能选择它现有的局域网地址", "addresses": addresses})
+				routes.JsonResponse(w, http.StatusBadRequest, agentAddressInvalidResponse{
+					Addresses: addresses,
+					Message:   "这台设备没有地址 " + host + "，只能选择它现有的局域网地址",
+					Success:   false,
+				})
 				return
 			}
 			if cfg.configuredAgentIP() != host {
 				previous := cfg.configuredAgentIP()
 				if err := cfg.setAgentIP(host); err != nil {
-					routes.JsonResponse(w, http.StatusInternalServerError, map[string]interface{}{"success": false, "message": "写入 Agent 配置失败：" + err.Error()})
+					routes.JsonResponse(w, http.StatusInternalServerError, routes.MessageResponse{Success: false, Message: "写入 Agent 配置失败：" + err.Error()})
 					return
 				}
-				log.Printf("agent_ip in the Agent config changed from %q to %s at the server's request.", previous, host)
+				logger.Infof("agent_ip in the Agent config changed from %q to %s at the server's request.", previous, host)
 			}
-			routes.JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "host": host})
+			routes.JsonResponse(w, http.StatusOK, agentAddressPostResponse{Host: host, Success: true})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}

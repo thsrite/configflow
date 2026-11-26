@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,6 +17,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"agent/svc"
 )
 
 // GetLogsHandler 获取指定服务的日志
@@ -35,19 +36,19 @@ func GetLogsHandler(cfg *Config) http.HandlerFunc {
 		if sourceID := r.URL.Query().Get("source"); sourceID != "" {
 			source, ok := findLogSource(cfg, sourceID)
 			if !ok {
-				JsonResponse(w, http.StatusOK, map[string]interface{}{"success": false, "message": "未知的日志来源: " + sourceID})
+				JsonResponse(w, http.StatusOK, MessageResponse{Success: false, Message: "未知的日志来源: " + sourceID})
 				return
 			}
 			logs, err := ReadLogSource(source, lines)
 			if err != nil {
-				JsonResponse(w, http.StatusOK, map[string]interface{}{"success": false, "message": err.Error(), "source": source})
+				JsonResponse(w, http.StatusOK, LogSourceErrorResponse{Message: err.Error(), Source: source, Success: false})
 				return
 			}
-			JsonResponse(w, http.StatusOK, map[string]interface{}{
-				"success":      true,
-				"logs":         logs,
-				"source":       source,
-				"service_name": cfg.ServiceName,
+			JsonResponse(w, http.StatusOK, LogSourceContentResponse{
+				Logs:        logs,
+				ServiceName: cfg.ServiceName,
+				Source:      source,
+				Success:     true,
 			})
 			return
 		}
@@ -56,13 +57,13 @@ func GetLogsHandler(cfg *Config) http.HandlerFunc {
 		if logPath := r.URL.Query().Get("log_path"); logPath != "" {
 			logs, err := ReadLogSource(LogSource{Kind: "file", Path: logPath}, lines)
 			if err != nil {
-				JsonResponse(w, http.StatusOK, map[string]interface{}{"success": false, "message": err.Error()})
+				JsonResponse(w, http.StatusOK, MessageResponse{Success: false, Message: err.Error()})
 				return
 			}
-			JsonResponse(w, http.StatusOK, map[string]interface{}{
-				"success":      true,
-				"logs":         logs,
-				"service_name": cfg.ServiceName,
+			JsonResponse(w, http.StatusOK, LogPathContentResponse{
+				Logs:        logs,
+				ServiceName: cfg.ServiceName,
+				Success:     true,
 			})
 			return
 		}
@@ -70,11 +71,11 @@ func GetLogsHandler(cfg *Config) http.HandlerFunc {
 		// 未指定路径，使用自动检测
 		logs, errLogs := getLogDataWithAgentLog(cfg.ServiceType, cfg.ConfigPath, lines, AgentLogPath(cfg), cfg.ServiceUnit)
 
-		JsonResponse(w, http.StatusOK, map[string]interface{}{
-			"success":      true,
-			"logs":         logs,
-			"error_logs":   errLogs,
-			"service_name": cfg.ServiceName,
+		JsonResponse(w, http.StatusOK, DefaultLogsResponse{
+			ErrorLogs:   errLogs,
+			Logs:        logs,
+			ServiceName: cfg.ServiceName,
+			Success:     true,
 		})
 	}
 }
@@ -82,9 +83,9 @@ func GetLogsHandler(cfg *Config) http.HandlerFunc {
 // LogSourcesHandler 列出本机可读的日志来源
 func LogSourcesHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		JsonResponse(w, http.StatusOK, map[string]interface{}{
-			"success": true,
-			"sources": ResolveLogSources(cfg),
+		JsonResponse(w, http.StatusOK, LogSourcesResponse{
+			Sources: ResolveLogSources(cfg),
+			Success: true,
 		})
 	}
 }
@@ -93,9 +94,9 @@ func LogSourcesHandler(cfg *Config) http.HandlerFunc {
 func ClearLogHandler(cfg *Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			JsonResponse(w, http.StatusMethodNotAllowed, map[string]interface{}{
-				"success": false,
-				"message": "Method not allowed",
+			JsonResponse(w, http.StatusMethodNotAllowed, MessageResponse{
+				Message: "Method not allowed",
+				Success: false,
 			})
 			return
 		}
@@ -105,18 +106,18 @@ func ClearLogHandler(cfg *Config) http.HandlerFunc {
 			Source  string `json:"source"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || (req.LogPath == "" && req.Source == "") {
-			JsonResponse(w, http.StatusBadRequest, map[string]interface{}{
-				"success": false,
-				"message": "source or log_path is required",
+			JsonResponse(w, http.StatusBadRequest, MessageResponse{
+				Message: "source or log_path is required",
+				Success: false,
 			})
 			return
 		}
 		if req.Source != "" {
 			source, ok := findLogSource(cfg, req.Source)
 			if !ok || !source.Clearable {
-				JsonResponse(w, http.StatusOK, map[string]interface{}{
-					"success": false,
-					"message": "该日志来源不支持清空",
+				JsonResponse(w, http.StatusOK, MessageResponse{
+					Message: "该日志来源不支持清空",
+					Success: false,
 				})
 				return
 			}
@@ -126,35 +127,35 @@ func ClearLogHandler(cfg *Config) http.HandlerFunc {
 		// 检查文件是否存在
 		info, err := os.Stat(req.LogPath)
 		if os.IsNotExist(err) {
-			JsonResponse(w, http.StatusOK, map[string]interface{}{
-				"success": true,
-				"message": "日志文件不存在，无需清空",
+			JsonResponse(w, http.StatusOK, MessageResponse{
+				Message: "日志文件不存在，无需清空",
+				Success: true,
 			})
 			return
 		}
 		// 只清空普通的日志文件，避免误清配置或设备文件
 		if err != nil || !info.Mode().IsRegular() || !strings.Contains(filepath.Base(req.LogPath), ".log") {
-			JsonResponse(w, http.StatusOK, map[string]interface{}{
-				"success": false,
-				"message": "只能清空文件名包含 .log 的普通文件",
+			JsonResponse(w, http.StatusOK, MessageResponse{
+				Message: "只能清空文件名包含 .log 的普通文件",
+				Success: false,
 			})
 			return
 		}
 
 		// 清空文件内容
 		if err := os.WriteFile(req.LogPath, []byte(""), 0644); err != nil {
-			log.Printf("清空日志文件失败: %s, error: %v", req.LogPath, err)
-			JsonResponse(w, http.StatusInternalServerError, map[string]interface{}{
-				"success": false,
-				"message": fmt.Sprintf("清空日志失败: %v", err),
+			logger.Errorf("清空日志文件失败: %s, error: %v", req.LogPath, err)
+			JsonResponse(w, http.StatusInternalServerError, MessageResponse{
+				Message: fmt.Sprintf("清空日志失败: %v", err),
+				Success: false,
 			})
 			return
 		}
 
-		log.Printf("日志文件已清空: %s", req.LogPath)
-		JsonResponse(w, http.StatusOK, map[string]interface{}{
-			"success": true,
-			"message": "日志已清空",
+		logger.Infof("日志文件已清空: %s", req.LogPath)
+		JsonResponse(w, http.StatusOK, MessageResponse{
+			Message: "日志已清空",
+			Success: true,
 		})
 	}
 }
@@ -205,10 +206,10 @@ func PortBasedLogsHandler(cfg *Config) http.HandlerFunc {
 		// 如果指定了 log_path，直接读取该文件
 		if logPath := r.URL.Query().Get("log_path"); logPath != "" {
 			logs := readLogFile(logPath, lines)
-			JsonResponse(w, http.StatusOK, map[string]interface{}{
-				"success":      true,
-				"logs":         escapeLogsForJSON(logs),
-				"service_name": serviceName,
+			JsonResponse(w, http.StatusOK, LogPathContentResponse{
+				Logs:        escapeLogsForJSON(logs),
+				ServiceName: serviceName,
+				Success:     true,
 			})
 			return
 		}
@@ -216,33 +217,13 @@ func PortBasedLogsHandler(cfg *Config) http.HandlerFunc {
 		// 未指定路径，使用自动检测
 		logs, errLogs := getLogDataWithAgentLog(serviceType, configPath, lines, AgentLogPath(cfg), cfg.ServiceUnit)
 
-		JsonResponse(w, http.StatusOK, map[string]interface{}{
-			"success":      true,
-			"logs":         logs,
-			"error_logs":   errLogs,
-			"service_name": serviceName,
+		JsonResponse(w, http.StatusOK, DefaultLogsResponse{
+			ErrorLogs:   errLogs,
+			Logs:        logs,
+			ServiceName: serviceName,
+			Success:     true,
 		})
 	}
-}
-
-// checkMosdnsStatus 检查 mosdns 服务状态
-func checkMosdnsStatus() (bool, string) {
-	cmd := exec.Command("supervisorctl", "-c", "/etc/supervisor/supervisord.conf", "status", "mosdns")
-	output, err := cmd.CombinedOutput()
-	outputStr := string(output)
-
-	// 即使命令返回错误，我们也检查输出内容
-	// 因为 supervisorctl 在服务处于 FATAL 状态时也会返回非零退出码
-	if strings.Contains(outputStr, "RUNNING") {
-		return true, ""
-	}
-
-	// 如果服务不是 RUNNING 状态，返回错误信息
-	if err != nil {
-		return false, fmt.Sprintf("mosdns 服务未运行: %s", outputStr)
-	}
-
-	return false, fmt.Sprintf("mosdns 服务未运行: %s", outputStr)
 }
 
 // getConfigDir 从配置文件路径中提取目录路径
@@ -258,11 +239,6 @@ func getConfigDir(configPath string) string {
 	return configPath[:lastSlash]
 }
 
-// getLogData 获取指定服务的日志数据
-func getLogData(serviceType string, configPath string, lines int, serviceUnits ...string) (string, string) {
-	return getLogDataWithAgentLog(serviceType, configPath, lines, "/var/log/configflow-agent.log", serviceUnits...)
-}
-
 func getLogDataWithAgentLog(serviceType string, configPath string, lines int, agentLogPath string, serviceUnits ...string) (string, string) {
 	if serviceType == "oxidns" {
 		return getOxiDNSLogs(configPath, lines, serviceUnits...)
@@ -271,9 +247,8 @@ func getLogDataWithAgentLog(serviceType string, configPath string, lines int, ag
 
 	// 统一的日志查找逻辑（适用于 mihomo 和 mosdns）
 	// 按优先级查找日志文件
-	// 1. Supervisor 路径 (Docker 环境)
-	supervisorLogPath := fmt.Sprintf("/var/log/supervisor/%s.log", serviceType)
-	supervisorErrPath := fmt.Sprintf("/var/log/supervisor/%s.err.log", serviceType)
+	// 1. Docker 镜像（s6-log，标准输出与错误输出合并在一个文件）
+	containerLogPath := svc.LogFile(serviceType)
 
 	// 2. ConfigFlow Agent 特殊路径 (Shell 安装)
 	// 3. 系统服务路径 (OpenRC/systemd)
@@ -288,10 +263,10 @@ func getLogDataWithAgentLog(serviceType string, configPath string, lines int, ag
 	}
 
 	// 按优先级检查哪个日志文件存在
-	if _, err := os.Stat(supervisorLogPath); err == nil {
-		// Supervisor 日志存在（Docker 环境）
-		logFilePath = supervisorLogPath
-		errFilePath = supervisorErrPath
+	if _, err := os.Stat(containerLogPath); containerLogPath != "" && err == nil {
+		// Docker 镜像日志存在
+		logFilePath = containerLogPath
+		errFilePath = ""
 	} else if _, err := os.Stat(agentLogPath); err == nil {
 		// ConfigFlow Agent 日志存在 (Shell 安装)
 		logFilePath = agentLogPath
@@ -306,14 +281,12 @@ func getLogDataWithAgentLog(serviceType string, configPath string, lines int, ag
 			logFilePath = configDirLogPath
 			errFilePath = configDirErrPath
 		} else {
-			// 默认使用 supervisor 路径（即使文件不存在）
-			logFilePath = supervisorLogPath
-			errFilePath = supervisorErrPath
+			// 默认使用 Docker 镜像路径（即使文件不存在）
+			logFilePath = containerLogPath
 		}
 	} else {
-		// 默认使用 supervisor 路径（即使文件不存在）
-		logFilePath = supervisorLogPath
-		errFilePath = supervisorErrPath
+		// 默认使用 Docker 镜像路径（即使文件不存在）
+		logFilePath = containerLogPath
 	}
 
 	logs := readLogFile(logFilePath, lines)
@@ -343,7 +316,7 @@ func getOxiDNSLogs(configPath string, lines int, serviceUnits ...string) (string
 			}
 		}
 	}
-	for _, path := range []string{"/var/log/supervisor/oxidns.log", filepath.Join(filepath.Dir(configPath), "oxidns.log"), "/var/log/oxidns.log"} {
+	for _, path := range []string{svc.LogFile("oxidns"), filepath.Join(filepath.Dir(configPath), "oxidns.log"), "/var/log/oxidns.log"} {
 		if _, err := os.Stat(path); err == nil {
 			return readLogFile(path, lines), ""
 		}

@@ -12,19 +12,18 @@ import (
 // 1.8.2-1.8.4 return routing (routes/rule without protocol, table as string).
 func legacyHost() *fakeHost {
 	var host fakeHost
-	_ = json.Unmarshal([]byte(`{}`), &host)
-	host.routes = jsonMaps([]map[string]interface{}{
-		{"dst": "default", "gateway": "192.168.1.1", "dev": "eth0", "flags": []interface{}{}},
-		{"dst": "default", "gateway": "192.168.1.1", "dev": "eth0", "table": "104", "flags": []interface{}{}},
-		{"dst": "192.168.1.0/24", "gateway": "192.168.1.1", "dev": "eth0", "table": "104", "flags": []interface{}{}},
+	host.routes = jsonMaps([]map[string]any{
+		{"dst": "default", "gateway": "192.168.1.1", "dev": "eth0", "flags": []any{}},
+		{"dst": "default", "gateway": "192.168.1.1", "dev": "eth0", "table": "104", "flags": []any{}},
+		{"dst": "192.168.1.0/24", "gateway": "192.168.1.1", "dev": "eth0", "table": "104", "flags": []any{}},
 	})
-	host.rules = jsonMaps([]map[string]interface{}{
+	host.rules = jsonMaps([]map[string]any{
 		{"priority": 0, "src": "all", "table": "255"},
 		{"priority": 104, "src": "all", "fwmark": "0x400000", "fwmask": "0x400000", "table": "104"},
 		{"priority": 32766, "src": "all", "table": "254"},
 	})
 	var nft struct {
-		NFTables []map[string]interface{} `json:"nftables"`
+		NFTables []map[string]any `json:"nftables"`
 	}
 	_ = json.Unmarshal([]byte(`{"nftables":[
 	 {"table":{"family":"inet","name":"configflow_return","handle":39}},
@@ -57,10 +56,10 @@ func TestLegacyBootReplayPreservesUnownedResources(t *testing.T) {
 	cases := map[string]func(*fakeHost){
 		"matching_legacy_snapshot": func(*fakeHost) {},
 		"foreign_expression_with_legacy_comment": func(host *fakeHost) {
-			host.nft[4]["rule"].(map[string]interface{})["expr"] = []interface{}{map[string]interface{}{"drop": nil}}
+			host.nft[4]["rule"].(map[string]any)["expr"] = []any{map[string]any{"drop": nil}}
 		},
 		"foreign_chain_hook_with_legacy_name": func(host *fakeHost) {
-			chain := host.nft[1]["chain"].(map[string]interface{})
+			chain := host.nft[1]["chain"].(map[string]any)
 			chain["hook"], chain["prio"], chain["policy"] = "input", float64(0), "drop"
 		},
 		"foreign_route_attributes": func(host *fakeHost) {
@@ -71,9 +70,9 @@ func TestLegacyBootReplayPreservesUnownedResources(t *testing.T) {
 			host.rules[1]["iif"] = "eth1"
 		},
 		"extra_foreign_rule": func(host *fakeHost) {
-			host.nft = append(host.nft, map[string]interface{}{"rule": map[string]interface{}{
+			host.nft = append(host.nft, map[string]any{"rule": map[string]any{
 				"family": "inet", "table": managedReturnTable, "chain": "output", "handle": 7,
-				"comment": "another-program", "expr": []interface{}{map[string]interface{}{"accept": nil}},
+				"comment": "another-program", "expr": []any{map[string]any{"accept": nil}},
 			}})
 		},
 		"inactive_without_owner":   func(*fakeHost) {},
@@ -89,7 +88,7 @@ func TestLegacyBootReplayPreservesUnownedResources(t *testing.T) {
 			original := writeLegacyState(t, cfg)
 			path := filepath.Join(filepath.Dir(cfg.AgentConfigFile), "return-routing.json")
 			if name == "inactive_without_owner" || name == "active_without_owner" {
-				var state map[string]interface{}
+				var state map[string]any
 				if err := json.Unmarshal(original, &state); err != nil {
 					t.Fatal(err)
 				}
@@ -100,13 +99,13 @@ func TestLegacyBootReplayPreservesUnownedResources(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			before := jsonText([]interface{}{host.routes, host.rules, host.nft, host.vrfs})
+			before := jsonText([]any{host.routes, host.rules, host.nft, host.vrfs})
 			reapplyReturnRouting(cfg)
 			assertNoWrites(t, host)
 			if len(host.commands) != 0 {
 				t.Fatalf("unowned boot replay should stop before probing or changing kernel resources: %v", host.commands)
 			}
-			if before != jsonText([]interface{}{host.routes, host.rules, host.nft, host.vrfs}) {
+			if before != jsonText([]any{host.routes, host.rules, host.nft, host.vrfs}) {
 				t.Fatal("unowned boot replay changed host resources")
 			}
 			after, err := os.ReadFile(path)

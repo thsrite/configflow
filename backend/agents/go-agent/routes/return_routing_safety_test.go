@@ -18,13 +18,13 @@ func safetySpec(t *testing.T) resolvedSpec {
 	return spec
 }
 
-func safetyObject(t *testing.T, raw string) map[string]interface{} {
+func safetyObject(t *testing.T, raw string) map[string]any {
 	t.Helper()
 	value, err := decodeResourceJSON(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return value.(map[string]interface{})
+	return value.(map[string]any)
 }
 
 func safetyReadFake(t *testing.T, override map[string]string, failed string) *[]string {
@@ -125,14 +125,14 @@ func TestSafetyReadResourcesRejectsFailedOrIncompleteEvidence(t *testing.T) {
 
 func TestSafetyNewOwnershipRejectsOccupiedResources(t *testing.T) {
 	cases := map[string]*returnResources{
-		"route with no policy rule":                 {Routes: []map[string]interface{}{{"table": 104, "dst": "10.0.0.0/8"}}},
-		"same priority without mark":                {Rules: []map[string]interface{}{{"priority": 104, "table": 200, "src": "10.0.0.0/8"}}},
-		"table referenced without routes":           {Rules: []map[string]interface{}{{"priority": 50, "table": 104}}},
-		"priority referenced by goto":               {Rules: []map[string]interface{}{{"priority": 50, "goto": 104}}},
-		"masked mark zero still reserves bit":       {Rules: []map[string]interface{}{{"priority": 80, "table": 200, "fwmark": "0x0", "fwmask": "0x400000"}}},
-		"unmasked mark uses full value":             {Rules: []map[string]interface{}{{"priority": 80, "table": 200, "fwmark": "0x2"}}},
-		"nft name alone cannot establish ownership": {NFT: []map[string]interface{}{{"table": map[string]interface{}{"family": "inet", "name": managedReturnTable}}}},
-		"empty vrf table is reserved":               {VRFs: []map[string]interface{}{{"linkinfo": map[string]interface{}{"info_kind": "vrf", "info_data": map[string]interface{}{"table": 104}}}}},
+		"route with no policy rule":                 {Routes: []map[string]any{{"table": 104, "dst": "10.0.0.0/8"}}},
+		"same priority without mark":                {Rules: []map[string]any{{"priority": 104, "table": 200, "src": "10.0.0.0/8"}}},
+		"table referenced without routes":           {Rules: []map[string]any{{"priority": 50, "table": 104}}},
+		"priority referenced by goto":               {Rules: []map[string]any{{"priority": 50, "goto": 104}}},
+		"masked mark zero still reserves bit":       {Rules: []map[string]any{{"priority": 80, "table": 200, "fwmark": "0x0", "fwmask": "0x400000"}}},
+		"unmasked mark uses full value":             {Rules: []map[string]any{{"priority": 80, "table": 200, "fwmark": "0x2"}}},
+		"nft name alone cannot establish ownership": {NFT: []map[string]any{{"table": map[string]any{"family": "inet", "name": managedReturnTable}}}},
+		"empty vrf table is reserved":               {VRFs: []map[string]any{{"linkinfo": map[string]any{"info_kind": "vrf", "info_data": map[string]any{"table": 104}}}}},
 	}
 	for name, resources := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestSafetyNewOwnershipRejectsOccupiedResources(t *testing.T) {
 			}
 		})
 	}
-	free := &returnResources{Rules: []map[string]interface{}{{"priority": 80, "table": 200, "fwmark": "0x2", "fwmask": "0xff"}}}
+	free := &returnResources{Rules: []map[string]any{{"priority": 80, "table": 200, "fwmark": "0x2", "fwmask": "0xff"}}}
 	if err := checkReturnResources(safetySpec(t), nil, free); err != nil {
 		t.Fatalf("disjoint explicit mask: %v", err)
 	}
@@ -171,19 +171,19 @@ func TestSafetyExistingOwnershipAllowsOnlyExactSubset(t *testing.T) {
 	route := safetyObject(t, `{"table":104,"dst":"default","gateway":"192.168.1.1","dev":"eth0","metric":60104}`)
 	rule := safetyObject(t, `{"priority":104,"table":104,"fwmark":"0x400000","fwmask":"0x400000"}`)
 	table := safetyObject(t, `{"table":{"family":"inet","name":"configflow_return","comment":"owner-token","handle":10}}`)
-	state := &returnRoutingState{Spec: spec.ReturnRoutingSpec, Ownership: &returnOwnership{Version: 1, Token: "owner-token", Metric: 60104, Routes: []map[string]interface{}{route}, Rules: []map[string]interface{}{rule}, NFT: []map[string]interface{}{table}}}
-	for _, resources := range []*returnResources{{}, {Routes: []map[string]interface{}{route}}, {Routes: []map[string]interface{}{route}, Rules: []map[string]interface{}{rule}, NFT: []map[string]interface{}{table}}} {
+	state := &returnRoutingState{Spec: spec.ReturnRoutingSpec, Ownership: &returnOwnership{Version: 1, Token: "owner-token", Metric: 60104, Routes: []map[string]any{route}, Rules: []map[string]any{rule}, NFT: []map[string]any{table}}}
+	for _, resources := range []*returnResources{{}, {Routes: []map[string]any{route}}, {Routes: []map[string]any{route}, Rules: []map[string]any{rule}, NFT: []map[string]any{table}}} {
 		if err := checkReturnResources(spec, state, resources); err != nil {
 			t.Fatalf("owned exact subset must be reusable: %v", err)
 		}
 	}
 	cases := map[string]*returnResources{
-		"duplicate identical rule":  {Rules: []map[string]interface{}{rule, rule}},
-		"duplicate identical route": {Routes: []map[string]interface{}{route, route}},
-		"changed route":             {Routes: []map[string]interface{}{safetyObject(t, `{"table":104,"dst":"default","gateway":"192.168.1.9","dev":"eth0","metric":60104}`)}},
-		"extra route":               {Routes: []map[string]interface{}{route, safetyObject(t, `{"table":104,"dst":"10.0.0.0/8","dev":"vpn0"}`)}},
-		"changed owner comment":     {NFT: []map[string]interface{}{safetyObject(t, `{"table":{"family":"inet","name":"configflow_return","comment":"somebody-else"}}`)}},
-		"extra nft chain":           {NFT: []map[string]interface{}{table, safetyObject(t, `{"chain":{"family":"inet","table":"configflow_return","name":"foreign"}}`)}},
+		"duplicate identical rule":  {Rules: []map[string]any{rule, rule}},
+		"duplicate identical route": {Routes: []map[string]any{route, route}},
+		"changed route":             {Routes: []map[string]any{safetyObject(t, `{"table":104,"dst":"default","gateway":"192.168.1.9","dev":"eth0","metric":60104}`)}},
+		"extra route":               {Routes: []map[string]any{route, safetyObject(t, `{"table":104,"dst":"10.0.0.0/8","dev":"vpn0"}`)}},
+		"changed owner comment":     {NFT: []map[string]any{safetyObject(t, `{"table":{"family":"inet","name":"configflow_return","comment":"somebody-else"}}`)}},
+		"extra nft chain":           {NFT: []map[string]any{table, safetyObject(t, `{"chain":{"family":"inet","table":"configflow_return","name":"foreign"}}`)}},
 	}
 	for name, resources := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -194,7 +194,7 @@ func TestSafetyExistingOwnershipAllowsOnlyExactSubset(t *testing.T) {
 	}
 	newSpec := spec
 	newSpec.Table, newSpec.Priority = 105, 105
-	if err := checkReturnResources(newSpec, state, &returnResources{Routes: []map[string]interface{}{safetyObject(t, `{"table":104,"dst":"default","dev":"foreign"}`)}}); err == nil {
+	if err := checkReturnResources(newSpec, state, &returnResources{Routes: []map[string]any{safetyObject(t, `{"table":104,"dst":"default","dev":"foreign"}`)}}); err == nil {
 		t.Fatal("changing requested table must not ignore drift in old owned table")
 	}
 }
@@ -218,11 +218,11 @@ func TestSafetyOwnedHandlesMustRetainKernelIdentity(t *testing.T) {
 	if ownedResourceEqual(stored, replaced) {
 		t.Fatal("a new handle cannot inherit persisted ownership")
 	}
-	state := &returnRoutingState{Spec: spec.ReturnRoutingSpec, Ownership: &returnOwnership{Version: 1, Token: "owner-token", NFT: []map[string]interface{}{stored}}}
-	if err := checkReturnResources(spec, state, &returnResources{NFT: []map[string]interface{}{replaced}}); err == nil {
+	state := &returnRoutingState{Spec: spec.ReturnRoutingSpec, Ownership: &returnOwnership{Version: 1, Token: "owner-token", NFT: []map[string]any{stored}}}
+	if err := checkReturnResources(spec, state, &returnResources{NFT: []map[string]any{replaced}}); err == nil {
 		t.Fatal("replacement must block at preflight, before deletion")
 	}
-	delete(replaced["table"].(map[string]interface{}), "handle")
+	delete(replaced["table"].(map[string]any), "handle")
 	if ownedResourceEqual(stored, replaced) {
 		t.Fatal("missing recorded handle cannot prove identity")
 	}
@@ -258,8 +258,8 @@ func TestSafetyNFTMarkExpressionsFailClosed(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			expr := safetyObject(t, test.expression)
-			object := map[string]interface{}{"rule": map[string]interface{}{"family": "inet", "table": "other", "expr": []interface{}{expr}}}
-			err := checkReturnResources(safetySpec(t), nil, &returnResources{NFT: []map[string]interface{}{object}})
+			object := map[string]any{"rule": map[string]any{"family": "inet", "table": "other", "expr": []any{expr}}}
+			err := checkReturnResources(safetySpec(t), nil, &returnResources{NFT: []map[string]any{object}})
 			if (err != nil) != test.conflict {
 				t.Fatalf("conflict=%v error=%v", test.conflict, err)
 			}
@@ -273,7 +273,7 @@ func TestSafetyNormalizationPreservesAllSemanticChanges(t *testing.T) {
 	if !normalizedResourceEqual(a, b) {
 		t.Fatal("runtime handles and counters must be ignored")
 	}
-	b["rule"].(map[string]interface{})["comment"] = "foreign"
+	b["rule"].(map[string]any)["comment"] = "foreign"
 	if normalizedResourceEqual(a, b) {
 		t.Fatal("owner comment must remain semantic")
 	}
@@ -281,21 +281,21 @@ func TestSafetyNormalizationPreservesAllSemanticChanges(t *testing.T) {
 	if normalizedResourceEqual(a, b) {
 		t.Fatal("verdict changes must remain semantic")
 	}
-	if !normalizedResourceEqual(map[string]interface{}{"table": "104", "fwmark": "0x400000"}, map[string]interface{}{"table": 104, "fwmark": json.Number("4194304")}) {
+	if !normalizedResourceEqual(map[string]any{"table": "104", "fwmark": "0x400000"}, map[string]any{"table": 104, "fwmark": json.Number("4194304")}) {
 		t.Fatal("numeric aliases should compare canonically")
 	}
-	if !normalizedResourceEqual(map[string]interface{}{"protocol": "242", "prio": -150}, map[string]interface{}{"protocol": 242, "prio": json.Number("-150")}) {
+	if !normalizedResourceEqual(map[string]any{"protocol": "242", "prio": -150}, map[string]any{"protocol": 242, "prio": json.Number("-150")}) {
 		t.Fatal("protocol and signed nft priority must compare canonically")
 	}
 }
 
 func TestSafetyResourceNumberRejectsAmbiguousTypes(t *testing.T) {
-	for _, value := range []interface{}{nil, true, false, -1, 1.5, math.NaN(), math.Inf(1), "vpn", "0x", "-1", json.Number("2.5")} {
+	for _, value := range []any{nil, true, false, -1, 1.5, math.NaN(), math.Inf(1), "vpn", "0x", "-1", json.Number("2.5")} {
 		if _, ok := resourceNumber(value); ok {
 			t.Fatalf("accepted %v", value)
 		}
 	}
-	for _, value := range []interface{}{104, uint64(104), float64(104), "104", "0x68", json.Number("104")} {
+	for _, value := range []any{104, uint64(104), float64(104), "104", "0x68", json.Number("104")} {
 		if n, ok := resourceNumber(value); !ok || n != 104 {
 			t.Fatalf("rejected %v", value)
 		}
@@ -308,15 +308,15 @@ func TestSafetyAnonymousSetOrderIsCanonicalButRuleOrderIsNot(t *testing.T) {
 	if !normalizedResourceEqual(first, reorderedSet) {
 		t.Fatal("nft anonymous CIDR set ordering is not semantic")
 	}
-	if _, err := confirmResources([]map[string]interface{}{first}, []map[string]interface{}{reorderedSet}); err != nil {
+	if _, err := confirmResources([]map[string]any{first}, []map[string]any{reorderedSet}); err != nil {
 		t.Fatalf("kernel-sorted anonymous set must confirm successfully: %v", err)
 	}
-	expressions := reorderedSet["rule"].(map[string]interface{})["expr"].([]interface{})
+	expressions := reorderedSet["rule"].(map[string]any)["expr"].([]any)
 	expressions[0], expressions[1] = expressions[1], expressions[0]
 	if normalizedResourceEqual(first, reorderedSet) {
 		t.Fatal("accept before match must not equal match before accept")
 	}
-	if _, err := confirmResources([]map[string]interface{}{first}, []map[string]interface{}{reorderedSet}); err == nil {
+	if _, err := confirmResources([]map[string]any{first}, []map[string]any{reorderedSet}); err == nil {
 		t.Fatal("changed rule expression sequence must fail confirmation")
 	}
 }
@@ -324,14 +324,14 @@ func TestSafetyAnonymousSetOrderIsCanonicalButRuleOrderIsNot(t *testing.T) {
 func TestSafetyReadAllLinksFiltersVRFWithoutEmptyPlaceholders(t *testing.T) {
 	for _, withVRF := range []bool{false, true} {
 		t.Run(fmt.Sprint(withVRF), func(t *testing.T) {
-			links := []map[string]interface{}{
+			links := []map[string]any{
 				{"ifindex": 1, "ifname": "lo", "link_type": "loopback"},
-				{"ifindex": 2, "ifname": "sit0", "linkinfo": map[string]interface{}{"info_kind": "sit"}},
-				{"ifindex": 3, "ifname": "eth0", "linkinfo": map[string]interface{}{"info_kind": "veth"}},
-				{"ifindex": 4, "ifname": "eth1", "linkinfo": map[string]interface{}{"info_slave_kind": "vrf"}},
+				{"ifindex": 2, "ifname": "sit0", "linkinfo": map[string]any{"info_kind": "sit"}},
+				{"ifindex": 3, "ifname": "eth0", "linkinfo": map[string]any{"info_kind": "veth"}},
+				{"ifindex": 4, "ifname": "eth1", "linkinfo": map[string]any{"info_slave_kind": "vrf"}},
 			}
 			if withVRF {
-				links = append(links, map[string]interface{}{"ifindex": 5, "ifname": "vrf0", "linkinfo": map[string]interface{}{"info_kind": "vrf", "info_data": map[string]interface{}{"table": 104}}})
+				links = append(links, map[string]any{"ifindex": 5, "ifname": "vrf0", "linkinfo": map[string]any{"info_kind": "vrf", "info_data": map[string]any{"table": 104}}})
 			}
 			safetyReadFake(t, map[string]string{"ip -j -d link show": jsonText(links)}, "")
 			resources, err := readReturnResources()
@@ -380,7 +380,7 @@ func TestSafetyAnonymousSetMatchesNftMergedIntervals(t *testing.T) {
 	// nftables 1.0.9 reads 91.108.4.0/22, 91.108.8.0/21 and 91.108.16.0/21 back as one range.
 	written := safetyObject(t, `{"rule":{"family":"inet","table":"configflow_return","chain":"owned","expr":[{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":{"set":[{"prefix":{"addr":"91.108.4.0","len":22}},{"prefix":{"addr":"91.108.8.0","len":21}},{"prefix":{"addr":"91.108.16.0","len":21}},{"prefix":{"addr":"198.18.0.0","len":15}},"1.1.1.1"]}}},{"accept":null}]}}`)
 	readBack := safetyObject(t, `{"rule":{"family":"inet","table":"configflow_return","chain":"owned","handle":7,"expr":[{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":{"set":["1.1.1.1",{"range":["91.108.4.0","91.108.23.255"]},{"prefix":{"addr":"198.18.0.0","len":15}}]}}},{"accept":null}]}}`)
-	if _, err := confirmResources([]map[string]interface{}{written}, []map[string]interface{}{readBack}); err != nil {
+	if _, err := confirmResources([]map[string]any{written}, []map[string]any{readBack}); err != nil {
 		t.Fatalf("merged nft intervals must confirm the written CIDRs: %v", err)
 	}
 	narrower := safetyObject(t, `{"rule":{"family":"inet","table":"configflow_return","chain":"owned","expr":[{"match":{"op":"==","left":{"payload":{"protocol":"ip","field":"daddr"}},"right":{"set":["1.1.1.1",{"range":["91.108.4.0","91.108.15.255"]},{"prefix":{"addr":"198.18.0.0","len":15}}]}}},{"accept":null}]}}`)

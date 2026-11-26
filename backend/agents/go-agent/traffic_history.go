@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -303,17 +302,17 @@ func (t *trafficHistoryCollector) reportOnce(ctx context.Context) {
 		}
 		return
 	case code == http.StatusNotFound:
-		log.Printf("Traffic history: server does not accept reports yet, pausing")
+		logger.Infof("Traffic history: server does not accept reports yet, pausing")
 		t.mu.Lock()
 		t.pausedUntil = time.Now().Add(trafficHistoryServerTooOld)
 		t.mu.Unlock()
 	case code == http.StatusBadRequest || code == http.StatusRequestEntityTooLarge:
 		// 被拒收的数据重试也不会成功，直接丢弃
-		log.Printf("Traffic history: report rejected with status %d", code)
+		logger.Warnf("Traffic history: report rejected with status %d", code)
 		return
 	default:
 		if err != nil {
-			log.Printf("Traffic history: report failed: %v", err)
+			logger.Infof("Traffic history: report failed: %v", err)
 		}
 	}
 	t.restore(report)
@@ -360,12 +359,12 @@ func (c *trafficHistoryController) SetEnabled(cfg *Config, enabled bool) {
 	if !enabled {
 		c.cancel()
 		c.cancel = nil
-		log.Printf("Traffic history stopped")
+		logger.Infof("Traffic history stopped")
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 	collector := newTrafficHistoryCollector(cfg, func() { c.SetEnabled(cfg, false) })
 	go collector.run(ctx)
-	log.Printf("Traffic history started")
+	logger.Infof("Traffic history started")
 }

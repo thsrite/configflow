@@ -1,0 +1,646 @@
+package repo
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"configflow/internal/model"
+	"configflow/internal/repo/repotest"
+	"configflow/internal/store"
+)
+
+// o17Registry is a Python-era registry row: state members inline, entries
+// without an id, a repeated id, a non-object entry and damaged values.
+const o17Registry = `[` +
+	`{"id":"m1","name":"M1","host":"192.0.2.10","port":8080,"service_type":"mihomo","profile_id":"default","enabled":true,` +
+	`"version":"1.8.0","config_version":"abcd1234","config_revision":3,"pushed_at":"2026-01-01T00:00:00Z",` +
+	`"deployments":{"d1":{"deployment_id":"d1","status":"succeeded","success":true}},` +
+	`"latest_deployment":{"deployment_id":"d1","status":"succeeded","success":true},` +
+	`"applied_content":{"fingerprint":"f","deployment_id":"d1"},` +
+	`"rule_sync":{"settings":{"library":true},"state":{"status":"succeeded","message":"ok"}},` +
+	`"status":"online","last_heartbeat":"2026-01-01T00:00:00Z","cpu":{"core_count":2}},` +
+	`{"id":"o1","name":"O1","host":"192.0.2.11","port":8081,"service_type":"oxidns","profile_id":"default",` +
+	`"oxidns_ha":{"enabled":true,"peer_id":"o2","vip":"192.0.2.100","vrid":51},` +
+	`"oxidns_ha_publication":"applying","dns_follow_state":{"status":"publishing"},"ipv6_verifications":[]},` +
+	`{"name":"no id","version":"0.1"},` +
+	`{"id":"m1","name":"repeated id","version":"9"},` +
+	`7]`
+
+// o17V1Database builds a version-1 data directory holding o17Registry.
+func o17V1Database(t *testing.T) (dir string, want string) {
+	t.Helper()
+	dir = t.TempDir()
+	r := must(Open(dir, Options{}))(t)
+	path := r.DatabasePath()
+	r.Close()
+	repotest.WriteRow(t, path, "system", "", "agents", []byte(o17Registry))
+	repotest.DowngradeToV1(t, path)
+	return dir, o17Decoded(t, []byte(o17Registry))
+}
+
+func o17Decoded(t testing.TB, row []byte) string {
+	t.Helper()
+	var system model.System
+	if _, _, err := model.DecodeStoredMember(&system, "agents", row, "agents"); err != nil {
+		t.Fatal(err)
+	}
+	return string(must(model.Marshal(system.Agents))(t))
+}
+
+func o17View(t testing.TB, r *Repository) string {
+	t.Helper()
+	system := must(r.System(bg))(t)
+	return string(must(model.Marshal(system.Agents))(t))
+}
+
+func o17Count(t testing.TB, path, query string) int {
+	t.Helper()
+	db := must(sql.Open("sqlite", "file:"+path))(t)
+	defer db.Close()
+	var n int
+	noError(t, db.QueryRow(query).Scan(&n))
+	return n
+}
+
+func o17Version(t testing.TB, path string) int {
+	t.Helper()
+	s := store.New(path, LockTimeout)
+	defer s.Close()
+	return must(s.Version())(t)
+}
+
+func o17Fingerprint(t testing.TB, path string) store.Fingerprint {
+	t.Helper()
+	s := store.New(path, LockTimeout)
+	defer s.Close()
+	return must(s.Fingerprint())(t)
+}
+
+func TestO17UpgradeMovesAgentState(t *testing.T) {
+	dir, want := o17V1Database(t)
+	path := filepath.Join(dir, DatabaseFilename)
+	before := o17Fingerprint(t, path)
+	r := openRepo(t, dir)
+	if v := o17Version(t, path); v != store.StorageVersion {
+		t.Fatalf("version %d", v)
+	}
+	if got := o17View(t, r); got != want {
+		t.Fatalf("merged registry differs from the version-1 registry\ngot  %s\nwant %s", got, want)
+	}
+	// m1: version config_version config_revision pushed_at deployments latest_deployment applied_content
+	// rule_sync.state status last_heartbeat cpu = 11; o1: oxidns_ha_publication dns_follow_state ipv6_verifications = 3.
+	if n := o17Count(t, path, "SELECT count(*) FROM agent_state"); n != 14 {
+		t.Fatalf("%d state rows", n)
+	}
+	raw := must(store.New(path, LockTimeout).Load())(t)
+	var agents []byte
+	for _, field := range raw.Document.System.Fields {
+		if field.Name == "agents" {
+			agents = field.Value
+		}
+	}
+	wantConfig := `[{"id":"m1","name":"M1","host":"192.0.2.10","port":8080,"service_type":"mihomo","profile_id":"default","enabled":true,` +
+		`"rule_sync":{"settings":{"library":true}}},` +
+		`{"id":"o1","name":"O1","host":"192.0.2.11","port":8081,"service_type":"oxidns","profile_id":"default",` +
+		`"oxidns_ha":{"enabled":true,"peer_id":"o2","vip":"192.0.2.100","vrid":51}},` +
+		`{"name":"no id","version":"0.1"},{"id":"m1","name":"repeated id","version":"9"},7]`
+	if string(agents) != wantConfig {
+		t.Fatalf("configuration row\n%s\nwant\n%s", agents, wantConfig)
+	}
+	// The damaged HA journal still reads as an active publication (fails closed).
+	system := must(r.System(bg))(t)
+	if j := system.Agents[1].OxiDNSHAPublication; j == nil || j.Status != "" {
+		t.Fatalf("damaged journal %+v", j)
+	}
+	// The backup is the untouched version-1 file.
+	backups := must(filepath.Glob(filepath.Join(dir, BackupsDirName, "configflow-v1-*.sqlite3")))(t)
+	if len(backups) != 1 {
+		t.Fatalf("backups %v", backups)
+	}
+	if got := o17Fingerprint(t, backups[0]); got.Digest != before.Digest {
+		t.Fatal("the backup differs from the version-1 database")
+	}
+}
+
+func TestO17UpgradeIsIdempotent(t *testing.T) {
+	dir, want := o17V1Database(t)
+	path := filepath.Join(dir, DatabaseFilename)
+	r := openRepo(t, dir)
+	first := o17Fingerprint(t, path)
+	r.Close()
+	for range 3 {
+		again := openRepo(t, dir)
+		if got := o17View(t, again); got != want {
+			t.Fatalf("view after reopening\n%s", got)
+		}
+		noError(t, again.upgradeLocked(bg))
+		again.Close()
+	}
+	if got := o17Fingerprint(t, path); got != first {
+		t.Fatal("reopening an upgraded database changed it")
+	}
+	if n := len(must(filepath.Glob(filepath.Join(dir, BackupsDirName, "*")))(t)); n != 1 {
+		t.Fatalf("%d backups", n)
+	}
+}
+
+func TestO17UpgradeBackupFailureRefusesStart(t *testing.T) {
+	dir, _ := o17V1Database(t)
+	path := filepath.Join(dir, DatabaseFilename)
+	before := o17Fingerprint(t, path)
+	noError(t, os.WriteFile(filepath.Join(dir, BackupsDirName), []byte("not a directory"), 0o600))
+	_, err := Open(dir, Options{})
+	wantError(t, err, ErrRepository, "前的备份失败")
+	wantError(t, err, ErrRepository, "服务没有启动")
+	if got := o17Fingerprint(t, path); got != before || o17Version(t, path) != 1 {
+		t.Fatal("the database changed although the backup failed")
+	}
+}
+
+func TestO17UpgradeStoppedAtEveryRowLeavesVersion1(t *testing.T) {
+	dir, want := o17V1Database(t)
+	path := filepath.Join(dir, DatabaseFilename)
+	before := o17Fingerprint(t, path)
+	stop := errors.New("stopped")
+	for i := range 14 {
+		SetUpgradeRowHookForTest(func(row int) error {
+			if row == i {
+				return stop
+			}
+			return nil
+		})
+		_, err := Open(dir, Options{})
+		SetUpgradeRowHookForTest(nil)
+		wantError(t, err, ErrRepository, "数据库未改动")
+		if !errors.Is(err, stop) {
+			t.Fatalf("row %d: %v", i, err)
+		}
+		if got := o17Fingerprint(t, path); got != before {
+			t.Fatalf("row %d: the database changed", i)
+		}
+	}
+	r := openRepo(t, dir)
+	if got := o17View(t, r); got != want {
+		t.Fatalf("view after the retried upgrade\n%s", got)
+	}
+}
+
+// TestO17UpgradeKilled kills a real process inside the upgrade transaction
+// (power loss): the next start sees the untouched version-1 file and upgrades.
+func TestO17UpgradeKilled(t *testing.T) {
+	if dir := os.Getenv("CONFIGFLOW_O17_UPGRADE_DIR"); dir != "" {
+		pause := must(strconv.Atoi(os.Getenv("CONFIGFLOW_O17_UPGRADE_PAUSE")))(t)
+		SetUpgradeRowHookForTest(func(row int) error {
+			if row == pause {
+				noError(t, os.WriteFile(filepath.Join(dir, "paused"), nil, 0o600))
+				select {} // killed here
+			}
+			return nil
+		})
+		_, err := Open(dir, Options{})
+		t.Fatalf("upgrade finished: %v", err)
+	}
+	for _, pause := range []int{0, 7, 13} {
+		t.Run(fmt.Sprint("row", pause), func(t *testing.T) {
+			dir, want := o17V1Database(t)
+			path := filepath.Join(dir, DatabaseFilename)
+			before := o17Fingerprint(t, path)
+			child := exec.Command(os.Args[0], "-test.run=^TestO17UpgradeKilled$", "-test.count=1")
+			child.Env = append(os.Environ(), "CONFIGFLOW_O17_UPGRADE_DIR="+dir, "CONFIGFLOW_O17_UPGRADE_PAUSE="+strconv.Itoa(pause),
+				"CONFIGFLOW_REPO_ORDER_HELPER=1")
+			noError(t, child.Start())
+			deadline := time.Now().Add(60 * time.Second)
+			for {
+				if _, err := os.Stat(filepath.Join(dir, "paused")); err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					_ = child.Process.Kill()
+					t.Fatal("the child never reached the pause")
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			noError(t, child.Process.Kill())
+			_ = child.Wait()
+			if _, err := os.Stat(path + "-journal"); err != nil {
+				t.Fatalf("no hot journal after the kill: %v", err)
+			}
+			if got := o17Fingerprint(t, path); got != before || o17Version(t, path) != 1 {
+				t.Fatal("a killed upgrade left a changed database")
+			}
+			r := openRepo(t, dir)
+			if got := o17View(t, r); got != want {
+				t.Fatalf("view after the upgrade\n%s", got)
+			}
+			if v := o17Version(t, path); v != store.StorageVersion {
+				t.Fatalf("version %d", v)
+			}
+		})
+	}
+}
+
+func TestO17StateCommitsKeepTheConfigurationGeneration(t *testing.T) {
+	r := newRepo(t)
+	path := r.DatabasePath()
+	edit := func(fn func(*model.Agent)) store.Head {
+		t.Helper()
+		noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+			if len(system.Agents) == 0 {
+				system.Agents = []model.Agent{{ID: "a", Name: "A", Host: "192.0.2.1", Port: 8080, ServiceType: "mihomo", ProfileID: "default"}}
+			}
+			fn(&system.Agents[0])
+			return nil
+		}))
+		return must(r.Head(bg))(t)
+	}
+	created := edit(func(*model.Agent) {})
+	state := edit(func(a *model.Agent) { a.Version = "1.2.3"; a.ConfigVersion = "abcd1234" })
+	if !state.SameConfig(created) || state.State != created.State+1 || state == created {
+		t.Fatalf("state commit: %+v → %+v", created, state)
+	}
+	config := edit(func(a *model.Agent) { a.Name = "B" })
+	if config.SameConfig(state) || config.State != state.State {
+		t.Fatalf("configuration commit: %+v → %+v", state, config)
+	}
+	both := edit(func(a *model.Agent) { a.Name = "C"; a.Version = "2.0.0" })
+	if both.SameConfig(config) || both.State != config.State+1 {
+		t.Fatalf("mixed commit: %+v → %+v", config, both)
+	}
+	if n := o17Count(t, path, "SELECT count(*) FROM agent_state WHERE agent_id='a'"); n != 2 {
+		t.Fatalf("%d state rows", n)
+	}
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents = nil
+		return nil
+	}))
+	if n := o17Count(t, path, "SELECT count(*) FROM agent_state"); n != 0 {
+		t.Fatalf("deleting the Agent left %d state rows", n)
+	}
+	// An edit that changes nothing still advances the system revision (as
+	// before), a configuration commit; the state counters stay.
+	same := must(r.Head(bg))(t)
+	noError(t, r.UpdateSystem(bg, func(context.Context, *model.System) error { return nil }))
+	if next := must(r.Head(bg))(t); next.SameConfig(same) || next.State != same.State {
+		t.Fatalf("empty edit: %+v → %+v", same, next)
+	}
+}
+
+func o17AgentWithState(t *testing.T, r *Repository) {
+	t.Helper()
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{{ID: "a", Name: "A", Host: "192.0.2.1", Port: 8080, ServiceType: "mihomo", ProfileID: "default",
+			Version: "1.2.3", ConfigVersion: "abcd1234", LatestDeployment: &model.Deployment{DeploymentID: "d1", Status: "succeeded"}}}
+		system.Agents[0].Deployments.Set("d1", model.Deployment{DeploymentID: "d1", Status: "succeeded"})
+		return nil
+	}))
+}
+
+func TestO17ExportCarriesConfigurationOnly(t *testing.T) {
+	r := newRepo(t)
+	o17AgentWithState(t, r)
+	exported := string(must(r.ExportAllJSON(bg, false))(t))
+	for _, member := range []string{`"deployments"`, `"latest_deployment"`, `"version"`, `"config_version"`} {
+		if strings.Contains(exported, member) {
+			t.Fatalf("export holds %s: %s", member, exported)
+		}
+	}
+	if !strings.Contains(exported, `"host":"192.0.2.1"`) {
+		t.Fatalf("export lost the configuration: %s", exported)
+	}
+	// The repository itself still has the state.
+	if a := must(r.System(bg))(t).Agents[0]; a.Version != "1.2.3" || a.LatestDeployment == nil {
+		t.Fatalf("state lost: %+v", a)
+	}
+}
+
+func TestO17ImportMarksAgentsRestoredWithoutRunRecords(t *testing.T) {
+	r := newRepo(t)
+	o17AgentWithState(t, r)
+	backup := must(r.ExportAllJSON(bg, false))(t)
+	must(r.ImportAllJSON(bg, backup))(t)
+	a := must(r.System(bg))(t).Agents[0]
+	if a.StateRestoredAt == nil || a.LatestDeployment != nil || a.Version != "" {
+		t.Fatalf("new-format backup: %+v", a)
+	}
+	if n := o17Count(t, r.DatabasePath(), "SELECT count(*) FROM agent_state WHERE member='state_restored_at'"); n != 1 {
+		t.Fatalf("%d markers stored", n)
+	}
+	// An older backup that carries the run records restores them, unmarked.
+	old := strings.Replace(string(backup), `"host":"192.0.2.1"`, `"host":"192.0.2.1","version":"1.0.0","latest_deployment":{"deployment_id":"d0","status":"succeeded"}`, 1)
+	must(r.ImportAllJSON(bg, []byte(old)))(t)
+	a = must(r.System(bg))(t).Agents[0]
+	if a.StateRestoredAt != nil || a.Version != "1.0.0" || a.LatestDeployment == nil || a.LatestDeployment.DeploymentID != "d0" {
+		t.Fatalf("older backup: %+v", a)
+	}
+}
+
+func TestO17CommitObserversByKind(t *testing.T) {
+	r := newRepo(t)
+	var config, state int
+	cancelConfig := r.OnCommit(ChangeConfig, func() { config++ })
+	defer cancelConfig()
+	cancelState := r.OnCommit(ChangeState, func() { state++ })
+	o17AgentWithState(t, r) // configuration and state
+	if config != 1 || state != 1 {
+		t.Fatalf("mixed commit: config %d state %d", config, state)
+	}
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Version = "2.0.0"
+		return nil
+	}))
+	if config != 1 || state != 2 {
+		t.Fatalf("state commit: config %d state %d", config, state)
+	}
+	cancelState()
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Name = "B"
+		return nil
+	}))
+	if config != 2 || state != 2 {
+		t.Fatalf("configuration commit after cancel: config %d state %d", config, state)
+	}
+}
+
+func TestO17FollowupExportKeepsHALeftoverMembersOnly(t *testing.T) {
+	r := newRepo(t)
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents = []model.Agent{
+			{
+				ID:          "leftover",
+				Name:        "Leftover",
+				Host:        "192.0.2.1",
+				Port:        model.Int(8080),
+				Token:       "tok-1",
+				ProfileID:   "default",
+				ServiceType: "oxidns",
+				Version:     "1.9.3",
+				LatestDeployment: &model.Deployment{
+					DeploymentID: "d1",
+					Status:       "succeeded",
+				},
+				OxiDNSHAState: &model.HAState{
+					Status:    "failed",
+					Error:     new("rollback failed"),
+					UpdatedAt: model.Int(1700000000),
+					Members:   []string{"secondary", "leftover"},
+				},
+			},
+			{
+				ID:          "enabled-pair",
+				Name:        "Enabled",
+				Host:        "192.0.2.2",
+				Port:        model.Int(8080),
+				Token:       "tok-2",
+				ProfileID:   "default",
+				ServiceType: "oxidns",
+				OxiDNSHA:    &model.HASettings{Enabled: new(true), GroupID: "g1", PeerID: "p2", VIP: "192.0.2.53", VRID: model.Int(51), Role: "primary"},
+				OxiDNSHAState: &model.HAState{
+					Status:    "failed",
+					Error:     new("transient"),
+					UpdatedAt: model.Int(1700000001),
+					Members:   []string{"enabled-pair", "p2"},
+				},
+			},
+		}
+		return nil
+	}))
+	exported := must(r.ExportAllJSON(bg, false))(t)
+	text := string(exported)
+	for _, forbidden := range []string{"latest_deployment", "rollback failed", "1700000000", "1.9.3", "transient"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("export leaked runtime state %q: %s", forbidden, text)
+		}
+	}
+	if !strings.Contains(text, `"oxidns_ha_state":{"status":"failed","members":["secondary","leftover"]}`) {
+		t.Fatalf("export missing minimal HA leftover members: %s", text)
+	}
+	// Enabled pair must not export oxidns_ha_state.
+	if strings.Count(text, `"oxidns_ha_state"`) != 1 {
+		t.Fatalf("expected oxidns_ha_state only for leftover agent: %s", text)
+	}
+	// Restoring into a fresh repository keeps the leftover members in
+	// agent_state AND still sets state_restored_at.
+	restored := newRepo(t)
+	must(restored.ImportAllJSON(bg, exported))(t)
+	agents := must(restored.System(bg))(t).Agents
+	if len(agents) != 2 {
+		t.Fatalf("restored agents = %d, want 2", len(agents))
+	}
+	a := agents[0]
+	if a.StateRestoredAt == nil {
+		t.Fatalf("restored leftover agent missing state_restored_at: %+v", a)
+	}
+	if a.OxiDNSHAState == nil || a.OxiDNSHAState.Status != "failed" || len(a.OxiDNSHAState.Members) != 2 || a.OxiDNSHAState.Members[0] != "secondary" || a.OxiDNSHAState.Members[1] != "leftover" {
+		t.Fatalf("restored leftover oxidns_ha_state = %+v", a.OxiDNSHAState)
+	}
+	if a.LatestDeployment != nil || a.Version != "" {
+		t.Fatalf("restored leftover agent should not have other runtime state: %+v", a)
+	}
+	if agents[1].OxiDNSHAState != nil || agents[1].StateRestoredAt == nil {
+		t.Fatalf("restored enabled pair unexpected state: %+v", agents[1])
+	}
+}
+
+func TestO17FollowupSameConfigCaches(t *testing.T) {
+	r := newRepo(t)
+	o17AgentWithState(t, r)
+
+	// Populate tokensCache, agentDefault, and configCredentialsCache.
+	if _, _, err := r.sanitizationTokensNow(bg); err != nil {
+		t.Fatal(err)
+	}
+	tokens1 := r.tokensCache.Load()
+	if _, err := r.AgentDefaultProfileID(bg); err != nil {
+		t.Fatal(err)
+	}
+	r.agentDefaultMu.Lock()
+	def1 := r.agentDefault
+	r.agentDefaultMu.Unlock()
+	collectCalls := 0
+	collect := func(raw json.RawMessage) []string {
+		collectCalls++
+		return []string{"secret"}
+	}
+	if _, err := r.ConfigCredentials(bg, DefaultProfileID, collect); err != nil {
+		t.Fatal(err)
+	}
+	if collectCalls != 1 {
+		t.Fatalf("collectCalls = %d, want 1", collectCalls)
+	}
+
+	// State-only commit: all three config-only caches must stay hit.
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Version = "2.0.0"
+		return nil
+	}))
+	if _, _, err := r.sanitizationTokensNow(bg); err != nil {
+		t.Fatal(err)
+	}
+	if r.tokensCache.Load() != tokens1 {
+		t.Fatal("tokensCache invalidated by state-only commit")
+	}
+	if _, err := r.AgentDefaultProfileID(bg); err != nil {
+		t.Fatal(err)
+	}
+	r.agentDefaultMu.Lock()
+	def2 := r.agentDefault
+	r.agentDefaultMu.Unlock()
+	if def2 != def1 {
+		t.Fatal("agentDefault cache invalidated by state-only commit")
+	}
+	if _, err := r.ConfigCredentials(bg, DefaultProfileID, collect); err != nil {
+		t.Fatal(err)
+	}
+	if collectCalls != 1 {
+		t.Fatalf("configCredentialsCache invalidated by state-only commit (collectCalls=%d)", collectCalls)
+	}
+
+	// Configuration commit: all three caches must invalidate.
+	noError(t, r.UpdateSystem(bg, func(_ context.Context, system *model.System) error {
+		system.Agents[0].Token = "tok-rotated"
+		return nil
+	}))
+	if _, _, err := r.sanitizationTokensNow(bg); err != nil {
+		t.Fatal(err)
+	}
+	if r.tokensCache.Load() == tokens1 {
+		t.Fatal("tokensCache not invalidated by config commit")
+	}
+	if _, err := r.AgentDefaultProfileID(bg); err != nil {
+		t.Fatal(err)
+	}
+	r.agentDefaultMu.Lock()
+	def3 := r.agentDefault
+	r.agentDefaultMu.Unlock()
+	if def3 == def1 {
+		t.Fatal("agentDefault cache not invalidated by config commit")
+	}
+	if _, err := r.ConfigCredentials(bg, DefaultProfileID, collect); err != nil {
+		t.Fatal(err)
+	}
+	if collectCalls != 2 {
+		t.Fatalf("configCredentialsCache not invalidated by config commit (collectCalls=%d)", collectCalls)
+	}
+}
+
+func TestO17FollowupRouterLastReleaseStateAndUpgrade(t *testing.T) {
+	r := newRepo(t)
+	o17AgentWithState(t, r)
+	_, err := r.UpdateProfile(bg, DefaultProfileID, func(_ context.Context, profile *model.Profile) error {
+		profile.Routers.Items = []model.Router{{
+			ID:       "r1",
+			Name:     "Main",
+			Type:     "routeros",
+			Endpoint: "http://192.0.2.1",
+			Username: "synthetic-user",
+			Password: "synthetic-password",
+			LastRelease: &model.RouterRelease{
+				At:          "2026-11-23T00:00:00Z",
+				OK:          true,
+				Fingerprint: "fp-1",
+				Message:     "",
+			},
+		}}
+		return nil
+	})
+	noError(t, err)
+
+	// 1. Downgrade to v1 and upgrade back to v2 in one transaction: both Agent
+	// state and router last_release move into agent_state (StorageVersion stays 2).
+	repotest.DowngradeToV1(t, r.DatabasePath())
+	if v := o17Version(t, r.DatabasePath()); v != 1 {
+		t.Fatalf("downgraded version = %d, want 1", v)
+	}
+	// Fault injection during upgrade: failure leaves v1 untouched with backup.
+	upgradeRowHook = func(i int) error {
+		if i == 0 {
+			return errors.New("synthetic upgrade row failure")
+		}
+		return nil
+	}
+	_, failErr := Open(r.DataDir(), Options{DefaultSettings: DefaultConfig})
+	upgradeRowHook = nil
+	if failErr == nil {
+		t.Fatal("expected upgrade fault injection to fail")
+	}
+	if v := o17Version(t, r.DatabasePath()); v != 1 {
+		t.Fatalf("version after failed upgrade = %d, want 1", v)
+	}
+
+	reopened := openRepo(t, r.DataDir())
+	if v := o17Version(t, reopened.DatabasePath()); v != store.StorageVersion {
+		t.Fatalf("upgraded version = %d, want %d", v, store.StorageVersion)
+	}
+	if n := o17Count(t, reopened.DatabasePath(), "SELECT count(*) FROM agent_state WHERE member='router.last_release'"); n != 1 {
+		t.Fatalf("router.last_release rows = %d, want 1", n)
+	}
+	prof := must(reopened.Profile(bg, DefaultProfileID))(t)
+	if len(prof.Routers.Items) != 1 || prof.Routers.Items[0].LastRelease == nil || prof.Routers.Items[0].LastRelease.Fingerprint != "fp-1" {
+		t.Fatalf("router last_release lost across v1->v2 upgrade: %+v", prof.Routers.Items)
+	}
+
+	// 2. Writing only last_release via SaveRouterPublicationJSON must not
+	// advance Head.Generation or profile.Revision, only Head.State.
+	headBefore := must(reopened.Head(bg))(t)
+	revBefore := prof.Revision
+	expectedRouter, err := model.Marshal(prof.Routers.Items[0])
+	noError(t, err)
+	noError(t, reopened.SaveRouterPublicationJSON(bg, DefaultProfileID, expectedRouter, RouterPublicationJSON{
+		LastRelease: JSONUpdate{Set: true, Value: json.RawMessage(`{"at":"2026-11-23T01:00:00Z","ok":true,"fingerprint":"fp-2","message":""}`)},
+	}))
+	headAfter := must(reopened.Head(bg))(t)
+	profAfter := must(reopened.Profile(bg, DefaultProfileID))(t)
+	if !headAfter.SameConfig(headBefore) || headAfter.State != headBefore.State+1 {
+		t.Fatalf("last_release-only commit changed head %+v -> %+v", headBefore, headAfter)
+	}
+	if profAfter.Revision != revBefore {
+		t.Fatalf("last_release-only commit advanced profile revision %d -> %d", revBefore, profAfter.Revision)
+	}
+
+	// 3. ExportAllJSON omits router last_release; importing it marks the router
+	// with state_restored_at; an older backup carrying last_release stays unmarked.
+	exported := must(reopened.ExportAllJSON(bg, false))(t)
+	if strings.Contains(string(exported), `"last_release"`) {
+		t.Fatalf("export leaked router last_release: %s", exported)
+	}
+	restored := newRepo(t)
+	must(restored.ImportAllJSON(bg, exported))(t)
+	restoredProf := must(restored.Profile(bg, DefaultProfileID))(t)
+	if len(restoredProf.Routers.Items) != 1 || restoredProf.Routers.Items[0].StateRestoredAt == nil || restoredProf.Routers.Items[0].LastRelease != nil {
+		t.Fatalf("restored router unexpected state: %+v", restoredProf.Routers.Items)
+	}
+
+	// 4. Failed republication keeps state_restored_at; successful republication clears it.
+	expectedRestored, err := model.Marshal(restoredProf.Routers.Items[0])
+	noError(t, err)
+	noError(t, restored.SaveRouterPublicationJSON(bg, DefaultProfileID, expectedRestored, RouterPublicationJSON{
+		LastRelease: JSONUpdate{Set: true, Value: json.RawMessage(`{"at":"2026-11-23T02:00:00Z","ok":false,"fingerprint":"fp-3","message":"failed"}`)},
+	}))
+	if got := must(restored.Profile(bg, DefaultProfileID))(t).Routers.Items[0]; got.StateRestoredAt == nil {
+		t.Fatalf("failed publication cleared router state_restored_at: %+v", got)
+	}
+	noError(t, restored.SaveRouterPublicationJSON(bg, DefaultProfileID, expectedRestored, RouterPublicationJSON{
+		LastRelease: JSONUpdate{Set: true, Value: json.RawMessage(`{"at":"2026-11-23T03:00:00Z","ok":true,"fingerprint":"fp-4","message":""}`)},
+	}))
+	if got := must(restored.Profile(bg, DefaultProfileID))(t).Routers.Items[0]; got.StateRestoredAt != nil || got.LastRelease == nil || !got.LastRelease.OK {
+		t.Fatalf("successful publication did not clear router state_restored_at: %+v", got)
+	}
+
+	// 5. Legacy backup with last_release imports unmarked.
+	diag := must(reopened.DiagnosticExportJSON(bg))(t)
+	legacy := newRepo(t)
+	must(legacy.ImportAllJSON(bg, diag))(t)
+	if got := must(legacy.Profile(bg, DefaultProfileID))(t).Routers.Items[0]; got.StateRestoredAt != nil || got.LastRelease == nil {
+		t.Fatalf("legacy backup with last_release should not set restore marker: %+v", got)
+	}
+}

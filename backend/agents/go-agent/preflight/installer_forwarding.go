@@ -103,9 +103,9 @@ func installerForwardTarget(configs []Config, local []net.IP) (netfilter.Target,
 		if _, marker := doc["x-configflow-linux-gateway"]; marker {
 			return netfilter.Target{}, false
 		}
-		tun, _ := doc["tun"].(map[string]interface{})
+		tun, _ := doc["tun"].(map[string]any)
 		for _, key := range []string{"route-address", "route-address-set", "inet4-route-address"} {
-			if entries, ok := tun[key].([]interface{}); ok && len(entries) > 0 {
+			if entries, ok := tun[key].([]any); ok && len(entries) > 0 {
 				return netfilter.Target{}, false
 			}
 		}

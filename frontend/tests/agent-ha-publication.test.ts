@@ -42,3 +42,42 @@ describe('planned HA handoff progress across publication surfaces', () => {
     expect(wrapper.get('[data-status-notice]').text()).toContain('原持有设备：未执行')
   })
 })
+
+describe('automatic completion after a lost member returns', () => {
+  const stopped: AgentHAPublication = {
+    ...publication, status: 'failed',
+    message: '主备设备连接中断超过 10 分钟，本次主备发布已停止；设备恢复后会自动完成本次主备发布。设备无法恢复时可以强制停用高可用',
+    auto_complete: { status: 'waiting', message: '等待设备恢复后自动完成发布' },
+  }
+  it.each(['waiting', 'running'] as const)('leaves the %s state to the status row and keeps the stop message', state => {
+    const task: AgentDeployment = { deployment_id: 'holder-release', status: 'failed', ha_publication: { ...stopped, auto_complete: { status: state, message: '等待设备恢复后自动完成发布' } } }
+    const wrapper = mount(AgentDeploymentStatus, { props: { task } })
+    wrappers.push(wrapper)
+    expect(wrapper.get('[data-ha-publication]').text()).toContain('设备恢复后会自动完成本次主备发布')
+    expect(wrapper.find('[data-ha-auto-complete]').exists()).toBe(false)
+    expect(wrapper.find('[data-ha-auto-attempt]').exists()).toBe(false)
+  })
+
+  it('names the reason when the stopped pair cannot be completed automatically', () => {
+    const message = '无法自动完成本次主备发布：本次发布的内容已无法读取；请手动完整发布一次主备配置'
+    const task: AgentDeployment = { deployment_id: 'holder-release', status: 'failed', ha_publication: { ...stopped, auto_complete: { status: 'blocked', message } } }
+    const wrapper = mount(AgentDeploymentStatus, { props: { task } })
+    wrappers.push(wrapper)
+    const line = wrapper.get('[data-ha-auto-complete]')
+    expect(line.text()).toBe(message)
+    expect(line.classes()).toContain('text-destructive-accent')
+  })
+
+  it('marks the completing publication in the history and shows nothing for an ordinary one', () => {
+    const attempt: AgentDeployment = { deployment_id: 'auto-release', status: 'succeeded',
+      ha_publication: { ...publication, status: 'succeeded', phase: 'done', message: '两台均已发布成功', auto_complete: { status: '', message: '自动补完', attempt: true } } }
+    const wrapper = mount(AgentDeploymentStatus, { props: { task: attempt } })
+    wrappers.push(wrapper)
+    expect(wrapper.get('[data-ha-auto-attempt]').text()).toBe('自动补完')
+    expect(wrapper.find('[data-ha-auto-complete]').exists()).toBe(false)
+    const plain = mount(AgentDeploymentStatus, { props: { task: { deployment_id: 'holder-release', status: 'failed', ha_publication: { ...publication, status: 'failed' } } } })
+    wrappers.push(plain)
+    expect(plain.find('[data-ha-auto-attempt]').exists()).toBe(false)
+    expect(plain.find('[data-ha-auto-complete]').exists()).toBe(false)
+  })
+})

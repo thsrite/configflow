@@ -18,7 +18,7 @@ func TestNativeAIOUninstallRejectsSharedOrMismatchedInstallation(t *testing.T) {
 		func(c *Config) { c.AgentServiceUnit = "configflow-agent" },
 		func(c *Config) { c.AgentServiceUnit = "configflow-agent-oxidns" },
 		func(c *Config) { c.ServiceType = "mosdns" },
-		func(c *Config) { c.ServiceManager = "supervisor" },
+		func(c *Config) { c.ServiceManager = "s6" },
 	} {
 		cfg := valid
 		mutate(&cfg)

@@ -1,0 +1,201 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"configflow/internal/agents"
+	"configflow/internal/agents/dnsfollow"
+	"configflow/internal/agents/dnsha"
+	agentipv6 "configflow/internal/agents/ipv6"
+	"configflow/internal/agents/metrics"
+	"configflow/internal/agents/monitor"
+	"configflow/internal/agents/rulesync"
+	"configflow/internal/agents/trafficstore"
+	"configflow/internal/agents/upgrades"
+	"configflow/internal/aggregations"
+	apisettings "configflow/internal/api/settings"
+	"configflow/internal/auth"
+	"configflow/internal/deploy"
+	"configflow/internal/discovery"
+	"configflow/internal/httpx"
+	"configflow/internal/lifecycle"
+	"configflow/internal/mcp"
+	"configflow/internal/notifications"
+	"configflow/internal/provider"
+	"configflow/internal/refresh"
+	"configflow/internal/repo"
+	"configflow/internal/routers"
+	routerrulesync "configflow/internal/routers/rulesync"
+	"configflow/internal/rulesource"
+	"configflow/internal/setup"
+	"configflow/internal/substore"
+	"configflow/internal/tasks"
+	"configflow/internal/webdav"
+)
+
+// Options configures server construction. Repo is required and must be opened
+// with RepoOptions (export sanitizer, router job lock); a nil Runtime
+// constructs a fresh Runtime for the App.
+type Options struct {
+	Repo    *repo.Repository
+	Runtime *lifecycle.Runtime
+}
+
+// App owns the wired HTTP application and its core runtime dependencies.
+type App struct {
+	HTTP          *httpx.App
+	Repo          *repo.Repository
+	Runtime       *lifecycle.Runtime
+	Tasks         *tasks.Registry
+	Notifications *notifications.Service
+	Agents        *agents.Manager
+	Traffic       *trafficstore.Service
+	Metrics       *metrics.Service
+	Monitor       *monitor.Service
+	Upgrades      *upgrades.Service
+	DNSHA         *dnsha.Service
+	DNSFollow     *dnsfollow.Service
+	RuleSync      *rulesync.Service
+	IPv6          *agentipv6.Service
+	SubStore      *substore.Service
+	Refresh       *refresh.Service
+	Provider      *provider.Service
+	Aggregations  *aggregations.Service
+	Deploy        *deploy.Service
+	RuleSource    *rulesource.Service
+	Routers       *routers.Service
+	RouterSync    *routerrulesync.RuleSyncService
+	WebDAV        *webdav.Service
+	Discovery     *discovery.Service
+	SetupOwners   setup.ExternalOwners
+	Settings      *apisettings.Handler
+
+	api apiHandlers // the mounted route handlers (production-wiring tests)
+}
+
+// New wires the application, registers ordered startup steps and background
+// loops on the Runtime, mounts every route package, validates task and
+// notification slot completeness, and installs the authentication gate.
+func New(ctx context.Context, opts Options) (*App, error) {
+	if opts.Repo == nil {
+		return nil, errors.New("server.New: repository is nil")
+	}
+	if err := opts.Repo.RequireServerCollaborators(); err != nil {
+		return nil, fmt.Errorf("server.New: open the repository with server.RepoOptions(): %w", err)
+	}
+	rt := opts.Runtime
+	if rt == nil {
+		rt = lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry()})
+	}
+	tk := tasks.NewRegistry(opts.Repo, rt)
+	nt := notifications.New(notifications.Options{Repo: opts.Repo, Tasks: tk, Summarize: routers.NotificationSummary})
+	gen, err := newGenerateServices(opts.Repo, rt, tk, nt)
+	if err != nil {
+		return nil, err
+	}
+	ag, err := wireAgents(ctx, opts, rt, tk, nt, gen)
+	if err != nil {
+		return nil, err
+	}
+	rs := rulesource.New(rulesource.Options{Repo: opts.Repo})
+	registerStartup(rt, opts.Repo, gen.substore, ag.metrics)
+	wd := webdav.NewService(nil)
+	wd.Repo = opts.Repo
+	wd.Tasks = tk
+	wd.Notifications = nt
+	wd.Register(rt, tk)
+	wd.Subscribe(opts.Repo)
+	disc := discovery.New(discovery.Options{
+		Repo:          opts.Repo,
+		Agents:        ag.manager,
+		Traffic:       ag.traffic,
+		Notifications: nt,
+		Runtime:       rt,
+		Tasks:         tk,
+	})
+	rtrSvc, err := wireOtherSubsystems(opts, rt, tk, nt, ag, gen, rs, disc)
+	if err != nil {
+		return nil, err
+	}
+	setupOwners := buildSetupOwners(ag, rs, rtrSvc.routers)
+	if err := gen.deploy.Validate(); err != nil {
+		return nil, err
+	}
+	if err := tk.Validate(); err != nil {
+		return nil, err
+	}
+	if err := nt.Validate(); err != nil {
+		return nil, err
+	}
+	nt.MarkStarted()
+	httpApp := httpx.New()
+	httpApp.Repo = opts.Repo
+	httpApp.Runtime = rt
+	api := apiHandlers{
+		mcp:    mcp.NewHandler(opts.Repo),
+		agents: newAgentAPIHandler(opts, ag, gen, disc),
+		w10b:   newW10bHandlers(opts, nt, ag, gen, rs, rtrSvc),
+		w10c:   newW10cHandlers(opts, tk, nt, ag, gen, rs, wd, disc, &setupOwners),
+	}
+	registerRoutes(httpApp.Router, api)
+	auth.Install(httpApp)
+	return &App{
+		HTTP:          httpApp,
+		Repo:          opts.Repo,
+		Runtime:       rt,
+		Tasks:         tk,
+		Notifications: nt,
+		Agents:        ag.manager,
+		Traffic:       ag.traffic,
+		Metrics:       ag.metrics,
+		Monitor:       ag.monitor,
+		Upgrades:      ag.upgrades,
+		DNSHA:         ag.dnsha,
+		DNSFollow:     ag.dnsfollow,
+		RuleSync:      ag.rulesync,
+		IPv6:          ag.ipv6,
+		SubStore:      gen.substore,
+		Refresh:       gen.refresh,
+		Provider:      gen.provider,
+		Aggregations:  gen.aggregations,
+		Deploy:        gen.deploy,
+		RuleSource:    rs,
+		Routers:       rtrSvc.routers,
+		RouterSync:    rtrSvc.rulesync,
+		WebDAV:        wd,
+		Discovery:     disc,
+		SetupOwners:   setupOwners,
+		Settings:      api.w10c.settings,
+		api:           api,
+	}, nil
+}
+
+// wireOtherSubsystems registers the generation-pipeline loops and task rows
+// (W7), routers and router rule-sync services (W9), and the subsystems not yet
+// instantiated (W10). Agent-domain services are wired exactly once in wireAgents.
+func wireOtherSubsystems(opts Options, rt *lifecycle.Runtime, tk *tasks.Registry, nt *notifications.Service, ag *agentServices, gen *generateServices, rs *rulesource.Service, disc *discovery.Service) (*routerServices, error) {
+	gen.substore.Register(rt)
+	gen.refresh.Register(rt, tk)
+	disc.Register(rt, tk)
+	if err := wireConvertOnce(opts.Repo, gen); err != nil {
+		return nil, err
+	}
+	rtrSvc := wireRouters(opts, rt, tk, nt, ag, rs)
+	return rtrSvc, nil
+}
+
+// registerStartup installs the synchronous startup steps in their required
+// order before webdav-worker-init runs.
+func registerStartup(rt *lifecycle.Runtime, r *repo.Repository, sub *substore.Service, mt *metrics.Service) {
+	rt.RegisterStartup(lifecycle.Startup{Name: "load-config", Run: func(ctx context.Context) error {
+		_, err := r.PrepareConfig(ctx)
+		return err
+	}})
+	sub.RegisterStartup(rt)
+	rt.RegisterStartup(lifecycle.Startup{Name: "agent-manager-init", Run: func(context.Context) error {
+		return nil
+	}})
+	rt.RegisterStartup(mt.Startup())
+}

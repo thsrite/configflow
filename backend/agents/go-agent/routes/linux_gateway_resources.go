@@ -16,54 +16,54 @@ var gatewayLookPath = exec.LookPath
 
 func gatewayOwner(state *gatewayState) string { return "configflow-gateway:" + state.Token }
 
-func gatewayDesiredNFT(state *gatewayState) []map[string]interface{} {
+func gatewayDesiredNFT(state *gatewayState) []map[string]any {
 	tag, spec := gatewayOwner(state), state.Spec
-	objects := []map[string]interface{}{
-		nftObject("table", map[string]interface{}{"family": "ip", "name": gatewayTable, "comment": tag}),
-		nftObject("chain", map[string]interface{}{"family": "ip", "table": gatewayTable, "name": "forward", "type": "filter", "hook": "forward", "prio": 0, "policy": "accept", "comment": tag}),
-		nftObject("chain", map[string]interface{}{"family": "ip", "table": gatewayTable, "name": "postrouting", "type": "nat", "hook": "postrouting", "prio": 100, "policy": "accept", "comment": tag}),
+	objects := []map[string]any{
+		nftObject("table", map[string]any{"family": "ip", "name": gatewayTable, "comment": tag}),
+		nftObject("chain", map[string]any{"family": "ip", "table": gatewayTable, "name": "forward", "type": "filter", "hook": "forward", "prio": 0, "policy": "accept", "comment": tag}),
+		nftObject("chain", map[string]any{"family": "ip", "table": gatewayTable, "name": "postrouting", "type": "nat", "hook": "postrouting", "prio": 100, "policy": "accept", "comment": tag}),
 	}
-	meta := func(key string) interface{} {
-		return map[string]interface{}{"meta": map[string]interface{}{"key": key}}
+	meta := func(key string) any {
+		return map[string]any{"meta": map[string]any{"key": key}}
 	}
-	ip := func(key string) interface{} {
-		return map[string]interface{}{"payload": map[string]interface{}{"protocol": "ip", "field": key}}
+	ip := func(key string) any {
+		return map[string]any{"payload": map[string]any{"protocol": "ip", "field": key}}
 	}
 	parts := strings.Split(spec.LANCIDR, "/")
 	var bits int
 	_, _ = fmt.Sscanf(parts[1], "%d", &bits)
-	subnet := map[string]interface{}{"prefix": map[string]interface{}{"addr": parts[0], "len": bits}}
-	addRule := func(chain, name string, expr []interface{}) {
-		objects = append(objects, nftObject("rule", map[string]interface{}{"family": "ip", "table": gatewayTable, "chain": chain, "expr": expr, "comment": tag + ":" + name}))
+	subnet := map[string]any{"prefix": map[string]any{"addr": parts[0], "len": bits}}
+	addRule := func(chain, name string, expr []any) {
+		objects = append(objects, nftObject("rule", map[string]any{"family": "ip", "table": gatewayTable, "chain": chain, "expr": expr, "comment": tag + ":" + name}))
 	}
-	addRule("forward", "lan", []interface{}{nftMatch(meta("iifname"), spec.Interface, "=="), nftMatch(ip("saddr"), subnet, "=="), map[string]interface{}{"accept": nil}})
-	addRule("forward", "reply", []interface{}{nftMatch(meta("oifname"), spec.Interface, "=="), nftMatch(ip("daddr"), subnet, "=="), nftMatch(map[string]interface{}{"ct": map[string]interface{}{"key": "state"}}, map[string]interface{}{"set": []interface{}{"established", "related"}}, "=="), map[string]interface{}{"accept": nil}})
-	addRule("postrouting", "snat", []interface{}{nftMatch(meta("iifname"), spec.Interface, "=="), nftMatch(meta("oifname"), spec.Interface, "=="), nftMatch(ip("saddr"), subnet, "=="), nftMatch(ip("daddr"), subnet, "!="), map[string]interface{}{"snat": map[string]interface{}{"addr": spec.Address}}})
+	addRule("forward", "lan", []any{nftMatch(meta("iifname"), spec.Interface, "=="), nftMatch(ip("saddr"), subnet, "=="), map[string]any{"accept": nil}})
+	addRule("forward", "reply", []any{nftMatch(meta("oifname"), spec.Interface, "=="), nftMatch(ip("daddr"), subnet, "=="), nftMatch(map[string]any{"ct": map[string]any{"key": "state"}}, map[string]any{"set": []any{"established", "related"}}, "=="), map[string]any{"accept": nil}})
+	addRule("postrouting", "snat", []any{nftMatch(meta("iifname"), spec.Interface, "=="), nftMatch(meta("oifname"), spec.Interface, "=="), nftMatch(ip("saddr"), subnet, "=="), nftMatch(ip("daddr"), subnet, "!="), map[string]any{"snat": map[string]any{"addr": spec.Address}}})
 	return objects
 }
 
 // nft compiles the old ct-state set membership spelling "in" to "==".
 // Accept that one equivalent spelling in preexisting journals, without relaxing
 // object identity, comments, expression ordering, or any other rule content.
-func canonicalGatewayNFT(value interface{}) interface{} {
+func canonicalGatewayNFT(value any) any {
 	switch value := value.(type) {
-	case map[string]interface{}:
-		result := make(map[string]interface{}, len(value))
+	case map[string]any:
+		result := make(map[string]any, len(value))
 		for key, child := range value {
 			result[key] = canonicalGatewayNFT(child)
 		}
-		if match, ok := result["match"].(map[string]interface{}); ok && len(result) == 1 && len(match) == 3 && match["op"] == "in" {
-			left := map[string]interface{}{"left": match["left"]}
-			right := map[string]interface{}{"right": match["right"]}
-			state := map[string]interface{}{"left": map[string]interface{}{"ct": map[string]interface{}{"key": "state"}}}
-			states := map[string]interface{}{"right": map[string]interface{}{"set": []interface{}{"established", "related"}}}
+		if match, ok := result["match"].(map[string]any); ok && len(result) == 1 && len(match) == 3 && match["op"] == "in" {
+			left := map[string]any{"left": match["left"]}
+			right := map[string]any{"right": match["right"]}
+			state := map[string]any{"left": map[string]any{"ct": map[string]any{"key": "state"}}}
+			states := map[string]any{"right": map[string]any{"set": []any{"established", "related"}}}
 			if normalizedResourceEqual(left, state) && normalizedResourceEqual(right, states) {
 				match["op"] = "=="
 			}
 		}
 		return result
-	case []interface{}:
-		result := make([]interface{}, len(value))
+	case []any:
+		result := make([]any, len(value))
 		for index, child := range value {
 			result[index] = canonicalGatewayNFT(child)
 		}
@@ -73,15 +73,15 @@ func canonicalGatewayNFT(value interface{}) interface{} {
 	}
 }
 
-func gatewayNormalizedResourceEqual(expected, actual map[string]interface{}) bool {
-	return normalizedResourceEqual(canonicalGatewayNFT(expected).(map[string]interface{}), canonicalGatewayNFT(actual).(map[string]interface{}))
+func gatewayNormalizedResourceEqual(expected, actual map[string]any) bool {
+	return normalizedResourceEqual(canonicalGatewayNFT(expected).(map[string]any), canonicalGatewayNFT(actual).(map[string]any))
 }
 
-func gatewayOwnedResourceEqual(expected, actual map[string]interface{}) bool {
-	return ownedResourceEqual(canonicalGatewayNFT(expected).(map[string]interface{}), canonicalGatewayNFT(actual).(map[string]interface{}))
+func gatewayOwnedResourceEqual(expected, actual map[string]any) bool {
+	return ownedResourceEqual(canonicalGatewayNFT(expected).(map[string]any), canonicalGatewayNFT(actual).(map[string]any))
 }
 
-func readGatewayNFT() ([]map[string]interface{}, error) {
+func readGatewayNFT() ([]map[string]any, error) {
 	raw, err := gatewayRun("nft", "-j", "list", "ruleset")
 	if err != nil {
 		return nil, fmt.Errorf("无法检查 nftables（需要 nft 和网络管理权限）：%w", err)
@@ -90,18 +90,18 @@ func readGatewayNFT() ([]map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	doc, ok := value.(map[string]interface{})
+	doc, ok := value.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("nft ruleset 返回格式无效")
 	}
 	return resourceObjects(doc["nftables"], "nft ruleset")
 }
 
-func gatewayNFTObjects(objects []map[string]interface{}) []map[string]interface{} {
-	result := []map[string]interface{}{}
+func gatewayNFTObjects(objects []map[string]any) []map[string]any {
+	result := []map[string]any{}
 	for _, object := range objects {
 		for kind, value := range object {
-			body, _ := value.(map[string]interface{})
+			body, _ := value.(map[string]any)
 			if body["family"] == "ip" && ((kind == "table" && body["name"] == gatewayTable) || body["table"] == gatewayTable) {
 				result = append(result, object)
 			}
@@ -110,7 +110,7 @@ func gatewayNFTObjects(objects []map[string]interface{}) []map[string]interface{
 	return result
 }
 
-func checkGatewayOwnership(state *gatewayState, all []map[string]interface{}, require bool) error {
+func checkGatewayOwnership(state *gatewayState, all []map[string]any, require bool) error {
 	actual := gatewayNFTObjects(all)
 	if len(actual) == 0 {
 		if require {
@@ -134,7 +134,7 @@ func checkGatewayOwnership(state *gatewayState, all []map[string]interface{}, re
 	return nil
 }
 
-func gatewayPreflightResources(cfg *Config, state *gatewayState) ([]map[string]interface{}, error) {
+func gatewayPreflightResources(cfg *Config, state *gatewayState) ([]map[string]any, error) {
 	if prior, err := loadReturnState(cfg); err != nil {
 		return nil, err
 	} else if prior != nil && (prior.Active || (prior.Ownership != nil && prior.Ownership.Pending)) {
@@ -185,10 +185,10 @@ func gatewayPreflightResources(cfg *Config, state *gatewayState) ([]map[string]i
 	}
 	forward := map[string]bool{}
 	for _, object := range objects {
-		if table, ok := object["table"].(map[string]interface{}); ok && table["name"] == managedReturnTable {
+		if table, ok := object["table"].(map[string]any); ok && table["name"] == managedReturnTable {
 			return nil, fmt.Errorf("检测到自动回流表，不能混用 Linux 网关")
 		}
-		if chain, ok := object["chain"].(map[string]interface{}); ok && chain["hook"] == "forward" && chain["table"] != gatewayTable && (chain["family"] == "ip" || chain["family"] == "inet") {
+		if chain, ok := object["chain"].(map[string]any); ok && chain["hook"] == "forward" && chain["table"] != gatewayTable && (chain["family"] == "ip" || chain["family"] == "inet") {
 			if chain["policy"] != "accept" {
 				return nil, fmt.Errorf("现有 nftables FORWARD 链策略不是 accept，不能保证网关转发")
 			}
@@ -196,7 +196,7 @@ func gatewayPreflightResources(cfg *Config, state *gatewayState) ([]map[string]i
 		}
 	}
 	for _, object := range objects {
-		if rule, ok := object["rule"].(map[string]interface{}); ok && forward[fmt.Sprint(rule["family"], "/", rule["table"], "/", rule["chain"])] && !gatewayPureAcceptRule(rule) {
+		if rule, ok := object["rule"].(map[string]any); ok && forward[fmt.Sprint(rule["family"], "/", rule["table"], "/", rule["chain"])] && !gatewayPureAcceptRule(rule) {
 			return nil, fmt.Errorf("现有 nftables FORWARD 链包含自定义规则，自动配置不会覆盖；请先核对防火墙")
 		}
 	}
@@ -206,13 +206,13 @@ func gatewayPreflightResources(cfg *Config, state *gatewayState) ([]map[string]i
 // Existing pure accept rules (including Mihomo's established-flow allowances)
 // cannot deny forwarding. Unknown verdicts, jumps and packet mutations remain
 // blockers; table names are never treated as evidence of compatibility.
-func gatewayPureAcceptRule(rule map[string]interface{}) bool {
-	expressions, ok := rule["expr"].([]interface{})
+func gatewayPureAcceptRule(rule map[string]any) bool {
+	expressions, ok := rule["expr"].([]any)
 	if !ok || len(expressions) == 0 {
 		return false
 	}
 	for index, value := range expressions {
-		expression, ok := value.(map[string]interface{})
+		expression, ok := value.(map[string]any)
 		if !ok || len(expression) != 1 {
 			return false
 		}
@@ -426,8 +426,8 @@ func lockGatewayJournal(cfg *Config) (func(), error) {
 	return func() { _ = syscall.Flock(int(file.Fd()), syscall.LOCK_UN); _ = file.Close() }, nil
 }
 
-func gatewayMutateNFT(commands []map[string]interface{}) error {
-	data, err := json.Marshal(map[string]interface{}{"nftables": commands})
+func gatewayMutateNFT(commands []map[string]any) error {
+	data, err := json.Marshal(map[string]any{"nftables": commands})
 	if err != nil {
 		return err
 	}
@@ -517,9 +517,9 @@ func applyLinuxGateway(cfg *Config, spec LinuxGatewaySpec, profileID string) err
 		if err := saveGatewayState(cfg, state); err != nil {
 			return err
 		}
-		commands := []map[string]interface{}{}
+		commands := []map[string]any{}
 		for _, object := range state.NFT {
-			commands = append(commands, map[string]interface{}{"add": object})
+			commands = append(commands, map[string]any{"add": object})
 		}
 		if err := gatewayMutateNFT(commands); err != nil {
 			return fmt.Errorf("网关未完成，journal 已保留，可撤销后重试：%w", err)
@@ -579,9 +579,9 @@ func removeLinuxGateway(cfg *Config) error {
 	}
 	if len(gatewayNFTObjects(objects)) != 0 {
 		// Remove by the verified table handle, never merely by a familiar name.
-		var table map[string]interface{}
+		var table map[string]any
 		for _, object := range gatewayNFTObjects(objects) {
-			if body, ok := object["table"].(map[string]interface{}); ok {
+			if body, ok := object["table"].(map[string]any); ok {
 				table = body
 				break
 			}
@@ -589,7 +589,7 @@ func removeLinuxGateway(cfg *Config) error {
 		if table == nil || table["handle"] == nil {
 			return fmt.Errorf("受管 nftables 表缺少可验证 handle，拒绝删除")
 		}
-		if err := gatewayMutateNFT([]map[string]interface{}{{"delete": nftObject("table", map[string]interface{}{"family": "ip", "handle": table["handle"]})}}); err != nil {
+		if err := gatewayMutateNFT([]map[string]any{{"delete": nftObject("table", map[string]any{"family": "ip", "handle": table["handle"]})}}); err != nil {
 			return err
 		}
 		remaining, err := readGatewayNFT()

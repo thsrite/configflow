@@ -1,0 +1,477 @@
+package rulesync
+
+// Registry, task and deployment collaborators use owned native records.
+// Reconciliation consumes immutable deploy.Source values and yamlx nodes.
+import (
+	"configflow/internal/agents/monitor"
+	"configflow/internal/jsonresp"
+	"configflow/internal/logx"
+	"configflow/internal/redact"
+	"configflow/internal/repo"
+	"configflow/internal/tasks"
+	"configflow/internal/taskstatus"
+	"context"
+	"encoding/json"
+	"strings"
+
+	"configflow/internal/agents"
+	"configflow/internal/convert"
+	"configflow/internal/deploy"
+	"configflow/internal/model"
+	"configflow/internal/oxidns"
+	"configflow/internal/yamlx"
+)
+
+// AgentSettings reads the typed per-Agent scopes. Malformed stored switches are off.
+func AgentSettings(record *model.Agent) Settings {
+	if record == nil || record.RuleSync == nil {
+		return Settings{}
+	}
+	s := record.RuleSync.Settings
+	return Settings{Library: s.Library != nil && *s.Library, Rules: s.Rules != nil && *s.Rules}
+}
+
+func publishSource(ctx context.Context, m *agents.Manager, profileID string) (*deploy.Source, error) {
+	return repositorySource(ctx, m.Repository(), profileID)
+}
+
+func persistSync(ctx context.Context, m *agents.Manager, id string, settings *Settings, state *model.RuleSyncState) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return m.EditAgents(ctx, "", func(tx context.Context, list *[]model.Agent) error {
+		for i := range *list {
+			record := &(*list)[i]
+			if !agents.AgentMatchesID(record, id) {
+				continue
+			}
+			if settings != nil && agents.HAEnablingModel(record) {
+				return refuse(msgPairEnabling)
+			}
+			sync := model.AgentRuleSync{}
+			if record.RuleSync != nil {
+				sync = *record.RuleSync
+			}
+			if settings != nil {
+				sync.Settings = model.RuleSyncSettings{Library: &settings.Library, Rules: &settings.Rules}
+			}
+			if state != nil {
+				data, err := encodeState(state)
+				if err != nil {
+					return err
+				}
+				var next model.RuleSyncState
+				if err = json.Unmarshal(data, &next); err != nil {
+					return err
+				}
+				sync.State = &next
+			}
+			record.RuleSync = &sync
+			return tx.Err()
+		}
+		return ErrAgentNotFound
+	})
+}
+
+func renderCandidate(ctx context.Context, target deploy.Target, source *deploy.Source, baseURL string) (content string, downloads []convert.ResourceDownload, err error) {
+	err = source.ViewConfig(func(config *model.Config) error {
+		if target.ServiceType == "mihomo" {
+			var e error
+			content, e = convert.MihomoConfig(ctx, config, convert.MihomoOptions{BaseURL: baseURL, SyncLANHosts: true, SkipProviderPreflight: true, ForAgent: true, RegionProbe: target.DomainDiscovery})
+			return e
+		}
+		profile, e := oxidns.NewTypedProfile(config)
+		if e != nil {
+			return e
+		}
+		content, e = oxidns.Generate(profile, baseURL)
+		if e != nil {
+			return e
+		}
+		entries, e := oxidns.RulesetDownloads(profile, baseURL)
+		if e != nil {
+			return e
+		}
+		downloads = make([]convert.ResourceDownload, 0, len(entries))
+		for _, entry := range entries {
+			downloads = append(downloads, convert.ResourceDownload{URL: entry.URL, LocalPath: entry.LocalPath})
+		}
+		return nil
+	})
+	return content, downloads, err
+}
+
+func recordID(r *model.Agent) string {
+	if r == nil {
+		return ""
+	}
+	return r.ID
+}
+func recordSupported(r *model.Agent) bool {
+	return r != nil && (r.ServiceType == "mihomo" || r.ServiceType == "oxidns")
+}
+func compareLeader(a, b *model.Agent) int {
+	ap := a.OxiDNSHA != nil && a.OxiDNSHA.Role == "primary"
+	bp := b.OxiDNSHA != nil && b.OxiDNSHA.Role == "primary"
+	if ap != bp {
+		if ap {
+			return -1
+		}
+		return 1
+	}
+	return strings.Compare(a.ID, b.ID)
+}
+func configurePair(ctx context.Context, m *agents.Manager, members []*model.Agent, s Settings) error {
+	expected := make([]*model.Agent, 0, len(members))
+	for _, member := range members {
+		a := member
+		if !agents.AgentMatchesID(a, a.ID) {
+			return refuse(msgPairChanged)
+		}
+		expected = append(expected, a)
+	}
+	if len(expected) != 2 || !agents.HAPairMatchesModel(expected[0], expected[1]) {
+		return refuse(msgPairChanged)
+	}
+	return m.EditAgents(ctx, "", func(tx context.Context, records *[]model.Agent) error {
+		selected := make([]*model.Agent, 0, len(expected))
+		for _, member := range expected {
+			var current *model.Agent
+			for i := range *records {
+				if agents.AgentMatchesID(&(*records)[i], member.ID) {
+					current = &(*records)[i]
+					break
+				}
+			}
+			if current == nil {
+				return refuse(msgPairChanged)
+			}
+			left, err := yamlx.FromJSON(jsonresp.Value(current.OxiDNSHA))
+			if err != nil {
+				return err
+			}
+			right, err := yamlx.FromJSON(jsonresp.Value(member.OxiDNSHA))
+			if err != nil {
+				return err
+			}
+			if !yamlx.Equal(left, right) {
+				return refuse(msgPairChanged)
+			}
+			if agents.HAEnablingModel(current) {
+				return refuse(msgPairEnabling)
+			}
+			selected = append(selected, current)
+		}
+		if !agents.HAPairMatchesModel(selected[0], selected[1]) {
+			return refuse(msgPairChanged)
+		}
+		for _, current := range selected {
+			sync := model.AgentRuleSync{}
+			if current.RuleSync != nil {
+				sync = *current.RuleSync
+			}
+			sync.Settings = model.RuleSyncSettings{Library: &s.Library, Rules: &s.Rules}
+			current.RuleSync = &sync
+		}
+		return tx.Err()
+	})
+}
+
+func systemSecrets(ctx context.Context, m *agents.Manager) (redact.Secrets, error) {
+	return agents.SystemSecrets(ctx, m.Repository())
+}
+func safeText(ctx context.Context, m *agents.Manager, record *model.Agent, text string) string {
+	secrets, err := systemSecrets(ctx, m)
+	if err != nil {
+		return redact.Redacted
+	}
+	secrets = agents.CollectAgentCredentials(record, secrets)
+	return safeDisplay(text, secrets)
+}
+func logState(ctx context.Context, m *agents.Manager, record *model.Agent, status, message string) {
+	name, _ := agents.AgentName(record)
+	if name == "" {
+		name = record.ID
+	}
+	name = safeText(ctx, m, record, name)
+	name = logx.LogText(name, 120)
+	message = logx.LogText(message, 300)
+	switch status {
+	case "running", "succeeded":
+		logger.Infof("Agent %s 规则自动同步：%s", name, message)
+	case "failed", "blocked":
+		logger.Warningf("Agent %s 规则自动同步：%s", name, message)
+	default:
+		logger.Debugf("Agent %s 规则自动同步：%s", name, message)
+	}
+}
+
+// TaskRow projects one Agent's rule-sync task row for /api/tasks.
+func (s *Service) TaskRow(ctx context.Context, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
+	var m *agents.Manager
+	if s != nil {
+		m = s.m
+	}
+	return agentTaskRow(ctx, m, a, statuses)
+}
+
+func agentTaskRow(ctx context.Context, m *agents.Manager, a *model.Agent, statuses taskstatus.Snapshot) (*tasks.Task, error) {
+	if !recordSupported(a) {
+		return nil, nil
+	}
+	id := a.ID
+	key := "agent_rule_sync:" + id
+	enabled := AgentSettings(a).Any()
+	_, recorded := statuses[key]
+	if !enabled && !recorded {
+		return nil, nil
+	}
+	state := stateOf(a)
+	history, err := tasks.ProjectHistory(statuses.Entry(key))
+	if err != nil {
+		return nil, err
+	}
+	sysSecrets, sysErr, ok := agents.RowSystemSecrets(ctx)
+	if !ok && m != nil {
+		sysSecrets, sysErr = systemSecrets(ctx, m)
+	}
+	sanitize := func(text string) string {
+		return redact.Redacted
+	}
+	if sysErr == nil {
+		// Every stored Agent record's credentials, histories included: a
+		// superset of this record's own, which the row collected before O10.
+		var r *repo.Repository
+		if m != nil {
+			r = m.Repository()
+		}
+		if agentSecrets, err := agents.RowAgentSecrets(ctx, r); err == nil {
+			secrets := redact.NewSecrets(sysSecrets, agentSecrets)
+			sanitize = func(text string) string { return safeDisplay(text, secrets) }
+		}
+	}
+	message := sanitize(state.Message)
+	if enabled && state.Status == "blocked" {
+		last := "skipped"
+		history.LastStatus, history.LastError = &last, &message
+	} else if enabled && (state.Status == "succeeded" || state.Status == "failed") {
+		last, detail := "success", ""
+		if state.Status == "failed" {
+			last, detail = "failed", message
+		}
+		history.LastStatus, history.LastError = &last, &detail
+	}
+	stateMessage := ""
+	if enabled && state.Status == "pending" {
+		stateMessage = message
+	}
+	name, _ := agents.AgentName(a)
+	if name == "" {
+		name = id
+	}
+	name = sanitize(name)
+	link := "/agents"
+	return &tasks.Task{Key: key, Category: "agent_rule_sync", Name: name, ResourceID: id, Enabled: enabled, ScheduleText: msgRowSchedule, RunHint: msgRowHint, Running: enabled && state.Status == "running", StateMessage: stateMessage, Link: &link, HistoryData: history}, nil
+}
+func (s *Service) nativeCall(ctx context.Context, m *agents.Manager, id, method string, paths []string) (nativeTask, error) {
+	answer, _, err := s.monitor.CallRuleUpdate(ctx, monitor.TypedFromAgents(m), id, method, paths)
+	if err != nil {
+		return nativeTask{}, err
+	}
+	raw, err := json.Marshal(answer)
+	if err != nil {
+		return nativeTask{}, err
+	}
+	var fields model.Fields
+	if err = json.Unmarshal(raw, &fields); err != nil {
+		return nativeTask{}, err
+	}
+	task, present := fields.Get("task")
+	if !present {
+		return nativeTask{}, nil
+	}
+	var result nativeTask
+	if err = json.Unmarshal(task, &result); err != nil {
+		return nativeTask{}, err
+	}
+	return result, nil
+}
+func refreshProvider(ctx context.Context, m *agents.Manager, id, name string) error {
+	_, err := monitor.CallPanel(ctx, monitor.TypedFromAgents(m), id, "providers/rule", "PUT", [][2]string{{"name", name}}, nil, "")
+	return err
+}
+func resultStatus(r *model.Deployment) string { return r.Status }
+func beginPublication(ctx context.Context, m *agents.Manager, id, deploymentID string) (bool, error) {
+	r, e := m.ReserveDeployment(ctx, id, deploymentID)
+	if e != nil {
+		return false, e
+	}
+	return r != nil && r.Success != nil && *r.Success, nil
+}
+func failUnsubmitted(ctx context.Context, m *agents.Manager, id, deploymentID string) error {
+	if e := ctx.Err(); e != nil {
+		return e
+	}
+	data, err := json.Marshal(struct {
+		Success bool   `json:"success"`
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}{false, "failed", msgCandidateFailed})
+	if err != nil {
+		return err
+	}
+	patch, err := agents.DecodeDeploymentUpdate(data)
+	if err != nil {
+		return err
+	}
+	_, err = m.RecordDeploymentModel(ctx, id, deploymentID, patch, agents.RecordOptions{OnlyUnsubmitted: true})
+	return err
+}
+func pollDeployment(ctx context.Context, m *agents.Manager, id, deploymentID string) (*model.Deployment, error) {
+	return m.GetDeploymentModel(ctx, id, deploymentID)
+}
+
+func isOxi(record *model.Agent) bool { return record != nil && record.ServiceType == "oxidns" }
+func profileAgents(ctx context.Context, r *repo.Repository, profileID string) ([]*model.Agent, error) {
+	defaultID, err := r.DefaultProfileID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if profileID == "" {
+		profileID = defaultID
+	}
+	out := []*model.Agent{}
+	err = r.ViewAgents(ctx, func(records []model.Agent) error {
+		for i := range records {
+			a := &records[i]
+			if !agents.AgentMatchesID(a, a.ID) || !agents.AgentEnabledModel(a) {
+				continue
+			}
+			id := defaultID
+			if a.ProfileID != "" {
+				id = a.ProfileID
+			}
+			if id != profileID {
+				continue
+			}
+			view := *a
+			view.DropHistory()
+			data, err := model.Marshal(view)
+			if err != nil {
+				return err
+			}
+			var record model.Agent
+			if err := json.Unmarshal(data, &record); err != nil {
+				return err
+			}
+			out = append(out, &record)
+		}
+		return nil
+	})
+	return out, err
+}
+func workerAgent(ctx context.Context, m *agents.Manager, id string) (*model.Agent, error) {
+	a, err := m.ReadAgent(ctx, id, false)
+	if err != nil || a == nil {
+		return nil, err
+	}
+	profile, err := m.ResolveAgentProfile(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	if !agents.FreshHeartbeat(a.LastHeartbeat, nil) {
+		a.Status = "offline"
+	}
+	a.Enabled = new(agents.AgentEnabledModel(a))
+	a.ProfileID = profile
+	return a, nil
+}
+func repositorySource(ctx context.Context, r *repo.Repository, profileID string) (*deploy.Source, error) {
+	config, revision, err := r.PublishConfig(ctx, profileID, false)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := model.Marshal(config)
+	if err != nil {
+		return nil, err
+	}
+	return deploy.SourceFromJSON(raw, &revision)
+}
+
+func snapshotVersion(a *model.Agent) string {
+	if a.AppliedContent != nil {
+		data, err := model.Marshal(a.AppliedContent)
+		var fields model.Fields
+		if err == nil {
+			err = json.Unmarshal(data, &fields)
+		}
+		raw, present := fields.Get("config_version")
+		if err == nil && present {
+			var version string
+			_ = json.Unmarshal(raw, &version)
+			return version
+		}
+	}
+	return a.ConfigVersion
+}
+
+// observeRuleSyncPresence is observePresence for the narrow round view: the
+// same system and per-record credential seeds, without owned Agent copies.
+// The seeds are collected only when a transition is logged; an idle round
+// compares statuses and encodes nothing.
+func observeRuleSyncPresence(ctx context.Context, m *agents.Manager, records []agents.RuleSyncAgent) {
+	presence := make([]agents.PresenceRecord, 0, len(records))
+	for i := range records {
+		presence = append(presence, records[i].Presence)
+	}
+	agents.ObservePresenceRecords(presence, func() (redact.Secrets, error) {
+		secrets, err := systemSecrets(ctx, m)
+		if err != nil {
+			return nil, err
+		}
+		for i := range records {
+			credentials, err := records[i].Credentials()
+			if err != nil {
+				return nil, err
+			}
+			secrets = redact.NewSecrets(secrets, credentials)
+		}
+		return secrets, nil
+	})
+}
+
+func safeDisplay(text string, secrets redact.Secrets) string {
+	safe := redact.DiagnosticText(text, secrets, 2000)
+	if redact.ContainsEncodedSecret(safe, secrets) {
+		return redact.Redacted
+	}
+	return safe
+}
+
+func pairEnabling(record *model.Agent) bool { return agents.HAEnablingModel(record) }
+
+// UnmarshalJSON accepts exact protocol names without struct tag folding.
+func (task *nativeTask) UnmarshalJSON(raw []byte) error {
+	var fields model.Fields
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	var next nativeTask
+	for _, field := range []struct {
+		name   string
+		target *string
+	}{{"id", &next.ID}, {"status", &next.Status}, {"message", &next.Message}} {
+		if value, present := fields.Get(field.name); present {
+			if err := json.Unmarshal(value, field.target); err != nil {
+				return err
+			}
+		}
+	}
+	*task = next
+	return nil
+}
+
+func receiptStamp(store *deploy.Receipts, a *model.Agent) (deploy.Stamp, bool) { return store.Stamp(a) }
+func advanceReceiptContent(ctx context.Context, store *deploy.Receipts, m *agents.Manager, a *model.Agent, source *deploy.Source, bundle *deploy.Bundle) (bool, error) {
+	return store.AdvanceContent(ctx, m, a, source, bundle)
+}

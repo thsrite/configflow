@@ -19,7 +19,7 @@ import (
 // what they approximate today, while a direct query would be poisoned.
 var tunUpstreamRemoteForwards = map[string]bool{"forward_remote": true, "forward_fallback": true}
 
-func tunHijackEntries(tun map[string]interface{}) []netip.AddrPort {
+func tunHijackEntries(tun map[string]any) []netip.AddrPort {
 	var entries []netip.AddrPort
 	for _, value := range dnsStrings(tun["dns-hijack"]) {
 		if _, after, ok := strings.Cut(value, "://"); ok {
@@ -41,7 +41,7 @@ func tunHijackEntries(tun map[string]interface{}) []netip.AddrPort {
 // to route-exclude-address and loopback) to Mihomo's DNS, whatever dns-hijack
 // says; the Linux gateway always works this way. Without those sets the host's
 // queries only meet Mihomo inside the TUN, where dns-hijack alone decides.
-func tunMarkModeHijacksLocalDNS(tun map[string]interface{}) bool {
+func tunMarkModeHijacksLocalDNS(tun map[string]any) bool {
 	if tun["auto-route"] != true || tun["auto-redirect"] != true {
 		return false
 	}
@@ -93,7 +93,7 @@ func plainDNSAddress(raw string) (netip.AddrPort, bool) {
 // TUNHijackedOxiDNSUpstreams lists the OxiDNS upstream and bootstrap addresses
 // that the given enabled Mihomo TUN would hijack. Loopback addresses never
 // enter the TUN and are omitted.
-func TUNHijackedOxiDNSUpstreams(oxidns, tun map[string]interface{}) []netip.Addr {
+func TUNHijackedOxiDNSUpstreams(oxidns, tun map[string]any) []netip.Addr {
 	entries := tunHijackEntries(tun)
 	if len(entries) == 0 {
 		return nil
@@ -104,17 +104,17 @@ func TUNHijackedOxiDNSUpstreams(oxidns, tun map[string]interface{}) []netip.Addr
 			found[target.Addr()] = true
 		}
 	}
-	plugins, _ := oxidns["plugins"].([]interface{})
+	plugins, _ := oxidns["plugins"].([]any)
 	for _, item := range plugins {
-		plugin, _ := item.(map[string]interface{})
+		plugin, _ := item.(map[string]any)
 		if kind, _ := plugin["type"].(string); kind != "forward" {
 			continue
 		}
 		tag, _ := plugin["tag"].(string)
-		args, _ := plugin["args"].(map[string]interface{})
-		upstreams, _ := args["upstreams"].([]interface{})
+		args, _ := plugin["args"].(map[string]any)
+		upstreams, _ := args["upstreams"].([]any)
 		for _, value := range upstreams {
-			upstream, _ := value.(map[string]interface{})
+			upstream, _ := value.(map[string]any)
 			// Bootstrap answers locate the upstream itself; a fake-ip there is
 			// never what any forward wants.
 			if bootstrap, _ := upstream["bootstrap"].(string); bootstrap != "" {
@@ -151,7 +151,7 @@ func TUNHijackedOxiDNSUpstreams(oxidns, tun map[string]interface{}) []netip.Addr
 }
 
 // PrefixesCover reports whether one of the CIDR strings contains the address.
-func PrefixesCover(values []interface{}, address netip.Addr) bool {
+func PrefixesCover(values []any, address netip.Addr) bool {
 	for _, value := range values {
 		text, _ := value.(string)
 		if prefix, err := netip.ParsePrefix(text); err == nil && prefix.Masked().Contains(address) {

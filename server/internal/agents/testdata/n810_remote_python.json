@@ -1,0 +1,111 @@
+{
+ "status_non_json": {
+  "result": {
+   "success": false,
+   "message": "Connection error: Expecting value: line 1 column 1 (char 0)"
+  }
+ },
+ "status_404": {
+  "result": {
+   "success": false,
+   "message": "HTTP 404"
+  }
+ },
+ "status_list": {
+  "result": [
+   1
+  ]
+ },
+ "sources_404": {
+  "result": {
+   "success": true,
+   "legacy": true,
+   "sources": []
+  }
+ },
+ "logs_url": {
+  "result": {
+   "success": true
+  }
+ },
+ "logs_source": {
+  "result": {
+   "success": true
+  }
+ },
+ "urls": [
+  "http://agent.test:8080/api/logs?lines=50&log_path=/var/log/a%20b%3F.log",
+  "http://agent.test:8080/api/logs?lines=50&source=mihomo/%E6%97%A5%E5%BF%97%20a"
+ ],
+ "logging_list": {
+  "error": "AttributeError: 'list' object has no attribute 'get'"
+ },
+ "logging_null": {
+  "error": "AttributeError: 'NoneType' object has no attribute 'get'"
+ },
+ "logging_ok": {
+  "result": {
+   "success": true,
+   "x": 1
+  }
+ },
+ "logging_saved": {
+  "enabled": true
+ },
+ "logging_existing_none": {
+  "error": "TypeError: 'NoneType' object does not support item assignment"
+ },
+ "logging_existing_list": {
+  "error": "TypeError: list indices must be integers or slices, not str"
+ },
+ "logging_fail": {
+  "result": {
+   "success": false
+  }
+ },
+ "uninstall_non_json": {
+  "result": {
+   "success": false,
+   "message": "Connection error: Expecting value: line 1 column 1 (char 0)"
+  }
+ },
+ "update_500": {
+  "result": {
+   "success": false,
+   "message": "HTTP 500"
+  }
+ },
+ "json_404": {
+  "error": "RuntimeError: Agent t 不支持域名探测，请升级"
+ },
+ "json_list": {
+  "error": "AttributeError: 'list' object has no attribute 'get'"
+ },
+ "json_null": {
+  "error": "AttributeError: 'NoneType' object has no attribute 'get'"
+ },
+ "json_fail_msg": {
+  "error": "RuntimeError: busy"
+ },
+ "json_fail_nomsg": {
+  "error": "RuntimeError: Agent 返回 HTTP 502"
+ },
+ "region_409": {
+  "error": "RuntimeError: Agent 上的 Mihomo 还没有检测入口，请为该 Agent 开启域名发现后部署一次配置"
+ },
+ "region_targets": {
+  "result": []
+ },
+ "ha_404": {
+  "error": "RuntimeError: Agent t 不支持 DNS 高可用，请升级"
+ },
+ "ha_list": {
+  "result": {}
+ },
+ "ha_false": {
+  "error": "RuntimeError: bad [REDACTED]"
+ },
+ "ha_handoff_bad": {
+  "error": "ValueError: Unsupported DNS handoff operation"
+ }
+}

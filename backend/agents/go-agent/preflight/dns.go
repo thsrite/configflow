@@ -35,15 +35,15 @@ func CheckDNS(candidate DNSCandidate, options DNSOptions) Report {
 	return checkDNSWithProbe(candidate, options, procPortProbe{Root: "/proc"}, wireDNSProbe{}, runtime.GOOS)
 }
 
-func dnsDocument(candidate DNSCandidate) (map[string]interface{}, error) {
-	var doc map[string]interface{}
+func dnsDocument(candidate DNSCandidate) (map[string]any, error) {
+	var doc map[string]any
 	if err := yaml.Unmarshal(candidate.Content, &doc); err != nil || len(doc) == 0 {
 		return nil, fmt.Errorf("DNS 检测需要有效、非空的 YAML 配置")
 	}
 	return doc, nil
 }
 
-func dnsRequirements(cfg Config, doc map[string]interface{}, index int) ([]portRequirement, []Check) {
+func dnsRequirements(cfg Config, doc map[string]any, index int) ([]portRequirement, []Check) {
 	// Candidate and peer files are checked as supplied, including custom ports.
 	requirements, checks := corePortRequirements(cfg, doc, index)
 	for i := range checks {
@@ -199,18 +199,18 @@ func dnsProbeBinding(binding portBinding) portBinding {
 	return binding
 }
 
-func dnsHijackChecks(cfg Config, doc map[string]interface{}) []Check {
+func dnsHijackChecks(cfg Config, doc map[string]any) []Check {
 	if cfg.ServiceType != "mihomo" {
 		return nil
 	}
-	var tunnels []map[string]interface{}
-	tun, _ := doc["tun"].(map[string]interface{})
+	var tunnels []map[string]any
+	tun, _ := doc["tun"].(map[string]any)
 	if enabled, _ := tun["enable"].(bool); enabled {
 		tunnels = append(tunnels, tun)
 	}
-	listeners, _ := doc["listeners"].([]interface{})
+	listeners, _ := doc["listeners"].([]any)
 	for _, item := range listeners {
-		listener, _ := item.(map[string]interface{})
+		listener, _ := item.(map[string]any)
 		kind, _ := listener["type"].(string)
 		disabled, _ := listener["disabled"].(bool)
 		if kind == "tun" && !disabled {
@@ -218,7 +218,7 @@ func dnsHijackChecks(cfg Config, doc map[string]interface{}) []Check {
 		}
 	}
 	for _, tunnel := range tunnels {
-		hijacks, _ := tunnel["dns-hijack"].([]interface{})
+		hijacks, _ := tunnel["dns-hijack"].([]any)
 		for _, item := range hijacks {
 			value, _ := item.(string)
 			if value == "any:53" || value == "tcp://any:53" || value == "udp://any:53" {
@@ -231,15 +231,15 @@ func dnsHijackChecks(cfg Config, doc map[string]interface{}) []Check {
 
 // Mihomo adds these exclusions when it is published; an OxiDNS publication can
 // only report upstreams that the running Mihomo would still answer itself.
-func dnsTUNUpstreamChecks(cfg Config, doc map[string]interface{}, peer Config, peerDoc map[string]interface{}) []Check {
+func dnsTUNUpstreamChecks(cfg Config, doc map[string]any, peer Config, peerDoc map[string]any) []Check {
 	if cfg.ServiceType != "oxidns" || peer.ServiceType != "mihomo" {
 		return nil
 	}
-	tun, _ := peerDoc["tun"].(map[string]interface{})
+	tun, _ := peerDoc["tun"].(map[string]any)
 	if tun["enable"] != true {
 		return nil
 	}
-	excluded, _ := tun["route-exclude-address"].([]interface{})
+	excluded, _ := tun["route-exclude-address"].([]any)
 	var missing []string
 	for _, address := range TUNHijackedOxiDNSUpstreams(doc, tun) {
 		if !PrefixesCover(excluded, address) {

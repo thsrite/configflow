@@ -1,0 +1,200 @@
+package yamlx
+
+import (
+	"fmt"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// aliasBudget uses yaml.v3 v3.0.1's decoder policy: at least 100 alias-driven
+// operations and 1000 total operations before the ratio gate, a 99% allowance
+// through 400k operations, scaling to 10% at 4m. Plain nodes have no size cap.
+type aliasBudget struct{ total, aliases int }
+
+func (b *aliasBudget) visit(alias bool) bool {
+	b.total++
+	if alias {
+		b.aliases++
+	}
+	ratio := 0.99
+	if b.total >= 4000000 {
+		ratio = 0.10
+	} else if b.total > 400000 {
+		ratio -= 0.89 * float64(b.total-400000) / 3600000
+	}
+	return b.aliases <= 100 || b.total <= 1000 || float64(b.aliases)/float64(b.total) <= ratio
+}
+
+func validateNode(n *Node) error {
+	if err := checkGraph(n, map[*Node]bool{}, map[*Node]bool{}); err != nil {
+		return err
+	}
+	return checkAliasBudget(n, &aliasBudget{}, false)
+}
+
+func checkGraph(n *Node, path, done map[*Node]bool) error {
+	if n == nil {
+		return invalidNode(n, "nil child node")
+	}
+	if path[n] {
+		return aliasNodeError(n, fmt.Sprintf(msgRecursiveAlias, n.Line), ErrAliasRecursion)
+	}
+	if done[n] {
+		return nil
+	}
+	path[n] = true
+	defer delete(path, n)
+	// `!%21` reads as the tag `!!` (no type name), which yaml.v3 writes back
+	// as a bare, unparsable `!!`. PyYAML refused it too (no constructor).
+	if n.Tag == "!!" || n.Tag == "tag:yaml.org,2002:" {
+		return nodeError(n, fmt.Sprintf(msgEmptyTag, n.Line))
+	}
+	if err := checkTagShape(n); err != nil {
+		return err
+	}
+	if n.Kind == yaml.ScalarNode && n.Style&yaml.TaggedStyle != 0 {
+		switch n.ShortTag() {
+		case "!!int":
+			var signed int64
+			var unsigned uint64
+			if err := n.Decode(&signed); err != nil && n.Decode(&unsigned) != nil && !decimalInteger.MatchString(n.Value) {
+				return nodeError(n, fmt.Sprintf(msgExplicitScalar, n.ShortTag(), n.Line, err))
+			}
+		case "!!null", "!!bool", "!!float":
+			// Only this scalar is decoded. This validates its explicit tag with
+			// yaml.v3, independently of any document destination or constructor.
+			var scalar any
+			if err := n.Decode(&scalar); err != nil {
+				return nodeError(n, fmt.Sprintf(msgExplicitScalar, n.ShortTag(), n.Line, err))
+			}
+		}
+	}
+	switch n.Kind {
+	case yaml.DocumentNode:
+		if len(n.Content) != 1 {
+			return invalidNode(n, "document must have one content node")
+		}
+	case yaml.MappingNode:
+		if len(n.Content)%2 != 0 {
+			return invalidNode(n, "mapping must have key/value pairs")
+		}
+	case yaml.SequenceNode, yaml.ScalarNode:
+	case yaml.AliasNode:
+		if n.Alias == nil {
+			return invalidNode(n, "alias has no target")
+		}
+		if path[n.Alias] {
+			return aliasNodeError(n, fmt.Sprintf(msgRecursiveAlias, n.Line), ErrAliasRecursion)
+		}
+		if err := checkGraph(n.Alias, path, done); err != nil {
+			return err
+		}
+	default:
+		if !n.IsZero() {
+			return invalidNode(n, "unknown node kind")
+		}
+	}
+	for _, child := range n.Content {
+		if err := checkGraph(child, path, done); err != nil {
+			return err
+		}
+	}
+	if n.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if Resolve(n.Content[i]).ShortTag() != "!!merge" {
+				continue
+			}
+			value := Resolve(n.Content[i+1])
+			if value.Kind == yaml.MappingNode {
+				continue
+			}
+			if value.Kind == yaml.SequenceNode {
+				valid := true
+				for _, source := range value.Content {
+					if Resolve(source).Kind != yaml.MappingNode {
+						valid = false
+						break
+					}
+				}
+				if valid {
+					continue
+				}
+			}
+			return nodeError(n.Content[i+1], fmt.Sprintf(msgMergeSource, n.Content[i+1].Line))
+		}
+		seen := map[string][]*Node{}
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key := n.Content[i]
+			resolved := Resolve(key)
+			id := "complex"
+			if resolved.Kind == yaml.ScalarNode {
+				id = resolved.ShortTag() + ":" + resolved.Value
+				switch resolved.ShortTag() {
+				case "!!null":
+					id = "!!null"
+				case "!!bool":
+					id = "!!bool:" + strings.ToLower(resolved.Value)
+				case "!!int":
+					if v, ok := yamlInteger(resolved.Value); ok {
+						id = "!!int:" + v.String()
+					}
+				case "!!float":
+					id = "!!float:" + floatKey(resolved.Value)
+				}
+			}
+			for _, previous := range seen[id] {
+				if Equal(previous, key) {
+					label := resolved.Value
+					if resolved.Kind != yaml.ScalarNode {
+						label = "<collection>"
+					}
+					return duplicateKeyError(key, label)
+				}
+			}
+			seen[id] = append(seen[id], key)
+		}
+	}
+	done[n] = true
+	return nil
+}
+
+// checkTagShape checks syntax-level shape only. Scalar contents and destination
+// types belong to Decode; parsing an AST must not run a typed constructor.
+func checkTagShape(n *Node) error {
+	if n.Kind == yaml.AliasNode || n.Kind == yaml.DocumentNode || n.IsZero() {
+		// ShortTag follows aliases; their target is checked by checkGraph.
+		return nil
+	}
+	var want yaml.Kind
+	var shape string
+	switch n.ShortTag() {
+	case "!!null", "!!bool", "!!int", "!!float", "!!str", "!!timestamp", "!!binary", "!!merge":
+		want, shape = yaml.ScalarNode, msgScalarShape
+	case "!!seq", "!!omap", "!!pairs":
+		want, shape = yaml.SequenceNode, msgSequenceShape
+	case "!!map", "!!set":
+		want, shape = yaml.MappingNode, msgMappingShape
+	default:
+		return nil
+	}
+	if n.Kind != want {
+		return nodeError(n, fmt.Sprintf(msgTagShape, n.ShortTag(), shape, n.Line))
+	}
+	return nil
+}
+
+func checkAliasBudget(n *Node, b *aliasBudget, alias bool) error {
+	if !b.visit(alias) {
+		return aliasNodeError(n, fmt.Sprintf(msgExcessiveAliases, n.Line), ErrAliasBudget)
+	}
+	if n.Kind == yaml.AliasNode {
+		return checkAliasBudget(n.Alias, b, true)
+	}
+	for _, child := range n.Content {
+		if err := checkAliasBudget(child, b, alias); err != nil {
+			return err
+		}
+	}
+	return nil
+}

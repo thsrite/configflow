@@ -1,0 +1,74 @@
+{
+  "source": "shared: &health # keep health\n  enable: true\n  url: https://example.com/check\n  interval: 300\nproxy-providers:\n  Synthetic:\n    type: http\n    url: https://example.com/provider\n    health-check: *health\n    extension: *health\n  Other: {type: http, url: https://example.com/other}\nproxy-groups: [{name: Group, use: [Synthetic, Other]}]\n",
+  "config": {
+    "proxy_groups": [
+      {
+        "id": "g",
+        "name": "Group",
+        "subscriptions": [
+          "s"
+        ],
+        "exclude_regex": "Ads"
+      }
+    ],
+    "subscriptions": [
+      {
+        "id": "s",
+        "name": "Synthetic"
+      }
+    ],
+    "subscription_aggregations": [],
+    "nodes": []
+  },
+  "native": {
+    "shared": {
+      "enable": true,
+      "url": "https://example.com/check",
+      "interval": 300
+    },
+    "proxy-providers": {
+      "Synthetic": {
+        "type": "http",
+        "url": "https://example.com/provider",
+        "health-check": {
+          "enable": true,
+          "url": "https://example.com/check",
+          "interval": 300
+        },
+        "extension": {
+          "enable": true,
+          "url": "https://example.com/check",
+          "interval": 300
+        }
+      },
+      "Other": {
+        "type": "http",
+        "url": "https://example.com/other"
+      },
+      "Group_Synthetic_筛选": {
+        "type": "http",
+        "url": "https://example.com/provider",
+        "health-check": {
+          "enable": true,
+          "url": "https://example.com/check",
+          "interval": 300
+        },
+        "extension": {
+          "enable": true,
+          "url": "https://example.com/check",
+          "interval": 300
+        },
+        "path": "./providers/group_filter_73dc15bfde2dcb1d96fe.yaml",
+        "exclude-filter": "Ads"
+      }
+    },
+    "proxy-groups": [
+      {
+        "name": "Group",
+        "use": [
+          "Group_Synthetic_筛选"
+        ]
+      }
+    ]
+  }
+}

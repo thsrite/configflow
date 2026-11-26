@@ -63,12 +63,12 @@ func TestNativeAIODNSUsesAutomaticAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(got), &doc); err != nil {
 		t.Fatal(err)
 	}
-	want := []interface{}{"10.0.0.0/8", "127.0.0.0/8", "192.168.0.33/32"}
-	if !reflect.DeepEqual(doc["tun"].(map[string]interface{})["route-exclude-address"], want) || cfg.AgentIP != "" {
+	want := []any{"10.0.0.0/8", "127.0.0.0/8", "192.168.0.33/32"}
+	if !reflect.DeepEqual(doc["tun"].(map[string]any)["route-exclude-address"], want) || cfg.AgentIP != "" {
 		t.Fatalf("automatic address was not merged or was persisted: %s; agent_ip=%q", got, cfg.AgentIP)
 	}
 }
@@ -79,12 +79,12 @@ func TestNativeAIODNSCoversAllAutomaticAddressesWithoutWideningRoutes(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if err := yaml.Unmarshal([]byte(got), &doc); err != nil {
 		t.Fatal(err)
 	}
-	want := []interface{}{"10.0.0.0/8", "127.0.0.0/8", "192.168.8.2/32", "192.168.9.2/32"}
-	if !reflect.DeepEqual(doc["tun"].(map[string]interface{})["route-exclude-address"], want) {
+	want := []any{"10.0.0.0/8", "127.0.0.0/8", "192.168.8.2/32", "192.168.9.2/32"}
+	if !reflect.DeepEqual(doc["tun"].(map[string]any)["route-exclude-address"], want) {
 		t.Fatalf("automatic protection missed an address or widened its prefix: %s", got)
 	}
 }
@@ -103,11 +103,11 @@ func TestNativeAIODNSPreservesYAMLAliasesAndMergeKeys(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			input := "mode: rule\n" + test.yaml
-			var want map[string]interface{}
+			var want map[string]any
 			if err := yaml.Unmarshal([]byte(input), &want); err != nil {
 				t.Fatal(err)
 			}
-			want["tun"].(map[string]interface{})["route-exclude-address"] = []interface{}{"10.0.0.0/8", "127.0.0.0/8", "192.168.0.33/32"}
+			want["tun"].(map[string]any)["route-exclude-address"] = []any{"10.0.0.0/8", "127.0.0.0/8", "192.168.0.33/32"}
 			cfg := testDeploymentConfig(t)
 			cfg.NativeAIO, cfg.AgentIP = true, "192.168.0.33"
 			got, err := adaptNativeAIODNS(cfg, input)
@@ -116,7 +116,7 @@ func TestNativeAIODNSPreservesYAMLAliasesAndMergeKeys(t *testing.T) {
 			}
 			assertDocument := func(content []byte) {
 				t.Helper()
-				var doc map[string]interface{}
+				var doc map[string]any
 				if err := yaml.Unmarshal(content, &doc); err != nil {
 					t.Fatal(err)
 				}
@@ -232,7 +232,7 @@ func TestNativeAIODNSInactiveSwitchesPreserveConfiguration(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					var actual, expected map[string]interface{}
+					var actual, expected map[string]any
 					if err := yaml.Unmarshal(data, &actual); err != nil {
 						t.Fatal(err)
 					}
@@ -263,14 +263,14 @@ func TestNativeAIODNSDoesNotGateOnOtherTUNOptions(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				var actual, expected map[string]interface{}
+				var actual, expected map[string]any
 				if err := yaml.Unmarshal([]byte(input), &expected); err != nil {
 					t.Fatal(err)
 				}
 				if err := yaml.Unmarshal([]byte(got), &actual); err != nil {
 					t.Fatal(err)
 				}
-				expected["tun"].(map[string]interface{})["route-exclude-address"] = []interface{}{"127.0.0.0/8", "192.168.0.33/32"}
+				expected["tun"].(map[string]any)["route-exclude-address"] = []any{"127.0.0.0/8", "192.168.0.33/32"}
 				if !reflect.DeepEqual(actual, expected) {
 					t.Fatalf("host protection gated on or changed %s: %s", option, got)
 				}
@@ -317,20 +317,20 @@ func TestNativeAIODNSPublicationProtectsHostOnEveryPublish(t *testing.T) {
 				if err != nil || len(manifest.Files) != 1 || manifest.Files[0].SHA256 != digest || manifest.Files[0].Size != size {
 					t.Fatalf("adapted bytes do not match the active manifest: %+v (%v)", manifest.Files, err)
 				}
-				var doc map[string]interface{}
+				var doc map[string]any
 				if err := yaml.Unmarshal(data, &doc); err != nil {
 					t.Fatal(err)
 				}
-				tun := doc["tun"].(map[string]interface{})
-				want := []interface{}{"10.0.0.0/8"}
+				tun := doc["tun"].(map[string]any)
+				want := []any{"10.0.0.0/8"}
 				if mode == "native" {
 					want = append(want, "127.0.0.0/8", address+"/32")
 				}
 				if !reflect.DeepEqual(tun["route-exclude-address"], want) || tun["enable"] != true || tun["auto-route"] != true || tun["auto-redirect"] != true {
 					t.Fatalf("publication failed to preserve and protect TUN: %s", data)
 				}
-				dns := doc["dns"].(map[string]interface{})
-				if dns["enable"] != false || dns["listen"] != "0.0.0.0:5353" || !reflect.DeepEqual(tun["dns-hijack"], []interface{}{"any:5353", "tcp://any:7874"}) {
+				dns := doc["dns"].(map[string]any)
+				if dns["enable"] != false || dns["listen"] != "0.0.0.0:5353" || !reflect.DeepEqual(tun["dns-hijack"], []any{"any:5353", "tcp://any:7874"}) {
 					t.Fatalf("host protection changed user DNS settings: %s", data)
 				}
 			}
@@ -413,12 +413,12 @@ func TestNativeAIODNSPublicationCoversAllLANsWithExplicitAddress(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var doc map[string]interface{}
+			var doc map[string]any
 			if err := yaml.Unmarshal(prepared, &doc); err != nil {
 				t.Fatal(err)
 			}
-			want := []interface{}{"10.0.0.0/8", "127.0.0.0/8", "192.168.8.2/32", "192.168.9.2/32"}
-			if !reflect.DeepEqual(doc["tun"].(map[string]interface{})["route-exclude-address"], want) {
+			want := []any{"10.0.0.0/8", "127.0.0.0/8", "192.168.8.2/32", "192.168.9.2/32"}
+			if !reflect.DeepEqual(doc["tun"].(map[string]any)["route-exclude-address"], want) {
 				t.Fatalf("explicit Agent IP hid other LANs or widened exclusions: %s", prepared)
 			}
 			state = activateReadyCandidate(t, cfg, state.DeploymentID)

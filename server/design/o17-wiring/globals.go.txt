@@ -1,0 +1,171 @@
+// globals lists package-level variables of function type (or structs/maps
+// holding functions) in every non-test package below ./internal and ./cmd,
+// with the files that assign them and the number of reads.
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"go/ast"
+	"go/importer"
+	"go/parser"
+	"go/token"
+	"go/types"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+type pkgInfo struct {
+	Dir, ImportPath string
+	GoFiles         []string
+}
+
+func hasFunc(t types.Type, depth int) bool {
+	if depth > 3 {
+		return false
+	}
+	switch u := t.Underlying().(type) {
+	case *types.Signature:
+		return true
+	case *types.Struct:
+		for i := 0; i < u.NumFields(); i++ {
+			if hasFunc(u.Field(i).Type(), depth+1) {
+				return true
+			}
+		}
+	case *types.Map:
+		return hasFunc(u.Elem(), depth+1)
+	case *types.Pointer:
+		return hasFunc(u.Elem(), depth+1)
+	case *types.Slice:
+		return hasFunc(u.Elem(), depth+1)
+	}
+	return false
+}
+
+func main() {
+	out, err := exec.Command("go", "list", "-json", "./internal/...", "./cmd/...").Output()
+	if err != nil {
+		panic(err)
+	}
+	dec := json.NewDecoder(strings.NewReader(string(out)))
+	var pkgs []pkgInfo
+	for dec.More() {
+		var p pkgInfo
+		if err := dec.Decode(&p); err != nil {
+			panic(err)
+		}
+		pkgs = append(pkgs, p)
+	}
+	fset := token.NewFileSet()
+	imp := importer.ForCompiler(fset, "source", nil).(types.ImporterFrom)
+	type use struct{ writes, reads map[string]int }
+	uses := map[types.Object]*use{}
+	var objs []types.Object
+	checked := map[string]*types.Package{}
+	infos := map[string]*types.Info{}
+	for _, p := range pkgs {
+		var files []*ast.File
+		for _, g := range p.GoFiles {
+			f, err := parser.ParseFile(fset, filepath.Join(p.Dir, g), nil, 0)
+			if err != nil {
+				panic(err)
+			}
+			files = append(files, f)
+		}
+		info := &types.Info{Uses: map[*ast.Ident]types.Object{}, Defs: map[*ast.Ident]types.Object{}}
+		conf := types.Config{Importer: imp, Error: func(error) {}}
+		pkg, _ := conf.Check(p.ImportPath, fset, files, info)
+		checked[p.ImportPath] = pkg
+		infos[p.ImportPath] = info
+		for _, name := range pkg.Scope().Names() {
+			v, ok := pkg.Scope().Lookup(name).(*types.Var)
+			if ok && hasFunc(v.Type(), 0) {
+				objs = append(objs, v)
+				if uses[v] == nil {
+					uses[v] = &use{writes: map[string]int{}, reads: map[string]int{}}
+				}
+			}
+		}
+		// writes: identifiers on the LHS of assignments
+		for _, f := range files {
+			ast.Inspect(f, func(n ast.Node) bool {
+				as, ok := n.(*ast.AssignStmt)
+				if !ok {
+					return true
+				}
+				for _, l := range as.Lhs {
+					var id *ast.Ident
+					switch x := l.(type) {
+					case *ast.Ident:
+						id = x
+					case *ast.SelectorExpr:
+						id = x.Sel
+						// pkg.Var.Field = ...
+						if inner, ok := x.X.(*ast.SelectorExpr); ok {
+							id = inner.Sel
+						} else if inner, ok := x.X.(*ast.Ident); ok {
+							if o, ok := info.Uses[inner].(*types.Var); ok && o.Parent() != nil && o.Pkg() != nil && o.Parent() == o.Pkg().Scope() {
+								id = inner
+							}
+						}
+					case *ast.IndexExpr:
+						if i, ok := x.X.(*ast.Ident); ok {
+							id = i
+						} else if s, ok := x.X.(*ast.SelectorExpr); ok {
+							id = s.Sel
+						}
+					}
+					if id == nil {
+						continue
+					}
+					if o := info.Uses[id]; o != nil {
+						if u := uses[o]; u != nil {
+							u.writes[p.ImportPath+"/"+filepath.Base(fset.Position(id.Pos()).Filename)]++
+						} else {
+							// may be an object from a package not yet seen: record lazily
+							key := o
+							uses[key] = &use{writes: map[string]int{p.ImportPath + "/" + filepath.Base(fset.Position(id.Pos()).Filename): 1}, reads: map[string]int{}}
+						}
+					}
+				}
+				return true
+			})
+		}
+		for id, o := range info.Uses {
+			if v, ok := o.(*types.Var); ok && v.Pkg() != nil && v.Parent() == v.Pkg().Scope() && hasFunc(v.Type(), 0) {
+				if uses[o] == nil {
+					uses[o] = &use{writes: map[string]int{}, reads: map[string]int{}}
+				}
+				uses[o].reads[p.ImportPath]++
+				_ = id
+			}
+		}
+	}
+	sort.Slice(objs, func(i, j int) bool {
+		return objs[i].Pkg().Path()+objs[i].Name() < objs[j].Pkg().Path()+objs[j].Name()
+	})
+	for _, o := range objs {
+		u := uses[o]
+		var w []string
+		for k, n := range u.writes {
+			w = append(w, fmt.Sprintf("%s×%d", strings.TrimPrefix(k, "configflow/internal/"), n))
+		}
+		sort.Strings(w)
+		var r []string
+		for k, n := range u.reads {
+			r = append(r, fmt.Sprintf("%s×%d", strings.TrimPrefix(k, "configflow/internal/"), n))
+		}
+		sort.Strings(r)
+		pos := fset.Position(o.Pos())
+		ts := types.TypeString(o.Type(), func(p *types.Package) string { return p.Name() })
+		if len(ts) > 90 {
+			ts = ts[:90] + "…"
+		}
+		fmt.Printf("%s.%s\t%s:%d\t%s\tW[%s]\tR[%s]\n", strings.TrimPrefix(o.Pkg().Path(), "configflow/internal/"), o.Name(), filepath.Base(pos.Filename), pos.Line, ts, strings.Join(w, " "), strings.Join(r, " "))
+	}
+	_ = os.Stdout
+}

@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"agent/svc"
 )
 
 type haNamespaceInfo struct {
@@ -18,7 +21,7 @@ type haNamespaceInfo struct {
 	stat syscall.Stat_t
 }
 
-func (info haNamespaceInfo) Sys() interface{} { return &info.stat }
+func (info haNamespaceInfo) Sys() any { return &info.stat }
 
 type haContainerFixture struct {
 	*haFixture
@@ -26,6 +29,8 @@ type haContainerFixture struct {
 	links           string
 	peerError       error
 	helperAvailable bool
+	// state, when set, is the keepalived state Status reports.
+	state svc.State
 }
 
 func newHAContainerFixture(t *testing.T, mode string) *haContainerFixture {
@@ -36,7 +41,7 @@ func newHAContainerFixture(t *testing.T, mode string) *haContainerFixture {
 	t.Setenv("CONFIGFLOW_DNS_HA", "1")
 	t.Setenv("CONFIGFLOW_DNS_HA_NETWORK", mode)
 	t.Setenv("CONFIGFLOW_DNS_HA_IDENTITY", "")
-	f.cfg.ServiceManager, f.cfg.AgentIP = "supervisor", f.spec.SelfIP
+	f.cfg.ServiceManager, f.cfg.AgentIP = "s6", f.spec.SelfIP
 	oldRead, oldStat, oldPeer := haEnvironmentRead, haEnvironmentStat, haCompanionPeerCheck
 	t.Cleanup(func() { haEnvironmentRead, haEnvironmentStat, haCompanionPeerCheck = oldRead, oldStat, oldPeer })
 	for _, path := range []string{filepath.Dir(f.cfg.AgentConfigFile), filepath.Dir(f.cfg.ConfigPath), haKeepalivedDir} {
@@ -65,35 +70,19 @@ func newHAContainerFixture(t *testing.T, mode string) *haContainerFixture {
 	haCompanionPeerCheck = func(string) error { return f.peerError }
 	f.setEvidence(t, haCompanionEvidence{Protocol: 1, Mode: "host", HostID: haHostIdentity(haHostIDPath),
 		CapEff: "3000", Network: haNamespace{1, 10}, PID: haNamespace{1, 21}})
+	previousManager := haContainerManager
+	t.Cleanup(func() { haContainerManager = previousManager })
+	haContainerManager = func() svc.Manager {
+		target := "local"
+		if haDockerNetwork() == "host" {
+			target = "companion"
+		}
+		return &haFakeKeepalived{f: f, t: t, target: target}
+	}
 	baseRun := haRun
 	haRun = func(name string, args ...string) (string, error) {
 		if name == "ip" && strings.Join(args, " ") == "-j -d link show" {
 			return f.links, nil
-		}
-		if name == "supervisorctl" {
-			if strings.Join(args[:len(args)-2], " ") != strings.Join(haSupervisorArgs("status")[:2], " ") || args[len(args)-1] != haSupervisorProgram {
-				t.Fatalf("unexpected Supervisor target: %v", args)
-			}
-			action := args[len(args)-2]
-			if !f.helperAvailable {
-				return "", fmt.Errorf("companion unavailable")
-			}
-			if action == "status" {
-				if f.running {
-					return haSupervisorProgram + " RUNNING pid 10", nil
-				}
-				return haSupervisorProgram + " STOPPED", fmt.Errorf("stopped")
-			}
-			f.commands = append(f.commands, name+" "+strings.Join(args, " "))
-			switch action {
-			case "start", "restart":
-				f.running = true
-			case "stop":
-				f.running = false
-			default:
-				t.Fatalf("unexpected action %s", action)
-			}
-			return "ok", nil
 		}
 		return baseRun(name, args...)
 	}
@@ -111,7 +100,7 @@ func (f *haContainerFixture) setEvidence(t *testing.T, evidence haCompanionEvide
 
 func TestHADockerNotOptedInDoesNotProbeEnvironment(t *testing.T) {
 	f := newHAFixture(t)
-	f.cfg.ServiceManager = "supervisor"
+	f.cfg.ServiceManager = "s6"
 	t.Setenv("CONFIGFLOW_DNS_HA", "")
 	previous := haEnvironmentRead
 	t.Cleanup(func() { haEnvironmentRead = previous })
@@ -212,7 +201,7 @@ func TestHACompanionSocketRejectsSamePIDNamespace(t *testing.T) {
 	}
 	defer listener.Close()
 	if err := checkHACompanionPeer(path); err == nil {
-		t.Fatal("local Supervisor impersonated an independent companion")
+		t.Fatal("a local process supervisor impersonated an independent companion")
 	}
 }
 
@@ -224,7 +213,7 @@ func TestHADockerApplyHandoffRecoveryAndDisableStayOwned(t *testing.T) {
 				t.Fatal(err)
 			}
 			state := mustHAState(t, f.cfg)
-			if state.Service.Manager != "supervisor" || state.ContainerHostID != haHostIdentity(haHostIDPath) {
+			if state.Service.Manager != "s6" || state.ContainerHostID != haHostIdentity(haHostIDPath) {
 				t.Fatalf("ownership not retained: %+v", state)
 			}
 			if err := changeHAHandoff(f.cfg, "publish-1", false); err != nil {
@@ -299,12 +288,171 @@ func TestHAContainerStatusAndRecoveryRejectChangedEnvironment(t *testing.T) {
 			if err := saveHAState(f.cfg, state); err != nil {
 				t.Fatal(err)
 			}
-			if result := haStatus(f.cfg); result["error"] == "" {
+			if result := haStatus(f.cfg); result.Error == "" {
 				t.Fatalf("unsafe environment looked healthy: %+v", result)
 			}
 			f.commands = nil
 			if err := reconcileOxiDNSHA(f.cfg); err == nil || len(f.commands) != 0 {
 				t.Fatalf("unsafe recovery: %v %v", err, f.commands)
+			}
+		})
+	}
+}
+
+// haFakeKeepalived stands in for the managed keepalived program (local s6 or
+// the companion's control socket).
+type haFakeKeepalived struct {
+	f      *haContainerFixture
+	t      *testing.T
+	target string
+}
+
+func (k *haFakeKeepalived) check(name string) error {
+	if name != svc.Keepalived {
+		k.t.Fatalf("unexpected program %s", name)
+	}
+	if !k.f.helperAvailable {
+		return fmt.Errorf("companion unavailable")
+	}
+	return nil
+}
+
+func (k *haFakeKeepalived) act(name, action string, running bool) error {
+	if err := k.check(name); err != nil {
+		return err
+	}
+	k.f.commands = append(k.f.commands, k.target+" "+action+" "+name)
+	k.f.running = running
+	return nil
+}
+
+func (k *haFakeKeepalived) Start(_ context.Context, name string) error {
+	return k.act(name, "start", true)
+}
+func (k *haFakeKeepalived) Restart(_ context.Context, name string) error {
+	return k.act(name, "restart", true)
+}
+func (k *haFakeKeepalived) Stop(_ context.Context, name string) error {
+	return k.act(name, "stop", false)
+}
+func (k *haFakeKeepalived) Status(_ context.Context, name string) (svc.Status, error) {
+	if err := k.check(name); err != nil {
+		return svc.Status{}, err
+	}
+	if k.f.state != "" {
+		return svc.Status{Name: name, State: k.f.state}, nil
+	}
+	if k.f.running {
+		return svc.Status{Name: name, State: svc.StateRunning, PID: 10}, nil
+	}
+	return svc.Status{Name: name, State: svc.StateStopped}, nil
+}
+
+func TestHAContainerStopsKeepalivedUnlessDown(t *testing.T) {
+	tests := []struct {
+		state     svc.State
+		available bool
+		stops     bool
+		fails     bool
+	}{
+		{svc.StateRunning, true, true, false},
+		// s6 would bring these up again after the journal is gone.
+		{svc.StateStarting, true, true, false},
+		{svc.StateBackoff, true, true, false},
+		{svc.StateStopping, true, true, false},
+		{svc.StateStopped, true, false, false},
+		{svc.StateFatal, true, false, false},
+		// An unreadable state is never taken as stopped.
+		{"", false, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.state)+fmt.Sprint(tt.available), func(t *testing.T) {
+			f := newHAContainerFixture(t, "host")
+			f.state, f.helperAvailable = tt.state, tt.available
+			err := haStopService(svc.ContainerManager)
+			stopped := len(f.commands) == 1 && f.commands[0] == "companion stop "+svc.Keepalived
+			if stopped != tt.stops || (err != nil) != tt.fails {
+				t.Fatalf("commands %v, err %v; want stop=%t fail=%t", f.commands, err, tt.stops, tt.fails)
+			}
+			if alive := haDaemonAlive(svc.ContainerManager); alive != (tt.stops || tt.fails) {
+				t.Fatalf("alive %t", alive)
+			}
+		})
+	}
+}
+
+func TestHAContainerControlsTheRightKeepalived(t *testing.T) {
+	for _, mode := range []string{"host", "macvlan"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newHAContainerFixture(t, mode)
+			if err := applyOxiDNSHA(f.cfg, f.spec); err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]string{"host": "companion", "macvlan": "local"}[mode]
+			if len(f.commands) == 0 {
+				t.Fatal("keepalived was not started")
+			}
+			for _, command := range f.commands {
+				if !strings.HasPrefix(command, want+" ") {
+					t.Fatalf("%s mode controlled %q", mode, command)
+				}
+			}
+		})
+	}
+	// The real selection: the companion socket in host mode.
+	t.Setenv("CONFIGFLOW_DNS_HA_NETWORK", "host")
+	if remote, ok := haContainerManager().(svc.Remote); !ok || remote.Socket != haCompanionSocket() || filepath.Base(remote.Socket) != "control.sock" {
+		t.Fatalf("host mode manager %#v", haContainerManager())
+	}
+	t.Setenv("CONFIGFLOW_DNS_HA_NETWORK", "macvlan")
+	if haContainerManager() != containerServices {
+		t.Fatal("macvlan mode must control this container's keepalived")
+	}
+}
+
+// Journals written by images before 1.9.3-go record the container manager
+// as "supervisor" (also what Docker Agents still on such an image write).
+// They are recovered like new ones, and the next save records "s6".
+func TestHAContainerRecoversLegacySupervisorJournal(t *testing.T) {
+	for _, mode := range []string{"host", "macvlan"} {
+		t.Run(mode, func(t *testing.T) {
+			f := newHAContainerFixture(t, mode)
+			if err := applyOxiDNSHA(f.cfg, f.spec); err != nil {
+				t.Fatal(err)
+			}
+			path, err := haJournalPath(f.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			data, _ := os.ReadFile(path)
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			if manager := raw["service"].(map[string]any)["manager"]; manager != "s6" {
+				t.Fatalf("new journal records %v, want s6", manager)
+			}
+			raw["service"].(map[string]any)["manager"] = "supervisor"
+			data, _ = json.Marshal(raw)
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			state := mustHAState(t, f.cfg)
+			if state.Service.Manager != "s6" {
+				t.Fatalf("legacy journal read as %q", state.Service.Manager)
+			}
+			if err := haContainerOwnership(f.cfg, state, haEnvironment(f.cfg)); err != nil {
+				t.Fatalf("legacy journal refused: %v", err)
+			}
+			f.running, f.commands = false, nil
+			if err := reconcileOxiDNSHA(f.cfg); err != nil || !f.running || len(f.commands) != 1 {
+				t.Fatalf("legacy journal not recovered: %v %v", err, f.commands)
+			}
+			// A config written before 1.9.3-go is read as the same manager.
+			legacy := *f.cfg
+			legacy.ServiceManager = "supervisor"
+			if err := haContainerOwnership(&legacy, state, haEnvironment(f.cfg)); err == nil {
+				t.Fatal("an unnormalized legacy value must not reach the comparisons")
 			}
 		})
 	}

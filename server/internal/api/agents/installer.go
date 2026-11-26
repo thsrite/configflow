@@ -1,0 +1,655 @@
+package agents
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math/big"
+	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"configflow/internal/auth"
+	"configflow/internal/httpx"
+	"configflow/internal/installer"
+	"configflow/internal/jsondecode"
+	"configflow/internal/model"
+	"configflow/internal/taskstatus"
+)
+
+// Installer routes of backend/routes/agents.py (A08): install script and
+// install-command links, the core installer, the gateway network probe and
+// the Docker Agent snippets. GET /api/agents/download/<filename> stays with A10.
+
+type installerHandler struct {
+	deps Deps
+}
+
+func (h *installerHandler) register(r *httpx.Router) {
+	r.GET("/api/agents/core-install-script", "agents.get_core_install_script", h.getCoreInstallScript)
+	r.GET("/api/agents/gateway-network-probe.sh", "agents.get_gateway_network_probe", h.getGatewayNetworkProbe)
+	r.POST("/api/agents/install-command", "agents.create_install_command", auth.Require(h.createInstallCommand))
+	r.POST("/api/agents/core-install-command", "agents.create_core_install_command", auth.Require(h.createCoreInstallCommand))
+	r.GET("/api/agents/i/<token>", "agents.download_install_command", h.downloadInstallCommand).PreservePlainErrors = true
+	r.GET("/api/agents/install-script", "agents.get_install_script", h.getInstallScript)
+	r.GET("/api/agents/docker-agent-compose", "agents.get_docker_agent_compose", auth.Require(h.getDockerAgentCompose))
+	r.GET("/api/agents/docker-agent-run", "agents.get_docker_agent_run", auth.Require(h.getDockerAgentRun))
+}
+
+// scriptDownload is a script body with the download headers of the routes.
+func scriptDownload(status int, script, filename string) *httpx.Response {
+	return httpx.Text(status, script).
+		WithHeader("Content-Disposition", `attachment; filename="`+filename+`"`).
+		WithHeader("Cache-Control", "no-store").
+		WithHeader("X-Content-Type-Options", "nosniff")
+}
+
+// coreInstallScript is get_core_install_script's body: the script, or the
+// 500 response.
+func coreInstallScript() (string, *httpx.Response) {
+	script, err := installer.GenerateCoreInstallScript(false)
+	if err != nil {
+		logger.Exception("生成双核心安装脚本失败", err)
+		return "", failure(500, "核心安装脚本不可用，请更新 ConfigFlow 后重试。")
+	}
+	return script, nil
+}
+
+func (h *installerHandler) getCoreInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
+	script, failed := coreInstallScript()
+	if failed != nil {
+		return failed, nil
+	}
+	return scriptDownload(200, script, "install-mihomo-oxidns.sh"), nil
+}
+
+func (h *installerHandler) getGatewayNetworkProbe(c *httpx.Ctx) (*httpx.Response, error) {
+	return scriptDownload(200, installer.GatewayNetworkProbe, "detect-gateway-network.sh"), nil
+}
+
+var installCommandFields = map[string]bool{
+	"name": true, "type": true, "port": true, "agent_ip": true, "config_path": true, "restart_command": true, "server_url": true,
+	"agent_type": true, "install_core": true, "service_manager": true, "service_unit": true, "service_binary": true,
+	"stop_command": true, "start_command": true, "status_command": true, "health_url": true,
+	"health_dns_address": true, "health_dns_name": true, "deployment_health_timeout": true,
+	"mihomo_agent_port": true, "oxidns_agent_port": true, "mihomo_config_path": true, "oxidns_config_path": true,
+	"mihomo_service_unit": true, "oxidns_service_unit": true, "mihomo_service_binary": true, "oxidns_service_binary": true,
+	"ipv4_forwarding": true, "prepare_dns_ha": true,
+}
+var installCommandBooleans = map[string]bool{"install_core": true, "ipv4_forwarding": true, "prepare_dns_ha": true}
+var installCommandNumbers = map[string]bool{"port": true, "mihomo_agent_port": true, "oxidns_agent_port": true, "deployment_health_timeout": true}
+
+// LegacyShellAgentRemoved is LEGACY_SHELL_AGENT_REMOVED.
+const LegacyShellAgentRemoved = "旧版 Shell Agent（agent_type=shell）已停止提供。请去掉该参数使用 Go Agent；" +
+	"已安装旧版的设备直接运行 Go Agent 安装命令即可原地升级。"
+
+func requireGoAgent(agentType string) error {
+	if agentType == "shell" {
+		return &installer.ValidationError{Message: LegacyShellAgentRemoved}
+	}
+	if agentType != "go" {
+		return &installer.ValidationError{Message: "agent_type 只支持 go"}
+	}
+	return nil
+}
+
+// installParams is the MultiDict the script renderer reads: request.args or
+// the converted install-command payload.
+type installParams interface {
+	get(name string) (string, bool)
+}
+
+type queryParams struct{ c *httpx.Ctx }
+
+func (q queryParams) get(name string) (string, bool) { return q.c.Arg(name) }
+
+type credentialParams struct {
+	base   installParams
+	tokens map[string]string
+}
+
+func (p credentialParams) get(name string) (string, bool) {
+	if service, ok := strings.CutPrefix(name, "registration_token_"); ok {
+		if token, present := p.tokens[service]; present {
+			return token, true
+		}
+	}
+	return p.base.get(name)
+}
+
+type mapParams map[string]string
+
+func (m mapParams) get(name string) (string, bool) {
+	value, ok := m[name]
+	return value, ok
+}
+
+func paramDefault(p installParams, name, def string) string {
+	if value, ok := p.get(name); ok {
+		return value
+	}
+	return def
+}
+
+// paramInt is params.get(name, def, type=int): int() of the value, the
+// default for invalid ASCII query text; native integers have no interpreter digit limit.
+func paramInt(p installParams, name string, def int64) *big.Int {
+	if value, ok := p.get(name); ok {
+		if strings.TrimSpace(value) != "" {
+			raw, err := json.Marshal(value)
+			if err == nil {
+				if n, err := taskstatus.Count(raw); err == nil {
+					return n
+				}
+			}
+		}
+	}
+	return big.NewInt(def)
+}
+
+// installCommandParams is _install_command_params(payload).
+func installCommandParams(payload json.RawMessage) (mapParams, error) {
+	invalid := &installer.ValidationError{Message: "安装参数无效，请重新生成命令。"}
+	var object model.Fields
+	if err := jsondecode.Unmarshal(payload, &object); err != nil {
+		return nil, invalid
+	}
+	for key := range object.All() {
+		if !installCommandFields[key] {
+			return nil, invalid
+		}
+	}
+	params := mapParams{}
+	for key, raw := range object.All() {
+		switch {
+		case installCommandBooleans[key]:
+			var b bool
+			if string(raw) == "null" || jsondecode.Unmarshal(raw, &b) != nil {
+				return nil, &installer.ValidationError{Message: key + " 必须为 true 或 false"}
+			}
+			params[key] = "false"
+			if b {
+				params[key] = "true"
+			}
+		case installCommandNumbers[key]:
+			var n json.Number
+			if len(raw) == 0 || raw[0] == '"' || jsondecode.Unmarshal(raw, &n) != nil || strings.ContainsAny(string(n), ".eE") {
+				return nil, &installer.ValidationError{Message: key + " 必须是 1 到 65535 之间的整数"}
+			}
+			v, ok := new(big.Int).SetString(string(n), 10)
+			if !ok || v.Cmp(big.NewInt(1)) < 0 || v.Cmp(big.NewInt(65535)) > 0 {
+				return nil, &installer.ValidationError{Message: key + " 必须是 1 到 65535 之间的整数"}
+			}
+			params[key] = v.String()
+		default:
+			var text string
+			if len(raw) == 0 || raw[0] != '"' || jsondecode.Unmarshal(raw, &text) != nil || utf8.RuneCountInString(text) > 4096 || strings.ContainsRune(text, 0) {
+				return nil, &installer.ValidationError{Message: key + " 参数无效"}
+			}
+			params[key] = text
+		}
+	}
+	agentType, ok := params["agent_type"]
+	if !ok {
+		agentType = "go"
+	}
+	if err := requireGoAgent(agentType); err != nil {
+		return nil, err
+	}
+	return params, nil
+}
+
+func valueErrorResponse(err error) *httpx.Response {
+	return failure(400, err.Error())
+}
+
+// installScriptResponse is _install_script_response(params): the native
+// Agent installer (single service or Mihomo + OxiDNS on one host).
+func installScriptResponse(c *httpx.Ctx, params installParams) (string, *httpx.Response) {
+	script, err := renderInstallScript(c, params)
+	if err != nil {
+		var valueErr *installer.ValidationError
+		if errors.As(err, &valueErr) {
+			return "", valueErrorResponse(err)
+		}
+		logger.Errorf("生成安装脚本失败: %s", err.Error())
+		logger.Errorf("错误详情:\n%s", err.Error())
+		name, _ := params.get("name")
+		serviceType, _ := params.get("type")
+		port, _ := params.get("port")
+		agentType, _ := params.get("agent_type")
+		logger.Errorf("请求参数: name=%s, type=%s, port=%s, agent_type=%s", optionalParam(params, "name", name),
+			optionalParam(params, "type", serviceType), optionalParam(params, "port", port), optionalParam(params, "agent_type", agentType))
+		return "", failure(500, err.Error())
+	}
+	return script, nil
+}
+
+// optionalParam is value for the log, or "-" when the parameter is absent.
+func optionalParam(params installParams, name, value string) string {
+	if _, ok := params.get(name); !ok {
+		return "-"
+	}
+	return value
+}
+
+func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
+	agentName := paramDefault(params, "name", "My-Agent")
+	serviceType := paramDefault(params, "type", "mihomo")
+	agentPort := paramInt(params, "port", 8080)
+	agentIP := strings.TrimSpace(paramDefault(params, "agent_ip", ""))
+	configPath := paramDefault(params, "config_path", "/etc/"+serviceType+"/config.yaml")
+	restartCommand := paramDefault(params, "restart_command", "systemctl restart "+serviceType)
+
+	agentType := strings.TrimSpace(strings.ToLower(paramDefault(params, "agent_type", "go")))
+	if err := requireGoAgent(agentType); err != nil {
+		return "", err
+	}
+	installCoreValue := paramDefault(params, "install_core", "false")
+	if installCoreValue != "true" && installCoreValue != "false" {
+		return "", &installer.ValidationError{Message: "install_core 必须为 true 或 false"}
+	}
+	installCore := installCoreValue == "true"
+	prepareHAValue, prepareHASet := params.get("prepare_dns_ha")
+	if prepareHASet && prepareHAValue != "true" && prepareHAValue != "false" {
+		return "", &installer.ValidationError{Message: "prepare_dns_ha 必须为 true 或 false"}
+	}
+	if prepareHASet && (serviceType != "oxidns" || agentType != "go") {
+		return "", &installer.ValidationError{Message: "仅 OxiDNS 单服务 Go Agent 支持准备 DNS 高可用环境"}
+	}
+	prepareDNSHA := prepareHAValue == "true"
+	if installCore {
+		if (serviceType != "mihomo" && serviceType != "oxidns" && serviceType != "aio") || agentType != "go" {
+			return "", &installer.ValidationError{Message: "仅 Mihomo、OxiDNS 或同机双服务 Go Agent 支持同时安装核心"}
+		}
+		// Strict validation instead of Flask's integer converter silently
+		// replacing an invalid explicit value with the default.
+		text := paramDefault(params, "port", "8080")
+		raw, _ := json.Marshal(text)
+		parsed, parseErr := taskstatus.Count(raw)
+		if parseErr != nil || strings.TrimSpace(text) == "" {
+			return "", &installer.ValidationError{Message: "Invalid installer integer"}
+		}
+		if !asciiDecimal(text) {
+			return "", &installer.ValidationError{Message: "Invalid Agent port"}
+		}
+		agentPort = parsed
+	}
+	forwardingValue, forwardingSet := params.get("ipv4_forwarding")
+	if forwardingSet && forwardingValue != "true" && forwardingValue != "false" {
+		return "", &installer.ValidationError{Message: "ipv4_forwarding 必须为 true 或 false"}
+	}
+	if forwardingSet && (serviceType != "mihomo" || agentType != "go") {
+		return "", &installer.ValidationError{Message: "仅 Mihomo 单独安装（Go Agent）可设置 IPv4 转发"}
+	}
+	manageForwarding := installer.ForwardingAuto
+	if forwardingSet {
+		manageForwarding = installer.ForwardingOff
+		if forwardingValue == "true" {
+			manageForwarding = installer.ForwardingOn
+		}
+	}
+
+	logger.Infof("生成安装脚本请求 - 名称: %s, 类型: %s, 端口: %s, Agent类型: %s", agentName, serviceType, fmt.Sprint(agentPort), agentType)
+
+	serverURL := strings.TrimSpace(paramDefault(params, "server_url", ""))
+	if serverURL == "" {
+		serverURL = strings.TrimRight(latin1(c.URLRoot()), "/")
+		proto, _ := c.Header("X-Forwarded-Proto")
+		host, _ := c.Header("X-Forwarded-Host")
+		if proto != "" && host != "" {
+			serverURL = latin1(proto) + "://" + latin1(host)
+		}
+	}
+
+	if serviceType != "aio" {
+		names := []string{"deployment_health_timeout"}
+		if !installCore {
+			names = append(names, "port")
+		}
+		for _, name := range names {
+			if err := rejectNonASCIIMachineNumber(params, name); err != nil {
+				return "", err
+			}
+		}
+	}
+	var script string
+	var err error
+	if serviceType == "aio" {
+		o := installer.DefaultAIOOptions(serverURL, agentName)
+		o.AgentIP = agentIP
+		o.RegistrationTokens = map[string]string{"mihomo": paramDefault(params, "registration_token_mihomo", ""), "oxidns": paramDefault(params, "registration_token_oxidns", "")}
+		o.RegistrationKey = paramDefault(params, "registration_key", "")
+		o.BinaryDownloadURL = serverURL + "/api/agents/download"
+		o.MihomoAgentPort, err = installPort(params, "mihomo_agent_port", 8080, true)
+		if err != nil {
+			return "", err
+		}
+		o.OxidnsAgentPort, err = installPort(params, "oxidns_agent_port", 8082, true)
+		if err != nil {
+			return "", err
+		}
+		o.InstallCore = installCore
+		o.MihomoConfigPath = strings.TrimSpace(paramDefault(params, "mihomo_config_path", "/etc/mihomo/config.yaml"))
+		o.MihomoServiceUnit = strings.TrimSpace(paramDefault(params, "mihomo_service_unit", "mihomo"))
+		o.MihomoServiceBinary = strings.TrimSpace(paramDefault(params, "mihomo_service_binary", "mihomo"))
+		o.OxidnsConfigPath = strings.TrimSpace(paramDefault(params, "oxidns_config_path", "/etc/oxidns/config.yaml"))
+		o.OxidnsServiceUnit = strings.TrimSpace(paramDefault(params, "oxidns_service_unit", "oxidns"))
+		o.OxidnsServiceBinary = strings.TrimSpace(paramDefault(params, "oxidns_service_binary", "oxidns"))
+		script, err = installer.RenderAIOInstall(o)
+	} else {
+		strip := func(name string) string { return strings.TrimSpace(paramDefault(params, name, "")) }
+		forwarding := installer.ForwardingOff
+		if serviceType == "mihomo" {
+			forwarding = manageForwarding
+		}
+		port, portErr := boundedInstallPort(agentPort)
+		if portErr != nil {
+			return "", portErr
+		}
+		script, err = installer.RenderAgentInstall(installer.AgentInstallOptions{
+			ServerURL: serverURL, AgentName: agentName, ServiceType: serviceType, AgentPort: port,
+			AgentIP: agentIP, ConfigPath: configPath, RestartCommand: restartCommand,
+			BinaryDownloadURL: serverURL + "/api/agents/download",
+			ServiceManager:    strip("service_manager"), ServiceUnit: strip("service_unit"), ServiceBinary: strip("service_binary"),
+			StopCommand: strip("stop_command"), StartCommand: strip("start_command"), StatusCommand: strip("status_command"),
+			HealthURL: strip("health_url"), HealthDNSAddress: strip("health_dns_address"), HealthDNSName: strip("health_dns_name"),
+			DeploymentHealthTimeout: paramInt(params, "deployment_health_timeout", 30),
+			RegistrationToken:       paramDefault(params, "registration_token_"+serviceType, paramDefault(params, "registration_token", "")), RegistrationKey: paramDefault(params, "registration_key", ""),
+			InstallCore: installCore, ManageIPv4Forwarding: forwarding, PrepareDNSHA: prepareDNSHA,
+		})
+	}
+	if err != nil {
+		return "", err
+	}
+	logger.Infof("安装脚本生成成功，长度: %d 字符", utf8.RuneCountInString(script))
+	return script, nil
+}
+
+func (h *installerHandler) getInstallScript(c *httpx.Ctx) (*httpx.Response, error) {
+	params := queryParams{c}
+	script, failed := installScriptResponse(c, params)
+	if failed != nil {
+		return failed, nil
+	}
+	// Anonymous script downloads remain templates. Only an authenticated panel
+	// request may mint a capability; a public URL can never become a proof oracle.
+	if auth.IsAuthEnabled() && validPanelJWT(c) {
+		tokens, failed := h.issueRegistration(c, shellRegistrationIdentities(params))
+		if failed != nil {
+			return failed, nil
+		}
+		script, failed = installScriptResponse(c, credentialParams{base: params, tokens: tokens})
+		if failed != nil {
+			return failed, nil
+		}
+		return httpx.Text(200, script).NoStore(), nil
+	}
+	return httpx.Text(200, script), nil
+}
+
+// saveInstallCommand is _save_install_command(script).
+func (h *installerHandler) saveInstallCommand(c *httpx.Ctx, script string) *httpx.Response {
+	store := &installer.Store{DataDir: h.deps.dataDir()}
+	token, expiresAt, err := store.SaveInstallScript(c.Context(), script, nil)
+	if errors.Is(err, installer.ErrStoreFull) {
+		return failure(503, "可用安装链接已达上限，请使用已生成的命令或等待旧链接过期。")
+	}
+	if err != nil {
+		logger.Exception("保存安装命令失败", err)
+		return failure(500, "无法保存安装命令，请检查数据目录后重试。")
+	}
+	return httpx.JSON(map[string]any{"success": true, "script": script, "download_path": "/api/agents/i/" + token, "expires_at": expiresAt}).NoStore()
+}
+
+func (h *installerHandler) createInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
+	payload, failed := readBoundJSON(c, 32*1024, "安装参数无效")
+	if failed != nil {
+		return failed, nil
+	}
+	params, err := installCommandParams(payload)
+	if err != nil {
+		return valueErrorResponse(err), nil
+	}
+	script, failed := installScriptResponse(c, params)
+	if failed != nil {
+		return failed, nil
+	}
+	if auth.IsAuthEnabled() {
+		identities := shellRegistrationIdentities(params)
+		tokens, failed := h.issueRegistration(c, identities)
+		if failed != nil {
+			return failed, nil
+		}
+		for service, token := range tokens {
+			params["registration_token_"+service] = token
+		}
+		script, failed = installScriptResponse(c, params)
+		if failed != nil {
+			return failed, nil
+		}
+	}
+	return h.saveInstallCommand(c, script), nil
+}
+
+func (h *installerHandler) createCoreInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
+	payload, failed := readBoundJSON(c, 1024, "核心安装参数无效")
+	if failed != nil {
+		return failed, nil
+	}
+	var object map[string]json.RawMessage
+	target := ""
+	if jsondecode.Unmarshal(payload, &object) == nil && len(object) == 1 {
+		_ = jsondecode.Unmarshal(object["target"], &target)
+	}
+	if target != "both" && target != "mihomo" && target != "oxidns" {
+		return failure(400, "请选择 both、mihomo 或 oxidns 核心。"), nil
+	}
+	rendered, failed := coreInstallScript()
+	if failed != nil {
+		return failed, nil
+	}
+	lines := installer.SplitLines(rendered)
+	head := lines
+	if len(head) > 2 {
+		head = lines[:2]
+	}
+	// Preserve the shebang and interface marker while fixing the chosen target.
+	script := strings.Join(head, "") + "set -- --core " + target + "\n" + strings.Join(lines[len(head):], "")
+	return h.saveInstallCommand(c, script), nil
+}
+
+func (h *installerHandler) downloadInstallCommand(c *httpx.Ctx) (*httpx.Response, error) {
+	store := &installer.Store{DataDir: h.deps.dataDir()}
+	script, ok, err := store.LoadInstallScript(c.Context(), c.Param("token"))
+	if err != nil {
+		logger.Exception("读取安装命令失败", err)
+		return scriptDownload(503, "安装脚本暂时不可用，请稍后重试。\n", "configflow-install.sh"), nil
+	}
+	if !ok {
+		return scriptDownload(404, "安装链接不存在或已过期，请在面板重新生成。\n", "configflow-install.sh"), nil
+	}
+	return scriptDownload(200, script, "configflow-install.sh"), nil
+}
+
+// dockerOptions reads the query of the Docker Agent routes.
+func dockerOptions(c *httpx.Ctx) installer.DockerInstallOptions {
+	q := queryParams{c}
+	return installer.DockerInstallOptions{
+		ServerURL:    paramDefault(q, "server_url", ""),
+		AgentName:    paramDefault(q, "agent_name", "agent"),
+		AgentIP:      paramDefault(q, "agent_ip", ""),
+		DataDir:      paramDefault(q, "data_dir", "./agent_data"),
+		NetworkMode:  paramDefault(q, "network_mode", "host"),
+		EnableMihomo: strings.EqualFold(paramDefault(q, "enable_mihomo", "true"), "true"),
+		EnableMosdns: strings.EqualFold(paramDefault(q, "enable_mosdns", "false"), "true"),
+		MihomoPort:   paramInt(q, "mihomo_port", 8080).String(),
+		MosdnsPort:   paramInt(q, "mosdns_port", 8081).String(),
+		EnableOxidns: strings.EqualFold(paramDefault(q, "enable_oxidns", "false"), "true"),
+		OxidnsPort:   paramInt(q, "oxidns_port", 8082).String(),
+		EnableDNSHA:  strings.EqualFold(paramDefault(q, "enable_dns_ha", "false"), "true"),
+		HAParent:     strings.TrimSpace(paramDefault(q, "ha_parent", "")),
+		HASubnet:     strings.TrimSpace(paramDefault(q, "ha_subnet", "")),
+		HAGateway:    strings.TrimSpace(paramDefault(q, "ha_gateway", "")),
+		HAHostIDPath: strings.TrimSpace(paramDefault(q, "ha_host_id_path", "/etc/machine-id")),
+	}
+}
+
+func dockerResponse(text string, err error, contentType string) *httpx.Response {
+	if err != nil {
+		var valueErr *installer.ValidationError
+		if errors.As(err, &valueErr) {
+			return failure(400, err.Error())
+		}
+		return failure(500, err.Error())
+	}
+	return httpx.Bytes(200, contentType, []byte(text))
+}
+
+// dockerInstallCommands is the Go-native paired response; legacy text responses
+// remain the default unless the authenticated caller explicitly asks for both.
+type dockerInstallCommands struct {
+	Compose string `json:"compose"`
+	Run     string `json:"run"`
+}
+
+func (h *installerHandler) getDockerAgentCompose(c *httpx.Ctx) (*httpx.Response, error) {
+	if format, _ := c.Arg("format"); format == "both" {
+		options, failed := h.prepareDockerAgentOptions(c, installer.RenderDockerCompose, installer.RenderDockerRun)
+		if failed != nil {
+			return failed, nil
+		}
+		compose, err := installer.RenderDockerCompose(options)
+		if err != nil {
+			return dockerResponse("", err, ""), nil
+		}
+		run, err := installer.RenderDockerRun(options)
+		if err != nil {
+			return dockerResponse("", err, ""), nil
+		}
+		return httpx.JSON(dockerInstallCommands{Compose: compose, Run: run}).NoStore(), nil
+	}
+	return h.dockerAgentResponse(c, installer.RenderDockerCompose, "text/yaml; charset=utf-8")
+}
+func (h *installerHandler) getDockerAgentRun(c *httpx.Ctx) (*httpx.Response, error) {
+	return h.dockerAgentResponse(c, installer.RenderDockerRun, "text/plain; charset=utf-8")
+}
+func (h *installerHandler) dockerAgentResponse(c *httpx.Ctx, render func(installer.DockerInstallOptions) (string, error), contentType string) (*httpx.Response, error) {
+	options, failed := h.prepareDockerAgentOptions(c, render)
+	if failed != nil {
+		return failed, nil
+	}
+	text, err := render(options)
+	response := dockerResponse(text, err, contentType)
+	if len(options.RegistrationTokens) > 0 {
+		response.NoStore()
+	}
+	return response, nil
+}
+
+func (h *installerHandler) prepareDockerAgentOptions(c *httpx.Ctx, renderers ...func(installer.DockerInstallOptions) (string, error)) (installer.DockerInstallOptions, *httpx.Response) {
+	options := dockerOptions(c)
+	for _, field := range []struct {
+		name    string
+		enabled bool
+	}{{"mihomo_port", options.EnableMihomo}, {"mosdns_port", options.EnableMosdns}, {"oxidns_port", options.EnableOxidns}} {
+		if field.enabled {
+			if err := rejectNonASCIIMachineNumber(queryParams{c}, field.name); err != nil {
+				return options, dockerResponse("", err, "")
+			}
+		}
+	}
+	// Validate every requested representation before minting any credential.
+	for _, render := range renderers {
+		if _, err := render(options); err != nil {
+			return options, dockerResponse("", err, "")
+		}
+	}
+	if auth.IsAuthEnabled() {
+		var identities []model.AgentRegistrationSession
+		for _, service := range []struct {
+			name    string
+			enabled bool
+			port    string
+		}{
+			{"mihomo", options.EnableMihomo, options.MihomoPort}, {"mosdns", options.EnableMosdns, options.MosdnsPort}, {"oxidns", options.EnableOxidns, options.OxidnsPort},
+		} {
+			if !service.enabled {
+				continue
+			}
+			port, _ := strconv.Atoi(fmt.Sprint(service.port))
+			identities = append(identities, model.AgentRegistrationSession{Name: options.AgentName + "-" + service.name, Host: strings.TrimSpace(options.AgentIP), Port: model.Int(port), ServiceType: service.name, DeploymentMethod: "docker"})
+		}
+		tokens, failed := h.issueRegistration(c, identities)
+		if failed != nil {
+			return options, failed
+		}
+		options.RegistrationTokens = tokens
+	}
+	return options, nil
+}
+
+func shellRegistrationIdentities(params installParams) []model.AgentRegistrationSession {
+	service := paramDefault(params, "type", "mihomo")
+	name := paramDefault(params, "name", "My-Agent")
+	host := strings.TrimSpace(paramDefault(params, "agent_ip", ""))
+	if service == "aio" {
+		return []model.AgentRegistrationSession{
+			{Name: name + "-mihomo", Host: host, Port: registrationPort(params, "mihomo_agent_port", 8080), ServiceType: "mihomo", DeploymentMethod: "shell"},
+			{Name: name + "-oxidns", Host: host, Port: registrationPort(params, "oxidns_agent_port", 8082), ServiceType: "oxidns", DeploymentMethod: "shell"},
+		}
+	}
+	return []model.AgentRegistrationSession{{Name: name, Host: host, Port: registrationPort(params, "port", 8080), ServiceType: service, DeploymentMethod: "shell"}}
+}
+func registrationPort(params installParams, name string, fallback int) model.Int {
+	// Use the renderer's converter, including accepted surrounding whitespace.
+	return model.Int(paramInt(params, name, int64(fallback)).Int64())
+}
+
+func (h *installerHandler) issueRegistration(c *httpx.Ctx, identities []model.AgentRegistrationSession) (map[string]string, *httpx.Response) {
+	manager, err := h.deps.manager(c.Context())
+	if err != nil {
+		return nil, failure(500, msgRegistrationStore)
+	}
+	tokens, err := manager.CreateRegistrationCredentials(c.Context(), identities)
+	if err != nil {
+		return nil, failure(500, msgRegistrationStore)
+	}
+	return tokens, nil
+}
+
+// rejectNonASCIIMachineNumber keeps an invalid machine number from silently
+// becoming the query converter's default before it reaches the typed renderer.
+func rejectNonASCIIMachineNumber(params installParams, name string) error {
+	text, present := params.get(name)
+	if present && strings.ContainsFunc(text, func(r rune) bool { return r > 127 && unicode.IsDigit(r) }) {
+		return &installer.ValidationError{Message: "Invalid installer integer"}
+	}
+	return nil
+}
+
+// asciiDecimal recognizes the machine port grammar before any integer conversion.
+func asciiDecimal(text string) bool {
+	if text == "" {
+		return false
+	}
+	for _, c := range []byte(text) {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+func boundedInstallPort(n *big.Int) (int, error) {
+	if n == nil || !n.IsInt64() || n.Sign() <= 0 || n.Cmp(big.NewInt(65535)) > 0 {
+		return 0, &installer.ValidationError{Message: "Invalid Agent port"}
+	}
+	return int(n.Int64()), nil
+}
+func installPort(params installParams, name string, fallback int64, strict bool) (int, error) {
+	if text, present := params.get(name); present && strict && !asciiDecimal(text) {
+		return 0, &installer.ValidationError{Message: "Invalid Agent port"}
+	}
+	return boundedInstallPort(paramInt(params, name, fallback))
+}

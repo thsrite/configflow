@@ -1,0 +1,212 @@
+package convert
+
+import (
+	"encoding/json"
+	"fmt"
+	"testing"
+
+	"configflow/internal/model"
+	"configflow/internal/testjson/modeldirt"
+	"configflow/internal/yamlx"
+)
+
+// MihomoReplayIssue only classifies the shapes owned by N8-8b. This is test-only:
+// normal archived outputs keep their original Python and byte oracles.
+func MihomoReplayIssue(profile *JObj) string {
+	if profile == nil {
+		return "config object"
+	}
+	data, err := CompactJ(profile)
+	if err != nil || !json.Valid(data) {
+		return "nonfinite stored config"
+	}
+	var p model.Profile
+	var shared model.Shared
+	if json.Unmarshal(data, &p) != nil || json.Unmarshal(data, &shared) != nil {
+		return "config object"
+	}
+	for _, key := range []string{"subscriptions", "subscription_aggregations"} {
+		for _, raw := range profile.GetList(key) {
+			if item, ok := raw.(*JObj); ok {
+				if value, present := item.Get("health_check"); present && value == nil {
+					return "R5 " + key + ".health_check null"
+				}
+
+			}
+		}
+	}
+	if settings := profile.GetObject("mihomo"); settings != nil {
+		if _, ok := settings.Value("provider_update_interval").(string); ok {
+			return "R8 quoted provider interval"
+		}
+
+		if n, ok := settings.Value("provider_update_interval").(json.Number); ok && !IsIntNumber(n) {
+			return "R8 provider_update_interval integer"
+		}
+	}
+
+	for _, key := range []string{"subscriptions", "subscription_aggregations"} {
+		for _, item := range profile.GetList(key) {
+			if row, ok := item.(*JObj); ok {
+				if _, numeric := row.Value("health_check_url").(json.Number); numeric {
+					return "shared numeric health URL text"
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// TestNativeMihomoStoredMemberFallbacks checks the values stored members of
+// another type read as. Plain records (O18 T1c) keep no stored original and
+// write the read value, so the R5 diagnostics and the byte-for-byte
+// round-trip check were removed; "compatible" names the readable ones.
+func TestNativeMihomoStoredMemberFallbacks(t *testing.T) {
+	cases := []struct {
+		source, path string
+		compatible   bool
+	}{
+		{`{"mihomo":{"custom_config":5}}`, "mihomo.custom_config", false},
+		{`{"mihomo":{"provider_update_interval":"300"}}`, "mihomo.provider_update_interval", true},
+		{`{"proxy_groups":[{"id":"g","type":"select","interval":"300"}]}`, "proxy_groups[0].interval", true},
+		{`{"subscriptions":[{"id":"s","health_check":"x"}]}`, "subscriptions[0].health_check", false},
+		{`{"subscription_aggregations":[{"id":"a","health_check_url":5}]}`, "subscription_aggregations[0].health_check_url", true},
+		{`{"mosdns":{"custom_hosts":false}}`, "mosdns.custom_hosts", false},
+		{`{"domain_discovery":{"region_probe_port":"300"}}`, "domain_discovery.region_probe_port", true},
+	}
+	for _, tt := range cases {
+		t.Run(tt.path, func(t *testing.T) {
+			var profile model.Profile
+			var shared model.Shared
+			if err := json.Unmarshal([]byte(tt.source), &profile); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(tt.source), &shared); err != nil {
+				t.Fatal(err)
+			}
+			switch tt.path {
+			case "mihomo.custom_config":
+				// O18 T1d review M3 ruling: a numeric base is damaged.
+				if profile.Mihomo.CustomConfig != model.DamagedText {
+					t.Fatal("numeric base not read as damaged")
+				}
+			case "mihomo.provider_update_interval":
+				if profile.Mihomo.ProviderUpdateInterval == nil || *profile.Mihomo.ProviderUpdateInterval != 300 {
+					t.Fatal("quoted provider interval not decoded")
+				}
+			case "proxy_groups[0].interval":
+				if profile.ProxyGroups[0].Interval == nil || *profile.ProxyGroups[0].Interval != 300 {
+					t.Fatal("quoted group interval not decoded")
+				}
+			case "subscriptions[0].health_check":
+				if shared.Subscriptions[0].HealthCheck != nil {
+					t.Fatal("non-object health accepted")
+				}
+			case "subscription_aggregations[0].health_check_url":
+				if shared.Aggregations[0].HealthCheckURL == nil || *shared.Aggregations[0].HealthCheckURL != "5" {
+					t.Fatal("numeric health URL text not decoded")
+				}
+			case "mosdns.custom_hosts":
+				if profile.MosDNS.CustomHosts != "" {
+					t.Fatal("non-text hosts accepted")
+				}
+			case "domain_discovery.region_probe_port":
+				if profile.DomainDiscovery.RegionProbePort == nil || *profile.DomainDiscovery.RegionProbePort != 300 {
+					t.Fatal("quoted probe port not decoded")
+				}
+			}
+		})
+	}
+	var agent model.Agent
+	if err := json.Unmarshal([]byte(`{"id":"agent","host":"192.0.2.1","port":8080.0}`), &agent); err != nil {
+		t.Fatal(err)
+	}
+	ports, _, _ := AgentPorts([]model.Agent{agent})
+	if ports[8080] != fmt.Sprintf(msgBaseAgentPort, "Mihomo", "agent") {
+		t.Fatal(ports)
+	}
+}
+
+// O18StoredDirt returns the O18 T1c dirt kinds (testjson/modeldirt) of a
+// recorded configuration, without empty text: values plain records read
+// differently from Python on purpose (a number in a text member as its text,
+// "300" in an integer member as 300, null as missing, an undeclared member
+// dropped, a value of another kind as zero). Corpora use it to accept a row
+// that differs from Python only when its input holds such data.
+func O18StoredDirt(profile *JObj) []string {
+	if profile == nil {
+		return nil
+	}
+	data, err := CompactJ(profile)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, kind := range modeldirt.Config(data) {
+		if kind != modeldirt.DirtEmptyText {
+			out = append(out, kind)
+		}
+	}
+	return out
+}
+
+// NativeBaseControllerMessage exposes the shared message to archived boundary tests.
+const NativeBaseControllerMessage = msgBaseController
+
+// NativeMihomoRulesMessage exposes the typed rule-list diagnostic for old client boundary tests.
+const NativeMihomoRulesMessage = msgMihomoRules
+
+func TestSharedScalarMihomoOutputBoundaries(t *testing.T) {
+	env := nativeGenerationEnv(t)
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, env))
+	config, err := DecodeConfigJ(mustJSON(t, `{"mihomo":{"provider_update_interval":"3600"},"proxy_groups":[{"id":"g","name":"G","type":"url-test","interval":"300","manual_nodes":["DIRECT"]}],"subscriptions":[{"id":"s","name":"S","health_check_url":5}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Profile.Mihomo.ProviderUpdateInterval == nil || *config.Profile.Mihomo.ProviderUpdateInterval != 3600 {
+		t.Fatalf("quoted interval: %v", config.Profile.Mihomo.ProviderUpdateInterval)
+	}
+	doc, err := MihomoDocument(t.Context(), config, MihomoOptions{SkipProviderPreflight: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, group := range yamlx.Get(doc, "proxy-groups").Content {
+		if yamlx.Get(group, "name").Value == "G" {
+			interval := yamlx.Get(group, "interval")
+			// A quoted stored interval reads as 300 and is written as a
+			// number (plain records, O18 T1c; Python copied the text).
+			found = interval != nil && interval.ShortTag() == "!!int" && interval.Value == "300"
+		}
+	}
+	if !found {
+		data, _ := yamlx.Marshal(doc)
+		t.Fatalf("quoted group interval lost its stored YAML override: %s", data)
+	}
+	address := config.Subscriptions[0].HealthCheckURL
+	health, err := providerHealthNode(nil, address, env)
+	if err != nil || yamlx.Get(health, "url").Value != "5" {
+		t.Fatalf("numeric URL text: %v", err)
+	}
+}
+
+func TestMihomoFollowKeepsLocalQuotedInterval(t *testing.T) {
+	t.Cleanup(OverrideMihomoEnvironmentForTest(t, nativeGenerationEnv(t)))
+	config, err := DecodeConfigJ(mustJSON(t, `{"proxy_groups":[{"id":"f","name":"Follower","type":"url-test","follow_group":"s","interval":"300"},{"id":"s","name":"Source","type":"url-test","manual_nodes":["DIRECT"]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := MihomoDocument(t.Context(), config, MihomoOptions{SkipProviderPreflight: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := yamlx.Get(doc, "proxy-groups")
+	if len(groups.Content) != 2 {
+		t.Fatalf("groups: %v", groups)
+	}
+	interval := yamlx.Get(groups.Content[0], "interval")
+	// The quoted stored interval is written as a number (O18 T1c).
+	if interval == nil || interval.ShortTag() != "!!int" || interval.Value != "300" {
+		t.Fatalf("interval: %v", interval)
+	}
+}

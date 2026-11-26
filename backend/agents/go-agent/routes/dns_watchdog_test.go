@@ -1,10 +1,10 @@
 package routes
 
 import (
+	"agent/internal/logx"
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -110,12 +110,13 @@ func TestWatchdogDNSAddress(t *testing.T) {
 			t.Run(service+"/"+test.name, func(t *testing.T) {
 				cfg := &Config{ServiceType: service, ConfigPath: filepath.Join(t.TempDir(), "config.yaml"), HealthDNSAddress: test.health}
 				writeWatchdogConfig(t, cfg, test.config)
-				got, err := watchdogDNSAddress(cfg)
+				target, err := watchdogTargetFor(cfg)
+				got := target.address
 				if test.want == "" {
-					if err == nil {
+					if err == nil && target.kind == "dns" {
 						t.Fatalf("unsafe configuration accepted: %q", got)
 					}
-				} else if err != nil || got != test.want {
+				} else if err != nil || target.kind != "dns" || got != test.want {
 					t.Fatalf("got %q, %v; want %q", got, err, test.want)
 				}
 			})
@@ -296,9 +297,8 @@ func TestWatchdogPausesUnsafeConfigurationsWithoutProbingAndResumes(t *testing.T
 	w.tick()
 	writeWatchdogConfig(t, w.cfg, strings.Replace(guardedWatchdogConfig("127.0.0.1:53"), "reject 3", "reject 2", 1))
 	var logs bytes.Buffer
-	previousOutput := log.Writer()
-	log.SetOutput(&logs)
-	t.Cleanup(func() { log.SetOutput(previousOutput) })
+	previousOutput := logx.SetOutput(&logs)
+	t.Cleanup(func() { logx.SetOutput(previousOutput) })
 	probe := w.probe
 	w.probe = func(watchdogTarget) error {
 		t.Fatal("an unsafe configuration must not send even one DNS probe")

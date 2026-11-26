@@ -1,0 +1,156 @@
+package monitor
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+
+	"configflow/internal/model"
+)
+
+var terminal = map[string]bool{"succeeded": true, "failed": true, "rolled_back": true, "rollback_failed": true}
+
+// ErrPublicationPending keeps an unresolved publication checkpoint intact.
+var ErrPublicationPending = errors.New("PublicationPending")
+
+var tokenHex = func() string { b := make([]byte, 16); _, _ = rand.Read(b); return hex.EncodeToString(b) }
+
+// SnapshotIdentity pins a metrics/rankings snapshot to one runtime/configuration.
+type SnapshotIdentity struct {
+	CollectedAtMS   int64  `json:"collected_at_ms"`
+	SourceRevision  string `json:"source_revision"`
+	RuntimeRevision string `json:"runtime_revision"`
+}
+
+// CoreStatus contains only the core fields exposed in the monitoring dashboard.
+type CoreStatus struct {
+	Version    string        `json:"version"`
+	Status     string        `json:"status"`
+	UptimeMS   *MetricNumber `json:"uptime_ms"`
+	InstanceID string        `json:"instance_id"`
+}
+
+func newDashboardState(snapshot *SnapshotIdentity, core *CoreStatus, observations *Observations, target, reason string) *DashboardState {
+	return &DashboardState{Schema: 1, Generation: tokenHex(), StartedAtMS: snapshot.CollectedAtMS, Reason: reason, Target: target,
+		InstanceID: core.InstanceID, SourceRevision: snapshot.SourceRevision, RuntimeRevision: snapshot.RuntimeRevision, Baseline: observations}
+}
+
+// errStatusDamaged is returned by statePublication for a non-string status.
+// AdvanceState reports it only after the PublicationPending ordering check.
+var errStatusDamaged = &StateError{msgPublicationDamaged}
+
+func statePublication(agent *model.Agent, pending *PendingPublication) (*model.Deployment, error) {
+	if agent == nil {
+		return nil, nil
+	}
+	task, exists := agent.Deployments.Get(pending.DeploymentID)
+	latest := agent.LatestDeployment
+	if !exists || latest == nil {
+		return nil, nil
+	}
+	profile := agent.ProfileID
+	if profile == "" {
+		profile = "default"
+	}
+	latestID := latest.DeploymentID
+	status := task.Status
+	latestStatus := ""
+	if latestID != pending.DeploymentID && (status == "succeeded" || status == "rolled_back") {
+		latestStatus = latest.Status
+	}
+	superseded := latestID != pending.DeploymentID && !((status == "succeeded" || status == "rolled_back") && (latestStatus == "preparing" || latestStatus == "uploading" || latestStatus == "ready"))
+	if superseded || task.ServiceType != "oxidns" || task.ProfileID != profile {
+		return nil, nil
+	}
+	return &task, nil
+}
+
+// AdvanceState computes one immutable statistics-boundary transition. Its
+// caller holds the repository snapshot through the state-file generation CAS.
+func AdvanceState(previous *DashboardState, snapshot *SnapshotIdentity, core *CoreStatus, observations *Observations, target string, agent *model.Agent, manual bool) (*DashboardState, error) {
+	reason := ""
+	switch {
+	case manual:
+		reason = "manual"
+	case previous == nil:
+		reason = "initial"
+	case previous.Target != target:
+		reason = "target_changed"
+	case previous.InstanceID != core.InstanceID:
+		reason = "core_changed"
+	case previous.SourceRevision != snapshot.SourceRevision:
+		reason = "configuration_changed"
+	case previous.RuntimeRevision != snapshot.RuntimeRevision:
+		reason = "core_changed"
+	case CountersRestarted(observations, previous.Baseline):
+		reason = "counters_changed"
+	}
+	if previous != nil && previous.Pending != nil && !manual && previous.Target == target {
+		pending := previous.Pending
+		task, err := statePublication(agent, pending)
+		if err != nil && !errors.Is(err, errStatusDamaged) {
+			return nil, err
+		}
+		if snapshot.CollectedAtMS < pending.CollectedAtMS {
+			return nil, ErrPublicationPending
+		}
+		if err != nil {
+			return nil, err
+		}
+		status := ""
+		if task != nil {
+			status = task.Status
+		}
+		if status != "" && !terminal[status] {
+			if reason != "" {
+				return nil, ErrPublicationPending
+			}
+			return previous, nil
+		}
+		expected := ""
+		switch status {
+		case "succeeded":
+			expected = pending.ExpectedRevision
+		case "rolled_back":
+			expected = previous.SourceRevision
+		}
+		manualRollback := task != nil && task.ManualRollback != nil && *task.ManualRollback
+		if reason != "" && expected != "" && expected == snapshot.SourceRevision && !manualRollback {
+			state := *previous
+			state.Generation = tokenHex()
+			state.Reason = "publication"
+			state.InstanceID = core.InstanceID
+			state.SourceRevision = snapshot.SourceRevision
+			state.RuntimeRevision = snapshot.RuntimeRevision
+			state.Baseline = ZeroObservations(observations)
+			state.Carried = pending.Totals
+			state.CarriedPartial = pending.Partial
+			state.Pending = nil
+			state.PublicationCount++
+			return &state, nil
+		}
+		if reason == "" {
+			state := *previous
+			state.Generation = tokenHex()
+			state.Pending = nil
+			return &state, nil
+		}
+	}
+	if reason != "" {
+		return newDashboardState(snapshot, core, observations, target, reason), nil
+	}
+	return previous, nil
+}
+
+// StateTotals computes the counters in one dashboard period.
+func StateTotals(state *DashboardState, observations *Observations) (*Observations, bool, error) {
+	adjusted, partial, err := ApplyBaseline(observations, state.Baseline)
+	if err != nil {
+		return nil, false, err
+	}
+	if state.Schema == 2 {
+		adjusted = CarryObservations(adjusted, state.Carried)
+		partial = partial || state.CarriedPartial
+	}
+	return adjusted, partial, nil
+}

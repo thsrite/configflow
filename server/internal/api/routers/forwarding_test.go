@@ -1,0 +1,102 @@
+package routers_test
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"configflow/internal/httpx/httpxtest"
+	"configflow/internal/model"
+)
+
+func TestR15ForwardingHeadAndMalformedReportIsolation(t *testing.T) {
+	var writes atomic.Int64
+	var bad atomic.Bool
+	peer := func(malformed bool) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") == "" {
+				t.Error("missing registered Agent authorization")
+			}
+			if r.Method == "POST" {
+				writes.Add(1)
+				raw, _ := io.ReadAll(r.Body)
+				if r.URL.Path != "/api/linux-gateway/forwarding" || string(raw) != "{}" {
+					t.Errorf("bad write wire %s %s", r.URL.Path, raw)
+				}
+			} else if r.URL.Path != "/api/linux-gateway/status" {
+				t.Errorf("bad status path %s", r.URL.Path)
+			}
+			filter := `{"state":"ok","sources":[],"remedies":[]}`
+			if malformed && bad.Load() {
+				filter = `{"state":[],"token":"synthetic-report-token"}`
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"success":true,"supported":true,"managed":{"active":false},"ipv4_forwarding":{"supported":true,"current":"1","persisted":true},"forward_filter":`+filter+`}`)
+		}))
+	}
+	one, two := peer(true), peer(false)
+	defer one.Close()
+	defer two.Close()
+	s := fixture(t)
+	login := s.Login()
+	records := []map[string]any{}
+	for i, url := range []string{one.URL, two.URL} {
+		host, portText, _ := net.SplitHostPort(strings.TrimPrefix(url, "http://"))
+		port, _ := strconv.Atoi(portText)
+		id := []string{"bad", "healthy"}[i]
+		records = append(records, map[string]any{"id": id, "name": id, "host": host, "port": port, "service_type": "mihomo", "profile_id": "default", "enabled": true, "status": "online", "last_heartbeat": time.Now().UTC().Format(time.RFC3339Nano), "version": "1.8.43-go", "deployment_method": "shell", "token": "synthetic-" + id + "-token"})
+	}
+	agentsRaw, _ := json.Marshal(records)
+	err := s.Repo.UpdateSystem(s.Context(), func(_ context.Context, current *model.System) error {
+		return current.SetJSON("agents", agentsRaw)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, current *model.Profile) error {
+		return current.SetJSON("routers", json.RawMessage(`{"items":[{"id":"router-bad","name":"Bad reference synthetic-healthy-token","proxy_gateway_agent_id":"bad"},{"id":"router-healthy","name":"Healthy","proxy_gateway_agent_id":"healthy"}]}`))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := s.Repo.ConfigRevision(s.Context(), "default")
+	files := boundaryFiles(t, s.DataDir)
+	s.Do("HEAD", "/api/routers/gateway-forwarding", login, httpxtest.JSON(map[string]string{"agent_id": "healthy"})).WantStatus(200)
+	if writes.Load() != 0 {
+		t.Fatal("HEAD persisted forwarding")
+	}
+	after, _ := s.Repo.ConfigRevision(s.Context(), "default")
+	if before != after {
+		t.Fatal("HEAD changed metadata")
+	}
+	compareBoundary(t, boundaryFiles(t, s.DataDir), files)
+	s.Post("/api/routers/gateway-forwarding", login, httpxtest.JSON(map[string]string{"agent_id": "healthy"})).WantStatus(200)
+	if writes.Load() != 1 {
+		t.Fatal("POST control did not use the real device write path")
+	}
+	bad.Store(true)
+	result := s.Get("/api/routers/gateway-forwarding", login)
+	result.WantStatus(200)
+	var out struct {
+		Gateways []struct {
+			State string `json:"state"`
+		} `json:"gateways"`
+	}
+	if err := json.Unmarshal(result.Body, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Gateways) != 2 || out.Gateways[0].State != "error" || out.Gateways[1].State != "persisted" {
+		t.Fatalf("bad report hid healthy gateway: %s", result.Body)
+	}
+	if strings.Contains(result.Text(), "synthetic-healthy-token") || strings.Contains(result.Text(), "synthetic-report-token") {
+		t.Fatal("forwarding response leaked peer or report credentials")
+	}
+}

@@ -1,0 +1,242 @@
+[
+  {
+    "index": 192,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": "yes"
+    },
+    "input_id": "76618aad1867dba2a2d3707c191e94eb29989648cd6da46880f03b399b8a6b42"
+  },
+  {
+    "index": 193,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": "no"
+    },
+    "input_id": "8d6a89f119e1e72ef5cff879b29b8ef1095eb754b939813a0400719e519fd217"
+  },
+  {
+    "index": 194,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": "Off"
+    },
+    "input_id": "ffdde3a37cc2bba285a58d0eda8d6340b4287a5aeba29520e4397ee84578632e"
+  },
+  {
+    "index": 195,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": "on"
+    },
+    "input_id": "29bba0997b8a21800e31e7ef09eac9a94924b19c8a61c7138a1a02fb4d72f5fd"
+  },
+  {
+    "index": 205,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": "1:30"
+    },
+    "input_id": "9e157542ffe245cc727e238c716534bf19cdbd5cd488db2295d94a7f09756b17"
+  },
+  {
+    "index": 206,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": "1:30.5"
+    },
+    "input_id": "9c9a2ddf278e4ec6fe544de00fcac79a22d020112298c39b51d161c6e8fc6437"
+  },
+  {
+    "index": 207,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": 1000.0
+    },
+    "input_id": "b68acd32cac691ded9d49c611bc5071979e0df44057c122eab23aea5f495d4e9"
+  },
+  {
+    "index": 209,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": 1500.0
+    },
+    "input_id": "ef9c98affd32f3b2ec11714471f73ec504fb6a9c5843c854e6ec16a693cbe990"
+  },
+  {
+    "index": 211,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": 5
+    },
+    "input_id": "bcc92aa0425bce4c9bffbfa2b7eb23e22c8a8e6531e13ac442ad8f2d0cec8242"
+  },
+  {
+    "index": 214,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": ".inf"
+    },
+    "input_id": "fe88e5bb07a428716b9e3736f335684c5952ce1fbb352cfdba129680d92635a4"
+  },
+  {
+    "index": 215,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": "-.INF"
+    },
+    "input_id": "ff53f36057c2e206d10a895fe4ab1bf38322b8a5b5e840fa6b536d56534cf648"
+  },
+  {
+    "index": 218,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": 15
+    },
+    "input_id": "6081fefadc73aebc858ea9c4befeddbc819d46a32ece52f3a54b0559f7a4a2dc"
+  },
+  {
+    "index": 219,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": 8
+    },
+    "input_id": "ff9bd3b332adf620f675a8c4f38377ce87fdc26cd14cbaf2a9acc58c68a8905d"
+  },
+  {
+    "index": 223,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": 1
+    },
+    "input_id": "26b668e20692fd45cc6c09e1160c7b54b1f9abd2574bd7a8ac724e7f9cf65d81"
+  },
+  {
+    "index": 226,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": "x"
+    },
+    "input_id": "a4156cd1a36fd09b0cab803d1be2a00bf5d9192856705c852c58cbbef783c2a4"
+  },
+  {
+    "index": 227,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": "="
+    },
+    "input_id": "0491084f266cbd8278b276972ba678e50e0a633aaead0ea0a3456e9881851002"
+  },
+  {
+    "index": 96,
+    "category": "5.7 native scalar schema",
+    "error_class": "DialerReferenceError",
+    "error": "原始 dialer-proxy 'yes' 不存在、未启用或名称不唯一，请改用稳定引用",
+    "input_id": "2d0508f46c778a7f83d13e7fb287c9c90c9ebc0451eceff54e09e5e2bcf5e794"
+  },
+  {
+    "index": 224,
+    "category": "5.4 validation policy",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: YAML 标签 !!bool 的标量内容无效（第 1 行）：yaml: cannot decode !!str `yes` as a !!bool",
+    "input_id": "519ecb506154cd882a02898b07b156e9bb289e620b65eb7be9ea93d8fdca0ae5"
+  },
+  {
+    "index": 230,
+    "category": "D1 duplicate",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: YAML 包含重复键 \"type\"（第 2 行）",
+    "input_id": "9a4d323f0e812a678395335a86536e6a194c49d9a7120e8d38862b55d4541411"
+  },
+  {
+    "index": 236,
+    "category": "D1 duplicate",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: YAML 包含重复键 \"<<\"（第 3 行）",
+    "input_id": "4d502949ed21d9f8575261494fb21f1d36f14d50fa79c2f671e7db8506c5f200"
+  },
+  {
+    "index": 235,
+    "category": "5.7 native mapping order",
+    "ok": {
+      "type": "x",
+      "p": 1,
+      "q": 2,
+      "a": {
+        "type": "x",
+        "p": 1
+      },
+      "b": {
+        "type": "y",
+        "q": 2
+      },
+      "z": 1
+    },
+    "input_id": "81c952c317ca93048e5b67ce579a1e2952c33fcab569e3951e8c4c36eb26eeb0"
+  },
+  {
+    "index": 259,
+    "category": "5.7 native scalar schema",
+    "ok": {
+      "type": "ss",
+      "when": "2024-01-02"
+    },
+    "input_id": "cad8cd3256e59c4147f565838b31d3cb7f9c6b44d119eee6091bf82c2e6a05fe"
+  },
+  {
+    "index": 225,
+    "category": "5.4 validation policy",
+    "input_id": "9ae34a51b817cec59b1ec89002429bb0dd856edf8994366a7f24953b6619f443",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: YAML 标签 !!null 的标量内容无效（第 1 行）：yaml: cannot decode !!str `x` as a !!null"
+  },
+  {
+    "index": 231,
+    "category": "D1 duplicate",
+    "input_id": "0f11ed070d6ddb36bbe490e1b3b38151ceb99ac69258b911b007a17be78d1f7e",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: YAML 包含重复键 \"type\"（第 3 行）"
+  },
+  {
+    "index": 237,
+    "category": "5.4 validation policy",
+    "input_id": "a99e8437e7b326d8753c77adbd97489f6b161ec2d39ae5c86d58f2698286d325",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: YAML 合并引用 << 必须是映射或映射序列（第 2 行）"
+  },
+  {
+    "index": 238,
+    "category": "5.4 validation policy",
+    "input_id": "370af6db5813c45ea88b1b5469a682c1cd5a0e93e6051173a2d3d416e964081a",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: YAML 合并引用 << 必须是映射或映射序列（第 1 行）"
+  },
+  {
+    "index": 243,
+    "category": "5.4 validation policy",
+    "input_id": "ceb32f3ac2cca29b3995b1681bb4f8810913f9df3b3d1839723fc2e19f11467c",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: YAML 只能包含一个文档（第 2 行开始第二个文档）"
+  },
+  {
+    "index": 245,
+    "category": "5.4 validation policy",
+    "input_id": "7853364c9fb36068f91c7f071480dfef1c1b2550796a83b45cb6f601cd1064f9",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: YAML 只能包含一个文档（第 3 行开始第二个文档）"
+  },
+  {
+    "index": 250,
+    "category": "5.7 JSON mapping boundary",
+    "input_id": "ef23867dc0808bc5527cf087b7a10b2392e066221a4cefc7c9b6012f9b7e122e",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: 订阅 YAML 的对象键必须是字符串、数字、布尔值或空值（第 1 行）"
+  },
+  {
+    "index": 251,
+    "category": "5.7 JSON mapping boundary",
+    "input_id": "d58b4031a4ee2145bf6913002844544bd77b407cb4c22f7608beb5d734e5899a",
+    "error_class": "ValueError",
+    "error": "代理 YAML 校验失败: 订阅 YAML 的对象键必须是字符串、数字、布尔值或空值（第 1 行）"
+  }
+]

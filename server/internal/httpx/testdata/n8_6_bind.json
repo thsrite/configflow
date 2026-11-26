@@ -1,0 +1,172 @@
+[
+  {
+    "name": "login bad json",
+    "path": "/api/auth/login",
+    "body": "{\"username\":",
+    "content_type": "application/json",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a400 Bad Request: The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "login text/plain",
+    "path": "/api/auth/login",
+    "body": "{}",
+    "content_type": "text/plain",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a415 Unsupported Media Type: Did not attempt to load JSON data because the request Content-Type was not 'application/json'.\",\"success\":false}",
+    "go_status": 415,
+    "go_body": "{\"message\":\"Did not attempt to load JSON data because the request Content-Type was not 'application/json'.\",\"success\":false}"
+  },
+  {
+    "name": "login list",
+    "path": "/api/auth/login",
+    "body": "[1]",
+    "content_type": "application/json",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a'list' object has no attribute 'get'\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "login absent content-type",
+    "path": "/api/auth/login",
+    "body": "{}",
+    "content_type": "",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a415 Unsupported Media Type: Did not attempt to load JSON data because the request Content-Type was not 'application/json'.\",\"success\":false}",
+    "go_status": 415,
+    "go_body": "{\"message\":\"Did not attempt to load JSON data because the request Content-Type was not 'application/json'.\",\"success\":false}"
+  },
+  {
+    "name": "login empty JSON",
+    "path": "/api/auth/login",
+    "body": "",
+    "content_type": "application/json",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a400 Bad Request: The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "login whitespace JSON",
+    "path": "/api/auth/login",
+    "body": "  ",
+    "content_type": "application/json",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a400 Bad Request: The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "login trailing JSON",
+    "path": "/api/auth/login",
+    "body": "{} {}",
+    "content_type": "application/json",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a400 Bad Request: The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "login null",
+    "path": "/api/auth/login",
+    "body": "null",
+    "content_type": "application/json",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a'NoneType' object has no attribute 'get'\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "login scalar bool",
+    "path": "/api/auth/login",
+    "body": "true",
+    "content_type": "application/json",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a'bool' object has no attribute 'get'\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "login scalar number",
+    "path": "/api/auth/login",
+    "body": "1",
+    "content_type": "application/json",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a'int' object has no attribute 'get'\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "login scalar string",
+    "path": "/api/auth/login",
+    "body": "\"text\"",
+    "content_type": "application/json",
+    "python_status": 500,
+    "python_body": "{\"message\":\"\\u767b\\u5f55\\u5931\\u8d25\\u3002\\u539f\\u59cb\\u9519\\u8bef\\uff1a'str' object has no attribute 'get'\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "login nonfinite NaN",
+    "path": "/api/auth/login",
+    "body": "{\"username\":NaN,\"password\":\"diff-password\"}",
+    "content_type": "application/json",
+    "python_status": 401,
+    "python_body": "{\"message\":\"\\u7528\\u6237\\u540d\\u6216\\u5bc6\\u7801\\u9519\\u8bef\\uff0c\\u8bf7\\u91cd\\u65b0\\u8f93\\u5165\\u3002\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "task nonfinite NaN",
+    "path": "/api/tasks/interval",
+    "body": "{\"key\":\"subscription:missing\",\"interval_seconds\":NaN}",
+    "content_type": "application/json",
+    "python_status": 400,
+    "python_body": "{\"message\":\"\\u66f4\\u65b0\\u95f4\\u9694\\u5fc5\\u987b\\u4e3a 0\\uff08\\u5173\\u95ed\\u81ea\\u52a8\\u66f4\\u65b0\\uff09\\u6216 60 ~ 604800 \\u79d2\\u7684\\u6574\\u6570\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"\\u8bf7\\u6307\\u5b9a\\u4efb\\u52a1\\u548c\\u66f4\\u65b0\\u95f4\\u9694\",\"success\":false}"
+  },
+  {
+    "name": "login nonfinite Infinity",
+    "path": "/api/auth/login",
+    "body": "{\"username\":Infinity,\"password\":\"diff-password\"}",
+    "content_type": "application/json",
+    "python_status": 401,
+    "python_body": "{\"message\":\"\\u7528\\u6237\\u540d\\u6216\\u5bc6\\u7801\\u9519\\u8bef\\uff0c\\u8bf7\\u91cd\\u65b0\\u8f93\\u5165\\u3002\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "task nonfinite Infinity",
+    "path": "/api/tasks/interval",
+    "body": "{\"key\":\"subscription:missing\",\"interval_seconds\":Infinity}",
+    "content_type": "application/json",
+    "python_status": 400,
+    "python_body": "{\"message\":\"\\u66f4\\u65b0\\u95f4\\u9694\\u5fc5\\u987b\\u4e3a 0\\uff08\\u5173\\u95ed\\u81ea\\u52a8\\u66f4\\u65b0\\uff09\\u6216 60 ~ 604800 \\u79d2\\u7684\\u6574\\u6570\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"\\u8bf7\\u6307\\u5b9a\\u4efb\\u52a1\\u548c\\u66f4\\u65b0\\u95f4\\u9694\",\"success\":false}"
+  },
+  {
+    "name": "login nonfinite -Infinity",
+    "path": "/api/auth/login",
+    "body": "{\"username\":-Infinity,\"password\":\"diff-password\"}",
+    "content_type": "application/json",
+    "python_status": 401,
+    "python_body": "{\"message\":\"\\u7528\\u6237\\u540d\\u6216\\u5bc6\\u7801\\u9519\\u8bef\\uff0c\\u8bf7\\u91cd\\u65b0\\u8f93\\u5165\\u3002\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"The browser (or proxy) sent a request that this server could not understand.\",\"success\":false}"
+  },
+  {
+    "name": "task nonfinite -Infinity",
+    "path": "/api/tasks/interval",
+    "body": "{\"key\":\"subscription:missing\",\"interval_seconds\":-Infinity}",
+    "content_type": "application/json",
+    "python_status": 400,
+    "python_body": "{\"message\":\"\\u66f4\\u65b0\\u95f4\\u9694\\u5fc5\\u987b\\u4e3a 0\\uff08\\u5173\\u95ed\\u81ea\\u52a8\\u66f4\\u65b0\\uff09\\u6216 60 ~ 604800 \\u79d2\\u7684\\u6574\\u6570\",\"success\":false}",
+    "go_status": 400,
+    "go_body": "{\"message\":\"\\u8bf7\\u6307\\u5b9a\\u4efb\\u52a1\\u548c\\u66f4\\u65b0\\u95f4\\u9694\",\"success\":false}"
+  }
+]

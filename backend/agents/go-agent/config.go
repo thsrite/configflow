@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"sync"
+
+	"agent/internal/atomicfile"
+	"agent/svc"
 )
 
 // Config 结构体完整定义了 agent 的所有配置项
@@ -38,6 +40,8 @@ type Config struct {
 	Token                   string `json:"token,omitempty"`
 	InstallationID          string `json:"installation_id,omitempty"`
 	InstallationToken       string `json:"installation_token,omitempty"`
+	RegistrationToken       string `json:"registration_token,omitempty"`
+	RegistrationKey         string `json:"registration_key,omitempty"`
 
 	// 监控功能配置（使用指针以区分未设置和 false）
 	EnableMetrics *bool `json:"enable_metrics,omitempty"` // 是否启用系统监控，默认 true
@@ -74,6 +78,8 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.HeartbeatInterval == 0 {
 		cfg.HeartbeatInterval = 30 // 设置默认心跳间隔
 	}
+	// Images before 1.9.3-go wrote "supervisor"; the next Save writes "s6".
+	cfg.ServiceManager = svc.NormalizeManager(cfg.ServiceManager)
 
 	cfg.filePath = path
 	return &cfg, nil
@@ -86,7 +92,7 @@ func (c *Config) Save() error {
 
 	// 使用 MarshalIndent 美化输出格式
 	// Keep extension fields supplied by older/newer installers during registration.
-	values := map[string]interface{}{}
+	values := map[string]any{}
 	if old, readErr := os.ReadFile(c.filePath); readErr == nil {
 		if err := json.Unmarshal(old, &values); err != nil {
 			return err
@@ -98,7 +104,7 @@ func (c *Config) Save() error {
 	if err != nil {
 		return err
 	}
-	var current map[string]interface{}
+	var current map[string]any
 	if err = json.Unmarshal(known, &current); err != nil {
 		return err
 	}
@@ -111,40 +117,21 @@ func (c *Config) Save() error {
 	if c.InstallationToken == "" {
 		delete(values, "installation_token")
 	}
+	if c.RegistrationToken == "" {
+		delete(values, "registration_token")
+	}
+	if c.RegistrationKey == "" {
+		delete(values, "registration_key")
+	}
 	data, err := json.MarshalIndent(values, "", "  ")
 	if err != nil {
 		return err
 	}
 
 	// Registration writes must not truncate the Agent configuration.
-	f, err := os.CreateTemp(filepath.Dir(c.filePath), ".agent-config-")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if err = f.Chmod(0600); err == nil {
-		_, err = f.Write(data)
-	}
-	if err == nil {
-		err = f.Sync()
-	}
-	closeErr := f.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(tmp, c.filePath); err != nil {
-		return err
-	}
-	dir, err := os.Open(filepath.Dir(c.filePath))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	return atomicfile.WriteWith(c.filePath, data, 0o600, atomicfile.Options{
+		Pattern: ".agent-config-*",
+	})
 }
 
 // IsMetricsEnabled 检查是否启用系统监控

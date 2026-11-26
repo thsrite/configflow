@@ -9,21 +9,20 @@ import (
 func statusAllocation(t *testing.T, cfg *Config) returnAllocation {
 	t.Helper()
 	status := returnSafetyStatus(cfg)
-	if status["ok"] != true {
+	if !status.OK {
 		t.Fatalf("expected safe allocation: %v", status)
 	}
-	allocation, ok := status["allocation"].(returnAllocation)
-	if !ok || allocation.Version != 1 {
+	if status.Allocation == nil || status.Allocation.Version != 1 {
 		t.Fatalf("allocation missing: %v", status)
 	}
-	return allocation
+	return *status.Allocation
 }
 
 func TestAllocatedReturnRoutingLifecyclePreservesForeignResources(t *testing.T) {
 	host := &fakeHost{
-		routes: []map[string]interface{}{{"dst": "default", "table": 104, "gateway": "10.0.0.1", "dev": "foreign0", "protocol": 99}},
-		rules:  []map[string]interface{}{{"priority": 104, "src": "all", "table": 200, "fwmark": "0x400000", "fwmask": "0x400000"}},
-		nft:    []map[string]interface{}{{"table": map[string]interface{}{"family": "inet", "name": "foreign", "handle": 900}}},
+		routes: []map[string]any{{"dst": "default", "table": 104, "gateway": "10.0.0.1", "dev": "foreign0", "protocol": 99}},
+		rules:  []map[string]any{{"priority": 104, "src": "all", "table": 200, "fwmark": "0x400000", "fwmask": "0x400000"}},
+		nft:    []map[string]any{{"table": map[string]any{"family": "inet", "name": "foreign", "handle": 900}}},
 	}
 	installFakeHost(t, host)
 	cfg := testConfig(t, tunConfig)
@@ -77,7 +76,7 @@ func TestAllocationPreviewBecomesStaleBeforeApply(t *testing.T) {
 	installFakeHost(t, host)
 	cfg := testConfig(t, tunConfig)
 	first := statusAllocation(t, cfg)
-	host.routes = append(host.routes, map[string]interface{}{"dst": "default", "table": 104, "gateway": "10.0.0.1", "dev": "foreign0"})
+	host.routes = append(host.routes, map[string]any{"dst": "default", "table": 104, "gateway": "10.0.0.1", "dev": "foreign0"})
 	before := jsonText(host.routes)
 	if _, err := ApplyReturnRouting(cfg, sampleSpec()); err == nil {
 		t.Fatal("stale allocation must be refused")

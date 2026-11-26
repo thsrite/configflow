@@ -82,14 +82,14 @@ func oxRuleUpdateConfiguration(cfg *Config) (*oxRuleUpdatePlan, *oxMonitorError)
 	if err != nil || len(data) > oxMonitorJSONLimit || sha256Hex(data) != api.sourceRevision {
 		return nil, oxMonitorFail(http.StatusConflict, "SNAPSHOT_CHANGED", "The active configuration changed; try again")
 	}
-	var doc map[string]interface{}
+	var doc map[string]any
 	if yaml.Unmarshal(data, &doc) != nil {
 		return nil, oxMonitorConfigError()
 	}
-	items, _ := doc["plugins"].([]interface{})
-	plugins := make(map[string]map[string]interface{})
+	items, _ := doc["plugins"].([]any)
+	plugins := make(map[string]map[string]any)
 	for _, item := range items {
-		plugin, _ := item.(map[string]interface{})
+		plugin, _ := item.(map[string]any)
 		tag, _ := plugin["tag"].(string)
 		if tag == "" {
 			continue
@@ -104,13 +104,13 @@ func oxRuleUpdateConfiguration(cfg *Config) (*oxRuleUpdatePlan, *oxMonitorError)
 		if plugin["type"] != "sequence" {
 			continue
 		}
-		steps, _ := plugin["args"].([]interface{})
+		steps, _ := plugin["args"].([]any)
 		if len(steps) != 2 {
 			continue
 		}
 		tags := make([]string, 2)
 		for i, value := range steps {
-			step, _ := value.(map[string]interface{})
+			step, _ := value.(map[string]any)
 			exec, _ := step["exec"].(string)
 			if len(step) == 1 && strings.HasPrefix(exec, "$") && oxMonitorSafeTag(exec[1:]) {
 				tags[i] = exec[1:]
@@ -120,16 +120,16 @@ func oxRuleUpdateConfiguration(cfg *Config) (*oxRuleUpdatePlan, *oxMonitorError)
 		if download["type"] != "download" || reload["type"] != "reload_provider" {
 			continue
 		}
-		args, _ := download["args"].(map[string]interface{})
-		downloads, _ := args["downloads"].([]interface{})
+		args, _ := download["args"].(map[string]any)
+		downloads, _ := args["downloads"].([]any)
 		if len(downloads) == 0 || len(downloads) > 1000 {
 			continue
 		}
-		var references []interface{}
+		var references []any
 		switch value := reload["args"].(type) {
 		case string:
-			references = []interface{}{value}
-		case []interface{}:
+			references = []any{value}
+		case []any:
 			references = value
 		}
 		if len(references) == 0 || len(references) > 1000 {
@@ -137,7 +137,7 @@ func oxRuleUpdateConfiguration(cfg *Config) (*oxRuleUpdatePlan, *oxMonitorError)
 		}
 		plan := &oxRuleUpdatePlan{api: api, downloadTag: tags[0], downloadTotal: len(downloads), providerFiles: make(map[string][]string)}
 		for _, value := range downloads {
-			entry, _ := value.(map[string]interface{})
+			entry, _ := value.(map[string]any)
 			dir, _ := entry["dir"].(string)
 			filename, _ := entry["filename"].(string)
 			target := ""
@@ -186,9 +186,9 @@ func oxRuleCleanPath(value string) string {
 	return strings.TrimPrefix(path.Clean(value), "./")
 }
 
-func oxRuleProviderFiles(plugin map[string]interface{}) []string {
-	args, _ := plugin["args"].(map[string]interface{})
-	values, ok := args["files"].([]interface{})
+func oxRuleProviderFiles(plugin map[string]any) []string {
+	args, _ := plugin["args"].(map[string]any)
+	values, ok := args["files"].([]any)
 	if !ok || len(values) == 0 {
 		return nil
 	}
@@ -242,11 +242,11 @@ func (plan *oxRuleUpdatePlan) selectPaths(paths []string) (*oxRuleSelection, *ox
 	return selection, nil
 }
 
-func oxRuleRequest(ctx context.Context, client *http.Client, api *oxMonitorConfig, method, path string, result interface{}) *oxMonitorError {
+func oxRuleRequest(ctx context.Context, client *http.Client, api *oxMonitorConfig, method, path string, result any) *oxMonitorError {
 	return oxRuleRequestBody(ctx, client, api, method, path, "{}", result)
 }
 
-func oxRuleRequestBody(ctx context.Context, client *http.Client, api *oxMonitorConfig, method, path, payload string, result interface{}) *oxMonitorError {
+func oxRuleRequestBody(ctx context.Context, client *http.Client, api *oxMonitorConfig, method, path, payload string, result any) *oxMonitorError {
 	var body io.Reader
 	if method == http.MethodPost {
 		body = strings.NewReader(payload)
@@ -482,7 +482,7 @@ func (updater *oxRuleUpdater) handler(cfg *Config) http.HandlerFunc {
 			return
 		}
 		if r.Method == http.MethodGet {
-			JsonResponse(w, http.StatusOK, map[string]interface{}{"success": true, "task": updater.snapshot()})
+			JsonResponse(w, http.StatusOK, OxiDNSRuleUpdateResponse{Success: true, Task: updater.snapshot()})
 			return
 		}
 		release, err := AcquireServiceOperation(cfg)
@@ -538,7 +538,7 @@ func (updater *oxRuleUpdater) handler(cfg *Config) http.HandlerFunc {
 		accepted = true
 		oxRuleUpdatesRunning.Add(1)
 		go updater.run(cfg, plan, selection, release)
-		JsonResponse(w, http.StatusAccepted, map[string]interface{}{"success": true, "task": task})
+		JsonResponse(w, http.StatusAccepted, OxiDNSRuleUpdateResponse{Success: true, Task: task})
 	}
 }
 

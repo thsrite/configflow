@@ -47,7 +47,7 @@ func TestOxiDNSRuleRequestTransportErrors(t *testing.T) {
 				}
 				return nil, test.err
 			})}
-			var result interface{}
+			var result any
 			err := oxRuleRequest(context.Background(), client, &oxMonitorConfig{endpoint: "http://127.0.0.1:1"}, http.MethodPost, "/api/plugins/rules_download/download", &result)
 			if err == nil || err.status != test.status || err.code != test.code {
 				t.Fatalf("transport failure classified incorrectly: %+v", err)

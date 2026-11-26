@@ -23,12 +23,12 @@ outline: 2
 
 | 要准备什么 | 本文示例 | 后面用在哪里 |
 | --- | --- | --- |
-| RouterOS 地址 | `192.168.50.254` | 容器网关、客户端网关、路由器管理地址 |
-| 面板地址 | `http://192.168.50.100:5010` | 服务域名、容器的 `SERVER_URL` |
-| Mihomo 容器 IP | `192.168.50.28` | 代理设备地址、代理路由的下一跳 |
-| OxiDNS 容器 IP | `192.168.50.251` | DNS 设备地址、客户端 DNS |
-| 测试设备 IP | `192.168.50.50` | 首次选择需要分流的设备 |
-| 内网网段 | `192.168.50.0/24` | 容器地址中的 `/24` 要与实际内网一致 |
+| RouterOS 地址 | `198.51.100.254` | 容器网关、客户端网关、路由器管理地址 |
+| 面板地址 | `http://198.51.100.100:5010` | 服务域名、容器的 `SERVER_URL` |
+| Mihomo 容器 IP | `198.51.100.28` | 代理设备地址、代理路由的下一跳 |
+| OxiDNS 容器 IP | `198.51.100.251` | DNS 设备地址、客户端 DNS |
+| 测试设备 IP | `198.51.100.50` | 首次选择需要分流的设备 |
+| 内网网段 | `198.51.100.0/24` | 容器地址中的 `/24` 要与实际内网一致 |
 | LAN 网桥 | `bridge1` | 把容器接到内网 |
 | 可写磁盘目录 | `disk1/configflow` | 保存镜像、配置和设备身份 |
 
@@ -45,7 +45,7 @@ AIO 就是把多个程序装在同一个容器里。以上两种都只有一份 
 ## 第 2 步：让容器能找到面板
 
 1. 按 [安装管理面板](install.md) 完成 NAS 或 Docker 部署。
-2. 从另一台内网设备打开面板，例如 `http://192.168.50.100:5010`。
+2. 从另一台内网设备打开面板，例如 `http://198.51.100.100:5010`。
 3. 进入「系统 → 系统设置 → 常规 → 服务配置」，将「服务域名」填成这个完整地址。
 4. 需要保护配置下载链接时生成「访问令牌」，以后从页面复制完整链接，不要漏掉令牌。
 
@@ -61,11 +61,11 @@ AIO 就是把多个程序装在同一个容器里。以上两种都只有一份 
 | x86 / x86_64 | `linux/amd64` |
 | ARM64 | `linux/arm64` |
 
-下面按 x86 举例；ARM64 要把**两条命令**中的平台都改成 `linux/arm64`。导出使用的 `--platform` 选项需要 Docker API 1.48 或以上；旧版 Docker 需先升级。
+下面按 x86 举例；ARM64 要把**两条命令**中的平台都改成 `linux/arm64`。导出使用的 `--platform` 选项需要 Docker API 1.48 或以上；旧版 Docker 需先升级。示例中的 `3.0.0` 请换成与当前面板相同的版本号，确保内置 Agent 版本与面板配套（不要用 `latest`：它暂时仍是 Python 时期的 Agent）；若面板已开启登录，新装容器还需在环境变量中配置与面板一致的 `AGENT_REGISTRATION_KEY`（或使用面板生成的注册凭据）。
 
 ```sh
-docker pull --platform linux/amd64 thsrite/config-flow-agent:latest
-docker save --platform linux/amd64 -o configflow-agent.tar thsrite/config-flow-agent:latest
+docker pull --platform linux/amd64 thsrite/config-flow-agent:3.0.0
+docker save --platform linux/amd64 -o configflow-agent.tar thsrite/config-flow-agent:3.0.0
 ```
 
 完成后，在 WinBox 的 **Files** 打开实际磁盘，本例是 `disk1`，新建 `configflow` 文件夹，把 `configflow-agent.tar` 上传进去。最终应能看到：
@@ -98,8 +98,8 @@ disk1/configflow/configflow-agent.tar
 | 字段 | Mihomo | OxiDNS |
 | --- | --- | --- |
 | Name | `cf-main` | `cf-dns` |
-| Address | `192.168.50.28/24` | `192.168.50.251/24` |
-| Gateway | `192.168.50.254` | `192.168.50.254` |
+| Address | `198.51.100.28/24` | `198.51.100.251/24` |
+| Gateway | `198.51.100.254` | `198.51.100.254` |
 
 再到 **Bridge → Ports**，分别添加这两张网卡，**Bridge 都选实际的 LAN 网桥**，本例是 `bridge1`。填错网桥或网关时，容器可能无法联系面板或外网。
 
@@ -124,10 +124,10 @@ disk1/configflow/configflow-agent.tar
 
 | Key | List 为 `cf-main` 时的 Value | List 为 `cf-dns` 时的 Value | 作用 |
 | --- | --- | --- | --- |
-| `SERVER_URL` | `http://192.168.50.100:5010` | 同左 | 面板的完整地址 |
+| `SERVER_URL` | `http://198.51.100.100:5010` | 同左 | 面板的完整地址 |
 | `SERVICE_TYPE` | `mihomo` | `oxidns` | 决定启动哪个核心 |
 | `AGENT_NAME` | `mihomo-main` | `oxidns` | 面板中显示的设备名称 |
-| `AGENT_IP` | `192.168.50.28` | `192.168.50.251` | 面板联系它的 IP，与对应网卡一致 |
+| `AGENT_IP` | `198.51.100.28` | `198.51.100.251` | 面板联系它的 IP，与对应网卡一致 |
 | `AGENT_PORT` | `8080` | `8082` | Agent 管理端口，按本文填写即可 |
 
 `8080 / 8082` 不是 DNS 端口，不填到手机的 DNS 设置中。单服务容器不需要额外添加 `ENABLE_MIHOMO` 等组合开关。
@@ -169,10 +169,10 @@ disk1/configflow/configflow-agent.tar
 ```text
 {
     :local lanBridge "bridge1"
-    :local gateway "192.168.50.254"
-    :local serverUrl "http://192.168.50.100:5010"
-    :local mainIP "192.168.50.28"
-    :local dnsIP "192.168.50.251"
+    :local gateway "198.51.100.254"
+    :local serverUrl "http://198.51.100.100:5010"
+    :local mainIP "198.51.100.28"
+    :local dnsIP "198.51.100.251"
     :local prefix "/24"
     :local base "disk1/configflow"
     :local imageFile ($base . "/configflow-agent.tar")
@@ -238,13 +238,13 @@ disk1/configflow/configflow-agent.tar
 
 <template #routeros-aio>
 
-首次安装只创建一个 `cf-aio` 容器，不创建 `cf-main`、`cf-dns` 两个独立容器。它们共用一个 IP，本例使用 `192.168.50.28`，但管理端口和 DNS 端口仍分开。
+首次安装只创建一个 `cf-aio` 容器，不创建 `cf-main`、`cf-dns` 两个独立容器。它们共用一个 IP，本例使用 `198.51.100.28`，但管理端口和 DNS 端口仍分开。
 
 使用 WinBox：先在 **Interfaces → VETH** 新建网卡，并在 **Bridge → Ports** 把它加入实际 LAN 网桥；再到 **Container** 添加容器。各项按下表填写：
 
 | 项目 | AIO 怎么填 |
 | --- | --- |
-| VETH | Name 填 `cf-aio`，Address 填 `192.168.50.28/24`，Gateway 填 `192.168.50.254`；加入 LAN 网桥 `bridge1` |
+| VETH | Name 填 `cf-aio`，Address 填 `198.51.100.28/24`，Gateway 填 `198.51.100.254`；加入 LAN 网桥 `bridge1` |
 | Container 的 File | 仍用 `disk1/configflow/configflow-agent.tar` |
 | Name / Hostname / Interface | 都填 `cf-aio` |
 | Root Dir | `disk1/configflow/aio-root` |
@@ -263,8 +263,8 @@ disk1/configflow/configflow-agent.tar
 
 | Key | Value | 说明 |
 | --- | --- | --- |
-| `SERVER_URL` | `http://192.168.50.100:5010` | 面板地址 |
-| `AGENT_IP` | `192.168.50.28` | 两个 Agent 共用容器 IP |
+| `SERVER_URL` | `http://198.51.100.100:5010` | 面板地址 |
+| `AGENT_IP` | `198.51.100.28` | 两个 Agent 共用容器 IP |
 | `ENABLE_MIHOMO` | `true` | 启动 Mihomo；不启用就没有代理服务 |
 | `ENABLE_OXIDNS` | `true` | 启动 OxiDNS；不启用就没有本方案的 DNS 服务 |
 | `ENABLE_MOSDNS` | `false` | 不启动 MosDNS，避免与 OxiDNS 争用 DNS 端口 |
@@ -278,8 +278,8 @@ disk1/configflow/configflow-agent.tar
 保留默认启动命令，解压完成后点击 **Start**。后面的操作仍要分别发布两个核心：
 
 - Mihomo DNS 用 `1053`，OxiDNS DNS 用 `53`，不能都占用 `53`。
-- OxiDNS 代理上游仍填 `192.168.50.28:1053`。
-- 路由下一跳、客户端 DNS 都改用 `192.168.50.28`；后文的 OxiDNS 地址 `192.168.50.251` 不再适用。
+- OxiDNS 代理上游仍填 `198.51.100.28:1053`。
+- 路由下一跳、客户端 DNS 都改用 `198.51.100.28`；后文的 OxiDNS 地址 `198.51.100.251` 不再适用。
 - 面板应出现两张 Agent 卡片，IP 相同，端口分别是 `8080` 和 `8082`。
 - 重启或停止这个容器，会同时影响代理和 DNS。三项挂载目录都要保留，不与其他容器共用。
 
@@ -327,8 +327,8 @@ Agent 是容器里的小助手，负责收配置和报状态。在「系统 → 
 | --- | --- | --- |
 | UDP、TCP 监听 | 均为 `0.0.0.0:53` | 让内网设备通过普通 DNS 端口查询 |
 | 直连上游 | 可用的公共 DNS，例如 `https://223.5.5.5/dns-query` | 不需要代理的网站交给它查询 |
-| 代理上游 | `192.168.50.28:1053` | 填 **Mihomo IP + DNS 端口**，不是面板或 Agent 端口 |
-| 测试设备策略 | `192.168.50.50` 选「智能分流」 | 先验证这一台，不要直接设置整个内网 |
+| 代理上游 | `198.51.100.28:1053` | 填 **Mihomo IP + DNS 端口**，不是面板或 Agent 端口 |
+| 测试设备策略 | `198.51.100.50` 选「智能分流」 | 先验证这一台，不要直接设置整个内网 |
 
 设备策略位置见 [客户端设备](../manual/client-devices.md)，上游位置见 [OxiDNS 基础与上游](../manual/core-settings.md#oxidns-基础与上游)。
 
@@ -354,7 +354,7 @@ Agent 是容器里的小助手，负责收配置和报状态。在「系统 → 
 | 字段 | 本次怎么填 | 结果与注意事项 |
 | --- | --- | --- |
 | 类型、名称 | RouterOS；名称自定 | 用于识别并选择对应管理接口 |
-| 管理地址、账号 | `https://192.168.50.254` 和专用账号；非默认端口也填上 | 访问路由器后台，不填代理或 DNS 端口 |
+| 管理地址、账号 | `https://198.51.100.254` 和专用账号；非默认端口也填上 | 访问路由器后台，不填代理或 DNS 端口 |
 | 校验 HTTPS 证书 | 默认开，有可信证书时保留 | 验证失败会阻止连接；自签证书仅在确认地址正确且属于可信内网时按需关闭 |
 | 代理网关 | `mihomo-main` | 把需要代理的连接送给 Mihomo 容器 |
 | 自动配置回流 | 本文同网段方案开启 | 帮助回复按本方案返回设备；其他网络先看 [上游路由](../manual/routers.md) |
@@ -362,12 +362,12 @@ Agent 是容器里的小助手，负责收配置和报状态。在「系统 → 
 | 使用策略路由的 IP 规则集 | 需要时选 Telegram 等 IP 清单 | 只对设置为智能分流的来源设备生效，不需要时留空 |
 | DHCP DNS 服务器 | **暂选「不关联」** | 这次先不改变全网设备获得的 DNS |
 
-**下一跳填 Mihomo 容器 IP，本例是 `192.168.50.28`，不是 NAS 或 RouterOS 自己的地址。**
+**下一跳填 Mihomo 容器 IP，本例是 `198.51.100.28`，不是 NAS 或 RouterOS 自己的地址。**
 
 依次点击：
 
 1. **保存 → 探测**，确认可以连接。到这里还没写入路由。
-2. 点该路由器的 **策略路由**，在 **来源设备** 中确认 `192.168.50.50` 为「智能分流」。
+2. 点该路由器的 **策略路由**，在 **来源设备** 中确认 `198.51.100.50` 为「智能分流」。
 3. 在 **发布预览** 勾选本次 OxiDNS 目标，点 **保存并预览**。
 4. 核对测试设备、Mihomo 地址、所选 IP 清单，并确认 DHCP DNS 本次跳过。
 5. **确认发布**，等待 OxiDNS 和 RouterOS 都成功。出现冲突、失败或结果待确认时，先查看原因，不要连续重复提交。
@@ -380,7 +380,7 @@ Agent 是容器里的小助手，负责收配置和报状态。在「系统 → 
 <a id="verify"></a>
 ### 修改测试设备并验证
 
-只改测试设备：**网关保持 `192.168.50.254`，DNS 改为 `192.168.50.251`**。AIO 的 DNS 改为 `192.168.50.28`。
+只改测试设备：**网关保持 `198.51.100.254`，DNS 改为 `198.51.100.251`**。AIO 的 DNS 改为 `198.51.100.28`。
 
 关闭这台设备上其他代理、VPN 和浏览器安全 DNS，检查：
 
@@ -397,7 +397,7 @@ Agent 是容器里的小助手，负责收配置和报状态。在「系统 → 
 1. 编辑 RouterOS 接入设置，将 **DHCP DNS 服务器** 选为 `oxidns`，保存。
 2. 到 **策略路由 → 来源设备** 添加其他设备或网段，需要分流的选「智能分流」，不需要的选「直连」。长期按设备设置时建议固定 IP。
 3. **发布预览** 勾选 OxiDNS，点击 **保存并预览**。
-4. 核对实际 DHCP 网段、设备范围，以及 DNS 将改为 `192.168.50.251`（AIO 为 `192.168.50.28`），再确认发布。
+4. 核对实际 DHCP 网段、设备范围，以及 DNS 将改为 `198.51.100.251`（AIO 为 `198.51.100.28`），再确认发布。
 5. 让客户端断开网络再连接，查看实际取得的 DNS；手动写死 DNS 的设备单独修改。
 
 发布会**替换目标网段原来的 DNS 列表**，不会保留旧备用地址。找不到唯一匹配网段时会阻止发布，应核对页面提示，不要猜。客户端网关仍保持 RouterOS。

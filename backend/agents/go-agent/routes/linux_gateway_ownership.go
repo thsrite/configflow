@@ -4,14 +4,14 @@ package routes
 // comments survive. Only the complete, token-tagged rule plan can prove that an
 // unpinned first transaction created that otherwise unlabelled table. Once its
 // read-back is journaled, metadata and kernel handles must match exactly again.
-func gatewayNFTObjectCommentsMissing(objects []map[string]interface{}) bool {
+func gatewayNFTObjectCommentsMissing(objects []map[string]any) bool {
 	count := 0
 	for _, object := range objects {
 		for kind, value := range object {
 			if kind != "table" && kind != "chain" {
 				continue
 			}
-			body, ok := value.(map[string]interface{})
+			body, ok := value.(map[string]any)
 			if !ok {
 				return false
 			}
@@ -24,12 +24,12 @@ func gatewayNFTObjectCommentsMissing(objects []map[string]interface{}) bool {
 	return count == 3
 }
 
-func gatewayNFTWithoutObjectComments(objects []map[string]interface{}) []map[string]interface{} {
-	result := make([]map[string]interface{}, len(objects))
+func gatewayNFTWithoutObjectComments(objects []map[string]any) []map[string]any {
+	result := make([]map[string]any, len(objects))
 	for i, object := range objects {
-		result[i] = canonicalGatewayNFT(object).(map[string]interface{})
+		result[i] = canonicalGatewayNFT(object).(map[string]any)
 		for _, kind := range []string{"table", "chain"} {
-			if body, ok := result[i][kind].(map[string]interface{}); ok {
+			if body, ok := result[i][kind].(map[string]any); ok {
 				delete(body, "comment")
 			}
 		}
@@ -37,13 +37,13 @@ func gatewayNFTWithoutObjectComments(objects []map[string]interface{}) []map[str
 	return result
 }
 
-func gatewayNFTHandles(objects []map[string]interface{}, present bool) bool {
+func gatewayNFTHandles(objects []map[string]any, present bool) bool {
 	for _, object := range objects {
 		if len(object) != 1 {
 			return false
 		}
 		for _, value := range object {
-			body, ok := value.(map[string]interface{})
+			body, ok := value.(map[string]any)
 			if !ok {
 				return false
 			}
@@ -63,7 +63,7 @@ func gatewayNFTHandles(objects []map[string]interface{}, present bool) bool {
 // Headers may be serialized in a different order, but rules within each chain
 // are executable order. Comparing only an unordered object inventory would
 // incorrectly accept an externally reordered chain or a reordered journal.
-func gatewayNFTListsEqual(expected, actual []map[string]interface{}, equal func(map[string]interface{}, map[string]interface{}) bool) bool {
+func gatewayNFTListsEqual(expected, actual []map[string]any, equal func(map[string]any, map[string]any) bool) bool {
 	if len(expected) != len(actual) {
 		return false
 	}
@@ -80,14 +80,14 @@ func gatewayNFTListsEqual(expected, actual []map[string]interface{}, equal func(
 			return false
 		}
 	}
-	rules := func(objects []map[string]interface{}) (map[string][]map[string]interface{}, bool) {
-		chains := map[string][]map[string]interface{}{}
+	rules := func(objects []map[string]any) (map[string][]map[string]any, bool) {
+		chains := map[string][]map[string]any{}
 		for _, object := range objects {
 			value, exists := object["rule"]
 			if !exists {
 				continue
 			}
-			body, ok := value.(map[string]interface{})
+			body, ok := value.(map[string]any)
 			if !ok {
 				return nil, false
 			}
@@ -134,7 +134,7 @@ func gatewayJournalNFTValid(state *gatewayState) bool {
 	return gatewayNFTListsEqual(expected, state.NFT, gatewayNormalizedResourceEqual)
 }
 
-func gatewayInitialNFTReadback(state *gatewayState, actual []map[string]interface{}) bool {
+func gatewayInitialNFTReadback(state *gatewayState, actual []map[string]any) bool {
 	return state.Pending && !state.Active && state.AppliedAt == "" &&
 		gatewayNFTHandles(state.NFT, false) && gatewayNFTHandles(actual, true) &&
 		gatewayNFTObjectCommentsMissing(actual) &&

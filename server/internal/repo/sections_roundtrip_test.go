@@ -1,0 +1,233 @@
+package repo
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"sort"
+	"strings"
+	"testing"
+
+	"configflow/internal/model"
+	"configflow/internal/store"
+)
+
+// storedRows is every field row of a repository keyed by scope/owner/field.
+func storedRows(t *testing.T, r *Repository) (store.Entry, map[modelRowKey]string) {
+	t.Helper()
+	entry := must(r.store.Load())(t)
+	rows := map[modelRowKey]string{}
+	add := func(scope, owner string, fields []store.Field) {
+		for _, field := range fields {
+			rows[modelRowKey{scope, owner, field.Name}] = string(field.Value)
+		}
+	}
+	add("root", "", entry.Document.Root)
+	add("system", "", entry.Document.System.Fields)
+	add("shared", "", entry.Document.Shared.Fields)
+	for _, profile := range entry.Document.Profiles {
+		add("profile", profile.ID, profile.Fields)
+	}
+	return entry, rows
+}
+
+func rowKeyNames(keys map[modelRowKey]bool) []string {
+	var names []string
+	for key := range keys {
+		names = append(names, key.scope+"/"+key.owner+"/"+key.name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// TestSectionWritesStoredRoundTrip checks that typed and legacy section
+// writers modify exactly their owned rows and leave rows intact on rejection.
+func TestSectionWritesStoredRoundTrip(t *testing.T) {
+	r := must(OpenDefault(t.TempDir()))(t)
+	profile := func(owner, name string) modelRowKey { return modelRowKey{"profile", owner, name} }
+	shared := func(name string) modelRowKey { return modelRowKey{"shared", "", name} }
+	system := func(name string) modelRowKey { return modelRowKey{"system", "", name} }
+	step := func(t *testing.T, label string, want []modelRowKey, write func() error) {
+		t.Helper()
+		before, beforeRows := storedRows(t, r)
+		if err := write(); err != nil {
+			t.Fatalf("%s: %v", label, err)
+		}
+		after, afterRows := storedRows(t, r)
+		changed := changedModelRowKeys(before.Document, after.Document)
+		expected := map[modelRowKey]bool{}
+		for _, key := range want {
+			expected[key] = true
+		}
+		if got, wanted := rowKeyNames(changed), rowKeyNames(expected); strings.Join(got, ",") != strings.Join(wanted, ",") {
+			t.Fatalf("%s changed rows %v, want %v", label, got, wanted)
+		}
+		for key, value := range beforeRows {
+			if !changed[key] && afterRows[key] != value {
+				t.Fatalf("%s rewrote %v", label, key)
+			}
+		}
+
+	}
+	refused := func(t *testing.T, label string, kind error, write func() error) {
+		t.Helper()
+		before := must(r.store.Fingerprint())(t)
+		if err := write(); err == nil || !errors.Is(err, kind) {
+			t.Fatalf("%s: %v", label, err)
+		}
+		if must(r.store.Fingerprint())(t) != before {
+			t.Fatalf("%s wrote", label)
+		}
+	}
+	const p = DefaultProfileID
+
+	// Unknown members, a stored null, a wrong-typed member and number text in
+	// rows the following writes either own or must leave alone.
+	entry := must(r.store.Load())(t)
+	for i := range entry.Document.Shared.Fields {
+		field := &entry.Document.Shared.Fields[i]
+		switch field.Name {
+		case "nodes":
+			field.Value = json.RawMessage(`[{"id":"n1","name":"Node 1","type":"ss","server":"192.0.2.1","port":8388,"remark":7,"n85":{"z":1.0}},` +
+				`{"id":"n2","name":"Node 2","type":"ss","server":"192.0.2.2","port":8389}]`)
+		case "subscriptions":
+			field.Value = json.RawMessage(`[{"id":"s1","name":"Sub","url":"https://sub.example.com/x","description":"\u00e9","n85":null}]`)
+		}
+	}
+	entry.Document.Shared.Fields = append(entry.Document.Shared.Fields, store.Field{Name: "n85_shared", Value: json.RawMessage(` {"keep":"é"} `)})
+	for i := range entry.Document.Profiles {
+		if entry.Document.Profiles[i].ID != p {
+			continue
+		}
+		for j := range entry.Document.Profiles[i].Fields {
+			field := &entry.Document.Profiles[i].Fields[j]
+			switch field.Name {
+			case "proxy_groups":
+				field.Value = json.RawMessage(`[{"id":"g1","name":"Group","type":"select","manual_nodes":["n1"],"n85":[1.50]},` +
+					`{"id":"g2","name":"Other","type":"select","manual_nodes":["n2"]}]`)
+			case "mihomo":
+				text := strings.TrimSpace(string(field.Value))
+				if strings.TrimSpace(text[1:]) == "}" {
+					field.Value = json.RawMessage(`{"n85":1e2}`)
+				} else {
+					field.Value = json.RawMessage(`{"n85":1e2,` + text[1:])
+				}
+			}
+		}
+		entry.Document.Profiles[i].Fields = append(entry.Document.Profiles[i].Fields,
+			store.Field{Name: "n85_profile", Value: json.RawMessage(`{"nested":[null,true]}`)})
+	}
+	_, written, err := r.store.Commit(t.Context(), entry, entry.Document, nil)
+	if err != nil || !written {
+		t.Fatalf("fixture: %v %v", written, err)
+	}
+
+	// The first Go write stores every row in Go's encoding and drops the rows
+	// no record declares (O18 T1a); the values of declared members stay.
+	_, fixtureRows := storedRows(t, r)
+	noError(t, r.Update(bg, func(context.Context, *model.Document) error { return nil }))
+	_, normalized := storedRows(t, r)
+	for _, key := range []modelRowKey{shared("n85_shared"), profile(p, "n85_profile")} {
+		if _, kept := normalized[key]; kept {
+			t.Fatalf("undeclared row %v kept", key)
+		}
+	}
+	for key, value := range fixtureRows {
+		if after, ok := normalized[key]; ok {
+			wantJSONEqual(t, json.RawMessage(after), json.RawMessage(value))
+		}
+	}
+
+	step(t, "typed UpdateProfile", []modelRowKey{profile(p, "proxy_groups"), profile(p, "_revision"), profile(p, "updated_at")}, func() error {
+		_, err := r.UpdateProfile(bg, p, func(_ context.Context, profile *model.Profile) error {
+			profile.ProxyGroups[1].Name = "Renamed"
+			profile.Name = "ignored: metadata is not a setting"
+			return nil
+		})
+		return err
+	})
+	step(t, "typed UpdateShared", []modelRowKey{shared("nodes"), shared("_revision")}, func() error {
+		return r.UpdateShared(bg, func(_ context.Context, s *model.Shared) error {
+			var node model.Node
+			noError(t, json.Unmarshal([]byte(`{"id":"n3","name":"Node 3","type":"ss","server":"192.0.2.3","port":8390}`), &node))
+			s.Nodes = append(s.Nodes, node)
+			return nil
+		})
+	})
+	refused(t, "removing a referenced node", ErrInUse, func() error {
+		return r.UpdateShared(bg, func(_ context.Context, s *model.Shared) error {
+			s.Nodes = s.Nodes[1:]
+			return nil
+		})
+	})
+	step(t, "typed UpdateSharedAndProfiles removes a node with its last reference",
+		[]modelRowKey{shared("nodes"), shared("_revision"), profile(p, "proxy_groups"), profile(p, "_revision"), profile(p, "updated_at")},
+		func() error {
+			return r.UpdateSharedAndProfiles(bg, func(_ context.Context, s *model.Shared, profiles []*model.Profile) error {
+				// n2's only reference (group g2) moves to n1 in the same write.
+				kept := s.Nodes[:0]
+				for _, node := range s.Nodes {
+					if node.ID != "n2" {
+						kept = append(kept, node)
+					}
+				}
+				s.Nodes = kept
+				for _, profile := range profiles {
+					if profile.ID == p {
+						nodes := []string{"n1"}
+						profile.ProxyGroups[1].ManualNodes = &nodes
+					}
+				}
+				return nil
+			})
+		})
+	step(t, "no-op profile update keeps every setting row", []modelRowKey{profile(p, "_revision"), profile(p, "updated_at")}, func() error {
+		_, err := r.UpdateProfile(bg, p, func(context.Context, *model.Profile) error { return nil })
+		return err
+	})
+	step(t, "typed shared subscription update", []modelRowKey{shared("subscriptions"), shared("_revision")}, func() error {
+		return r.UpdateShared(bg, func(_ context.Context, current *model.Shared) error {
+			current.Subscriptions = append(current.Subscriptions, model.Subscription{ID: "s2", Name: "Sub 2", URL: "https://sub.example.com/y"})
+			return nil
+		})
+	})
+	refused(t, "updater with a wrong-shaped setting", ErrValidation, func() error {
+		_, err := r.UpdateProfile(bg, p, func(_ context.Context, current *model.Profile) error {
+			return current.SetJSON("mosdns", []byte(`"not an object"`))
+		})
+		return err
+	})
+	step(t, "metadata rename", []modelRowKey{profile(p, "name"), profile(p, "_revision"), profile(p, "updated_at")}, func() error {
+		name := "N8-5b"
+		_, err := r.UpdateProfileMetadataRecord(bg, p, ProfileMetadataUpdate{Name: &name})
+		return err
+	})
+	var cloneRows []modelRowKey
+	_, sourceRows := storedRows(t, r)
+	for key := range sourceRows {
+		if key.scope == "profile" && key.owner == p {
+			cloneRows = append(cloneRows, profile("copy", key.name))
+		}
+	}
+	step(t, "clone", cloneRows, func() error {
+		_, err := r.CloneProfileRecord(bg, p, ProfileCreation{ID: "copy", Name: "Copy"})
+		return err
+	})
+	step(t, "default switch", []modelRowKey{system("system_config"), system("_revision")}, func() error {
+		_, err := r.SetDefaultProfile(bg, "copy")
+		return err
+	})
+
+	_, rows := storedRows(t, r)
+	// Plain records (O18 T1c): a node keeps its protocol parameters as
+	// stored, a number in a text member is its text, and the other records
+	// drop undeclared members.
+	for key, part := range map[modelRowKey]string{
+		shared("nodes"):         `"remark":"7","n85":{"z":1.0}`,
+		shared("subscriptions"): `"description":"é"`,
+	} {
+		if !strings.Contains(rows[key], part) {
+			t.Fatalf("%v lost %s: %s", key, part, rows[key])
+		}
+	}
+}
