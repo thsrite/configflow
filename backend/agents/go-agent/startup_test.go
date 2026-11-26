@@ -98,7 +98,7 @@ func TestAgentStartupOnlyInspectsInterruptedDeployments(t *testing.T) {
 				metrics := false
 				cfg := &Config{ConfigPath: filepath.Join(root, "config.yaml"), ServiceType: kind,
 					AgentHost: "127.0.0.1", AgentPort: port, AgentID: "startup-test", Token: "test-token",
-					DeploymentMethod: "docker", ServiceManager: "command", HeartbeatInterval: 3600,
+					DeploymentMethod: "shell", ServiceManager: "command", HeartbeatInterval: 3600,
 					StopCommand: "echo stopped >> lifecycle", StartCommand: "echo started >> lifecycle",
 					StatusCommand: "exit 0", ServerURL: "http://127.0.0.1:1", EnableMetrics: &metrics,
 					filePath: filepath.Join(root, "agent.json")}
@@ -221,9 +221,9 @@ func TestOxiDNSValidationCommandDoesNotMigrateOrRecover(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestAgentStartupProcess$", "--", "-config", configPath, "-validate-service")
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestAgentStartupProcess$", "--", "-config", configPath, "-validate-service", "-verbose")
 	cmd.Env = append(os.Environ(), "CONFIGFLOW_STARTUP_TEST_HELPER=1", "PATH="+root, "CONFIGFLOW_TEST_CORE_DIR="+root, "CONFIGFLOW_TEST_COMMAND_LOG="+managerLog)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := cmd.CombinedOutput(); err != nil || !strings.Contains(string(output), "OxiDNS 服务目录校验完成") {
 		t.Fatalf("validation: %v\n%s", err, output)
 	}
 	if got, err := os.ReadFile(managerLog); err != nil || string(got) != "show oxidns.service --property=ExecStart --property=WorkingDirectory\n" {
@@ -236,5 +236,34 @@ func TestOxiDNSValidationCommandDoesNotMigrateOrRecover(t *testing.T) {
 		if _, err := os.Lstat(path); !os.IsNotExist(err) {
 			t.Fatalf("validation created %s: %v", path, err)
 		}
+	}
+}
+
+func TestServiceValidationReportsActualScope(t *testing.T) {
+	for _, tc := range []struct{ kind, manager, want string }{
+		{"mosdns", "systemd", "MosDNS 无需服务目录专项校验"},
+		{"mihomo", "openrc", "Mihomo 无需服务目录专项校验"},
+		{"oxidns", "command", "OxiDNS 当前服务管理方式无需校验 systemd 工作目录"},
+		{"custom", "command", "当前服务类型及管理方式无需服务目录专项校验"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			root := t.TempDir()
+			configPath := filepath.Join(root, "agent.json")
+			data, err := json.Marshal(&Config{ServiceType: tc.kind, ServiceManager: tc.manager, ConfigPath: filepath.Join(root, "config.yaml")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(configPath, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestAgentStartupProcess$", "--", "-config", configPath, "-validate-service", "-verbose")
+			cmd.Env = append(os.Environ(), "CONFIGFLOW_STARTUP_TEST_HELPER=1", "PATH="+root)
+			output, err := cmd.CombinedOutput()
+			if err != nil || !strings.Contains(string(output), tc.want) || strings.Contains(string(output), "OxiDNS 服务目录校验完成") {
+				t.Fatalf("incorrect validation result: %v\n%s", err, output)
+			}
+		})
 	}
 }

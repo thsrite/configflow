@@ -3,8 +3,10 @@ package upgrade
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -156,5 +158,58 @@ func writeBootstrapCommand(t *testing.T, path string) {
 		"printf '\\n' >> \"$CONFIGFLOW_TEST_MANAGER_LOG\"\n"
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCommandLifecycleSkipsLegacyMigration(t *testing.T) {
+	for _, kind := range []string{"mihomo", "mosdns", "oxidns", "custom"} {
+		for _, schema := range []interface{}{nil, float64(1), float64(migrationSchema)} {
+			t.Run(fmt.Sprintf("%s/schema-%v", kind, schema), func(t *testing.T) {
+				c, root := testConfig(t, "systemd")
+				c.Values["service_type"] = kind
+				c.Values["service_manager"] = "command"
+				c.Values["restart_command"] = "custom-core restart"
+				c.Values["start_command"] = "custom-core start"
+				c.Values["stop_command"] = "custom-core stop"
+				c.Values["status_command"] = "custom-core status"
+				if schema != nil {
+					c.Values["upgrade_schema"] = schema
+				}
+				original, err := json.Marshal(c.Values)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(c.Path, original, 0600); err != nil {
+					t.Fatal(err)
+				}
+				// No manager or custom lifecycle command may run at startup.
+				t.Setenv("PATH", t.TempDir())
+				binary := filepath.Join(root, "agent")
+				for attempt := 0; attempt < 2; attempt++ {
+					if err := ensureInstalled(c.Path, binary, root); err != nil {
+						t.Fatal(err)
+					}
+					if ready, err := migrationReady(c.Path, binary, root); err != nil || !ready {
+						t.Fatalf("command lifecycle not ready: %v %v", ready, err)
+					}
+					got, err := os.ReadFile(c.Path)
+					if err != nil || !bytes.Equal(got, original) {
+						t.Fatalf("changed custom config: %s %v", got, err)
+					}
+					if _, err := os.Stat(filepath.Join(root, ".agent-migration.json")); !os.IsNotExist(err) {
+						t.Fatalf("created legacy migration state: %v", err)
+					}
+					// Shell reinstall/upgrade regenerates the config without a schema.
+					if err := os.WriteFile(c.Path, original, 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				// Startup readiness must not enable an unsupported online worker.
+				req := Request{ID: "1234567890123456", Version: Version, SHA256: strings.Repeat("a", 64), Size: 12}
+				if _, err := Prepare(c.Path, binary, req); err == nil {
+					t.Fatal("accepted custom lifecycle online upgrade")
+				}
+			})
+		}
 	}
 }
