@@ -22,9 +22,9 @@ import (
 func DockerAgentImage() string { return version.DockerAgentImage() }
 
 // DockerHAImage is Python's IMAGE, the floating tag every Python-generated
-// command used. Legacy comparisons against Python keep it; generators call
-// DockerAgentImage.
-const DockerHAImage = version.DefaultAgentImage
+// command used. Legacy comparisons against Python recordings keep it;
+// generators call DockerAgentImage.
+const DockerHAImage = "thsrite/config-flow-agent:latest"
 
 func enrollmentURL(e *Capability) string {
 	if e == nil {

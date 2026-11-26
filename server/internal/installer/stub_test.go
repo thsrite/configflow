@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"configflow/internal/testgolden"
+	"configflow/internal/version"
 )
 
 const (
@@ -33,6 +34,10 @@ func TestMain(m *testing.M) {
 	if name := os.Getenv(stubEnv); name != "" {
 		os.Exit(runStub(name, os.Getenv(stubArgv0Env), os.Args[1:]))
 	}
+	// The recorded Python outputs these tests compare against carry Python's
+	// floating Agent image. Pair the build with it so generators emit the same
+	// image; tests of the unpaired default call pairAgentImage(t, "").
+	version.AgentImage = DockerHAImage
 	code := m.Run()
 	if agentBuild.dir != "" {
 		os.RemoveAll(agentBuild.dir)
