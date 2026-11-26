@@ -13,7 +13,7 @@ import (
 	"agent/svc"
 )
 
-const Version = "1.9.3-go"
+const Version = "1.9.4-go"
 
 type Config struct {
 	Path   string

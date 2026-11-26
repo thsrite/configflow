@@ -44,7 +44,7 @@ func runAgent() int {
 	requireCleanDeployments := flag.Bool("require-clean-deployments", false, "Read-only installation preflight; exit nonzero if deployment or native Agent update journals require attention")
 	recoverOnly := flag.Bool("recover-only", false, "Deprecated compatibility alias for -check-deployments; does not restore files")
 	recoverAndExit := flag.Bool("recover-and-exit", false, "Recover interrupted deployments with service lifecycle, then exit without registration")
-	validateService := flag.Bool("validate-service", false, "Validate OxiDNS service working directory without registration or mutation")
+	validateService := flag.Bool("validate-service", false, "Check service configuration (OxiDNS/systemd working directory) without registration or mutation")
 	checkEnvironment := flag.Bool("check-environment", false, "Inspect native installation TUN, permissions, IPv4 forwarding and port occupancy without changing the system")
 	prepareTUN := flag.Bool("prepare-tun", false, "Prepare enabled TUN for native AIO: load the local driver and persist it, or explain required container host changes")
 	assumeTUN := flag.Bool("assume-tun-enabled", false, "With -prepare-tun: prepare TUN even when the bootstrap config has TUN disabled (gateway installer)")
@@ -190,7 +190,20 @@ func runAgent() int {
 		if err := routes.ValidateOxiDNSServiceDirectory(toRoutesConfig(cfg)); err != nil {
 			return fail("核心服务配置检查未通过", err, "核对 OxiDNS 服务的工作目录及启动参数。")
 		}
-		output.Result("pass", "核心服务配置检查通过", "OxiDNS 服务目录校验完成；未更改文件或服务。", "")
+		message := "当前服务类型及管理方式无需服务目录专项校验；未更改文件或服务。"
+		switch cfg.ServiceType {
+		case "oxidns":
+			if cfg.ServiceManager == "systemd" {
+				message = "OxiDNS 服务目录校验完成；未更改文件或服务。"
+			} else {
+				message = "OxiDNS 当前服务管理方式无需校验 systemd 工作目录；未更改文件或服务。"
+			}
+		case "mosdns":
+			message = "MosDNS 无需服务目录专项校验；未更改文件或服务。"
+		case "mihomo":
+			message = "Mihomo 无需服务目录专项校验；未更改文件或服务。"
+		}
+		output.Result("pass", "核心服务配置检查通过", message, "")
 		return 0
 	}
 	if *cleanupOnly {
