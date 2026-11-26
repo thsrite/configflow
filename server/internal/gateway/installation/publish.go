@@ -195,7 +195,7 @@ func (s *Service) publishService(ctx context.Context, r *Record, service string)
 		return nil, err
 	}
 	dp := s.deployService()
-	prepared, err := dp.PrepareContent(ctx, s.Manager, target, source, deploy.PrepareOptions{BaseURL: r.ServerURL, DeploymentID: did, StoreDownloads: true})
+	prepared, err := dp.PrepareContent(ctx, s.Manager, target, source, deploy.PrepareOptions{BaseURL: r.ServerURL, DeploymentID: did, StoreDownloads: true, Progress: deploy.PublishProgress(ctx, s.Manager, a.ID, did, a.Token)})
 	if err != nil {
 		return nil, err
 	}

@@ -73,6 +73,7 @@ import { githubProxyDomainApi, ruleFetchProxyApi } from '@/api'
 import FormField from '@/components/common/FormField.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
 import { Button } from '@/components/ui/button'
+import { useRuleProxyVisibility } from '@/composables/useRuleProxyVisibility'
 import { Input } from '@/components/ui/input'
 import { optionHelp } from '@/lib/optionCopy'
 
@@ -83,9 +84,9 @@ const loading = ref(true)
 const loadError = ref('')
 const saving = ref(false)
 const saveError = ref('')
-const showRuleProxy = ref(false)
 const githubProxy = ref('')
 const ruleProxy = ref('')
+const showRuleProxy = useRuleProxyVisibility(ruleProxy)
 const saved = ref({ github: '', rule: '' })
 
 /* 只保存改动过的项；未读到当前值时不允许保存，避免把已有设置清空 */

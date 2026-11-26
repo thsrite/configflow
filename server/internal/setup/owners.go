@@ -27,7 +27,7 @@ func DefaultDNSOwner() *DNSOwner {
 // DNSOwner supplies A21's pure DNS helpers and defaults. The adapter supplies
 // the reviewed DNS-loop checker; documents are independently owned temporaries.
 type DNSOwner struct {
-	LocalUpstreams   func(string) (*yamlx.Node, error)
+	LocalUpstreams   func(string, bool) (*yamlx.Node, error)
 	PrepareMihomoDNS func(*yamlx.Node) (*yamlx.Node, error)
 	DefaultLocalDNS  string
 	DNSTarget        string

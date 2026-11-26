@@ -352,6 +352,7 @@ import ScheduledTasks from '@/components/settings/ScheduledTasks.vue'
 import WebPortSettings from '@/components/settings/WebPortSettings.vue'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { useRuleProxyVisibility } from '@/composables/useRuleProxyVisibility'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -414,8 +415,8 @@ const backingUp = ref(false)
 const savingBackup = ref(false)
 
 const ruleFetchProxy = ref('')
+const showRuleFetchProxy = useRuleProxyVisibility(ruleFetchProxy)
 const savedRuleFetchProxy = ref('')
-const showRuleFetchProxy = ref(false)
 
 // 订阅聚合开关
 const subscriptionAggregationEnabled = ref(false)

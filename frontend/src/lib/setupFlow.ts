@@ -5,12 +5,12 @@ import { stripTrailingPunctuation } from '@/lib/text'
 
 export const SETUP_STEPS = ['使用方式', '节点来源', '规则与 DNS', '安装与检查', '路由与 DNS', '开始使用']
 
-export function setupLocalDnsWarning(value: string): string {
+export function setupLocalDnsWarning(value: string, goal: SetupGoal): string {
   const text = value.trim()
   if (!text) return '请填写直连 DNS 上游。'
   // Advanced YAML remains supported and is checked by the server's shared validator.
   if (/^(?:[-[{]|addr:)/.test(text)) return ''
-  if (text.split('\n').some(line => /^(?:(?:udp|tcp):\/\/)?\d+(?:\.\d+){3}(?::\d+)?$/.test(line.trim()))) {
+  if (goal === 'gateway' && text.split('\n').some(line => /^(?:(?:udp|tcp):\/\/)?\d+(?:\.\d+){3}(?::\d+)?$/.test(line.trim()))) {
     return '普通 DNS 地址不能用于此方案，请使用 IP 地址的 DoH / DoT，例如 https://223.5.5.5/dns-query。'
   }
   return ''

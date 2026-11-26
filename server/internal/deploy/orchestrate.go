@@ -352,7 +352,7 @@ func (s *Service) pushConfig(ctx context.Context, m *agents.Manager, id string, 
 		}
 		prepared = &Prepared{Bundle: generated.Bundle, ConfigContent: generated.Public().Content}
 	} else {
-		prepared, err = s.PrepareContent(ctx, m, t, source, PrepareOptions{BaseURL: base, DeploymentID: did, StoreDownloads: true, Progress: publishProgress(ctx, m, id, did, t.Token)})
+		prepared, err = s.PrepareContent(ctx, m, t, source, PrepareOptions{BaseURL: base, DeploymentID: did, StoreDownloads: true, Progress: PublishProgress(ctx, m, id, did, t.Token)})
 		if err != nil {
 			return fail(err)
 		}

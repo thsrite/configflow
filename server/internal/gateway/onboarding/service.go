@@ -119,7 +119,7 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 	}
 	var form Request
 	if op.Preview {
-		form, err = ParseRequest(op.Body)
+		form, err = parseRequest(op.Body, mode == "full_tun")
 		if err != nil {
 			return nil, safeError(err, config)
 		}
@@ -176,7 +176,7 @@ func (s *Service) Execute(ctx context.Context, op Operation) (json.RawMessage, e
 		if marker != beforeMarker || mode == "full_tun" && marker == "absent" && settings.Enabled {
 			return repo.NewInUse(msgTakeoverChanged, nil)
 		}
-		form, err = ParseRequest(op.Body)
+		form, err = parseRequest(op.Body, mode == "full_tun")
 		if err != nil {
 			return safeError(err, now)
 		}

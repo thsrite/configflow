@@ -43,6 +43,10 @@ func invalid(message string) error { return &gateway.Error{Message: message} }
 
 // ParseRequest rejects unsupported shapes and validates exact field names.
 func ParseRequest(raw json.RawMessage) (Request, error) {
+	return parseRequest(raw, false)
+}
+
+func parseRequest(raw json.RawMessage, fullTUN bool) (Request, error) {
 	var body map[string]json.RawMessage
 	var result Request
 	if !utf8.Valid(raw) || json.Unmarshal(raw, &body) != nil || body == nil {
@@ -118,15 +122,23 @@ func ParseRequest(raw json.RawMessage) (Request, error) {
 		return result, invalid(msgDefaultForward)
 	}
 	_ = json.Unmarshal(body["local_dns"], &result.LocalDNS)
-	if _, err := LocalUpstreams(result.LocalDNS); err != nil {
+	if _, err := localUpstreams(result.LocalDNS, fullTUN, nil); err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
-// LocalUpstreams validates the encrypted, IP-addressed direct DNS endpoints.
+// LocalUpstreams validates the direct DNS endpoints for the selected takeover.
 // Parsing and feature validation are shared with the OxiDNS generator.
-func LocalUpstreams(value string) (*yamlx.Node, error) {
+func LocalUpstreams(value string, fullTUN bool) (*yamlx.Node, error) {
+	return localUpstreams(value, fullTUN, nil)
+}
+
+func localUpstreams(value string, fullTUN bool, localAddresses []netip.Addr) (*yamlx.Node, error) {
+	unsafeMessage := msgUnsafeDNS
+	if fullTUN {
+		unsafeMessage = "直连 DNS 请填写 IPv4 地址的 UDP、TCP、DoH 或 DoT 上游，避免指向本机 DNS 或代理出口"
+	}
 	if !utf8.ValidString(value) || strings.TrimSpace(value) == "" || len(value) > 16384 {
 		return nil, invalid(msgLocalDNS)
 	}
@@ -139,26 +151,52 @@ func LocalUpstreams(value string) (*yamlx.Node, error) {
 	}
 	for _, upstream := range upstreams.Content {
 		raw := text(yamlx.Get(upstream, "addr"))
+		if fullTUN && !strings.Contains(raw, "://") {
+			raw = "udp://" + raw
+		}
 		u, err := url.Parse(raw)
 		if err != nil {
-			return nil, invalid(msgUnsafeDNS)
+			return nil, invalid(unsafeMessage)
 		}
-		ip, err := netip.ParseAddr(u.Hostname())
-		if err != nil || !ip.Is4() || ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || u.User != nil || (u.Scheme != "https" && u.Scheme != "tls") || u.Port() == "53" || u.Port() == "1053" || u.Scheme == "https" && u.Path == "" {
-			return nil, invalid(msgUnsafeDNS)
+		plain := fullTUN && (u.Scheme == "udp" || u.Scheme == "tcp")
+		if plain && (u.Path != "" || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Host, ":")) {
+			return nil, invalid(unsafeMessage)
 		}
-		if port := u.Port(); port != "" {
-			if n, e := strconv.Atoi(port); e != nil || n < 0 || n > 65535 || n == 53 || n == 1053 {
-				return nil, invalid(msgUnsafeDNS)
+		if u.User != nil || !plain && u.Scheme != "https" && u.Scheme != "tls" || u.Scheme == "https" && u.Path == "" {
+			return nil, invalid(unsafeMessage)
+		}
+		if !validUpstreamIPv4(u.Hostname(), plain, localAddresses) || !validUpstreamPort(u.Port(), plain) {
+			return nil, invalid(unsafeMessage)
+		}
+		if plain {
+			if dial := text(field(upstream, "dial_addr")); dial != "" && !validUpstreamIPv4(dial, true, localAddresses) {
+				return nil, invalid(unsafeMessage)
+			}
+			if override := field(upstream, "port"); override != nil && !validUpstreamPort(override.Value, true) {
+				return nil, invalid(unsafeMessage)
 			}
 		}
 		for _, key := range []string{"socks5", "outbound"} {
 			if n := yamlx.Get(upstream, key); n != nil && n.Tag != "!!null" && n.Value != "" && n.Value != "false" {
-				return nil, invalid(msgUnsafeDNS)
+				return nil, invalid(unsafeMessage)
 			}
 		}
 	}
 	return upstreams, nil
+}
+
+func validUpstreamIPv4(host string, plain bool, localAddresses []netip.Addr) bool {
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.Is4() && !ip.IsLoopback() && !ip.IsUnspecified() && !ip.IsMulticast() &&
+		!ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast() && !(plain && slices.Contains(localAddresses, ip))
+}
+
+func validUpstreamPort(port string, plain bool) bool {
+	if port == "" {
+		return true
+	}
+	n, err := strconv.Atoi(port)
+	return err == nil && n >= 0 && n <= 65535 && n != 1053 && (plain && n != 0 || !plain && n != 53)
 }
 
 // ErrSetupUnavailable means C36 cannot safely adopt this profile write yet.

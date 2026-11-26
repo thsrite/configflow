@@ -531,6 +531,30 @@ func (f *fixture) prepareRun(t *testing.T) {
 	}
 	must(t, f.s.write(f.ctx, f.r))
 }
+func TestPublicPreparationShowsCurrentJobOnly(t *testing.T) {
+	f := newFixture(t)
+	f.enroll(t)
+	f.prepareRun(t)
+	id := f.r.AgentIDs["mihomo"]
+	const did = "job-mihomo"
+	_, err := f.s.Manager.ReserveDeployment(f.ctx, id, did)
+	must(t, err)
+	defer f.s.Manager.FinishDeploymentPreparation(id, did)
+	deploy.PublishProgress(f.ctx, f.s.Manager, id, did, "").Phase("正在准备规则「Steam」")
+	message := func() string {
+		body, e := f.s.Get(f.ctx, f.r.ID)
+		must(t, e)
+		return taskOf(object(object(body)["deployments"])["mihomo"]).Message
+	}
+	if got := message(); got != "正在准备规则「Steam」" {
+		t.Fatalf("progress = %q", got)
+	}
+	f.r.Deployments["mihomo"] = jsonresp.Value(map[string]string{"deployment_id": "new-attempt", "status": "preparing"})
+	must(t, f.s.write(f.ctx, f.r))
+	if got := message(); got != "" {
+		t.Fatalf("stale progress = %q", got)
+	}
+}
 func uploads(a *agentfake.Agent) []agentfake.Call {
 	out := []agentfake.Call{}
 	for _, c := range a.Calls() {

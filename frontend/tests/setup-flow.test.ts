@@ -310,8 +310,8 @@ describe('首次使用分流向导', () => {
     expect(wrapper!.text()).toContain('未选择域名规则，所有域名将使用下方的默认 DNS')
   })
 
-  it('直接填写普通 DNS 时就地提示格式，不等到下一步才失败', async () => {
-    vi.mocked(setupApi.get).mockResolvedValue({ data: record({ step: 2, max_step: 2 }) } as never)
+  it('Linux 网关填写普通 DNS 时就地提示格式', async () => {
+    vi.mocked(setupApi.get).mockResolvedValue({ data: record({ goal: 'gateway', step: 2, max_step: 2 }) } as never)
     await open('/setup?session=' + 'a'.repeat(32))
     await wrapper!.get('#setup-local-dns').setValue('223.5.5.5')
     expect(wrapper!.get('#setup-local-dns').attributes('aria-invalid')).toBe('true')

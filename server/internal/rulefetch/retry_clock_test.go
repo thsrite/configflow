@@ -37,6 +37,8 @@ func TestRetryUsesProductionDelaysAndCancellableClock(t *testing.T) {
 			}}}
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
+			retries := make(chan int, 2)
+			ctx = WithRetryObserver(ctx, func(attempt int) { retries <- attempt })
 			done := make(chan error, 1)
 			go func() {
 				response, err := c.Download(ctx, retrySource, DownloadRequest{Config: sysConfig()})
@@ -61,6 +63,14 @@ func TestRetryUsesProductionDelaysAndCancellableClock(t *testing.T) {
 				fake.Advance(2 * time.Second)
 				if err := <-done; err != nil {
 					t.Fatal(err)
+				}
+			}
+			if got := <-retries; got != 1 {
+				t.Fatal("first attempt", got)
+			}
+			if !cancelWait {
+				if got := <-retries; got != 2 {
+					t.Fatal("second attempt", got)
 				}
 			}
 			if fake.Pending() != 0 {

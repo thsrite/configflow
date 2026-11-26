@@ -382,6 +382,7 @@ func (s *Service) public(ctx context.Context, r *Record) (json.RawMessage, error
 		return nil, err
 	}
 	agentsView := map[string]json.RawMessage{}
+	publicTasks := map[string]json.RawMessage{}
 	changed := false
 	for service, id := range r.AgentIDs {
 		a, e := s.agent(ctx, id)
@@ -390,6 +391,21 @@ func (s *Service) public(ctx context.Context, r *Record) (json.RawMessage, error
 		}
 		if a != nil {
 			agentsView[service] = a.public
+			// The ordered worker checkpoints the task after preparation. During the
+			// build its throttled progress is already available in the Agent journal.
+			checkpoint := taskOf(r.Deployments[service])
+			if r.Phase == "publishing" && checkpoint.Status == "preparing" && checkpoint.DeploymentID != "" && checkpoint.DeploymentID == a.Latest.DeploymentID {
+				journal := object(a.Deployments[checkpoint.DeploymentID])
+				if text(journal["status"]) != "" {
+					fields := object(r.Deployments[service])
+					for _, key := range []string{"status", "message"} {
+						if value, ok := journal[key]; ok {
+							fields[key] = value
+						}
+					}
+					publicTasks[service] = jsonresp.Value(fields)
+				}
+			}
 		}
 		if match(r, a, service, true) != nil {
 			changed = true
@@ -418,8 +434,10 @@ func (s *Service) public(ctx context.Context, r *Record) (json.RawMessage, error
 	if err != nil {
 		return nil, err
 	}
-	publicTasks := map[string]json.RawMessage{}
 	for service, task := range r.Deployments {
+		if live := publicTasks[service]; len(live) > 0 {
+			task = live
+		}
 		publicTasks[service], err = s.safeMetadata(ctx, task)
 		if err != nil {
 			return nil, err

@@ -10,7 +10,8 @@ import (
 	"time"
 )
 
-func publishProgress(ctx context.Context, m *agents.Manager, id, did, token string) Progress {
+// PublishProgress reports preparation to the reserved deployment journal.
+func PublishProgress(ctx context.Context, m *agents.Manager, id, did, token string) Progress {
 	// Held across exactly one RecordDeployment; callbacks hold no other locks.
 	var mu sync.Mutex
 	var lastDetail, lastRules time.Time

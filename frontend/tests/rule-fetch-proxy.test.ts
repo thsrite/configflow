@@ -81,6 +81,7 @@ describe('rule download proxy setting', () => {
     await flushPromises()
     expect(ruleFetchProxyApi.update).toHaveBeenCalledWith({ rule_fetch_proxy: 'http://192.0.2.3:7890' })
     expect(input.element.value).toBe('http://192.0.2.3:7890')
+    expect(input.attributes('type')).toBe('text')
     expect(notify.success).toHaveBeenCalledWith('规则下载代理已保存')
   })
 

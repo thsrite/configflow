@@ -11,6 +11,8 @@ import (
 	"configflow/internal/convert/mihomoenv"
 	"configflow/internal/gateway"
 	"configflow/internal/model"
+	"configflow/internal/oxidns"
+	"strings"
 )
 
 func preparedFixture(t *testing.T, goal string) (*Service, context.Context) {
@@ -100,6 +102,47 @@ func TestPrepareRetainsOwnershipAndIsIdempotent(t *testing.T) {
 			after, _ := os.ReadFile(path)
 			if s.repository.CommitCount() != before || !bytes.Equal(previous, after) {
 				t.Fatal("rejected preparation changed storage")
+			}
+		})
+	}
+}
+
+func TestPreparePlainLocalDNSByGoal(t *testing.T) {
+	for _, goal := range []string{"gateway", "router"} {
+		t.Run(goal, func(t *testing.T) {
+			s, ctx := preparedFixture(t, goal)
+			s.owners.DNS = DefaultDNSOwner()
+			raw := json.RawMessage(`{"domain_rules":{"direct":[],"proxy":[]},"local_dns":"223.5.5.5\nudp://192.0.2.53:53\ntcp://192.0.2.54:53"}`)
+			_, err := s.Prepare(ctx, testSessionID, raw, "http://localhost")
+			if goal == "gateway" {
+				if err == nil || !strings.Contains(err.Error(), "DoH / DoT") {
+					t.Fatal("expected encrypted DNS requirement", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			saved, err := s.repository.Profile(ctx, "setup_"+testSessionID[:20])
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := json.Marshal(saved)
+			if err != nil {
+				t.Fatal(err)
+			}
+			profile, err := oxidns.ProfileFromJSON(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			output, err := oxidns.Generate(profile, "http://localhost")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, addr := range []string{"223.5.5.5", "udp://192.0.2.53:53", "tcp://192.0.2.54:53"} {
+				if !strings.Contains(output, "addr: "+addr) {
+					t.Fatalf("missing rendered upstream %s", addr)
+				}
 			}
 		})
 	}

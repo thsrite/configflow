@@ -488,6 +488,13 @@ func localError(err error) error {
 // ErrSizeLimit rejects a decoded body over the global or caller-supplied limit.
 var ErrSizeLimit = errors.New("Resource exceeds deployment file size limit")
 
+type retryObserverKey struct{}
+
+// WithRetryObserver reports transient upstream retries for this request only.
+func WithRetryObserver(ctx context.Context, observe func(attempt int)) context.Context {
+	return context.WithValue(ctx, retryObserverKey{}, observe)
+}
+
 var retryDelays = []time.Duration{time.Second, 2 * time.Second}
 
 // requestWithRetries is _request_rule_with_retries.
@@ -533,6 +540,9 @@ func (c *Client) requestWithRetries(ctx context.Context, url string, r *Download
 		var fetch *FetchError
 		if !errors.As(err, &fetch) || attempt == len(retryDelays) || !fetch.Transient {
 			return nil, err
+		}
+		if observe, ok := ctx.Value(retryObserverKey{}).(func(int)); ok && observe != nil {
+			observe(attempt + 1)
 		}
 		logger.Infof("规则下载连接中断（%s），%d 秒后重试第 %d 次：%s", fetch.Class,
 			int(retryDelays[attempt]/time.Second), attempt+1, weburl.SafeForLog(url))

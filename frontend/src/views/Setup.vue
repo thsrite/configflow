@@ -44,7 +44,7 @@ const proxyRules = ref(['builtin:proxy'])
 // Kept in step with IP_TAKEOVER_RULES in backend/common/setup_presets.py.
 const ipTakeoverRules = ['builtin:telegram', 'builtin:googlefcm']
 const ipTakeover = computed(() => proxyRules.value.some(id => ipTakeoverRules.includes(id)))
-const localDnsWarning = computed(() => setupLocalDnsWarning(localDns.value))
+const localDnsWarning = computed(() => setupLocalDnsWarning(localDns.value, goal.value))
 // Typed by the user only; a saved password is never sent back to the page.
 const controllerSecret = ref('')
 const showControllerSecret = ref(false)
@@ -345,7 +345,7 @@ onUnmounted(() => { disposed = true })
               <p v-if="goal === 'gateway' && ipTakeover" class="m-0 text-xs leading-relaxed text-muted-foreground">Telegram、Google 推送（FCM）会直接连 IP，它们的 IP 网段也会交给 Mihomo。安装后可在「配置生成 → Linux 网关」的「IP 接管」里调整。</p>
             </section>
             <section class="space-y-3 border-t border-border pt-4" aria-label="DNS 上游">
-              <FormField label="直连 DNS 上游" html-for="setup-local-dns" hint="IP 地址的 DoH / DoT，每行一个。" persistent-hint help="用于查询直连域名的真实 IP。默认地址可直接使用，例如 https://223.5.5.5/dns-query；也支持 tls://223.5.5.5:853，最多 16 个，无需 YAML 前缀。为避免 Linux DNS 接管回环，不支持普通 53 端口、本机地址或代理出口。后续安装自动带入，之后可在 OxiDNS 设置中修改。">
+              <FormField label="直连 DNS 上游" html-for="setup-local-dns" persistent-hint :hint="goal === 'router' ? 'IPv4 地址的普通 DNS、DoH 或 DoT，每行一个。' : 'IPv4 地址的 DoH 或 DoT，每行一个。'" :help="goal === 'router' ? '最多 16 个直连上游。例如 223.5.5.5、udp://223.5.5.5:53、tcp://223.5.5.5:53 或 https://223.5.5.5/dns-query。请填写上游解析器的地址，避免指向这台 Linux 自己。' : '最多 16 个直连上游，例如 https://223.5.5.5/dns-query 或 tls://223.5.5.5:853。Linux 网关使用加密 DNS，避免普通 53 端口被再次接管。'">
                 <Textarea id="setup-local-dns" v-model="localDns" :disabled="working || session?.completed" :rows="2" :spellcheck="false" :aria-invalid="!!localDnsWarning" :aria-describedby="localDnsWarning ? 'setup-local-dns-warning' : undefined" class="min-h-16 font-mono text-xs" :placeholder="defaultLocalDns" />
                 <p v-if="localDnsWarning" id="setup-local-dns-warning" role="alert" class="m-0 text-xs leading-relaxed text-destructive-accent">{{ localDnsWarning }}</p>
               </FormField>

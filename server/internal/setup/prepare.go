@@ -223,13 +223,10 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 	}
 	local, valid = readString(body, "local_dns", local)
 	if !valid {
-		if _, err := s.owners.DNS.LocalUpstreams(""); err != nil {
+		if _, err := s.owners.DNS.LocalUpstreams("", false); err != nil {
 			return ownerValidation(err)
 		}
 		return failure(msgLocalDNS, 400)
-	}
-	if _, err := s.owners.DNS.LocalUpstreams(local); err != nil {
-		return ownerValidation(err)
 	}
 	local = strings.TrimSpace(local)
 	selections, err := s.selections(ctx, record, body)
@@ -296,6 +293,9 @@ func (s *Service) prepare(ctx context.Context, record *Record, body map[string]j
 	state, marker := routersplit.ReadMarkerProfile(stored)
 	legacy := record.Goal == "router" && state == routersplit.StateAbsent && settings.Enabled
 	fullTUN := record.Goal == "router" && !legacy
+	if _, err := s.owners.DNS.LocalUpstreams(local, fullTUN); err != nil {
+		return ownerValidation(err)
+	}
 	dns := oxidns.DefaultSettings()
 	for _, setting := range []struct{ key, value string }{{"local_dns", local}, {"remote_dns", s.owners.DNS.DNSTarget}, {"fallback_dns", s.owners.DNS.DNSTarget}} {
 		yamlx.Set(dns, setting.key, yamlx.Str(setting.value))

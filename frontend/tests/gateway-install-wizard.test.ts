@@ -529,6 +529,16 @@ describe('gateway installation wizard', () => {
     expect(linuxGatewayApi.apply).not.toHaveBeenCalled()
     expect(button(wrapper, '继续确认发布').attributes('disabled')).toBeUndefined()
   })
+  it.each(['publishing', 'publish_failed'])('shows a neutral OxiDNS row until Mihomo succeeds (%s)', async phase => {
+    vi.mocked(gatewayOnboardingApi.sessions).mockResolvedValue(response({ success: true, session: session(phase, { deployments: {
+      mihomo: { deployment_id: 'a', status: phase === 'publishing' ? 'preparing' : 'failed', message: '正在准备规则「Steam」' },
+      oxidns: { deployment_id: 'b', status: 'preparing' },
+    } }) }))
+    const wrapper = await render(false, false, 'gateway', { AgentDeploymentStatus: false, AgentStatusRow: false, AgentFailureDetails: false })
+    expect(wrapper.get('[data-agent-status-row="OxiDNS"]').attributes('data-tone')).toBe('neutral')
+    expect(wrapper.get('[data-agent-status-row="OxiDNS"]').text()).toContain(phase === 'publishing' ? '等待 Mihomo 检查通过' : '未执行')
+    expect(wrapper.get('[data-agent-status-row="Mihomo"]').text()).toContain('Steam')
+  })
   it('stops on failure and lets explicit retry continue same session', async () => {
     vi.mocked(gatewayOnboardingApi.sessions).mockResolvedValue(response({ success: true, session: session('publish_failed', { error: 'Mihomo 健康检查失败' }) }))
     const wrapper = await render()
