@@ -143,7 +143,7 @@ describe('routers view', () => {
     menu.find(item => item.textContent === '编辑')!.click(); await flushPromises()
     expect(document.body.querySelector('#router-ip-rule-sets')).not.toBeNull()
     expect(document.body.querySelector('#router-policy-rule-sets')).toBeNull()
-    buttonInDocument('保存').click(); await flushPromises()
+    buttonInDocument('保存路由器配置').click(); await flushPromises()
     expect(routerApi.update).toHaveBeenCalledWith('router_1', expect.objectContaining({ type: 'routeros', ros_policy_rule_sets: [] }), 'setup-profile')
     wrapper.unmount()
     // A router that already uses policy routing keeps the option so it can be cleared.
@@ -173,7 +173,7 @@ describe('routers view', () => {
     for (const [id, value] of [['router-name', 'Guide router'], ['router-endpoint', 'http://192.0.2.1'], ['router-username', 'admin'], ['router-password', 'private']]) {
       await new DOMWrapper(document.querySelector<HTMLInputElement>(`#${id}`)!).setValue(value)
     }
-    buttonInDocument('保存').click()
+    buttonInDocument('保存路由器配置').click()
     await flushPromises()
     expect(routerApi.create).toHaveBeenCalledWith(expect.objectContaining({ proxy_gateway_agent_id: 'new-m', dns_agent_id: 'new-o' }), 'setup-profile')
     expect(wrapper.emitted('busy')?.some(event => event[0] === true)).toBe(true)
