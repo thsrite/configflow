@@ -823,34 +823,6 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
             </Select>
           </FormField>
           <FormField v-else label="安装设备" help="安装并检查完成后，向导会把代理网关设为本次 Mihomo Agent，把 DHCP DNS 设为本次 OxiDNS Agent，无需预先选择其他设备。"><p class="m-0 text-sm text-muted-foreground">安装后自动关联本次 Mihomo + OxiDNS</p></FormField>
-          <component :is="embedded ? 'details' : 'div'" :class="embedded ? 'space-y-4 border-t border-border pt-3' : 'contents'">
-          <summary v-if="embedded" class="min-h-11 cursor-pointer text-sm font-medium">高级路由选项</summary>
-          <div class="flex flex-col gap-1.5">
-            <div class="flex min-h-11 items-center justify-between gap-3">
-              <div class="flex min-w-0 items-center gap-1">
-                <Label for="router-return-routing">自动配置回流</Label>
-                <FieldHelp label="自动配置回流" :text="routerCopy.returnRouting.help" />
-              </div>
-              <Switch
-                id="router-return-routing"
-                :model-value="form.manage_return_routing"
-                @update:model-value="value => (form.manage_return_routing = Boolean(value))"
-              />
-            </div>
-          </div>
-          <FormField :label="form.type === 'routeros' ? '使用静态路由的 IP 规则集' : '按 IP 路由给 Mihomo 的规则集'" html-for="router-ip-rule-sets" v-bind="routerCopy.staticRules">
-            <div class="[&_[role=combobox]]:min-h-11">
-              <MultiSelect :model-value="form.ip_rule_sets" trigger-id="router-ip-rule-sets" :options="ruleSetOptions" placeholder="仅 fake-ip 网段" @update:model-value="selectStaticRuleSets" />
-            </div>
-            <p v-if="form.type === 'ikuai'" class="m-0 mt-1.5 text-[12px] leading-relaxed text-muted-foreground" data-router-ikuai-ipv6-note>iKuai 只发布 IPv4 网段，规则集中的 IPv6 网段不会处理。</p>
-          </FormField>
-          <FormField v-if="showPolicyOption" label="使用策略路由的 IP 规则集" html-for="router-policy-rule-sets" v-bind="routerCopy.policyRules">
-            <div class="[&_[role=combobox]]:min-h-11">
-              <MultiSelect :model-value="form.ros_policy_rule_sets" trigger-id="router-policy-rule-sets" :options="ruleSetOptions" placeholder="不使用策略路由" @update:model-value="selectPolicyRuleSets" />
-            </div>
-          </FormField>
-          <p v-if="form.type === 'routeros'" class="m-0 text-xs leading-relaxed text-muted-foreground">取消规则集后，需保存、预览并确认发布，才会清理对应的受管规则。</p>
-          </component>
           <FormField v-if="!setupDraftSession" label="DHCP DNS 服务器（OxiDNS Agent）" html-for="router-dns" :help="form.type === 'routeros' ? routerCopy.dnsROS.help : routerCopy.dns.help">
             <Select v-model="form.dns_agent_id">
               <SelectTrigger id="router-dns" class="w-full bg-background/50"><SelectValue placeholder="不关联" /></SelectTrigger>
@@ -909,13 +881,43 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
               </div>
             </div>
           </template>
+          <component :is="embedded ? 'details' : 'div'" :class="embedded ? 'group border-y border-border' : 'contents'">
+          <summary v-if="embedded" class="flex min-h-11 cursor-pointer items-center justify-between text-sm font-medium [&::-webkit-details-marker]:hidden">高级路由选项<ChevronDown aria-hidden="true" class="size-4 text-muted-foreground group-open:rotate-180" /></summary>
+          <div :class="embedded ? 'space-y-4 pb-3' : 'contents'">
+          <div class="flex flex-col gap-1.5">
+            <div class="flex min-h-11 items-center justify-between gap-3">
+              <div class="flex min-w-0 items-center gap-1">
+                <Label for="router-return-routing">自动配置回流</Label>
+                <FieldHelp label="自动配置回流" :text="routerCopy.returnRouting.help" />
+              </div>
+              <Switch
+                id="router-return-routing"
+                :model-value="form.manage_return_routing"
+                @update:model-value="value => (form.manage_return_routing = Boolean(value))"
+              />
+            </div>
+          </div>
+          <FormField :label="form.type === 'routeros' ? '使用静态路由的 IP 规则集' : '按 IP 路由给 Mihomo 的规则集'" html-for="router-ip-rule-sets" v-bind="routerCopy.staticRules">
+            <div class="[&_[role=combobox]]:min-h-11">
+              <MultiSelect :model-value="form.ip_rule_sets" trigger-id="router-ip-rule-sets" :options="ruleSetOptions" placeholder="仅 fake-ip 网段" @update:model-value="selectStaticRuleSets" />
+            </div>
+            <p v-if="form.type === 'ikuai'" class="m-0 mt-1.5 text-[12px] leading-relaxed text-muted-foreground" data-router-ikuai-ipv6-note>iKuai 只发布 IPv4 网段，规则集中的 IPv6 网段不会处理。</p>
+          </FormField>
+          <FormField v-if="showPolicyOption" label="使用策略路由的 IP 规则集" html-for="router-policy-rule-sets" v-bind="routerCopy.policyRules">
+            <div class="[&_[role=combobox]]:min-h-11">
+              <MultiSelect :model-value="form.ros_policy_rule_sets" trigger-id="router-policy-rule-sets" :options="ruleSetOptions" placeholder="不使用策略路由" @update:model-value="selectPolicyRuleSets" />
+            </div>
+          </FormField>
+          <p v-if="form.type === 'routeros'" class="m-0 text-xs leading-relaxed text-muted-foreground">取消规则集后，需保存、预览并确认发布，才会清理对应的受管规则。</p>
+          </div>
+          </component>
         </form>
 
         <DialogFooter>
           <Button variant="outline" :disabled="saving" @click="dialogVisible = false">取消</Button>
           <Button :disabled="saving || !form.type" @click="submit">
             <Loader2 v-if="saving" class="size-4 animate-spin" />
-            {{ setupDraftSession ? '保存到向导' : '保存' }}
+            {{ setupDraftSession ? '保存到向导' : embedded ? '保存路由器配置' : '保存' }}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -928,7 +930,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, 
 import { RouterLink, matchedRouteKey, onBeforeRouteLeave, routeLocationKey, routerKey } from 'vue-router'
 import {
   Activity,
-  MoreHorizontal,
+  ChevronDown, MoreHorizontal,
   CircleX,
   Copy,
   GitCompare,
