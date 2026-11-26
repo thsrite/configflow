@@ -381,8 +381,15 @@ func (s *Service) deployment(ctx context.Context, id, did string, activate bool)
 	}
 	return encodeResult(result)
 }
-func (s *Service) recordFailed(ctx context.Context, id, did string) (json.RawMessage, error) {
-	update, err := agents.DecodeDeploymentUpdate(jsonresp.Value(map[string]any{"success": false, "status": "failed", "message": msgPrepareFailed}))
+func (s *Service) recordFailed(ctx context.Context, id, did string, cause error) (json.RawMessage, error) {
+	message, err := s.safeText(ctx, cause.Error())
+	if err != nil {
+		return nil, err
+	}
+	if message == "" {
+		message = msgPrepareFailed
+	}
+	update, err := agents.DecodeDeploymentUpdate(jsonresp.Value(map[string]any{"success": false, "status": "failed", "message": message}))
 	if err != nil {
 		return nil, err
 	}

@@ -317,7 +317,6 @@ func dnsRelationshipChecks(candidate DNSCandidate, doc map[string]any, requireme
 			checks[i].Message = "对端现有配置存在问题：" + checks[i].Message + "；请随后修复对端配置，本次发布不会修改对端。"
 		}
 	}
-	checks = append(checks, dnsHijackChecks(peer.Config, peerDoc)...)
 	groups, _ := dnsGroups(candidate.Config, doc)
 	peerGroups, _ := dnsGroups(peer.Config, peerDoc)
 	somePeer, allPeer, someBack, allBack := false, false, false, false

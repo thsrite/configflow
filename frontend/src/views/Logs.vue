@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="logs-page">
     <PageHeader title="日志" class="logs-page-header">
       <template #actions>
         <div class="flex w-full flex-wrap items-center justify-between gap-2">
@@ -480,8 +480,17 @@ onUnmounted(() => {
 
 /* 桌面：终端列布局、独立滚动，来源过长时截断（悬停看全称），正文仍完整换行 */
 @media (min-width: 901px) {
+  .logs-page {
+    display: flex;
+    flex-direction: column;
+    /* App shell uses pt-7 and pb-12 around the desktop page. */
+    height: calc(100dvh - var(--cf-topbar-h) - 4.75rem);
+    min-height: 28rem;
+  }
+  .logs-page > :not(.terminal) { flex: none; }
+  .terminal { flex: 1; min-height: 10rem; }
   .logs-container {
-    height: 560px;
+    height: 100%;
     overflow: auto;
   }
 

@@ -292,7 +292,7 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 			if jsondecode.Unmarshal(record.Installation, &pair) != nil {
 				return ErrCorruptRecord
 			}
-			if router == nil || router.ProxyGatewayAgentID != pair.Mihomo.ID || router.DNSAgentID != pair.OxiDNS.ID {
+			if router == nil || router.ProxyGatewayAgentID != pair.Mihomo.ID || (router.DNSAgentID != "" && router.DNSAgentID != pair.OxiDNS.ID) {
 				return failure(msgRouterPair, 409)
 			}
 			if s.owners.VerifyRouter == nil {
@@ -323,6 +323,9 @@ func (s *Service) finish(ctx context.Context, record *Record, body map[string]js
 				return failure(msgRouterChanged, 409)
 			}
 			record.RouterMode, record.RouterID, record.RouterVerification = pointer("managed"), &id, pointer("verified")
+			if router.DNSAgentID == "" {
+				record.RouterVerification = pointer("routes_verified")
+			}
 		default:
 			return failure(msgFinishRouterMode, 400)
 		}

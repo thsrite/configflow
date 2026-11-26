@@ -791,7 +791,7 @@ func MihomoConfig(ctx context.Context, config *model.Config, options MihomoOptio
 		return "", err
 	}
 	data, err := yamlx.Marshal(document)
-	return string(data), err
+	return yamlx.ReadableUnicode(string(data)), err
 }
 func addRegionProbe(document *yamlx.Node, port int64) (bool, error) {
 	if port < 1 || port > 65535 {

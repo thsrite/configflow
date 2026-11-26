@@ -269,7 +269,7 @@ onUnmounted(() => { disposed = true })
 
 <template>
   <div class="mx-auto max-w-5xl">
-    <PageHeader title="开始使用"><template #actions><Button v-if="session && !session.completed" variant="ghost" class="min-h-11" :disabled="working" @click="abandonCurrent">放弃此向导</Button><Button variant="outline" class="min-h-11" :disabled="working" @click="session ? newSetup() : router.push('/dashboard')">{{ session ? '新建一次配置' : '返回总览' }}</Button></template></PageHeader>
+    <PageHeader :title="step === 5 ? '配置完成' : '开始使用'"><template #actions><Button v-if="session && !session.completed" variant="ghost" class="min-h-11" :disabled="working" @click="abandonCurrent">放弃此向导</Button><Button variant="outline" class="min-h-11" :disabled="working" @click="session ? newSetup() : router.push('/dashboard')">{{ session ? '新建一次配置' : '返回总览' }}</Button></template></PageHeader>
     <p v-if="loading" role="status" class="py-12 text-center text-sm text-muted-foreground">正在读取向导进度…</p>
     <template v-else>
       <div v-if="error" role="alert" class="mb-4 rounded-lg border border-destructive-accent/30 bg-destructive-soft px-4 py-3 text-sm text-destructive-accent">{{ error }}<Button v-if="!ready" variant="ghost" class="ml-2" @click="load">重新加载</Button></div>
@@ -277,7 +277,7 @@ onUnmounted(() => { disposed = true })
         <nav aria-label="配置向导步骤" class="min-w-0"><ol class="m-0 flex list-none flex-col gap-1 p-0 max-md:flex-row max-md:overflow-x-auto">
           <li v-for="(label, index) in steps" :key="index" class="shrink-0"><button type="button" :disabled="working || !session || (index > session.max_step && !(index === 4 && canPreviewRouting))" :aria-current="step === index ? 'step' : undefined" class="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 text-left text-[13px] disabled:cursor-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-accent" :class="step === index ? 'bg-primary-soft font-medium text-primary-accent' : index < (session?.step ?? 0) ? 'text-foreground' : 'text-muted-foreground'" @click="move(index)"><span class="grid size-6 shrink-0 place-items-center rounded-full border border-border-strong font-mono text-xs"><Check v-if="session?.completed || index < (session?.step ?? 0)" class="size-3.5" /><template v-else>{{ index + 1 }}</template></span>{{ label }}<span v-if="index === 4 && canPreviewRouting" class="ml-auto text-xs text-muted-foreground">{{ goal === 'router' ? '可先配置' : '预览' }}</span></button></li>
         </ol></nav>
-        <SectionCard :title="steps[step]" :help="help[step]" class="min-w-0">
+        <SectionCard :title="step === 5 ? 'Mihomo + OxiDNS 已准备好' : steps[step]" :help="help[step]" class="min-w-0">
           <div v-if="session" class="mb-6 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border pb-4 text-xs text-muted-foreground"><span class="break-words font-medium text-foreground">{{ session.name }}</span><span>{{ SETUP_GOALS.find(item => item.id === session?.goal)?.title }}</span></div>
           <p v-if="session?.legacy_takeover && (step === 3 || step === 4)" role="status" class="mt-0 mb-5 rounded-lg border border-primary-accent/30 bg-primary-soft px-3 py-2.5 text-sm leading-relaxed text-foreground" data-legacy-takeover>此配置空间使用旧版 Linux 网关接管，保持不变。</p>
           <div v-if="session?.mihomo_changes?.length && step === 3" role="status" class="mt-0 mb-5 space-y-1 rounded-lg bg-muted px-3 py-2.5 text-sm leading-relaxed" data-mihomo-changes><p class="m-0 font-medium">已调整 Mihomo 基础配置的以下项，其余设置原样保留：</p><ul class="m-0 list-disc space-y-0.5 pl-5 text-xs text-muted-foreground"><li v-for="item in session.mihomo_changes" :key="item" class="break-words">{{ item }}</li></ul></div>
@@ -376,7 +376,7 @@ onUnmounted(() => { disposed = true })
                 <p class="m-0 text-xs text-muted-foreground">手动设置由你确认，向导无法自动核验这台主路由。</p>
               </template>
               <template v-else>
-                <FormField label="连接主路由" help="自动配置支持 iKuai 4.x / RouterOS 7.1+；其他品牌使用手动配置。添加管理地址和账号后，ConfigFlow 可读取主路由设置。安装完成后自动关联本次设备；先探测，再打开差异报告，预览具体变更后确认发布。保存连接信息本身不会修改路由器。"><p class="m-0 text-sm">先添加主路由的管理地址和账号。安装完成后，由 ConfigFlow 配置静态路由和 DHCP DNS。</p></FormField>
+                <FormField label="连接主路由" help="自动配置支持 iKuai 4.x / RouterOS 7.1+；其他品牌使用手动配置。添加管理地址和账号后，ConfigFlow 可读取主路由设置。安装完成后自动关联本次设备；先探测，再打开差异报告，预览具体变更后确认发布。保存连接信息本身不会修改路由器。"><p class="m-0 text-sm">先添加主路由的管理地址和账号。安装完成后可查看并发布静态路由。若由其他设备提供 DHCP，可在编辑路由器时将 DHCP DNS 服务器设为「不关联」。</p></FormField>
                 <ol aria-label="主路由自动配置步骤" class="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-xs text-muted-foreground"><li>1 添加主路由</li><li>2 检查连接</li><li>3 查看改动并发布</li></ol>
                 <Routers :key="previewRouting ? 'draft-' + session.id : 'installed-' + session.id" embedded :profile-id="session.profile_id" :setup-agents="routerAgents" :setup-draft-session="previewRouting ? session.id : undefined" @selected="selectRouter" @busy="childBusy = $event" />
               </template>
@@ -390,17 +390,24 @@ onUnmounted(() => { disposed = true })
             <label v-if="session.default_profile && !session.default_profile.is_default" class="flex items-start gap-2 text-sm"><Checkbox v-model="makeDefault" :disabled="working" class="mt-0.5" /><span><span class="font-medium">设为默认配置空间</span><span class="mt-1 block text-xs leading-relaxed text-muted-foreground">新打开的页面、未指定配置空间的配置链接和新注册的 Agent 都会使用它。现在的默认是「{{ session.default_profile.current.name }}」，已绑定的设备不受影响，之后也可以在配置空间里更改。「{{ session.default_profile.current.name }}」中的客户端设备名称和 DNS 策略不会带过来，需要时在客户端设备中重新设置。</span></span></label>
             <Button :disabled="previewRouting || working || (goal === 'gateway' && !clientReady) || (goal === 'router' && (routerMode === 'manual' ? !ackRoutes || !ackDNS || routesIncomplete : !routerId))" class="min-h-11" @click="finish"><LoaderCircle v-if="working" class="size-4 animate-spin" />{{ previewRouting ? '完成安装后继续' : goal === 'router' && routerMode === 'managed' ? '检查路由器并完成' : '确认设置并继续' }}<ArrowRight class="size-4" /></Button>
           </div>
-          <div v-if="step === 5 && session" class="space-y-5">
-            <div class="flex items-center gap-2"><CircleCheck class="size-5 text-success-accent" /><h3 class="m-0 text-base font-semibold">Mihomo + OxiDNS 已准备好</h3></div>
-            <p class="m-0 text-sm">请在实际使用的手机或电脑测试解析、国内网站与代理网站；客户端连通性尚未由本向导确认。</p>
-            <p v-if="session.router_verification === 'manual'" class="m-0 text-sm text-warning-accent">主路由为手动配置，尚未自动核验。</p>
-            <p v-else-if="session.router_verification === 'verified'" class="m-0 text-sm text-success-accent">主路由的路由与 DHCP DNS 已核对同步。</p>
+          <div v-if="step === 5 && session" class="grid gap-5">
+            <ul class="m-0 grid list-none gap-2 p-0 text-sm" aria-label="安装结果">
+              <li v-for="item in ['Mihomo 配置已发布', 'OxiDNS 配置已发布', 'IPv4 转发与 TUN 已检查']" :key="item" class="flex items-start gap-2"><CircleCheck class="size-4 shrink-0 text-success-accent" />{{ item }}</li>
+              <li v-if="session.router_verification === 'verified'" class="flex items-start gap-2"><CircleCheck class="size-4 shrink-0 text-success-accent" />主路由的路由与 DHCP DNS 已核对同步。</li>
+              <li v-if="session.router_verification === 'routes_verified'" class="text-sm">主路由静态路由已核对；请在实际 DHCP 服务器下发 OxiDNS 地址。</li>
+              <li v-if="session.router_verification === 'manual'" class="text-warning-accent">主路由为手动配置，尚未自动核验。</li>
+            </ul>
+            <section class="grid gap-2 border-t border-border pt-4">
+              <h3 class="m-0 text-sm font-semibold">用一台手机或电脑验证分流</h3>
+              <p class="m-0 text-sm leading-relaxed">{{ goal === 'router' ? '重新连接局域网，确认设备使用 OxiDNS 作为 DNS。' : '将测试设备的网关和 DNS 指向这台 Linux。' }}分别打开一个国内直连网站和一个应走代理的网站，确认都能访问。</p>
+              <p class="m-0 text-xs text-muted-foreground">客户端连通性尚未由本向导确认。</p>
+            </section>
             <div v-if="session.default_profile?.is_default && session.previous_default" class="space-y-1 rounded-lg bg-muted px-3 py-2 text-sm">
               <p class="m-0">已设为默认配置空间，新打开的页面会直接进入它。</p>
               <p v-if="session.default_profile.leftovers?.profile" class="m-0 text-muted-foreground">原来的「{{ session.default_profile.leftovers.profile.name }}」没有设备在用，不需要的话可以在<button type="button" class="text-primary-accent underline-offset-2 hover:underline" @click="manage('/profiles')">配置空间</button>里删除。</p>
               <p v-if="session.default_profile.leftovers?.subscriptions.length" class="m-0 text-muted-foreground">示例订阅「{{ session.default_profile.leftovers.subscriptions.map(item => item.name).join('、') }}」只被原来的默认配置使用，不需要的话可以在<button type="button" class="text-primary-accent underline-offset-2 hover:underline" @click="manage('/subscriptions')">订阅来源</button>里删除。</p>
             </div>
-            <div class="flex flex-wrap gap-2"><Button class="min-h-11" :disabled="working" @click="manage('/agents')">进入 Agent<ArrowRight class="size-4" /></Button><Button variant="outline" class="min-h-11" :disabled="working" @click="manage('/client-devices')">客户端设备</Button><Button v-if="goal === 'router'" variant="outline" class="min-h-11" @click="manage('/routers')">进入上游路由</Button></div>
+            <div class="flex flex-wrap gap-2"><Button class="min-h-11" :disabled="working" @click="manage('/agents')">查看 Agent 状态<ArrowRight class="size-4" /></Button><Button variant="outline" class="min-h-11" :disabled="working" @click="manage('/client-devices')">查看客户端设备</Button><Button v-if="goal === 'router'" variant="outline" class="min-h-11" @click="manage('/routers')">管理主路由规则</Button></div>
           </div>
           <footer v-if="session && step > 0 && step < 5" class="mt-6 flex items-center gap-2 border-t border-border pt-4"><Button variant="ghost" :disabled="working" @click="move(previewRouting ? session.step : step - 1)"><ArrowLeft class="size-3.5" />{{ previewRouting ? '返回安装与检查' : '上一步' }}</Button><span class="ml-auto text-xs text-muted-foreground">{{ previewRouting ? '安装进度未改变' : '进度已保存' }}</span></footer>
         </SectionCard>

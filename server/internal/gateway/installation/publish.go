@@ -177,7 +177,7 @@ func (s *Service) publishService(ctx context.Context, r *Record, service string)
 	defer s.Manager.FinishDeploymentPreparation(a.ID, did)
 	defer func() {
 		if err != nil && ctx.Err() == nil {
-			task, e := s.recordFailed(ctx, a.ID, did)
+			task, e := s.recordFailed(ctx, a.ID, did, err)
 			if e == nil {
 				e = s.progress(ctx, r.ID, service, task)
 			}

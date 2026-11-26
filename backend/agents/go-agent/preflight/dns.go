@@ -222,7 +222,7 @@ func dnsHijackChecks(cfg Config, doc map[string]any) []Check {
 		for _, item := range hijacks {
 			value, _ := item.(string)
 			if value == "any:53" || value == "tcp://any:53" || value == "udp://any:53" {
-				return []Check{{Name: "DNS 劫持范围", Level: "warn", Message: "一体化模式下，TUN 对目标端口 53 的 DNS 劫持可能绕过同机 DNS 服务；这不是监听端口占用", Fix: "确认进入 TUN 的 DNS 请求是否应先交给同机 DNS 服务，并核对实际路由和排除规则。"}}
+				return []Check{{Name: "DNS 劫持范围", Level: "warn", Message: "进入 Mihomo TUN 的外部 DNS 查询可能由 Mihomo 应答，包括同机 OxiDNS 发给明文上游的查询", Fix: "确认进入 TUN 的 DNS 请求是否应先交给同机 DNS 服务，并核对实际路由和排除规则。"}}
 			}
 		}
 	}

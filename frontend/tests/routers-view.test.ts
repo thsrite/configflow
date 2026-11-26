@@ -100,6 +100,9 @@ describe('routers view', () => {
     expect(document.body.querySelector('#router-gateway')).toBeNull()
     expect(document.body.querySelector('#router-dns')).toBeNull()
     expect(document.body.textContent).toContain('安装后自动关联本次 Mihomo + OxiDNS')
+    expect(document.querySelector('#router-type')?.textContent).toContain('请选择路由器类型')
+    wrapper.findAllComponents(Select)[0]!.vm.$emit('update:modelValue', 'ikuai')
+    await flushPromises()
     for (const [id, value] of [['router-name', '主路由'], ['router-endpoint', 'http://192.0.2.1'], ['router-username', 'admin'], ['router-password', 'private']]) {
       await new DOMWrapper(document.querySelector<HTMLInputElement>(`#${id}`)!).setValue(value)
     }
@@ -156,6 +159,9 @@ describe('routers view', () => {
     await wrapper.findAll('button').find(button => button.text().includes('添加路由器'))!.trigger('click')
     await flushPromises()
     activeProfileId.value = 'other-profile'
+    await flushPromises()
+    expect(document.querySelector('#router-type')?.textContent).toContain('请选择路由器类型')
+    wrapper.findAllComponents(Select)[0]!.vm.$emit('update:modelValue', 'ikuai')
     await flushPromises()
     for (const [id, value] of [['router-name', 'Guide router'], ['router-endpoint', 'http://192.0.2.1'], ['router-username', 'admin'], ['router-password', 'private']]) {
       await new DOMWrapper(document.querySelector<HTMLInputElement>(`#${id}`)!).setValue(value)
@@ -388,6 +394,8 @@ describe('routers view', () => {
     await wrapper.findAll('button').find(button => button.text().includes('添加路由器'))!.trigger('click')
     await flushPromises()
 
+    wrapper.findAllComponents(Select)[0]!.vm.$emit('update:modelValue', 'ikuai')
+    await flushPromises()
     const toggle = document.querySelector<HTMLButtonElement>('#router-return-routing')!
     expect(toggle.getAttribute('aria-checked')).toBe('false')
     expect(document.body.textContent).not.toContain('关闭后发布时会移除 Agent 写入的回流规则')

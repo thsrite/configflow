@@ -27,7 +27,7 @@ vi.mock('@/api', () => ({
 vi.mock('@/lib/feedback', () => ({ notify: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }))
 vi.mock('@/lib/clipboard', () => ({ copyText: vi.fn(async () => {}) }))
 const icon = markRaw(defineComponent({ template: '<i />' }))
-const targets = ['mihomo', 'mosdns', 'loon'].map(key => ({ key, title: key, icon, desc: '', url: '', urlDisplay: '', actions: [] })) as any
+const targets = ['mihomo', 'mosdns', 'loon', 'oxidns'].map(key => ({ key, title: key, icon, desc: '', url: '', urlDisplay: '', actions: [] })) as any
 const wrappers: VueWrapper[] = []
 const button = (wrapper: VueWrapper, text: string) => wrapper.findAll('button').find(b => b.text() === text)!
 const selection = (wrapper: VueWrapper) => wrapper.findAllComponents(Select)[1]
@@ -102,6 +102,21 @@ describe('Generation destination', () => {
     live.agents.value = [...live.agents.value, agent('dns-two', 'mosdns')]
     await flushPromises()
     expect(selection(wrapper).props('modelValue')).toBe('manual')
+  })
+
+  it('labels OxiDNS filenames in the main preview but copies the original YAML', async () => {
+    const result = artifact('manual', 'default', 'oxidns')
+    const filename = 'rule_57bafbd68e6032cb_domain.txt'
+    result.data.content = '  filename: ' + filename
+    result.data.rule_file_names = { ['rules/' + filename]: 'BiliBili <测试>' }
+    vi.mocked(generateApi.artifact).mockResolvedValue(result)
+    const wrapper = await render()
+    await button(wrapper, 'oxidns').trigger('click')
+    await button(wrapper, '生成').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.gen-code').text()).toContain('BiliBili <测试> · 域名规则')
+    await button(wrapper, '复制').trigger('click')
+    expect(copyText).toHaveBeenCalledWith(result.data.content)
   })
 
   it('requires a choice for multiple Agents and restores the chosen Agent on a later visit', async () => {

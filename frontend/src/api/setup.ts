@@ -32,7 +32,7 @@ export interface SetupSession {
   domain_rules?: SetupDomainSelection
   node_count?: number; config_revision?: number; updated_at: string
   installation?: { id: string; mihomo: { id: string; name: string; host: string }; oxidns: { id: string; name: string; host: string } }
-  router_id?: string; router_mode?: 'manual' | 'managed'; router_verification?: 'manual' | 'verified' | 'client_pending'
+  router_id?: string; router_mode?: 'manual' | 'managed'; router_verification?: 'manual' | 'verified' | 'routes_verified' | 'client_pending'
   router_draft?: SetupRouterDraft
   default_profile?: SetupDefaultProfile; previous_default?: string
   route_instructions?: { gateway: string; dns: string; routes: { cidr: string; sources: string[]; requires_source_exclusion?: boolean }[]; warnings: string[]; incomplete?: boolean; missing_rule_sets?: string[] }

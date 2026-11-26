@@ -6,6 +6,8 @@ import (
 	"configflow/internal/agents"
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
+	"configflow/internal/oxidns"
+	"configflow/internal/yamlx"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -131,16 +133,17 @@ type BundleMeta struct {
 
 // PreviewPublic is the frontend's final generated file view.
 type PreviewPublic struct {
-	ID           string   `json:"id"`
-	DeploymentID string   `json:"deployment_id"`
-	AgentID      string   `json:"agent_id"`
-	ProfileID    string   `json:"profile_id"`
-	ServiceType  string   `json:"service_type"`
-	ExpiresAt    int64    `json:"expires_at"`
-	Content      string   `json:"content"`
-	ConfigPath   string   `json:"config_path"`
-	Files        []File   `json:"files"`
-	TargetIDs    []string `json:"target_ids"`
+	RuleFileNames map[string]string `json:"rule_file_names,omitempty"`
+	ID            string            `json:"id"`
+	DeploymentID  string            `json:"deployment_id"`
+	AgentID       string            `json:"agent_id"`
+	ProfileID     string            `json:"profile_id"`
+	ServiceType   string            `json:"service_type"`
+	ExpiresAt     int64             `json:"expires_at"`
+	Content       string            `json:"content"`
+	ConfigPath    string            `json:"config_path"`
+	Files         []File            `json:"files"`
+	TargetIDs     []string          `json:"target_ids"`
 }
 
 // Previews owns one data directory's artifacts and eviction under a single L4
@@ -382,6 +385,21 @@ func (pv *Preview) Public() PreviewPublic {
 	return result
 }
 
+// publicFor attaches labels from the same snapshot as the displayed files.
+func (pv *Preview) publicFor(source *Source) PreviewPublic {
+	result := pv.Public()
+	if pv.ServiceType == "oxidns" {
+		names := oxidns.RuleFileNames(source.config())
+		result.RuleFileNames = map[string]string{}
+		for _, file := range result.Files {
+			if name := names[file.Path]; name != "" {
+				result.RuleFileNames[file.Path] = name
+			}
+		}
+	}
+	return result
+}
+
 // Zip exports the frozen files as a native DEFLATE ZIP in manifest order.
 func (pv *Preview) Zip() ([]byte, error) {
 	files, order, err := pv.contents()
@@ -463,6 +481,9 @@ func FinalizeBundle(ctx context.Context, m *agents.Manager, t Target, b *Bundle,
 	content, err := finalPreview(ctx, m, t, string(files[path].Data))
 	if err != nil {
 		return nil, err
+	}
+	if t.ServiceType == "mihomo" {
+		content = yamlx.ReadableUnicode(content)
 	}
 	files[path] = Content{[]byte(content), RoleConfig}
 	manifest := b.Manifest()

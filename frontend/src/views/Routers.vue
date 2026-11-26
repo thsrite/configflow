@@ -31,7 +31,7 @@
 
     <SectionCard v-else :padded="false" title="路由器">
       <div class="cf-table-wrap">
-        <table class="cf-table cf-mobile-records router-records min-w-[880px]" role="table">
+        <table class="cf-table cf-mobile-records router-records" :class="embedded ? 'router-wizard-records' : 'min-w-[880px]'" role="table">
           <thead role="rowgroup">
             <tr role="row">
               <th role="columnheader">名称</th>
@@ -445,6 +445,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
         </template>
         <div class="flex flex-col gap-2 px-5 pb-4 text-[12.5px] max-md:px-4 max-sm:px-3">
           <p v-if="dhcpDns.message" class="m-0 text-muted-foreground">{{ dhcpDns.message }}</p>
+          <p v-if="embedded && dhcpDns.blockers.length && reportRouter" class="m-0">如果其他设备提供 DHCP，请<button type="button" class="text-primary-accent underline" @click="openEdit(reportRouter)">编辑路由器</button>，将 DHCP DNS 服务器设为「不关联」后重新查看改动。</p>
           <p v-if="dhcpDns.target_dns" class="m-0">
             目标 DNS：<span class="font-mono">{{ dhcpDns.target_dns }}</span>
           </p>
@@ -728,7 +729,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
           <div class="flex flex-col gap-1.5">
             <Label for="router-type">{{ embedded ? '路由器类型（必选）' : '类型' }}</Label>
             <Select v-model="form.type">
-              <SelectTrigger id="router-type" class="w-full bg-background/50"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="router-type" class="w-full bg-background/50"><SelectValue placeholder="请选择路由器类型" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ikuai">iKuai 4.x</SelectItem>
                 <SelectItem value="routeros">RouterOS 7.1+</SelectItem>
@@ -815,6 +816,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
                 </SelectItem>
               </SelectContent>
             </Select>
+            <p v-if="embedded" class="m-0 text-xs text-muted-foreground">DHCP 在其他设备上时，选择「不关联」后继续发布静态路由，并在实际 DHCP 服务器中下发 OxiDNS 地址。</p>
             <p v-if="dnsHaVip" class="m-0 text-xs leading-relaxed text-muted-foreground" data-dns-ha-vip>所选 OxiDNS 已开启 DNS 高可用，将下发虚拟 IP <span class="font-mono">{{ dnsHaVip }}</span>。</p>
           </FormField>
           <template v-if="form.type === 'routeros' && !setupDraftSession">
@@ -870,7 +872,7 @@ Fake-IP 和未选入这项策略的规则集，仍按上方的静态路由设置
 
         <DialogFooter>
           <Button variant="outline" :disabled="saving" @click="dialogVisible = false">取消</Button>
-          <Button :disabled="saving" @click="submit">
+          <Button :disabled="saving || !form.type" @click="submit">
             <Loader2 v-if="saving" class="size-4 animate-spin" />
             {{ setupDraftSession ? '保存到向导' : '保存' }}
           </Button>
@@ -1267,7 +1269,7 @@ const releaseNotices = computed(() => releaseLogs.value.flatMap(group => group.e
 
 const emptyForm = () => ({
   name: '',
-  type: 'ikuai' as RouterType,
+  type: '' as RouterType | '',
   endpoint: '',
   username: '',
   password: '',
@@ -1644,7 +1646,7 @@ const clearInspection = (routerId?: string) => {
 }
 
 const submit = async () => {
-  if (saving.value) return
+  if (saving.value || !form.type) return
   saving.value = true
   const { dns_guard: guard, ipv6_pd_guard: pdGuardSetting, ...fields } = form
   const payload = {
@@ -1895,3 +1897,16 @@ watch(() => JSON.stringify(deepLinkOf()), () => {
   if (link && !deepLinkBusy && !loading.value) void handleDeepLink(link, true)
 })
 </script>
+
+
+<style scoped>
+@media (min-width: 640px) {
+  .router-wizard-records, .router-wizard-records tbody { display: block; }
+  .router-wizard-records thead { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
+  .router-wizard-records tr { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(8rem, 100%), 1fr)); gap: .75rem; padding: 1rem; }
+  .router-wizard-records td { min-width: 0; padding: 0; border: 0; overflow-wrap: anywhere; }
+  .router-wizard-records td[data-label]::before { content: attr(data-label); display: block; color: var(--muted-foreground); font-size: 12px; }
+  .router-wizard-records td:last-child { grid-column: 1 / -1; }
+  .router-wizard-records .router-record-actions { justify-content: flex-start; flex-wrap: wrap; }
+}
+</style>
