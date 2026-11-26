@@ -71,6 +71,7 @@ func RenderConfig(ctx context.Context, r *repo.Repository, config *model.Config,
 		report := &convert.GenerationReport{}
 		out.Content, err = convert.MihomoConfig(ctx, config, convert.MihomoOptions{BaseURL: baseURL, Report: report})
 		if err == nil {
+			out.Content = yamlx.ReadableUnicode(out.Content)
 			if report.SubscriptionHosts != nil {
 				if dns := yamlx.Resolve(yamlx.Get(report.SubscriptionHosts, "dns")); dns != nil && dns.Kind == yaml.MappingNode {
 					if applied := yamlx.Resolve(yamlx.Get(dns, "applied")); applied != nil && applied.Kind == yaml.ScalarNode && applied.ShortTag() == "!!bool" && applied.Value == "true" {
