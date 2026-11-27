@@ -69,10 +69,7 @@ var rankingSchema = []string{
 		" blocked_slots INTEGER NOT NULL DEFAULT 0, slots INTEGER NOT NULL DEFAULT 0," +
 		" partial_slots INTEGER NOT NULL DEFAULT 0," +
 		" PRIMARY KEY (agent_id, recorder, start, seconds))",
-	"CREATE TABLE IF NOT EXISTS ranking_rows (" +
-		" agent_id TEXT NOT NULL, recorder TEXT NOT NULL, start INTEGER NOT NULL, seconds INTEGER NOT NULL," +
-		" kind TEXT NOT NULL, key TEXT NOT NULL, count INTEGER NOT NULL," +
-		" PRIMARY KEY (agent_id, recorder, start, seconds, kind, key))",
+	"CREATE TABLE IF NOT EXISTS ranking_rows" + rankingRowColumns + " WITHOUT ROWID",
 	"CREATE TABLE IF NOT EXISTS ranking_slots (" +
 		" agent_id TEXT NOT NULL, recorder TEXT NOT NULL, start INTEGER NOT NULL," +
 		" PRIMARY KEY (agent_id, recorder, start))",
@@ -510,10 +507,15 @@ func (s *RankingStore) Maintain(ctx context.Context, agentIDs []string, now *int
 		}
 		return nil
 	})
-	if err == nil {
-		s.maintainedHour = &hour
+	if err != nil {
+		return err
 	}
-	return err
+	s.maintainedHour = &hour
+	// Compaction is optional. A failed upgrade must not undo retention or prevent collection.
+	if err := s.read(ctx, compactRankingRows); err != nil && ctx.Err() == nil {
+		rankingLogger.Warningf(msgRankingCompactFailed, err)
+	}
+	return ctx.Err()
 }
 
 func nullInt(v sql.NullInt64) int64 {

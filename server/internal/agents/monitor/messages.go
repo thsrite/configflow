@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const msgRankingCompactFailed = "OxiDNS 排名库压实未完成，将在下次维护时重试：%v"
+
 const msgHARulesBusy = "DNS 主备正在同步，请等待两台发布完成后更新规则"
 
 const (
