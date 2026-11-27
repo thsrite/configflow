@@ -507,9 +507,10 @@ func dbDump(t *testing.T, path string) map[string]any {
 		"journal_mode": mode,
 		"master":       rowsOf("SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY name"),
 	}
-	for _, table := range []string{"ranking_periods", "ranking_rows", "ranking_slots"} {
+	for _, table := range []string{"ranking_periods", "ranking_slots"} {
 		out[table] = rowsOf("SELECT rowid, * FROM " + table + " ORDER BY rowid")
 	}
+	out["ranking_rows"] = rankingRowsByKey(t, rowsOf("SELECT * FROM ranking_rows"), false)
 	db.Close()
 	header := make([]byte, 100)
 	f, err := os.Open(path)
@@ -531,6 +532,20 @@ func dbDump(t *testing.T, path string) map[string]any {
 	}
 	out["files"] = list
 	return out
+}
+
+// The old corpus includes an internal rowid. Compare every logical row by its composite key.
+func rankingRowsByKey(t *testing.T, rows []any, hasRowID bool) map[string]any {
+	t.Helper()
+	counts := make(map[string]any, len(rows))
+	for _, raw := range rows {
+		row := asList(raw)
+		if hasRowID {
+			row = row[1:]
+		}
+		counts[string(mustMarshal(t, row[:6]))] = row[6]
+	}
+	return counts
 }
 
 func TestReferenceRankingScenario(t *testing.T) {
@@ -617,6 +632,19 @@ func TestReferenceRankingScenario(t *testing.T) {
 			// file itself is compared.
 			wantMap := parseJSONMap(t, wantRaw)
 			wantMap["files"] = []any{filepath.Base(store.Path)}
+			wantMap["ranking_rows"] = rankingRowsByKey(t, asList(wantMap["ranking_rows"]), true)
+			var master []any
+			for _, entry := range asList(wantMap["master"]) {
+				row := asList(entry)
+				if row[2] == "ranking_rows" {
+					if row[0] == "index" {
+						continue // the primary key is now the table itself
+					}
+					row[3] = asStr(row[3]) + " WITHOUT ROWID"
+				}
+				master = append(master, row)
+			}
+			wantMap["master"] = master
 			wantRaw = mustMarshal(t, wantMap)
 		}
 		wantVal, err := testjson.Parse(wantRaw)
