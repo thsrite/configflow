@@ -100,6 +100,7 @@ type cacheEntry struct {
 	path      string
 	signature jsonstore.Signature
 	status    json.RawMessage
+	idle      *idleHistory
 }
 
 type damagedEntry struct {
@@ -207,14 +208,23 @@ func cacheableStatus(status json.RawMessage) bool {
 
 // rememberStatus is _remember_status(path, signature, status): reuse the
 // bounded metadata only while its source file is still unchanged.
-func rememberStatus(path string, signature *jsonstore.Signature, status json.RawMessage) {
-	cachePop(path)
+func rememberStatus(path string, signature *jsonstore.Signature, status json.RawMessage) *cacheEntry {
 	if signature == nil || !cacheableStatus(status) {
-		return
+		cachePop(path)
+		return nil
 	}
 	current := statusSignature(path)
 	if current == nil || *current != *signature {
-		return
+		cachePop(path)
+		return nil
+	}
+	if e := statusIndex[path]; e != nil {
+		entry := e.Value.(*cacheEntry)
+		if entry.signature == *signature && bytes.Equal(entry.status, status) {
+			statusCache.MoveToBack(e)
+			return entry
+		}
+		cachePop(path)
 	}
 	entry := &cacheEntry{path: path, signature: *signature, status: bytes.Clone(status)}
 	statusIndex[path] = statusCache.PushBack(entry)
@@ -223,6 +233,7 @@ func rememberStatus(path string, signature *jsonstore.Signature, status json.Raw
 		statusCache.Remove(oldest)
 		delete(statusIndex, oldest.Value.(*cacheEntry).path)
 	}
+	return entry
 }
 
 // Status contains bounded collection metadata. Opaque reads remain available for legacy files.
@@ -731,6 +742,11 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	}
 	path := s.absPath(id)
 	preSig := statusSignature(path)
+	if len(r.Items) == 0 && r.IPOnlyConns.Sign() == 0 && r.Dropped.Sign() == 0 {
+		if status, err := refreshIdleReport(ctx, path, preSig, r, dayKey, stamp); status != nil || err != nil {
+			return status, err
+		}
+	}
 	d, err := s.read(id)
 	if err != nil {
 		if errors.Is(err, ErrInvalid) {
@@ -924,7 +940,9 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	if err != nil {
 		return nil, err
 	}
-	rememberStatus(path, signature, statusRaw)
+	if entry := rememberStatus(path, signature, statusRaw); entry != nil && entry.signature.Ino != 0 {
+		entry.idle = newIdleHistory(raw, statusRaw, dayKey)
+	}
 	return status, nil
 }
 

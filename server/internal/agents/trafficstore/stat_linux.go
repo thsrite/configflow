@@ -3,8 +3,12 @@
 package trafficstore
 
 import (
+	"io"
 	"io/fs"
+	"os"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 
 	"configflow/internal/jsonstore"
 )
@@ -19,4 +23,14 @@ func signatureOf(info fs.FileInfo) jsonstore.Signature {
 		MtimeNs: st.Mtim.Nano(),
 		CtimeNs: st.Ctim.Nano(),
 	}
+}
+
+func copyFile(dst, src *os.File) error {
+	if err := unix.IoctlFileClone(int(dst.Fd()), int(src.Fd())); err == nil {
+		return nil
+	}
+	// Filesystems and sandbox policies can reject the ioctl even when an
+	// ordinary copy is permitted. Both descriptors still start at offset zero.
+	_, err := io.Copy(dst, src)
+	return err
 }
