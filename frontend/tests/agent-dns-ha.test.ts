@@ -6,7 +6,7 @@ import { Select } from '@/components/ui/select'
 import { agentApi } from '@/api'
 import { confirm, confirmDanger, notify } from '@/lib/feedback'
 
-vi.mock('@/api', () => ({ agentApi: { getDNSHA: vi.fn(), setDNSHA: vi.fn(), removeDNSHA: vi.fn() } }))
+vi.mock('@/api', () => ({ agentApi: { getDNSHA: vi.fn(), getDockerHAEnvironment: vi.fn(), setDNSHA: vi.fn(), removeDNSHA: vi.fn() } }))
 vi.mock('@/lib/feedback', () => ({
   notify: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
   confirm: vi.fn(),
@@ -403,7 +403,19 @@ describe('disabling DNS high availability', () => {
 
 
 describe('service-specific high availability installation entry', () => {
-  it.each(['shell', 'docker'])('offers the installation guide for a %s member without enabling HA', async deployment => {
+  it('checks the installed Shell host, then offers backup installation when ready', async () => {
+    vi.mocked(agentApi.getDockerHAEnvironment)
+      .mockResolvedValueOnce({ data: { oxidns_ha_environment: { missing_tools: ['keepalived', 'jq'] } } } as any)
+      .mockResolvedValueOnce({ data: { oxidns_ha_environment: { missing_tools: [] } } } as any)
+    const wrapper = render({ deployment_method: 'shell' }, [])
+    await click('配置 DNS 主备')
+    expect(document.body.textContent).toContain('需要准备 keepalived、jq')
+    expect(document.getElementById('dns-ha-vip-oxi-1')).toBeNull()
+    await click('重新检查')
+    await click('安装到另一台设备')
+    expect(wrapper.emitted('install-backup')).toHaveLength(1)
+  })
+  it.each(['docker'])('offers the installation guide for a %s member without enabling HA', async deployment => {
     const wrapper = render({ deployment_method: deployment })
     await click('设置 DNS 高可用')
     await click('打开高可用安装引导')

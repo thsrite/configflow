@@ -192,6 +192,7 @@
               :blocked="deploymentBusy(agent.id) || upgradeBusy(agent.id) || pushingIds.has(agent.id)"
               @changed="loadAgents"
               @install-guide="openOxiDNSHAGuide(agent)"
+              @install-backup="openBackupInstaller(agent)"
             />
 
             <OxiDNSRuleUpdate v-if="agent.service_type === 'oxidns'" :ref="instance => setRuleUpdateRef(agent.id, instance)"
@@ -950,6 +951,7 @@ import SectionCard from '@/components/common/SectionCard.vue'
 import StatTile from '@/components/common/StatTile.vue'
 import StatusDot from '@/components/common/StatusDot.vue'
 import { confirm, confirmDanger, notify } from '@/lib/feedback'
+import { readInstallCommand, installCommandUpdateMessage } from '@/lib/readInstallCommand'
 import { copyText } from '@/lib/clipboard'
 import { listItemStyle } from '@/lib/motion'
 import { agentApi, type AgentInstallScriptParams, type AgentLogSource } from '@/api'
@@ -1163,6 +1165,14 @@ const openOxiDNSHAGuide = (agent: Agent) => {
   shellHAStep.value = 'pair'
   scriptDialogVisible.value = true
 }
+function openBackupInstaller(primary: Agent) {
+  showGenerateScriptDialog()
+  scriptForm.value.type = 'oxidns'
+  onServiceTypeChange()
+  oxidnsInstallMode.value = 'ha'
+  const id = primary.profile_id || defaultProfileId.value
+  haGuideProfile.value = { id, name: profileStore.profileName(id) }
+}
 const gatewayInstallContext = ref<{ profileId: string; profileName: string } | null>(null)
 const openGatewayInstaller = () => {
   gatewayInstallContext.value = { profileId: profileStore.activeProfileId.value, profileName: activeProfileName.value }
@@ -1332,28 +1342,6 @@ const resetCoreInstallCommand = () => {
 }
 
 watch([shellAio, aioCoreInstall, scriptDialogVisible, coreInstallTarget], resetCoreInstallCommand, { flush: 'sync' })
-
-const installCommandUpdateMessage = '当前服务不支持短安装链接，请更新 ConfigFlow 后重试'
-
-const readInstallCommand = (data: unknown, baseUrl: URL) => {
-  if (!data || typeof data !== 'object') throw new Error(installCommandUpdateMessage)
-  const { script, download_path: path, expires_at: expiresAt } = data as Record<string, unknown>
-  if (typeof script !== 'string' || !script.startsWith('#!')) throw new Error(installCommandUpdateMessage)
-  if (typeof path !== 'string' || !/^\/api\/agents\/i\/[A-Za-z0-9_-]{22}$/.test(path)) {
-    throw new Error('服务返回的安装链接无效，请更新 ConfigFlow 后重试')
-  }
-  if (typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now() / 1000) {
-    throw new Error('安装链接已失效，请重新生成')
-  }
-  const url = new URL(baseUrl)
-  url.pathname = `${url.pathname.replace(/\/+$/, '')}${path}`
-  return {
-    script, url: url.toString(),
-    expiry: new Date(expiresAt * 1000).toLocaleString('zh-CN', {
-      month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false
-    })
-  }
-}
 
 const installCommandError = (error: any, fallback: string) => [404, 405].includes(error.response?.status)
   ? installCommandUpdateMessage

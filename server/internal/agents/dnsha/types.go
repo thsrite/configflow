@@ -241,14 +241,15 @@ type EnvironmentView struct {
 
 // EnvironmentProof contains only installation-guide fields.
 type EnvironmentProof struct {
-	Kind         string   `json:"kind"`
-	Ready        bool     `json:"ready"`
-	Network      string   `json:"network"`
-	HostID       string   `json:"host_id"`
-	HostIDSource string   `json:"host_id_source"`
-	HostBootID   string   `json:"host_boot_id"`
-	Interface    string   `json:"interface"`
-	Blockers     []string `json:"blockers"`
+	MissingTools *[]string `json:"missing_tools,omitempty"`
+	Kind         string    `json:"kind"`
+	Ready        bool      `json:"ready"`
+	Network      string    `json:"network"`
+	HostID       string    `json:"host_id"`
+	HostIDSource string    `json:"host_id_source"`
+	HostBootID   string    `json:"host_boot_id"`
+	Interface    string    `json:"interface"`
+	Blockers     []string  `json:"blockers"`
 }
 
 type payload struct {

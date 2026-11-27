@@ -68,6 +68,7 @@ export interface DockerHAEnvironment {
   oxidns_ha_container_protocols: number[]
   oxidns_ha_handoff_protocols: number[]
   oxidns_ha_environment: {
+    missing_tools?: string[]
     kind: string
     ready: boolean
     network?: string

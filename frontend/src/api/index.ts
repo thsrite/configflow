@@ -443,7 +443,7 @@ export interface AgentInstallScriptParams {
   service_unit?: string; service_binary?: string; stop_command?: string;
   start_command?: string; status_command?: string; install_core?: boolean;
   /** 仅原生 OxiDNS 单服务：自动准备 keepalived 与高可用工具。 */
-  prepare_dns_ha?: boolean;
+  prepare_dns_ha?: boolean; prepare_existing?: boolean;
   mihomo_agent_port?: number; oxidns_agent_port?: number;
   mihomo_config_path?: string; oxidns_config_path?: string;
   mihomo_service_unit?: string; oxidns_service_unit?: string;
