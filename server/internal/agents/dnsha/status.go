@@ -201,6 +201,10 @@ func (s *Service) Environment(ctx context.Context, id string) (EnvironmentView, 
 	}
 	env := o.obj("oxidns_ha_environment")
 	proof := EnvironmentProof{Kind: env.text("kind"), Ready: env.isTrue("ready"), Network: env.text("network"), HostID: env.text("host_id"), HostIDSource: env.text("host_id_source"), HostBootID: env.text("host_boot_id"), Interface: limited(env.text("interface"), 64), Blockers: []string{}}
+	var missing []string
+	if proof.Kind == "native" && json.Unmarshal(env["missing_tools"], &missing) == nil && missing != nil {
+		proof.MissingTools = &missing
+	}
 	if proof.Kind != "native" && proof.Kind != "container" {
 		proof.Kind = "unknown"
 	}

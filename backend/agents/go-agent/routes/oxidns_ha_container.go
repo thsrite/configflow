@@ -55,14 +55,15 @@ type haCompanionEvidence struct {
 }
 
 type haEnvironmentInfo struct {
-	Kind         string   `json:"kind"`
-	Network      string   `json:"network,omitempty"`
-	Ready        bool     `json:"ready"`
-	HostID       string   `json:"host_id"`
-	HostIDSource string   `json:"host_id_source"`
-	HostBootID   string   `json:"host_boot_id,omitempty"`
-	Interface    string   `json:"interface,omitempty"`
-	Blockers     []string `json:"blockers"`
+	MissingTools *[]string `json:"missing_tools,omitempty"`
+	Kind         string    `json:"kind"`
+	Network      string    `json:"network,omitempty"`
+	Ready        bool      `json:"ready"`
+	HostID       string    `json:"host_id"`
+	HostIDSource string    `json:"host_id_source"`
+	HostBootID   string    `json:"host_boot_id,omitempty"`
+	Interface    string    `json:"interface,omitempty"`
+	Blockers     []string  `json:"blockers"`
 }
 
 func haDockerOptIn() bool     { return os.Getenv("CONFIGFLOW_DNS_HA") == "1" }
@@ -313,6 +314,13 @@ func haContainerInterface(cfg *Config, macvlan bool) (string, error) {
 func haEnvironment(cfg *Config) haEnvironmentInfo {
 	result := haEnvironmentInfo{Kind: "native", Ready: true, HostIDSource: "file", Blockers: []string{}}
 	if cfg == nil || cfg.ServiceManager != svc.ContainerManager {
+		missing := []string{}
+		for _, tool := range []string{"keepalived", "ip", "jq"} {
+			if _, err := haLookPath(tool); err != nil {
+				missing = append(missing, tool)
+			}
+		}
+		result.MissingTools = &missing
 		result.HostBootID = haBootIdentity(haNativeBootIDPath)
 		result.HostID = haHostIdentity("/etc/machine-id")
 		if result.HostID == "" {

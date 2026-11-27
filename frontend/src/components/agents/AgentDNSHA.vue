@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { Loader2, RefreshCw } from '@lucide/vue'
-import { agentApi } from '@/api'
+import { buildInstallCommand, DNS_HA_PREPARE_INTERFACE } from '@/lib/coreInstallCommand'
+import { readInstallCommand } from '@/lib/readInstallCommand'
+import DockerHAGuideCommand from './DockerHAGuideCommand.vue'
+import { agentApi, serverDomainApi } from '@/api'
 import { confirm, confirmDanger, notify } from '@/lib/feedback'
 import { oxidnsHaCopy } from '@/lib/oxidnsHaCopy'
 import { Button } from '@/components/ui/button'
@@ -16,7 +19,7 @@ import type { Agent } from '@/types'
 import { isDNSHAEnabled, type AgentDNSHAInput, type AgentDNSHAMember, type AgentDNSHARemoveResult, type AgentDNSHAStatus } from '@/types/agentDNSHA'
 
 const props = withDefaults(defineProps<{ agent: Agent; agents: Agent[]; blocked?: boolean; showInstallGuide?: boolean }>(), { showInstallGuide: true })
-const emit = defineEmits<{ changed: []; 'install-guide': [] }>()
+const emit = defineEmits<{ changed: []; 'install-guide': []; 'install-backup': [] }>()
 
 const enabled = computed(() => isDNSHAEnabled(props.agent.oxidns_ha))
 const config = computed(() => status.value?.config || (enabled.value ? props.agent.oxidns_ha! : null))
@@ -189,8 +192,46 @@ const vridError = computed(() => {
 const canEnable = computed(() => !enabled.value && !busy.value && !!selectedPeer.value
   && !!vip.value.trim() && !vipError.value && !vridError.value)
 
+const installedShell = computed(() => props.showInstallGuide && props.agent.deployment_method === 'shell' && !config.value && !publication.value && !leftover.value)
+const checkingTools = ref(false)
+const missingTools = ref<string[] | undefined>()
+const prepareCommand = ref('')
+const generating = ref(false)
+let checkId = 0
+async function checkTools() {
+  const id = ++checkId
+  checkingTools.value = true
+  error.value = ''
+  try {
+    const { data } = await agentApi.getDockerHAEnvironment(props.agent.id)
+    if (id === checkId) missingTools.value = data.oxidns_ha_environment?.missing_tools
+  } catch (failure) {
+    if (id === checkId) error.value = errorMessage(failure)
+  } finally {
+    if (id === checkId) checkingTools.value = false
+  }
+}
+async function generatePreparation() {
+  generating.value = true
+  error.value = ''
+  try {
+    const { data } = await serverDomainApi.get()
+    const base = new URL(data.server_domain || localStorage.getItem('serverDomain') || window.location.origin)
+    const response = await agentApi.generateInstallCommand({ type: 'oxidns', name: props.agent.name, port: Number(props.agent.port),
+      agent_ip: props.agent.host, server_url: base.toString().replace(/\/$/, ''), prepare_dns_ha: true })
+    const result = readInstallCommand(response.data, base)
+    if (!result.script.split('\n').slice(1,4).includes(DNS_HA_PREPARE_INTERFACE)) throw new Error('请更新面板后重新生成准备命令')
+    prepareCommand.value = buildInstallCommand(result.url)
+  } catch (failure) { error.value = errorMessage(failure) }
+  finally { generating.value = false }
+}
+const preparingHost = computed(() => installedShell.value && (checkingTools.value || !!missingTools.value?.length))
 watch(open, value => {
+  checkId++
+  prepareCommand.value = ''
+  missingTools.value = undefined
   if (!value) return
+  if (installedShell.value) void checkTools()
   error.value = ''
   canForce.value = false
   if (!enabled.value) {
@@ -345,7 +386,7 @@ async function disable(force: boolean) {
     </AgentStatusRow>
     <AgentStatusRow v-else label="DNS 高可用" status="未开启" tone="neutral">
       <template #actions>
-        <Button variant="ghost" size="sm" class="min-h-11 text-xs" aria-label="设置 DNS 高可用" @click="open = true">设置</Button>
+        <Button variant="ghost" size="sm" class="min-h-11 text-xs"  :aria-label="installedShell ? '配置 DNS 主备' : '设置 DNS 高可用'" @click="open = true">{{ installedShell ? '配置 DNS 主备' : '设置' }}</Button>
       </template>
       <template v-if="leftover" #notice>
         <p class="m-0 whitespace-pre-wrap text-warning-accent" data-dns-ha-leftover>上次开启失败<template v-if="haState?.error">：{{ haState.error }}</template>。设备上可能仍有残留配置，可在「设置」中清除。</p>
@@ -355,8 +396,9 @@ async function disable(force: boolean) {
     <Dialog :open="open" @update:open="value => { if (!action) open = value }">
       <DialogContent class="max-w-[560px]">
         <DialogHeader>
-          <DialogTitle>DNS 高可用</DialogTitle>
+          <DialogTitle>{{ installedShell ? '配置 DNS 主备' : 'DNS 高可用' }}</DialogTitle>
           <DialogDescription v-if="config">{{ agent.name }} 与 {{ peerName }} 共用虚拟 IP {{ config.vip }}，一台故障时由另一台继续应答。</DialogDescription>
+          <DialogDescription v-else-if="installedShell">主机 · {{ agent.name }} · {{ agent.host }}</DialogDescription>
           <DialogDescription v-else>{{ agent.name }} 与另一台 OxiDNS 共用一个虚拟 IP，一台故障时由另一台继续应答。</DialogDescription>
         </DialogHeader>
         <dl v-if="config" class="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
@@ -366,9 +408,18 @@ async function disable(force: boolean) {
           <dt class="text-muted-foreground">VRID</dt><dd class="m-0 font-mono">{{ config.vrid }}</dd>
         </dl>
         <p v-if="config" class="m-0 text-xs text-muted-foreground">当前主备以实际虚拟 IP 持有情况为准。如需更换对端或虚拟 IP，请先停用后重新开启。</p>
-        <form v-else :id="`dns-ha-form-${agent.id}`" class="min-w-0 space-y-4" @submit.prevent="enable">
+        <section v-if="installedShell && (preparingHost || missingTools === undefined)" class="space-y-2">
+          <p v-if="checkingTools" role="status">正在检查主机工具…</p>
+          <template v-else>
+            <p>{{ missingTools?.length ? '需要准备 ' + missingTools.join('、') : '当前 Agent 尚未报告主机工具，可先运行准备命令。' }}</p>
+            <DockerHAGuideCommand v-if="prepareCommand" :title="'在 ' + agent.host + ' 执行'" :command="prepareCommand" />
+            <Button v-else variant="outline" :disabled="generating" @click="generatePreparation">生成准备命令</Button>
+            <Button variant="ghost" @click="checkTools">重新检查</Button>
+          </template>
+        </section>
+        <form v-if="!config && !preparingHost" :id="`dns-ha-form-${agent.id}`" class="min-w-0 space-y-4" @submit.prevent="enable">
           <fieldset :disabled="busy" class="m-0 min-w-0 space-y-4 border-0 p-0">
-            <FormField label="备机" :html-for="`dns-ha-peer-${agent.id}`" v-bind="oxidnsHaCopy.peer">
+            <FormField v-if="!installedShell || candidates.length" label="备机" :html-for="`dns-ha-peer-${agent.id}`" v-bind="oxidnsHaCopy.peer">
               <Select v-model="peer" :disabled="busy">
                 <SelectTrigger :id="`dns-ha-peer-${agent.id}`" class="min-h-11 w-full" aria-label="备机"><SelectValue placeholder="选择另一台 OxiDNS" /></SelectTrigger>
                 <SelectContent class="max-w-(--reka-select-content-available-width)">
@@ -377,6 +428,8 @@ async function disable(force: boolean) {
               </Select>
               <p v-if="!candidates.length" class="m-0 text-xs text-warning-accent">同一配置空间内没有可用的另一台 OxiDNS（需尚未加入其他高可用组）。</p>
             </FormField>
+            <div v-if="installedShell && !candidates.length"><p>当前配置空间还没有备用 OxiDNS。</p><Button type="button" variant="outline" @click="open = false; emit('install-backup')">安装到另一台设备</Button></div>
+            <template v-if="!installedShell || selectedPeer">
             <FormField label="虚拟 IP" :html-for="`dns-ha-vip-${agent.id}`" v-bind="oxidnsHaCopy.vip">
               <Input :id="`dns-ha-vip-${agent.id}`" v-model="vip" class="min-h-11 font-mono" placeholder="192.0.2.53" autocomplete="off" spellcheck="false" inputmode="decimal" :aria-invalid="!!vipError || undefined" />
               <p v-if="vipError" class="m-0 text-xs text-destructive-accent">{{ vipError }}</p>
@@ -390,11 +443,12 @@ async function disable(force: boolean) {
                 </FormField>
               </div>
             </details>
+            </template>
           </fieldset>
         </form>
         <p v-if="leftover" class="m-0 rounded-md border border-border p-3 text-xs leading-relaxed text-warning-accent" data-dns-ha-leftover-hint>上次开启失败，部分 Agent 上可能仍保留 keepalived 配置。请先清除残留配置，再重新开启。</p>
         <p v-if="config" class="m-0 text-xs leading-relaxed text-muted-foreground">停用后虚拟 IP 下线，请到上游路由页重新发布 DHCP DNS 与 DNS 劫持。</p>
-        <div v-else class="rounded-md border border-border p-3 text-xs leading-relaxed text-muted-foreground">
+        <div v-else-if="!installedShell" class="rounded-md border border-border p-3 text-xs leading-relaxed text-muted-foreground">
           <p class="m-0 font-medium text-foreground">开启前请确认</p>
           <ul class="m-0 mt-1.5 list-disc space-y-1 pl-4">
             <li>开启时会把本配置空间已保存的配置与规则发布到两台；备机检查成功后才更新主机，任一步失败都会停止后续步骤。</li>
@@ -414,7 +468,7 @@ async function disable(force: boolean) {
           <Button v-else-if="leftover" variant="outline" class="min-h-11 sm:mr-auto" :disabled="busy" @click="disable(false)"><Loader2 v-if="action === 'disable'" class="size-3.5 animate-spin" />清除残留配置</Button>
           <Button v-if="(config || leftover) && canForce" variant="outline" class="min-h-11" :disabled="busy" @click="disable(true)"><Loader2 v-if="action === 'force'" class="size-3.5 animate-spin" />强制清除记录</Button>
           <Button variant="outline" class="min-h-11" :disabled="!!action" @click="open = false">关闭</Button>
-          <Button v-if="!config" :form="`dns-ha-form-${agent.id}`" type="submit" class="min-h-11" :disabled="!canEnable"><Loader2 v-if="action === 'enable'" class="size-3.5 animate-spin" />{{ action === 'enable' ? '正在开启…' : '开启' }}</Button>
+          <Button v-if="!config && (!installedShell || (selectedPeer && !preparingHost))" :form="`dns-ha-form-${agent.id}`" type="submit" class="min-h-11" :disabled="!canEnable"><Loader2 v-if="action === 'enable'" class="size-3.5 animate-spin" />{{ action === 'enable' ? '正在开启…' : '开启' }}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
