@@ -1088,8 +1088,10 @@ func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 			warnStore(path, date)
 			continue
 		}
-		if err := put(&d.days, date, day); err != nil {
-			d.days.Delete(date)
+		if day != nil {
+			if err := put(&d.days, date, day); err != nil {
+				d.days.Delete(date)
+			}
 		}
 	}
 	if d.storeState == StoreStateOK && preSig != nil {

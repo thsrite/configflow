@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -60,5 +61,33 @@ func TestAutoRoundReusesOnlyUnchangedFullTraffic(t *testing.T) {
 	}
 	if len(load(ctx, true).Days) != 0 {
 		t.Fatal("deleted report was reused")
+	}
+}
+
+func TestDayRecordsPreserveDiscoveryRankingOrder(t *testing.T) {
+	svc := &Service{Traffic: trafficstore.NewService(t.TempDir())}
+	a := Agent{ID: "ordered"}
+	path := svc.Traffic.Store().Path(a.ID)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	today, yesterday := now.Format("2006-01-02"), now.AddDate(0, 0, -1).Format("2006-01-02")
+	raw := fmt.Sprintf(`{"status":{"value":"running"},"days":{"%s":{"hosts":{"z.test":{"ports":{"443":2,"bad":[],"80":1},"by_route":{}},"broken":1,"a.test":{"by_route":{}}}},"%s":{"hosts":{}}}}`, today, yesterday)
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.loadTraffic(t.Context(), a, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want traffic
+	doc := svc.Traffic.Store().LoadDocument(a.ID, &now)
+	if err := project(doc, &want); err != nil {
+		t.Fatal(err)
+	}
+	want.storeState = string(doc.StoreState())
+	if !reflect.DeepEqual(got, want) || !reflect.DeepEqual(got.dayOrder, []string{today, yesterday}) || !reflect.DeepEqual(got.Days[today].hostOrder, []string{"z.test", "a.test"}) || !reflect.DeepEqual(got.Days[today].Hosts["z.test"].portOrder, []string{"443", "80"}) {
+		t.Fatal("day decoding changed validated records or storage order")
 	}
 }

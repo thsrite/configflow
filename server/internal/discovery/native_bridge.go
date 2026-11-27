@@ -48,7 +48,20 @@ func (s *Service) legacyLoadTraffic(ctx context.Context, a Agent, full bool) (tr
 			return cached.report, nil
 		}
 		doc := store.LoadDocument(a.ID, nil)
-		err = project(doc, &out)
+		if raw := doc.StatusJSON(); len(raw) > 0 {
+			if err := jsondecode.Unmarshal(raw, &out.Status); err != nil {
+				return traffic{}, err
+			}
+		}
+		out.Days = make(map[string]trafficDay)
+		for date, raw := range doc.DayRecords() {
+			var day trafficDay
+			if err := jsondecode.Unmarshal(raw, &day); err != nil {
+				return traffic{}, err
+			}
+			out.Days[date] = day
+			out.dayOrder = append(out.dayOrder, date)
+		}
 		state = doc.StoreState()
 		revision = doc.Revision()
 	} else {
