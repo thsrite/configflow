@@ -428,6 +428,29 @@ func nowOr(now *int64) int64 {
 	return nowSeconds()
 }
 
+// The ranking_rows primary key starts with (agent_id, recorder, start).
+// Seek to each distinct prefix so an hourly expiry with nothing to remove
+// touches only a few index pages per recorder.
+func expireRankingRows(c *rankConn, cutoff int64) error {
+	const first = "SELECT agent_id, recorder FROM ranking_rows"
+	const ordered = " ORDER BY agent_id, recorder LIMIT 1"
+	var agentID, recorder string
+	err := c.queryRow(first + ordered).Scan(&agentID, &recorder)
+	for err == nil {
+		if _, err := c.write("DELETE FROM ranking_rows WHERE agent_id = ? AND recorder = ? AND start < ?", agentID, recorder, cutoff); err != nil {
+			return err
+		}
+		err = c.queryRow("SELECT recorder FROM ranking_rows WHERE agent_id = ? AND recorder > ? ORDER BY recorder LIMIT 1", agentID, recorder).Scan(&recorder)
+		if errors.Is(err, sql.ErrNoRows) {
+			err = c.queryRow(first+" WHERE agent_id > ?"+ordered, agentID).Scan(&agentID, &recorder)
+		}
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	return err
+}
+
 // Maintain is maintain(agent_ids, now): merge old hours into days, drop
 // expired data and removed Agents; at most once per hour.
 func (s *RankingStore) Maintain(ctx context.Context, agentIDs []string, now *int64) error {
@@ -493,10 +516,11 @@ func (s *RankingStore) Maintain(ctx context.Context, agentIDs []string, now *int
 				return err
 			}
 		}
-		for _, table := range []string{"ranking_periods", "ranking_rows"} {
-			if _, err := c.write("DELETE FROM "+table+" WHERE start < ?", cutoff); err != nil {
-				return err
-			}
+		if err := expireRankingRows(c, cutoff); err != nil {
+			return err
+		}
+		if _, err := c.write("DELETE FROM ranking_periods WHERE start < ?", cutoff); err != nil {
+			return err
 		}
 		if _, err := c.write("DELETE FROM ranking_slots WHERE start < ?", cutoff); err != nil {
 			return err
