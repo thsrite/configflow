@@ -4,6 +4,7 @@ import (
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"encoding/json"
+	"iter"
 	"math/big"
 )
 
@@ -44,6 +45,9 @@ func (d Document) Days() map[string]Day {
 	return out
 }
 
+// DayRecords visits the validated day buckets in storage order.
+func (d Document) DayRecords() iter.Seq2[string, json.RawMessage] { return d.days.All() }
+
 // StatusJSON returns an independent copy of the persisted metadata.
 func (d Document) StatusJSON() json.RawMessage { return member(d.fields, "status") }
 
@@ -55,22 +59,24 @@ func (d Document) StoreState() StoreState {
 	return StoreStateOK
 }
 
-func readableDay(raw json.RawMessage) (model.Fields, bool) {
+// A nil replacement means the original day already passed validation.
+func readableDay(raw json.RawMessage) (*model.Fields, bool) {
 	day, err := object(raw)
 	if err != nil {
-		return day, false
+		return nil, false
 	}
 	for _, key := range []string{"ip_only_conns", "dropped"} {
 		if value, exists := day.Get(key); exists && string(value) != "null" {
 			if _, err = addNumber(value, zeroCount); err != nil {
-				return day, false
+				return nil, false
 			}
 		}
 	}
 	hosts, err := readRecords(member(day, "hosts"))
 	if err != nil {
-		return day, false
+		return nil, false
 	}
+	changedHost := false
 	for _, name := range hosts.keys() {
 		raw := recordMember(hosts, name)
 		host, err := object(raw)
@@ -79,6 +85,7 @@ func readableDay(raw json.RawMessage) (model.Fields, bool) {
 			continue
 		}
 		badHost := false
+		changedPorts := false
 		for _, key := range []string{"first_seen", "last_seen"} {
 			if raw, exists := host.Get(key); exists && string(raw) != "null" {
 				var value string
@@ -98,7 +105,8 @@ func readableDay(raw json.RawMessage) (model.Fields, bool) {
 						ports.delete(port)
 					}
 				}
-				if put(&host, "ports", ports) != nil {
+				changedPorts = ports.len() != len(ports.order)
+				if changedPorts && put(&host, "ports", ports) != nil {
 					badHost = true
 				}
 			}
@@ -151,18 +159,28 @@ func readableDay(raw json.RawMessage) (model.Fields, bool) {
 				routes.delete(key)
 			}
 		}
-		if err = put(&host, "by_route", routes); err != nil {
-			hosts.delete(name)
+		changedRoutes := routes.len() != len(routes.order)
+		if !changedPorts && !changedRoutes {
 			continue
+		}
+		changedHost = true
+		if changedRoutes {
+			if err = put(&host, "by_route", routes); err != nil {
+				hosts.delete(name)
+				continue
+			}
 		}
 		if err = recordPut(&hosts, name, host); err != nil {
 			hosts.delete(name)
 		}
 	}
-	if put(&day, "hosts", hosts) != nil {
-		return day, false
+	if !changedHost && hosts.len() == len(hosts.order) {
+		return nil, true
 	}
-	return day, true
+	if put(&day, "hosts", hosts) != nil {
+		return nil, false
+	}
+	return &day, true
 }
 
 var zeroCount = new(big.Int)

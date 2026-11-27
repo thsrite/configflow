@@ -25,6 +25,14 @@ func project[A, B any](v A, out *B) error {
 func legacySupported(text, minimum string) bool {
 	return text != "" && version.CompareAgent(text, minimum) >= 0
 }
+
+type roundTrafficKey struct{}
+type roundTraffic map[string]roundTrafficEntry
+type roundTrafficEntry struct {
+	report   traffic
+	revision trafficstore.DocumentRevision
+}
+
 func (s *Service) legacyLoadTraffic(ctx context.Context, a Agent, full bool) (traffic, error) {
 	store, err := s.trafficStore()
 	if err != nil {
@@ -32,10 +40,30 @@ func (s *Service) legacyLoadTraffic(ctx context.Context, a Agent, full bool) (tr
 	}
 	var out traffic
 	var state trafficstore.StoreState
+	var revision trafficstore.DocumentRevision
+	var cache roundTraffic
 	if full {
+		cache, _ = ctx.Value(roundTrafficKey{}).(roundTraffic)
+		if cached, ok := cache[a.ID]; ok && cached.revision.Current() {
+			return cached.report, nil
+		}
 		doc := store.LoadDocument(a.ID, nil)
-		err = project(doc, &out)
+		if raw := doc.StatusJSON(); len(raw) > 0 {
+			if err := jsondecode.Unmarshal(raw, &out.Status); err != nil {
+				return traffic{}, err
+			}
+		}
+		out.Days = make(map[string]trafficDay)
+		for date, raw := range doc.DayRecords() {
+			var day trafficDay
+			if err := jsondecode.Unmarshal(raw, &day); err != nil {
+				return traffic{}, err
+			}
+			out.Days[date] = day
+			out.dayOrder = append(out.dayOrder, date)
+		}
 		state = doc.StoreState()
+		revision = doc.Revision()
 	} else {
 		snap := store.InspectStatus(a.ID)
 		state = snap.State
@@ -49,6 +77,9 @@ func (s *Service) legacyLoadTraffic(ctx context.Context, a Agent, full bool) (tr
 	} else {
 		out.storeState = string(trafficstore.StoreStateOK)
 		out.storeMessage = ""
+	}
+	if cache != nil && err == nil {
+		cache[a.ID] = roundTrafficEntry{out, revision}
 	}
 	return out, err
 }

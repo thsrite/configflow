@@ -100,6 +100,7 @@ type cacheEntry struct {
 	path      string
 	signature jsonstore.Signature
 	status    json.RawMessage
+	idle      *idleHistory
 }
 
 type damagedEntry struct {
@@ -207,14 +208,23 @@ func cacheableStatus(status json.RawMessage) bool {
 
 // rememberStatus is _remember_status(path, signature, status): reuse the
 // bounded metadata only while its source file is still unchanged.
-func rememberStatus(path string, signature *jsonstore.Signature, status json.RawMessage) {
-	cachePop(path)
+func rememberStatus(path string, signature *jsonstore.Signature, status json.RawMessage) *cacheEntry {
 	if signature == nil || !cacheableStatus(status) {
-		return
+		cachePop(path)
+		return nil
 	}
 	current := statusSignature(path)
 	if current == nil || *current != *signature {
-		return
+		cachePop(path)
+		return nil
+	}
+	if e := statusIndex[path]; e != nil {
+		entry := e.Value.(*cacheEntry)
+		if entry.signature == *signature && bytes.Equal(entry.status, status) {
+			statusCache.MoveToBack(e)
+			return entry
+		}
+		cachePop(path)
 	}
 	entry := &cacheEntry{path: path, signature: *signature, status: bytes.Clone(status)}
 	statusIndex[path] = statusCache.PushBack(entry)
@@ -223,6 +233,7 @@ func rememberStatus(path string, signature *jsonstore.Signature, status json.Raw
 		statusCache.Remove(oldest)
 		delete(statusIndex, oldest.Value.(*cacheEntry).path)
 	}
+	return entry
 }
 
 // Status contains bounded collection metadata. Opaque reads remain available for legacy files.
@@ -517,6 +528,7 @@ func (s *NativeStore) absPath(id string) string {
 
 // Document retains unknown persisted members; typed merge code opens only the records it updates.
 type Document struct {
+	revision   DocumentRevision
 	fields     model.Fields
 	days       model.Fields
 	storeState StoreState
@@ -731,6 +743,11 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	}
 	path := s.absPath(id)
 	preSig := statusSignature(path)
+	if len(r.Items) == 0 && r.IPOnlyConns.Sign() == 0 && r.Dropped.Sign() == 0 {
+		if status, err := refreshIdleReport(ctx, path, preSig, r, dayKey, stamp); status != nil || err != nil {
+			return status, err
+		}
+	}
 	d, err := s.read(id)
 	if err != nil {
 		if errors.Is(err, ErrInvalid) {
@@ -924,7 +941,9 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	if err != nil {
 		return nil, err
 	}
-	rememberStatus(path, signature, statusRaw)
+	if entry := rememberStatus(path, signature, statusRaw); entry != nil && entry.signature.Ino != 0 {
+		entry.idle = newIdleHistory(raw, statusRaw, dayKey)
+	}
 	return status, nil
 }
 
@@ -994,6 +1013,36 @@ func (s *NativeStore) StatusJSON(id string) json.RawMessage {
 	return member(d.fields, "status")
 }
 
+// DocumentRevision identifies the file and retention day used by LoadDocument.
+type DocumentRevision struct {
+	path      string
+	day       string
+	signature jsonstore.Signature
+}
+
+// Revision can be kept independently of the decoded document.
+func (d Document) Revision() DocumentRevision { return d.revision }
+
+// Current also checks whether another reader or writer has since marked the file damaged.
+func (r DocumentRevision) Current() bool {
+	if r.path == "" || r.day != now().Format("2006-01-02") {
+		return false
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	sig := statusSignature(r.path)
+	if sig == nil || *sig != r.signature {
+		return false
+	}
+	if elem := damagedIndex[r.path]; elem != nil {
+		entry := elem.Value.(*damagedEntry)
+		if entry.signature == r.signature && (entry.dayKey == "" || entry.dayKey == r.day) {
+			return false
+		}
+	}
+	return true
+}
+
 // LoadDocument reads and prunes the returned copy without writing the file.
 func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 	current := now()
@@ -1057,9 +1106,14 @@ func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 			warnStore(path, date)
 			continue
 		}
-		if err := put(&d.days, date, day); err != nil {
-			d.days.Delete(date)
+		if day != nil {
+			if err := put(&d.days, date, day); err != nil {
+				d.days.Delete(date)
+			}
 		}
+	}
+	if d.storeState == StoreStateOK && preSig != nil {
+		d.revision = DocumentRevision{path: path, day: today, signature: *preSig}
 	}
 	return d
 }
