@@ -226,6 +226,7 @@ async function generatePreparation() {
   finally { generating.value = false }
 }
 const preparingHost = computed(() => installedShell.value && (checkingTools.value || !!missingTools.value?.length))
+const showPreparation = computed(() => installedShell.value && (preparingHost.value || missingTools.value === undefined))
 watch(open, value => {
   checkId++
   prepareCommand.value = ''
@@ -408,13 +409,11 @@ async function disable(force: boolean) {
           <dt class="text-muted-foreground">VRID</dt><dd class="m-0 font-mono">{{ config.vrid }}</dd>
         </dl>
         <p v-if="config" class="m-0 text-xs text-muted-foreground">当前主备以实际虚拟 IP 持有情况为准。如需更换对端或虚拟 IP，请先停用后重新开启。</p>
-        <section v-if="installedShell && (preparingHost || missingTools === undefined)" class="space-y-2">
+        <section v-if="showPreparation" class="min-w-0 space-y-3">
           <p v-if="checkingTools" role="status">正在检查主机工具…</p>
           <template v-else>
-            <p>{{ missingTools?.length ? '需要准备 ' + missingTools.join('、') : '当前 Agent 尚未报告主机工具，可先运行准备命令。' }}</p>
-            <DockerHAGuideCommand v-if="prepareCommand" :title="'在 ' + agent.host + ' 执行'" :command="prepareCommand" wrap />
-            <Button v-else variant="outline" :disabled="generating" @click="generatePreparation">生成准备命令</Button>
-            <Button variant="ghost" @click="checkTools">重新检查</Button>
+            <p class="m-0 text-sm text-muted-foreground">{{ missingTools?.length ? '需要准备 ' + missingTools.join('、') : '当前 Agent 尚未报告主机工具，可先运行准备命令。' }}</p>
+            <DockerHAGuideCommand v-if="prepareCommand" title="在主机终端执行" :command="prepareCommand" wrap />
           </template>
         </section>
         <form v-if="!config && !preparingHost" :id="`dns-ha-form-${agent.id}`" class="min-w-0 space-y-4" @submit.prevent="enable">
@@ -463,11 +462,15 @@ async function disable(force: boolean) {
           <Button v-if="showInstallGuide" variant="outline" class="mt-3 min-h-11" :disabled="busy" @click="open = false; emit('install-guide')">打开高可用安装引导</Button>
         </div>
         <p v-if="error" role="alert" class="m-0 whitespace-pre-wrap text-sm text-destructive-accent [overflow-wrap:anywhere]">{{ error }}</p>
-        <DialogFooter class="flex-wrap gap-2">
+        <DialogFooter class="flex-wrap gap-2" :class="showPreparation && 'flex-row items-center justify-end border-t border-border/60 pt-3'">
+          <template v-if="showPreparation">
+            <Button :variant="prepareCommand ? 'default' : 'ghost'" size="sm" :disabled="checkingTools || generating" @click="checkTools"><RefreshCw class="size-3.5" :class="checkingTools && 'animate-spin'" />重新检查</Button>
+            <Button v-if="!prepareCommand" size="sm" :disabled="checkingTools || generating" @click="generatePreparation">生成准备命令</Button>
+          </template>
           <Button v-if="config" variant="outline" class="min-h-11 sm:mr-auto" :disabled="busy" @click="disable(false)"><Loader2 v-if="action === 'disable'" class="size-3.5 animate-spin" />停用</Button>
           <Button v-else-if="leftover" variant="outline" class="min-h-11 sm:mr-auto" :disabled="busy" @click="disable(false)"><Loader2 v-if="action === 'disable'" class="size-3.5 animate-spin" />清除残留配置</Button>
           <Button v-if="(config || leftover) && canForce" variant="outline" class="min-h-11" :disabled="busy" @click="disable(true)"><Loader2 v-if="action === 'force'" class="size-3.5 animate-spin" />强制清除记录</Button>
-          <Button variant="outline" class="min-h-11" :disabled="!!action" @click="open = false">关闭</Button>
+          <Button v-if="!showPreparation" variant="outline" class="min-h-11" :disabled="!!action" @click="open = false">关闭</Button>
           <Button v-if="!config && (!installedShell || (selectedPeer && !preparingHost))" :form="`dns-ha-form-${agent.id}`" type="submit" class="min-h-11" :disabled="!canEnable"><Loader2 v-if="action === 'enable'" class="size-3.5 animate-spin" />{{ action === 'enable' ? '正在开启…' : '开启' }}</Button>
         </DialogFooter>
       </DialogContent>
