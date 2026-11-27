@@ -218,7 +218,7 @@ async function generatePreparation() {
     const { data } = await serverDomainApi.get()
     const base = new URL(data.server_domain || localStorage.getItem('serverDomain') || window.location.origin)
     const response = await agentApi.generateInstallCommand({ type: 'oxidns', name: props.agent.name, port: Number(props.agent.port),
-      agent_ip: props.agent.host, server_url: base.toString().replace(/\/$/, ''), prepare_dns_ha: true })
+      agent_ip: props.agent.host, server_url: base.toString().replace(/\/$/, ''), prepare_dns_ha: true, prepare_existing: true })
     const result = readInstallCommand(response.data, base)
     if (!result.script.split('\n').slice(1,4).includes(DNS_HA_PREPARE_INTERFACE)) throw new Error('请更新面板后重新生成准备命令')
     prepareCommand.value = buildInstallCommand(result.url)
@@ -386,7 +386,7 @@ async function disable(force: boolean) {
     </AgentStatusRow>
     <AgentStatusRow v-else label="DNS 高可用" status="未开启" tone="neutral">
       <template #actions>
-        <Button variant="ghost" size="sm" class="min-h-11 text-xs"  :aria-label="installedShell ? '配置 DNS 主备' : '设置 DNS 高可用'" @click="open = true">{{ installedShell ? '配置 DNS 主备' : '设置' }}</Button>
+        <Button variant="ghost" size="sm" class="min-h-11 text-xs" :aria-label="installedShell ? '配置 DNS 主备' : '设置 DNS 高可用'" @click="open = true">{{ installedShell ? '配置 DNS 主备' : '设置' }}</Button>
       </template>
       <template v-if="leftover" #notice>
         <p class="m-0 whitespace-pre-wrap text-warning-accent" data-dns-ha-leftover>上次开启失败<template v-if="haState?.error">：{{ haState.error }}</template>。设备上可能仍有残留配置，可在「设置」中清除。</p>

@@ -48,6 +48,7 @@ type AgentInstallOptions struct {
 	InstallCore             bool
 	ManageIPv4Forwarding    Forwarding
 	PrepareDNSHA            bool
+	PrepareExisting         bool
 	RegistrationToken       string
 	RegistrationKey         string
 }
@@ -293,6 +294,16 @@ done`
 fi
 `
 		replacements["agent_summary_port"] = "$DNS_HA_EFFECTIVE_PORT"
+		if o.PrepareExisting {
+			replacements["installation_choice"] = `if [ -f "$AGENT_DIR/oxidns/config.json" ]; then
+    AGENT_DIR="$AGENT_DIR/oxidns"
+    CONFIG_FILE="$AGENT_DIR/config.json"
+fi
+[ -f "$CONFIG_FILE" ] || [ -f "$AGENT_DIR/config.json" ] || agent_ha_fail "找不到现有 OxiDNS Agent，请在所选设备执行。"
+agent_prepare_dns_ha
+cf_complete "主备工具已准备，请返回面板重新检查。"
+exit 0`
+		}
 		if o.InstallCore {
 			replacements["core_install_phase"] = "if [ -z \"$DNS_HA_EXISTING_CONFIG\" ]; then\n" + replacements["core_install_phase"] + "fi\n"
 		}

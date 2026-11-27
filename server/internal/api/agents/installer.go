@@ -75,9 +75,9 @@ var installCommandFields = map[string]bool{
 	"health_dns_address": true, "health_dns_name": true, "deployment_health_timeout": true,
 	"mihomo_agent_port": true, "oxidns_agent_port": true, "mihomo_config_path": true, "oxidns_config_path": true,
 	"mihomo_service_unit": true, "oxidns_service_unit": true, "mihomo_service_binary": true, "oxidns_service_binary": true,
-	"ipv4_forwarding": true, "prepare_dns_ha": true,
+	"ipv4_forwarding": true, "prepare_dns_ha": true, "prepare_existing": true,
 }
-var installCommandBooleans = map[string]bool{"install_core": true, "ipv4_forwarding": true, "prepare_dns_ha": true}
+var installCommandBooleans = map[string]bool{"install_core": true, "ipv4_forwarding": true, "prepare_dns_ha": true, "prepare_existing": true}
 var installCommandNumbers = map[string]bool{"port": true, "mihomo_agent_port": true, "oxidns_agent_port": true, "deployment_health_timeout": true}
 
 // LegacyShellAgentRemoved is LEGACY_SHELL_AGENT_REMOVED.
@@ -259,6 +259,10 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 		return "", &installer.ValidationError{Message: "仅 OxiDNS 单服务 Go Agent 支持准备 DNS 高可用环境"}
 	}
 	prepareDNSHA := prepareHAValue == "true"
+	existing := paramDefault(params, "prepare_existing", "false")
+	if existing != "false" && (existing != "true" || !prepareDNSHA || installCore) {
+		return "", &installer.ValidationError{Message: "准备已有设备仅适用于 OxiDNS 高可用依赖"}
+	}
 	if installCore {
 		if (serviceType != "mihomo" && serviceType != "oxidns" && serviceType != "aio") || agentType != "go" {
 			return "", &installer.ValidationError{Message: "仅 Mihomo、OxiDNS 或同机双服务 Go Agent 支持同时安装核心"}
@@ -357,7 +361,7 @@ func renderInstallScript(c *httpx.Ctx, params installParams) (string, error) {
 			HealthURL: strip("health_url"), HealthDNSAddress: strip("health_dns_address"), HealthDNSName: strip("health_dns_name"),
 			DeploymentHealthTimeout: paramInt(params, "deployment_health_timeout", 30),
 			RegistrationToken:       paramDefault(params, "registration_token_"+serviceType, paramDefault(params, "registration_token", "")), RegistrationKey: paramDefault(params, "registration_key", ""),
-			InstallCore: installCore, ManageIPv4Forwarding: forwarding, PrepareDNSHA: prepareDNSHA,
+			InstallCore: installCore, ManageIPv4Forwarding: forwarding, PrepareDNSHA: prepareDNSHA, PrepareExisting: existing == "true",
 		})
 	}
 	if err != nil {

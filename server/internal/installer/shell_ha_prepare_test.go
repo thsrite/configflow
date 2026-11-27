@@ -45,6 +45,16 @@ func TestMarkersAndAutoInstallKeepNormalInstallerUnchanged(t *testing.T) {
 	notContains(t, ordinary, "agent_prepare_dns_ha")
 }
 
+func TestPrepareExistingStopsBeforeInstallation(t *testing.T) {
+	source := ok(RenderAgentInstall(AgentInstallOptions{AgentPort: 8080, ServerURL: "https://config.test", AgentName: "ha-node", ServiceType: "oxidns", PrepareDNSHA: true, PrepareExisting: true}))
+	contains(t, source, `CONFIG_FILE="$AGENT_DIR/config.json"`)
+	stop := strings.Index(source, "agent_prepare_dns_ha\ncf_complete")
+	if stop < 0 || stop > strings.Index(source, "for isolated_dir") || !strings.HasPrefix(source[stop:], "agent_prepare_dns_ha\ncf_complete \"主备工具已准备，请返回面板重新检查。\"\nexit 0") {
+		t.Fatal("existing host must finish before the single-service installer")
+	}
+	checkSh(t, source)
+}
+
 type haHarness struct {
 	tmp, script, root, events string
 	env                       env
