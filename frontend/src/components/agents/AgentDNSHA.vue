@@ -394,7 +394,7 @@ async function disable(force: boolean) {
     </AgentStatusRow>
 
     <Dialog :open="open" @update:open="value => { if (!action) open = value }">
-      <DialogContent class="max-w-[560px]">
+      <DialogContent class="max-w-[560px] grid-cols-[minmax(0,1fr)]">
         <DialogHeader>
           <DialogTitle>{{ installedShell ? '配置 DNS 主备' : 'DNS 高可用' }}</DialogTitle>
           <DialogDescription v-if="config">{{ agent.name }} 与 {{ peerName }} 共用虚拟 IP {{ config.vip }}，一台故障时由另一台继续应答。</DialogDescription>
@@ -412,7 +412,7 @@ async function disable(force: boolean) {
           <p v-if="checkingTools" role="status">正在检查主机工具…</p>
           <template v-else>
             <p>{{ missingTools?.length ? '需要准备 ' + missingTools.join('、') : '当前 Agent 尚未报告主机工具，可先运行准备命令。' }}</p>
-            <DockerHAGuideCommand v-if="prepareCommand" :title="'在 ' + agent.host + ' 执行'" :command="prepareCommand" />
+            <DockerHAGuideCommand v-if="prepareCommand" :title="'在 ' + agent.host + ' 执行'" :command="prepareCommand" wrap />
             <Button v-else variant="outline" :disabled="generating" @click="generatePreparation">生成准备命令</Button>
             <Button variant="ghost" @click="checkTools">重新检查</Button>
           </template>
