@@ -291,6 +291,8 @@ Host + macvlan：先按一种模式为第一台生成并保存文件，再切换
 
 在已有 Shell OxiDNS 的 Agent 卡片点 **配置 DNS 主备**，面板会检查当前主机。缺少工具时点「生成准备命令」，在页面指定的主机执行后点「重新检查」。旧版 Agent 未上报工具时也可以生成准备命令。
 
+![已安装的 OxiDNS 主机准备命令](../img/guide/oxidns-existing-shell-command.png)
+
 主机就绪后选择同一配置空间里的备用 OxiDNS，填入虚拟 IP 并开启。没有备用设备时点「安装到另一台设备」，待新 Agent 上线并绑定到同一空间，再回到主机卡片配对。
 
 如果提示缺少工具，按 [Linux 端准备步骤](#prepare-shell)生成并执行准备命令。它会补装高可用工具并更新 Agent，保留现有 OxiDNS、配置、端口和 Agent 身份。已有 keepalived 配置或服务发生冲突时会停止，先处理提示再继续。
