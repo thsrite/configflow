@@ -517,6 +517,7 @@ func (s *NativeStore) absPath(id string) string {
 
 // Document retains unknown persisted members; typed merge code opens only the records it updates.
 type Document struct {
+	revision   DocumentRevision
 	fields     model.Fields
 	days       model.Fields
 	storeState StoreState
@@ -994,6 +995,36 @@ func (s *NativeStore) StatusJSON(id string) json.RawMessage {
 	return member(d.fields, "status")
 }
 
+// DocumentRevision identifies the file and retention day used by LoadDocument.
+type DocumentRevision struct {
+	path      string
+	day       string
+	signature jsonstore.Signature
+}
+
+// Revision can be kept independently of the decoded document.
+func (d Document) Revision() DocumentRevision { return d.revision }
+
+// Current also checks whether another reader or writer has since marked the file damaged.
+func (r DocumentRevision) Current() bool {
+	if r.path == "" || r.day != now().Format("2006-01-02") {
+		return false
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	sig := statusSignature(r.path)
+	if sig == nil || *sig != r.signature {
+		return false
+	}
+	if elem := damagedIndex[r.path]; elem != nil {
+		entry := elem.Value.(*damagedEntry)
+		if entry.signature == r.signature && (entry.dayKey == "" || entry.dayKey == r.day) {
+			return false
+		}
+	}
+	return true
+}
+
 // LoadDocument reads and prunes the returned copy without writing the file.
 func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 	current := now()
@@ -1060,6 +1091,9 @@ func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 		if err := put(&d.days, date, day); err != nil {
 			d.days.Delete(date)
 		}
+	}
+	if d.storeState == StoreStateOK && preSig != nil {
+		d.revision = DocumentRevision{path: path, day: today, signature: *preSig}
 	}
 	return d
 }
