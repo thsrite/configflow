@@ -114,6 +114,8 @@ Mihomo 设置顶部是一张「IPv6」卡片：「配置」一组的「模式」
 
 客户端验收同时核对本次请求的源地址、端口、网站、Mihomo 新连接与 ROS 连接记录。ROS 未启用连接跟踪、使用 `notrack` 或记录无法读取时，该段保留「未验证」；验收不会自行开启跟踪。这次请求经过哪个节点，直接读 Mihomo 连接记录里的连接链，订阅（proxy-providers）中的节点同样识别；是否用 IPv6 连接节点，看 Mihomo 记录的实际节点远端地址，结果写明「本次请求经由「策略组 → 节点」，节点连接使用 IPv6 / IPv4」。Mihomo 1.19.34 实测 AnyTLS、Shadowsocks、VMess、VLESS、Trojan、TUIC 及订阅节点（含复用的连接）记录的都是节点的真实地址；开启 smux 时记录的是目标网站地址，使用 dialer-proxy 时看不到节点的连接，远端是域名时（如部分 Hysteria2 节点）也判断不了，这几种显示「无法确认」，不冒充已通过。经由 IPv4 节点时，可在「验收设置」把检测网址换成会分到 IPv6 节点的网站。Agent 1.9.5-go 起支持；更早的 Agent 只认 SOCKS5/HTTP 节点。
 
+![客户端这次经由 IPv4 节点：写明经由的策略组和节点，提示更换检测网址；主机开机恢复有缺项时才显示补齐按钮](img/guide/mihomo-ipv6-client-ipv4-node.png)
+
 ## 自动修改的范围
 
 - Linux Shell Mihomo Agent `1.8.50-go` 起支持。Docker 等不支持自动主机配置的环境保留只读说明。
