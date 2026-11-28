@@ -305,9 +305,12 @@ func (e *Edge) serveCompressed(w http.ResponseWriter, req *http.Request, file st
 	if req.Method == "HEAD" {
 		return
 	}
-	gz, _ := gzip.NewWriterLevel(w, 6)
+	gz := gzipPool.Get().(*gzip.Writer)
+	gz.Reset(w)
 	_, _ = io.Copy(gz, f)
 	_ = gz.Close()
+	gz.Reset(io.Discard)
+	gzipPool.Put(gz)
 }
 
 // nginxError writes nginx's default error page.
