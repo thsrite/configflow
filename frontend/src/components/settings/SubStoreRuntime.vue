@@ -11,7 +11,7 @@
         </SelectContent>
       </Select>
       <p :id="`${id}-description`" class="m-0 mt-0.5 text-[12px] leading-[18px] text-muted-foreground" aria-live="polite">
-        {{ saving ? '正在保存…' : mode === 'on_demand' ? '空闲 5 分钟后休眠' : '持续运行，随时就绪' }}
+        {{ saving ? '正在保存…' : mode === 'on_demand' ? `空闲约 ${idleText}后休眠` : '持续运行，随时就绪' }}
       </p>
     </template>
     <span v-else class="inline-flex min-h-8 items-center text-[12px] text-muted-foreground">由外部服务管理</span>
@@ -31,6 +31,10 @@ const id = useId()
 type Mode = 'on_demand' | 'always'
 const mode = ref<Mode>('on_demand')
 const saving = ref(false)
+const idleText = computed(() => {
+  const seconds = props.dependency.lifecycle?.idle_seconds ?? 10
+  return seconds >= 60 ? `${Math.round(seconds / 60)} 分钟` : `${seconds} 秒`
+})
 const disabled = computed(() => saving.value || props.dependency.update.state === 'running' || props.dependency.lifecycle?.state === 'updating')
 watch(() => props.dependency.lifecycle?.mode, value => { mode.value = value === 'always' ? 'always' : 'on_demand' }, { immediate: true })
 async function saveMode(value: unknown) {

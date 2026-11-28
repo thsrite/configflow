@@ -164,6 +164,44 @@ func TestIdleTimeBeginsAfterFailedTaskFinishes(t *testing.T) {
 	}
 }
 
+// The on-demand process is kept for IdleSeconds after its last use, then the
+// next tick stops it.
+func TestOnDemandStopsAfterTheDefaultIdleWindow(t *testing.T) {
+	h, rt, _ := lifecycleService(t)
+	ctx := context.Background()
+	rt.IdleSeconds = IdleSeconds
+	if IdleSeconds != 10 {
+		t.Fatalf("IdleSeconds = %v, the documented window is 10 seconds", IdleSeconds)
+	}
+	if err := rt.Use(ctx, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	age := func(seconds float64) {
+		t.Helper()
+		err := rt.withControl(ctx, func(ctx context.Context) error {
+			ts := SystemClock.Monotonic() - seconds
+			return rt.writeState(ctx, runtimePatch{LastUsed: &ts})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	age(IdleSeconds - 2)
+	if err := rt.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !h.store.running() {
+		t.Fatal("stopped before the idle window elapsed")
+	}
+	age(IdleSeconds + 1)
+	if err := rt.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if h.store.running() {
+		t.Fatal("still running after the idle window elapsed")
+	}
+}
+
 // test_sub_store_runtime.py::test_update_waits_for_conversion_and_blocks_new_work_and_stop
 func TestUpdateWaitsForConversionAndBlocksNewWorkAndStop(t *testing.T) {
 	_, rt, _ := lifecycleService(t)
