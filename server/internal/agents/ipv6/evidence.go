@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -234,6 +235,33 @@ func evidenceCheck(id, label string, confirmed bool, success, missing string, de
 	}
 	return check(id, label, status, message, details...)
 }
+
+// chainRoute shows a Mihomo connection chain from the outer group to the node.
+func chainRoute(chains []string) string {
+	parts := make([]string, 0, len(chains))
+	for i := len(chains) - 1; i >= 0; i-- {
+		parts = append(parts, chains[i])
+	}
+	return strings.Join(parts, " → ")
+}
+
+// transportCheck names the node the client request used and the address
+// family of the node connection, so a test of the wrong node is visible.
+func transportCheck(confirmed bool, routes []string, families map[string]bool) Check {
+	route := strings.Join(routes, "；")
+	switch {
+	case confirmed && route != "":
+		return check("client_ipv6_transport", msgClientTransport, "ok", fmt.Sprintf(msgClientTransportVia, route))
+	case confirmed:
+		return check("client_ipv6_transport", msgClientTransport, "ok", msgClientTransportOK)
+	case route != "" && families["ipv4"]:
+		return check("client_ipv6_transport", msgClientTransport, "unknown", fmt.Sprintf(msgClientTransportIPv4, route))
+	case route != "" && families["unknown"]:
+		return check("client_ipv6_transport", msgClientTransport, "unknown", fmt.Sprintf(msgClientTransportUnknown, route))
+	}
+	return check("client_ipv6_transport", msgClientTransport, "unknown", msgClientTransportMissing)
+}
+
 func evaluate(ctx context.Context, config, source, report, trace Document, testURL string, seen observed) []Check {
 	expected, p := targetURL(testURL)
 	host := strings.TrimRight(strings.ToLower(text(report["target_host"])), ".")
@@ -249,6 +277,9 @@ func evaluate(ctx context.Context, config, source, report, trace Document, testU
 	complete := len(requests) > 0 && len(requests) == len(all)
 	proxied, transport := complete, complete
 	matches := documents(trace["matches"])
+	// The routes and address families seen, to say which node was tested.
+	routes := []string{}
+	families := map[string]bool{}
 	for _, r := range requests {
 		found, ipv6 := false, false
 		for _, m := range matches {
@@ -274,11 +305,15 @@ func evaluate(ctx context.Context, config, source, report, trace Document, testU
 			}
 			found = true
 			ipv6 = ipv6 || yes(m["ipv6_transport_verified"])
+			if route := chainRoute(chains); !slices.Contains(routes, route) {
+				routes = append(routes, route)
+			}
+			families[text(m["transport"])] = true
 		}
 		proxied = proxied && found
 		transport = transport && found && ipv6
 	}
-	checks := []Check{evidenceCheck("client_mihomo_path", msgClientMihomo, proxied, msgClientMihomoOK, msgClientMihomoMissing), evidenceCheck("client_ipv6_transport", msgClientTransport, transport, msgClientTransportOK, msgClientTransportMissing)}
+	checks := []Check{evidenceCheck("client_mihomo_path", msgClientMihomo, proxied, msgClientMihomoOK, msgClientMihomoMissing), transportCheck(transport, routes, families)}
 	confirmed := map[int]bool{}
 	details := []string{}
 	rs := linked(config, text(source["id"]))

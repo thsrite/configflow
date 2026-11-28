@@ -3,6 +3,7 @@ package ipv6
 import (
 	"configflow/internal/jsonresp"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,6 +36,34 @@ func TestTupleEvidence(t *testing.T) {
 		if i > 0 && checks[1].Status == "ok" {
 			t.Fatal("invalid tuple proved IPv6")
 		}
+	}
+}
+func TestTransportCheckNamesTheNode(t *testing.T) {
+	request := Document{"source_ip": jsonresp.Value("192.0.2.8"), "source_port": jsonresp.Value(34567), "address": jsonresp.Value("198.51.100.9"), "status": jsonresp.Value("ok"), "family": jsonresp.Value("ipv4")}
+	tests := []struct {
+		name       string
+		match      Document
+		wantStatus string
+		wantText   string
+	}{
+		{"ipv6 node", Document{"transport": jsonresp.Value("ipv6"), "ipv6_transport_verified": jsonresp.Value(true)}, "ok", fmt.Sprintf(msgClientTransportVia, "IPv6 组 → v6-node")},
+		{"ipv4 node", Document{"transport": jsonresp.Value("ipv4")}, "unknown", fmt.Sprintf(msgClientTransportIPv4, "IPv6 组 → v6-node")},
+		{"unreliable remote", Document{"transport": jsonresp.Value("unknown")}, "unknown", fmt.Sprintf(msgClientTransportUnknown, "IPv6 组 → v6-node")},
+		{"agent before 1.9.5-go", Document{}, "unknown", msgClientTransportMissing},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			m := Document{"source_ip": jsonresp.Value("192.0.2.8"), "source_port": jsonresp.Value(34567), "host": jsonresp.Value("site.example"), "network": jsonresp.Value("tcp"), "destination_port": jsonresp.Value(443), "proxy_name": jsonresp.Value("v6-node"), "proxy_type": jsonresp.Value("AnyTLS"), "chains": jsonresp.Value([]string{"v6-node", "IPv6 组"})}
+			for k, v := range test.match {
+				m[k] = v
+			}
+			report := Document{"target_host": jsonresp.Value("site.example"), "requests": jsonresp.Value([]Document{request})}
+			trace := Document{"target_host": jsonresp.Value("site.example"), "matches": jsonresp.Value([]Document{m})}
+			checks := evaluate(context.Background(), nil, nil, report, trace, "https://site.example/", nil)
+			if checks[0].Status != "ok" || checks[1].Status != test.wantStatus || checks[1].Message != test.wantText {
+				t.Fatalf("got %s %q", checks[1].Status, checks[1].Message)
+			}
+		})
 	}
 }
 func TestConnectionTupleCountersAndLegacy(t *testing.T) {

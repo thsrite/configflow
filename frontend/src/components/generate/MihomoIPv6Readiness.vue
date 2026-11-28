@@ -9,6 +9,7 @@ import MihomoIPv6VerificationSettings from './MihomoIPv6VerificationSettings.vue
 import UpstreamRouterPending from '@/components/routers/UpstreamRouterPending.vue'
 import type { MihomoIPv6Readiness } from '@/types/mihomoIPv6'
 import { checkedAgo } from '@/lib/format'
+import { prepareNeeded } from '@/lib/mihomoIPv6Summary'
 
 type Agent = { id: string; name: string; profile_id?: string; service_type?: string; status?: string; enabled?: boolean }
 type Profile = { id: string; is_default?: boolean }
@@ -49,7 +50,9 @@ const recheckFailed = computed(() => {
   const failure = result.value?.refresh_error
   return failure ? `这次未能重新检查：${failure.message.replace(/[。.]$/, '')}。以下是${result.value?.stale ? '设备或配置变化前' : '上次'}的结果。` : ''
 })
-const canPrepare = computed(() => available.value && result.value?.can_prepare === true && !!result.value.check_token)
+// The button shows only when the host misses a setting it can write.
+const prepareShown = computed(() => prepareNeeded(result.value))
+const canPrepare = computed(() => available.value && prepareShown.value && !!result.value?.check_token)
 const current = (generation: number, id?: string) => !disposed && props.open && generation === session
   && (!id || id === selectedId.value)
 const messageOf = (failure: any) => failure?.response?.data?.message || failure?.message || '读取失败，请重试。'
@@ -216,10 +219,10 @@ onUnmounted(() => { clearInterval(ticker); disposed = true; session++; emit('bus
     <template v-if="result">
       <MihomoIPv6Verification :key="`${selectedId}-${verificationVersion}`" :open="open" :agent-id="selectedId" :profile-id="profileId" :config-revision="result.config_revision" :readiness="result" :disabled="!available">
         <template #actions>
-          <Button v-if="result.can_prepare" type="button" variant="outline" class="min-h-11" :disabled="!canPrepare" @click="prepare">补齐缺少的配置</Button>
+          <Button v-if="prepareShown" type="button" variant="outline" class="min-h-11" :disabled="!canPrepare" @click="prepare">补齐缺少的配置</Button>
         </template>
       </MihomoIPv6Verification>
-      <p v-if="result.can_prepare" class="m-0 text-xs leading-relaxed text-muted-foreground">补齐仅处理 Mihomo 主机配置，必要时重新加载 Mihomo。</p>
+      <p v-if="prepareShown" class="m-0 text-xs leading-relaxed text-muted-foreground">补齐仅处理 Mihomo 主机配置，必要时重新加载 Mihomo。</p>
     </template>
     <UpstreamRouterPending v-if="selectedId && routerCheck && !dirty" :agent-id="selectedId" :profile-id="profileId" :refresh-key="routerCheck" />
     <MihomoIPv6VerificationSettings v-if="selected" :open="open" :agent-id="selectedId" :profile-id="profileId" :disabled="busy || disabled" @saved="verificationVersion++" />

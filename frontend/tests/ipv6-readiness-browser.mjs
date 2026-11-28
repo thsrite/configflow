@@ -22,7 +22,7 @@ async function dependency(name) {
 const { createServer } = await dependency('vite')
 const { default: vue } = await dependency('@vitejs/plugin-vue')
 const { default: tailwindcss } = await dependency('@tailwindcss/vite')
-const output = resolve(frontend, '../.ci-results/ipv6-three-results-ui')
+const output = resolve(frontend, '../.ci-results/ipv6-ipv6-results-ui')
 await mkdir(output, { recursive: true })
 const scratch = await mkdtemp('/tmp/configflow-ipv6-ui-')
 await cp(join(frontend, 'src'), join(scratch, 'src'), { recursive: true })
@@ -59,11 +59,12 @@ function readiness(prepared = false) {
     connectivity: { status: 'not_checked', message: '尚未验证节点连接。网络参数检查通过不代表代理连接已经成功。' },
   }
 }
-const groupIds = ['ipv6-network', 'node', 'client']
-async function checkThreeResults(summary) {
+const groupLabels = { 'ipv6-network': 'IPv6 网络', client: '客户端分流' }
+// Without a test client only 「IPv6 网络」 is shown; there is no node outcome.
+async function checkResults(summary, groupIds = ['ipv6-network', 'client']) {
   await summary.waitFor()
   assert.deepEqual(await summary.locator('[data-ipv6-check-group]').evaluateAll(elements => elements.map(element => element.dataset.ipv6CheckGroup)), groupIds)
-  assert.deepEqual(await summary.locator('[data-agent-status-row]').evaluateAll(elements => elements.map(element => element.dataset.agentStatusRow)), ['IPv6 网络', 'IPv6 节点连接', '客户端分流'])
+  assert.deepEqual(await summary.locator('[data-agent-status-row]').evaluateAll(elements => elements.map(element => element.dataset.agentStatusRow)), groupIds.map(id => groupLabels[id]))
   assert.equal(await summary.getByRole('button').count(), 0, 'Results do not open technical detail lists')
   assert.equal(await summary.locator('[data-status-details], [data-ipv6-check-id]').count(), 0, 'Raw diagnostic details are absent from the DOM, not merely collapsed')
   const heights = await summary.locator('[data-agent-status-row] > div:first-child').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height))
@@ -73,13 +74,10 @@ async function checkThreeResults(summary) {
     assert.ok(!text.includes(raw), `Technical trace must not reach the result UI: ${raw}`)
   }
 }
-async function checkUnconfiguredClient(summary) {
-  const client = summary.locator('[data-ipv6-check-group="client"]')
-  await client.waitFor()
-  assert.equal(await client.locator('[data-agent-status-row]').getAttribute('data-tone'), 'neutral', 'An unconfigured client is not an acceptance failure or success')
-  assert.match(await client.innerText(), /未配置|待验证|未验证/)
-  assert.match(await client.innerText(), /验收设置/, 'The result explains how to select a test client')
-  assert.equal(await client.locator('[data-status-details]').count(), 0)
+async function checkClientHidden(summary) {
+  await summary.locator('[data-ipv6-check-group="client"]').waitFor({ state: 'detached' })
+  await checkResults(summary, ['ipv6-network'])
+  assert.doesNotMatch(await summary.innerText(), /未配置检测客户端|节点/, 'No test client: no client outcome and no node outcome')
 }
 const report = { mockedAPI: true, productionEndpointsContacted: false, scenarios: [], pageErrors: [] }
 const { chromium } = await import(process.env.CF_PLAYWRIGHT_MODULE || '/home/sunbroke/rt/private__tmp__configflow-real-env-rebuild__browser-runtime/node_modules/playwright/index.mjs')
@@ -133,7 +131,7 @@ try {
       } else if (url.pathname === '/api/agents/gw/ipv6-readiness/prepare') {
         assert.deepEqual(request.postDataJSON(), { profile_id: 'bound', interface: 'eth0', check_token: 'a'.repeat(64) })
         writes.push('prepare')
-        data = { ...readiness(true), message: '已补齐缺少的配置；节点连接需单独验证。' }
+        data = { ...readiness(true), message: '已补齐缺少的配置。' }
       } else if (url.pathname === '/api/agents/gw/ipv6-readiness/verify') {
         if (request.method() === 'POST') {
           const body = request.postDataJSON()
@@ -146,8 +144,9 @@ try {
               ...readiness(true).checks,
               { id: 'runtime_deployed_config', label: '配置与主机网络', status: 'ok', message: '当前验收对应已确认的配置版本。' },
               { id: 'runtime_dns_a', label: 'DNS 实际应答', status: 'ok', message: '实际 DNS 应答符合配置。' },
-              { id: 'runtime_proxy_http', label: '代理网站访问', status: 'ok', message: '检测网站已通过 Mihomo 代理访问。' },
-              { id: 'runtime_node_ipv6_transport', label: '节点 IPv6 连接', status: 'ok', message: '已取得本次连接使用 IPv6 的证据。' },
+              { id: 'runtime_runtime_core', label: 'Mihomo 运行状态', status: 'ok', message: '已从当前 Mihomo 控制接口读取运行状态。' },
+              { id: 'runtime_runtime_ipv6', label: '运行中的 IPv6 开关', status: 'ok', message: '运行中的 IPv6 开关与文件一致：true' },
+              { id: 'runtime_runtime_tun', label: '运行中的 TUN', status: 'ok', message: '已核对当前核心的 TUN 开关。' },
               ...readiness(true).routers[0].checks.map(check => ({ ...check, id: `router_ros_${check.id}` })),
               ...(verificationMode === 'host' ? [{ id: 'client_not_configured', label: '客户端全链路', status: 'unknown', message: '尚未配置独立检测客户端，客户端全链路未验证。' }]
                 : ['client_http_ipv4', 'client_mihomo_path', 'client_ros_path', 'client_ipv6_transport'].map(id => ({ id, label: id,
@@ -181,13 +180,13 @@ try {
     await page.getByRole('button', { name: '补齐缺少的配置', exact: true }).waitFor()
     assert.deepEqual(writes, [])
     const manualSummary = page.locator('[data-mihomo-ipv6-readiness] [data-ipv6-check-summary]')
-    await checkThreeResults(manualSummary)
+    await checkResults(manualSummary)
     const network = manualSummary.locator('[data-ipv6-check-group="ipv6-network"]')
     assert.match(await network.innerText(), /开机|重启|恢复/, 'A confirmed persistence problem keeps a short actionable message')
-    const node = manualSummary.locator('[data-ipv6-check-group="node"]')
-    assert.equal(await node.locator('[data-agent-status-row]').getAttribute('data-tone'), 'neutral')
-    assert.match(await node.innerText(), /验证连接与分流/, 'An unverified node explains which action to run')
-    report.scenarios.push({ width, theme, state: 'three-results-only-actionable-messages', technicalDetailsInDOM: false })
+    const client = manualSummary.locator('[data-ipv6-check-group="client"]')
+    assert.equal(await client.locator('[data-agent-status-row]').getAttribute('data-tone'), 'neutral')
+    assert.match(await client.innerText(), /验证连接与分流/, 'An unverified client explains which action to run')
+    report.scenarios.push({ width, theme, state: 'results-only-actionable-messages', technicalDetailsInDOM: false })
     for (const accent of ['clay', 'kraft', 'sky']) {
       await page.evaluate(accent => { document.documentElement.dataset.accent = accent }, accent)
       const metrics = await page.evaluate(() => {
@@ -201,39 +200,39 @@ try {
     }
     await page.evaluate(() => { document.documentElement.dataset.accent = 'clay' })
     await page.locator('[data-mihomo-ipv6-dialog]').scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(output, `${width}-${theme}-three-results-ready.png`) })
+    await page.screenshot({ path: join(output, `${width}-${theme}-ipv6-results-ready.png`) })
     await page.getByRole('button', { name: '验收设置', exact: true }).click()
     const clientPicker = page.getByRole('combobox', { name: '独立检测客户端', exact: true })
     await clientPicker.waitFor()
     assert.ok((await clientPicker.innerText()).includes('不配置'))
     await page.getByRole('button', { name: '保存验收设置', exact: true }).scrollIntoViewIfNeeded()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
-    await page.screenshot({ path: join(output, `${width}-${theme}-three-results-verification-settings.png`) })
+    await page.screenshot({ path: join(output, `${width}-${theme}-ipv6-results-verification-settings.png`) })
     await page.getByRole('button', { name: '验收设置', exact: true }).click()
     report.scenarios.push({ width, theme, state: 'optional-client-not-preselected' })
     if (width === 1440 && theme === 'dark') {
       await page.getByRole('button', { name: '补齐缺少的配置', exact: true }).click()
       await page.getByText('补齐操作已完成，请查看检查结果。', { exact: true }).waitFor()
+      assert.equal(await page.getByRole('button', { name: '补齐缺少的配置', exact: true }).count(), 0, 'Nothing left to prepare: the button is gone')
       await page.getByRole('button', { name: '验证连接与分流', exact: true }).click()
-      await manualSummary.locator('[data-ipv6-check-group="node"] [data-agent-status-row][data-tone="success"]').waitFor()
-      await checkThreeResults(manualSummary)
-      await checkUnconfiguredClient(manualSummary)
+      await checkClientHidden(manualSummary)
+      assert.equal(await manualSummary.locator('[data-ipv6-check-group="ipv6-network"] [data-agent-status-row]').getAttribute('data-tone'), 'success')
       assert.equal(await manualSummary.locator('[data-status-details]').count(), 0)
-      assert.equal(await page.getByRole('button', { name: '主机自检：已通过', exact: true }).count(), 0, 'Manual verification contains only the three requested results')
+      assert.equal(await page.getByRole('button', { name: '主机自检：已通过', exact: true }).count(), 0, 'Manual verification contains only the requested results')
       assert.deepEqual(writes, ['prepare', 'verify'])
       verificationMode = 'client'
       await page.getByRole('button', { name: '验证连接与分流', exact: true }).click()
       await manualSummary.locator('[data-ipv6-check-group="client"] [data-agent-status-row][data-tone="success"]').waitFor()
-      await checkThreeResults(manualSummary)
-      assert.equal(await manualSummary.locator('[data-agent-status-row][data-tone="success"]').count(), 3, 'Actual traffic success is not downgraded by static unknown rule paths')
-      await page.screenshot({ path: join(output, `${width}-${theme}-three-results-passed.png`) })
-      report.scenarios.push({ width, theme, state: 'three-actual-results-pass-with-static-unknowns' })
+      await checkResults(manualSummary)
+      assert.equal(await manualSummary.locator('[data-agent-status-row][data-tone="success"]').count(), 2, 'Actual traffic success is not downgraded by static unknown rule paths')
+      await page.screenshot({ path: join(output, `${width}-${theme}-ipv6-results-passed.png`) })
+      report.scenarios.push({ width, theme, state: 'actual-results-pass-with-static-unknowns' })
       verificationMode = 'failure'
       await page.getByRole('button', { name: '验证连接与分流', exact: true }).click()
       await manualSummary.locator('[data-ipv6-check-group="client"] [data-agent-status-row][data-tone="danger"]').waitFor()
-      await checkThreeResults(manualSummary)
+      await checkResults(manualSummary)
       assert.match(await manualSummary.locator('[data-ipv6-check-group="client"]').innerText(), /客户端访问检测网站失败/)
-      await page.screenshot({ path: join(output, `${width}-${theme}-three-results-problem.png`) })
+      await page.screenshot({ path: join(output, `${width}-${theme}-ipv6-results-problem.png`) })
       report.scenarios.push({ width, theme, state: 'confirmed-failure-is-visible-without-rule-trace' })
       verificationMode = 'host'
       await page.getByRole('button', { name: '返回设置', exact: true }).click()
@@ -249,7 +248,7 @@ try {
       assert.equal(await page.getByRole('switch', { name: 'DNS 返回 IPv6 地址', exact: true }).getAttribute('aria-checked'), 'true')
       assert.ok(yaml.includes('# 保留用户注释') && yaml.includes('# 单独控制 AAAA 答案'))
       assert.ok(yaml.includes('fake-ip-range6: fc00::1/64'), 'Enabling DNS IPv6 fills the missing range in the draft')
-      await page.screenshot({ path: join(output, `${width}-${theme}-three-results-saved-draft-open.png`) })
+      await page.screenshot({ path: join(output, `${width}-${theme}-ipv6-results-saved-draft-open.png`) })
       report.scenarios.push({ width, theme, state: 'prepare-probe-edit-save-stays-open', writes })
     }
     if (width === 375) {
@@ -260,16 +259,16 @@ try {
         const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
         return hit === element || element.contains(hit)
       }), true, 'Preparation remains reachable above the fixed footer after scrolling')
-      await page.screenshot({ path: join(output, `${width}-${theme}-three-results-scrolled.png`) })
+      await page.screenshot({ path: join(output, `${width}-${theme}-ipv6-results-scrolled.png`) })
       report.scenarios.push({ width, theme, state: 'scroll-to-network-actions', reachable: true })
       state = 'loading'
       await page.getByRole('button', { name: '重新检查', exact: true }).click()
       await page.getByText('正在检查 IPv6 配置…', { exact: true }).waitFor()
-      await page.screenshot({ path: join(output, `${width}-${theme}-three-results-loading.png`) })
+      await page.screenshot({ path: join(output, `${width}-${theme}-ipv6-results-loading.png`) })
       state = 'failure'
       release()
       await page.getByRole('alert').filter({ hasText: '无法读取设备的 IPv6 网络' }).waitFor()
-      await page.screenshot({ path: join(output, `${width}-${theme}-three-results-failure.png`) })
+      await page.screenshot({ path: join(output, `${width}-${theme}-ipv6-results-failure.png`) })
       assert.equal(await page.getByRole('button', { name: '重新检查', exact: true }).isDisabled(), false)
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
       assert.equal(overflow, false)
@@ -335,14 +334,13 @@ try {
     await page.getByRole('button', { name: '保存并发布', exact: true }).click()
     const automatic = page.locator('[data-ipv6-verifier][aria-label="发布后验收"]')
     const automaticGroups = automatic.locator('[data-ipv6-check-summary]')
-    await automaticGroups.locator('[data-ipv6-check-group="node"] [data-agent-status-row][data-tone="success"]').waitFor()
+    await automaticGroups.locator('[data-ipv6-check-group="ipv6-network"] [data-agent-status-row][data-tone="success"]').waitFor()
     assert.deepEqual(writes.slice(-3), ['save', 'publish', 'verify'])
-    await checkThreeResults(automaticGroups)
-    await checkUnconfiguredClient(automaticGroups)
-    assert.equal(await automatic.getByRole('button', { name: /^主机自检/ }).count(), 0, 'Automatic verification also exposes three results directly')
+    await checkClientHidden(automaticGroups)
+    assert.equal(await automatic.getByRole('button', { name: /^主机自检/ }).count(), 0, 'Automatic verification also exposes the results directly')
     assert.equal(await automatic.getByText('客户端全链路验收', { exact: true }).count(), 0)
     await automatic.scrollIntoViewIfNeeded()
-    await page.screenshot({ path: join(output, `${width}-${theme}-three-results-automatic.png`) })
+    await page.screenshot({ path: join(output, `${width}-${theme}-ipv6-results-automatic.png`) })
     report.scenarios.push({ width, theme, state: 'confirmed-publication-auto-verification', scope: 'host-only', client: 'not-verified' })
     await context.close()
   }

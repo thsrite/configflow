@@ -26,6 +26,8 @@ type ipv6ConnectionMatch struct {
 	IPv6TransportVerified bool     `json:"ipv6_transport_verified"`
 	Network               string   `json:"network"`
 	InboundType           string   `json:"inbound_type,omitempty"`
+	// Transport is the address family of the node connection: ipv6, ipv4 or unknown.
+	Transport string `json:"transport,omitempty"`
 }
 type ipv6ConnectionsReport struct {
 	ipv6VerifyReport
@@ -142,21 +144,21 @@ func ipv6VerifyConnectionsHandler(cfg *Config, w http.ResponseWriter, r *http.Re
 	if len(report.Matches) == 0 {
 		report.add("client_mihomo_path", "客户端经过 Mihomo", "unknown", "观察窗口内未捕获匹配客户端和目标域名的新连接", "mihomo_connections", "请先开始连接观察，再由独立客户端发起请求；短连接也可能来不及捕获。")
 	} else {
-		var proxies struct {
-			Proxies map[string]ipv6RuntimeProxy `json:"proxies"`
-		}
+		proxies, err := ipv6RuntimeProxies(ctx, controller)
 		identified := false
-		transportVerified := false
-		if ipv6VerifyAPIStep(ctx, controller, "/proxies", &proxies) == nil {
+		transport := ""
+		if err == nil {
 			for i := range report.Matches {
 				match := &report.Matches[i]
 				for _, name := range match.Chains {
-					if p, exists := proxies.Proxies[name]; exists && ipv6ActualProxy(p) {
+					if p, exists := proxies[name]; exists && ipv6ActualProxy(p) {
 						identified = true
 						match.ProxyName, match.ProxyType = name, p.Type
-						_, node := ipv6SelectVerifyNode(doc, proxies.Proxies, name)
-						match.IPv6TransportVerified = ipv6ConnectionTransport(ctx, cfg, *match, node, p)
-						transportVerified = transportVerified || match.IPv6TransportVerified
+						match.Transport = ipv6ConnectionTransport(*match, p)
+						match.IPv6TransportVerified = match.Transport == "ipv6"
+						if transport != "ipv6" && match.Transport != "unknown" {
+							transport = match.Transport
+						}
 						break
 					}
 				}
@@ -164,10 +166,13 @@ func ipv6VerifyConnectionsHandler(cfg *Config, w http.ResponseWriter, r *http.Re
 		}
 		if identified {
 			report.add("client_mihomo_path", "客户端经过 Mihomo", "ok", "捕获到访问目标域名的新连接，连接链包含实际代理节点", "mihomo_connections", "请与客户端结果的来源 IP 和端口关联。观察只筛选目标域名、新连接和可选来源 IP；request_id 不是核心提供的匹配字段。")
-			if transportVerified {
-				report.add("client_ipv6_transport", "客户端请求的 IPv6 节点连接", "ok", "新连接的实际远端与 IPv6 节点一致，且已观察到 Mihomo 的对应 IPv6 连接", "mihomo_connection_transport", "仍须与客户端本次请求的来源地址、端口和 HTTP 结果一致，才能确认完整路径。")
-			} else {
-				report.add("client_ipv6_transport", "客户端请求的 IPv6 节点连接", "unknown", "没有取得足以归属到本次客户端连接的 IPv6 节点证据", "mihomo_connection_transport")
+			switch transport {
+			case "ipv6":
+				report.add("client_ipv6_transport", "客户端请求的 IPv6 节点连接", "ok", "新连接的实际节点远端是 IPv6 地址", "mihomo_connection_transport", "仍须与客户端本次请求的来源地址、端口和 HTTP 结果一致，才能确认完整路径。")
+			case "ipv4":
+				report.add("client_ipv6_transport", "客户端请求的 IPv6 节点连接", "unknown", "新连接经由的节点使用 IPv4 连接", "mihomo_connection_transport")
+			default:
+				report.add("client_ipv6_transport", "客户端请求的 IPv6 节点连接", "unknown", "节点类型或连接方式不提供可靠的实际远端地址", "mihomo_connection_transport")
 			}
 		} else {
 			report.add("client_mihomo_path", "客户端经过 Mihomo", "warning", "捕获到经过 Mihomo 的新连接，但没有确认其连接链使用实际代理节点", "mihomo_connections", "可能为 DIRECT 或节点类型无法确认；不能标为代理链路通过。")
@@ -176,34 +181,58 @@ func ipv6VerifyConnectionsHandler(cfg *Config, w http.ResponseWriter, r *http.Re
 	finish()
 }
 
-func ipv6ConnectionTransport(ctx context.Context, cfg *Config, match ipv6ConnectionMatch, node map[string]any, proxy ipv6RuntimeProxy) bool {
-	// For these TCP adapters RemoteDestination comes from the connected socket.
-	// Other adapters can expose a synthetic address (QUIC/multiplexing/tunnels),
-	// so leave them unknown until an equally strong correlation is implemented.
-	if match.Network != "tcp" || (!strings.EqualFold(proxy.Type, "socks5") && !strings.EqualFold(proxy.Type, "http")) {
-		return false
+// ipv6RuntimeProxies returns the running proxies by name, including the nodes
+// of proxy providers, which /proxies does not list.
+func ipv6RuntimeProxies(ctx context.Context, controller *mihomoReloader) (map[string]ipv6RuntimeProxy, error) {
+	var top struct {
+		Proxies map[string]ipv6RuntimeProxy `json:"proxies"`
 	}
-	if proxy.DialerProxy != "" || node["dialer-proxy"] != nil && node["dialer-proxy"] != "" {
-		return false
+	if err := ipv6VerifyAPIStep(ctx, controller, "/proxies", &top); err != nil {
+		return nil, err
 	}
-	server, _ := node["server"].(string)
-	ip := net.ParseIP(server)
+	proxies := top.Proxies
+	if proxies == nil {
+		proxies = map[string]ipv6RuntimeProxy{}
+	}
+	var providers struct {
+		Providers map[string]struct {
+			Proxies []ipv6RuntimeProxy `json:"proxies"`
+		} `json:"providers"`
+	}
+	// An older core without provider listing still identifies top-level nodes.
+	if ipv6VerifyAPIStep(ctx, controller, "/providers/proxies", &providers) == nil {
+		for _, provider := range providers.Providers {
+			for _, p := range provider.Proxies {
+				if _, exists := proxies[p.Name]; !exists && p.Name != "" {
+					proxies[p.Name] = p
+				}
+			}
+		}
+	}
+	return proxies, nil
+}
+
+// ipv6ConnectionTransport reports the address family Mihomo used to reach the
+// node: "ipv6", "ipv4" or "unknown". Mihomo's remoteDestination is the node
+// socket address for plain adapters (lab-checked on 1.19.34 for SS, VMess,
+// VLESS, Trojan, AnyTLS, TUIC and provider nodes, including reused sessions).
+// With smux it is the target address, and a chained dialer hides the node
+// socket, so those stay unknown, as does a remote reported as a domain name.
+func ipv6ConnectionTransport(match ipv6ConnectionMatch, proxy ipv6RuntimeProxy) string {
+	if proxy.Smux || proxy.DialerProxy != "" {
+		return "unknown"
+	}
 	remote := net.ParseIP(strings.Trim(match.RemoteDestination, "[]"))
 	if remote == nil {
-		host, _, err := net.SplitHostPort(match.RemoteDestination)
-		if err == nil {
+		if host, _, err := net.SplitHostPort(match.RemoteDestination); err == nil {
 			remote = net.ParseIP(host)
 		}
 	}
-	if ip == nil || ip.To4() != nil || remote == nil || !remote.Equal(ip) || match.SourcePort == 0 {
-		return false
+	if remote == nil || remote.IsUnspecified() || remote.Equal(net.ParseIP(match.DestinationIP)) {
+		return "unknown"
 	}
-	stop := ipv6ObserveNodeSockets(ctx, cfg, node, proxy.DialerProxy)
-	timer := time.NewTimer(100 * time.Millisecond)
-	select {
-	case <-ctx.Done():
-		timer.Stop()
-	case <-timer.C:
+	if remote.To4() != nil {
+		return "ipv4"
 	}
-	return stop().Status == "ok"
+	return "ipv6"
 }
