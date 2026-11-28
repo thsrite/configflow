@@ -1,13 +1,12 @@
 package installer
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"configflow/internal/agents/upgrades"
 	"configflow/internal/resource"
 	"configflow/internal/weburl"
 )
@@ -57,17 +56,11 @@ func LocalAgentChecksums() (map[string]string, error) {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		stream, err := os.Open(binary)
+		digest, err := upgrades.InstallerChecksum(context.Background(), binary)
 		if err != nil {
 			return nil, err
 		}
-		digest := sha256.New()
-		_, err = io.Copy(digest, stream)
-		stream.Close()
-		if err != nil {
-			return nil, err
-		}
-		checksums[arch] = hex.EncodeToString(digest.Sum(nil))
+		checksums[arch] = digest
 	}
 	return checksums, nil
 }

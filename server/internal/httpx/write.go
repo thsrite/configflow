@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+
+	"configflow/internal/pagecache"
 )
 
 // writeResponse sends a finalized response; HEAD gets the GET headers and
@@ -64,6 +66,9 @@ func writeFile(w http.ResponseWriter, req *http.Request, r *Response) {
 			return
 		}
 		defer file.Close()
+		if f.options.DiscardAfterSend {
+			defer pagecache.Discard(file)
+		}
 		content = file
 	} else {
 		content = bytes.NewReader(f.data)
