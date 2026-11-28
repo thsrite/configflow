@@ -48,10 +48,14 @@ type Service struct {
 	prepare       PrepareFunc
 	pair          PairHooks
 	waker         *agents.Waker
+	roundMu       sync.Mutex
 	mu            sync.Mutex
 	comparisons   map[string]comparison
 	pending       map[string]bool
 	cursor        int
+	remaining     int // records left in this sweep, across two-worker batches
+	epoch         uint64
+	retryAt       time.Time
 }
 
 func (s *Service) deployService() *deploy.Service {
@@ -71,7 +75,7 @@ func New(m *agents.Manager, r *deploy.Receipts, o Options) *Service {
 	}
 	w := agents.NewWaker(PollInterval, IdleFallback)
 	if m != nil {
-		w.Watch(m, repo.ChangeConfig|repo.ChangeState, true)
+		w.Watch(m, repo.ChangeConfig|repo.ChangeState|repo.ChangeRuleCache, true)
 	}
 	s := &Service{
 		m:             m,
@@ -258,17 +262,24 @@ func (s *Service) done(busy bool) {
 // Round observes presence and admits at most two tracked workers in
 // round-robin order. It records whether work is in flight (loop pacing).
 func (s *Service) Round(ctx context.Context) (e error) {
+	s.roundMu.Lock()
+	defer s.roundMu.Unlock()
+	epoch := s.waker.Epoch()
 	records, e := s.m.RuleSyncAgents(ctx)
 	if e != nil {
 		s.done(true)
 		return e
 	}
-	defer func() { s.done(e != nil || s.inFlight(records)) }()
+	busy := false
+	defer func() { s.done(e != nil || busy) }()
 	observeRuleSyncPresence(ctx, s.m, records)
 	s.mu.Lock()
 	for id, running := range s.pending {
 		if !running {
 			delete(s.pending, id)
+		} else {
+			// A wake may have arrived after this worker read its inputs.
+			busy = true
 		}
 	}
 	ids := map[string]bool{}
@@ -280,7 +291,14 @@ func (s *Service) Round(ctx context.Context) (e error) {
 			delete(s.comparisons, id)
 		}
 	}
+	poll, retryAt := syncSchedule(records, s.now())
+	busy = busy || poll
+	s.retryAt = retryAt
 	n := len(records)
+	if s.remaining == 0 || epoch != s.epoch || s.remaining > n {
+		s.remaining = n
+		s.epoch = epoch
+	}
 	if n == 0 {
 		s.cursor = 0
 		s.mu.Unlock()
@@ -291,17 +309,20 @@ func (s *Service) Round(ctx context.Context) (e error) {
 	ordered = append(ordered, records[s.cursor:]...)
 	ordered = append(ordered, records[:s.cursor]...)
 	s.mu.Unlock()
-	for i := range ordered {
+	for i := range ordered[:s.remaining] {
 		r := &ordered[i]
 		id := r.ID
 		s.mu.Lock()
-		if len(s.pending) >= 2 {
+		supported := r.ServiceType == "mihomo" || r.ServiceType == "oxidns"
+		eligible := supported && (r.RuleSyncLibrary || r.RuleSyncRules)
+		if eligible && len(s.pending) >= 2 {
+			busy = true
 			s.mu.Unlock()
 			break
 		}
 		s.cursor = (s.cursor + 1) % n
-		supported := r.ServiceType == "mihomo" || r.ServiceType == "oxidns"
-		eligible := !s.pending[id] && supported && (r.RuleSyncLibrary || r.RuleSyncRules)
+		s.remaining--
+		eligible = eligible && !s.pending[id]
 		if eligible {
 			s.pending[id] = true
 		}
@@ -329,29 +350,32 @@ func (s *Service) Round(ctx context.Context) (e error) {
 	return nil
 }
 
-// inFlight reports a running worker or an Agent whose rule sync waits on the
-// clock (pending debounce, running, a retry not yet due).
-func (s *Service) inFlight(records []agents.RuleSyncAgent) bool {
-	s.mu.Lock()
-	running := false
-	for _, active := range s.pending {
-		running = running || active
-	}
-	s.mu.Unlock()
-	if running {
-		return true
-	}
-	now := nowSeconds(s.now())
+// syncSchedule follows work that needs another observation without a commit.
+func syncSchedule(records []agents.RuleSyncAgent, now time.Time) (bool, time.Time) {
+	var retry time.Time
 	for i := range records {
-		state := records[i].SyncState()
+		r := &records[i]
+		if (!r.RuleSyncLibrary && !r.RuleSyncRules) || (r.ServiceType != "mihomo" && r.ServiceType != "oxidns") {
+			continue
+		}
+		if r.HAActive {
+			return true, retry
+		}
+		state := r.SyncState()
 		if state == nil {
 			continue
 		}
-		if state.Status == "pending" || state.Status == "running" || value(state.RetryAt) > now {
-			return true
+		if at := value(state.RetryAt); at > nowSeconds(now) {
+			wait := min(at-nowSeconds(now), IdleFallback.Seconds())
+			deadline := now.Add(time.Duration(wait * float64(time.Second)))
+			if retry.IsZero() || deadline.Before(retry) {
+				retry = deadline
+			}
+		} else if r.Enabled && r.Presence.Status == "online" && (state.Status == "pending" || state.Status == "running") {
+			return true, retry
 		}
 	}
-	return false
+	return false, retry
 }
 
 func stateOf(a *model.Agent) *model.RuleSyncState {

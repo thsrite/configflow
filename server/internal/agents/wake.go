@@ -27,6 +27,7 @@ const IdleFallback = 10 * time.Minute
 type Waker struct {
 	signal lifecycle.Signal
 	busy   atomic.Bool
+	epoch  atomic.Uint64
 	active time.Duration
 	idle   time.Duration
 }
@@ -55,7 +56,13 @@ func (w *Waker) Done(busy bool) { w.busy.Store(busy) }
 func (w *Waker) Busy() bool { return w.busy.Load() }
 
 // Wake ends the loop's current pause.
-func (w *Waker) Wake() { w.signal.Notify() }
+func (w *Waker) Wake() {
+	w.epoch.Add(1)
+	w.signal.Notify()
+}
+
+// Epoch identifies the latest input change, including coalesced wakes.
+func (w *Waker) Epoch() uint64 { return w.epoch.Load() }
 
 // Watch wakes the loop on commits of m's repository that change kinds and,
 // with presence, when an Agent of m comes online. It ends when m closes.

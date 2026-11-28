@@ -200,14 +200,23 @@ func (r *Repository) writeSharedText(ctx context.Context, relativePath string, c
 	if err != nil {
 		return "", err
 	}
-	return path, withFile(ctx, path, func() error {
+	replaced := false
+	err = withFile(ctx, path, func() error {
 		if preferTouch {
 			if touched, err := touchUnchangedCache(ctx, path, content); err != nil || touched {
 				return err
 			}
 		}
-		return writeAtomic(ctx, path, content)
+		if err := writeAtomic(ctx, path, content); err != nil {
+			return err
+		}
+		replaced = true
+		return nil
 	})
+	if replaced && strings.HasPrefix(filepath.ToSlash(filepath.Clean(relativePath)), "rules/") {
+		r.NotifyRuleCacheChanged()
+	}
+	return path, err
 }
 
 // touchUnchangedCache runs under the file leaf lock. A failed touch falls

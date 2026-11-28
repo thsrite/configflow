@@ -2,6 +2,7 @@ package rulesync
 
 import (
 	"context"
+	"time"
 
 	"configflow/internal/lifecycle"
 )
@@ -11,10 +12,22 @@ func (s *Service) Loop() lifecycle.Periodic {
 	return lifecycle.Periodic{
 		Name:     "agent-rule-sync",
 		Start:    lifecycle.AfterFirstRequest,
-		Interval: s.waker.Interval,
+		Interval: s.interval,
 		Wake:     s.waker.Signal(),
 		Round:    s.Round,
 	}
+}
+
+func (s *Service) interval(ctx context.Context) time.Duration {
+	pause := s.waker.Interval(ctx)
+	s.mu.Lock()
+	retry := s.retryAt
+	s.mu.Unlock()
+	if !retry.IsZero() {
+		// The worker dispatched by Round handles an already-due retry.
+		pause = min(pause, max(time.Nanosecond, retry.Sub(s.now())))
+	}
+	return pause
 }
 
 // WakeLoop wakes s's rule-sync loop, for example after rule sources were

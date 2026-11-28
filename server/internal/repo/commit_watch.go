@@ -6,8 +6,7 @@ import (
 	"configflow/internal/model"
 )
 
-// ChangeKind says what a commit changed: configuration rows, Agent state
-// rows (design/o17-runtime-state.md), or both.
+// ChangeKind identifies a durable repository change that can wake a reader.
 type ChangeKind uint8
 
 const (
@@ -15,6 +14,8 @@ const (
 	ChangeConfig ChangeKind = 1 << iota
 	// ChangeState is a commit that changed Agent state rows.
 	ChangeState
+	// ChangeRuleCache is a published rule file, independent of database revisions.
+	ChangeRuleCache
 )
 
 type commitWatcher struct {
@@ -28,10 +29,10 @@ type commitWatchers struct {
 	list map[int]commitWatcher
 }
 
-// OnCommit registers fn to run after every commit of this repository that
-// changed one of kinds, once .config.lock is released. fn runs on the
-// committing goroutine and must not block or use the repository: it should
-// only wake someone (lifecycle.Signal.Notify). cancel removes it.
+// OnCommit registers fn for durable changes of the selected kinds. Database
+// commits notify after releasing .config.lock. File publications may run within
+// an edit. Callbacks must only signal a reader, never block or enter the repository.
+// The returned function removes the registration.
 func (r *Repository) OnCommit(kinds ChangeKind, fn func()) (cancel func()) {
 	r.watchers.mu.Lock()
 	defer r.watchers.mu.Unlock()
@@ -61,6 +62,9 @@ func (r *Repository) notifyCommit(kinds ChangeKind) {
 		fn()
 	}
 }
+
+// NotifyRuleCacheChanged wakes readers after rule cache bytes are published.
+func (r *Repository) NotifyRuleCacheChanged() { r.notifyCommit(ChangeRuleCache) }
 
 type commitObservers struct {
 	mu   sync.Mutex
