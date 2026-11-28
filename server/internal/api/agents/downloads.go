@@ -93,7 +93,10 @@ func (h *downloadsHandler) downloadAgentBinary(c *httpx.Ctx) (*httpx.Response, e
 		return fail(err)
 	}
 	stream.Close()
-	response, err := httpx.File(httpx.FileOptions{Path: served, MimeType: "application/octet-stream", AsAttachment: true, DownloadName: filename})
+	response, err := httpx.File(httpx.FileOptions{
+		Path: served, MimeType: "application/octet-stream", AsAttachment: true, DownloadName: filename,
+		DiscardAfterSend: true,
+	})
 	if err != nil {
 		return fail(err)
 	}

@@ -143,6 +143,8 @@ type FileOptions struct {
 	DownloadName string
 	// NoETag disables the ETag Werkzeug derives for files on disk.
 	NoETag bool
+	// DiscardAfterSend releases the on-disk file's cached pages after sending.
+	DiscardAfterSend bool
 	// MaxAge, when set, replaces Cache-Control: no-cache with public, max-age.
 	MaxAge *int
 }

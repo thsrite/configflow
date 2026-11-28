@@ -22,6 +22,7 @@ import (
 
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
+	"configflow/internal/pagecache"
 	"configflow/internal/resource"
 )
 
@@ -99,14 +100,23 @@ func signatureOf(info fs.FileInfo) signature {
 	if st == nil {
 		return signature{size: info.Size(), mtime: info.ModTime().UnixNano()}
 	}
+	_, mtime, ctime := statNanos(st)
 	return signature{dev: int64(st.Dev), ino: int64(st.Ino), size: st.Size,
-		mtime: st.Mtim.Nano(), ctime: st.Ctim.Nano()}
+		mtime: mtime, ctime: ctime}
 }
 
 // ArtifactInfo is one artifact's {'sha256', 'size'}.
 type ArtifactInfo struct {
 	SHA256 string
 	Size   int64
+	elf    bool
+}
+
+func (i *ArtifactInfo) forUpgrade() *ArtifactInfo {
+	if i.elf && i.Size <= maxArtifactBytes {
+		return i
+	}
+	return nil
 }
 
 type cacheEntry struct {
@@ -136,6 +146,67 @@ func cachePop(key string) {
 	}
 }
 
+func artifactCacheKey(path string) string {
+	key, err := filepath.Abs(path)
+	if err != nil {
+		key = path
+	}
+	return key
+}
+
+// cachedArtifact and rememberArtifact are called with cacheMu held.
+func cachedArtifact(key string, expected signature) *ArtifactInfo {
+	if element, ok := cacheIndex[key]; ok {
+		entry := element.Value.(*cacheEntry)
+		if entry.expected == expected {
+			cacheOrder.MoveToBack(element)
+			result := entry.info
+			return &result
+		}
+	}
+	return nil
+}
+
+func rememberArtifact(key string, expected signature, metadata *ArtifactInfo) {
+	cachePop(key)
+	cacheIndex[key] = cacheOrder.PushBack(&cacheEntry{key: key, expected: expected, info: *metadata})
+	for cacheOrder.Len() > artifactCacheLimit {
+		oldest := cacheOrder.Front()
+		cacheOrder.Remove(oldest)
+		delete(cacheIndex, oldest.Value.(*cacheEntry).key)
+	}
+}
+
+// InstallerChecksum returns the digest of any local installer binary. A file
+// that changes during the read still supplies its digest to this caller, but
+// only stable digests can be shared with future installers and web updates.
+func InstallerChecksum(ctx context.Context, path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	key := artifactCacheKey(path)
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	before, statErr := file.Stat()
+	var expected signature
+	if statErr == nil {
+		expected = signatureOf(before)
+		if hit := cachedArtifact(key, expected); hit != nil {
+			return hit.SHA256, nil
+		}
+	}
+	digest, err := hashArtifact(ctx, file)
+	if err != nil {
+		return "", err
+	}
+	if after, err := file.Stat(); err == nil && statErr == nil && signatureOf(after) == expected && digest.Size == expected.size {
+		rememberArtifact(key, expected, digest)
+	}
+	return digest.SHA256, nil
+}
+
 // readArtifact is _read_artifact(path, expected): the digest and size of an
 // ELF file within the size limit, nil for any other file, errChanged when the
 // path and the bytes read did not describe one stable file.
@@ -158,6 +229,31 @@ func readArtifact(ctx context.Context, path string, expected signature) (*Artifa
 	if signatureOf(info) != expected {
 		return nil, errChanged
 	}
+	digest, err := hashArtifact(ctx, handle)
+	if err != nil {
+		return nil, err
+	}
+	info, err = handle.Stat()
+	if err != nil {
+		return nil, err
+	}
+	afterRead := signatureOf(info)
+	pathInfo, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, errChanged
+		}
+		return nil, err
+	}
+	afterPath := signatureOf(pathInfo)
+	if expected != afterRead || expected != afterPath || digest.Size != expected.size {
+		return nil, errChanged
+	}
+	return digest.forUpgrade(), nil
+}
+
+func hashArtifact(ctx context.Context, handle *os.File) (*ArtifactInfo, error) {
+	defer pagecache.Discard(handle)
 	digest := sha256.New()
 	var size int64
 	var magic []byte
@@ -170,7 +266,7 @@ func readArtifact(ctx context.Context, path string, expected signature) (*Artifa
 		count, err := handle.Read(buffer)
 		calls++
 		if readHook != nil {
-			if hookErr := readHook(path, calls, count); hookErr != nil {
+			if hookErr := readHook(handle.Name(), calls, count); hookErr != nil {
 				return nil, hookErr
 			}
 		}
@@ -191,26 +287,7 @@ func readArtifact(ctx context.Context, path string, expected signature) (*Artifa
 			return nil, err
 		}
 	}
-	info, err = handle.Stat()
-	if err != nil {
-		return nil, err
-	}
-	afterRead := signatureOf(info)
-	pathInfo, err := os.Stat(path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, errChanged
-		}
-		return nil, err
-	}
-	afterPath := signatureOf(pathInfo)
-	if expected != afterRead || expected != afterPath || size != expected.size {
-		return nil, errChanged
-	}
-	if string(magic) != "\x7fELF" || size > maxArtifactBytes {
-		return nil, nil
-	}
-	return &ArtifactInfo{SHA256: hex.EncodeToString(digest.Sum(nil)), Size: size}, nil
+	return &ArtifactInfo{SHA256: hex.EncodeToString(digest.Sum(nil)), Size: size, elf: string(magic) == "\x7fELF"}, nil
 }
 
 // isFile reports a regular file (symlinks followed); missing paths are
@@ -235,10 +312,7 @@ func artifactMetadata(ctx context.Context, path string) (*ArtifactInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	key, err := filepath.Abs(path)
-	if err != nil {
-		key = path
-	}
+	key := artifactCacheKey(path)
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	for attempt := 0; attempt < 2; attempt++ {
@@ -258,13 +332,8 @@ func artifactMetadata(ctx context.Context, path string) (*ArtifactInfo, error) {
 			return nil, err
 		}
 		expected := signatureOf(info)
-		if element, ok := cacheIndex[key]; ok {
-			entry := element.Value.(*cacheEntry)
-			if entry.expected == expected {
-				cacheOrder.MoveToBack(element)
-				result := entry.info
-				return &result, nil
-			}
+		if cached := cachedArtifact(key, expected); cached != nil {
+			return cached.forUpgrade(), nil
 		}
 		cachePop(key)
 		metadata, err := readArtifact(ctx, path, expected)
@@ -281,12 +350,7 @@ func artifactMetadata(ctx context.Context, path string) (*ArtifactInfo, error) {
 			return nil, err
 		}
 		if metadata != nil {
-			cacheIndex[key] = cacheOrder.PushBack(&cacheEntry{key: key, expected: expected, info: *metadata})
-			for cacheOrder.Len() > artifactCacheLimit {
-				oldest := cacheOrder.Front()
-				cacheOrder.Remove(oldest)
-				delete(cacheIndex, oldest.Value.(*cacheEntry).key)
-			}
+			rememberArtifact(key, expected, metadata)
 		}
 		return metadata, nil
 	}

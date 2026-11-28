@@ -6,7 +6,6 @@ package logs
 import (
 	"bufio"
 	"bytes"
-	"configflow/internal/timefmt"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,19 +15,31 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"configflow/internal/httpx"
 	"configflow/internal/lifecycle"
 	"configflow/internal/pathx"
 	"configflow/internal/rules"
+	"configflow/internal/timefmt"
 )
+
+// LogFile supports streaming the complete log or reading a window by offset.
+type LogFile interface {
+	io.ReadCloser
+	io.ReaderAt
+	Stat() (fs.FileInfo, error)
+}
 
 // Handler serves the /api/logs routes. Nil hook fields use the production
 // log-path lookup and os.Open directly.
 type Handler struct {
 	LogFilePath func() (string, error)
-	OpenFile    func(string) (io.ReadCloser, error)
+	OpenFile    func(string) (LogFile, error)
+
+	countMu sync.Mutex
+	count   lineCount
 }
 
 // NewHandler constructs a Handler for the logs blueprint.
@@ -41,7 +52,7 @@ func (h *Handler) logFilePath() (string, error) {
 	return getLogFilePath()
 }
 
-func (h *Handler) openLogFile(path string) (io.ReadCloser, error) {
+func (h *Handler) openLogFile(path string) (LogFile, error) {
 	if h != nil && h.OpenFile != nil {
 		return h.OpenFile(path)
 	}
@@ -50,6 +61,9 @@ func (h *Handler) openLogFile(path string) (io.ReadCloser, error) {
 
 // Register adds the logs blueprint routes to r.
 func (h *Handler) Register(r *httpx.Router) {
+	if h == nil {
+		h = NewHandler()
+	}
 	r.GET("/api/logs/tail", "logs.get_logs", h.getLogs)
 	r.GET("/api/logs/info", "logs.get_log_info", h.getLogInfo)
 	r.POST("/api/logs/clear", "logs.clear_logs", h.clearLogs)
@@ -160,15 +174,7 @@ func (h *Handler) getLogs(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil {
 		return errorResponse(err, true), nil
 	}
-	var logLines []string
-	total := 0
-	err = readLines(file, func(line string) {
-		total++
-		logLines = append(logLines, line)
-		if lines > 0 && int64(len(logLines)) > lines {
-			logLines = logLines[1:]
-		}
-	})
+	logLines, total, err := h.readTail(file, lines)
 	file.Close()
 	if err != nil {
 		return errorResponse(err, true), nil
@@ -313,12 +319,15 @@ func (h *Handler) clearLog(ctx context.Context) (*httpx.Response, error) {
 	if !present {
 		return httpx.Message(200, true, msgMissing), nil
 	}
+	h.countMu.Lock()
+	defer h.countMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(logPath, nil, 0o666); err != nil {
 		return errorResponse(err, false), nil
 	}
+	h.count = lineCount{}
 	return httpx.Message(200, true, msgCleared), nil
 }
 

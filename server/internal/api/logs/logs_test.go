@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,19 +21,21 @@ import (
 // cannot import httpxtest, which wires it).
 
 type logClient struct {
-	t       *testing.T
+	t       testing.TB
 	app     *httpx.App
 	handler *Handler
 	repo    *repo.Repository
 	path    string
 }
 
-func newLogClient(t *testing.T) *logClient {
+func newLogClient(t testing.TB) *logClient {
+	t.Helper()
 	dir := t.TempDir()
 	repository, err := repo.Open(filepath.Join(dir, "repository"), repo.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(repository.Close)
 	path := filepath.Join(dir, "app.log")
 	app := httpx.New()
 	app.Repo = repository
@@ -138,38 +139,53 @@ func TestTailCountsBlankLinesIgnoresInvalidUTF8AndNormalizesNewlines(t *testing.
 	}
 }
 
+type readMeter struct {
+	bytes          int64
+	opened, closed int
+}
+
 type countingFile struct {
-	lines, read int
-	closed      bool
-	buffer      []byte
+	*os.File
+	meter *readMeter
+}
+
+func (m *readMeter) open(path string) (LogFile, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	m.opened++
+	return &countingFile{file, m}, nil
 }
 
 func (f *countingFile) Read(p []byte) (int, error) {
-	for len(f.buffer) == 0 {
-		if f.read == f.lines {
-			return 0, io.EOF
-		}
-		f.buffer = []byte(fmt.Sprintf("INFO: generated %d\n", f.read))
-		f.read++
-	}
-	n := copy(p, f.buffer)
-	f.buffer = f.buffer[n:]
-	return n, nil
+	n, err := f.File.Read(p)
+	f.meter.bytes += int64(n)
+	return n, err
 }
 
-func (f *countingFile) Close() error { f.closed = true; return nil }
+func (f *countingFile) ReadAt(p []byte, off int64) (int, error) {
+	n, err := f.File.ReadAt(p, off)
+	f.meter.bytes += int64(n)
+	return n, err
+}
 
-// test_logs_tail.py::test_tail_reads_full_count_without_reading_file_into_a_list
-// (the bounded tail is a ring of `lines` entries while the file streams).
-func TestTailReadsFullCountWithoutReadingFileIntoAList(t *testing.T) {
+func (f *countingFile) Close() error {
+	f.meter.closed++
+	return f.File.Close()
+}
+
+func TestTailCountsOnceAndReadsOnlyTheWindowOnAppend(t *testing.T) {
 	client := newLogClient(t)
-	os.WriteFile(client.path, nil, 0o644)
-	var opened []*countingFile
-	client.handler.OpenFile = func(path string) (io.ReadCloser, error) {
-		f := &countingFile{lines: 50000}
-		opened = append(opened, f)
-		return f, nil
+	var content strings.Builder
+	for i := 0; i < 50000; i++ {
+		fmt.Fprintf(&content, "INFO: generated %d\n", i)
 	}
+	if err := os.WriteFile(client.path, []byte(content.String()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var meter readMeter
+	client.handler.OpenFile = meter.open
 	_, data := client.get("/api/logs/tail?lines=60")
 	want := []any{}
 	for i := 49940; i < 50000; i++ {
@@ -178,8 +194,14 @@ func TestTailReadsFullCountWithoutReadingFileIntoAList(t *testing.T) {
 	if data["success"] != true || jsonInt(data["total_lines"]) != 50000 || !testjson.Equal(want, data["logs"]) {
 		t.Fatal(data["total_lines"])
 	}
-	if len(opened) != 1 || !opened[0].closed || opened[0].read != 50000 {
-		t.Fatal("one streamed read, closed")
+	if meter.opened != 1 || meter.closed != 1 || meter.bytes < int64(content.Len()) {
+		t.Fatal("initial count", meter)
+	}
+	appendLog(t, client.path, []byte("INFO: appended\n"))
+	meter.bytes = 0
+	_, data = client.get("/api/logs/tail?lines=60")
+	if meter.opened != 2 || meter.closed != 2 || meter.bytes > 256<<10 || jsonInt(data["total_lines"]) != 50001 {
+		t.Fatal("incremental count", meter, data["total_lines"])
 	}
 }
 
@@ -212,7 +234,7 @@ func TestTailReadErrorAndInvalidLevelKeepExistingErrorResponse(t *testing.T) {
 	if status != 500 || data["success"] != false {
 		t.Fatalf("%d %#v", status, data)
 	}
-	client.handler.OpenFile = func(string) (io.ReadCloser, error) { return nil, errors.New("synthetic read failure") }
+	client.handler.OpenFile = func(string) (LogFile, error) { return nil, errors.New("synthetic read failure") }
 	status, data = client.get("/api/logs/tail")
 	want := map[string]any{"success": false, "error": "synthetic read failure", "logs": []any{}, "total_lines": 0}
 	if status != 500 || !testjson.Equal(want, data) {

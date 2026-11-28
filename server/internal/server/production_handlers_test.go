@@ -74,6 +74,7 @@ var nilByDesign = map[string]string{
 	"api.w10c.settings.wl":                      "D5: SetWebListener after New (cmd/configflow)",
 	"api.w10c.logs.LogFilePath":                 "test seam; nil = getLogFilePath",
 	"api.w10c.logs.OpenFile":                    "test seam; nil = os.Open",
+	"api.w10c.logs.count.file":                  "runtime state; nil = no line count taken yet",
 	"api.w10c.stats.Now":                        "test seam; nil = time.Now",
 }
 
