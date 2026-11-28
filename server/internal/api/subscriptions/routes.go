@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"configflow/internal/auth"
@@ -15,17 +16,21 @@ import (
 	"configflow/internal/provider"
 	"configflow/internal/refresh"
 	"configflow/internal/repo"
+	"configflow/internal/subs"
 	"configflow/internal/substore"
 )
 
 // Handler serves the /api/subscriptions routes and profile provider alias
 // backed by explicit services.
 type Handler struct {
-	Repo          *repo.Repository
-	SubStore      *substore.Service
-	Provider      *provider.Service
-	Refresh       *refresh.Service
-	Notifications *notifications.Service
+	Repo           *repo.Repository
+	SubStore       *substore.Service
+	Provider       *provider.Service
+	Refresh        *refresh.Service
+	Notifications  *notifications.Service
+	healthMu       sync.Mutex
+	healthSnapshot *refresh.HealthSnapshot
+	healthEntries  map[string]healthEntry
 }
 
 // NewHandler constructs a subscriptions Handler with explicit services.
@@ -85,21 +90,27 @@ func (h *Handler) handleSubscriptions(c *httpx.Ctx) (*httpx.Response, error) {
 			if len(entry.History) > 0 {
 				view.LastFetch = entry.History[len(entry.History)-1]
 			}
-			cached, err := h.loadCacheSummary(ctx, sub.ID)
+			cached, err := substore.LoadCacheShared(ctx, h.Repo, sub.ID)
 			if err != nil {
 				return nil, err
 			}
 			if cached != nil {
-				view.CachedUpdatedAt = cached.UpdatedAt
-				if cached.Nodes != nil {
-					filtered, err := filter(sub, cached.Nodes)
-					if err != nil {
-						return nil, err
+				view.CachedUpdatedAt, _ = json.Marshal(cached.UpdatedAt)
+				if cached.Nodes != nil && !cached.NodesDamaged() {
+					count := len(cached.Nodes)
+					if re := subs.CompileFilter(sub); re != nil {
+						count = 0
+						for i := range cached.Nodes {
+							if re.Search(cached.Nodes[i].Name) {
+								count++
+							}
+						}
 					}
-					view.CachedNodeCount, _ = json.Marshal(len(filtered))
+					view.CachedNodeCount, _ = json.Marshal(count)
 					view.CachedTotalCount, _ = json.Marshal(len(cached.Nodes))
 				} else {
-					view.CachedNodeCount, view.CachedTotalCount = cached.Count, cached.Count
+					view.CachedNodeCount, _ = json.Marshal(cached.Count)
+					view.CachedTotalCount = view.CachedNodeCount
 				}
 			}
 			views = append(views, view)

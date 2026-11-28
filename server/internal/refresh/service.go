@@ -36,6 +36,7 @@ type Service struct {
 	envMu sync.RWMutex
 	env   *RefreshEnv
 
+	healthFile repo.SharedFileView[*HealthSnapshot]
 	loop       refreshPacer
 	ruleRowsMu sync.Mutex
 	ruleRows   *ruleRows

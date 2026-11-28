@@ -529,39 +529,73 @@ func parseProbeResults(stdout string, proxies []model.Fields) (model.OrderedMap[
 
 // LoadLatencyResults reads persisted node latency entries of the current probe Method.
 func LoadLatencyResults(ctx context.Context, repository *repo.Repository) model.OrderedMap[LatencyEntry] {
-	var out model.OrderedMap[LatencyEntry]
-	env := CurrentProbeEnv()
-	if env.Collaborators.ReadLatencyFile == nil {
-		return out
+	return decodeLatencyResults(latencyBytes(ctx, repository))
+}
+
+func latencyBytes(ctx context.Context, r *repo.Repository) json.RawMessage {
+	read := CurrentProbeEnv().Collaborators.ReadLatencyFile
+	if read == nil {
+		return nil
 	}
-	raw, ok := env.Collaborators.ReadLatencyFile(ctx, repository)
+	raw, ok := read(ctx, r)
 	if !ok {
-		return out
+		return nil
 	}
+	return raw
+}
+
+func decodeLatencyResults(raw json.RawMessage) model.OrderedMap[LatencyEntry] {
+	var out model.OrderedMap[LatencyEntry]
 	var top rawObject
 	if err := json.Unmarshal(raw, &top); err != nil {
 		return out
 	}
-	for name, rawEntry := range top.Fields.All() {
-		// Python keeps only object entries of the current method.
-		if trimmed := bytes.TrimSpace(rawEntry); len(trimmed) == 0 || trimmed[0] != '{' {
-			continue
-		}
-		var entry LatencyEntry
-		issues, err := model.DecodeStored(rawEntry, (*latencyWire)(&entry), "")
-		if err != nil {
-			continue
-		}
-		for _, field := range []string{"url", "unified_delay", "dns_servers", "dns_bootstrap"} {
-			if model.IssueUnder(issues, field) {
-				entry.damagedSettings = true
+	out.SetAll(func(yield func(string, LatencyEntry) bool) {
+		for name, rawEntry := range top.Fields.All() {
+			// Python keeps only object entries of the current method.
+			if trimmed := bytes.TrimSpace(rawEntry); len(trimmed) == 0 || trimmed[0] != '{' {
+				continue
+			}
+			var entry LatencyEntry
+			issues, err := model.DecodeStored(rawEntry, (*latencyWire)(&entry), "")
+			if err != nil {
+				continue
+			}
+			for _, field := range []string{"url", "unified_delay", "dns_servers", "dns_bootstrap"} {
+				if model.IssueUnder(issues, field) {
+					entry.damagedSettings = true
+				}
+			}
+			if entry.Method == Method {
+				if !yield(name, entry) {
+					return
+				}
 			}
 		}
-		if entry.Method == Method {
-			out.Set(name, entry)
-		}
-	}
+	})
 	return out
+}
+
+// LatencyView holds the encoded current-method measurements for one polling reader.
+type LatencyView struct {
+	mu            sync.Mutex
+	input, result json.RawMessage
+}
+
+// JSON returns the immutable result object in the same order as LoadLatencyResults.
+func (v *LatencyView) JSON(ctx context.Context, r *repo.Repository) (json.RawMessage, error) {
+	raw := latencyBytes(ctx, r)
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.result != nil && bytes.Equal(raw, v.input) {
+		return v.result, nil
+	}
+	result, err := json.Marshal(decodeLatencyResults(raw))
+	if err != nil {
+		return nil, err
+	}
+	v.input, v.result = bytes.Clone(raw), result
+	return result, nil
 }
 
 func saveLatencyResults(ctx context.Context, repository *repo.Repository, results model.OrderedMap[LatencyEntry]) {

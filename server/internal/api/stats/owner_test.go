@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -80,7 +81,7 @@ func TestSamplingOwnerRuntimeAndCancellationBeforeCommit(t *testing.T) {
 				}
 				return time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
 			}
-			_, err := h.recordHistory(request, Counts{Nodes: 1}, true)
+			_, err := h.recordHistory(request, "default", Counts{Nodes: 1}, true)
 			path, _ := r.ProfilePath("default", HistoryFile)
 			_, statErr := os.Stat(path)
 			if mode == "disconnect" {
@@ -100,7 +101,7 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	h := NewHandler(r)
 	h.Now = func() time.Time { return clock }
 	for range HistorySize + 5 {
-		if _, err := h.recordHistory(ctx, Counts{Nodes: 1}, true); err != nil {
+		if _, err := h.recordHistory(ctx, "default", Counts{Nodes: 1}, true); err != nil {
 			t.Fatal(err)
 		}
 		clock = clock.Add(SampleInterval)
@@ -129,7 +130,7 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 20 {
 		wg.Go(func() {
-			if _, err := h.recordHistory(ctx, Counts{Nodes: 2}, true); err != nil {
+			if _, err := h.recordHistory(ctx, "default", Counts{Nodes: 2}, true); err != nil {
 				t.Error(err)
 			}
 		})
@@ -141,7 +142,7 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{bad"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.recordHistory(ctx, Counts{Nodes: 3}, true); err != nil {
+	if _, err := h.recordHistory(ctx, "default", Counts{Nodes: 3}, true); err != nil {
 		t.Fatal("corrupt optional history prevented overview", err)
 	}
 	if err := os.Remove(path); err != nil {
@@ -150,7 +151,54 @@ func TestSamplingBoundsCorruptionAndConcurrentReaders(t *testing.T) {
 	if err := os.Mkdir(path, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.recordHistory(ctx, Counts{Nodes: 4}, true); err != nil {
+	if _, err := h.recordHistory(ctx, "default", Counts{Nodes: 4}, true); err != nil {
 		t.Fatal("optional history write failure prevented overview", err)
+	}
+}
+
+func TestHistoryViewObeysFileReplacementAndSamplingTime(t *testing.T) {
+	r, ctx := statsRepository(t)
+	defer r.Close()
+	h := NewHandler(r)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	h.Now = func() time.Time { return now }
+	path, err := r.ProfilePath("default", HistoryFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	replace := func(n string) {
+		t.Helper()
+		data := []byte(`{"samples":[{"nodes":` + n + `},{"at":"2026-01-01T00:00:00Z","nodes":2}]}`)
+		if err := os.WriteFile(path+".new", data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(path+".new", path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(want, tail string, length int, persist bool) {
+		t.Helper()
+		series, err := h.recordHistory(ctx, "default", Counts{Nodes: 5}, persist)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := series["nodes"]
+		if len(got) != length || got[0].String() != want || got[length-1].String() != tail {
+			t.Fatalf("unexpected series: %v", got)
+		}
+	}
+	replace("1")
+	check("1", "5", 2, true)
+	check("1", "5", 2, true)
+	replace("9")
+	check("9", "5", 2, true)
+	now = now.Add(SampleInterval)
+	check("9", "5", 3, false)
+	check("9", "5", 3, true)
+	if got, err := os.ReadFile(path); err != nil || !bytes.Contains(got, []byte("00:30:00")) {
+		t.Fatal("due GET failed to persist", err)
 	}
 }

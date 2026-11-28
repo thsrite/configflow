@@ -496,69 +496,44 @@ func copyValue[T any](value T) (T, error) {
 	return result, nil
 }
 
-// rulesetSource are the members a ruleset takes from its rule library item.
-var rulesetSource = []string{"name", "url", "behavior", "content", "source_type", "format"}
-
-// HydratedRuleset returns a rule-set reference with its source taken from
-// the shared library item, as resolved configurations carry it.
+// HydratedRuleset returns an owned rule-set reference resolved against the library.
 func HydratedRuleset(rule model.RuleConfig, item model.RuleLibraryItem, profileID string) (model.RuleConfig, error) {
-	return hydratedRuleset(&rule, &item, profileID)
+	resolved, err := hydratedRuleset(&rule, &item, profileID)
+	if err != nil {
+		return model.RuleConfig{}, err
+	}
+	return model.Clone(resolved)
 }
 
-// hydratedRuleset returns rule with its source taken from the library item:
-// the item's source members (stored values as they are), behavior "domain"
-// when the item has none, library_enabled from the item's enabled (default
-// true), and for content items the profile's content URL.
+func cloneText(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	return new(*value)
+}
+
+// The source members come exclusively from the library, including absent fields.
 func hydratedRuleset(rule *model.RuleConfig, item *model.RuleLibraryItem, profileID string) (model.RuleConfig, error) {
-	members, err := recordMembers(rule)
-	if err != nil {
+	if (len(item.Policy) > 0 && !json.Valid(item.Policy)) || (len(item.Target) > 0 && !json.Valid(item.Target)) {
+		_, err := model.Marshal(item)
 		return model.RuleConfig{}, err
 	}
-	source, err := recordMembers(item)
-	if err != nil {
-		return model.RuleConfig{}, err
+	result := *rule
+	result.Name = item.Name
+	result.URL, result.Content = cloneText(item.URL), cloneText(item.Content)
+	result.Format, result.SourceType = cloneText(item.Format), cloneText(item.SourceType)
+	result.Behavior = cloneText(item.Behavior)
+	if result.Behavior == nil {
+		result.Behavior = new("domain")
 	}
-	for _, name := range append(append([]string(nil), rulesetSource...), "library_enabled") {
-		members.Delete(name)
-	}
-	for _, name := range rulesetSource {
-		if value, ok := source.Get(name); ok {
-			if err := members.Set(name, value); err != nil {
-				return model.RuleConfig{}, err
-			}
-		}
-	}
-	if !members.Has("behavior") {
-		if err := members.Set("behavior", json.RawMessage(`"domain"`)); err != nil {
-			return model.RuleConfig{}, err
-		}
-	}
-	enabled, ok := source.Get("enabled")
-	if !ok {
-		enabled = json.RawMessage("true")
-	}
-	if err := members.Set("library_enabled", enabled); err != nil {
-		return model.RuleConfig{}, err
-	}
+	result.LibraryEnabled = new(model.Flag(item.Enabled, true))
 	if item.SourceType != nil && *item.SourceType == "content" {
 		if profileID == "" {
 			profileID = DefaultProfileID
 		}
-		url, err := model.Marshal("/api/profiles/" + profileID + "/rule-library/content/" + item.ID)
-		if err != nil {
-			return model.RuleConfig{}, err
-		}
-		if err := members.Set("url", url); err != nil {
-			return model.RuleConfig{}, err
-		}
+		result.URL = new("/api/profiles/" + profileID + "/rule-library/content/" + item.ID)
 	}
-	encoded, err := members.MarshalJSON()
-	if err != nil {
-		return model.RuleConfig{}, err
-	}
-	var result model.RuleConfig
-	err = json.Unmarshal(encoded, &result)
-	return result, err
+	return result, nil
 }
 
 // recordMembers is a record's members in order as opaque JSON.

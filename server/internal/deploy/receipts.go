@@ -3,14 +3,17 @@ package deploy
 import (
 	"configflow/internal/agents"
 	"configflow/internal/jsondecode"
+	"configflow/internal/jsonstore"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
+	"configflow/internal/store"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 )
 
 // maxReceiptBytes bounds receipt.json, which embeds the whole profile snapshot
@@ -23,6 +26,9 @@ type Receipts struct {
 	repo      *repo.Repository
 	dataDir   string
 	writeFile func(context.Context, string, []byte) error
+	readyMu   sync.Mutex
+	readyHead store.Head
+	ready     map[string]readyReceipt
 }
 
 var receiptDirectoryLocks leafLocks
@@ -156,17 +162,80 @@ func (r *Receipts) LoadAgent(ctx context.Context, agent *model.Agent, withBundle
 	return r.loadView(ctx, view, withBundle)
 }
 
+type readyReceipt struct {
+	view receiptAgentView
+	sig  jsonstore.Signature
+}
+
+func (v receiptAgentView) eligible() bool {
+	a := v.Applied
+	return v.ID != "" && a.DeploymentID != "" && a.ProfileID == v.ProfileID && a.ServiceType == v.ServiceType && a.ConfigVersion == v.ConfigVersion && versionPattern.MatchString(a.ConfigVersion)
+}
+
+func receiptSignature(path string) (jsonstore.Signature, bool) {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return jsonstore.Signature{}, false
+	}
+	return jsonstore.InfoSignature(info), true
+}
+
+// Ready reports LoadAgent's baseline eligibility without retaining the source
+// document. A receipt can be replaced independently of its Agent's generation.
+func (r *Receipts) Ready(ctx context.Context, agent *model.Agent, gen agents.Generation) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	view, err := receiptAgent(ctx, r.repo, agent)
+	if err != nil || !view.eligible() {
+		return false, err
+	}
+	release := receiptDirectoryLocks.lock(r.root(view.ID))
+	defer release()
+	folder := r.folder(view.ID, view.Applied.DeploymentID)
+	path := filepath.Join(folder, "receipt.json")
+	before, ok := receiptSignature(path)
+	if !ok {
+		return false, nil
+	}
+	key := readyReceipt{view, before}
+	if gen.Shared {
+		r.readyMu.Lock()
+		hit := r.readyHead == gen.Head && r.ready[view.ID] == key
+		r.readyMu.Unlock()
+		if hit {
+			return true, nil
+		}
+	}
+	record, err := r.loadRecord(folder, view, false)
+	if err == nil && record != nil && gen.Shared {
+		if after, ok := receiptSignature(path); ok && after == before {
+			r.readyMu.Lock()
+			if r.ready == nil || r.readyHead != gen.Head {
+				r.ready = map[string]readyReceipt{}
+				r.readyHead = gen.Head
+			}
+			r.ready[view.ID] = key
+			r.readyMu.Unlock()
+		}
+	}
+	return record != nil, err
+}
+
 func (r *Receipts) loadView(ctx context.Context, view receiptAgentView, withBundle bool) (*Receipt, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	a := view.Applied
-	if view.ID == "" || a.DeploymentID == "" || a.ProfileID != view.ProfileID || a.ServiceType != view.ServiceType || a.ConfigVersion != view.ConfigVersion || !versionPattern.MatchString(a.ConfigVersion) {
+	if !view.eligible() {
 		return nil, nil
 	}
 	release := receiptDirectoryLocks.lock(r.root(view.ID))
 	defer release()
-	folder := r.folder(view.ID, a.DeploymentID)
+	return r.loadRecord(r.folder(view.ID, view.Applied.DeploymentID), view, withBundle)
+}
+
+func (r *Receipts) loadRecord(folder string, view receiptAgentView, withBundle bool) (*Receipt, error) {
+	a := view.Applied
 	data, err := readPrivate(filepath.Join(folder, "receipt.json"), maxReceiptBytes)
 	if err != nil {
 		return nil, nil

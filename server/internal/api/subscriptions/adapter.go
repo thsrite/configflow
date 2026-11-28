@@ -237,13 +237,21 @@ func (h *Handler) readCache(ctx context.Context, id string, summary bool) (*cach
 	return &out, err
 }
 func (h *Handler) loadHealth(ctx context.Context) (map[string]healthEntry, error) {
-	v, err := h.refreshSvc(ctx).ReadHealth(lifecycle.Detach(ctx))
-	if err != nil {
+	snapshot, err := h.refreshSvc(ctx).BorrowHealth(lifecycle.Detach(ctx))
+	if err != nil || snapshot == nil {
 		return nil, err
 	}
-	var out map[string]healthEntry
-	err = native(v, &out)
-	return out, err
+	h.healthMu.Lock()
+	defer h.healthMu.Unlock()
+	if snapshot == h.healthSnapshot {
+		return h.healthEntries, nil
+	}
+	var entries map[string]healthEntry
+	if err := native(*snapshot, &entries); err != nil {
+		return nil, err
+	}
+	h.healthSnapshot, h.healthEntries = snapshot, entries
+	return entries, nil
 }
 func healthSize() int { return refresh.HistorySize }
 func (h *Handler) usage(ctx context.Context, id string) (*httpx.Response, error) {

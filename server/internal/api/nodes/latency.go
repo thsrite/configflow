@@ -18,6 +18,7 @@ import (
 type Handler struct {
 	Repo     *repo.Repository
 	SubStore *substore.Service
+	latency  health.LatencyView
 }
 
 // NewHandler constructs a nodes Handler. Nil dependencies fall back to
@@ -95,10 +96,14 @@ func (h *Handler) nodeLatency(c *httpx.Ctx) (*httpx.Response, error) {
 		return nil, err
 	}
 	if c.Request.Method == "GET" {
+		results, err := h.latency.JSON(ctx, r)
+		if err != nil {
+			return httpx.Message(500, false, err.Error()), nil
+		}
 		return nativeJSON(200, struct {
-			Success bool `json:"success"`
-			Results any  `json:"results"`
-		}{true, health.LoadLatencyResults(ctx, r)}), nil
+			Success bool            `json:"success"`
+			Results json.RawMessage `json:"results"`
+		}{true, results}), nil
 	}
 	body, err := decodeObject[latencyRequest](c, true)
 	if err != nil {

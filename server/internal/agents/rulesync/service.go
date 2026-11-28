@@ -139,7 +139,7 @@ func (s *Service) leader(ctx context.Context, record *model.Agent) (*model.Agent
 
 // Status resolves a device's own profile and never trusts the active-profile header.
 func (s *Service) Status(ctx context.Context, id string) (StatusView, error) {
-	record, e := s.m.ReadAgent(ctx, id, false)
+	record, _, gen, e := s.m.ReadAgentAt(ctx, id, false)
 	if e != nil {
 		return StatusView{}, e
 	}
@@ -166,8 +166,8 @@ func (s *Service) Status(ctx context.Context, id string) (StatusView, error) {
 	} else if view.Status == "" && view.Message == "" && view.UpdatedAt == "" {
 		view = PublicState{Status: "pending", Message: msgWaiting}
 	}
-	baseline, e := s.receipts.LoadAgent(ctx, record, false)
-	return StatusView{Success: true, Settings: settings, State: view, BaselineReady: baseline != nil}, e
+	ready, e := s.receipts.Ready(ctx, record, gen)
+	return StatusView{Success: true, Settings: settings, State: view, BaselineReady: ready}, e
 }
 
 // Configure atomically replaces selected scopes, on both members of a saved pair.
