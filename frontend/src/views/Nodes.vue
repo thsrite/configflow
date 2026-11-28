@@ -147,9 +147,9 @@
           <TableHead class="w-40 text-right">操作</TableHead>
         </TableRow>
       </TableHeader>
-      <TableBody ref="nodesContainer">
+      <TableBody ref="nodesRoot">
         <TableRow
-          v-for="(node, cfIndex) in tileNodes"
+          v-for="(node, cfIndex) in renderedNodes"
           :key="node.readonly ? `sub:${subscriptionNodeKey(node)}` : node.id || node.name"
           :data-name="node.name"
           :data-reorder-item="node.readonly ? undefined : ''"
@@ -261,22 +261,24 @@
             </div>
           </TableCell>
         </TableRow>
+        <tr v-if="remainingHeight" aria-hidden="true" :style="{ height: `${remainingHeight}px` }" />
       </TableBody>
     </DataTableShell>
 
     <!-- ===== 延迟磁贴（默认）；手机（< 640px）由下方 scoped 样式排成两行紧凑列表 ===== -->
     <div
       v-else
-      ref="nodesContainer"
+      ref="nodesRoot"
       class="node-tiles grid grid-cols-[repeat(auto-fill,minmax(212px,1fr))] gap-2.5 max-[420px]:grid-cols-1"
     >
       <div
-        v-for="(node, cfIndex) in tileNodes"
+        v-for="(node, cfIndex) in renderedNodes"
         :key="node.readonly ? `sub:${subscriptionNodeKey(node)}` : node.id || node.name"
         class="cf-list-in"
         :style="listItemStyle(cfIndex)"
         :data-name="node.name"
         :data-tile="cfIndex"
+        :data-entered="cfIndex >= entranceCount ? '' : undefined"
         :aria-busy="testingKeys.has(latencyKey(node)) || undefined"
         :data-reorder-item="node.readonly ? undefined : ''"
         :data-selected="!node.readonly && selectedNodeIds.has(node.id) ? '' : undefined"
@@ -435,6 +437,7 @@
           />
         </div>
       </div>
+      <div v-if="remainingHeight" aria-hidden="true" class="col-span-full" :style="{ height: `${remainingHeight}px` }" />
     </div>
 
     <NodeDeleteDialog ref="nodeDeleteDialog" @deleted="onNodesDeleted" />
@@ -544,7 +547,7 @@
 
 <script setup lang="ts">
 import { onUnmounted, watch, ref, computed, onMounted, nextTick } from 'vue'
-import { useMediaQuery } from '@vueuse/core'
+import { unrefElement, useEventListener, useMediaQuery, useResizeObserver } from '@vueuse/core'
 import {
   ArrowUpDown,
   CheckSquare,
@@ -616,7 +619,8 @@ import * as yaml from 'js-yaml'
 
 const nodes = ref<ProxyNode[]>([])
 const savingStatus = ref<Record<string, boolean>>({})
-const nodesContainer = ref<HTMLElement | null>(null)
+const nodesRoot = ref<HTMLElement | InstanceType<typeof TableBody> | null>(null)
+const nodesContainer = computed(() => unrefElement(nodesRoot) as HTMLElement | null)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const form = ref<Partial<ProxyNode>>({
@@ -1552,6 +1556,43 @@ const reorder = useReorder<any>({
     })
   }
 })
+
+// 按网格的实际列数和已渲染行高预留滚动空间。已经显示的节点保持挂载，
+// 排序模式给 Sortable 全部可排序项，键盘、拖动和保存共用原始索引。
+const renderedCount = ref(1)
+const entranceCount = ref(Infinity)
+const columns = ref(1)
+const rowPitch = ref(61)
+const rowGap = ref(0)
+const renderedNodes = computed(() => reorder.active.value ? tileNodes.value : tileNodes.value.slice(0, renderedCount.value))
+const remainingHeight = computed(() => {
+  const rows = Math.ceil(tileNodes.value.length / columns.value) - Math.ceil(renderedNodes.value.length / columns.value)
+  return Math.max(0, rows * rowPitch.value - rowGap.value)
+})
+const fillViewport = () => {
+  const container = nodesContainer.value
+  if (!container || !renderedNodes.value.length || renderedNodes.value.length === tileNodes.value.length) return
+  const style = getComputedStyle(container)
+  columns.value = style.display === 'grid' ? style.gridTemplateColumns.split(' ').length : 1
+  rowGap.value = style.display === 'grid' ? parseFloat(style.rowGap) || 0 : 0
+  const last = container.children[renderedNodes.value.length - 1]
+  if (!last) return
+  const top = container.getBoundingClientRect().top
+  const height = last.getBoundingClientRect().bottom - top
+  if (height > 0) rowPitch.value = (height + rowGap.value) / Math.ceil(renderedNodes.value.length / columns.value)
+  const rows = Math.max(1, Math.ceil((window.innerHeight - top) / rowPitch.value) + 1)
+  renderedCount.value = Math.max(renderedCount.value, Math.min(rows * columns.value, tileNodes.value.length))
+}
+watch([tileNodes, nodesContainer, renderedCount], fillViewport, { flush: 'post' })
+watch(effectiveView, () => { entranceCount.value = Infinity })
+useEventListener(window, 'scroll', () => {
+  // 滚动补上的节点在原列表中已播完进场，无需再从透明开始。
+  const previous = renderedCount.value
+  fillViewport()
+  if (renderedCount.value > previous) entranceCount.value = Math.min(entranceCount.value, previous)
+}, { passive: true })
+useResizeObserver(nodesContainer, fillViewport)
+useEventListener(window, 'resize', fillViewport)
 
 const handleSaveOrder = async () => {
   try {

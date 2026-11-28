@@ -52,6 +52,7 @@ afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   localStorage.clear()
   document.body.innerHTML = ''
 })
@@ -243,6 +244,34 @@ describe.each(['card', 'list'] as const)('%s 来源筛选', view => {
   })
 })
 
+it.each(['card', 'list'] as const)('%s 首屏只创建附近节点，后续批次保序并沿用全选', async view => {
+  const records = Array.from({ length: 80 }, (_, i) => ({
+    id: `node-${i}`, name: `节点 ${i}`, enabled: true, type: 'ss', server: 'example.com', port: 443
+  }))
+  vi.mocked(nodeApi.getAll).mockResolvedValue({ data: records } as any)
+  vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+  await render(view)
+  expect(names().length).toBeLessThan(records.length)
+  expect(names()).toEqual(records.slice(0, names().length).map(node => node.name))
+  const initialCount = names().length
+  vi.stubGlobal('innerHeight', 2000)
+  window.dispatchEvent(new Event('resize'))
+  await flushPromises()
+  expect(names().length).toBeGreaterThan(initialCount)
+  await click('全选')
+  expect(wrapper!.text()).toContain('删除 80 项')
+  // jsdom 没有布局，模拟滚动到末页时容器和最后一个已渲染元素的位置。
+  const container = wrapper!.get('[data-name]').element.parentElement!
+  const top = -80 * 61
+  vi.spyOn(container, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, top, 500, 80 * 61))
+  const last = wrapper!.findAll('[data-name]').at(-1)!.element
+  vi.spyOn(last, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, top + (names().length - 1) * 61, 500, 61))
+  window.dispatchEvent(new Event('scroll'))
+  await flushPromises()
+  expect(names()).toEqual(records.map(node => node.name))
+  expect(wrapper!.get('[aria-label="选择 节点 79"]').attributes('aria-checked')).toBe('true')
+})
+
 it('表格中的订阅预览节点保持只读，不能编辑、删除或选中', async () => {
   await render('list')
   const row = wrapper!.get('[data-name="日本 订阅预览"]')
@@ -271,6 +300,7 @@ it('保存测速设置后刷新显示的测速历史', async () => {
 })
 
 it('代理测速每批最多二十个并展示真实进度，失败保留原因，已停用节点不测试', async () => {
+  vi.stubGlobal('innerHeight', 3200) // 同时检查首批、排队中和末行的状态
   const records = Array.from({ length: 22 }, (_, i) => ({
     id: `node-${i}`, name: `node-${i}`, enabled: i !== 21, type: 'trojan', server: 'example.invalid', port: 443, params: { password: 'secret' }
   }))
@@ -327,6 +357,7 @@ it.each([
   { kind: '结构化', batchSize: 20, total: 41 },
   { kind: 'URI', batchSize: 5, total: 11 }
 ])('$kind 后续批次请求失败时按实际完成数提示并保留结果', async ({ kind, batchSize, total }) => {
+  vi.stubGlobal('innerHeight', 3200) // 同时检查首批、排队中和末行的状态
   const error = vi.spyOn(notify, 'error').mockImplementation(() => 0)
   const records = Array.from({ length: total }, (_, i) => ({
     id: `n${i}`, name: `n${i}`, enabled: true,
