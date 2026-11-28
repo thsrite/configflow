@@ -1,7 +1,6 @@
 package discovery
 
 import (
-	"bytes"
 	"configflow/internal/jsondecode"
 	"context"
 	"encoding/json"
@@ -50,102 +49,6 @@ type collectionStatus struct {
 	At            *string `json:"at"`
 	MihomoVersion string  `json:"mihomo_version"`
 }
-type traffic struct {
-	Status       collectionStatus      `json:"status"`
-	Days         map[string]trafficDay `json:"days"`
-	dayOrder     []string
-	storeState   string
-	storeMessage string
-}
-type trafficDay struct {
-	IPOnly    int64                  `json:"ip_only_conns"`
-	Hosts     map[string]trafficHost `json:"hosts"`
-	hostOrder []string
-}
-type trafficHost struct {
-	First                 string           `json:"first_seen"`
-	Last                  string           `json:"last_seen"`
-	Ports                 map[string]int64 `json:"ports"`
-	Routes                map[string]Stats `json:"by_route"`
-	portOrder, routeOrder []string
-}
-
-// Object key order is used only to break ties in stable traffic rankings.
-func fieldOrder(raw json.RawMessage) []string {
-	d := json.NewDecoder(bytes.NewReader(raw))
-	if token, err := d.Token(); err != nil || token != json.Delim('{') {
-		return nil
-	}
-	out := []string{}
-	for d.More() {
-		key, err := d.Token()
-		if err != nil {
-			return nil
-		}
-		var value json.RawMessage
-		if d.Decode(&value) != nil {
-			return nil
-		}
-		out = append(out, key.(string))
-	}
-	return out
-}
-
-// UnmarshalJSON decodes the known fields while retaining the original data.
-func (t *traffic) UnmarshalJSON(b []byte) error {
-	type plain traffic
-	var p plain
-	if err := jsondecode.Unmarshal(b, &p); err != nil {
-		return err
-	}
-	*t = traffic(p)
-	var raw struct {
-		Days json.RawMessage `json:"days"`
-	}
-	if err := jsondecode.Unmarshal(b, &raw); err != nil {
-		return err
-	}
-	t.dayOrder = fieldOrder(raw.Days)
-	return nil
-}
-
-// UnmarshalJSON decodes the known fields while retaining the original data.
-func (t *trafficDay) UnmarshalJSON(b []byte) error {
-	type plain trafficDay
-	var p plain
-	if err := jsondecode.Unmarshal(b, &p); err != nil {
-		return err
-	}
-	*t = trafficDay(p)
-	var raw struct {
-		Hosts json.RawMessage `json:"hosts"`
-	}
-	if err := jsondecode.Unmarshal(b, &raw); err != nil {
-		return err
-	}
-	t.hostOrder = fieldOrder(raw.Hosts)
-	return nil
-}
-
-// UnmarshalJSON decodes the known fields while retaining the original data.
-func (t *trafficHost) UnmarshalJSON(b []byte) error {
-	type plain trafficHost
-	var p plain
-	if err := jsondecode.Unmarshal(b, &p); err != nil {
-		return err
-	}
-	*t = trafficHost(p)
-	var raw struct {
-		Ports  json.RawMessage `json:"ports"`
-		Routes json.RawMessage `json:"by_route"`
-	}
-	if err := jsondecode.Unmarshal(b, &raw); err != nil {
-		return err
-	}
-	t.portOrder = fieldOrder(raw.Ports)
-	t.routeOrder = fieldOrder(raw.Routes)
-	return nil
-}
 
 // AgentStatus exposes collection status without registry credentials.
 type AgentStatus struct {
@@ -164,6 +67,9 @@ type AgentStatus struct {
 
 func statusOf(a Agent, data traffic) AgentStatus {
 	s := data.Status
+	if s.At != nil {
+		s.At = new(*s.At)
+	}
 	if s.Value == "" {
 		s.Value = "no_data"
 	}
@@ -315,15 +221,13 @@ func summarize(reports []struct {
 		if agentID != "" && a.ID != agentID {
 			continue
 		}
-		days := data.dayOrder
-		for _, day := range days {
-			bucket := data.Days[day]
-			if day < oldest {
+		for _, day := range data.Days {
+			if day.key < oldest {
 				continue
 			}
-			ipOnly += bucket.IPOnly
-			for _, name := range bucket.hostOrder {
-				entry := bucket.Hosts[name]
+			ipOnly += day.value.IPOnly
+			for _, host := range day.value.Hosts {
+				name, entry := host.key, host.value
 				domain := RegistrableDomain(name)
 				g := groups[domain]
 				if g == nil {
@@ -345,16 +249,16 @@ func summarize(reports []struct {
 				if !slices.Contains(h.AgentIDs, a.ID) {
 					h.AgentIDs = append(h.AgentIDs, a.ID)
 				}
-				for _, port := range entry.portOrder {
-					if _, ok := h.ports[port]; !ok {
-						h.portOrder = append(h.portOrder, port)
+				for _, port := range entry.Ports {
+					if _, ok := h.ports[port.key]; !ok {
+						h.portOrder = append(h.portOrder, port.key)
 					}
-					h.ports[port] += entry.Ports[port]
+					h.ports[port.key] += port.value
 				}
 				h.First = min(h.First, entry.First)
 				h.Last = max(h.Last, entry.Last)
-				for _, key := range entry.routeOrder {
-					s := entry.Routes[key]
+				for _, route := range entry.Routes {
+					key, s := route.key, route.value
 					parts := strings.SplitN(key, "\t", 4)
 					if len(parts) != 4 {
 						continue

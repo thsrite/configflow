@@ -27,7 +27,7 @@ func (e *URLParseError) Unwrap() error { return e.Err }
 func HasYAMLPayload(content string) bool {
 	probe := strings.TrimPrefix(content, "\ufeff")
 	firstContent := true
-	for _, line := range strings.Split(probe, "\n") {
+	for line := range strings.SplitSeq(probe, "\n") {
 		rest := strings.TrimLeftFunc(line, unicode.IsSpace)
 		if rest == "" || strings.HasPrefix(rest, "#") || strings.TrimSpace(rest) == "---" {
 			continue

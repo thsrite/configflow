@@ -321,6 +321,13 @@ func NormalizeRuleset(content, behavior, ruleFormat string) (string, []Problem, 
 		return content, []Problem{}, nil
 	}
 	key := dataDigest([]byte(content)) + "\x00" + behavior + "\x00" + ruleFormat
+	// Remote validation already checked each explicit classical line. When
+	// those exact bytes are also in delivery form, no edit pass is needed.
+	if behavior == "classical" && ruleFormat == "text" {
+		if result, ok := validatedCache.Get(key); ok && result.(validationResult).normalized {
+			return content, []Problem{}, nil
+		}
+	}
 	if cached, ok := normalizedCache.Get(key); ok {
 		entry := cached.(normalized)
 		return entry.content, cloneProblems(entry.warnings), nil
@@ -367,6 +374,9 @@ func normalizeMihomoRuleset(content, behavior, ruleFormat string) (string, []Pro
 // look-ahead: a "\r" not followed by "\n" and the other separators become
 // "\n".
 func replaceLoneCR(content string, pattern *regexp.Regexp) string {
+	if utf8.ValidString(content) && !pattern.MatchString(content) {
+		return content
+	}
 	all := pattern == textLineBreaks
 	var b strings.Builder
 	runes := []rune(content)
@@ -855,18 +865,26 @@ func ValidateRemote(content Content, rule model.RuleConfig, library []model.Rule
 	if _, ok := validatedCache.Get(key); ok {
 		return nil
 	}
-	if err := validateRemoteContent(content, rule, behavior, selected); err != nil {
+	result, err := validateRemoteContent(content, rule, behavior, selected)
+	if err != nil {
 		return err
 	}
-	validatedCache.Put(key, true, 0)
+	validatedCache.Put(key, result, 0)
 	return nil
 }
 
 const textLineBreakChars = "\n\r\v\f\x1c\x1d\x1e\u0085  "
 
-func validateRemoteContent(content Content, rule model.RuleConfig, behavior, selected string) error {
+// validationResult records successful validation. normalized is a proof for
+// the matching digest, behavior and format only. No rule text is retained.
+type validationResult struct {
+	normalized bool
+}
+
+func validateRemoteContent(content Content, rule model.RuleConfig, behavior, selected string) (validationResult, error) {
+	var result validationResult
 	if selected == "mrs" {
-		return validateRemoteMRS(content, rule)
+		return result, validateRemoteMRS(content, rule)
 	}
 	if !utf8.Valid(content.Data) {
 		offset := 0
@@ -901,9 +919,10 @@ func validateRemoteContent(content Content, rule model.RuleConfig, behavior, sel
 		bytes.WriteByte('\'')
 		evidence := bytes.String()
 
-		return NewRemoteError(rule, selected, []Problem{remoteProblem(line, evidence, msgInvalidUTF8)})
+		return result, NewRemoteError(rule, selected, []Problem{remoteProblem(line, evidence, msgInvalidUTF8)})
 	}
 	text := string(content.Data)
+	result.normalized = behavior == "classical" && selected == "text" && !strings.HasPrefix(text, "\uFEFF") && !textLineBreaks.MatchString(text)
 	entries, problems := remoteTextEntries(text, selected)
 	for _, e := range entries {
 		value := pyStrip(e.value)
@@ -917,7 +936,11 @@ func validateRemoteContent(content Content, rule model.RuleConfig, behavior, sel
 		case behavior == "classical" && (strings.Contains(value, ",") || rules.IsRuleType(strings.ToUpper(value))):
 			message = rules.ClassicalLineError(value)
 		default:
-			if _, err := classicalOrDomain(behavior, value); err != nil {
+			updated, err := classicalOrDomain(behavior, value)
+			if updated != value {
+				result.normalized = false
+			}
+			if err != nil {
 				message = strings.ReplaceAll(err.Error(), "，已保留原文", "")
 			}
 		}
@@ -931,9 +954,9 @@ func validateRemoteContent(content Content, rule model.RuleConfig, behavior, sel
 			b := problems[j].Line
 			return a < b
 		})
-		return NewRemoteError(rule, selected, problems)
+		return validationResult{}, NewRemoteError(rule, selected, problems)
 	}
-	return nil
+	return result, nil
 }
 
 // ReadRulePayload is read_rule_payload: the payload lines of YAML (with its

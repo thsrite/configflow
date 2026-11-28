@@ -35,7 +35,7 @@ func (svc *Service) autoRound(ctx context.Context, id string) (AutoOutcome, erro
 	if len(capable(as, minProbeVersion)) == 0 {
 		return out, nil
 	}
-	// The automatic jobs below run synchronously. Each round owns its decoded reports.
+	// The automatic jobs below run synchronously. Keep even over-budget reports until this round ends.
 	ctx = context.WithValue(ctx, roundTrafficKey{}, make(roundTraffic))
 	listing, err := svc.LoadDomains(ctx, id, 7, "uncovered", "")
 	if err != nil {

@@ -1,9 +1,12 @@
 package convert
 
 import (
+	"iter"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"configflow/internal/netipx"
 )
@@ -13,14 +16,36 @@ func AppendQuery(address string, pairs [][2]string) (string, error) {
 	return appendProfileQuery(address, pairs)
 }
 
-var ruleLineBreaks = strings.NewReplacer("\r\n", "\n", "\r", "\n", "\v", "\n", "\f", "\n", "\x1c", "\n", "\x1d", "\n", "\x1e", "\n", "\u0085", "\n", "\u2028", "\n", "\u2029", "\n")
-
 // RuleLines splits text accepted by the rule-file editors into logical lines.
 func RuleLines(text string) []string {
-	if text == "" {
-		return nil
+	return slices.Collect(RuleLineSeq(text))
+}
+
+// RuleLineSeq visits the same logical lines without allocating a list. A
+// trailing separator terminates the preceding line; CRLF is one separator.
+func RuleLineSeq(text string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		start := 0
+		for i, r := range text {
+			switch r {
+			case '\n':
+				if i > 0 && text[i-1] == '\r' {
+					start = i + 1
+					continue
+				}
+			case '\r', '\v', '\f', '\x1c', '\x1d', '\x1e', '\u0085', '\u2028', '\u2029':
+			default:
+				continue
+			}
+			if !yield(text[start:i]) {
+				return
+			}
+			start = i + utf8.RuneLen(r)
+		}
+		if start < len(text) {
+			yield(text[start:])
+		}
 	}
-	return strings.Split(strings.TrimSuffix(ruleLineBreaks.Replace(text), "\n"), "\n")
 }
 
 var ruleLiteralPunctuation = strings.NewReplacer("-", `\-`, "&", `\&`, "~", `\~`, "#", `\#`, " ", `\ `, "\t", "\\\t", "\n", "\\\n", "\r", "\\\r", "\v", "\\\v", "\f", "\\\f")

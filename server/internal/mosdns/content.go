@@ -2,7 +2,10 @@ package mosdns
 
 import (
 	"errors"
+	"iter"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"configflow/internal/convert"
 	"configflow/internal/rules"
@@ -61,12 +64,33 @@ func inList(s string, list []string) bool {
 // DOMAIN-REGEX keeps every remaining comma in its payload.
 func ParseClashRuleValue(line string) (kind, value string) {
 	kind, value, _ = strings.Cut(line, ",")
-	kind, value = cases.Upper(language.Und).String(strings.TrimSpace(kind)), strings.TrimSpace(value)
+	kind, value = strings.TrimSpace(kind), strings.TrimSpace(value)
+	if asciiRuleWord(kind) {
+		kind = strings.ToUpper(kind)
+	} else {
+		kind = cases.Upper(language.Und).String(kind)
+	}
 	if kind != "DOMAIN-REGEX" {
 		first, _, _ := strings.Cut(value, ",")
 		value = strings.TrimSpace(first)
 	}
 	return kind, value
+}
+
+func asciiRuleWord(text string) bool {
+	for i := range len(text) {
+		if text[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+func lowerRulePrefix(prefix string) string {
+	if asciiRuleWord(prefix) {
+		return strings.ToLower(prefix)
+	}
+	return cases.Lower(language.Und).String(prefix)
 }
 
 // isIPOrCIDR is _is_ip_or_cidr.
@@ -148,145 +172,168 @@ func ConvertRuleContentForMosDNS(content string, part ...string) (out string, er
 		p = part[0]
 	}
 	content = strings.TrimPrefix(content, "\ufeff")
-	wantDomain := !hasPart || p == PartDomain
-	wantIP := !hasPart || p == PartIP
-	wantClashIP := hasPart && p == PartIP
-
-	isMosdnsFormat := false
-	isYAMLFormat := rules.HasYAMLPayload(content)
-	if !isYAMLFormat {
-		sampleCount := 0
-		for _, line := range convert.RuleLines(content) {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.HasPrefix(line, "#") {
-				continue
-			}
-			sampleCount++
-			if sampleCount > 20 {
-				break
-			}
-			if strings.Contains(line, ":") {
-				before, _, _ := strings.Cut(line, ":")
-				prefix := cases.Lower(language.Und).String(strings.TrimSpace(before))
-				if inList(prefix, mosdnsDomainPrefixes) || prefix == "ip" {
-					isMosdnsFormat = true
-					break
-				}
-			}
-		}
-	}
-
-	if isMosdnsFormat && !hasPart {
+	yamlPayload := rules.HasYAMLPayload(content)
+	if !hasPart && !yamlPayload && nativeRuleFile(content) {
 		return content, nil
 	}
-
-	var ruleLines []string
-	if isYAMLFormat {
-		document, loadErr := yamlx.Parse([]byte(content))
-		if loadErr != nil && rejectYAML(loadErr) {
-			return "", customYAMLError(loadErr)
-		}
-		var payload *yamlx.Node
-		if loadErr == nil {
-			payload = yamlx.Resolve(yamlx.Get(document, "payload"))
-		}
-		if payload == nil {
-			isYAMLFormat = false
-		} else {
-			addScalar := func(node *yamlx.Node) {
-				node = yamlx.Resolve(node)
-				if textScalar(node) {
-					ruleLines = append(ruleLines, node.Value)
-				}
-			}
-			switch payload.Kind {
-			case yaml.SequenceNode:
-				for _, node := range payload.Content {
-					addScalar(node)
-				}
-			case yaml.MappingNode:
-				for key := range yamlx.AllPairs(payload) {
-					addScalar(key)
-				}
-			case yaml.ScalarNode:
-				if textScalar(payload) {
-					for _, character := range payload.Value {
-						ruleLines = append(ruleLines, string(character))
-					}
-					break
-				}
-				switch payload.ShortTag() {
-				case "!!null":
-				case "!!str", "!!timestamp":
-					for _, character := range payload.Value {
-						ruleLines = append(ruleLines, string(character))
-					}
-				default:
-					var value any
-					if err := yamlx.Decode(payload, &value); err != nil {
-						return "", err
-					}
-					if value != nil && value != false && value != 0 && value != 0.0 {
-						return "", errors.New(PayloadCollectionMessage)
-					}
-				}
-			}
-		}
+	lines, err := contentLines(content, yamlPayload)
+	if err != nil {
+		return "", err
 	}
-	if !isYAMLFormat {
-		ruleLines = append(ruleLines, convert.RuleLines(content)...)
-	}
-
-	converted := []string{}
-	for _, line := range ruleLines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
-			continue
-		}
-
-		nativePrefix, nativeValue, separator := strings.Cut(line, ":")
-		if separator && inList(cases.Lower(language.Und).String(nativePrefix), mosdnsDomainPrefixes) {
-			if wantDomain && nativeValue != "" {
-				converted = append(converted, cases.Lower(language.Und).String(nativePrefix)+":"+nativeValue)
-			}
-			continue
-		}
-		if separator && cases.Lower(language.Und).String(nativePrefix) == "ip" {
-			if wantIP && isIPOrCIDR(strings.TrimSpace(nativeValue)) {
-				converted = append(converted, strings.TrimSpace(nativeValue))
-			}
-			continue
-		}
-
-		if strings.Contains(line, ",") {
-			ruleType, value := ParseClashRuleValue(line)
-			if value == "" {
-				continue
-			}
-			if prefix, ok := clashDomainPrefix(ruleType); ok {
-				if wantDomain {
-					converted = append(converted, prefix+":"+value)
-				}
-			} else if inList(ruleType, clashIPTypes) {
-				if wantClashIP && isIPOrCIDR(value) {
-					converted = append(converted, value)
-				}
-			}
-			continue
-		}
-
-		if isIPOrCIDR(line) {
-			if wantIP {
-				converted = append(converted, line)
-			}
-			continue
-		}
-		if !wantDomain {
-			continue
-		}
-		if expression, ok := DomainPatternForMosDNS(line); ok {
-			converted = append(converted, expression)
+	sel := ruleSelection{domain: !hasPart || p == PartDomain, ip: !hasPart || p == PartIP, clashIP: p == PartIP}
+	var converted []string
+	for line := range lines {
+		if value := sel.convert(line); value != "" {
+			converted = append(converted, value)
 		}
 	}
 	return joinRuleLines(converted, p), nil
+}
+
+// HasIPRules reports whether PartIP would contain a rule. YAML syntax and
+// policy checks apply to the complete document before inspecting its payload.
+func HasIPRules(content string) (bool, error) {
+	content = strings.TrimPrefix(content, "\ufeff")
+	lines, err := contentLines(content, rules.HasYAMLPayload(content))
+	if err != nil {
+		return false, err
+	}
+	sel := ruleSelection{ip: true, clashIP: true}
+	for line := range lines {
+		if sel.convert(line) != "" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func nativeRuleFile(content string) bool {
+	count := 0
+	for line := range convert.RuleLineSeq(content) {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if count == 20 {
+			break
+		}
+		count++
+		if before, _, ok := strings.Cut(line, ":"); ok {
+			prefix := lowerRulePrefix(strings.TrimSpace(before))
+			if inList(prefix, mosdnsDomainPrefixes) || prefix == "ip" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func contentLines(content string, yamlPayload bool) (iter.Seq[string], error) {
+	if !yamlPayload {
+		return convert.RuleLineSeq(content), nil
+	}
+	doc, err := yamlx.Parse([]byte(content))
+	if err != nil && rejectYAML(err) {
+		return nil, customYAMLError(err)
+	}
+	var payload *yamlx.Node
+	if err == nil {
+		payload = yamlx.Resolve(yamlx.Get(doc, "payload"))
+	}
+	if payload == nil {
+		return convert.RuleLineSeq(content), nil
+	}
+
+	switch payload.Kind {
+	case yaml.SequenceNode:
+		return func(yield func(string) bool) {
+			for _, n := range payload.Content {
+				n = yamlx.Resolve(n)
+				if textScalar(n) && !yield(n.Value) {
+					return
+				}
+			}
+		}, nil
+	case yaml.MappingNode:
+		return func(yield func(string) bool) {
+			for key := range yamlx.AllPairs(payload) {
+				n := yamlx.Resolve(key)
+				if textScalar(n) && !yield(n.Value) {
+					return
+				}
+			}
+		}, nil
+	case yaml.ScalarNode:
+		if textScalar(payload) {
+			return func(yield func(string) bool) {
+				for _, r := range payload.Value {
+					if !yield(string(r)) {
+						return
+					}
+				}
+			}, nil
+		}
+		var v any
+		if err := yamlx.Decode(payload, &v); err != nil {
+			return nil, err
+		}
+		if v != nil && v != false && v != 0 && v != 0.0 {
+			return nil, errors.New(PayloadCollectionMessage)
+		}
+	}
+	return slices.Values([]string(nil)), nil
+}
+
+type ruleSelection struct {
+	domain, ip, clashIP bool
+}
+
+func (s ruleSelection) convert(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+		return ""
+	}
+	if prefix, value, ok := strings.Cut(line, ":"); ok {
+		prefix = lowerRulePrefix(prefix)
+		if inList(prefix, mosdnsDomainPrefixes) {
+			if s.domain && value != "" {
+				return prefix + ":" + value
+			}
+			return ""
+		}
+		if prefix == "ip" {
+			value = strings.TrimSpace(value)
+			if s.ip && isIPOrCIDR(value) {
+				return value
+			}
+			return ""
+		}
+	}
+	if strings.Contains(line, ",") {
+		kind, value := ParseClashRuleValue(line)
+		if value == "" {
+			return ""
+		}
+		if s.domain {
+			if prefix, ok := clashDomainPrefix(kind); ok {
+				return prefix + ":" + value
+			}
+		}
+		if s.clashIP && inList(kind, clashIPTypes) && isIPOrCIDR(value) {
+			return value
+		}
+		return ""
+	}
+	if isIPOrCIDR(line) {
+		if s.ip {
+			return line
+		}
+		return ""
+	}
+	if s.domain {
+		if value, ok := DomainPatternForMosDNS(line); ok {
+			return value
+		}
+	}
+	return ""
 }
