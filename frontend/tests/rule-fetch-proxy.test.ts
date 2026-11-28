@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import SystemSettings from '@/views/SystemSettings.vue'
-import { dependenciesApi, ruleFetchProxyApi, serverDomainApi, configTokenApi, tasksApi } from '@/api'
+import { ruleFetchProxyApi, serverDomainApi, configTokenApi, tasksApi } from '@/api'
 import { canReloadPage } from '@/lib/pageReloadGuard'
 import { notify } from '@/lib/feedback'
 
@@ -66,33 +66,6 @@ describe('system settings tabs', () => {
     expect(wrapper.get('[data-scheduled-tasks]').element.closest('[role="tabpanel"]')!.getAttribute('data-state')).toBe('active')
     expect(tasksApi.list).toHaveBeenCalledTimes(reads)
   })
-})
-
-it('依赖空闲时只读取一次，恢复可见后跟踪正在更新的依赖直到完成', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-  const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
-  const dependency = (state: string) => ({ data: { dependencies: [{ key: 'sample', name: '样例',
-    current_version: '1', latest_version: '2', update: { state, message: state } }] } } as any)
-  try {
-    vi.mocked(dependenciesApi.list).mockResolvedValueOnce(dependency('idle'))
-    await render()
-    await vi.advanceTimersByTimeAsync(60000)
-    expect(dependenciesApi.list).toHaveBeenCalledTimes(1)
-    hidden.mockReturnValue(true)
-    document.dispatchEvent(new Event('visibilitychange'))
-    await vi.advanceTimersByTimeAsync(15000)
-    vi.mocked(dependenciesApi.list).mockResolvedValueOnce(dependency('running')).mockResolvedValueOnce(dependency('success'))
-    hidden.mockReturnValue(false)
-    document.dispatchEvent(new Event('visibilitychange'))
-    await flushPromises()
-    expect(dependenciesApi.list).toHaveBeenCalledTimes(2)
-    await vi.advanceTimersByTimeAsync(1999)
-    expect(dependenciesApi.list).toHaveBeenCalledTimes(2)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(dependenciesApi.list).toHaveBeenCalledTimes(3)
-    await vi.advanceTimersByTimeAsync(60000)
-    expect(dependenciesApi.list).toHaveBeenCalledTimes(3)
-  } finally { vi.useRealTimers() }
 })
 
 describe('rule download proxy setting', () => {

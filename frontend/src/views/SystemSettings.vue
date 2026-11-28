@@ -428,52 +428,48 @@ const updatingKey = ref('')
 let dependenciesDisposed = false
 let dependencyPollTimer: ReturnType<typeof setTimeout> | undefined
 
-let dependencyRead = 0
-let readingDependencies = false
-const updatingDependencies = () => dependencies.value.some(dep => dep.update.state === 'running')
-
-const loadDependencies = async (refresh = false, background = false) => {
-  if (background && (document.hidden || readingDependencies)) return
-  const read = ++dependencyRead
-  clearTimeout(dependencyPollTimer)
-  readingDependencies = true
-  checkingDependencies.value = !background
+const loadDependencies = async (refresh = false) => {
+  checkingDependencies.value = true
   try {
     const response = await dependenciesApi.list(refresh)
-    if (dependenciesDisposed || read !== dependencyRead) return
-    const wasUpdating = updatingDependencies()
     dependencies.value = response.data.dependencies || []
     if (refresh) {
       const failed = dependencies.value.find(dep => dep.check_error)
       if (failed) notify.error(failed.check_error)
       else notify.success(dependencies.value.some(dep => dep.has_update) ? '发现新版本' : '所有依赖均为最新版本')
     }
-    if (wasUpdating && !updatingDependencies() && updatingKey.value) {
-      const target = dependencies.value.find(dep => dep.key === updatingKey.value)
-      if (target?.update.state === 'success') notify.success(target.update.message)
-      else if (target?.update.state === 'failed') notify.error(target.update.message)
-      updatingKey.value = ''
-    }
   } catch {
-    if (!background && !dependenciesDisposed && read === dependencyRead) notify.error('加载第三方依赖失败')
+    notify.error('加载第三方依赖失败')
   } finally {
-    if (read === dependencyRead) {
-      readingDependencies = false
-      checkingDependencies.value = false
-      scheduleDependencyPoll()
-    }
+    checkingDependencies.value = false
+    scheduleDependencyPoll()
   }
 }
 
+// 仅此页面可见时刷新；检测状态不会唤醒 Sub-Store 或推迟休眠。
 const scheduleDependencyPoll = () => {
+  if (dependenciesDisposed) return
   clearTimeout(dependencyPollTimer)
-  if (!dependenciesDisposed && !document.hidden && updatingDependencies()) {
-    dependencyPollTimer = setTimeout(() => loadDependencies(false, true), 2000)
-  }
-}
-const onDependencyVisibility = () => {
-  if (document.hidden) clearTimeout(dependencyPollTimer)
-  else void loadDependencies(false, true)
+  dependencyPollTimer = setTimeout(async () => {
+    if (document.hidden) { scheduleDependencyPoll(); return }
+    try {
+      const response = await dependenciesApi.list()
+      dependencies.value = response.data.dependencies || []
+    } catch {
+      // 更新期间 Sub-Store 重启，后端偶发失败时继续轮询
+    }
+    const target = dependencies.value.find(dep => dep.key === updatingKey.value)
+    if (dependencies.value.some(dep => dep.update.state === 'running')) {
+      scheduleDependencyPoll()
+      return
+    }
+    if (target) {
+      if (target.update.state === 'success') notify.success(target.update.message)
+      else if (target.update.state === 'failed') notify.error(target.update.message)
+    }
+    updatingKey.value = ''
+    scheduleDependencyPoll()
+  }, dependencies.value.some(dep => dep.update.state === 'running') ? 2000 : 15000)
 }
 
 const updateDependency = async (dep: DependencyStatus) => {
@@ -485,12 +481,7 @@ const updateDependency = async (dep: DependencyStatus) => {
   updatingKey.value = dep.key
   try {
     await dependenciesApi.update(dep.key)
-    // 更新前启动的状态读取不能覆盖刚提交的任务。
-    ++dependencyRead
-    readingDependencies = false
-    checkingDependencies.value = false
-    const current = dependencies.value.find(item => item.key === dep.key)
-    if (current) current.update = { ...current.update, state: 'running', message: `准备更新到 ${dep.latest_version}…` }
+    dep.update = { ...dep.update, state: 'running', message: `准备更新到 ${dep.latest_version}…` }
     scheduleDependencyPoll()
   } catch (error) {
     updatingKey.value = ''
@@ -498,11 +489,7 @@ const updateDependency = async (dep: DependencyStatus) => {
   }
 }
 
-onBeforeUnmount(() => {
-  dependenciesDisposed = true
-  clearTimeout(dependencyPollTimer)
-  document.removeEventListener('visibilitychange', onDependencyVisibility)
-})
+onBeforeUnmount(() => { dependenciesDisposed = true; clearTimeout(dependencyPollTimer) })
 
 const serverDomain = ref(window.location.origin)
 const configToken = ref('')
@@ -907,7 +894,6 @@ const saveBackupConfig = async () => {
 }
 
 onMounted(async () => {
-  document.addEventListener('visibilitychange', onDependencyVisibility)
   await Promise.all([
     loadConfigToken(),
     loadRuleFetchProxy(),
