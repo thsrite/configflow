@@ -479,7 +479,8 @@ func (svc *Service) LoadDomains(ctx context.Context, id string, days int, view, 
 	for _, d := range out.Items {
 		for _, h := range d.Hosts {
 			if p, ok := ps[h.Host]; ok {
-				h.Probe = &p
+				copy := p.Clone()
+				h.Probe = &copy
 			}
 			if p, ok := pages[h.Host]; ok && (d.Website.Page == nil || p.CheckedAt > d.Website.Page.CheckedAt) {
 				d.Website.Page = &p

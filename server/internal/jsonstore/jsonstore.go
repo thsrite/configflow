@@ -58,18 +58,25 @@ func (s *Store) Path(id string) string {
 // Read is _read_json: the object stored for id, or nil when the file is
 // missing, unreadable, not valid JSON or not an object.
 func (s *Store) Read(id string, dst any) bool {
+	valid, _ := s.ReadObject(id, dst)
+	return valid
+}
+
+// ReadObject decodes a stored object, distinguishing an unreadable file from
+// readable content that is invalid for dst.
+func (s *Store) ReadObject(id string, dst any) (decoded, readable bool) {
 	data, err := os.ReadFile(s.Path(id))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			logx.Get("backend.utils.json_store").Warningf("%s: %s", msgReadFailed, readErrorCategory(err))
 		}
-		return false
+		return false, false
 	}
 	data = bytes.TrimSpace(data)
 	if len(data) == 0 || data[0] != '{' {
-		return false
+		return false, true
 	}
-	return jsonresp.DecodeStored(data, dst) == nil
+	return jsonresp.DecodeStored(data, dst) == nil, true
 }
 
 func readErrorCategory(err error) string {
@@ -227,6 +234,15 @@ func (s *Store) Remove(ctx context.Context, id string) error {
 		}
 		return &fs.PathError{Op: "remove", Path: path, Err: err}
 	}
+}
+
+// FileSignature identifies the file currently named by path.
+func FileSignature(path string) (Signature, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Signature{}, err
+	}
+	return signatureOf(info), nil
 }
 
 func signature(f *os.File) (Signature, error) {

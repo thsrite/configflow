@@ -333,7 +333,7 @@ func (svc *Service) ProbeEvidence(ctx context.Context, id string, entries []Appl
 			}
 		}
 		if found {
-			out[e.Value] = best
+			out[e.Value] = best.Clone()
 		}
 	}
 	return out, nil

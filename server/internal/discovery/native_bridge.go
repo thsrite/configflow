@@ -34,13 +34,7 @@ func (s *Service) legacyProbes(ctx context.Context, as []Agent) (map[string]Prob
 	for i, a := range as {
 		ids[i] = a.ID
 	}
-	entries, err := check.LatestProbeEntries(ids, store)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]Probe{}
-	err = project(entries, &out)
-	return out, err
+	return store.LatestProbes(ids)
 }
 func (s *Service) legacySaveProbes(ctx context.Context, id string, ps map[string]Probe) error {
 	store, err := s.probeStore()

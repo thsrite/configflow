@@ -372,7 +372,7 @@ func (r TimedRecord) CheckedAt() string {
 		return ""
 	}
 	var stamp StrictString
-	if json.Unmarshal(raw, &stamp) != nil {
+	if stamp.UnmarshalJSON(raw) != nil {
 		return ""
 	}
 	return string(stamp)
@@ -386,31 +386,31 @@ type probeFile struct {
 var probeLock sync.Mutex
 
 // ProbeStore persists per-Agent active domain probe results on disk.
-type ProbeStore struct{ files *jsonstore.Store }
+type ProbeStore = probeStore[struct{}]
 
 // NewProbeStore creates a ProbeStore rooted at dir.
 func NewProbeStore(dir string) *ProbeStore { return &ProbeStore{files: jsonstore.New(dir)} }
 
 // Path returns the JSON file path for agentID.
-func (s *ProbeStore) Path(agentID string) string { return s.files.Path(agentID) }
+func (s *probeStore[T]) Path(agentID string) string { return s.files.Path(agentID) }
 
 // readFile reads an Agent's probe file. A file without a hosts object, or
 // with a host entry that is not an object, reads as empty: probe results are
 // a cache the next probe refills.
-func (s *ProbeStore) readFile(agentID string) probeFile {
+func (s *probeStore[T]) readFile(agentID string) (probeFile, bool) {
 	var object model.Fields
-	if !s.files.Read(agentID, &object) {
-		return probeFile{}
+	if valid, readable := s.files.ReadObject(agentID, &object); !valid {
+		return probeFile{}, readable
 	}
 	raw, ok := object.Get("hosts")
 	if !ok {
-		return probeFile{}
+		return probeFile{}, true
 	}
 	var file probeFile
 	if !decodeClean(raw, &file.Hosts) {
-		return probeFile{}
+		return probeFile{}, true
 	}
-	return file
+	return file, true
 }
 
 func validTimedRecords(records model.OrderedMap[TimedRecord]) bool {
@@ -432,65 +432,97 @@ func validTimestamp(entry TimedRecord) bool {
 	return json.Unmarshal(value, &stamp) == nil
 }
 
-func pruneHosts(hosts *model.OrderedMap[TimedRecord], now time.Time) {
-	bound := oldest(now, ProbeRetentionDays)
-	if hosts.Len() <= MaxProbedHosts {
-		expired := false
-		for _, entry := range hosts.All() {
-			if entry.CheckedAt() < bound {
-				expired = true
-				break
-			}
-		}
-		if !expired {
-			return
-		}
-	}
+type retainedHost struct {
+	host      string
+	entry     TimedRecord
+	checkedAt string
+	index     int
+}
 
-	type retainedHost struct {
-		host      string
-		entry     TimedRecord
-		checkedAt string
-		index     int
-	}
+// indexHosts retains the newest MaxProbedHosts, preserving insertion order on
+// ties. An entry outside that set cannot survive any time-based cutoff.
+func indexHosts(hosts model.OrderedMap[TimedRecord], stamps map[string]string) []retainedHost {
 	retained := make([]retainedHost, 0, hosts.Len())
 	for host, entry := range hosts.All() {
-		if checkedAt := entry.CheckedAt(); checkedAt >= bound {
-			retained = append(retained, retainedHost{host, entry, checkedAt, len(retained)})
+		stamp, ok := stamps[host]
+		if !ok {
+			stamp = entry.CheckedAt()
 		}
+		retained = append(retained, retainedHost{host, entry, stamp, len(retained)})
 	}
 	if len(retained) > MaxProbedHosts {
-		// Equal timestamps retain the earliest insertions at the cutoff.
-		slices.SortStableFunc(retained, func(a, b retainedHost) int {
-			return cmp.Compare(b.checkedAt, a.checkedAt)
-		})
+		slices.SortStableFunc(retained, func(a, b retainedHost) int { return cmp.Compare(b.checkedAt, a.checkedAt) })
 		retained = retained[:MaxProbedHosts]
-		slices.SortFunc(retained, func(a, b retainedHost) int {
-			return cmp.Compare(a.index, b.index)
-		})
+		slices.SortFunc(retained, func(a, b retainedHost) int { return cmp.Compare(a.index, b.index) })
 	}
-	// Rebuild from an empty map, including when every entry expired.
-	*hosts = model.OrderedMap[TimedRecord]{}
+	return retained
+}
+
+func (s *probeStore[T]) loadSnapshot(agentID string) *probeSnapshot[T] {
+	probeLock.Lock()
+	defer probeLock.Unlock()
+	return s.snapshot(agentID)
+}
+
+func (s *probeStore[T]) snapshot(agentID string) *probeSnapshot[T] {
+	path := s.Path(agentID)
+	sig, err := jsonstore.FileSignature(path)
+	for i, cached := range s.cached {
+		if cached.path == path {
+			s.cached = slices.Delete(s.cached, i, i+1)
+			if err == nil && sig == cached.signature {
+				s.cached = append(s.cached, cached)
+				return cached
+			}
+			break
+		}
+	}
+	file, valid := s.readFile(agentID)
+	snap := &probeSnapshot[T]{path: path, signature: sig, file: file, retained: indexHosts(file.Hosts, nil)}
+	if err == nil && valid {
+		if after, err := jsonstore.FileSignature(path); err == nil && after == sig {
+			// One slot per recently read Agent file.
+			const maxCachedProbeFiles = 32
+			if len(s.cached) == maxCachedProbeFiles {
+				s.cached = slices.Delete(s.cached, 0, 1)
+			}
+			s.cached = append(s.cached, snap)
+		}
+	}
+	return snap
+}
+
+func (snap *probeSnapshot[T]) entries(bound string) model.OrderedMap[TimedRecord] {
+	if len(snap.retained) == snap.file.Hosts.Len() && !slices.ContainsFunc(snap.retained, func(h retainedHost) bool { return h.checkedAt < bound }) {
+		return snap.file.Hosts
+	}
+	var hosts model.OrderedMap[TimedRecord]
 	hosts.SetAll(func(yield func(string, TimedRecord) bool) {
-		for _, entry := range retained {
-			if !yield(entry.host, entry.entry) {
+		for _, h := range snap.retained {
+			if h.checkedAt >= bound && !yield(h.host, h.entry) {
 				return
 			}
 		}
 	})
+	return hosts
 }
 
 // SaveEntries merges probe entries, retaining the caller's owner lifetime
 // through lock acquisition and checking cancellation before file publication.
-func (s *ProbeStore) SaveEntries(ctx context.Context, agentID string, results model.OrderedMap[TimedRecord], now time.Time) error {
+func (s *probeStore[T]) SaveEntries(ctx context.Context, agentID string, results model.OrderedMap[TimedRecord], now time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if now.IsZero() {
 		now = time.Now()
 	}
-	if !validTimedRecords(results) {
-		return invalidInput(msgInvalidProbeEntry)
+	stamps := make(map[string]string, results.Len())
+	for host, entry := range results.All() {
+		var stamp StrictString
+		if raw, ok := entry.Get("checked_at"); ok && stamp.UnmarshalJSON(raw) != nil {
+			return invalidInput(msgInvalidProbeEntry)
+		}
+		stamps[host] = string(stamp)
 	}
 
 	probeLock.Lock()
@@ -498,9 +530,16 @@ func (s *ProbeStore) SaveEntries(ctx context.Context, agentID string, results mo
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	file := s.readFile(agentID)
+	snap := s.snapshot(agentID)
+	file := snap.file
 	file.Hosts.SetAll(results.All())
-	pruneHosts(&file.Hosts, now)
+	for _, h := range snap.retained {
+		if _, updated := stamps[h.host]; !updated {
+			stamps[h.host] = h.checkedAt
+		}
+	}
+	next := probeSnapshot[T]{file: file, retained: indexHosts(file.Hosts, stamps)}
+	file.Hosts = next.entries(oldest(now, ProbeRetentionDays))
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -510,19 +549,15 @@ func (s *ProbeStore) SaveEntries(ctx context.Context, agentID string, results mo
 
 // LoadEntries loads and prunes agentID's host probe entries relative to now
 // without writing back to disk.
-func (s *ProbeStore) LoadEntries(agentID string, now time.Time) model.OrderedMap[TimedRecord] {
+func (s *probeStore[T]) LoadEntries(agentID string, now time.Time) model.OrderedMap[TimedRecord] {
 	if now.IsZero() {
 		now = time.Now()
 	}
-	probeLock.Lock()
-	file := s.readFile(agentID)
-	probeLock.Unlock()
-	pruneHosts(&file.Hosts, now)
-	return file.Hosts
+	return s.loadSnapshot(agentID).entries(oldest(now, ProbeRetentionDays))
 }
 
 // Delete removes the probe file only while its owner is active.
-func (s *ProbeStore) Delete(ctx context.Context, agentID string) error {
+func (s *probeStore[T]) Delete(ctx context.Context, agentID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -542,15 +577,18 @@ func LatestProbeEntries(agentIDs []string, store *ProbeStore) (model.OrderedMap[
 	// Map, which made this quadratic in the number of probed hosts.
 	var order []string
 	latest := map[string]TimedRecord{}
+	stamps := map[string]string{}
 	for _, agentID := range agentIDs {
 		agentJSON, err := json.Marshal(agentID)
 		if err != nil {
 			return merged, fmt.Errorf("encode agent_id: %w", err)
 		}
-		hosts := store.LoadEntries(agentID, time.Time{})
-		for host, entry := range hosts.All() {
-			previous, seen := latest[host]
-			if seen && !(entry.CheckedAt() > previous.CheckedAt()) {
+		bound := oldest(time.Now(), ProbeRetentionDays)
+		snap := store.loadSnapshot(agentID)
+		for _, h := range snap.retained {
+			host, entry := h.host, h.entry
+			previous, seen := stamps[host]
+			if h.checkedAt < bound || seen && h.checkedAt <= previous {
 				continue
 			}
 			copied := entry
@@ -561,6 +599,7 @@ func LatestProbeEntries(agentIDs []string, store *ProbeStore) (model.OrderedMap[
 				order = append(order, host)
 			}
 			latest[host] = copied
+			stamps[host] = h.checkedAt
 		}
 	}
 	merged.SetAll(func(yield func(string, TimedRecord) bool) {
