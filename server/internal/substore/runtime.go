@@ -21,9 +21,11 @@ import (
 	"configflow/internal/repo"
 )
 
-// IdleSeconds is IDLE_SECONDS: an on-demand Sub-Store stops after five idle
-// minutes.
-const IdleSeconds = 300
+// IdleSeconds is how long an on-demand Sub-Store stays up after its last use.
+// One operation (a subscription refresh, a batch of node conversions) issues
+// its calls back to back, so a short window is enough to reuse the process;
+// a cold start costs well under a second.
+const IdleSeconds = 10
 
 var runtimeLog = logx.Get("backend.utils.sub_store_runtime")
 

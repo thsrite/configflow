@@ -465,7 +465,7 @@ func TestGetSubStoreStatus(t *testing.T) {
 	want := &DependencyStatus{
 		Key: "sub-store", Name: "Sub-Store", Description: "订阅解析与节点格式转换",
 		Homepage: "https://github.com/sub-store-org/Sub-Store", Running: true,
-		Lifecycle:      &RuntimeStatus{Managed: true, Mode: "on_demand", State: "running", IdleSeconds: 300, Error: ""},
+		Lifecycle:      &RuntimeStatus{Managed: true, Mode: "on_demand", State: "running", IdleSeconds: IdleSeconds, Error: ""},
 		CurrentVersion: "2.40.0", BuiltinVersion: "2.40.0", OnlineUpdated: true, Runtime: "v26.0.0",
 		LatestVersion: "2.42.0", LatestPublishedAt: "p", ReleaseURL: "u", ReleaseNotes: "n", CheckError: "",
 		HasUpdate: true, Updatable: true,

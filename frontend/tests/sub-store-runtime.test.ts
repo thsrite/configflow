@@ -9,7 +9,7 @@ vi.mock('@/api', () => ({ dependenciesApi: { setSubStoreMode: vi.fn() } }))
 vi.mock('@/lib/feedback', () => ({ notify: { success: vi.fn(), error: vi.fn() } }))
 const wrappers: ReturnType<typeof mount>[] = []
 const dependency = (extra = {}) => ({ key: 'sub-store', running: false,
-  lifecycle: { managed: true, mode: 'on_demand', state: 'sleeping', idle_seconds: 300, error: '' },
+  lifecycle: { managed: true, mode: 'on_demand', state: 'sleeping', idle_seconds: 10, error: '' },
   update: { state: 'idle' }, ...extra } as DependencyStatus)
 function render(dep = dependency()) {
   const wrapper = mount(SubStoreRuntime, { props: { dependency: dep }, attachTo: document.body })
@@ -27,8 +27,13 @@ describe('Sub-Store runtime settings', () => {
     const wrapper = render()
     expect(wrapper.get('[role="combobox"]').attributes('aria-label')).toBe('Sub-Store 运行方式')
     expect(wrapper.getComponent(Select).props('modelValue')).toBe('on_demand')
-    expect(wrapper.text()).toContain('空闲 5 分钟')
+    expect(wrapper.text()).toContain('空闲约 10 秒后休眠')
     expect(dependenciesApi.setSubStoreMode).not.toHaveBeenCalled()
+  })
+
+  it('describes a longer idle window in minutes', () => {
+    const wrapper = render(dependency({ lifecycle: { managed: true, mode: 'on_demand', state: 'sleeping', idle_seconds: 300, error: '' } }))
+    expect(wrapper.text()).toContain('空闲约 5 分钟后休眠')
   })
 
   it('waits for a successful mode change and prevents duplicate saves', async () => {
