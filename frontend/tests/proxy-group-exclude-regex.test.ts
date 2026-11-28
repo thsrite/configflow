@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { AxiosHeaders, type AxiosResponse } from 'axios'
+import Sortable from 'sortablejs'
 import ProxyGroups from '@/views/ProxyGroups.vue'
 import MultiSelect from '@/components/common/MultiSelect.vue'
 import api, { nodeApi, proxyGroupApi } from '@/api'
@@ -59,6 +60,7 @@ beforeEach(() => {
 afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
+  vi.restoreAllMocks()
   vi.useRealTimers()
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
@@ -91,6 +93,32 @@ async function dialogButton(text: string) {
   await dialog().findAll('button').find(item => item.text() === text)!.trigger('click')
   await flushPromises()
 }
+
+it('编辑成员时保留同一拖拽实例，保存最新成员顺序，关闭时释放实例', async () => {
+  groups = [group({ subscriptions: [], manual_nodes: ['DIRECT'] })]
+  const create = vi.spyOn(Sortable, 'create')
+  await render()
+  await openEdit()
+  await dialogButton('顺序调整 · 1 项')
+  await vi.advanceTimersByTimeAsync(150)
+  const select = wrapper!.findAllComponents(MultiSelect).find(c => c.props('placeholder') === '手动选择节点')!
+  for (let i = 0; i < 5; i++) {
+    select.vm.$emit('update:modelValue', i % 2 ? ['DIRECT'] : ['DIRECT', 'REJECT'])
+    await flushPromises()
+  }
+  expect(create).toHaveBeenCalledTimes(1)
+  const [container, options] = create.mock.calls.at(-1)!
+  const instance = create.mock.results.at(-1)!.value as Sortable
+  const destroy = vi.spyOn(instance, 'destroy')
+  container.prepend(container.children[1]!)
+  options!.onEnd!.call(instance, { oldIndex: 1, newIndex: 0 } as Sortable.SortableEvent)
+  await flushPromises()
+  await dialogButton('保存')
+  expect(proxyGroupApi.update).toHaveBeenCalledWith('alpha', expect.objectContaining({
+    proxies_order: [{ type: 'node', id: 'REJECT' }, { type: 'node', id: 'DIRECT' }]
+  }), 'exclude-profile')
+  expect(destroy).toHaveBeenCalledOnce()
+})
 
 describe('proxy group exclusion filters', () => {
   it.each(cases)('loads, previews, saves and restores an exclusion-only $source draft', async item => {

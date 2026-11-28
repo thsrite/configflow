@@ -793,7 +793,6 @@ const filteredPickerGroups = computed(() => {
 })
 watch(groupPickerOpen, open => { if (open) groupPickerSearch.value = '' })
 const orderedProxiesRef = ref<HTMLElement | null>(null)
-let orderedProxiesSortable: any = null
 const originalGroupName = ref<string>('') // 保存原始策略组名称，用于检测名称变化
 const expandedCards = ref<Set<string>>(new Set()) // 展开的卡片ID集合
 const form = ref<Partial<ProxyGroup>>({
@@ -1086,7 +1085,7 @@ watch([() => form.value.manual_nodes, () => form.value.aggregations, () => form.
   })
 
   form.value.proxies_order = newOrder
-}, { deep: true })
+})
 
 const getGroupTypeLabel = (type: string) => {
   const labels: Record<string, string> = {
@@ -1844,67 +1843,25 @@ const deleteGroup = async (row: ProxyGroup) => {
 }
 
 
-
-// 初始化已排序代理列表的拖拽功能
-const initOrderedProxiesSortable = () => {
-  nextTick(() => {
-    if (orderedProxiesRef.value) {
-      // 销毁已有实例
-      if (orderedProxiesSortable) {
-        orderedProxiesSortable.destroy()
-      }
-
-      orderedProxiesSortable = Sortable.create(orderedProxiesRef.value, {
-        animation: 150,
-        handle: '.drag-handle',
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        dragClass: 'sortable-drag',
-        onEnd: (evt: any) => {
-          const { oldIndex, newIndex } = evt
-          if (oldIndex === newIndex || oldIndex === undefined || newIndex === undefined) return
-
-          // 更新 proxies_order 顺序
-          const proxiesOrder = [...(form.value.proxies_order || [])]
-          const movedItem = proxiesOrder.splice(oldIndex, 1)[0]
-          proxiesOrder.splice(newIndex, 0, movedItem)
-          form.value.proxies_order = proxiesOrder
-        }
-      })
+// Sortable 在容器上处理拖动，增删或重排子项时复用同一个实例。
+watch(orderedProxiesRef, (container, _, onCleanup) => {
+  if (!container) return
+  const sortable = Sortable.create(container, {
+    animation: 150,
+    handle: '.drag-handle',
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    dragClass: 'sortable-drag',
+    onEnd: ({ oldIndex, newIndex }) => {
+      if (oldIndex === newIndex || oldIndex === undefined || newIndex === undefined) return
+      const proxiesOrder = [...(form.value.proxies_order || [])]
+      const [moved] = proxiesOrder.splice(oldIndex, 1)
+      proxiesOrder.splice(newIndex, 0, moved!)
+      form.value.proxies_order = proxiesOrder
     }
   })
-}
-
-// 监听对话框显示状态，初始化排序功能
-watch(dialogVisible, (visible) => {
-  if (visible) {
-    // 对话框打开时，延迟初始化Sortable（等待DOM渲染）
-    setTimeout(() => {
-      initOrderedProxiesSortable()
-    }, 100)
-  } else {
-    // 对话框关闭时，销毁Sortable实例
-    if (orderedProxiesSortable) {
-      orderedProxiesSortable.destroy()
-      orderedProxiesSortable = null
-    }
-  }
-})
-
-// 监听排序列表变化，重新初始化Sortable
-watch(orderedProxiesList, () => {
-  if (dialogVisible.value && orderedProxiesList.value.length > 0) {
-    initOrderedProxiesSortable()
-  }
-}, { deep: true })
-
-// 折叠面板展开时才有 DOM，此时才初始化 Sortable
-watch(orderPanelOpen, open => {
-  if (open && orderedProxiesList.value.length > 0) {
-    // 等待折叠动画渲染出列表节点
-    setTimeout(() => initOrderedProxiesSortable(), 50)
-  }
-})
+  onCleanup(() => sortable.destroy())
+}, { flush: 'post' })
 
 /* ---------- 策略组排序：弹窗保存成功后才更新主列表 ---------- */
 const persistGroupOrder = async (ordered: ProxyGroup[]): Promise<void> => {
@@ -2122,7 +2079,7 @@ const refreshPreview = () => {
   }, 280)
 }
 
-watch([selectedKey, () => draft.value.sources, () => draft.value.regex, () => draft.value.excludeRegex], refreshPreview, { deep: true })
+watch([selectedKey, () => draft.value.sources, () => draft.value.regex, () => draft.value.excludeRegex], refreshPreview)
 
 /* ---------- 每个策略组的命中数（列表右侧），限并发逐个计算 ---------- */
 const matchCounts = ref<Record<string, number>>({})
