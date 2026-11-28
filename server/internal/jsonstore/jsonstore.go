@@ -49,6 +49,9 @@ type Signature struct {
 	MtimeNs, CtimeNs int64
 }
 
+// InfoSignature returns the same change signature from an existing stat result.
+func InfoSignature(info fs.FileInfo) Signature { return signatureOf(info) }
+
 // Path is _path: the id with "/" and "\" replaced by "_", plus ".json".
 func (s *Store) Path(id string) string {
 	safe := strings.NewReplacer("/", "_", "\\", "_").Replace(id)

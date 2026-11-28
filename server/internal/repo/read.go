@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"configflow/internal/model"
+	"configflow/internal/store"
 )
 
 // Typed reads (design n7-n8 2.5).
@@ -203,4 +204,13 @@ func profileByKey(document *model.Document, profileID string) *model.Profile {
 		}
 	}
 	return nil
+}
+
+// ViewAt presents the document with its committed head. A mutable working
+// document has no head. The callback must not change the document.
+func (r *Repository) ViewAt(ctx context.Context, fn func(*model.Document, *store.Head) error) error {
+	_, err := r.borrowWithHead(ctx, func(doc *model.Document, head *store.Head, _ bool) error {
+		return fn(doc, head)
+	})
+	return err
 }

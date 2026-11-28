@@ -36,7 +36,9 @@ type Service struct {
 	envMu sync.RWMutex
 	env   *RefreshEnv
 
-	loop refreshPacer
+	loop       refreshPacer
+	ruleRowsMu sync.Mutex
+	ruleRows   *ruleRows
 
 	hooksMu          sync.Mutex
 	onRulesRefreshed []func()

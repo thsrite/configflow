@@ -24,7 +24,7 @@ import (
 // deployment and IPv6 verification histories make up most of the document,
 // like in production. Every value is synthetic.
 type o10Fixture struct {
-	t       *testing.T
+	t       testing.TB
 	srv     *httpxtest.Server
 	app     *httpx.App
 	agents  []o10Agent
@@ -39,7 +39,7 @@ const (
 	o10Aggregation = "agg-synthetic"
 )
 
-func newO10Fixture(t *testing.T) *o10Fixture {
+func newO10Fixture(t testing.TB) *o10Fixture {
 	t.Helper()
 	srv := httpxtest.New(t, httpxtest.Options{RepoOptions: RepoOptions(), DefaultFactories: true})
 	rt := lifecycle.NewRuntime(lifecycle.Options{Registry: lifecycle.NewRegistry(), Grace: 2 * time.Second, Mode: lifecycle.ModeManual})
@@ -165,7 +165,7 @@ func newO10Fixture(t *testing.T) *o10Fixture {
 	return f
 }
 
-func copyJSON(t *testing.T, in, out any) {
+func copyJSON(t testing.TB, in, out any) {
 	t.Helper()
 	data, err := json.Marshal(in)
 	if err != nil {
