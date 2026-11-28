@@ -17,6 +17,7 @@ import (
 
 	"configflow/internal/agents/upgrades"
 	"configflow/internal/api/agents"
+	"configflow/internal/api/logs"
 	"configflow/internal/httpx"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/installer"
@@ -132,5 +133,60 @@ func TestAgentDownloadDiscardsAfterServing(t *testing.T) {
 			t.Fatalf("got %d %v %q, want %d %v %q", got.Status, got.Header, got.Body, want.Status, want.Header, want.Body)
 		}
 		checkDiscards(discard{path, tc.pos})
+	}
+}
+
+func TestLogTailDiscardsAfterFullReads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "app.log")
+	h := &logs.Handler{LogFilePath: func() (string, error) { return path, nil }}
+	srv := httpxtest.New(t, httpxtest.Options{Register: httpxtest.Routes(h.Register)})
+	checkDiscards := observeDiscards(t)
+	appendLog := func(text string) {
+		t.Helper()
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if _, err := f.WriteString(text); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tail := func(limit string, total int, want ...string) {
+		t.Helper()
+		srv.Get("/api/logs/tail?lines="+limit).WantStatus(200).WantJSON(map[string]any{
+			"success": true, "log_file": path, "logs": want, "total_lines": total, "filtered_lines": len(want),
+		})
+	}
+	recount := discard{path, 0} // ReadAt leaves the descriptor position unchanged.
+	appendLog("first\nsecond\n")
+	tail("1", 2, "second")
+	checkDiscards(recount)
+	tail("1", 2, "second")
+	checkDiscards()
+	appendLog("third\n")
+	tail("1", 3, "third")
+	checkDiscards()
+
+	if err := os.Rename(path, path+".1"); err != nil {
+		t.Fatal(err)
+	}
+	appendLog("rotated\n")
+	tail("1", 1, "rotated")
+	checkDiscards(recount)
+
+	srv.Post("/api/logs/clear").WantStatus(200)
+	checkDiscards()
+	tail("1", 0, []string{}...)
+	checkDiscards(recount)
+	tail("1", 0, []string{}...)
+	checkDiscards()
+	const fresh = "new\r\nlast"
+	appendLog(fresh)
+	tail("1", 2, "last")
+	checkDiscards(recount)
+	for _, limit := range []string{"0", "-1"} {
+		tail(limit, 2, "new", "last")
+		checkDiscards(discard{path, int64(len(fresh))})
 	}
 }

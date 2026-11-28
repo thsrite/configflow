@@ -5,6 +5,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
+
+	"configflow/internal/pagecache"
 )
 
 const tailBlockSize = 16 << 10
@@ -112,11 +114,18 @@ func collectLines(reader io.Reader) ([]string, error) {
 func (h *Handler) readTail(file LogFile, limit int64) ([]string, int, error) {
 	h.countMu.Lock()
 	defer h.countMu.Unlock()
+	var fullRead bool
+	defer func() {
+		if f, ok := file.(*os.File); ok && fullRead {
+			pagecache.Discard(f)
+		}
+	}()
 	if limit <= 0 {
 		var state lineCount
 		state.file, _ = file.Stat() // Only needed to reuse the count on a later tail.
 		lines, err := collectLines(io.TeeReader(file, &state.end))
 		if err == nil {
+			fullRead = true
 			state.total = int64(len(lines))
 			h.count = state
 		}
@@ -137,8 +146,12 @@ func (h *Handler) readTail(file LogFile, limit int64) ([]string, int, error) {
 			state = lineCount{}
 		}
 		state.file = info
+		previousOffset := state.end.offset
 		if err := state.advance(file, buf); err != nil {
 			return nil, 0, err
+		}
+		if !matches || (previousOffset == 0 && state.end.offset > 0) {
+			fullRead = true
 		}
 		start, err := tailStart(file, state.end.offset, limit, buf)
 		if err == io.EOF {
