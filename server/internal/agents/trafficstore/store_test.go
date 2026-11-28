@@ -282,8 +282,8 @@ func TestReportPopulatesStatusWithoutRedecodingHistoryAndDeleteInvalidates(t *te
 	if statusValue(t, store, "a") != "unreachable" {
 		t.Fatal("caller mutation leaked")
 	}
-	if strings.Join(*calls, ",") != "a,a" {
-		t.Fatalf("only the two report merges need a history decode: %v", *calls)
+	if strings.Join(*calls, ",") != "a" {
+		t.Fatalf("only the cold merge needs a history read: %v", *calls)
 	}
 	if err := store.Delete(context.Background(), "a"); err != nil {
 		t.Fatal(err)
@@ -299,7 +299,7 @@ func TestFullHistoryReadPopulatesIndependentStatusForOtherStoreInstances(t *test
 	first, second := NewNative(dir), NewNative(dir)
 	writeData(t, first, "a", nil)
 	loaded := first.LoadDocument("a", nil)
-	_ = loaded.fields.Set("status", json.RawMessage(`{"value":"caller mutation"}`))
+	loaded.fields.setEncoded("status", json.RawMessage(`{"value":"caller mutation"}`))
 	calls := trackReads(second)
 	if statusValue(t, second, "a") != "running" || len(*calls) != 0 {
 		t.Fatalf("calls %v", *calls)
@@ -442,9 +442,7 @@ func TestReportMergesExternalHistoryAndKeepsVersionAndRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := store.LoadDocument("a", naive(2026, 10, 1, 0))
-	if err := data.days.Set("2026-10-10", json.RawMessage(`{"ip_only_conns":12,"dropped":3,"hosts":{}}`)); err != nil {
-		t.Fatal(err)
-	}
+	data.days.setEncoded("2026-10-10", json.RawMessage(`{"ip_only_conns":12,"dropped":3,"hosts":{}}`))
 	if _, err := store.files.Write(t.Context(), "a", data, true); err != nil {
 		t.Fatal(err)
 	}

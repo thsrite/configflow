@@ -5,9 +5,8 @@
 // URL paths, client IPs or processes).
 //
 // Python created a store object per request and serialised the
-// read-modify-write cycles with a module-level lock; the small status cache
-// (load_status) is module level too, keyed by the absolute file path. Both
-// are package level here.
+// read-modify-write cycles with a module-level lock. The lock and signed
+// file cache are shared here as well, keyed by absolute path.
 //
 // Domain discovery (C37) reads this package (Get, Load, LoadStatus,
 // ParseRouteKey); it must therefore not import internal/discovery.
@@ -32,11 +31,11 @@ import (
 	"bytes"
 	"configflow/internal/jsonstore"
 	"encoding/json"
+	"encoding/json/jsontext"
 
 	"configflow/internal/jsondecode"
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
-	"configflow/internal/rules"
 )
 
 // Report limits and choices (module constants of traffic_store.py).
@@ -101,6 +100,7 @@ type cacheEntry struct {
 	signature jsonstore.Signature
 	status    json.RawMessage
 	idle      *idleHistory
+	document  *Document
 }
 
 type damagedEntry struct {
@@ -243,235 +243,7 @@ type Status struct {
 	MihomoVersion json.RawMessage `json:"mihomo_version"`
 }
 
-// Report is a validated domain-discovery report; raw members preserve optional fields.
-type Report struct {
-	Status               string
-	MihomoVersion        json.RawMessage
-	IPOnlyConns, Dropped *big.Int
-	Items                []ReportItem
-	raw                  model.Fields
-}
-
-// ReportItem is one validated connection aggregate.
-type ReportItem struct {
-	Host              string
-	Port              int64
-	Rule, RulePayload *string
-	rulePresent       bool
-	Policy, Outlet    string
-	Counts            [5]*big.Int
-	FailKinds         map[string]*big.Int
-	raw               json.RawMessage
-}
-
-// MarshalJSON retains the released cleaned-report shape, including omitted optional fields.
-func (r Report) MarshalJSON() ([]byte, error) {
-	fields := r.raw
-	items := make([]json.RawMessage, len(r.Items))
-	for i, item := range r.Items {
-		items[i] = item.raw
-	}
-	raw, err := json.Marshal(items)
-	if err != nil {
-		return nil, err
-	}
-	if err = fields.Set("items", raw); err != nil {
-		return nil, err
-	}
-	if err = fields.Set("dropped", json.RawMessage(r.Dropped.String())); err != nil {
-		return nil, err
-	}
-	return json.Marshal(fields)
-}
-func bounded(raw json.RawMessage, limit int, required bool) bool {
-	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
-		return !required
-	}
-	var value string
-	if jsondecode.Unmarshal(raw, &value) != nil || utf8.RuneCountInString(value) > limit || required && value == "" {
-		return false
-	}
-	for _, r := range value {
-		if r < 32 || r == 127 {
-			return false
-		}
-	}
-	return true
-}
 func member(fields model.Fields, name string) json.RawMessage { raw, _ := fields.Get(name); return raw }
-func str(raw json.RawMessage) string {
-	var text string
-	_ = jsondecode.Unmarshal(raw, &text)
-	return text
-}
-func countJSON(raw json.RawMessage, defaultZero bool) (*big.Int, bool) {
-	if len(raw) == 0 && defaultZero {
-		return new(big.Int), true
-	}
-	text := string(raw)
-	if text == "" {
-		return nil, false
-	}
-	for i, r := range text {
-		if i == 0 && r == '-' {
-			continue
-		}
-		if r < '0' || r > '9' {
-			return nil, false
-		}
-	}
-	n, ok := new(big.Int).SetString(text, 10)
-	return n, ok && n.Sign() >= 0 && n.Cmp(maxCount) <= 0
-}
-func oneOf(raw json.RawMessage, choices []string) (bool, error) {
-	if len(raw) > 0 && (raw[0] == '[' || raw[0] == '{') {
-		return false, invalidData("a JSON array or object is not a valid choice")
-	}
-	var value string
-	if jsondecode.Unmarshal(raw, &value) != nil {
-		return false, nil
-	}
-	for _, choice := range choices {
-		if value == choice {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-func within(f model.Fields, allowed map[string]bool) bool {
-	for key := range f.All() {
-		if !allowed[key] {
-			return false
-		}
-	}
-	return true
-}
-
-// DecodeReport validates exact Agent JSON keys and drops individual malformed items.
-func DecodeReport(raw json.RawMessage) (*Report, error) {
-	// Agent objects use the JSON decoder's last complete member value. Stored
-	// documents still use the strict Fields codec; do not relax file validation.
-	var value map[string]any
-	if jsondecode.Decode(raw, &value) != nil || value == nil {
-		return nil, nil
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var f model.Fields
-	if jsondecode.Unmarshal(raw, &f) != nil || len(bytes.TrimSpace(raw)) == 0 || bytes.TrimSpace(raw)[0] != '{' || !within(f, reportFields) {
-		return nil, nil
-	}
-	schema := member(f, "schema")
-	var version float64
-	if string(schema) == "true" {
-		version = 1
-	} else if jsondecode.Unmarshal(schema, &version) != nil {
-		return nil, nil
-	}
-	if version != 1 {
-		return nil, nil
-	}
-	known, err := oneOf(member(f, "status"), ReportStatuses)
-	if err != nil || !known {
-		return nil, err
-	}
-	for _, name := range []string{"mihomo_version", "window_start", "window_end"} {
-		if !bounded(member(f, name), 64, false) {
-			return nil, nil
-		}
-	}
-	ip, ok := countJSON(member(f, "ip_only_conns"), true)
-	if !ok {
-		return nil, nil
-	}
-	dropped, ok := countJSON(member(f, "dropped"), true)
-	if !ok {
-		return nil, nil
-	}
-	items := []json.RawMessage{}
-	if v := member(f, "items"); len(v) > 0 {
-		if jsondecode.Unmarshal(v, &items) != nil || items == nil {
-			return nil, nil
-		}
-	}
-	if len(items) > ReportMaxItems {
-		return nil, nil
-	}
-	report := &Report{Status: str(member(f, "status")), MihomoVersion: member(f, "mihomo_version"), IPOnlyConns: ip, Dropped: dropped, Items: []ReportItem{}, raw: f}
-	for _, raw := range items {
-		item, err := decodeItem(raw)
-		if err != nil {
-			return nil, err
-		}
-		if item == nil {
-			report.Dropped.Add(report.Dropped, big.NewInt(1))
-		} else {
-			report.Items = append(report.Items, *item)
-		}
-	}
-	return report, nil
-}
-func decodeItem(raw json.RawMessage) (*ReportItem, error) {
-	var f model.Fields
-	if jsondecode.Unmarshal(raw, &f) != nil || len(raw) == 0 || raw[0] != '{' || !within(f, itemFields) {
-		return nil, nil
-	}
-	host := str(member(f, "host"))
-	if host == "" || host != strings.ToLower(host) || rules.IsValidIP(host) || !rules.IsValidDomain(host, false) {
-		return nil, nil
-	}
-	port, ok := countJSON(member(f, "port"), true)
-	if !ok || !port.IsInt64() || port.Int64() > 65535 {
-		return nil, nil
-	}
-	network := member(f, "network")
-	if len(network) > 0 && str(network) != "tcp" && str(network) != "udp" {
-		return nil, nil
-	}
-	known, err := oneOf(member(f, "outlet"), Outlets)
-	if err != nil || !known {
-		return nil, err
-	}
-	if !bounded(member(f, "rule"), 64, false) || !bounded(member(f, "rule_payload"), 256, false) || !bounded(member(f, "policy"), 128, true) {
-		return nil, nil
-	}
-	item := &ReportItem{Host: host, Port: port.Int64(), Policy: str(member(f, "policy")), Outlet: str(member(f, "outlet")), raw: bytes.Clone(raw), FailKinds: map[string]*big.Int{}}
-	item.rulePresent = f.Has("rule")
-	if v := member(f, "rule"); len(v) > 0 && string(v) != "null" {
-		text := str(v)
-		item.Rule = &text
-	}
-	if v := member(f, "rule_payload"); len(v) > 0 && string(v) != "null" {
-		text := str(v)
-		item.RulePayload = &text
-	}
-	for i, name := range countFields {
-		n, ok := countJSON(member(f, name), true)
-		if !ok {
-			return nil, nil
-		}
-		item.Counts[i] = n
-	}
-	kinds := model.Fields{}
-	if v := member(f, "fail_kinds"); len(v) > 0 {
-		if v[0] != '{' || jsondecode.Unmarshal(v, &kinds) != nil {
-			return nil, nil
-		}
-	}
-	for key, raw := range kinds.All() {
-		if !set(FailKinds...)[key] {
-			return nil, nil
-		}
-		n, ok := countJSON(raw, false)
-		if !ok {
-			return nil, nil
-		}
-		item.FailKinds[key] = n
-	}
-	return item, nil
-}
 
 // Route identifies one Mihomo rule decision.
 type Route struct {
@@ -486,7 +258,7 @@ func RouteKey(rule, rulePayload, outlet, policy string) string {
 	return strings.Join([]string{rule, rulePayload, outlet, policy}, routeSeparator)
 }
 
-// NativeStore owns native JSON persistence and a shared bounded status cache.
+// NativeStore owns native JSON persistence and a bounded cache of signed writes.
 type NativeStore struct {
 	files     *jsonstore.Store
 	readJSON  func(string) (json.RawMessage, error)
@@ -511,7 +283,7 @@ func NewNative(dataDir string) *NativeStore {
 		return raw, nil
 	}
 	s.writeJSON = func(ctx context.Context, id string, raw json.RawMessage) (*jsonstore.Signature, error) {
-		return s.files.Write(ctx, id, raw, true)
+		return s.files.WriteEncoded(ctx, id, raw, true)
 	}
 	return s
 }
@@ -529,31 +301,38 @@ func (s *NativeStore) absPath(id string) string {
 // Document retains unknown persisted members; typed merge code opens only the records it updates.
 type Document struct {
 	revision   DocumentRevision
-	fields     model.Fields
-	days       model.Fields
+	fields     records
+	days       records
+	bucket     *mergeBucket
 	storeState StoreState
 }
 
 // MarshalJSON encodes the existing traffic file format without discarding extension members.
 func (d Document) MarshalJSON() ([]byte, error) {
-	f := d.fields
-	raw, err := json.Marshal(d.days)
-	if err != nil {
-		return nil, err
-	}
-	if err = f.Set("days", raw); err != nil {
-		return nil, err
-	}
-	return json.Marshal(f)
+	fields := d.fields.clone()
+	fields.setEncoded("days", nil)
+	return json.Marshal(json.RawMessage(fields.encodeObject("days", &d.days)))
 }
+
 func emptyDocument() Document {
-	var f model.Fields
-	_ = f.Set("status", json.RawMessage("null"))
+	var f records
+	f.setEncoded("status", json.RawMessage("null"))
 	return Document{fields: f}
 }
-func (s *NativeStore) read(id string) (Document, error) {
-	path := s.absPath(id)
-	signature := statusSignature(path)
+
+func (d Document) clone() Document {
+	d.fields, d.days = d.fields.clone(), d.days.clone()
+	return d
+}
+
+func (s *NativeStore) read(id, path string, signature *jsonstore.Signature, forMerge bool) (Document, error) {
+	if e := statusIndex[path]; e != nil && signature != nil {
+		cached := e.Value.(*cacheEntry)
+		if cached.signature == *signature && cached.document != nil {
+			statusCache.MoveToBack(e)
+			return cached.document.clone(), nil
+		}
+	}
 	raw, err := s.readJSON(id)
 	if err != nil {
 		cachePop(path)
@@ -564,29 +343,48 @@ func (s *NativeStore) read(id string) (Document, error) {
 		return emptyDocument(), nil
 	}
 	raw = bytes.TrimSpace(raw)
-	var f model.Fields
-	if len(raw) == 0 || raw[0] != '{' || jsondecode.Unmarshal(raw, &f) != nil {
+	// The root decoder verifies UTF-8 and unique names throughout the
+	// document. Nested indexes can then borrow spans of the validated bytes.
+	var reader recordReader
+	f, err := reader.index(raw)
+	if err != nil {
 		cachePop(path)
 		return Document{}, invalidData("invalid traffic days")
 	}
-	days := member(f, "days")
-	var d model.Fields
+	days := recordMember(f, "days")
 	if len(days) == 0 || string(days) == "null" {
 		cachePop(path)
 		return emptyDocument(), nil
 	}
-	if days[0] != '{' || jsondecode.Unmarshal(days, &d) != nil {
+	if forMerge {
+		// The returned status may inherit the exact previous version literal.
+		// Compact only the other fields, as json.Marshal would at publication.
+		for key, v := range f.values {
+			if key == "status" {
+				continue
+			}
+			encoded, err := jsontext.AppendFormat(make([]byte, 0, len(v)), v, jsontext.AllowDuplicateNames(true), jsontext.PreserveRawStrings(true), jsontext.EscapeForJS(true), jsontext.EscapeForHTML(true))
+			if err != nil {
+				return Document{}, err
+			}
+			f.values[key] = encoded
+		}
+		days = recordMember(f, "days")
+	}
+	d, err := reader.read(days)
+	if err != nil {
 		cachePop(path)
 		return Document{}, invalidData("invalid traffic days")
 	}
-	rememberStatus(path, signature, member(f, "status"))
+	rememberStatus(path, signature, recordMember(f, "status"))
+	f.setEncoded("days", nil)
 	return Document{fields: f, days: d}, nil
 }
 func prune(d *Document, at time.Time) {
 	oldest := at.AddDate(0, 0, -(RetentionDays - 1)).Format("2006-01-02")
-	for key := range d.days.All() {
+	for key := range d.days.values {
 		if key < oldest {
-			d.days.Delete(key)
+			d.days.delete(key)
 		}
 	}
 }
@@ -617,20 +415,43 @@ func put(f *model.Fields, name string, value any) error {
 	}
 	return f.Set(name, raw)
 }
-func inc(f *model.Fields, name string, n *big.Int) error {
-	raw, err := addNumber(member(*f, name), n)
-	if err != nil {
-		return err
-	}
-	return f.Set(name, raw)
+
+// mergeBucket retains the last successfully written day's member order and
+// host index. A merge edits private maps until its atomic publication succeeds.
+type mergeBucket struct {
+	key        string
+	day, hosts records
 }
-func defaultObject(f model.Fields, key string, raw string) (model.Fields, error) {
-	value, exists := f.Get(key)
-	if !exists {
-		value = json.RawMessage(raw)
+
+func (d Document) openBucket(reader *recordReader, key string, r *Report) (records, records, error) {
+	var day, hosts records
+	cached := d.bucket != nil && d.bucket.key == key
+	if cached {
+		day = d.bucket.day.clone()
+	} else {
+		raw, ok := d.days.get(key)
+		if !ok {
+			raw = []byte(`{"ip_only_conns":0,"dropped":0,"hosts":{}}`)
+		}
+		var err error
+		day, err = reader.read(raw)
+		if err != nil {
+			return records{}, records{}, invalidData("invalid traffic object")
+		}
 	}
-	return object(value)
+	if err := incRecord(&day, "ip_only_conns", r.IPOnlyConns); err != nil {
+		return records{}, records{}, err
+	}
+	if err := incRecord(&day, "dropped", r.Dropped); err != nil {
+		return records{}, records{}, err
+	}
+	if cached {
+		return day, d.bucket.hosts.clone(), nil
+	}
+	hosts, err := reader.read(recordMember(day, "hosts"))
+	return day, hosts, err
 }
+
 func weight(raw json.RawMessage) (*big.Rat, error) {
 	entry, err := object(raw)
 	if err != nil {
@@ -688,8 +509,8 @@ func validateStatusFields(raw json.RawMessage) error {
 	return nil
 }
 
-func validateDayBucketHeader(days model.Fields, dayKey string) error {
-	rawDay, exists := days.Get(dayKey)
+func validateDayBucketHeader(days records, dayKey string) error {
+	rawDay, exists := days.get(dayKey)
 	if !exists {
 		return nil
 	}
@@ -748,14 +569,14 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 			return status, err
 		}
 	}
-	d, err := s.read(id)
+	d, err := s.read(id, path, preSig, true)
 	if err != nil {
 		if errors.Is(err, ErrInvalid) {
 			rememberDamaged(path, preSig, "", nil)
 		}
 		return nil, err
 	}
-	previous := member(d.fields, "status")
+	previous := d.StatusJSON()
 	if err := validateStatusFields(previous); err != nil {
 		cachePop(path)
 		rememberDamaged(path, preSig, "", nil)
@@ -781,24 +602,13 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		}
 	}
 	status := &Status{Value: r.Status, At: stamp, MihomoVersion: version}
-	day, err := defaultObject(d.days, dayKey, `{"ip_only_conns":0,"dropped":0,"hosts":{}}`)
+	var reader recordReader
+	day, hosts, err := d.openBucket(&reader, dayKey, r)
 	if err != nil {
 		markDayDamaged()
 		return nil, err
 	}
-	if err = inc(&day, "ip_only_conns", r.IPOnlyConns); err != nil {
-		markDayDamaged()
-		return nil, err
-	}
-	if err = inc(&day, "dropped", r.Dropped); err != nil {
-		markDayDamaged()
-		return nil, err
-	}
-	hosts, err := readRecords(member(day, "hosts"))
-	if err != nil {
-		markDayDamaged()
-		return nil, err
-	}
+	stampJSON, _ := json.Marshal(stamp)
 	modified := map[string]*hostMerge{}
 	var modifiedOrder []string
 	for _, item := range r.Items {
@@ -815,7 +625,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		}
 		host := modified[item.Host]
 		if host == nil {
-			host, err = openHost(hosts, item.Host, stamp)
+			host, err = reader.openHost(hosts, item.Host, stampJSON)
 			if err != nil {
 				markDayDamaged()
 				return nil, err
@@ -847,7 +657,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		if !exists {
 			statsRaw = []byte(`{"conns":0,"fails":0,"zero_dl":0,"up":0,"down":0,"fail_kinds":{}}`)
 		}
-		stats, err := readRecords(statsRaw)
+		stats, err := reader.read(statsRaw)
 		if err != nil {
 			markDayDamaged()
 			return nil, err
@@ -858,7 +668,7 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 				return nil, err
 			}
 		}
-		kinds, err := readRecords(recordMember(stats, "fail_kinds"))
+		kinds, err := reader.read(recordMember(stats, "fail_kinds"))
 		if err != nil {
 			markDayDamaged()
 			return nil, err
@@ -875,24 +685,14 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 			}
 			kinds.setEncoded(key, value)
 		}
-		if err = recordPut(&stats, "fail_kinds", kinds); err != nil {
-			return nil, err
-		}
-		if err = recordPut(routes, routeKey, stats); err != nil {
-			return nil, err
-		}
+		stats.setEncoded("fail_kinds", kinds.encode())
+		routes.setEncoded(routeKey, stats.encode())
 	}
 	for _, name := range modifiedOrder {
 		host := modified[name]
-		if err = recordPut(&host.entry, "ports", host.ports); err != nil {
-			return nil, err
-		}
-		if err = recordPut(&host.entry, "by_route", host.routes); err != nil {
-			return nil, err
-		}
-		if err = recordPut(&hosts, name, host.entry); err != nil {
-			return nil, err
-		}
+		host.entry.setEncoded("ports", host.ports.encode())
+		host.entry.setEncoded("by_route", host.routes.encode())
+		hosts.setEncoded(name, host.entry.encode())
 	}
 	if hosts.len() > MaxHostsPerDay {
 		keys := hosts.keys()
@@ -908,25 +708,26 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 		sort.SliceStable(keys, func(i, j int) bool { return weights[keys[i]].Cmp(weights[keys[j]]) > 0 })
 		for _, key := range keys[MaxHostsPerDay:] {
 			hosts.delete(key)
-			if err = inc(&day, "dropped", big.NewInt(1)); err != nil {
+			if err = incRecord(&day, "dropped", big.NewInt(1)); err != nil {
 				markDayDamaged()
 				return nil, err
 			}
 		}
 	}
-	if err = put(&day, "hosts", hosts); err != nil {
-		return nil, err
-	}
-	if err = put(&d.days, dayKey, day); err != nil {
-		return nil, err
-	}
-	if err = put(&d.fields, "status", status); err != nil {
-		return nil, err
-	}
-	prune(&d, current)
-	raw, err := json.Marshal(d)
+	hosts.compactOrder()
+	day.setEncoded("hosts", nil)
+	d.days.setEncoded(dayKey, day.encodeObject("hosts", &hosts))
+	statusRaw, err := json.Marshal(status)
 	if err != nil {
 		return nil, err
+	}
+	d.fields.setEncoded("status", statusRaw)
+	d.fields.setEncoded("days", nil)
+	prune(&d, current)
+	d.days.compactOrder()
+	raw := d.fields.encodeObject("days", &d.days)
+	if !json.Valid(raw) {
+		return nil, model.ErrJSON
 	}
 	cachePop(path)
 	damagedPop(path)
@@ -937,11 +738,14 @@ func (s *NativeStore) Add(ctx context.Context, id string, r *Report, at *time.Ti
 	if err != nil {
 		return nil, err
 	}
-	statusRaw, err := json.Marshal(status)
-	if err != nil {
-		return nil, err
-	}
 	if entry := rememberStatus(path, signature, statusRaw); entry != nil && entry.signature.Ino != 0 {
+		d.bucket = nil
+		if d.days.has(dayKey) {
+			d.bucket = &mergeBucket{dayKey, day, hosts}
+		}
+		if jsontext.Value(statusRaw).IsValid() {
+			entry.document = &d
+		}
 		entry.idle = newIdleHistory(raw, statusRaw, dayKey)
 	}
 	return status, nil
@@ -973,7 +777,7 @@ func (s *NativeStore) InspectStatus(id string) StatusSnapshot {
 		return StatusSnapshot{Status: bytes.Clone(e.Value.(*cacheEntry).status), State: StoreStateOK}
 	}
 	cachePop(path)
-	d, err := s.read(id)
+	d, err := s.read(id, path, signature, false)
 	if err != nil {
 		if errors.Is(err, ErrInvalid) {
 			rememberDamaged(path, signature, "", nil)
@@ -981,7 +785,7 @@ func (s *NativeStore) InspectStatus(id string) StatusSnapshot {
 		}
 		return StatusSnapshot{State: StoreStateOK}
 	}
-	statusRaw := member(d.fields, "status")
+	statusRaw := d.StatusJSON()
 	if validateStatusFields(statusRaw) != nil {
 		cachePop(path)
 		rememberDamaged(path, signature, "", nil)
@@ -995,7 +799,7 @@ func (s *NativeStore) InspectStatus(id string) StatusSnapshot {
 	return StatusSnapshot{Status: bytes.Clone(statusRaw), State: StoreStateOK}
 }
 
-// StatusJSON returns independent status metadata without retaining the full history.
+// StatusJSON returns an independent copy of the collection metadata.
 func (s *NativeStore) StatusJSON(id string) json.RawMessage {
 	mu.Lock()
 	defer mu.Unlock()
@@ -1006,11 +810,11 @@ func (s *NativeStore) StatusJSON(id string) json.RawMessage {
 		return bytes.Clone(e.Value.(*cacheEntry).status)
 	}
 	cachePop(path)
-	d, err := s.read(id)
+	d, err := s.read(id, path, signature, false)
 	if err != nil {
 		return nil
 	}
-	return member(d.fields, "status")
+	return d.StatusJSON()
 }
 
 // DocumentRevision identifies the file and retention day used by LoadDocument.
@@ -1063,7 +867,7 @@ func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 			}
 		}
 	}
-	d, err := s.read(id)
+	d, err := s.read(id, path, preSig, false)
 	if err != nil {
 		if errors.Is(err, ErrInvalid) {
 			rememberDamaged(path, preSig, "", nil)
@@ -1075,7 +879,7 @@ func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 		mu.Unlock()
 		return emptyDocument()
 	}
-	statusRaw := member(d.fields, "status")
+	statusRaw := d.StatusJSON()
 	statusInvalid := validateStatusFields(statusRaw) != nil
 	if statusInvalid {
 		cachePop(path)
@@ -1089,10 +893,11 @@ func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 	}
 	if statusInvalid {
 		d.storeState = StoreStateDamaged
-		_ = d.fields.Set("status", json.RawMessage("null"))
+		d.fields.setEncoded("status", json.RawMessage("null"))
 	}
 	prune(&d, current)
-	for date, raw := range d.days.All() {
+	for _, date := range d.days.keys() {
+		raw := recordMember(d.days, date)
 		day, ok := readableDay(raw)
 		if !ok {
 			if date == today {
@@ -1102,19 +907,20 @@ func (s *NativeStore) LoadDocument(id string, at *time.Time) Document {
 				rememberDamaged(path, preSig, today, statusRaw)
 				mu.Unlock()
 			}
-			d.days.Delete(date)
+			d.days.delete(date)
 			warnStore(path, date)
 			continue
 		}
 		if day != nil {
-			if err := put(&d.days, date, day); err != nil {
-				d.days.Delete(date)
+			if err := recordPut(&d.days, date, day); err != nil {
+				d.days.delete(date)
 			}
 		}
 	}
 	if d.storeState == StoreStateOK && preSig != nil {
 		d.revision = DocumentRevision{path: path, day: today, signature: *preSig}
 	}
+	d.bucket = nil
 	return d
 }
 

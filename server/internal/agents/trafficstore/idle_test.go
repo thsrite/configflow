@@ -34,7 +34,7 @@ func TestIdleReportOnlyChangesPersistedStatus(t *testing.T) {
 	store.LoadDocument("a", day) // discovery reading the history must not discard write eligibility
 	idle := report(t, "running")
 	status, err := store.Add(t.Context(), "a", idle, &next)
-	if err != nil || status == nil || string(status.MihomoVersion) != `"v1"` || len(*readCalls) != 1 {
+	if err != nil || status == nil || string(status.MihomoVersion) != `"v1"` || len(*readCalls) != 0 {
 		t.Fatalf("empty report: %v, %v, history reads %v", status, err, *readCalls)
 	}
 	after, err := os.ReadFile(store.Path("a"))
@@ -67,7 +67,7 @@ func TestIdleReportRechecksChangedFilesCountersAndDays(t *testing.T) {
 	if _, err := store.Add(t.Context(), "a", &counted, &next); err != nil {
 		t.Fatal(err)
 	}
-	if len(*calls) != 1 || string(store.LoadDocument("a", &next).Days()["2026-11-20"].Dropped) != "3" {
+	if len(*calls) != 0 || string(store.LoadDocument("a", &next).Days()["2026-11-20"].Dropped) != "3" {
 		t.Fatal("an empty item list with a nonzero counter must be merged")
 	}
 	later := first.AddDate(0, 0, RetentionDays)
