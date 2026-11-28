@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"configflow/internal/agents"
 	"configflow/internal/lifecycle"
 	"configflow/internal/logx"
 	"configflow/internal/model"
@@ -81,22 +82,22 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 	if e := ctx.Err(); e != nil {
 		return false, e
 	}
-	all, e := s.all(ctx)
+	all, e := s.Manager.ReadAgents(ctx, true, nil)
 	if e != nil {
 		return false, e
 	}
 	idle := true
-	for _, a := range all {
+	for i := range all {
+		a := &all[i]
 		needsExpiry := false
-		for _, b := range runs(a).All() {
-			r := object(b)
-			if text(r["status"]) == "running" {
+		for _, run := range a.IPv6Verifications.All() {
+			if run.Status == "running" {
 				idle = false
+				needsExpiry = needsExpiry || run.StartedEpoch == 0 || expiredStart(ctx, run.StartedEpoch)
 			}
-			needsExpiry = needsExpiry || expired(ctx, r)
 		}
 		if needsExpiry {
-			if e = s.update(ctx, text(a["id"]), func(ctx context.Context, current Document, _ []Document) error {
+			if e = s.update(ctx, a.ID, func(ctx context.Context, current Document, _ []Document) error {
 				if current == nil {
 					return nil
 				}
@@ -115,48 +116,52 @@ func (s *Service) Tick(ctx context.Context) (bool, error) {
 			}
 		}
 	}
-	all, e = s.all(ctx)
+	all, e = s.Manager.ReadAgents(ctx, true, nil)
 	if e != nil {
 		return false, e
 	}
-	for _, a := range all {
+	for i := range all {
+		a := &all[i]
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		if text(a["service_type"]) != "mihomo" || string(a["enabled"]) == "false" {
+		if a.ServiceType != "mihomo" || a.Enabled != nil && !*a.Enabled {
 			continue
 		}
-		latest := object(a["latest_deployment"])
-		did := text(latest["deployment_id"])
-		if did == "" || !yes(latest["ipv6_verification_requested"]) {
+		latest := a.LatestDeployment
+		if latest == nil || latest.DeploymentID == "" || latest.IPv6VerificationRequested == nil || !*latest.IPv6VerificationRequested {
 			continue
 		}
-		status := text(latest["status"])
+		did := latest.DeploymentID
+		status := latest.Status
 		if status != "succeeded" && status != "failed" && status != "rolled_back" && status != "rollback_failed" {
 			idle = false
-			task, e := s.Manager.GetDeploymentModel(ctx, text(a["id"]), did)
+			task, e := s.Manager.GetDeploymentModel(ctx, a.ID, did)
 			if e != nil {
 				continue
 			}
-			data, err := model.Marshal(task)
-			if err != nil {
-				continue
-			}
-			latest = object(data)
+			latest = task
 		}
-		if text(latest["status"]) != "succeeded" || yes(latest["manual_rollback"]) {
+		if latest == nil || latest.Status != "succeeded" || latest.ManualRollback != nil && *latest.ManualRollback {
 			continue
 		}
-		if _, ok := runs(a).Get(did); ok {
+		if _, ok := a.IPv6Verifications.Get(did); ok {
 			continue
 		}
 		idle = false
-		_, e = s.Start(ctx, text(a["id"]), text(a["profile_id"]), jsonresp.Value(Document{"deployment_id": jsonresp.Value(did)}), true)
+		_, e = s.Start(ctx, a.ID, a.ProfileID, jsonresp.Value(Document{"deployment_id": jsonresp.Value(did)}), true)
 		var boundary *Error
 		if errors.As(e, &boundary) {
 			switch boundary.Code {
 			case "SNAPSHOT_UNAVAILABLE", "CLIENT_UNAVAILABLE", "CLIENT_UPGRADE_REQUIRED", "CONFIG_CHANGED", "INVALID_REQUEST", "UPGRADE_REQUIRED", "AGENT_AUTH_FAILED":
-				if e = s.unavailable(ctx, a, did, boundary); e != nil {
+				if !agents.FreshHeartbeat(a.LastHeartbeat, nil) {
+					a.Status = "offline"
+				}
+				doc, err := agentDocument(a)
+				if err != nil {
+					return false, err
+				}
+				if e = s.unavailable(ctx, doc, did, boundary); e != nil {
 					return false, e
 				}
 			}

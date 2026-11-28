@@ -576,12 +576,16 @@ func (s *Service) Advance(ctx context.Context, id string) (out *model.HAPublicat
 func (s *Service) Reconcile(ctx context.Context) (e error) {
 	busy := false
 	defer func() { s.waker.Done(busy || e != nil) }()
-	list, e := s.all(ctx)
+	records, e := s.m.ReadAgents(ctx, true, nil)
 	if e != nil {
 		return e
 	}
 	seen := []string{}
-	for _, a := range list {
+	for i := range records {
+		a := &agent{Agent: &records[i]}
+		if !agents.AgentMatchesID(a.Agent, a.ID) {
+			continue
+		}
 		j := a.OxiDNSHAPublication
 		if j != nil && awaitingCompletion(j) && !slices.Contains(seen, j.ID) {
 			// A stopped pair waiting for its lost member keeps the loop
