@@ -155,6 +155,51 @@ describe('domain discovery on phones', () => {
     expect(row.get('button.domain-compact-action').text()).toContain('撤销')
   })
 
+  it('按窗口渲染并保留展开状态，搜索后的批量提交覆盖全部匹配项', async () => {
+    const items = Array.from({ length: 836 }, (_, i) => ({
+      ...domains.items[0], domain: `site-${i}.example.com`,
+      hosts: [{ ...domains.items[0].hosts[0], host: `${i % 2 ? 'odd' : 'even'}.site-${i}.example.com` }]
+    }))
+    const previousAdapter = api.defaults.adapter!
+    api.defaults.adapter = async config => {
+      if (config.url === '/domain-discovery/domains') return response(config, { ...domains, items })
+      return previousAdapter(config)
+    }
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(61)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const wrapper = await render()
+      expect(wrapper.findAll('.domain-toggle').length).toBeLessThan(30)
+      await wrapper.get('.domain-toggle').trigger('click')
+      const scroll = async (top: number) => {
+        vi.stubGlobal('scrollY', top)
+        window.dispatchEvent(new Event('scroll'))
+        await flushPromises()
+      }
+      await scroll(835 * 61)
+      expect(wrapper.find('.domain-hosts-row').exists()).toBe(false)
+      expect(wrapper.find('[aria-label="选择 site-835.example.com"]').exists()).toBe(true)
+      await scroll(0)
+      expect(wrapper.get('.domain-hosts-row').text()).toContain('even.site-0.example.com')
+
+      const search = wrapper.get('input[placeholder="搜索域名…"]')
+      await search.setValue('even.site')
+      expect(wrapper.text()).toContain('共 836 个域名')
+      await vi.advanceTimersByTimeAsync(150)
+      expect(wrapper.text()).toContain('共 418 个域名')
+      await search.setValue('odd.site')
+      await wrapper.get('[aria-label="全选"]').trigger('click')
+      expect(wrapper.text()).toContain('已选 418')
+      await wrapper.findAll('button').find(b => b.text() === '加入代理')!.trigger('click')
+      await flushPromises()
+      const sent = requests.find(config => config.url === '/domain-discovery/apply')!
+      expect(JSON.parse(sent.data).items).toEqual(items.filter((_, i) => i % 2).map(({ domain }) =>
+        ({ rule_type: 'DOMAIN-SUFFIX', value: domain, target: 'proxy' })))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps damaged store alert expanded on phones with a 44px recovery action', async () => {
     const damagedPayload = {
       ...agents,
