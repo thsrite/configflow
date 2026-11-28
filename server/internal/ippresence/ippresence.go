@@ -23,10 +23,8 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"unicode"
 	"unicode/utf8"
 
-	"configflow/internal/convert"
 	"configflow/internal/mosdns"
 )
 
@@ -69,28 +67,13 @@ func remember(key memoKey, value bool) bool {
 	return value
 }
 
-func hasIPLines(text string) (bool, error) {
-	converted, err := mosdns.ConvertRuleContentForMosDNS(text, mosdns.PartIP)
-	if err != nil {
-		return false, err
-	}
-	// An empty part comes back as a "# no ip rules" placeholder comment.
-	for _, line := range convert.RuleLines(converted) {
-		trimmed := strings.TrimLeftFunc(line, unicode.IsSpace)
-		if strings.TrimSpace(trimmed) != "" && !strings.HasPrefix(trimmed, "#") {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func inlineIPLines(text string) (*bool, error) {
 	sum := sha256.Sum256([]byte(text))
 	key := memoKey{kind: "content", value: hex.EncodeToString(sum[:])}
 	if value, ok := lookup(key); ok {
 		return &value, nil
 	}
-	has, err := hasIPLines(text)
+	has, err := mosdns.HasIPRules(text)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +101,7 @@ func cachedIPLines(path string, read func() ([]byte, error)) (*bool, error) {
 		return nil, nil
 	}
 	text := strings.TrimPrefix(string(data), "\ufeff")
-	has, err := hasIPLines(text)
+	has, err := mosdns.HasIPRules(text)
 	if err != nil {
 		return nil, err
 	}
