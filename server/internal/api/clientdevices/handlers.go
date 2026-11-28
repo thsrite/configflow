@@ -40,7 +40,11 @@ type Handler struct {
 // NewHandler constructs a Handler with an app-owned discovery cache. Nil
 // dependencies fall back to context/package defaults until W11.
 func NewHandler(r *repo.Repository, m *agents.Manager) *Handler {
-	return &Handler{Repo: r, Agents: m, cache: clients.NewDiscoveryCache(nil, nil)}
+	return &Handler{
+		Repo: r, Agents: m,
+		cache: clients.NewDiscoveryCache(nil, nil),
+		view:  &deviceView{},
+	}
 }
 
 // Register installs the five HTTP routes on r.
@@ -199,7 +203,7 @@ func (h *Handler) profileView(ctx context.Context, db *repo.Repository, id strin
 		h.viewMu.Lock()
 		defer h.viewMu.Unlock()
 		registrationKey := os.Getenv("AGENT_REGISTRATION_KEY")
-		if head != nil && h.view != nil && h.view.id == id && h.view.head == *head && h.view.registrationKey == registrationKey {
+		if head != nil && h.view != nil && h.view.config != nil && h.view.id == id && h.view.head == *head && h.view.registrationKey == registrationKey {
 			result = h.view
 			return nil
 		}

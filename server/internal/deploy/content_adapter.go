@@ -112,21 +112,20 @@ func ContentView(t Target) (ContentState, error) {
 	if t.Record == nil {
 		return result, fmt.Errorf("missing content target")
 	}
-	tasks := []model.Deployment{}
-	for _, task := range t.Record.Deployments.All() {
-		tasks = append(tasks, task)
-	}
-	if latest := t.Record.LatestDeployment; latest != nil {
-		tasks = append(tasks, *latest)
-	}
-	for _, task := range tasks {
-		switch task.Status {
+	observe := func(status string) {
+		switch status {
 		case "succeeded":
 			result.PreviouslyPushed = true
 		case "failed", "rolled_back":
 		default:
 			result.Pending = true
 		}
+	}
+	for _, task := range t.Record.Deployments.All() {
+		observe(task.Status)
+	}
+	if latest := t.Record.LatestDeployment; latest != nil {
+		observe(latest.Status)
 	}
 
 	if result.Pending {

@@ -35,7 +35,11 @@ type Handler struct {
 
 // NewHandler constructs a subscriptions Handler with explicit services.
 func NewHandler(r *repo.Repository, sub *substore.Service, pv *provider.Service, rf *refresh.Service, nt *notifications.Service) *Handler {
-	return &Handler{Repo: r, SubStore: sub, Provider: pv, Refresh: rf, Notifications: nt}
+	return &Handler{
+		Repo: r, SubStore: sub, Provider: pv, Refresh: rf, Notifications: nt,
+		healthSnapshot: &refresh.HealthSnapshot{},
+		healthEntries:  make(map[string]healthEntry),
+	}
 }
 
 // Register adds the subscriptions blueprint and its profile provider alias to r.

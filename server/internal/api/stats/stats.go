@@ -35,7 +35,9 @@ type Handler struct {
 }
 
 // NewHandler constructs a Handler for r.
-func NewHandler(r *repo.Repository) *Handler { return &Handler{Repo: r} }
+func NewHandler(r *repo.Repository) *Handler {
+	return &Handler{Repo: r, history: &historyView{series: make(map[string][]*json.Number)}}
+}
 
 func (h *Handler) repo(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.Repo != nil {
