@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"sort"
 
 	"configflow/internal/jsonresp"
 	"configflow/internal/redact"
@@ -73,13 +71,7 @@ func writeJSON(c *Ctx, r *Response) error {
 		// Body may be materialized and fed back through SetBody by a hook.
 		// Preserve the provider's original-key sort before that becomes raw JSON.
 		if r.sortValue {
-			d := json.NewDecoder(bytes.NewReader(r.body))
-			d.UseNumber()
-			var value any
-			if err := d.Decode(&value); err != nil {
-				return fmt.Errorf("decode materialized JSON response: %w", err)
-			}
-			body, err := jsonresp.Encode(value)
+			body, err := transformResponse(r.body, nil, true, nil, r.Status)
 			if err != nil {
 				return err
 			}
@@ -114,197 +106,18 @@ func writeJSON(c *Ctx, r *Response) error {
 	if err != nil {
 		return err
 	}
-	d := json.NewDecoder(bytes.NewReader(text))
-	d.UseNumber()
-	pass := responseRedactor{decoder: d, secrets: secrets, sortKeys: r.sortValue, cache: make(map[string]string)}
-	payload, err := pass.value(0)
+	if bytes.Equal(bytes.TrimSpace(text), []byte("null")) {
+		return nil
+	}
+	body, err := transformResponse(text, secrets, r.sortValue, c, r.Status)
 	if err != nil {
 		return fmt.Errorf("redact JSON response: %w", err)
-	}
-	if _, err := d.Token(); err != io.EOF {
-		return fmt.Errorf("redact JSON response: trailing data")
-	}
-	if payload == nil {
-		return nil
-	} // Flask leaves a JSON null body untouched.
-	if target, ok := payload.(map[string]any); ok && hasExemptions(c.Endpoint) {
-		originalDecoder := json.NewDecoder(bytes.NewReader(text))
-		originalDecoder.UseNumber()
-		var original map[string]any
-		if err := originalDecoder.Decode(&original); err != nil {
-			return fmt.Errorf("decode JSON exemption: %w", err)
-		}
-		applyWhitelists(c, r.Status, original, target)
-	}
-	body, err := jsonresp.Encode(payload) // encoding/json sorts every object map.
-	if err != nil {
-		return err
 	}
 	r.SetBody(body)
 	return nil
 }
 
 const responseMaxDepth = 128
-
-type responseRedactor struct {
-	decoder  *json.Decoder
-	secrets  redact.Secrets
-	sortKeys bool
-	cache    map[string]string
-}
-
-type responseMember struct {
-	key   string
-	value any
-}
-
-func (s *responseRedactor) value(depth int) (any, error) {
-	token, err := s.decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	if token == json.Delim('{') || token == json.Delim('[') {
-		if depth >= responseMaxDepth {
-			if err := s.skipContainer(); err != nil {
-				return nil, err
-			}
-			return redact.Redacted, nil
-		}
-	}
-	switch token {
-	case json.Delim('{'):
-		members := []responseMember{}
-		positions := map[string]int{}
-		for s.decoder.More() {
-			keyToken, err := s.decoder.Token()
-			if err != nil {
-				return nil, err
-			}
-			key := keyToken.(string)
-			value, err := s.value(depth + 1)
-			if err != nil {
-				return nil, err
-			}
-			if redact.SensitiveSystemConfigFields[key] {
-				continue
-			}
-			if i, ok := positions[key]; ok {
-				members[i].value = value
-			} else {
-				positions[key] = len(members)
-				members = append(members, responseMember{key, value})
-			}
-		}
-		if _, err := s.decoder.Token(); err != nil {
-			return nil, err
-		}
-		if s.sortKeys {
-			sort.SliceStable(members, func(i, j int) bool { return members[i].key < members[j].key })
-		}
-		out := make(map[string]any, len(members))
-		for _, m := range members {
-			out[s.str(m.key)] = m.value
-		}
-		return out, nil
-	case json.Delim('['):
-		out := []any{}
-		for s.decoder.More() {
-			value, err := s.value(depth + 1)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, value)
-		}
-		_, err := s.decoder.Token()
-		return out, err
-	}
-	if value, ok := token.(string); ok {
-		return s.str(value), nil
-	}
-	return token, nil
-}
-
-func (s *responseRedactor) str(value string) string {
-	if result, ok := s.cache[value]; ok {
-		return result
-	}
-	result := value
-	if redact.ContainsEncodedSecret(value, s.secrets) {
-		result = redact.Redacted
-	}
-	if len(value) <= 1024 && len(s.cache) < 4096 {
-		s.cache[value] = result
-	}
-	return result
-}
-
-// skipContainer consumes a subtree iteratively, keeping the call stack bounded
-// even for hostile raw bodies. The opening delimiter has already been read.
-func (s *responseRedactor) skipContainer() error {
-	depth := 1
-	for depth > 0 {
-		token, err := s.decoder.Token()
-		if err != nil {
-			return err
-		}
-		switch token {
-		case json.Delim('{'), json.Delim('['):
-			depth++
-		case json.Delim('}'), json.Delim(']'):
-			depth--
-		}
-	}
-	return nil
-}
-
-func hasExemptions(endpoint string) bool {
-	return renderDraftEndpoints[endpoint] || oxidnsSettingsEndpoints[endpoint] || oxidnsValuesEndpoints[endpoint] ||
-		tokenEndpoints[endpoint] || artifactEndpoints[endpoint] || endpoint == "settings.handle_rule_fetch_proxy"
-}
-
-func applyWhitelists(c *Ctx, status int, payload, sanitized map[string]any) {
-	endpoint := c.Endpoint
-	if status == 200 {
-		if renderDraftEndpoints[endpoint] {
-			if config, ok := payload["config"].(string); ok {
-				sanitized["config"] = config
-			}
-		} else if oxidnsSettingsEndpoints[endpoint] {
-			original, target := payload, sanitized
-			if c.Request.Method == "POST" {
-				original, _ = payload["settings"].(map[string]any)
-				target, _ = sanitized["settings"].(map[string]any)
-			}
-			if original != nil && target != nil {
-				for _, key := range oxidnsNativeKeys {
-					if value, ok := original[key]; ok {
-						target[key] = value
-					}
-				}
-			}
-		}
-		if oxidnsValuesEndpoints[endpoint] {
-			if values, ok := payload["values"].(map[string]any); ok {
-				sanitized["values"] = values
-			}
-		}
-	}
-	if endpoint == "settings.handle_rule_fetch_proxy" && status == 200 {
-		if proxy, ok := payload["rule_fetch_proxy"].(string); ok {
-			sanitized["rule_fetch_proxy"] = proxy
-		}
-	}
-	if tokenEndpoints[endpoint] && status >= 200 && status < 300 && payload["success"] == true {
-		if token, ok := payload["token"].(string); ok {
-			sanitized["token"] = token
-		}
-	}
-	if artifactEndpoints[endpoint] && status == 200 && payload["success"] == true {
-		if content, ok := payload["content"].(string); ok {
-			sanitized["content"] = content
-		}
-	}
-}
 
 // jsonDepth is the maximum container nesting of a JSON text (strings
 // skipped), without decoding it.
