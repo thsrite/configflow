@@ -58,18 +58,25 @@ func (s *Store) Path(id string) string {
 // Read is _read_json: the object stored for id, or nil when the file is
 // missing, unreadable, not valid JSON or not an object.
 func (s *Store) Read(id string, dst any) bool {
+	valid, _ := s.ReadObject(id, dst)
+	return valid
+}
+
+// ReadObject decodes a stored object, distinguishing an unreadable file from
+// readable content that is invalid for dst.
+func (s *Store) ReadObject(id string, dst any) (decoded, readable bool) {
 	data, err := os.ReadFile(s.Path(id))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			logx.Get("backend.utils.json_store").Warningf("%s: %s", msgReadFailed, readErrorCategory(err))
 		}
-		return false
+		return false, false
 	}
 	data = bytes.TrimSpace(data)
 	if len(data) == 0 || data[0] != '{' {
-		return false
+		return false, true
 	}
-	return jsonresp.DecodeStored(data, dst) == nil
+	return jsonresp.DecodeStored(data, dst) == nil, true
 }
 
 func readErrorCategory(err error) string {
@@ -99,16 +106,33 @@ func readErrorCategory(err error) string {
 // Callers supply an owner context detached from request cancellation when the
 // write must outlive a disconnect.
 func (s *Store) Write(ctx context.Context, id string, data any, verifySignature bool) (*Signature, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(s.DataDir, 0o777); err != nil {
+	if err := s.prepareWrite(ctx); err != nil {
 		return nil, err
 	}
 	encoded, err := jsonresp.Encode(data)
 	if err != nil {
 		return nil, err
 	}
+	return s.publish(ctx, id, encoded, verifySignature)
+}
+
+// WriteEncoded writes a complete, already encoded JSON document verbatim using
+// the same atomic publication and signature verification as Write.
+func (s *Store) WriteEncoded(ctx context.Context, id string, encoded []byte, verifySignature bool) (*Signature, error) {
+	if err := s.prepareWrite(ctx); err != nil {
+		return nil, err
+	}
+	return s.publish(ctx, id, encoded, verifySignature)
+}
+
+func (s *Store) prepareWrite(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return os.MkdirAll(s.DataDir, 0o777)
+}
+
+func (s *Store) publish(ctx context.Context, id string, encoded []byte, verifySignature bool) (*Signature, error) {
 	path := s.Path(id)
 	temp := path + ".tmp"
 	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
@@ -227,6 +251,15 @@ func (s *Store) Remove(ctx context.Context, id string) error {
 		}
 		return &fs.PathError{Op: "remove", Path: path, Err: err}
 	}
+}
+
+// FileSignature identifies the file currently named by path.
+func FileSignature(path string) (Signature, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Signature{}, err
+	}
+	return signatureOf(info), nil
 }
 
 func signature(f *os.File) (Signature, error) {

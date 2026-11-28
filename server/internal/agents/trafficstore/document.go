@@ -1,6 +1,7 @@
 package trafficstore
 
 import (
+	"bytes"
 	"configflow/internal/jsondecode"
 	"configflow/internal/model"
 	"encoding/json"
@@ -36,7 +37,7 @@ type RouteStats struct {
 // Days returns a private typed view. Damaged records have already been isolated by LoadDocument.
 func (d Document) Days() map[string]Day {
 	out := map[string]Day{}
-	for date, raw := range d.days.All() {
+	for date, raw := range d.DayRecords() {
 		var day Day
 		if jsondecode.Unmarshal(raw, &day) == nil {
 			out[date] = day
@@ -46,10 +47,18 @@ func (d Document) Days() map[string]Day {
 }
 
 // DayRecords visits the validated day buckets in storage order.
-func (d Document) DayRecords() iter.Seq2[string, json.RawMessage] { return d.days.All() }
+func (d Document) DayRecords() iter.Seq2[string, json.RawMessage] {
+	return func(yield func(string, json.RawMessage) bool) {
+		for _, date := range d.days.order {
+			if raw, ok := d.days.get(date); ok && !yield(date, bytes.Clone(raw)) {
+				return
+			}
+		}
+	}
+}
 
 // StatusJSON returns an independent copy of the persisted metadata.
-func (d Document) StatusJSON() json.RawMessage { return member(d.fields, "status") }
+func (d Document) StatusJSON() json.RawMessage { return bytes.Clone(recordMember(d.fields, "status")) }
 
 // StoreState reports whether the underlying traffic file is healthy or damaged.
 func (d Document) StoreState() StoreState {
@@ -72,7 +81,8 @@ func readableDay(raw json.RawMessage) (*model.Fields, bool) {
 			}
 		}
 	}
-	hosts, err := readRecords(member(day, "hosts"))
+	var reader recordReader
+	hosts, err := reader.read(member(day, "hosts"))
 	if err != nil {
 		return nil, false
 	}
@@ -95,7 +105,7 @@ func readableDay(raw json.RawMessage) (*model.Fields, bool) {
 			}
 		}
 		if portsRaw, exists := host.Get("ports"); exists {
-			ports, err := readRecords(portsRaw)
+			ports, err := reader.read(portsRaw)
 			if err != nil {
 				badHost = true
 			} else {
@@ -115,7 +125,7 @@ func readableDay(raw json.RawMessage) (*model.Fields, bool) {
 			hosts.delete(name)
 			continue
 		}
-		routes, err := readRecords(member(host, "by_route"))
+		routes, err := reader.read(member(host, "by_route"))
 		if err != nil {
 			hosts.delete(name)
 			continue

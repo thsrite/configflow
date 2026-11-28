@@ -2,12 +2,15 @@ package trafficstore
 
 import (
 	"bytes"
-	"configflow/internal/jsondecode"
-	"configflow/internal/model"
 	"encoding/json"
+	"encoding/json/jsontext"
+	"io"
+	"maps"
+	"slices"
+	"strings"
 )
 
-// records is the mutable, ordered storage index for hosts, routes and ports.
+// records is the mutable, ordered storage index for traffic document members.
 // Reports update many entries before one serialization. model.Fields remains
 // appropriate for small extension-bearing records, but copying its whole state
 // on every host update makes a 2,000-item report quadratic in retained hosts.
@@ -16,17 +19,52 @@ type records struct {
 	values map[string]json.RawMessage
 }
 
-func readRecords(raw json.RawMessage) (records, error) {
-	var fields model.Fields
-	if len(raw) == 0 || raw[0] != '{' || jsondecode.Unmarshal(raw, &fields) != nil {
+// recordReader reuses one decoder while indexing members of a document
+// validated at the file boundary. Returned spans point into the source bytes.
+type recordReader struct {
+	buffer  bytes.Buffer
+	decoder jsontext.Decoder
+}
+
+func (reader *recordReader) read(raw json.RawMessage) (records, error) {
+	return reader.index(raw, jsontext.AllowDuplicateNames(true))
+}
+
+func (reader *recordReader) index(raw json.RawMessage, opts ...jsontext.Options) (records, error) {
+	if len(raw) == 0 || raw[0] != '{' {
 		return records{}, invalidData("invalid traffic collection")
 	}
-	r := records{values: make(map[string]json.RawMessage, fields.Len()), order: fields.Keys()}
-	for key, raw := range fields.All() {
-		r.values[key] = raw
+	reader.buffer = *bytes.NewBuffer(raw)
+	d := &reader.decoder
+	d.Reset(&reader.buffer, opts...)
+	if _, err := d.ReadToken(); err != nil {
+		return records{}, invalidData("invalid traffic collection")
+	}
+	var r records
+	for d.PeekKind() != '}' {
+		key, err := d.ReadToken()
+		if err != nil {
+			return records{}, invalidData("invalid traffic collection")
+		}
+		name := key.String()
+		value, err := d.ReadValue()
+		if err != nil {
+			return records{}, invalidData("invalid traffic collection")
+		}
+		end := int(d.InputOffset())
+		r.setEncoded(name, raw[end-len(value):end])
+	}
+	if _, err := d.ReadToken(); err != nil {
+		return records{}, invalidData("invalid traffic collection")
+	}
+	if _, err := d.ReadToken(); err != io.EOF {
+		return records{}, invalidData("invalid traffic collection")
 	}
 	return r, nil
 }
+
+// clone owns the mutable index and borrows immutable encoded values.
+func (r records) clone() records                         { return records{slices.Clone(r.order), maps.Clone(r.values)} }
 func (r records) get(key string) (json.RawMessage, bool) { raw, ok := r.values[key]; return raw, ok }
 func (r records) has(key string) bool                    { _, ok := r.values[key]; return ok }
 func (r records) len() int                               { return len(r.values) }
@@ -40,7 +78,7 @@ func (r records) keys() []string {
 	return keys
 }
 
-// setEncoded accepts an owned value produced by json.Marshal or storedCounter.raw.
+// setEncoded accepts an immutable encoded value from the document or the merge.
 // It is deliberately confined to this storage codec, after validation or encoding.
 func (r *records) setEncoded(key string, raw json.RawMessage) {
 	if r.values == nil {
@@ -54,30 +92,61 @@ func (r *records) setEncoded(key string, raw json.RawMessage) {
 func (r *records) delete(key string) { delete(r.values, key) }
 
 // MarshalJSON writes storage members in their original or insertion order.
-func (r records) MarshalJSON() ([]byte, error) {
-	var out bytes.Buffer
-	out.WriteByte('{')
+func (r records) MarshalJSON() ([]byte, error) { return r.encode(), nil }
+
+func (r records) encode() []byte { return r.encodeObject("", nil) }
+
+func (r records) size() int {
+	size := 2
+	for key, raw := range r.values {
+		size += len(key) + len(raw) + 4
+	}
+	return size
+}
+
+// encodeObject inserts an indexed child directly into its parent buffer. Both
+// the top-level days and the day's hosts can be large.
+func (r records) encodeObject(name string, child *records) []byte {
+	size := r.size()
+	if child != nil {
+		size += child.size() - len(r.values[name])
+	}
+	return r.appendObject(make([]byte, 0, size), name, child)
+}
+func (r records) appendObject(out []byte, name string, child *records) []byte {
+	out = append(out, '{')
 	first := true
 	for _, key := range r.order {
-		raw, exists := r.values[key]
-		if !exists {
+		raw, ok := r.values[key]
+		if !ok {
 			continue
 		}
 		if !first {
-			out.WriteByte(',')
+			out = append(out, ',')
 		}
 		first = false
-		name, err := json.Marshal(key)
-		if err != nil {
-			return nil, err
+		if strings.ContainsAny(key, "<>&\u2028\u2029") {
+			quoted, _ := json.Marshal(key)
+			out = append(out, quoted...)
+		} else {
+			out, _ = jsontext.AppendQuote(out, key)
 		}
-		out.Write(name)
-		out.WriteByte(':')
-		out.Write(raw)
+		out = append(out, ':')
+		if child != nil && key == name {
+			out = child.appendObject(out, "", nil)
+		} else {
+			out = append(out, raw...)
+		}
 	}
-	out.WriteByte('}')
-	return out.Bytes(), nil
+	return append(out, '}')
 }
+
+func (r *records) compactOrder() {
+	if len(r.order) != len(r.values) {
+		r.order = slices.DeleteFunc(r.order, func(k string) bool { return !r.has(k) })
+	}
+}
+
 func recordMember(r records, key string) json.RawMessage { raw, _ := r.get(key); return raw }
 func recordPut(r *records, key string, value any) error {
 	raw, err := json.Marshal(value)
@@ -93,36 +162,29 @@ type hostMerge struct {
 	ports, routes records
 }
 
-func openHost(hosts records, name, stamp string) (*hostMerge, error) {
+func (reader *recordReader) openHost(hosts records, name string, stamp json.RawMessage) (*hostMerge, error) {
 	raw, exists := hosts.get(name)
 	if !exists {
 		raw = []byte(`{}`)
 	}
-	entry, err := readRecords(raw)
+	entry, err := reader.read(raw)
 	if err != nil {
 		return nil, err
 	}
 	for _, key := range []string{"first_seen", "last_seen"} {
-		if raw, ok := entry.get(key); ok && string(raw) != "null" {
-			var value string
-			if jsondecode.Unmarshal(raw, &value) != nil {
-				return nil, invalidData("invalid traffic host timestamp")
-			}
+		if raw, ok := entry.get(key); ok && string(raw) != "null" && raw[0] != '"' {
+			return nil, invalidData("invalid traffic host timestamp")
 		}
 	}
 	if !entry.has("first_seen") {
-		if err = recordPut(&entry, "first_seen", stamp); err != nil {
-			return nil, err
-		}
+		entry.setEncoded("first_seen", stamp)
 	}
-	if err = recordPut(&entry, "last_seen", stamp); err != nil {
-		return nil, err
-	}
+	entry.setEncoded("last_seen", stamp)
 	portsRaw, ok := entry.get("ports")
 	if !ok {
 		portsRaw = []byte(`{}`)
 	}
-	ports, err := readRecords(portsRaw)
+	ports, err := reader.read(portsRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +195,7 @@ func openHost(hosts records, name, stamp string) (*hostMerge, error) {
 		}
 		routesRaw = []byte(`{}`)
 	}
-	routes, err := readRecords(routesRaw)
+	routes, err := reader.read(routesRaw)
 	if err != nil {
 		return nil, err
 	}

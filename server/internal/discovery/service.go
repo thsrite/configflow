@@ -39,6 +39,8 @@ type Service struct {
 	Runtime       *lifecycle.Runtime
 	Tasks         *tasks.Registry
 
+	probeOnce    sync.Once
+	probeFiles   *check.ProjectedProbeStore[Probe]
 	client       AgentClient
 	trafficCache trafficCache
 
@@ -93,12 +95,13 @@ func (s *Service) trafficStore() (*trafficstore.NativeStore, error) {
 	return trafficstore.NewNative(filepath.Join(r.DataDir(), "traffic")), nil
 }
 
-func (s *Service) probeStore() (*check.ProbeStore, error) {
+func (s *Service) probeStore() (*check.ProjectedProbeStore[Probe], error) {
 	r, err := s.repo()
 	if err != nil {
 		return nil, err
 	}
-	return health.ProbeStore(r.DataDir()), nil
+	s.probeOnce.Do(func() { s.probeFiles = check.WithProbeProjection(health.ProbeStore(r.DataDir()), projectProbeRecord) })
+	return s.probeFiles, nil
 }
 
 func (s *Service) regionStore() (*check.RegionStore, error) {

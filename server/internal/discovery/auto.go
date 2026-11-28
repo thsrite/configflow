@@ -37,7 +37,11 @@ func (svc *Service) autoRound(ctx context.Context, id string) (AutoOutcome, erro
 	}
 	// The automatic jobs below run synchronously. Keep even over-budget reports until this round ends.
 	ctx = context.WithValue(ctx, roundTrafficKey{}, make(roundTraffic))
-	listing, err := svc.LoadDomains(ctx, id, 7, "uncovered", "")
+	var base *trafficSummary
+	if s.AutoApply {
+		base = new(trafficSummary)
+	}
+	listing, err := svc.loadDomains(ctx, id, 7, "uncovered", "", base)
 	if err != nil {
 		return out, err
 	}
@@ -68,7 +72,7 @@ func (svc *Service) autoRound(ctx context.Context, id string) (AutoOutcome, erro
 			return out, err
 		}
 		if s.AutoApply && !autoStopping(ctx) {
-			refreshed, err := svc.LoadDomains(ctx, id, 7, "uncovered", "")
+			refreshed, err := svc.loadDomains(ctx, id, 7, "uncovered", "", base)
 			if err != nil {
 				return out, err
 			}

@@ -3,6 +3,7 @@ package check
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -34,6 +35,11 @@ func makeProbeHosts(t testing.TB, count int, timestamp func(int) string) model.O
 		}
 	})
 	return hosts
+}
+
+func pruneHosts(hosts *model.OrderedMap[TimedRecord], now time.Time) {
+	snap := probeSnapshot[struct{}]{file: probeFile{Hosts: *hosts}, retained: indexHosts(*hosts, nil)}
+	*hosts = snap.entries(oldest(now, ProbeRetentionDays))
 }
 
 func TestPruneHostsRetention(t *testing.T) {
@@ -157,5 +163,40 @@ func BenchmarkPruneHosts6000(b *testing.B) {
 				impl.prune(&candidate, now)
 			}
 		})
+	}
+}
+
+func TestCachedProbeCutoffMovesBothWays(t *testing.T) {
+	store := NewProbeStore(t.TempDir())
+	before := time.Now().Truncate(time.Second)
+	seedProbeHosts(t, store, "a", []string{"one.example.com"}, before)
+	cutoff := before.AddDate(0, 0, ProbeRetentionDays)
+	for _, tc := range []struct {
+		at    time.Time
+		count int
+	}{{cutoff, 1}, {cutoff.Add(time.Second), 0}, {cutoff, 1}} {
+		if got := store.LoadEntries("a", tc.at).Len(); got != tc.count {
+			t.Fatalf("at %v got %d, want %d", tc.at, got, tc.count)
+		}
+	}
+}
+
+func TestProbeStoreCachesReadableEmptyVersions(t *testing.T) {
+	store := NewProbeStore(t.TempDir())
+	path := store.Path("agent")
+	for _, raw := range []string{`{`, `{}`, `{"hosts":[]}`, `{"hosts":{"one.example.com":"invalid"}}`} {
+		if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		first := store.loadSnapshot("agent")
+		if len(first.retained) != 0 || store.loadSnapshot("agent") != first {
+			t.Fatalf("not cached as empty: %q", raw)
+		}
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if first := store.loadSnapshot("agent"); store.loadSnapshot("agent") == first {
+		t.Fatal("missing file retained")
 	}
 }

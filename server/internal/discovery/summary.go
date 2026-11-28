@@ -200,24 +200,48 @@ func ignored(domain, host string, values []string) bool {
 
 type group struct {
 	hostOrder, routeOrder []string
-	domain                *Domain
+	domain                string
 	hosts                 map[string]*Host
 	routes                map[string]*RouteStats
 	agents                map[string]bool
 }
 
-func summarize(reports []struct {
+type agentTraffic = struct {
 	agent Agent
 	data  traffic
-}, days int, view, agentID string, ignore []string, match func(string) *Match) Listing {
-	out := Listing{Agents: []AgentStatus{}, Items: []*Domain{}, MinAgentVersion: minAgentVersion, MinProbeVersion: minProbeVersion}
-	oldest := now().AddDate(0, 0, -max(days, 1)+1).Format("2006-01-02")
+}
+
+// trafficSummary holds only the passive observations for one synchronous
+// round. Rules, ignore settings, Agent status and probes are read on each pass.
+type trafficSummary struct {
+	reports          []agentTraffic
+	selected, oldest string
+	groups           []*group
+	coverage         *float64
+}
+
+func (s *trafficSummary) current(reports []agentTraffic, selected, oldest string) bool {
+	if s.selected != selected || s.oldest != oldest || len(s.reports) != len(reports) {
+		return false
+	}
+	for i, r := range reports {
+		prev := s.reports[i]
+		// loadTraffic shares immutable slices only while the revision is current.
+		if r.agent.ID != prev.agent.ID || r.agent.Name != prev.agent.Name || len(r.data.Days) != len(prev.data.Days) ||
+			len(r.data.Days) != 0 && &r.data.Days[0] != &prev.data.Days[0] {
+			return false
+		}
+	}
+	return true
+}
+
+func aggregateTraffic(reports []agentTraffic, agentID, oldest string) trafficSummary {
+	summary := trafficSummary{reports: reports, selected: agentID, oldest: oldest}
 	groups := map[string]*group{}
-	domainOrder := []string{}
+	domains := map[string]string{}
 	var hostConns, ipOnly int64
 	for _, r := range reports {
 		a, data := r.agent, r.data
-		out.Agents = append(out.Agents, statusOf(a, data))
 		if agentID != "" && a.ID != agentID {
 			continue
 		}
@@ -228,12 +252,16 @@ func summarize(reports []struct {
 			ipOnly += day.value.IPOnly
 			for _, host := range day.value.Hosts {
 				name, entry := host.key, host.value
-				domain := RegistrableDomain(name)
+				domain, seen := domains[name]
+				if !seen {
+					domain = RegistrableDomain(name)
+					domains[name] = domain
+				}
 				g := groups[domain]
 				if g == nil {
-					g = &group{domain: &Domain{Domain: domain, Tags: []string{}, Routes: []*RouteStats{}, Hosts: []*Host{}, Agents: []string{}}, hosts: map[string]*Host{}, routes: map[string]*RouteStats{}, agents: map[string]bool{}}
+					g = &group{domain: domain, hosts: map[string]*Host{}, routes: map[string]*RouteStats{}, agents: map[string]bool{}}
 					groups[domain] = g
-					domainOrder = append(domainOrder, domain)
+					summary.groups = append(summary.groups, g)
 				}
 				label := a.Name
 				if label == "" {
@@ -283,12 +311,8 @@ func summarize(reports []struct {
 			}
 		}
 	}
-	for _, name := range domainOrder {
-		g := groups[name]
-		d := g.domain
-		uncovered, pending, allIgnored, failing := 0, 0, true, false
-		for _, host := range g.hostOrder {
-			h := g.hosts[host]
+	for _, g := range summary.groups {
+		for _, h := range g.hosts {
 			h.Port = 443
 			weight := int64(-1)
 			for _, p := range h.portOrder {
@@ -301,6 +325,41 @@ func summarize(reports []struct {
 			}
 			h.ports = nil
 			h.Failing = h.DirectFails >= 3 && h.DirectFails >= h.DirectConns
+		}
+	}
+	if total := hostConns + ipOnly; total > 0 {
+		summary.coverage = new(math.RoundToEven(float64(hostConns)/float64(total)*10000) / 10000)
+	}
+	return summary
+}
+
+func summarize(reports []agentTraffic, days int, view, agentID string, ignore []string, match func(string) *Match) Listing {
+	return summarizeRound(reports, days, view, agentID, ignore, match, nil)
+}
+
+func summarizeRound(reports []agentTraffic, days int, view, agentID string, ignore []string, match func(string) *Match, base *trafficSummary) Listing {
+	oldest := now().AddDate(0, 0, -max(days, 1)+1).Format("2006-01-02")
+	reuse := base != nil
+	if !reuse {
+		base = &trafficSummary{}
+	}
+	if !base.current(reports, agentID, oldest) {
+		*base = aggregateTraffic(reports, agentID, oldest)
+	}
+	out := Listing{Agents: []AgentStatus{}, Items: []*Domain{}, Coverage: base.coverage, MinAgentVersion: minAgentVersion, MinProbeVersion: minProbeVersion}
+	for _, r := range reports {
+		out.Agents = append(out.Agents, statusOf(r.agent, r.data))
+	}
+	for _, g := range base.groups {
+		name := g.domain
+		d := &Domain{Domain: name, Tags: []string{}, Routes: []*RouteStats{}, Hosts: []*Host{}, Agents: []string{}}
+		uncovered, pending, allIgnored, failing := 0, 0, true, false
+		for _, host := range g.hostOrder {
+			h := g.hosts[host]
+			if reuse {
+				copy := *h
+				h = &copy
+			}
 			h.Ignored = ignored(name, host, ignore)
 			allIgnored = allIgnored && h.Ignored
 			failing = failing || (h.Failing && !h.Ignored)
@@ -386,9 +445,6 @@ func summarize(reports []struct {
 		}
 		return a.Conns > b.Conns
 	})
-	if total := hostConns + ipOnly; total > 0 {
-		out.Coverage = new(math.RoundToEven(float64(hostConns)/float64(total)*10000) / 10000)
-	}
 	return out
 }
 func sortedKeys[V any](m map[string]V) []string {
@@ -399,23 +455,14 @@ func sortedKeys[V any](m map[string]V) []string {
 	sort.Strings(ks)
 	return ks
 }
-func (svc *Service) reports(ctx context.Context, as []Agent, selected string) ([]struct {
-	agent Agent
-	data  traffic
-}, error) {
-	out := []struct {
-		agent Agent
-		data  traffic
-	}{}
+func (svc *Service) reports(ctx context.Context, as []Agent, selected string) ([]agentTraffic, error) {
+	out := make([]agentTraffic, 0, len(as))
 	for _, a := range as {
 		t, err := svc.loadTraffic(ctx, a, selected == "" || selected == a.ID)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, struct {
-			agent Agent
-			data  traffic
-		}{a, t})
+		out = append(out, agentTraffic{a, t})
 	}
 	return out, nil
 }
@@ -439,6 +486,10 @@ func (svc *Service) AgentsPayload(ctx context.Context, id string) (*AgentsView, 
 
 // LoadDomains aggregates selected traffic while retaining every Agent status.
 func (svc *Service) LoadDomains(ctx context.Context, id string, days int, view, selected string) (Listing, error) {
+	return svc.loadDomains(ctx, id, days, view, selected, nil)
+}
+
+func (svc *Service) loadDomains(ctx context.Context, id string, days int, view, selected string, base *trafficSummary) (Listing, error) {
 	c, err := svc.loadConfig(ctx, id)
 	if err != nil {
 		return Listing{}, err
@@ -455,7 +506,7 @@ func (svc *Service) LoadDomains(ctx context.Context, id string, days int, view, 
 	if err != nil {
 		return Listing{}, err
 	}
-	out := summarize(rs, days, view, selected, c.Settings.Ignored, match)
+	out := summarizeRound(rs, days, view, selected, c.Settings.Ignored, match, base)
 	ps, err := svc.probes(ctx, as)
 	if err != nil {
 		return out, err
@@ -479,7 +530,8 @@ func (svc *Service) LoadDomains(ctx context.Context, id string, days int, view, 
 	for _, d := range out.Items {
 		for _, h := range d.Hosts {
 			if p, ok := ps[h.Host]; ok {
-				h.Probe = &p
+				copy := p.Clone()
+				h.Probe = &copy
 			}
 			if p, ok := pages[h.Host]; ok && (d.Website.Page == nil || p.CheckedAt > d.Website.Page.CheckedAt) {
 				d.Website.Page = &p

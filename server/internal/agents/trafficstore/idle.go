@@ -15,7 +15,7 @@ import (
 )
 
 // Only a successful full merge establishes that this day's counts, retention
-// and host limit are current. Keep the digest, never the history, in the LRU.
+// and host limit are current. The digest verifies a status-only rewrite.
 type idleHistory struct {
 	day       string
 	hostLimit int
@@ -77,7 +77,13 @@ func refreshIdleReport(ctx context.Context, path string, sig *jsonstore.Signatur
 		cachePop(path)
 		return nil, err
 	}
+	document := entry.document
 	if entry := rememberStatus(path, written, raw); entry != nil {
+		if document != nil {
+			d := document.clone()
+			d.fields.setEncoded("status", raw)
+			entry.document = &d
+		}
 		entry.idle = history
 	}
 	return &status, nil
