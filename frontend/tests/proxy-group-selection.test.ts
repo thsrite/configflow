@@ -333,7 +333,7 @@ describe('proxy group selection', () => {
     const wrapper = await render()
     await vi.advanceTimersByTimeAsync(280)
     await flushPromises()
-    expect(proxyGroupApi.previewRegex).toHaveBeenCalledTimes(3)
+    expect(proxyGroupApi.previewRegex).toHaveBeenCalledTimes(2) // Alpha 的命中数与详情共用在途请求
     await select(wrapper, 'Beta')
     expect(heading(wrapper)).toBe('Beta')
     oldPreview.resolve(response({ success: true, nodes: [{ name: 'Stale Alpha node' }], count: 1, total_candidates: 100 }))

@@ -76,10 +76,15 @@ let timer: ReturnType<typeof setTimeout> | undefined
 function clearTimer() { if (timer) clearTimeout(timer); timer = undefined }
 function schedule() {
   clearTimer()
-  if (!disposed && (settings.value.library || settings.value.rules || ['pending', 'running'].includes(state.value.status))) {
+  if (!disposed && !document.hidden && (settings.value.library || settings.value.rules || ['pending', 'running'].includes(state.value.status))) {
     timer = setTimeout(() => { timer = undefined; void load() }, 10000)
   }
 }
+function onVisibility() {
+  if (document.hidden) clearTimer()
+  else void load()
+}
+document.addEventListener('visibilitychange', onVisibility)
 function apply(data: AgentRuleSyncResponse) {
   if (!data?.success || typeof data.settings?.library !== 'boolean' || typeof data.settings?.rules !== 'boolean'
     || !Object.prototype.hasOwnProperty.call(stateLabels, data.state?.status) || typeof data.baseline_ready !== 'boolean') {
@@ -97,7 +102,7 @@ function failureMessage(failure: any, fallback: string) {
   return failure?.response?.data?.message || failure?.message || fallback
 }
 async function load() {
-  if (disposed || !props.agentId || saving.value || reading.value) return
+  if (disposed || document.hidden || !props.agentId || saving.value || reading.value) return
   clearTimer()
   const current = ++request
   controller = new AbortController()
@@ -159,5 +164,12 @@ watch(() => props.agentId, () => {
   errorKind.value = 'load'
   void load()
 }, { immediate: true })
-onBeforeUnmount(() => { disposed = true; request++; clearTimer(); controller?.abort(); window.removeEventListener(PAIR_SAVED, onPairSaved) })
+onBeforeUnmount(() => {
+  disposed = true
+  request++
+  clearTimer()
+  controller?.abort()
+  document.removeEventListener('visibilitychange', onVisibility)
+  window.removeEventListener(PAIR_SAVED, onPairSaved)
+})
 </script>

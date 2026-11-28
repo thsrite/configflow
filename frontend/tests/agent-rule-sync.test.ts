@@ -123,6 +123,28 @@ describe('per-Agent automatic rule synchronization controls', () => {
     expect(wrapper.text()).toContain('先成功发布一次配置')
   })
 
+  it('后台不读取，恢复可见立即补读并恢复原轮询间隔', async () => {
+    const visibility = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    try {
+      vi.mocked(api.get).mockResolvedValue(response(enabled()))
+      await render()
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(api.get).not.toHaveBeenCalled()
+      visibility.mockReturnValue(false)
+      document.dispatchEvent(new Event('visibilitychange'))
+      await flushPromises()
+      expect(api.get).toHaveBeenCalledTimes(1)
+      visibility.mockReturnValue(true)
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(30000)
+      expect(api.get).toHaveBeenCalledTimes(1)
+      visibility.mockReturnValue(false)
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(api.get).toHaveBeenCalledTimes(3)
+    } finally { visibility.mockRestore() }
+  })
+
   it('polls enabled synchronization and shows pending, running, success, and failure outcomes', async () => {
     vi.mocked(api.get).mockResolvedValueOnce(response(enabled({ state: { status: 'pending', message: '等待设备上线。' } })))
     const wrapper = await render()

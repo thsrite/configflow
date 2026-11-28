@@ -113,8 +113,17 @@ describe('proxy group navigation lifecycle', () => {
     expect(state.matchCounts).toEqual(previousCounts)
   })
 
+  it('相同参数共用批次结果，仍分别展示每个组的命中数', async () => {
+    groups = Array.from({ length: 10 }, (_, index) => group(`组 ${index}`, { exclude_regex: index % 2 ? '备用' : '' }))
+    vi.mocked(proxyGroupApi.previewRegex).mockImplementation(async params =>
+      result((params as { exclude_regex: string }).exclude_regex ? ['节点一'] : ['节点一', '节点二']))
+    const view = await render()
+    expect(proxyGroupApi.previewRegex).toHaveBeenCalledTimes(2)
+    expect(view.findAll('[title="命中节点数"]').map(el => el.text())).toEqual(groups.map((_, i) => i % 2 ? '1' : '2'))
+  })
+
   it('stops the count worker queue and ignores in-flight results after leaving', async () => {
-    groups = [group('Manual', { subscriptions: [], manual_nodes: ['DIRECT'] }), ...Array.from({ length: 8 }, (_, index) => group(`Group ${index}`))]
+    groups = [group('Manual', { subscriptions: [], manual_nodes: ['DIRECT'] }), ...Array.from({ length: 8 }, (_, index) => group(`Group ${index}`, { regex: `node-${index}` }))]
     const requests = Array.from({ length: 3 }, () => deferred<AxiosResponse>())
     requests.forEach(request => vi.mocked(proxyGroupApi.previewRegex).mockReturnValueOnce(request.promise))
     await render()

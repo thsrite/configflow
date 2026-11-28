@@ -2080,14 +2080,20 @@ const preview = ref<{ nodes: any[]; total: number; loading: boolean; error: stri
   error: ''
 })
 
-const requestPreview = async (kind: SourceKind, sources: string[], regex: string, excludeRegex: string) => {
-  const { data } = await proxyGroupApi.previewRegex({
-    source: kind,
-    regex: regex || '.*',
-    exclude_regex: excludeRegex,
-    ...(kind === 'aggregation' ? { aggregations: sources } : { subscriptions: sources })
-  }, profileId)
-  return data
+const previewParams = (d: typeof draft.value) => ({
+  source: d.kind,
+  regex: d.regex || '.*',
+  exclude_regex: d.excludeRegex,
+  ...(d.kind === 'aggregation' ? { aggregations: d.sources } : { subscriptions: d.sources })
+})
+const pendingPreviews = new Map<string, ReturnType<typeof proxyGroupApi.previewRegex>>()
+const requestPreview = (params: ReturnType<typeof previewParams>) => {
+  const key = JSON.stringify(params)
+  const pending = pendingPreviews.get(key)
+  if (pending) return pending
+  const request = proxyGroupApi.previewRegex(params, profileId).finally(() => pendingPreviews.delete(key))
+  pendingPreviews.set(key, request)
+  return request
 }
 
 let previewTimer: number | undefined
@@ -2105,7 +2111,7 @@ const refreshPreview = () => {
   preview.value = { ...preview.value, loading: true, error: '' }
   previewTimer = window.setTimeout(async () => {
     try {
-      const data = await requestPreview(draft.value.kind, draft.value.sources, draft.value.regex, draft.value.excludeRegex)
+      const { data } = await requestPreview(previewParams(draft.value))
       if (!viewActive || seq !== previewSeq) return
       preview.value = { nodes: data.nodes || [], total: data.total_candidates || 0, loading: false, error: '' }
       if (!draftDirty.value) matchCounts.value = { ...matchCounts.value, [keyOf(group)]: data.count ?? 0 }
@@ -2122,16 +2128,25 @@ watch([selectedKey, () => draft.value.sources, () => draft.value.regex, () => dr
 const matchCounts = ref<Record<string, number>>({})
 
 const computeMatchCounts = async () => {
-  const queue = proxyGroups.value.filter(g => !g.follow_group)
+  const batches = new Map<string, { params: ReturnType<typeof previewParams>; groups: string[] }>()
+  for (const group of proxyGroups.value) {
+    if (group.follow_group) continue
+    const d = draftFrom(group)
+    if (!d.sources.length) continue
+    const params = previewParams(d)
+    const key = JSON.stringify(params)
+    const batch = batches.get(key)
+    if (batch) batch.groups.push(keyOf(group))
+    else batches.set(key, { params, groups: [keyOf(group)] })
+  }
+  const queue = [...batches.values()]
   const worker = async () => {
     while (viewActive && queue.length) {
-      const group = queue.shift()!
-      const d = draftFrom(group)
-      if (!d.sources.length) continue
+      const { params, groups } = queue.shift()!
       try {
-        const data = await requestPreview(d.kind, d.sources, d.regex, d.excludeRegex)
+        const { data } = await requestPreview(params)
         if (!viewActive) return
-        matchCounts.value = { ...matchCounts.value, [keyOf(group)]: data.count ?? 0 }
+        for (const group of groups) matchCounts.value[group] = data.count ?? 0
       } catch {
         // 单个失败不影响其他
       }

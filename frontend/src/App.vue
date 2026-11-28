@@ -153,7 +153,7 @@
             :active-path="navigationPath(route.path)"
             :subscription-aggregation-enabled="subscriptionAggregationEnabled"
           />
-          <router-view v-if="profileStore.profileReady.value" :key="pageKey" />
+          <router-view v-if="profileStore.profileReady.value || isProfilesPage" :key="pageKey" />
           <LoadingRows v-else :rows="3" />
         </div>
       </main>
@@ -228,6 +228,7 @@ const liveThroughput = computed(() => {
   return t ? { down: formatRate(t.down), up: formatRate(t.up) } : null
 })
 const isLoginPage = computed(() => route.path === '/login')
+const isProfilesPage = computed(() => route.name === 'Profiles')
 /* 只有配置空间内的页面随配置空间切换重建；共享资源与系统页不受影响 */
 const pageKey = computed(() =>
   scopeOfPath(route.path) === 'profile' || route.path === '/dashboard'
@@ -266,6 +267,11 @@ const loadVersion = async () => {
 }
 
 const loadSubscriptionAggregationSetting = async () => {
+  const checked = route.meta.subscriptionAggregationEnabled ?? route.redirectedFrom?.meta.subscriptionAggregationEnabled
+  if (checked !== undefined) {
+    subscriptionAggregationEnabled.value = checked
+    return
+  }
   try {
     const response = await api.get('/settings/subscription-aggregation')
     subscriptionAggregationEnabled.value = response.data.enabled || false
@@ -334,7 +340,8 @@ watch(isLoginPage, (login, _previous, onCleanup) => {
   live.start()
   onCleanup(() => live.stop())
   checkAuthStatus()
-  profileStore.refreshProfiles().catch(() => undefined)
+  // 配置空间页进入时会刷新同一份列表，导航直接使用它的结果。
+  if (!isProfilesPage.value) profileStore.refreshProfiles().catch(() => undefined)
   loadSubscriptionAggregationSetting()
 }, { immediate: true })
 

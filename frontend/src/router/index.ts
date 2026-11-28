@@ -10,6 +10,7 @@ declare module 'vue-router' {
   interface RouteMeta {
     requiresAuth?: boolean
     requiresSubscriptionAggregation?: boolean
+    subscriptionAggregationEnabled?: boolean
   }
 }
 
@@ -173,6 +174,7 @@ router.beforeEach(async (to) => {
   if (to.meta.requiresSubscriptionAggregation) {
     try {
       const { data } = await api.get('/settings/subscription-aggregation')
+      to.meta.subscriptionAggregationEnabled = Boolean(data.enabled)
       if (!data.enabled) return '/subscriptions'
     } catch (error) {
       console.error('Failed to check subscription aggregation status:', error)
