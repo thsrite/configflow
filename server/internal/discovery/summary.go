@@ -213,6 +213,7 @@ func summarize(reports []struct {
 	out := Listing{Agents: []AgentStatus{}, Items: []*Domain{}, MinAgentVersion: minAgentVersion, MinProbeVersion: minProbeVersion}
 	oldest := now().AddDate(0, 0, -max(days, 1)+1).Format("2006-01-02")
 	groups := map[string]*group{}
+	domains := map[string]string{}
 	domainOrder := []string{}
 	var hostConns, ipOnly int64
 	for _, r := range reports {
@@ -228,7 +229,11 @@ func summarize(reports []struct {
 			ipOnly += day.value.IPOnly
 			for _, host := range day.value.Hosts {
 				name, entry := host.key, host.value
-				domain := RegistrableDomain(name)
+				domain, seen := domains[name]
+				if !seen {
+					domain = RegistrableDomain(name)
+					domains[name] = domain
+				}
 				g := groups[domain]
 				if g == nil {
 					g = &group{domain: &Domain{Domain: domain, Tags: []string{}, Routes: []*RouteStats{}, Hosts: []*Host{}, Agents: []string{}}, hosts: map[string]*Host{}, routes: map[string]*RouteStats{}, agents: map[string]bool{}}

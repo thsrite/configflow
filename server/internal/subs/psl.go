@@ -265,6 +265,8 @@ func lenientNetloc(url string) string {
 	return strings.TrimRight(host, ".。．｡")
 }
 
+var domainDots = strings.NewReplacer("。", ".", "．", ".", "｡", ".")
+
 // ExtractDomain is TLDExtract(suffix_list_urls=(), cache_dir=None,
 // include_psl_private_domains=includePrivate)(url): the subdomain,
 // registrable label and public suffix of a host or URL per tldextract
@@ -272,7 +274,9 @@ func lenientNetloc(url string) string {
 func ExtractDomain(url string, includePrivate bool) (subdomain, domain, suffix string) {
 	suffixOnce.Do(loadSuffixTries)
 	netloc := lenientNetloc(url)
-	netloc = strings.NewReplacer("。", ".", "．", ".", "｡", ".").Replace(netloc)
+	if strings.ContainsAny(netloc, "。．｡") {
+		netloc = domainDots.Replace(netloc)
+	}
 	if len([]rune(netloc)) >= 4 && strings.HasPrefix(netloc, "[") && strings.HasSuffix(netloc, "]") {
 		if a, err := netip.ParseAddr(netloc[1 : len(netloc)-1]); err == nil && a.Is6() {
 			return "", netloc, ""
