@@ -39,7 +39,8 @@ type Service struct {
 	Runtime       *lifecycle.Runtime
 	Tasks         *tasks.Registry
 
-	client AgentClient
+	client       AgentClient
+	trafficCache trafficCache
 
 	matcherMu    sync.Mutex
 	matcherCache *rules.Cache

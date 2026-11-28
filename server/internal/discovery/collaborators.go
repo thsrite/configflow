@@ -26,10 +26,6 @@ func (s *Service) localMatcher(ctx context.Context, id string) (func(string) *Ma
 
 func supported(version, minimum string) bool { return legacySupported(version, minimum) }
 
-func (s *Service) loadTraffic(ctx context.Context, a Agent, full bool) (traffic, error) {
-	return s.legacyLoadTraffic(ctx, a, full)
-}
-
 func (s *Service) probes(ctx context.Context, as []Agent) (map[string]Probe, error) {
 	return s.legacyProbes(ctx, as)
 }

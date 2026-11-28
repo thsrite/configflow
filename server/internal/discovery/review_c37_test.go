@@ -84,16 +84,16 @@ func TestReviewLargeAgentSummariesDoNotSurviveRequests(t *testing.T) {
 			}{}
 			day := now().Format("2006-01-02")
 			for a := range 80 {
-				bucket := trafficDay{Hosts: map[string]trafficHost{}}
+				var bucket trafficDay
 				for h := range 150 {
 					name := fmt.Sprintf("h%d.a%d.example.com", h, a)
-					bucket.hostOrder = append(bucket.hostOrder, name)
-					bucket.Hosts[name] = trafficHost{First: day, Last: day, Routes: map[string]Stats{"Match\t\tdirect\tDIRECT": {Conns: 1}}, routeOrder: []string{"Match\t\tdirect\tDIRECT"}}
+					host := trafficHost{First: day, Last: day, Routes: trafficRows[Stats]{{"Match\t\tdirect\tDIRECT", Stats{Conns: 1}}}}
+					bucket.Hosts = append(bucket.Hosts, trafficRow[trafficHost]{name, host})
 				}
 				reports = append(reports, struct {
 					agent Agent
 					data  traffic
-				}{Agent{ID: fmt.Sprint(a)}, traffic{Days: map[string]trafficDay{day: bucket}, dayOrder: []string{day}}})
+				}{Agent{ID: fmt.Sprint(a)}, traffic{Days: trafficRows[trafficDay]{{day, bucket}}}})
 			}
 			result := summarize(reports, 7, "all", "", nil, nil)
 			if len(result.Items) != 1 || len(result.Items[0].Hosts) != 12000 {

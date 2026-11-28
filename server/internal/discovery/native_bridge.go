@@ -10,7 +10,6 @@ import (
 	"errors"
 
 	"configflow/internal/agents"
-	"configflow/internal/agents/trafficstore"
 	"configflow/internal/health/check"
 	"configflow/internal/rulefetch"
 )
@@ -26,63 +25,6 @@ func legacySupported(text, minimum string) bool {
 	return text != "" && version.CompareAgent(text, minimum) >= 0
 }
 
-type roundTrafficKey struct{}
-type roundTraffic map[string]roundTrafficEntry
-type roundTrafficEntry struct {
-	report   traffic
-	revision trafficstore.DocumentRevision
-}
-
-func (s *Service) legacyLoadTraffic(ctx context.Context, a Agent, full bool) (traffic, error) {
-	store, err := s.trafficStore()
-	if err != nil {
-		return traffic{}, err
-	}
-	var out traffic
-	var state trafficstore.StoreState
-	var revision trafficstore.DocumentRevision
-	var cache roundTraffic
-	if full {
-		cache, _ = ctx.Value(roundTrafficKey{}).(roundTraffic)
-		if cached, ok := cache[a.ID]; ok && cached.revision.Current() {
-			return cached.report, nil
-		}
-		doc := store.LoadDocument(a.ID, nil)
-		if raw := doc.StatusJSON(); len(raw) > 0 {
-			if err := jsondecode.Unmarshal(raw, &out.Status); err != nil {
-				return traffic{}, err
-			}
-		}
-		out.Days = make(map[string]trafficDay)
-		for date, raw := range doc.DayRecords() {
-			var day trafficDay
-			if err := jsondecode.Unmarshal(raw, &day); err != nil {
-				return traffic{}, err
-			}
-			out.Days[date] = day
-			out.dayOrder = append(out.dayOrder, date)
-		}
-		state = doc.StoreState()
-		revision = doc.Revision()
-	} else {
-		snap := store.InspectStatus(a.ID)
-		state = snap.State
-		if len(snap.Status) > 0 {
-			err = jsondecode.Unmarshal(snap.Status, &out.Status)
-		}
-	}
-	if state == trafficstore.StoreStateDamaged {
-		out.storeState = string(trafficstore.StoreStateDamaged)
-		out.storeMessage = MsgStoreDamaged
-	} else {
-		out.storeState = string(trafficstore.StoreStateOK)
-		out.storeMessage = ""
-	}
-	if cache != nil && err == nil {
-		cache[a.ID] = roundTrafficEntry{out, revision}
-	}
-	return out, err
-}
 func (s *Service) legacyProbes(ctx context.Context, as []Agent) (map[string]Probe, error) {
 	store, err := s.probeStore()
 	if err != nil {
