@@ -3,6 +3,7 @@ package taskstatus
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -227,6 +228,75 @@ func TestParseISO(t *testing.T) {
 		"2026-11-14T12:34:56ZZ", "2026-11-14T12:34:56Z\n", "2026-11-14T12:34:56 +08:00"} {
 		if _, _, ok := ParseISO(bad); ok {
 			t.Errorf("%q parsed", bad)
+		}
+	}
+}
+
+func TestSharedSnapshotOwnershipAndReplacement(t *testing.T) {
+	store, _ := fixedStore(t)
+	read := func() Snapshot {
+		t.Helper()
+		data, err := New(store.DataDir).Read()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	path := store.path()
+	write := func(path, value string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(path, `{"x":{"old":1}}`)
+	first := read()
+	first["x"][2] = 'X'
+	delete(first, "x")
+	if got := string(read()["x"]); got != `{"old":1}` {
+		t.Fatal("shared mutable result", got)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(path+".new", `{"x":{"new":1}}`)
+	if err := os.Chtimes(path+".new", before.ModTime(), before.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path+".new", path); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(read()["x"]); got != `{"new":1}` {
+		t.Fatal(got)
+	}
+	if _, err := store.SaveResult(t.Context(), "y", Result{OK: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(); got["y"] == nil || string(got["x"]) != `{"new":1}` {
+		t.Fatal(got)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if len(read()) != 0 {
+		t.Fatal("stale deleted receipt")
+	}
+}
+
+func BenchmarkPollingSnapshot(b *testing.B) {
+	s := New(b.TempDir())
+	data := Snapshot{}
+	for i := range 40 {
+		data[fmt.Sprintf("rule_source:%d", i)] = json.RawMessage(`{"last_status":"success","last_run_at":"2026-01-01T00:00:00Z","run_count":11}`)
+	}
+	if err := writeSnapshot(b.Context(), s.path(), data); err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		if snapshot, err := s.Read(); err != nil || len(snapshot) != len(data) {
+			b.Fatal(err)
 		}
 	}
 }
