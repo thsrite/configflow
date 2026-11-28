@@ -57,8 +57,9 @@ func (s *Source) ProfileID() string {
 	_ = json.Unmarshal(s.Member("profile_id"), &id)
 	return id
 }
-func (s *Source) gateway() *gateway.Config {
-	return gateway.NewConfig(s.config())
+func (s *Source) gatewayEnabled() bool {
+	settings, err := gateway.SettingsOf(s.config())
+	return err == nil && settings.Enabled
 }
 
 func (s *Source) config() *model.Config {
@@ -570,7 +571,7 @@ func (ds *Service) prepareContent(ctx context.Context, m *agents.Manager, t Targ
 		service = "mihomo"
 	}
 	if service == "mihomo" {
-		if s.gateway().Enabled() {
+		if s.gatewayEnabled() {
 			if err := gateway.RequireGatewayAgent(t.Version); err != nil {
 				return nil, err
 			}
@@ -710,7 +711,7 @@ func (ds *Service) prepareContent(ctx context.Context, m *agents.Manager, t Targ
 				p.ProviderDownloads = append(p.ProviderDownloads, ProviderFile{Name: v.Name, LocalPath: path, URL: v.URL, Content: []byte(v.Content)})
 			}
 		}
-		if s.gateway().Enabled() {
+		if s.gatewayEnabled() {
 			providers := yamlx.Resolve(yamlx.Get(main, "rule-providers"))
 			if providers != nil && providers.Kind == yaml.MappingNode {
 				for i := 0; i < len(providers.Content); i += 2 {

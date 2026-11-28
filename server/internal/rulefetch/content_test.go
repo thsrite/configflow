@@ -1063,3 +1063,37 @@ func TestFailureIsNotAWebsiteName(t *testing.T) {
 		}
 	}
 }
+
+func TestValidationRecognizesUnchangedClassicalDelivery(t *testing.T) {
+	tests := []struct {
+		name, content string
+		normalized    bool
+	}{
+		{"explicit", "DOMAIN,example.com\r\n# note\r\nIP-CIDR,192.0.2.0/24,no-resolve", true},
+		{"bare domain", "example.com", false},
+		{"bare address", "192.0.2.1", false},
+		{"BOM", "\uFEFFDOMAIN,example.com", false},
+		{"line conversion", "DOMAIN,example.com\r", false},
+		{"Unicode break in comment", "# comment\u2028example.com", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			want, warnings, err := normalizeMihomoRuleset(tc.content, "classical", "text")
+			if err != nil || len(warnings) != 0 {
+				t.Fatalf("reference normalization: %v, %v", warnings, err)
+			}
+			content := Content{Data: []byte(tc.content)}
+			if err := ValidateRemote(content, remoteRule("classical", "text"), nil, "text"); err != nil {
+				t.Fatal(err)
+			}
+			proof, ok := validatedCache.Get(dataDigest(content.Data) + "\x00classical\x00text")
+			if !ok || proof.(validationResult).normalized != tc.normalized {
+				t.Fatalf("unexpected validation result: %+v", proof)
+			}
+			got, warnings, err := NormalizeRuleset(tc.content, "classical", "text")
+			if err != nil || got != want || len(warnings) != 0 {
+				t.Fatalf("normalized %q, want %q: %v, %v", got, want, warnings, err)
+			}
+		})
+	}
+}

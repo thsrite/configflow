@@ -105,15 +105,15 @@ func MaterializeRule(ctx context.Context, rawURL string, src *Source, baseURL st
 		return ConvertMosDNSRules(data, "domain_set", false)
 	}
 	if internal && src != nil {
-		gw := src.gateway()
-		settings, err := gw.Settings()
+		cfg := src.config()
+		settings, err := gateway.SettingsOf(cfg)
 		if err != nil {
 			return nil, err
 		}
 		prefix := sourcePrefix(src, baseURL)
 		for _, id := range settings.RuleSetIDs {
 			for _, source := range []bool{false, true} {
-				expected := gw.ProviderPath(id, source)
+				expected := gateway.ProviderPath(cfg.ProfileID, id, source)
 				expected, _ = url.PathUnescape(expected)
 				if u.Path != expected && u.Path != prefix+expected {
 					continue
@@ -138,6 +138,7 @@ func MaterializeRule(ctx context.Context, rawURL string, src *Source, baseURL st
 					}
 					return string(content), nil
 				}
+				gw := gateway.NewConfig(cfg)
 				var rendered string
 				if source {
 					rendered, err = gw.SourceYAML(ctx, id, loader)

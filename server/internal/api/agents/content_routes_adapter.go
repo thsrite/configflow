@@ -84,12 +84,20 @@ func publicWithContent(ctx context.Context, m *core.Manager, record *model.Agent
 	if cache != nil {
 		gen = cache.gen
 	}
-	public, err := views.public(m.Repository(), gen, viewKey{index, record.ID, viewFull}, record, func() (map[string]json.RawMessage, error) {
+	// Comparison still needs the deployment history to detect pending work.
+	// Only the public projection can share the history-free summary view.
+	view, mode := record, viewFull
+	if !history {
+		light := *record
+		light.DropHistory()
+		view, mode = &light, viewSummary
+	}
+	public, err := views.public(m.Repository(), gen, viewKey{index, record.ID, mode}, view, func() (map[string]json.RawMessage, error) {
 		secrets, err := liveAgentSecrets(ctx, m, cache, record)
 		if err != nil {
 			return nil, err
 		}
-		return publicAgentView(record, secrets)
+		return publicAgentView(view, secrets)
 	})
 	if err != nil {
 		return nil, err

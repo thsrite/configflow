@@ -253,7 +253,7 @@ func Build(ctx context.Context, in BuildInput) (*Bundle, error) {
 		}
 		pinned[p] = true
 	}
-	if service == "mihomo" && in.Source.gateway().Enabled() {
+	if service == "mihomo" && in.Source.gatewayEnabled() {
 		for _, f := range sortedContents(b.files) {
 			v := b.files[f]
 			if v.Role != RoleProvider {

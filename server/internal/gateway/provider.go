@@ -35,13 +35,19 @@ func ProviderName(ruleID string) string {
 // ProviderPath is the panel path Mihomo refreshes a selected rule set from:
 // its gateway IPv4 networks, or with source its original rule lines.
 func (c *Config) ProviderPath(ruleID string, source bool) string {
+	return ProviderPath(c.profileID.text, ruleID, source)
+}
+
+// ProviderPath is the refresh path for a rule in a resolved profile. An empty
+// profile ID selects the global configuration.
+func ProviderPath(profileID, ruleID string, source bool) string {
 	kind := "rules/"
 	if source {
 		kind = "source/"
 	}
 	suffix := "/linux-gateway/" + kind + weburl.Quote(ruleID)
-	if c.profileID.truthy {
-		return "/api/profiles/" + c.profileID.text + suffix
+	if profileID != "" {
+		return "/api/profiles/" + profileID + suffix
 	}
 	return "/api/custom-config" + suffix
 }
