@@ -1,20 +1,4 @@
 /**
- * motion-v 动效预设：全站进出场语汇的唯一来源。
- *
- * 统一用 spring，避免不同页面各写一套时长导致节奏不一致。
- * App 的 MotionConfig 跟随系统减少动效偏好；CSS 动效由 tokens.css 兜底。
- */
-export const SPRING = { type: 'spring', stiffness: 320, damping: 30, mass: 0.7 } as const
-export const SPRING_SOFT = { type: 'spring', stiffness: 200, damping: 26 } as const
-
-/** 卡片 / 区块进场：轻微上浮 */
-export const riseIn = {
-  initial: { opacity: 0, y: 10 },
-  animate: { opacity: 1, y: 0 },
-  transition: SPRING
-}
-
-/**
  * 列表项进场：卡片加 class="cf-list-in"（theme.css 的 CSS 动画），再用 :style 绑定本函数做 stagger。
  * 只给前 12 项写 --i，其余沿用 CSS 里的最大延迟，长列表不必逐项写内联样式。
  * 列表卡片不要再包 motion-v 的 <Motion>：每张卡挂载都会强制一次布局，静止模式也关不掉。
@@ -31,14 +15,6 @@ export function markListItemEntered(event: AnimationEvent): void {
   if (event.animationName === 'cf-list-in' && event.target instanceof Element) {
     event.target.setAttribute('data-entered', '')
   }
-}
-
-/** 弹层 / 面板 */
-export const popIn = {
-  initial: { opacity: 0, scale: 0.97 },
-  animate: { opacity: 1, scale: 1 },
-  exit: { opacity: 0, scale: 0.97 },
-  transition: SPRING
 }
 
 /** 数值滚动时长（秒） */

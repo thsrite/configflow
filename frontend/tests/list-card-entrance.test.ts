@@ -3,7 +3,6 @@ import { resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { Motion } from 'motion-v'
 import Nodes from '@/views/Nodes.vue'
 import { nodeApi } from '@/api'
 import { listItemStyle, markListItemEntered } from '@/lib/motion'
@@ -58,7 +57,6 @@ describe('列表卡片进场', () => {
 
     const tiles = wrapper.findAll('[data-tile]')
     expect(tiles).toHaveLength(14)
-    expect(wrapper.findAllComponents(Motion)).toHaveLength(0)
     expect(tiles.every(tile => tile.element.tagName === 'DIV' && tile.classes('cf-list-in'))).toBe(true)
     // 静态 class 与原有 :class 合并，卡片样式不丢
     expect(tiles[0].classes('node-tile')).toBe(true)

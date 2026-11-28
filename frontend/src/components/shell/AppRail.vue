@@ -36,7 +36,7 @@
     <ProfileSwitcher variant="rail" :collapsed="collapsed" class="mb-3 shrink-0" />
 
     <TooltipProvider :delay-duration="200">
-    <nav :id="navId" class="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 [scrollbar-width:none]" aria-label="主导航">
+    <nav ref="navigation" :id="navId" class="-mx-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-1 [scrollbar-width:none]" aria-label="主导航">
     <template v-for="group in groups" :key="group.scope">
       <div
         v-if="group.title"
@@ -67,12 +67,11 @@
         :aria-label="item.label"
         :aria-current="activePath === item.path ? 'page' : undefined"
       >
-        <!-- 选中态：共享 layoutId 的高亮块在切换时平滑滑动到新项 -->
-        <Motion
+        <!-- 选中态：高亮块在切换时平滑滑动到新项 -->
+        <span
           v-if="activePath === item.path"
-          layout-id="rail-active"
+          data-nav-highlight
           class="absolute inset-0 rounded-lg border border-border-strong bg-secondary"
-          :transition="SPRING"
           aria-hidden="true"
         />
         <!-- 选中态除底色外再加一条左侧指示条，弱视条件下也能分辨 -->
@@ -130,7 +129,6 @@
 </template>
 
 <script setup lang="ts">
-import { Motion } from 'motion-v'
 import { PanelLeftClose, PanelLeftOpen, RadioTower } from '@lucide/vue'
 import BrandMark from '@/components/common/BrandMark.vue'
 import ProfileSwitcher from '@/components/ProfileSwitcher.vue'
@@ -141,7 +139,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useRailCollapse } from '@/composables/useRailCollapse'
 import { NAV_GROUPS, type NavGroup, type NavItem, type NavScope } from '@/navigation'
 import { iconOf } from '@/lib/icons'
-import { SPRING } from '@/lib/motion'
+import { useNavHighlight } from '@/composables/useNavHighlight'
 import { cn } from '@/lib/utils'
 
 const props = defineProps<{
@@ -153,6 +151,7 @@ const props = defineProps<{
   busy?: boolean
 }>()
 
+const navigation = useNavHighlight(() => props.activePath)
 const metaKeyLabel = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 const { collapsed, toggle } = useRailCollapse()
 const navId = `rail-navigation-${useId()}`

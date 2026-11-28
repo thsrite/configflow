@@ -793,7 +793,6 @@ const filteredPickerGroups = computed(() => {
 })
 watch(groupPickerOpen, open => { if (open) groupPickerSearch.value = '' })
 const orderedProxiesRef = ref<HTMLElement | null>(null)
-let orderedProxiesSortable: any = null
 const originalGroupName = ref<string>('') // 保存原始策略组名称，用于检测名称变化
 const expandedCards = ref<Set<string>>(new Set()) // 展开的卡片ID集合
 const form = ref<Partial<ProxyGroup>>({
@@ -1086,7 +1085,7 @@ watch([() => form.value.manual_nodes, () => form.value.aggregations, () => form.
   })
 
   form.value.proxies_order = newOrder
-}, { deep: true })
+})
 
 const getGroupTypeLabel = (type: string) => {
   const labels: Record<string, string> = {
@@ -1844,67 +1843,25 @@ const deleteGroup = async (row: ProxyGroup) => {
 }
 
 
-
-// 初始化已排序代理列表的拖拽功能
-const initOrderedProxiesSortable = () => {
-  nextTick(() => {
-    if (orderedProxiesRef.value) {
-      // 销毁已有实例
-      if (orderedProxiesSortable) {
-        orderedProxiesSortable.destroy()
-      }
-
-      orderedProxiesSortable = Sortable.create(orderedProxiesRef.value, {
-        animation: 150,
-        handle: '.drag-handle',
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        dragClass: 'sortable-drag',
-        onEnd: (evt: any) => {
-          const { oldIndex, newIndex } = evt
-          if (oldIndex === newIndex || oldIndex === undefined || newIndex === undefined) return
-
-          // 更新 proxies_order 顺序
-          const proxiesOrder = [...(form.value.proxies_order || [])]
-          const movedItem = proxiesOrder.splice(oldIndex, 1)[0]
-          proxiesOrder.splice(newIndex, 0, movedItem)
-          form.value.proxies_order = proxiesOrder
-        }
-      })
+// Sortable 在容器上处理拖动，增删或重排子项时复用同一个实例。
+watch(orderedProxiesRef, (container, _, onCleanup) => {
+  if (!container) return
+  const sortable = Sortable.create(container, {
+    animation: 150,
+    handle: '.drag-handle',
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    dragClass: 'sortable-drag',
+    onEnd: ({ oldIndex, newIndex }) => {
+      if (oldIndex === newIndex || oldIndex === undefined || newIndex === undefined) return
+      const proxiesOrder = [...(form.value.proxies_order || [])]
+      const [moved] = proxiesOrder.splice(oldIndex, 1)
+      proxiesOrder.splice(newIndex, 0, moved!)
+      form.value.proxies_order = proxiesOrder
     }
   })
-}
-
-// 监听对话框显示状态，初始化排序功能
-watch(dialogVisible, (visible) => {
-  if (visible) {
-    // 对话框打开时，延迟初始化Sortable（等待DOM渲染）
-    setTimeout(() => {
-      initOrderedProxiesSortable()
-    }, 100)
-  } else {
-    // 对话框关闭时，销毁Sortable实例
-    if (orderedProxiesSortable) {
-      orderedProxiesSortable.destroy()
-      orderedProxiesSortable = null
-    }
-  }
-})
-
-// 监听排序列表变化，重新初始化Sortable
-watch(orderedProxiesList, () => {
-  if (dialogVisible.value && orderedProxiesList.value.length > 0) {
-    initOrderedProxiesSortable()
-  }
-}, { deep: true })
-
-// 折叠面板展开时才有 DOM，此时才初始化 Sortable
-watch(orderPanelOpen, open => {
-  if (open && orderedProxiesList.value.length > 0) {
-    // 等待折叠动画渲染出列表节点
-    setTimeout(() => initOrderedProxiesSortable(), 50)
-  }
-})
+  onCleanup(() => sortable.destroy())
+}, { flush: 'post' })
 
 /* ---------- 策略组排序：弹窗保存成功后才更新主列表 ---------- */
 const persistGroupOrder = async (ordered: ProxyGroup[]): Promise<void> => {
@@ -2080,14 +2037,20 @@ const preview = ref<{ nodes: any[]; total: number; loading: boolean; error: stri
   error: ''
 })
 
-const requestPreview = async (kind: SourceKind, sources: string[], regex: string, excludeRegex: string) => {
-  const { data } = await proxyGroupApi.previewRegex({
-    source: kind,
-    regex: regex || '.*',
-    exclude_regex: excludeRegex,
-    ...(kind === 'aggregation' ? { aggregations: sources } : { subscriptions: sources })
-  }, profileId)
-  return data
+const previewParams = (d: typeof draft.value) => ({
+  source: d.kind,
+  regex: d.regex || '.*',
+  exclude_regex: d.excludeRegex,
+  ...(d.kind === 'aggregation' ? { aggregations: d.sources } : { subscriptions: d.sources })
+})
+const pendingPreviews = new Map<string, ReturnType<typeof proxyGroupApi.previewRegex>>()
+const requestPreview = (params: ReturnType<typeof previewParams>) => {
+  const key = JSON.stringify(params)
+  const pending = pendingPreviews.get(key)
+  if (pending) return pending
+  const request = proxyGroupApi.previewRegex(params, profileId).finally(() => pendingPreviews.delete(key))
+  pendingPreviews.set(key, request)
+  return request
 }
 
 let previewTimer: number | undefined
@@ -2105,7 +2068,7 @@ const refreshPreview = () => {
   preview.value = { ...preview.value, loading: true, error: '' }
   previewTimer = window.setTimeout(async () => {
     try {
-      const data = await requestPreview(draft.value.kind, draft.value.sources, draft.value.regex, draft.value.excludeRegex)
+      const { data } = await requestPreview(previewParams(draft.value))
       if (!viewActive || seq !== previewSeq) return
       preview.value = { nodes: data.nodes || [], total: data.total_candidates || 0, loading: false, error: '' }
       if (!draftDirty.value) matchCounts.value = { ...matchCounts.value, [keyOf(group)]: data.count ?? 0 }
@@ -2116,22 +2079,31 @@ const refreshPreview = () => {
   }, 280)
 }
 
-watch([selectedKey, () => draft.value.sources, () => draft.value.regex, () => draft.value.excludeRegex], refreshPreview, { deep: true })
+watch([selectedKey, () => draft.value.sources, () => draft.value.regex, () => draft.value.excludeRegex], refreshPreview)
 
 /* ---------- 每个策略组的命中数（列表右侧），限并发逐个计算 ---------- */
 const matchCounts = ref<Record<string, number>>({})
 
 const computeMatchCounts = async () => {
-  const queue = proxyGroups.value.filter(g => !g.follow_group)
+  const batches = new Map<string, { params: ReturnType<typeof previewParams>; groups: string[] }>()
+  for (const group of proxyGroups.value) {
+    if (group.follow_group) continue
+    const d = draftFrom(group)
+    if (!d.sources.length) continue
+    const params = previewParams(d)
+    const key = JSON.stringify(params)
+    const batch = batches.get(key)
+    if (batch) batch.groups.push(keyOf(group))
+    else batches.set(key, { params, groups: [keyOf(group)] })
+  }
+  const queue = [...batches.values()]
   const worker = async () => {
     while (viewActive && queue.length) {
-      const group = queue.shift()!
-      const d = draftFrom(group)
-      if (!d.sources.length) continue
+      const { params, groups } = queue.shift()!
       try {
-        const data = await requestPreview(d.kind, d.sources, d.regex, d.excludeRegex)
+        const { data } = await requestPreview(params)
         if (!viewActive) return
-        matchCounts.value = { ...matchCounts.value, [keyOf(group)]: data.count ?? 0 }
+        for (const group of groups) matchCounts.value[group] = data.count ?? 0
       } catch {
         // 单个失败不影响其他
       }

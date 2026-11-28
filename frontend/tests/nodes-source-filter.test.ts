@@ -41,6 +41,7 @@ afterAll(() => {
 })
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.stubGlobal('scrollTo', vi.fn())
   localStorage.clear()
   vi.mocked(nodeApi.getAll).mockResolvedValue({ data: storedNodes.map(node => ({ ...node })) } as any)
   vi.mocked(nodeApi.latency).mockResolvedValue({ data: { results: {} } } as any)
@@ -52,6 +53,7 @@ afterEach(() => {
   wrapper?.unmount()
   wrapper = undefined
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   localStorage.clear()
   document.body.innerHTML = ''
 })
@@ -243,6 +245,30 @@ describe.each(['card', 'list'] as const)('%s 来源筛选', view => {
   })
 })
 
+it.each(['card', 'list'] as const)('%s 首屏只创建附近节点，滚动到末尾仍保序并沿用全选', async view => {
+  const records = Array.from({ length: 80 }, (_, i) => ({
+    id: `node-${i}`, name: `节点 ${i}`, enabled: true, type: 'ss', server: 'example.com', port: 443
+  }))
+  vi.mocked(nodeApi.getAll).mockResolvedValue({ data: records } as any)
+  vi.mocked(api.get).mockResolvedValue({ data: [] } as any)
+  await render(view)
+  expect(names().length).toBeLessThan(records.length)
+  expect(names()).toEqual(records.slice(0, names().length).map(node => node.name))
+  const initialCount = names().length
+  vi.stubGlobal('innerHeight', 2000)
+  window.dispatchEvent(new Event('resize'))
+  await flushPromises()
+  expect(names().length).toBeGreaterThan(initialCount)
+  await click('全选')
+  expect(wrapper!.text()).toContain('删除 80 项')
+  vi.stubGlobal('scrollY', records.length * 61 - window.innerHeight)
+  window.dispatchEvent(new Event('scroll'))
+  await flushPromises()
+  expect(names().length).toBeLessThan(records.length)
+  expect(names()).toEqual(records.slice(-names().length).map(node => node.name))
+  expect(wrapper!.get('[aria-label="选择 节点 79"]').attributes('aria-checked')).toBe('true')
+})
+
 it('表格中的订阅预览节点保持只读，不能编辑、删除或选中', async () => {
   await render('list')
   const row = wrapper!.get('[data-name="日本 订阅预览"]')
@@ -253,11 +279,20 @@ it('表格中的订阅预览节点保持只读，不能编辑、删除或选中'
   expect(row.text()).toContain('测试订阅')
 })
 
-it('离屏跳过渲染覆盖全部节点磁贴，包括不能排序的订阅节点', async () => {
+it('订阅预览磁贴也随窗口回收，进入排序时完整保留可拖动磁贴', async () => {
+  const previews = Array.from({ length: 40 }, (_, i) => ({ ...previewNodes[1], name: `订阅预览 ${i}` }))
+  vi.mocked(api.post).mockResolvedValue({ data: { nodes: previews, imported_node_ids: ['imported'] } } as any)
+  vi.stubGlobal('innerHeight', 3 * 61)
   await render('card')
-  const tiles = wrapper!.findAll('[data-tile]')
-  expect(tiles.map(tile => tile.attributes('data-name'))).toContain('日本 订阅预览')
-  expect(tiles.every(tile => tile.classes('cf-cv-row'))).toBe(true)
+  expect(names()).not.toContain('订阅预览 39')
+  vi.stubGlobal('scrollY', (storedNodes.length + previews.length) * 61 - window.innerHeight)
+  window.dispatchEvent(new Event('scroll'))
+  await flushPromises()
+  expect(names()).not.toContain('香港 手动')
+  expect(wrapper!.get('[data-name="订阅预览 39"]').find('[role="checkbox"]').exists()).toBe(false)
+  await click('调整顺序')
+  expect(names()).toEqual(storedNodes.map(node => node.name))
+  expect(wrapper!.findAll('[data-tile]').every(tile => tile.classes('cf-cv-row'))).toBe(true)
 })
 
 it('保存测速设置后刷新显示的测速历史', async () => {
@@ -271,6 +306,7 @@ it('保存测速设置后刷新显示的测速历史', async () => {
 })
 
 it('代理测速每批最多二十个并展示真实进度，失败保留原因，已停用节点不测试', async () => {
+  vi.stubGlobal('innerHeight', 3200) // 同时检查首批、排队中和末行的状态
   const records = Array.from({ length: 22 }, (_, i) => ({
     id: `node-${i}`, name: `node-${i}`, enabled: i !== 21, type: 'trojan', server: 'example.invalid', port: 443, params: { password: 'secret' }
   }))
@@ -327,6 +363,7 @@ it.each([
   { kind: '结构化', batchSize: 20, total: 41 },
   { kind: 'URI', batchSize: 5, total: 11 }
 ])('$kind 后续批次请求失败时按实际完成数提示并保留结果', async ({ kind, batchSize, total }) => {
+  vi.stubGlobal('innerHeight', 3200) // 同时检查首批、排队中和末行的状态
   const error = vi.spyOn(notify, 'error').mockImplementation(() => 0)
   const records = Array.from({ length: total }, (_, i) => ({
     id: `n${i}`, name: `n${i}`, enabled: true,

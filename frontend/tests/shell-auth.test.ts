@@ -7,6 +7,7 @@ import Login from '@/views/Login.vue'
 import Profiles from '@/views/Profiles.vue'
 import api, { agentApi, profileApi } from '@/api'
 import { setActiveProfileId } from '@/profileContext'
+import { useProfileStore } from '@/stores/profile'
 import { invalidateAgentSummaries } from '@/lib/agentSummaries'
 
 const authState = vi.hoisted(() => ({ enabled: true }))
@@ -51,7 +52,7 @@ afterEach(() => {
 
 async function renderApp(path = '/login') {
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/login', component: Login }, { path: '/profiles', component: Profiles },
+    { path: '/login', component: Login }, { path: '/profiles', name: 'Profiles', component: Profiles },
     { path: '/shell-other', component: { render: () => null } }
   ] })
   await router.push(path)
@@ -63,6 +64,17 @@ async function renderApp(path = '/login') {
 }
 
 describe('authenticated shell startup', () => {
+  it('配置空间冷启动只读取一次，再次进入仍刷新', async () => {
+    useProfileStore().profileReady.value = false
+    const { wrapper, router } = await renderApp('/profiles/')
+    expect(profileApi.list).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Second')
+    await router.push('/shell-other')
+    await router.push('/profiles')
+    await flushPromises()
+    expect(profileApi.list).toHaveBeenCalledTimes(2)
+  })
+
   it('does not poll protected agents while an unauthenticated login screen is idle', async () => {
     // Keep motion and flushPromises on real timers; only advance the shared poller.
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })

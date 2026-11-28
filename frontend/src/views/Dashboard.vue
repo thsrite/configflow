@@ -30,14 +30,14 @@
         class="border-border/70 bg-card/60 max-md:absolute max-md:top-6 max-md:right-0 max-md:size-11 max-md:px-0 max-sm:static max-sm:col-start-2 max-sm:row-start-1 max-sm:self-end"
         :disabled="loading"
         aria-label="刷新"
-        @click="loadAllData"
+        @click="loadAllData()"
       >
         <RefreshCw class="size-3.5" :class="loading && 'animate-spin'" />
         <span class="max-md:hidden">刷新</span>
       </Button>
     </header>
 
-    <SetupEntry @abandoned="loadAllData" />
+    <SetupEntry @abandoned="loadAllData()" />
 
     <p
       v-if="loadFailed"
@@ -656,7 +656,7 @@ const QUICK_ACTIONS: Array<{ id: AppAction; icon: typeof Zap }> = [
 ]
 
 /* ---------- 数据加载 ---------- */
-const loadAllData = async () => {
+const loadAllData = async (includeEvents = true) => {
   if (!canRefresh() || loading.value) return
   loading.value = true
   try {
@@ -711,7 +711,7 @@ const loadAllData = async () => {
     }
     // Keep this refresh in flight through its follow-up reads as well.
     if (!canRefresh()) return
-    await Promise.all([loadHealth(), loadEvents(), live.refresh()])
+    await Promise.all([loadHealth(), includeEvents && loadEvents(), live.refresh()])
   } finally {
     loading.value = false
   }
@@ -728,7 +728,7 @@ onMounted(() => {
   document.addEventListener('visibilitychange', onVisibilityChange)
   live.start()
   loadAllData()
-  timer = window.setInterval(loadAllData, 30000)
+  timer = window.setInterval(() => loadAllData(false), 30000)
   // 事件流比其他数据刷新得更勤，页面不可见时跳过
   eventTimer = window.setInterval(loadEvents, 5000)
 })

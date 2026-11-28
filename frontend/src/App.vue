@@ -1,6 +1,4 @@
 <template>
-  <!-- 系统要求减少动效，或在 Tweaks 里关掉动效时，motion-v 的进场动画一并跳过 -->
-  <MotionConfig reduced-motion="user" :skip-animations="skipAnimations">
   <!-- 登录页不套用应用壳 -->
   <template v-if="isLoginPage">
     <router-view />
@@ -155,7 +153,7 @@
             :active-path="navigationPath(route.path)"
             :subscription-aggregation-enabled="subscriptionAggregationEnabled"
           />
-          <router-view v-if="profileStore.profileReady.value" :key="pageKey" />
+          <router-view v-if="profileStore.profileReady.value || isProfilesPage" :key="pageKey" />
           <LoadingRows v-else :rows="3" />
         </div>
       </main>
@@ -172,15 +170,12 @@
   <Toaster position="bottom-center" :duration="2600" :mobile-offset="{ bottom: '92px' }" />
   <ConfirmHost />
   <PromptHost />
-  </MotionConfig>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { FileText, LogOut, Moon, Search, Sun, User } from '@lucide/vue'
-import { useMediaQuery } from '@vueuse/core'
-import { MotionConfig } from 'motion-v'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -207,14 +202,9 @@ import TweaksPanel from './components/shell/TweaksPanel.vue'
 import NotificationCenter from './components/shell/NotificationCenter.vue'
 import { formatRate, useLive } from './stores/live'
 import { confirm, notify } from './lib/feedback'
-import { usePreferences } from './stores/preferences'
 import { useProfileStore } from './stores/profile'
 import { useThemeStore } from './stores/theme'
 import { CURRENT_NAV_PATH, groupOfScope, labelOfPath, navigationPath, scopeOfPath } from './navigation'
-
-const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
-const { prefs } = usePreferences()
-const skipAnimations = computed(() => reduceMotion.value || !prefs.value.motion)
 
 const route = useRoute()
 // 页面标题据此判断手机上是否已由分组按钮或底栏写明所在页
@@ -238,6 +228,7 @@ const liveThroughput = computed(() => {
   return t ? { down: formatRate(t.down), up: formatRate(t.up) } : null
 })
 const isLoginPage = computed(() => route.path === '/login')
+const isProfilesPage = computed(() => route.name === 'Profiles')
 /* 只有配置空间内的页面随配置空间切换重建；共享资源与系统页不受影响 */
 const pageKey = computed(() =>
   scopeOfPath(route.path) === 'profile' || route.path === '/dashboard'
@@ -276,6 +267,11 @@ const loadVersion = async () => {
 }
 
 const loadSubscriptionAggregationSetting = async () => {
+  const checked = route.meta.subscriptionAggregationEnabled ?? route.redirectedFrom?.meta.subscriptionAggregationEnabled
+  if (checked !== undefined) {
+    subscriptionAggregationEnabled.value = checked
+    return
+  }
   try {
     const response = await api.get('/settings/subscription-aggregation')
     subscriptionAggregationEnabled.value = response.data.enabled || false
@@ -344,7 +340,8 @@ watch(isLoginPage, (login, _previous, onCleanup) => {
   live.start()
   onCleanup(() => live.stop())
   checkAuthStatus()
-  profileStore.refreshProfiles().catch(() => undefined)
+  // 配置空间页进入时会刷新同一份列表，导航直接使用它的结果。
+  if (!isProfilesPage.value) profileStore.refreshProfiles().catch(() => undefined)
   loadSubscriptionAggregationSetting()
 }, { immediate: true })
 

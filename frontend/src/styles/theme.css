@@ -605,6 +605,31 @@
   }
 }
 
+/* 原导航和登录卡片的弹簧（刚度 320、阻尼 30、质量 0.7）在 400ms 内的位移。 */
+:root {
+  --cf-ease-spring: linear(0, .069, .211, .367, .509, .629, .725, .799, .855, .896, .926, .948, .963, .974, .982, .988, .991, .994, .996, .997, 1);
+}
+
+[data-nav-highlight] {
+  transform-origin: top left;
+  animation-duration: 400ms;
+  animation-timing-function: var(--cf-ease-spring);
+}
+
+@keyframes cf-nav-slide {
+  from { transform: var(--cf-nav-from); }
+  to { transform: none; }
+}
+
+.cf-login-in {
+  animation: cf-login-in 400ms var(--cf-ease-spring);
+}
+
+@keyframes cf-login-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
 @keyframes cf-list-in {
   from {
     opacity: 0;
@@ -636,6 +661,7 @@
 }
 
 /* 列表进场在静止模式下不建动画，免得几百张卡各跑一个空动画 */
+:root[data-motion='off'] .cf-login-in,
 :root[data-motion='off'] .cf-list-in {
   animation: none;
 }
@@ -658,6 +684,7 @@
   .tech-backdrop::before,
   .scanline::after,
   .live-dot,
+  .cf-login-in,
   .cf-list-in {
     animation: none;
   }

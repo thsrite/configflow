@@ -878,7 +878,7 @@
 import { useChartPalette, withAlpha } from '@/lib/chartPalette'
 import PageHeader from '@/components/common/PageHeader.vue'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { ref, shallowRef, computed, onMounted, onUnmounted, nextTick, watch, type ComponentPublicInstance } from 'vue'
+import { ref, shallowRef, computed, defineAsyncComponent, onMounted, onUnmounted, nextTick, watch, type ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import { consumeAction } from '@/lib/actions'
 import { cn } from '@/lib/utils'
@@ -981,15 +981,8 @@ import { submitAgentRequests, uniquePublicationTargets } from '@/lib/agentReques
 import { deploymentErrorSummary } from '@/lib/agentFailure'
 import { upgradeLabels, useAgentUpgrades } from '@/composables/useAgentUpgrades'
 import { useAgentGatewayForwarding } from '@/composables/useAgentGatewayForwarding'
-import { use } from 'echarts/core'
-import { LineChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent, LegendComponent, TitleComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-import VChart from 'vue-echarts'
 
-// Register ECharts components
-use([LineChart, GridComponent, TooltipComponent, LegendComponent, TitleComponent, CanvasRenderer])
-
+const VChart = defineAsyncComponent(() => import('@/components/agents/metricsChart'))
 
 const agents = ref<Agent[]>([])
 const restoredAgents = computed(() => agents.value.filter(agent => agent.state_restored_at))

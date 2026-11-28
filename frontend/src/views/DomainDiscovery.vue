@@ -303,8 +303,8 @@
             <TableHead class="w-24 text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody>
-          <TableRow v-for="entry in visibleHistory" :key="`${entry.value}:${entry.target}`" :class="entry.recheck?.suggest_remove && 'bg-warning-soft/40'">
+        <VirtualTableRows v-slot="{ item: entry }" :items="visibleHistory" :item-key="historyKey" :estimated-height="isPhone ? 68 : 52">
+          <TableRow :class="entry.recheck?.suggest_remove && 'bg-warning-soft/40'">
             <TableCell class="font-mono text-[13px]" :title="isPhone ? entry.value : undefined">
               {{ entry.value }}
               <span class="ml-1 text-[11px] text-muted-foreground">{{ entry.rule_type }}</span>
@@ -333,7 +333,7 @@
               </Button>
             </TableCell>
           </TableRow>
-        </TableBody>
+        </VirtualTableRows>
       </DataTableShell>
     </template>
 
@@ -355,8 +355,8 @@
           <TableHead class="w-[250px] text-right">操作</TableHead>
         </TableRow>
       </TableHeader>
-      <TableBody>
-        <template v-for="item in visibleItems" :key="item.domain">
+      <VirtualTableRows :items="visibleItems" :item-key="domainKey" :estimated-height="isPhone ? 61 : 64">
+        <template #default="{ item }">
           <TableRow>
             <TableCell>
               <Checkbox
@@ -503,7 +503,7 @@
             </TableCell>
           </TableRow>
         </template>
-      </TableBody>
+      </VirtualTableRows>
     </DataTableShell>
 
     <Dialog v-model:open="initDialogVisible">
@@ -544,7 +544,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { isAxiosError, isCancel, type AxiosResponse } from 'axios'
 import { ChevronRight, Ellipsis, Eraser, EyeOff, Globe, Info, ListPlus, Loader2, Plus, Radar, RefreshCw, ScanSearch, Sparkles, TriangleAlert, Undo2 } from '@lucide/vue'
-import { useMediaQuery } from '@vueuse/core'
+import { useMediaQuery, watchDebounced } from '@vueuse/core'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -552,7 +552,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import VirtualTableRows from '@/components/common/VirtualTableRows.vue'
 import DataTableShell from '@/components/common/DataTableShell.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingRows from '@/components/common/LoadingRows.vue'
@@ -746,6 +747,10 @@ const view = ref<View>('uncovered')
 // 手机（< 640px）上域名列表排成两行记录，行内操作收进「⋯」菜单
 const isPhone = useMediaQuery('(max-width: 639px)')
 const search = ref('')
+const searchTerm = ref('')
+watchDebounced(search, value => { searchTerm.value = value }, { debounce: 150 })
+const domainKey = (item: DomainItem) => item.domain
+const historyKey = (entry: HistoryEntry) => `${entry.value}:${entry.target}`
 const loading = ref(false)
 const loadedKey = ref('')
 const queryKey = computed(() => `${view.value}:${days.value}`)
@@ -759,7 +764,7 @@ const settingsError = ref('')
 const agents = ref<AgentInfo[]>([])
 const items = ref<DomainItem[]>([])
 const websiteDomain = ref('')
-const activeWebsite = computed(() => items.value.find(item => item.domain === websiteDomain.value)?.website || null)
+const activeWebsite = computed(() => websiteDomain.value ? items.value.find(item => item.domain === websiteDomain.value)?.website || null : null)
 const websiteLabel = (item: DomainItem) => {
   const website = item.website
   if (website?.note) return `${website.note} · 备注`
@@ -823,7 +828,7 @@ const errorMessage = (error: unknown, fallback: string) => {
 }
 
 const visibleItems = computed(() => {
-  const keyword = search.value.trim().toLowerCase()
+  const keyword = searchTerm.value.trim().toLowerCase()
   if (!keyword) return items.value
   return items.value.filter(item => item.domain.includes(keyword) || item.hosts.some(host => host.host.includes(keyword))
     || [item.website?.note, item.website?.service?.name, item.website?.page?.name]
@@ -831,7 +836,7 @@ const visibleItems = computed(() => {
 })
 
 const visibleHistory = computed(() => {
-  const keyword = search.value.trim().toLowerCase()
+  const keyword = searchTerm.value.trim().toLowerCase()
   return keyword ? history.value.filter(entry => entry.value.includes(keyword)) : history.value
 })
 
@@ -861,7 +866,7 @@ const configurationReady = computed(() => {
 const emptyTitle = computed(() => {
   if (!agentsLoaded.value) return '等待采集设备状态'
   if (!enabledAgents.value.length) return '还没有开启域名发现'
-  if (search.value.trim()) return '没有匹配的域名'
+  if (searchTerm.value.trim()) return '没有匹配的域名'
   return {
     uncovered: '没有未覆盖的域名',
     failing: '没有直连失败的域名',
@@ -925,6 +930,8 @@ const toggleSelected = (domain: string) => {
 }
 
 const toggleAll = () => {
+  // 刚输入就全选时也按最新关键词操作。
+  searchTerm.value = search.value
   selected.value = allSelected.value ? new Set() : new Set(visibleItems.value.map(item => item.domain))
 }
 

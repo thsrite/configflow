@@ -117,6 +117,7 @@ describe('dashboard polling', () => {
     await vi.advanceTimersByTimeAsync(25000)
     expectInitialReads(2)
     expect(api.health).toHaveBeenCalledTimes(2)
+    expect(api.logs).toHaveBeenCalledTimes(7) // 初次读取和六个 5 秒周期
   })
 
   it('pauses all dashboard reads in a hidden tab and refreshes immediately on return', async () => {

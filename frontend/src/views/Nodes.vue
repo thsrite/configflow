@@ -147,10 +147,15 @@
           <TableHead class="w-40 text-right">操作</TableHead>
         </TableRow>
       </TableHeader>
-      <TableBody ref="nodesContainer">
+      <NodeWindow
+        ref="nodesRoot"
+        v-slot="{ node, index: cfIndex }"
+        :items="tileNodes"
+        :item-key="nodeKey"
+        :full="reorder.active.value"
+        table
+      >
         <TableRow
-          v-for="(node, cfIndex) in tileNodes"
-          :key="node.readonly ? `sub:${subscriptionNodeKey(node)}` : node.id || node.name"
           :data-name="node.name"
           :data-reorder-item="node.readonly ? undefined : ''"
           :data-state="!node.readonly && selectedNodeIds.has(node.id) ? 'selected' : undefined"
@@ -261,27 +266,31 @@
             </div>
           </TableCell>
         </TableRow>
-      </TableBody>
+      </NodeWindow>
     </DataTableShell>
 
     <!-- ===== 延迟磁贴（默认）；手机（< 640px）由下方 scoped 样式排成两行紧凑列表 ===== -->
-    <div
+    <NodeWindow
       v-else
-      ref="nodesContainer"
+      ref="nodesRoot"
+      v-slot="{ node, index: cfIndex, entered, menuOpen }"
+      :items="tileNodes"
+      :item-key="nodeKey"
+      :full="reorder.active.value"
       class="node-tiles grid grid-cols-[repeat(auto-fill,minmax(212px,1fr))] gap-2.5 max-[420px]:grid-cols-1"
     >
       <div
-        v-for="(node, cfIndex) in tileNodes"
-        :key="node.readonly ? `sub:${subscriptionNodeKey(node)}` : node.id || node.name"
         class="cf-list-in"
         :style="listItemStyle(cfIndex)"
         :data-name="node.name"
         :data-tile="cfIndex"
+        :data-entered="entered ? '' : undefined"
         :aria-busy="testingKeys.has(latencyKey(node)) || undefined"
         :data-reorder-item="node.readonly ? undefined : ''"
         :data-selected="!node.readonly && selectedNodeIds.has(node.id) ? '' : undefined"
         :class="cn(
-          'node-tile cf-cv-row [--cf-cv-row-h:85px] max-md:[--cf-cv-row-h:101px] group relative overflow-hidden rounded-[14px] border px-[13px] pt-3 pb-2.5 transition-[transform,border-color,opacity] duration-300 ease-(--ease-flow) hover:-translate-y-0.5',
+          'node-tile [--cf-cv-row-h:85px] max-md:[--cf-cv-row-h:101px] group relative overflow-hidden rounded-[14px] border px-[13px] pt-3 pb-2.5 transition-[transform,border-color,opacity] duration-300 ease-(--ease-flow) hover:-translate-y-0.5',
+          reorder.active.value && 'cf-cv-row',
           !node.readonly && selectedNodeIds.has(node.id) ? 'border-primary-accent/55 bg-primary-soft/40 hover:border-primary-accent/70' : 'border-border bg-card/90 hover:border-border-strong',
           !node.readonly && !reorder.active.value && 'cursor-pointer',
           !node.enabled && 'opacity-55',
@@ -352,49 +361,37 @@
             <Pencil class="size-3.5" />
           </Button>
           </template>
-          <DropdownMenu>
-            <DropdownMenuTrigger as-child>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                class="node-tile-menu cf-reorder-mute -my-1 -mr-1.5 size-7 shrink-0 opacity-60 group-hover:opacity-100"
-                :aria-label="`${node.name} 的更多操作`"
-              >
-                <MoreHorizontal class="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="glass-strong min-w-[168px]">
-              <template v-if="isPhone && !node.readonly">
-                <DropdownMenuItem @select="editNode(node)">
-                  <Pencil class="size-4" />
-                  编辑
-                </DropdownMenuItem>
-                <DropdownMenuItem :disabled="savingStatus[node.id]" @select="handleToggle(node)">
-                  <component :is="node.enabled ? EyeOff : Eye" class="size-4" />
-                  {{ node.enabled ? '停用' : '启用' }}
-                </DropdownMenuItem>
-              </template>
-              <DropdownMenuItem :disabled="node.readonly && testing" @select="testOne(node)">
-                <Zap class="size-4" />
-                单独测速
+          <NodeTileMenu :label="`${node.name} 的更多操作`" @update:open="menuOpen">
+            <template v-if="isPhone && !node.readonly">
+              <DropdownMenuItem @select="editNode(node)">
+                <Pencil class="size-4" />
+                编辑
               </DropdownMenuItem>
-              <template v-if="!node.readonly">
-                <DropdownMenuItem @select="viewingNode = node">
-                  <Link2 class="size-4" />
-                  节点字符串
-                </DropdownMenuItem>
-                <DropdownMenuItem @select="toggleNodeSelection(node.id)">
-                  <CheckSquare class="size-4" />
-                  {{ selectedNodeIds.has(node.id) ? '取消选择' : '选择' }}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" @select="deleteNode(node)">
-                  <Trash2 class="size-4" />
-                  删除
-                </DropdownMenuItem>
-              </template>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              <DropdownMenuItem :disabled="savingStatus[node.id]" @select="handleToggle(node)">
+                <component :is="node.enabled ? EyeOff : Eye" class="size-4" />
+                {{ node.enabled ? '停用' : '启用' }}
+              </DropdownMenuItem>
+            </template>
+            <DropdownMenuItem :disabled="node.readonly && testing" @select="testOne(node)">
+              <Zap class="size-4" />
+              单独测速
+            </DropdownMenuItem>
+            <template v-if="!node.readonly">
+              <DropdownMenuItem @select="viewingNode = node">
+                <Link2 class="size-4" />
+                节点字符串
+              </DropdownMenuItem>
+              <DropdownMenuItem @select="toggleNodeSelection(node.id)">
+                <CheckSquare class="size-4" />
+                {{ selectedNodeIds.has(node.id) ? '取消选择' : '选择' }}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" @select="deleteNode(node)">
+                <Trash2 class="size-4" />
+                删除
+              </DropdownMenuItem>
+            </template>
+          </NodeTileMenu>
           </template>
         </header>
 
@@ -426,16 +423,17 @@
           {{ latencyMap[latencyKey(node)]?.error }}
         </p>
         <!-- 最近 14 次代理延迟；失败画一截红色短柱 -->
-        <div class="node-tile-history cf-reorder-mute mt-2 flex h-4 items-end gap-0.5" aria-hidden="true">
+        <div v-if="!isPhone" class="node-tile-history cf-reorder-mute mt-2 flex h-4 items-end gap-0.5" aria-hidden="true">
           <i
             v-for="(bar, i) in historyBars(node)"
             :key="i"
-            :class="cn('flex-1 rounded-[1px]', bar === null ? 'bg-destructive-accent/70' : bar < 0 ? 'bg-border-strong' : 'bg-border-strong')"
+            class="flex-1 rounded-[1px]"
+            :class="bar === null ? 'bg-destructive-accent/70' : 'bg-border-strong'"
             :style="{ height: `${bar === null ? 18 : bar < 0 ? 12 : Math.round(bar * 100)}%` }"
           />
         </div>
       </div>
-    </div>
+    </NodeWindow>
 
     <NodeDeleteDialog ref="nodeDeleteDialog" @deleted="onNodesDeleted" />
     <!-- 节点字符串 -->
@@ -543,8 +541,8 @@
 </template>
 
 <script setup lang="ts">
-import { onUnmounted, watch, ref, computed, onMounted, nextTick } from 'vue'
-import { useMediaQuery } from '@vueuse/core'
+import { onUnmounted, watch, ref, computed, onMounted, nextTick, type ComponentPublicInstance } from 'vue'
+import { unrefElement, useMediaQuery } from '@vueuse/core'
 import {
   ArrowUpDown,
   CheckSquare,
@@ -593,7 +591,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import DataTableShell from '@/components/common/DataTableShell.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -602,6 +600,8 @@ import SectionCard from '@/components/common/SectionCard.vue'
 import Toolbar from '@/components/common/Toolbar.vue'
 import ViewToggle from '@/components/common/ViewToggle.vue'
 import NodeLatencySettings from '@/components/nodes/NodeLatencySettings.vue'
+import NodeWindow from '@/components/nodes/NodeWindow.vue'
+import NodeTileMenu from '@/components/nodes/NodeTileMenu.vue'
 import ReorderBar from '@/components/shell/ReorderBar.vue'
 import DragHandle from '@/components/shell/DragHandle.vue'
 import { useReorder } from '@/composables/useReorder'
@@ -616,7 +616,8 @@ import * as yaml from 'js-yaml'
 
 const nodes = ref<ProxyNode[]>([])
 const savingStatus = ref<Record<string, boolean>>({})
-const nodesContainer = ref<HTMLElement | null>(null)
+const nodesRoot = ref<ComponentPublicInstance | null>(null)
+const nodesContainer = computed(() => unrefElement(nodesRoot) as HTMLElement | null)
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const form = ref<Partial<ProxyNode>>({
@@ -1277,11 +1278,8 @@ watch(viewMode, mode => {
 })
 
 // 节点表格列多，窄屏不可读，移动端一律用卡片
-const isNarrow = ref(false)
+const isNarrow = useMediaQuery('(max-width: 900px)')
 const isPhone = useMediaQuery('(max-width: 639px)')
-const syncNarrow = () => {
-  isNarrow.value = window.matchMedia('(max-width: 900px)').matches
-}
 const effectiveView = computed<ViewMode>(() => (isNarrow.value ? 'card' : viewMode.value))
 
 const keyword = ref('')
@@ -1553,6 +1551,8 @@ const reorder = useReorder<any>({
   }
 })
 
+const nodeKey = (node: any): string => node.readonly ? `sub:${subscriptionNodeKey(node)}` : node.id || node.name
+
 const handleSaveOrder = async () => {
   try {
     await reorder.save()
@@ -1563,8 +1563,6 @@ const handleSaveOrder = async () => {
 }
 
 onMounted(async () => {
-  syncNarrow()
-  window.addEventListener('resize', syncNarrow)
   await Promise.all([loadNodes(), loadLatency()])
   if (consumeAction(router, 'speedtest')) speedTest()
 })
@@ -1579,7 +1577,6 @@ watch(
 
 onUnmounted(() => {
   latencyDisposed = true
-  window.removeEventListener('resize', syncNarrow)
 })
 </script>
 
@@ -1750,10 +1747,6 @@ onUnmounted(() => {
     line-height: 16px;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .node-tile-history {
-    display: none;
   }
 }
 

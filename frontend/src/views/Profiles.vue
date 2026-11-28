@@ -1,5 +1,6 @@
 <template>
-  <div>
+  <LoadingRows v-if="!profileStore.profileReady.value" :rows="3" />
+  <div v-else>
     <PageHeader title="配置空间">
       <template #actions>
         <DropdownMenu v-if="isPhone">
