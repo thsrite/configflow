@@ -2,6 +2,8 @@ package substore
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -79,5 +81,52 @@ func TestWireRegistersIdleOnlyWithBuiltin(t *testing.T) {
 				t.Fatal("prune Startup missing")
 			}
 		})
+	}
+}
+
+func TestSleepingPaceResumesOnUseModeAndExternalState(t *testing.T) {
+	h, r, _ := lifecycleService(t)
+	ctx := context.Background()
+	spec := r.idlePeriodic()
+	tick := func() time.Duration {
+		t.Helper()
+		if err := spec.Round(ctx); err != nil {
+			t.Fatal(err)
+		}
+		return spec.Interval(ctx)
+	}
+	active := 5 * time.Second
+	tick()
+	if pause := tick(); pause != time.Minute {
+		t.Fatalf("sleeping pause %v", pause)
+	}
+	if err := r.Use(ctx, func(context.Context) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if spec.Interval(ctx) != active {
+		t.Fatal("use did not restore active interval")
+	}
+	tick()
+	if running, _, stops := process(h); running || stops != 1 {
+		t.Fatalf("idle sweep after use: running=%v stops=%d", running, stops)
+	}
+	tick()
+	if err := r.SetMode(ctx, "always"); err != nil {
+		t.Fatal(err)
+	}
+	if tick() != active || !h.store.running() {
+		t.Fatal("always did not stay running")
+	}
+	if err := r.SetMode(ctx, "on_demand"); err != nil {
+		t.Fatal(err)
+	}
+	tick()
+	tick()
+	if err := os.WriteFile(filepath.Join(r.Root(), "state.json"), []byte(`{"state":"running","last_used":0}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	tick()
+	if state := stateOf(r); state.State == nil || *state.State != "sleeping" {
+		t.Fatalf("external state not reconciled: %+v", state)
 	}
 }

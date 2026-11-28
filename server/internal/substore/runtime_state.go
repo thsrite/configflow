@@ -161,5 +161,8 @@ func (r *Runtime) writeStateUsing(ctx context.Context, patch runtimePatch, befor
 		}
 		return fmt.Errorf("commit Sub-Store runtime state: %w", err)
 	}
+	if r.sleeping.Swap(false) {
+		r.wake.Notify()
+	}
 	return nil
 }
