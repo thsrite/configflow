@@ -4,9 +4,12 @@ package clientdevices
 
 import (
 	"configflow/internal/routers/device"
+	"configflow/internal/store"
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"sync"
 
 	"configflow/internal/agents"
 	"configflow/internal/auth"
@@ -30,12 +33,18 @@ type Handler struct {
 	Repo   *repo.Repository
 	Agents *agents.Manager
 	cache  *clients.DiscoveryCache
+	viewMu sync.Mutex
+	view   *deviceView
 }
 
 // NewHandler constructs a Handler with an app-owned discovery cache. Nil
 // dependencies fall back to context/package defaults until W11.
 func NewHandler(r *repo.Repository, m *agents.Manager) *Handler {
-	return &Handler{Repo: r, Agents: m, cache: clients.NewDiscoveryCache(nil, nil)}
+	return &Handler{
+		Repo: r, Agents: m,
+		cache: clients.NewDiscoveryCache(nil, nil),
+		view:  &deviceView{},
+	}
 }
 
 // Register installs the five HTTP routes on r.
@@ -49,13 +58,22 @@ func (h *Handler) Register(r *httpx.Router) {
 	r.POST("/api/client-devices/fixed-ip/apply", "client_devices.apply_fixed_ip", auth.Require(h.apply))
 }
 
-func config(ctx context.Context, db *repo.Repository, profile string) (json.RawMessage, error) {
-	value, err := db.ConfigWithOxiDNSAgents(lifecycle.Detach(ctx), profile, repo.ResourceRoots{})
+func config(document *model.Document, profile string) (json.RawMessage, error) {
+	value, err := repo.ConfigWithOxiDNSAgentsFrom(document, profile)
 	if err != nil {
 		return nil, err
 	}
 	return json.Marshal(value)
 }
+
+func readConfig(ctx context.Context, db *repo.Repository, profile string) (raw json.RawMessage, err error) {
+	err = db.View(lifecycle.Detach(ctx), func(doc *model.Document) error {
+		raw, err = config(doc, profile)
+		return err
+	})
+	return raw, err
+}
+
 func (h *Handler) manager(c *httpx.Ctx) (*repo.Repository, *agents.Manager, error) {
 	if h == nil || h.Repo == nil {
 		return nil, nil, errors.New("api/clientdevices: repository is nil")
@@ -114,6 +132,9 @@ func text(raw json.RawMessage) (string, bool) {
 	return value, err == nil
 }
 func (h *Handler) sanitize(ctx context.Context, config json.RawMessage, value any) (json.RawMessage, error) {
+	return h.sanitizeWith(ctx, redact.CollectCredentials(config, nil), value)
+}
+func (h *Handler) sanitizeWith(ctx context.Context, profileSecrets redact.Secrets, value any) (json.RawMessage, error) {
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		return nil, err
@@ -129,7 +150,7 @@ func (h *Handler) sanitize(ctx context.Context, config json.RawMessage, value an
 	if err != nil {
 		return nil, err
 	}
-	return redact.SanitizeCredentials(json.RawMessage(encoded), redact.CollectCredentials(config, secrets)), nil
+	return redact.SanitizeCredentials(json.RawMessage(encoded), redact.NewSecrets(profileSecrets, secrets)), nil
 }
 func (h *Handler) public(ctx context.Context, config json.RawMessage, value any, status int) (*httpx.Response, error) {
 	safe, err := h.sanitize(ctx, config, value)
@@ -166,13 +187,69 @@ func (h *Handler) failure(ctx context.Context, cfg json.RawMessage, err error) (
 		Message string `json:"message"`
 	}{false, err.Error()}, status)
 }
-func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id string) (json.RawMessage, any, error) {
-	ctx = lifecycle.Detach(ctx)
-	cfg, err := config(ctx, db, id)
+
+type deviceView struct {
+	head                store.Head
+	id, registrationKey string
+	config              json.RawMessage
+	list                clients.DeviceList
+	revision            string
+	secrets             redact.Secrets
+}
+
+func (h *Handler) profileView(ctx context.Context, db *repo.Repository, id string) (*deviceView, error) {
+	var result *deviceView
+	err := db.ViewAt(ctx, func(doc *model.Document, head *store.Head) error {
+		h.viewMu.Lock()
+		defer h.viewMu.Unlock()
+		registrationKey := os.Getenv("AGENT_REGISTRATION_KEY")
+		if head != nil && h.view != nil && h.view.config != nil && h.view.id == id && h.view.head == *head && h.view.registrationKey == registrationKey {
+			result = h.view
+			return nil
+		}
+		raw, err := config(doc, id)
+		if err != nil {
+			return err
+		}
+		result = &deviceView{id: id, config: raw, registrationKey: registrationKey}
+		p, err := oxidns.ProfileFromJSON(raw)
+		if err != nil {
+			return err
+		}
+		result.list, err = clients.ListProfileDevices(raw, p)
+		if err != nil {
+			return err
+		}
+		result.revision = oxidns.Revision(p.Settings())
+		result.secrets = redact.CollectCredentials(raw, nil)
+		if head != nil {
+			result.head = *head
+			h.view = result
+		}
+		return nil
+	})
+	return result, err
+}
+
+func (h *Handler) respondState(ctx context.Context, db *repo.Repository, m *agents.Manager, id string) (*httpx.Response, error) {
+	view, value, err := h.state(ctx, db, m, id)
 	if err != nil {
-		return nil, nil, err
+		var cfg json.RawMessage
+		if view != nil {
+			cfg = view.config
+		}
+		return h.failure(ctx, cfg, err)
 	}
-	list, err := clients.ListDevices(cfg)
+	safe, err := h.sanitizeWith(ctx, view.secrets, value)
+	if err != nil {
+		return nil, err
+	}
+	return httpx.JSONStatus(200, safe).NoStore(), nil
+}
+
+func (h *Handler) state(ctx context.Context, db *repo.Repository, m *agents.Manager, id string) (*deviceView, any, error) {
+	ctx = lifecycle.Detach(ctx)
+	cfg, err := h.profileView(ctx, db, id)
 	if err != nil {
 		return cfg, nil, err
 	}
@@ -251,10 +328,6 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 		}
 		rows = append(rows, data)
 	}
-	p, err := oxidns.ProfileFromJSON(cfg)
-	if err != nil {
-		return cfg, nil, err
-	}
 	profile, err := db.ProfileMetadataRecord(ctx, id)
 	if err != nil {
 		return cfg, nil, err
@@ -270,7 +343,7 @@ func state(ctx context.Context, db *repo.Repository, m *agents.Manager, id strin
 		Revision    string            `json:"oxidns_revision"`
 		Agents      []json.RawMessage `json:"agents"`
 		clients.DeviceList
-	}{true, id, name, oxidns.Revision(p.Settings()), rows, list}, nil
+	}{true, id, name, cfg.revision, rows, cfg.list}, nil
 }
 func (h *Handler) devices(c *httpx.Ctx) (*httpx.Response, error) {
 	db, m, err := h.manager(c)
@@ -281,11 +354,11 @@ func (h *Handler) devices(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil || early != nil {
 		return early, err
 	}
-	cfg, err := config(c.Context(), db, id)
-	if err != nil {
-		return nil, err
-	}
 	if c.Method() == "PUT" {
+		cfg, err := readConfig(c.Context(), db, id)
+		if err != nil {
+			return nil, err
+		}
 		raw := body(c)
 		fields, ok := exact(raw, "profile_id", "ip", "name", "mode", "previous_name", "previous_mode", "base_url")
 		baseURL, valid := text(fields["base_url"])
@@ -324,11 +397,7 @@ func (h *Handler) devices(c *httpx.Ctx) (*httpx.Response, error) {
 			return h.failure(work, cfg, err)
 		}
 	}
-	cfg, value, err := state(c.Context(), db, m, id)
-	if err != nil {
-		return h.failure(c.Context(), cfg, err)
-	}
-	return h.public(c.Context(), cfg, value, 200)
+	return h.respondState(c.Context(), db, m, id)
 }
 
 // deviceChange reports the first invalid field in the page's order: address,
@@ -388,7 +457,7 @@ func (h *Handler) discovery(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil || early != nil {
 		return early, err
 	}
-	cfg, err := config(c.Context(), db, id)
+	cfg, err := readConfig(c.Context(), db, id)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +524,7 @@ func (h *Handler) preview(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil || early != nil {
 		return early, err
 	}
-	cfg, err := config(c.Context(), db, id)
+	cfg, err := readConfig(c.Context(), db, id)
 	if err != nil {
 		return nil, err
 	}
@@ -489,7 +558,7 @@ func (h *Handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 	if err != nil || early != nil {
 		return early, err
 	}
-	cfg, err := config(c.Context(), db, id)
+	cfg, err := readConfig(c.Context(), db, id)
 	if err != nil {
 		return nil, err
 	}
@@ -505,11 +574,7 @@ func (h *Handler) apply(c *httpx.Ctx) (*httpx.Response, error) {
 	if err = h.fixed(db).Apply(c.Context(), id, token); err != nil {
 		return h.failure(c.Context(), cfg, err)
 	}
-	cfg, value, err := state(lifecycle.Detach(c.Context()), db, m, id)
-	if err != nil {
-		return h.failure(c.Context(), cfg, err)
-	}
-	return h.public(c.Context(), cfg, value, 200)
+	return h.respondState(lifecycle.Detach(c.Context()), db, m, id)
 }
 
 func storedAgentString(agent *model.Agent, key string) (string, error) {

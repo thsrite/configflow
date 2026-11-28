@@ -79,6 +79,12 @@ func ListDevices(config json.RawMessage) (DeviceList, error) {
 	if err != nil {
 		return DeviceList{}, err
 	}
+	return ListProfileDevices(config, p)
+}
+
+// ListProfileDevices lists the devices of an already decoded profile. The raw
+// config supplies the ordered notes and fixed IP bindings of that same profile.
+func ListProfileDevices(config json.RawMessage, p *oxidns.Profile) (DeviceList, error) {
 	view, err := oxidns.ReadPolicies(p.Settings(), p)
 	if err != nil {
 		return DeviceList{}, err

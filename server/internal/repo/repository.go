@@ -501,20 +501,19 @@ func (r *Repository) dropCache() {
 // loadEntry is _load_entry: head and rows from one snapshot; the cached
 // generation is returned when the database head still equals it.
 func (r *Repository) loadEntry() (storedEntry, error) {
-	var entry storedEntry
-	hit := false
-	err := r.store.Reading(func(connection *store.Conn) error {
-		head, err := connection.Head()
+	if cached := r.cached(); cached != nil {
+		head, err := r.store.Head()
 		if err != nil {
-			return err
+			return storedEntry{}, err
 		}
-		if cached := r.cached(); cached != nil && cached.Head == head {
-			entry, hit = *cached, true
-			return nil
+		if cached.Head == head {
+			return *cached, nil
 		}
+	}
+	var entry storedEntry
+	err := r.store.Reading(func(connection *store.Conn) error {
 		r.loads.Add(1)
-		raw, failure := connection.Load()
-		err = failure
+		raw, err := connection.Load()
 		if err == nil {
 			entry, err = decodeEntry(raw)
 		}
@@ -523,7 +522,7 @@ func (r *Repository) loadEntry() (storedEntry, error) {
 		}
 		return err
 	})
-	if err != nil || hit {
+	if err != nil {
 		return entry, err
 	}
 	r.reportModelIssues(entry)

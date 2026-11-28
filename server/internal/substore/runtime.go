@@ -96,7 +96,9 @@ type Runtime struct {
 	ready    func(ctx context.Context) (bool, error)
 	command  func(ctx context.Context, action string) (string, error)
 	// clock preserves the owner test clock seam; production uses ClockFrom(ctx).
-	clock clock.Clock
+	clock    clock.Clock
+	sleeping atomic.Bool
+	wake     lifecycle.Signal
 }
 
 // NewRuntime returns a runtime on env (directory "" = default root).
@@ -512,6 +514,7 @@ func (r *Runtime) Tick(ctx context.Context) error {
 	}
 	err := r.tryWork(ctx, func(ctx context.Context) error {
 		return r.withControl(ctx, func(ctx context.Context) error {
+			r.sleeping.Store(false)
 			mode, err := r.mode(ctx)
 			if err != nil {
 				return err
@@ -536,6 +539,7 @@ func (r *Runtime) Tick(ctx context.Context) error {
 				return r.writeState(ctx, runtimePatch{State: new(current), LastUsed: new(now)})
 			}
 			if state.State != nil && *state.State == "sleeping" {
+				r.sleeping.Store(true)
 				return nil
 			}
 			if state.invalidLastUsed {
@@ -627,7 +631,14 @@ func (r *Runtime) Snapshot(ctx context.Context, running bool) (*RuntimeStatus, e
 func (r *Runtime) idlePeriodic() lifecycle.Periodic {
 	return lifecycle.Periodic{
 		Name: "sub-store-idle", Start: lifecycle.AtBoot, FirstDelay: 0,
-		Interval: func(context.Context) time.Duration { return 5 * time.Second },
-		Round:    func(ctx context.Context) error { return r.Tick(ctx) },
+		Wake: &r.wake,
+		Interval: func(context.Context) time.Duration {
+			if r.sleeping.Load() {
+				// Other processes can replace state.json or the settings.
+				return time.Minute
+			}
+			return 5 * time.Second
+		},
+		Round: func(ctx context.Context) error { return r.Tick(ctx) },
 	}
 }

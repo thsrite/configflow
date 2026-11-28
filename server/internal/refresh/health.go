@@ -100,28 +100,46 @@ func (s HealthSnapshot) Entry(id string) *HealthEntry {
 	return &entry
 }
 
-// ReadHealth reads health history without writing or creating a directory.
-func (s *Service) ReadHealth(ctx context.Context) (HealthSnapshot, error) {
+// BorrowHealth returns the immutable snapshot of the current file. Missing or
+// damaged files have no snapshot. The pointer is stable while the file is unchanged.
+func (s *Service) BorrowHealth(ctx context.Context) (*HealthSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	r, err := s.repository()
 	if err != nil {
-		return HealthSnapshot{}, nil
+		return nil, nil
 	}
-	data, err := readSharedData(ctx, r, HealthFile)
+	value, err := s.healthFile.Read(ctx, r, HealthFile, func(data []byte) (*HealthSnapshot, error) {
+		var result HealthSnapshot
+		if json.Unmarshal(data, &result) != nil || result == nil {
+			return nil, nil
+		}
+		return &result, nil
+	})
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
 		if isRepositoryOrFileError(err) {
-			return HealthSnapshot{}, nil
+			return nil, nil
 		}
+	}
+	return value, err
+}
+
+// ReadHealth returns a private health snapshot for callers that update entries.
+func (s *Service) ReadHealth(ctx context.Context) (HealthSnapshot, error) {
+	value, err := s.BorrowHealth(ctx)
+	if err != nil {
 		return nil, err
 	}
-	var result HealthSnapshot
-	if json.Unmarshal(data, &result) != nil || result == nil {
+	if value == nil {
 		return HealthSnapshot{}, nil
+	}
+	result := make(HealthSnapshot, len(*value))
+	for key, raw := range *value {
+		result[key] = bytes.Clone(raw)
 	}
 	return result, nil
 }

@@ -82,8 +82,11 @@ func expired(ctx context.Context, r Document) bool {
 	}
 	var start float64
 	e := json.Unmarshal(r["started_epoch"], &start)
+	return e != nil || expiredStart(ctx, start)
+}
+func expiredStart(ctx context.Context, start float64) bool {
 	now := float64(lifecycle.ClockFrom(ctx).Now().UnixNano()) / 1e9
-	return e != nil || math.IsInf(start, 0) || math.IsNaN(start) || now-start > 300 || start > now+30
+	return math.IsInf(start, 0) || math.IsNaN(start) || now-start > 300 || start > now+30
 }
 func interrupt(ctx context.Context, r Document, message string) {
 	r["status"] = jsonresp.Value("error")

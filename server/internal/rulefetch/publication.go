@@ -299,6 +299,7 @@ func (s *CachePublication) Commit(ctx context.Context) error {
 		return ErrStaleCacheStage
 	})
 	if errors.Is(err, errCachePublished) {
+		r.NotifyRuleCacheChanged()
 		return nil
 	}
 	return err

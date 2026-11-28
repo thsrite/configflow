@@ -504,6 +504,8 @@ type RuleSyncAgent struct {
 	ServiceType     string
 	RuleSyncLibrary bool
 	RuleSyncRules   bool
+	HAActive        bool
+	Enabled         bool
 	Presence        PresenceRecord
 	// record is the immutable published generation's record (see
 	// BorrowAgents); credentials are collected from it only on demand.
@@ -557,6 +559,8 @@ func (m *Manager) RuleSyncAgents(ctx context.Context) ([]RuleSyncAgent, error) {
 			ServiceType:     a.ServiceType,
 			RuleSyncLibrary: library,
 			RuleSyncRules:   rules,
+			HAActive:        HAActiveModel(a),
+			Enabled:         AgentEnabledModel(a),
 			Presence:        presenceRecordOf(a, liveHB, hasLive, true),
 		}
 		if shared {

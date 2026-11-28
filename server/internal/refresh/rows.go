@@ -4,7 +4,6 @@ import (
 	"configflow/internal/lifecycle"
 	"configflow/internal/model"
 	"configflow/internal/repo"
-	"configflow/internal/rules"
 	"configflow/internal/substore"
 	"configflow/internal/tasks"
 	"configflow/internal/taskstatus"
@@ -98,89 +97,6 @@ func (s *Service) SubscriptionTasks(ctx context.Context, statuses taskstatus.Sna
 	return rows, nil
 }
 
-// RuleTasks projects native task rows for URL-backed library sources.
-func (s *Service) RuleTasks(ctx context.Context, statuses taskstatus.Snapshot) ([]*tasks.Task, error) {
-	r, err := s.repository()
-	if err != nil {
-		return nil, err
-	}
-	type ruleView struct {
-		id       string
-		name     string
-		url      string
-		enabled  bool
-		interval model.Int
-		library  model.RuleConfig
-	}
-	var list []ruleView
-	if err := r.View(ctx, func(document *model.Document) error {
-		list = make([]ruleView, 0, len(document.Shared.RuleLibrary))
-		for _, rule := range document.Shared.RuleLibrary {
-			url := textOr(rule.URL, "")
-			if !urlRule(rule) || url == "" {
-				continue
-			}
-			list = append(list, ruleView{
-				id:       rule.ID,
-				name:     rule.Name,
-				url:      url,
-				enabled:  notFalse(rule.Enabled),
-				interval: RemoteInterval(rule),
-				library:  rules.LibraryRule(rule),
-			})
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	rows := make([]*tasks.Task, 0, len(list))
-	for _, rule := range list {
-		key := RuleTaskKey(rule.id)
-		entry := statuses.Entry(key)
-		interval := rule.interval
-		enabled := rule.enabled
-		var due *time.Time
-		var baseline *string
-		var baselineChecked bool
-		if enabled {
-			baseline, err = s.ruleCacheAtLibrary(ctx, rule.library)
-			if err != nil {
-				return nil, err
-			}
-			baselineChecked = true
-			due, err = s.nextDue(entry, interval, baseline, nil)
-			if err != nil {
-				return nil, err
-			}
-		}
-		history, err := tasks.ProjectHistory(entry)
-		if err != nil {
-			return nil, err
-		}
-		if history.CacheUpdatedAt == nil || *history.CacheUpdatedAt == "" {
-			if baselineChecked {
-				history.CacheUpdatedAt = baseline
-			} else {
-				history.CacheUpdatedAt, err = s.ruleCacheAtLibrary(ctx, rule.library)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-		name := rule.name
-		if name == "" {
-			name = rule.id
-		}
-		message := ""
-		if !enabled {
-			message = msgRuleDisabled
-		}
-		seconds, _ := json.Marshal(interval)
-		link := "/rule-library"
-		rows = append(rows, &tasks.Task{Key: key, Category: "rule_source", Name: name, ResourceID: rule.id, Detail: sourceHost(rule.url), Enabled: enabled && interval != 0, IntervalSeconds: seconds, Editable: true, CanRun: true, Running: IsRunning(key), NextRunAt: tasks.Timestamp(due), StateMessage: message, Link: &link, NotificationsEnabled: &enabled, HistoryData: history})
-	}
-	return rows, nil
-}
 func (s *Service) runTask(ctx context.Context, key, id string) error {
 	category, _, _ := strings.Cut(key, ":")
 	_, err := s.RunResourceNow(ctx, category, id)

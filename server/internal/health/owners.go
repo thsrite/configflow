@@ -1,6 +1,7 @@
 package health
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 
@@ -14,6 +15,7 @@ import (
 func init() { currentProbeEnv.Collaborators = defaultCollaborators(nil) }
 
 func defaultCollaborators(converterFn func() convert.NodeConverter) Collaborators {
+	var latencyFile repo.SharedFileView[json.RawMessage]
 	return Collaborators{
 		NeedsRemoteConversion: needsRemoteProxyString,
 		ConvertNode: func(ctx context.Context, raw json.RawMessage) (model.Fields, bool) {
@@ -53,11 +55,16 @@ func defaultCollaborators(converterFn func() convert.NodeConverter) Collaborator
 			if r == nil {
 				return nil, false
 			}
-			data, err := r.ReadSharedBytes(ctx, LatencyFile)
-			if err != nil || !json.Valid(data) {
+			data, err := latencyFile.Read(ctx, r, LatencyFile, func(raw []byte) (json.RawMessage, error) {
+				if !json.Valid(raw) {
+					return nil, nil
+				}
+				return raw, nil
+			})
+			if err != nil || data == nil {
 				return nil, false
 			}
-			return json.RawMessage(data), true
+			return bytes.Clone(data), true
 		},
 		WriteLatencyFile: func(ctx context.Context, r *repo.Repository, data json.RawMessage) error {
 			if err := ctx.Err(); err != nil {

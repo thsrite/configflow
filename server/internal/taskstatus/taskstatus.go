@@ -9,7 +9,9 @@
 package taskstatus
 
 import (
+	"bytes"
 	"configflow/internal/fsx"
+	"configflow/internal/jsonstore"
 	"context"
 	"encoding/json"
 	"errors"
@@ -132,7 +134,30 @@ func (s Snapshot) Entry(key string) *Receipt {
 	return &result
 }
 
+// The process normally serves one data directory. All Store handles share
+// this last successful read under guard. Callers own even the raw bytes.
+var lastRead struct {
+	path string
+	sig  jsonstore.Signature
+	data Snapshot
+}
+
+func (s Snapshot) clone() Snapshot {
+	out := make(Snapshot, len(s))
+	for key, raw := range s {
+		out[key] = bytes.Clone(raw)
+	}
+	return out
+}
+
 func readSnapshot(path string) Snapshot {
+	sig, statErr := jsonstore.FileSignature(path)
+	if statErr == nil && path == lastRead.path && sig == lastRead.sig {
+		return lastRead.data.clone()
+	}
+	if errors.Is(statErr, os.ErrNotExist) {
+		return Snapshot{}
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -147,6 +172,11 @@ func readSnapshot(path string) Snapshot {
 	var result Snapshot
 	if jsonresp.DecodeStored(data, &result) != nil || result == nil {
 		return Snapshot{}
+	}
+	if statErr == nil {
+		if after, err := jsonstore.FileSignature(path); err == nil && after == sig {
+			lastRead.path, lastRead.sig, lastRead.data = path, sig, result.clone()
+		}
 	}
 	return result
 }

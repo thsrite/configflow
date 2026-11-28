@@ -61,21 +61,11 @@ func (r *Repository) cachedAgentRecords(head store.Head) ([]model.Agent, bool) {
 }
 
 func (r *Repository) agentRecords(ctx context.Context) ([]model.Agent, store.Head, error) {
-	var records []model.Agent
-	var head store.Head
-	hit := false
-	err := r.store.Reading(func(connection *store.Conn) error {
-		var err error
-		head, err = connection.Head()
-		if err != nil {
-			return err
-		}
-		records, hit = r.cachedAgentRecords(head)
-		return nil
-	})
+	head, err := r.store.Head()
 	if err != nil {
 		return nil, store.Head{}, r.agentReadFailure(ctx, err)
 	}
+	records, hit := r.cachedAgentRecords(head)
 	if hit {
 		return records, head, nil
 	}
@@ -188,8 +178,8 @@ func (r *Repository) AgentDefaultProfileID(ctx context.Context) (string, error) 
 	if snapshot := r.lockedSnapshot(ctx); snapshot != nil {
 		return defaultProfileIn(snapshot.entry.Model), nil
 	}
-	var head store.Head
-	if err := r.store.Reading(func(c *store.Conn) error { var err error; head, err = c.Head(); return err }); err != nil {
+	head, err := r.store.Head()
+	if err != nil {
 		return "", r.agentReadFailure(ctx, err)
 	}
 	r.agentDefaultMu.Lock()

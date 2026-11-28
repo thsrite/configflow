@@ -34,6 +34,18 @@ func defaultProfileIn(document *model.Document) string {
 	return DefaultProfileID
 }
 
+// ViewProfile reads a stored profile and its shared resources from the same document.
+// The callback must treat both as immutable.
+func (r *Repository) ViewProfile(ctx context.Context, id string, fn func(*model.Profile, *model.Shared) error) error {
+	return r.View(ctx, func(doc *model.Document) error {
+		profile, err := profileFor(doc, id)
+		if err != nil {
+			return err
+		}
+		return fn(profile, &doc.Shared)
+	})
+}
+
 // ConfigRevision is config_revision(): the revision of the generated
 // configuration; it grows when the profile or the shared resources change
 // and tells whether an Agent is out of date.

@@ -167,6 +167,20 @@ func (s *Store) Reading(fn func(*Conn) error) error {
 	return nil
 }
 
+// Head reads the committed identity in one SQLite statement. The implicit
+// read transaction covers all meta rows and ends when the query closes.
+func (s *Store) Head() (Head, error) {
+	c, err := s.reader()
+	if err != nil {
+		return Head{}, translate(err)
+	}
+	ok := false
+	defer func() { s.release(c, ok) }()
+	head, err := c.Head()
+	ok = err == nil
+	return head, translate(err)
+}
+
 // Meta returns the raw JSON of one meta key, or nil when it is missing.
 func (s *Store) Meta(key string) (value json.RawMessage, err error) {
 	err = s.Reading(func(connection *Conn) error {

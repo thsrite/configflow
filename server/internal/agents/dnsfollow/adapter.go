@@ -39,6 +39,10 @@ func modelAgentWithProfile(a *model.Agent, profile string) (*agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	return agentWithTarget(a, profile, target)
+}
+
+func agentWithTarget(a *model.Agent, profile string, target deploy.Target) (*agent, error) {
 	binding, _, err := model.EncodeMember(a, "dns_follow")
 	if err != nil {
 		return nil, err
@@ -75,7 +79,14 @@ func (s *Service) all(ctx context.Context) ([]*agent, error) {
 		if !agents.FreshHeartbeat(rows[i].LastHeartbeat, nil) {
 			rows[i].Status = "offline"
 		}
-		a, err := modelAgentWithProfile(&rows[i], profiles[i])
+		// Profile resolution changes the top-level record only. Keep the
+		// target's original binding and borrow the immutable nested history.
+		record := rows[i]
+		target, err := deploy.BorrowedTarget(&record)
+		if err != nil {
+			return nil, err
+		}
+		a, err := agentWithTarget(&rows[i], profiles[i], target)
 		if err != nil {
 			return nil, err
 		}

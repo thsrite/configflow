@@ -102,6 +102,20 @@ func TestServiceLoopWakesOnConfigStatePresenceAndRefresh(t *testing.T) {
 	}
 	wantRound("agent coming online")
 
+	// A rule reader with its own refresh service still publishes through this repository.
+	write := func() {
+		t.Helper()
+		if _, err := r.WriteSharedTextIfChanged(ctx, "rules/by-source/poll.list", []byte("example.com\n")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write()
+	wantRound("rule file publication")
+	write() // first replacement also installs the backup
+	wantRound("rule cache backup installation")
+	write() // identical bytes: refreshes mtime only
+	noRound("unchanged file touch")
+
 	// Rule-source refresh wakes the loop explicitly via WakeLoop.
 	svc.WakeLoop()
 	wantRound("WakeLoop after rule refresh")
@@ -157,5 +171,57 @@ func TestPairHooksFailSafeAndWired(t *testing.T) {
 	}
 	if msg, ok := wired.pairFailure(ctx, errors.New("busy")); !ok || msg != "translated: busy" {
 		t.Fatalf("wired pairFailure = (%q, %v), want (\"translated: busy\", true)", msg, ok)
+	}
+}
+
+func TestRoundIdleAndRetryPacing(t *testing.T) {
+	ctx, s := fixtureService(t)
+	clk := lifecycletest.NewClock(s.now())
+	s.now = clk.Now
+	rt := lifecycle.NewRuntime(lifecycle.Options{Clock: clk, Registry: lifecycle.NewRegistry()})
+	round := func() time.Duration {
+		t.Helper()
+		rt.Start(ctx)
+		if err := s.Round(rt.BindRequest(ctx)); err != nil {
+			t.Fatal(err)
+		}
+		rt.Stop(5 * time.Second)
+		return s.Loop().Interval(ctx)
+	}
+	set := func(on bool, state model.RuleSyncState) {
+		t.Helper()
+		if err := persistSync(ctx, s.m, "device", &Settings{Library: on}, &state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, on := range []bool{true, false} {
+		set(on, model.RuleSyncState{Status: "pending", Message: msgOffline})
+		start := clk.Now()
+		rounds := 0
+		for clk.Now().Sub(start) < 10*time.Minute {
+			delay := round()
+			if delay != IdleFallback {
+				t.Fatalf("library=%v: idle interval %v", on, delay)
+			}
+			clk.Advance(delay)
+			rounds++
+		}
+		if rounds != 10 {
+			t.Fatalf("library=%v: %d rounds in ten minutes", on, rounds)
+		}
+	}
+	const retry = 17 * time.Second
+	set(true, model.RuleSyncState{Status: "failed", RetryAt: new(nowSeconds(clk.Now().Add(retry)))})
+	if delay := round(); delay != retry {
+		t.Fatalf("retry interval %v, want %v", delay, retry)
+	}
+	clk.Advance(retry)
+	round()
+	record, err := s.m.ReadAgent(ctx, "device", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state := stateOf(record); state.Message != msgOffline || state.RetryAt != nil {
+		t.Fatalf("retry did not run at its deadline: %+v", state)
 	}
 }

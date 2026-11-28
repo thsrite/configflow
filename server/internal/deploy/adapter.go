@@ -220,24 +220,20 @@ func equalJSON(a, b []byte) bool {
 	return err == nil && yamlx.Equal(left, right)
 }
 
-type appliedView struct {
-	PreparedContent
-	DeploymentID  string `json:"deployment_id"`
-	ConfigVersion string `json:"config_version"`
-}
 type receiptAgentView struct {
-	ID            string      `json:"id"`
-	ProfileID     string      `json:"profile_id"`
-	ServiceType   string      `json:"service_type"`
-	ConfigVersion string      `json:"config_version"`
-	Applied       appliedView `json:"applied_content"`
+	ID, ProfileID, ServiceType, ConfigVersion string
+	Applied                                   struct{ DeploymentID, ProfileID, ServiceType, ConfigVersion string }
 }
 
 func receiptAgentRaw(agent *model.Agent) receiptAgentView {
 	var view receiptAgentView
-	raw, err := model.Marshal(agent)
-	if err == nil {
-		_ = jsondecode.Unmarshal(raw, &view)
+	if agent == nil {
+		return view
+	}
+	view.ID, view.ProfileID, view.ServiceType, view.ConfigVersion = agent.ID, agent.ProfileID, agent.ServiceType, agent.ConfigVersion
+	if a := agent.AppliedContent; a != nil {
+		view.Applied.DeploymentID, view.Applied.ProfileID = a.DeploymentID, a.ProfileID
+		view.Applied.ServiceType, view.Applied.ConfigVersion = a.ServiceType, a.ConfigVersion
 	}
 	return view
 }

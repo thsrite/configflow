@@ -136,3 +136,54 @@ func TestRenameAfterForeignWALCommitReadsNewFile(t *testing.T) {
 		t.Fatalf("store read %v, want %v", got, replaced.Head)
 	}
 }
+
+func TestAutocommitHeadTracksJournalAndReplacement(t *testing.T) {
+	target := newStore(t)
+	created := must(target.Create(sampleDocument(t), nil))(t)
+	identity := func() Head {
+		t.Helper()
+		got := must(target.Store.Head())(t)
+		if want := head(t, target.Store); got != want {
+			t.Fatalf("single statement %v, read transaction %v", got, want)
+		}
+		return got
+	}
+	if identity() != created.Head {
+		t.Fatal("initial head")
+	}
+	execSQL(t, target.Path(), "PRAGMA journal_mode=WAL", `UPDATE meta SET value = '9' WHERE key = 'generation'`)
+	if got := must(target.Store.Head())(t); got.Generation != 9 || len(idleReaders(target.Store)) != 0 {
+		t.Fatal("foreign WAL generation or connection lifetime")
+	}
+	temp, replacement, err := target.Store.BuildTemporary(must(legacyEncode(sampleDocument(t), nil))(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := target.Store.Install(temp); err != nil {
+		t.Fatal(err)
+	}
+	if identity() != replacement.Head {
+		t.Fatal("replacement head")
+	}
+}
+
+func BenchmarkHeadValidation(b *testing.B) {
+	target := newStore(b)
+	must(target.Create(sampleDocument(b), nil))(b)
+	for _, single := range []bool{false, true} {
+		b.Run(map[bool]string{false: "transaction", true: "statement"}[single], func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				var err error
+				if single {
+					_, err = target.Store.Head()
+				} else {
+					err = target.Reading(func(c *Conn) error { _, err := c.Head(); return err })
+				}
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}

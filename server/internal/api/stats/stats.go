@@ -13,7 +13,9 @@ import (
 	"math/big"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"configflow/internal/httpx"
@@ -26,12 +28,16 @@ import (
 
 // Handler serves the /api/stats routes backed by an explicit Repository.
 type Handler struct {
-	Repo *repo.Repository
-	Now  func() time.Time
+	Repo      *repo.Repository
+	Now       func() time.Time
+	historyMu sync.Mutex
+	history   *historyView
 }
 
 // NewHandler constructs a Handler for r.
-func NewHandler(r *repo.Repository) *Handler { return &Handler{Repo: r} }
+func NewHandler(r *repo.Repository) *Handler {
+	return &Handler{Repo: r, history: &historyView{series: make(map[string][]*json.Number)}}
+}
 
 func (h *Handler) repo(_ context.Context) (*repo.Repository, error) {
 	if h != nil && h.Repo != nil {
@@ -99,35 +105,20 @@ type sample struct {
 	Rules         json.RawMessage `json:"rules"`
 }
 
-func (h *Handler) currentCounts(ctx context.Context) (Counts, error) {
-	repository, err := h.repo(ctx)
-	if err != nil {
-		return Counts{}, err
-	}
-	shared, err := repository.Shared(ctx)
-	if err != nil {
-		return Counts{}, err
-	}
-	profileID, err := h.resolveProfileID(ctx)
-	if err != nil {
-		return Counts{}, err
-	}
-	profile, err := repository.Profile(ctx, profileID)
-	if err != nil {
-		return Counts{}, err
-	}
-	return Counts{len(shared.Subscriptions), len(shared.Nodes), len(profile.ProxyGroups), len(profile.RuleConfigs)}, nil
+type historyView struct {
+	path    string
+	sig     jsonstore.Signature
+	counts  Counts
+	sampled time.Time
+	series  map[string][]*json.Number
+	samples []json.RawMessage
 }
 
-func (h *Handler) recordHistory(ctx context.Context, counts Counts, persist bool) (map[string][]*json.Number, error) {
+func (h *Handler) recordHistory(ctx context.Context, profileID string, counts Counts, persist bool) (map[string][]*json.Number, error) {
 	if persist {
 		ctx = lifecycle.Detach(ctx)
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	profileID, err := h.resolveProfileID(ctx)
-	if err != nil {
 		return nil, err
 	}
 	repository, err := h.repo(ctx)
@@ -139,10 +130,23 @@ func (h *Handler) recordHistory(ctx context.Context, counts Counts, persist bool
 	if err != nil {
 		return nil, err
 	}
+	file := filepath.Join(filepath.Dir(path), HistoryFile)
+	sig, statErr := jsonstore.FileSignature(file)
+	h.historyMu.Lock()
+	cached := h.history
+	h.historyMu.Unlock()
+	hit := statErr == nil && cached != nil && cached.path == file && cached.sig == sig
 	var document historyDocument
-	_ = jsonstore.New(filepath.Dir(path)).Read(strings.TrimSuffix(HistoryFile, ".json"), &document)
+	if hit {
+		document.Samples = slices.Clip(cached.samples)
+	} else {
+		_ = jsonstore.New(filepath.Dir(path)).Read(strings.TrimSuffix(HistoryFile, ".json"), &document)
+	}
 	samples := document.Samples
 	now := h.now().UTC()
+	if hit && cached.counts == counts && now.Sub(cached.sampled) < SampleInterval {
+		return cached.series, nil
+	}
 	var lastAt *time.Time
 	if len(samples) > 0 {
 		var last sample
@@ -202,30 +206,14 @@ func (h *Handler) recordHistory(ctx context.Context, counts Counts, persist bool
 			result[key] = append(result[key], count)
 		}
 	}
+	if lastAt != nil && now.Sub(*lastAt) < SampleInterval && statErr == nil {
+		if after, err := jsonstore.FileSignature(file); err == nil && sig == after {
+			h.historyMu.Lock()
+			h.history = &historyView{path: file, sig: sig, counts: counts, sampled: *lastAt, series: result, samples: samples}
+			h.historyMu.Unlock()
+		}
+	}
 	return result, nil
-}
-func (h *Handler) profileRevision(ctx context.Context) (int64, *string) {
-	profileID, err := h.resolveProfileID(ctx)
-	if err != nil {
-		return 0, nil
-	}
-	repository, err := h.repo(ctx)
-	if err != nil {
-		return 0, nil
-	}
-	profile, err := repository.Profile(ctx, profileID)
-	if err != nil {
-		return 0, nil
-	}
-	revision, err := repository.ConfigRevision(ctx, profileID)
-	if err != nil {
-		return 0, nil
-	}
-	var updated *string
-	if profile.UpdatedAt != "" {
-		updated = new(profile.UpdatedAt)
-	}
-	return revision, updated
 }
 func (h *Handler) getOverview(c *httpx.Ctx) (*httpx.Response, error) {
 	result, err := h.overview(c.Context(), c.Request.Method != http.MethodHead)
@@ -260,11 +248,25 @@ func (h *Handler) overview(ctx context.Context, persist bool) (*httpx.Response, 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	counts, err := h.currentCounts(ctx)
+	id, err := h.resolveProfileID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	history, err := h.recordHistory(ctx, counts, persist)
+	var counts Counts
+	var revision int64
+	var updated *string
+	err = h.Repo.ViewProfile(ctx, id, func(profile *model.Profile, shared *model.Shared) error {
+		counts = Counts{len(shared.Subscriptions), len(shared.Nodes), len(profile.ProxyGroups), len(profile.RuleConfigs)}
+		revision = int64(profile.Revision) + int64(shared.Revision)
+		if profile.UpdatedAt != "" {
+			updated = new(profile.UpdatedAt)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	history, err := h.recordHistory(ctx, id, counts, persist)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +276,7 @@ func (h *Handler) overview(ctx context.Context, persist bool) (*httpx.Response, 
 		ProxyGroups:   overviewSeries{counts.ProxyGroups, history["proxyGroups"]},
 		Rules:         overviewSeries{counts.Rules, history["rules"]},
 	}
-	data.Profile.Revision, data.Profile.UpdatedAt = h.profileRevision(ctx)
+	data.Profile.Revision, data.Profile.UpdatedAt = revision, updated
 	return httpx.JSON(struct {
 		Success bool         `json:"success"`
 		Data    overviewData `json:"data"`

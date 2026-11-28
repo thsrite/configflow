@@ -139,9 +139,12 @@ func (s *Service) ruleCacheAtLibrary(ctx context.Context, rule model.RuleConfig)
 	if err != nil || !info.Mode().IsRegular() {
 		return nil, nil
 	}
+	return ruleTimestamp(info), nil
+}
+
+func ruleTimestamp(info os.FileInfo) *string {
 	stamp := info.ModTime()
-	value := time.Unix(mtimeSeconds(stamp.Unix(), int64(stamp.Nanosecond())), 0).UTC().Format("2006-01-02T15:04:05Z")
-	return &value, nil
+	return new(time.Unix(mtimeSeconds(stamp.Unix(), int64(stamp.Nanosecond())), 0).UTC().Format("2006-01-02T15:04:05Z"))
 }
 func urlRule(rule model.RuleLibraryItem) bool { return textOr(rule.SourceType, "url") == "url" }
 

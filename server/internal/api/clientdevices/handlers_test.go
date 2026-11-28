@@ -1,7 +1,6 @@
 package clientdevices_test
 
 import (
-	"configflow/internal/clients"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -13,9 +12,11 @@ import (
 	"time"
 
 	api "configflow/internal/api/clientdevices"
+	"configflow/internal/clients"
 	"configflow/internal/httpx/httpxtest"
 	"configflow/internal/model"
 	"configflow/internal/oxidns"
+	"configflow/internal/redact"
 	"configflow/internal/repo"
 	"configflow/internal/routers"
 	"configflow/internal/routers/routerfake"
@@ -277,5 +278,32 @@ func TestR17MalformedDiscoveryRowsPreserveHealthyDevice(t *testing.T) {
 	row, _ := devices[0].(map[string]any)
 	if row["mac"] != "02:00:00:00:00:21" || row["fixed_ip"] == nil {
 		t.Fatalf("healthy evidence dropped: %s", result.Body)
+	}
+}
+
+func TestDeviceListRefreshesNotesAndRedactionAfterCommit(t *testing.T) {
+	s, _ := fixture(t)
+	login := s.Login()
+	for range 2 {
+		if res := s.Get("/api/client-devices", login).WantStatus(200); !strings.Contains(res.Text(), `"name":"Synthetic"`) {
+			t.Fatal("missing initial note")
+		}
+	}
+	_, err := s.Repo.UpdateProfile(s.Context(), "default", func(_ context.Context, p *model.Profile) error {
+		p.Routers.Items[0].Password = "replacement-secret"
+		return p.SetJSON("device_notes", json.RawMessage(`{"192.0.2.21":"reference replacement-secret","192.0.2.22":"new note"}`))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		res := s.Get("/api/client-devices", login).WantStatus(200)
+		var list clients.DeviceList
+		if err := json.Unmarshal(res.Body, &list); err != nil {
+			t.Fatal(err)
+		}
+		if len(list.Devices) != 2 || list.Devices[0].Name != redact.Redacted || list.Devices[1].Name != "new note" {
+			t.Fatalf("unexpected updated device notes: %+v", list.Devices)
+		}
 	}
 }

@@ -10,3 +10,9 @@ import "configflow/internal/model"
 func ConfigFrom(document *model.Document, profileID string, roots ResourceRoots) (*model.Config, error) {
 	return resolveConfig(document, profileID, roots, agentCopyNone, true)
 }
+
+// ConfigWithOxiDNSAgentsFrom resolves the same OxiDNS view as ConfigWithOxiDNSAgents
+// directly from a document held by the caller. The result borrows the document.
+func ConfigWithOxiDNSAgentsFrom(document *model.Document, profileID string) (*model.Config, error) {
+	return resolveConfig(document, profileID, nil, agentCopyOxiDNS, true)
+}
