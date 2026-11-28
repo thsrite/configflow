@@ -30,6 +30,7 @@ async function render() {
   wrapper = mount(NotificationCenter, { attachTo: document.body, global: { plugins: [router] } })
   await flushPromises()
   await wrapper.get('[data-notifications-trigger]').trigger('click')
+  await vi.dynamicImportSettled()
   await flushPromises()
   return router
 }

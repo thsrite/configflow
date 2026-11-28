@@ -21,11 +21,24 @@ async function render() {
   wrappers.push(wrapper)
   return { wrapper, router }
 }
-const openPalette = async (wrapper: VueWrapper) => { (wrapper.vm as any).show(); await flushPromises() }
+const openPalette = async (wrapper: VueWrapper) => { (wrapper.vm as any).show(); await vi.dynamicImportSettled(); await flushPromises() }
 const headings = () => [...document.querySelectorAll('[role="dialog"] [cmdk-group-heading], [role="dialog"] [data-slot="command-group"] > div:first-child')].map(e => e.textContent?.trim())
 const frequentLabels = () => [...document.querySelectorAll('[data-frequent-pages] [data-slot="command-item"]')].map(e => e.querySelector('span')?.textContent?.trim())
 
 describe('command palette suggestions', () => {
+  it('首次按快捷键才挂载搜索面板，再按一次关闭', async () => {
+    const { wrapper } = await render()
+    expect(wrapper.findComponent({ name: 'CommandPaletteDialog' }).exists()).toBe(false)
+    const shortcut = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))
+    shortcut()
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(document.querySelector('[data-slot="command-input"]')).not.toBeNull()
+    shortcut()
+    await flushPromises()
+    expect(document.querySelector('[data-slot="command-input"]')).toBeNull()
+  })
+
   it('shows only frequent pages and common actions before typing, with sensible defaults', async () => {
     const { wrapper } = await render()
     await openPalette(wrapper)

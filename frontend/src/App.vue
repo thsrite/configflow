@@ -1,6 +1,4 @@
 <template>
-  <!-- 系统要求减少动效，或在 Tweaks 里关掉动效时，motion-v 的进场动画一并跳过 -->
-  <MotionConfig reduced-motion="user" :skip-animations="skipAnimations">
   <!-- 登录页不套用应用壳 -->
   <template v-if="isLoginPage">
     <router-view />
@@ -172,15 +170,12 @@
   <Toaster position="bottom-center" :duration="2600" :mobile-offset="{ bottom: '92px' }" />
   <ConfirmHost />
   <PromptHost />
-  </MotionConfig>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { FileText, LogOut, Moon, Search, Sun, User } from '@lucide/vue'
-import { useMediaQuery } from '@vueuse/core'
-import { MotionConfig } from 'motion-v'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -207,14 +202,9 @@ import TweaksPanel from './components/shell/TweaksPanel.vue'
 import NotificationCenter from './components/shell/NotificationCenter.vue'
 import { formatRate, useLive } from './stores/live'
 import { confirm, notify } from './lib/feedback'
-import { usePreferences } from './stores/preferences'
 import { useProfileStore } from './stores/profile'
 import { useThemeStore } from './stores/theme'
 import { CURRENT_NAV_PATH, groupOfScope, labelOfPath, navigationPath, scopeOfPath } from './navigation'
-
-const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
-const { prefs } = usePreferences()
-const skipAnimations = computed(() => reduceMotion.value || !prefs.value.motion)
 
 const route = useRoute()
 // 页面标题据此判断手机上是否已由分组按钮或底栏写明所在页

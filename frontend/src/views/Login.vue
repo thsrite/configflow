@@ -3,9 +3,8 @@
     <div class="tech-backdrop" aria-hidden="true" />
     <div class="paper-grain" aria-hidden="true" />
 
-    <Motion
-      v-bind="riseIn"
-      class="relative z-10 w-full max-w-[400px] overflow-hidden rounded-[22px] border border-border bg-card/90 p-8 backdrop-blur-2xl max-[480px]:p-6"
+    <div
+      class="cf-login-in relative z-10 w-full max-w-[400px] overflow-hidden rounded-[22px] border border-border bg-card/90 p-8 backdrop-blur-2xl max-[480px]:p-6"
       style="box-shadow: var(--shadow-overlay)"
     >
       <div class="flex flex-col items-center gap-3 pb-7 text-center">
@@ -71,7 +70,7 @@
           {{ loading ? '登录中…' : '登录' }}
         </Button>
       </form>
-    </Motion>
+    </div>
   </div>
 </template>
 
@@ -80,13 +79,11 @@ import BrandMark from '@/components/common/BrandMark.vue'
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
-import { Motion } from 'motion-v'
 import { Loader2, Lock, User } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { notify } from '@/lib/feedback'
-import { riseIn } from '@/lib/motion'
 
 const router = useRouter()
 const loading = ref(false)

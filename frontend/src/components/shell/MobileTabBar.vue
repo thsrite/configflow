@@ -1,5 +1,6 @@
 <template>
   <nav
+    ref="navigation"
     class="glass-strong fixed inset-x-0 bottom-0 z-30 hidden h-[calc(var(--cf-tabbar-h)+env(safe-area-inset-bottom))] grid-cols-6 gap-0.5 border-t border-border-strong px-1.5 pt-1 pb-[calc(env(safe-area-inset-bottom)+4px)] max-[900px]:grid"
     aria-label="主导航"
   >
@@ -18,11 +19,10 @@
       :aria-expanded="tab.path ? undefined : moreOpen"
       @click="!tab.path && (moreOpen = true)"
     >
-      <Motion
+      <span
         v-if="isActive(tab)"
-        layout-id="tab-active"
+        data-nav-highlight
         class="absolute inset-0 rounded-lg bg-primary-soft"
-        :transition="SPRING"
         aria-hidden="true"
       />
       <component :is="tab.icon" class="relative size-5" :stroke-width="2" aria-hidden="true" />
@@ -76,13 +76,12 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, type Component } from 'vue'
-import { Motion } from 'motion-v'
 import { Gauge, Globe, LayoutDashboard, LayoutGrid, ListChecks, Server, X } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { MOBILE_TAB_PATHS, NAV_GROUPS } from '@/navigation'
 import { iconOf } from '@/lib/icons'
-import { SPRING } from '@/lib/motion'
+import { useNavHighlight } from '@/composables/useNavHighlight'
 import { cn } from '@/lib/utils'
 
 /* 底栏放最常用的五个页面直达，其余收进「更多」面板 */
@@ -105,6 +104,7 @@ const props = withDefaults(defineProps<{ activePath: string; subscriptionAggrega
   subscriptionAggregationEnabled: false
 })
 
+const navigation = useNavHighlight(() => props.activePath)
 const moreOpen = ref(false)
 const tabPaths = new Set<string>(MOBILE_TAB_PATHS)
 
