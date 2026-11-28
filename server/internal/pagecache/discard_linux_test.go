@@ -154,7 +154,7 @@ func TestLogTailDiscardsAfterFullReads(t *testing.T) {
 	}
 	tail := func(limit string, total int, want ...string) {
 		t.Helper()
-		srv.Get("/api/logs/tail?lines="+limit).WantStatus(200).WantJSON(map[string]any{
+		srv.Get("/api/logs/tail?lines=" + limit).WantStatus(200).WantJSON(map[string]any{
 			"success": true, "log_file": path, "logs": want, "total_lines": total, "filtered_lines": len(want),
 		})
 	}
