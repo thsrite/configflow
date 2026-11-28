@@ -298,3 +298,20 @@ rt -- /home/sunbroke/cf-test/.venv/bin/python scripts/tests/ipv6_managed_routes_
 - 手机深色 390 px：中间选项折成两行，高 44 px，页面无横向滚动，触控目标不小于 44 px。
 - 结束时 RouterOS 写入与 Agent 写操作计数均为 0。`upstream_router_pending_browser.mjs` 用同一只读保护重跑通过，并重拍了改名后的待发布提醒截图。
 
+## 去掉单独的节点测试（2026-11-28）
+
+生产验收报「IPv6 节点连接未通过：通过节点访问检测网站失败」，而 Mihomo 面板里 IPv6 节点测速正常。原因是 Agent 自选测试节点：面板不传节点，Agent 只在 `/proxies` 里挑，订阅里的节点不在那里，内置的 `PASS-RULE`（类型 `PassRule`，不在排除名单里）按名字排第一被选中，测速必然失败。客户端分流验收同样只在 `/proxies` 里找节点，且只认 SOCKS5/HTTP 节点的 IPv6 证据，订阅里的 AnyTLS 节点永远无法通过。
+
+改动（Agent 1.9.5-go）：去掉 Agent 自选节点测速与 socket 观察；客户端连接按连接链在 `/proxies` 与 `/providers/proxies` 中识别节点，按 Mihomo 记录的 `remoteDestination` 判断 IPv6 / IPv4，smux、dialer-proxy、域名远端判为无法确认；前端去掉「IPv6 节点连接」，未配置检测客户端时不显示「客户端分流」，「补齐缺少的配置」只在主机有可补的缺项时显示。
+
+测试服务器上用两份 Mihomo 1.19.34（服务端用 listeners 提供各协议入站，客户端经 mixed-port 访问本机 HTTP 服务，节点分别写 `::1`、`127.0.0.1` 和映射到这两个地址的域名），每个节点连续请求两次（第二次复用连接）：
+
+| 节点 | Mihomo 记录的远端 | 判断 |
+| --- | --- | --- |
+| SS、VMess、VLESS、Trojan、AnyTLS、TUIC（IPv6 地址或域名） | `::1` | IPv6 |
+| 同上（IPv4 地址或域名） | `127.0.0.1` | IPv4 |
+| 订阅（file provider）中的 AnyTLS | `::1`；节点只出现在 `/providers/proxies` | IPv6 |
+| SS + smux（无论节点是 IPv6 还是 IPv4） | 目标网站地址 | 无法确认 |
+| Hysteria2（域名） | 域名本身 | 无法确认 |
+
+随后用新的 verify-connections 接口对同一套 Mihomo 实测：AnyTLS / VMess IPv6 节点与订阅节点判为 IPv6，AnyTLS / Trojan IPv4 节点判为 IPv4，smux 与 Hysteria2 域名判为无法确认，`client_mihomo_path` 均通过。实验只在测试服务器本机回环地址上进行，未连接生产设备。

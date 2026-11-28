@@ -39,7 +39,9 @@ JPEG 由 [capture-guide.mjs](../../../scripts/docs/capture-guide.mjs) 采集，�
 
 客户端设备的旁路入口 PNG 由 [device_policy_side_entries_browser.mjs](../../../scripts/tests/device_policy_side_entries_browser.mjs) 单独采集。脚本使用真实 Vue 前端、隔离 Go 面板和合成设备，同时核对测速入口隐藏、DNS 策略可编辑及手机页无横向滚动。在测试服务器构建前端后，设置 `CF_PLAYWRIGHT` 为下方安装的 Playwright `index.mjs` 路径，再运行该脚本。
 
-聚合缓存预览、Mihomo 基础参数、EasyTier、Mihomo IPv6 模式和生成结果回放的既有截图来自切换前的独立浏览器验收。采集脚本和记录可在切换候选提交 `7feb6e125` 中查阅。
+IPv6 步骤清单与设备检查的 7 张 PNG（`mihomo-ipv6-mode-steps`、`mihomo-ipv6-mode-nodes`、`mihomo-ipv6-steps-after-router`、`mihomo-ipv6-pending-after-change`、`mihomo-ipv6-three-results`、`mihomo-ipv6-verify-after-router`、`mihomo-ipv6-client-ipv4-node`）由 [ipv6_verify_results_browser.mjs](../../../scripts/tests/ipv6_verify_results_browser.mjs) 采集：真实 Vue 组件，接口返回模拟的设备检查与验收结果（没有 Go 面板、Agent 或路由器），同时核对验收只显示「IPv6 网络」和（配置了检测客户端时）「客户端分流」、补齐按钮只在有缺项时出现、旧 Agent 返回的节点测速结果不显示。图中节点名是演示填写。
+
+聚合缓存预览、Mihomo 基础参数、EasyTier、Mihomo IPv6 模式的其余截图和生成结果回放来自切换前的独立浏览器验收。采集脚本和记录可在切换候选提交 `7feb6e125` 中查阅。
 
 ## 在测试服务器重现
 

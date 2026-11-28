@@ -62,61 +62,44 @@ func ipv6CheckStatus(t *testing.T, result map[string]any, id string) string {
 	return ""
 }
 
-func TestIPv6VerificationRequiresFreshSuccessfulHTTPNotDelayAlone(t *testing.T) {
-	for _, test := range []struct {
-		name           string
-		alive, history bool
-		want           string
-	}{{"successful", true, true, "ok"}, {"http-failed-despite-delay", false, true, "unknown"}, {"no-http-evidence", true, false, "unknown"}} {
-		t.Run(test.name, func(t *testing.T) {
-			target := "https://example.test/check"
-			var completed time.Time
-			var paths []string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				paths = append(paths, r.Method+" "+r.URL.Path)
-				if r.Header.Get("Authorization") != "Bearer must-not-leak" {
-					w.WriteHeader(401)
-					return
-				}
-				switch r.URL.Path {
-				case "/version":
-					fmt.Fprint(w, `{"version":"test"}`)
-				case "/configs":
-					fmt.Fprint(w, `{"ipv6":true,"tun":{"enable":true}}`)
-				case "/proxies":
-					fmt.Fprint(w, `{"proxies":{"node":{"name":"node","type":"Socks5","id":"stable"}}}`)
-				case "/proxies/node/delay":
-					if r.URL.Query().Get("expected") != "200-299" {
-						t.Error("missing expected HTTP status")
-					}
-					completed = time.Now()
-					fmt.Fprint(w, `{"delay":2}`)
-				case "/proxies/node":
-					node := map[string]any{"name": "node", "type": "Socks5", "id": "stable"}
-					if test.history {
-						node["extra"] = map[string]any{target: map[string]any{"alive": test.alive, "history": []any{map[string]any{"time": completed, "delay": 2}}}}
-					}
-					_ = json.NewEncoder(w).Encode(node)
-				default:
-					w.WriteHeader(404)
-				}
-			}))
-			defer server.Close()
-			cfg := ipv6VerificationTestConfig(t, strings.TrimPrefix(server.URL, "http://"))
-			data, _ := os.ReadFile(cfg.ConfigPath)
-			code, result := ipv6RunVerification(t, cfg, "verify", map[string]any{"test_url": target, "expected_config_sha256": sha256Hex(data)})
-			if code != 200 || ipv6CheckStatus(t, result, "proxy_http") != test.want {
-				t.Fatalf("unexpected verification %v", result)
-			}
-			if ipv6CheckStatus(t, result, "dns_aaaa") != "ok" || ipv6CheckStatus(t, result, "node_ipv6_transport") != "unknown" || ipv6CheckStatus(t, result, "client_path") != "unknown" {
-				t.Fatal("unsupported evidence was marked passed")
-			}
-			for _, path := range paths {
-				if !strings.HasPrefix(path, "GET ") {
-					t.Fatalf("verification mutated core: %s", path)
-				}
-			}
-		})
+func TestIPv6VerificationReadsRuntimeWithoutNodeTest(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		if r.Header.Get("Authorization") != "Bearer must-not-leak" {
+			w.WriteHeader(401)
+			return
+		}
+		switch r.URL.Path {
+		case "/version":
+			fmt.Fprint(w, `{"version":"test"}`)
+		case "/configs":
+			fmt.Fprint(w, `{"ipv6":true,"tun":{"enable":true}}`)
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	cfg := ipv6VerificationTestConfig(t, strings.TrimPrefix(server.URL, "http://"))
+	data, _ := os.ReadFile(cfg.ConfigPath)
+	code, result := ipv6RunVerification(t, cfg, "verify", map[string]any{"test_url": "https://example.test/check", "expected_config_sha256": sha256Hex(data)})
+	if code != 200 {
+		t.Fatalf("unexpected verification %v", result)
+	}
+	for id, want := range map[string]string{"deployed_config": "ok", "runtime_core": "ok", "runtime_ipv6": "ok", "runtime_tun": "ok", "dns_aaaa": "ok", "client_path": "unknown"} {
+		if got := ipv6CheckStatus(t, result, id); got != want {
+			t.Errorf("%s = %s, want %s", id, got, want)
+		}
+	}
+	for _, raw := range result["checks"].([]any) {
+		if id := raw.(map[string]any)["id"]; id == "proxy_http" || id == "node_ipv6_transport" {
+			t.Errorf("node test %s still reported", id)
+		}
+	}
+	for _, path := range paths {
+		if !strings.HasPrefix(path, "GET ") || strings.HasPrefix(path, "GET /proxies") {
+			t.Fatalf("verification touched proxies or mutated core: %s", path)
+		}
 	}
 }
 
@@ -210,39 +193,29 @@ func TestIPv6ClientUsesDNSAnswersAndDoesNotFollowRedirects(t *testing.T) {
 	}
 }
 
-func TestIPv6SocketEvidenceRequiresOwnedObservedSocket(t *testing.T) {
-	oldPID, oldSocket := ipv6VerifyCorePID, ipv6VerifySocketRead
-	t.Cleanup(func() { ipv6VerifyCorePID = oldPID; ipv6VerifySocketRead = oldSocket })
-	ipv6VerifyCorePID = func(context.Context, *Config) (int, error) { return 42, nil }
-	ipv6VerifySocketRead = func(pid int, ip net.IP, port int) bool {
-		return pid == 42 && ip.Equal(net.ParseIP("2001:db8::1")) && port == 1080
+func TestIPv6ConnectionTransport(t *testing.T) {
+	tests := []struct {
+		name   string
+		remote string
+		proxy  ipv6RuntimeProxy
+		want   string
+	}{
+		{"ipv6 node", "2001:db8::1", ipv6RuntimeProxy{Type: "AnyTLS"}, "ipv6"},
+		{"ipv6 node with port", "[2001:db8::1]:443", ipv6RuntimeProxy{Type: "Trojan"}, "ipv6"},
+		{"ipv4 node", "203.0.113.7", ipv6RuntimeProxy{Type: "Shadowsocks"}, "ipv4"},
+		{"domain remote", "node.example", ipv6RuntimeProxy{Type: "Hysteria2"}, "unknown"},
+		{"empty remote", "", ipv6RuntimeProxy{Type: "Vmess"}, "unknown"},
+		{"smux reports the target", "2001:db8::1", ipv6RuntimeProxy{Type: "Shadowsocks", Smux: true}, "unknown"},
+		{"dialer proxy hides the node socket", "2001:db8::1", ipv6RuntimeProxy{Type: "Vless", DialerProxy: "relay"}, "unknown"},
+		{"remote equals the target", "2001:db8::99", ipv6RuntimeProxy{Type: "Vless"}, "unknown"},
 	}
-	stop := ipv6ObserveNodeSockets(context.Background(), &Config{}, map[string]any{"server": "2001:db8::1", "port": 1080}, "")
-	time.Sleep(time.Millisecond)
-	if stop().Status != "ok" {
-		t.Fatal("actual socket not recorded")
-	}
-	if ipv6ObserveNodeSockets(context.Background(), &Config{}, map[string]any{"server": "node.test", "port": 1080}, "")().Status != "unknown" {
-		t.Fatal("DNS node inferred to use IPv6")
-	}
-	match := ipv6ConnectionMatch{SourcePort: 32000, RemoteDestination: "2001:db8::1", Network: "tcp"}
-	node := map[string]any{"server": "2001:db8::1", "port": 1080}
-	proxy := ipv6RuntimeProxy{Type: "Socks5"}
-	if !ipv6ConnectionTransport(context.Background(), &Config{}, match, node, proxy) {
-		t.Fatal("matching runtime remote and owned IPv6 socket not correlated")
-	}
-	match.RemoteDestination = "2001:db8::2"
-	if ipv6ConnectionTransport(context.Background(), &Config{}, match, node, proxy) {
-		t.Fatal("unrelated IPv6 socket passed client transport")
-	}
-	match.RemoteDestination = "2001:db8::1"
-	proxy.DialerProxy = "other"
-	if ipv6ConnectionTransport(context.Background(), &Config{}, match, node, proxy) {
-		t.Fatal("chained proxy wrongly inferred as physical IPv6")
-	}
-	ip, port, err := ipv6ProcAddress("B80D0120000000000000000001000000:0438")
-	if err != nil || !ip.Equal(net.ParseIP("2001:db8::1")) || port != 1080 {
-		t.Fatalf("invalid proc decode %s %d %v", ip, port, err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			match := ipv6ConnectionMatch{RemoteDestination: test.remote, DestinationIP: "2001:db8::99", Network: "tcp"}
+			if got := ipv6ConnectionTransport(match, test.proxy); got != test.want {
+				t.Fatalf("transport = %s, want %s", got, test.want)
+			}
+		})
 	}
 }
 
@@ -254,11 +227,14 @@ func TestIPv6ConnectionsOnlyAssociatesNewClientConnections(t *testing.T) {
 			count++
 			connections := []any{map[string]any{"id": "old", "metadata": map[string]any{"sourceIP": "192.0.2.5", "host": "fixture.test"}, "chains": []string{"node"}}}
 			if count > 1 {
-				connections = append(connections, map[string]any{"id": "new", "metadata": map[string]any{"sourceIP": "192.0.2.5", "sourcePort": "32000", "host": "fixture.test", "destinationIP": "198.18.0.2", "destinationPort": "80"}, "chains": []string{"node", "select"}, "rule": "Match"})
+				connections = append(connections, map[string]any{"id": "new", "metadata": map[string]any{"sourceIP": "192.0.2.5", "sourcePort": "32000", "host": "fixture.test", "destinationIP": "198.18.0.2", "destinationPort": "80", "remoteDestination": "2001:db8::7"}, "chains": []string{"sub-node", "select"}, "rule": "Match"})
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"connections": connections})
 		case "/proxies":
-			fmt.Fprint(w, `{"proxies":{"node":{"type":"Socks5"},"select":{"type":"Selector","all":["node"]}}}`)
+			// Provider nodes are absent here, as in a real core.
+			fmt.Fprint(w, `{"proxies":{"PASS-RULE":{"name":"PASS-RULE","type":"PassRule"},"select":{"type":"Selector","all":["sub-node"]}}}`)
+		case "/providers/proxies":
+			fmt.Fprint(w, `{"providers":{"sub":{"proxies":[{"name":"sub-node","type":"AnyTLS","smux":false}]}}}`)
 		default:
 			w.WriteHeader(404)
 		}
@@ -266,30 +242,16 @@ func TestIPv6ConnectionsOnlyAssociatesNewClientConnections(t *testing.T) {
 	defer server.Close()
 	cfg := ipv6VerificationTestConfig(t, strings.TrimPrefix(server.URL, "http://"))
 	code, result := ipv6RunVerification(t, cfg, "verify-connections", map[string]any{"source_ip": "192.0.2.5", "host": "fixture.test", "request_id": "test-request-123456"})
-	if code != 200 || ipv6CheckStatus(t, result, "client_mihomo_path") != "ok" {
-		t.Fatalf("new connection not found %v", result)
+	if code != 200 || ipv6CheckStatus(t, result, "client_mihomo_path") != "ok" || ipv6CheckStatus(t, result, "client_ipv6_transport") != "ok" {
+		t.Fatalf("provider node over IPv6 not recognised %v", result)
 	}
 	matches := result["matches"].([]any)
 	if len(matches) != 1 || matches[0].(map[string]any)["id"] != "new" {
 		t.Fatal("old connection used as evidence")
 	}
-}
-
-func TestIPv6FreshHTTPResultRejectsStaleOrConcurrentHistory(t *testing.T) {
-	started := time.Now()
-	for _, times := range [][]time.Time{{started.Add(-time.Second)}, {started, started.Add(time.Millisecond)}} {
-		raw, _ := json.Marshal(map[string]any{"extra": map[string]any{"https://test/": map[string]any{"alive": true, "history": func() []any {
-			out := []any{}
-			for _, when := range times {
-				out = append(out, map[string]any{"time": when, "delay": 3})
-			}
-			return out
-		}()}}})
-		var proxy ipv6RuntimeProxy
-		_ = json.Unmarshal(raw, &proxy)
-		if ipv6FreshHTTPResult(proxy, "https://test/", started) {
-			t.Fatal("ambiguous HTTP history accepted")
-		}
+	match := matches[0].(map[string]any)
+	if match["proxy_name"] != "sub-node" || match["transport"] != "ipv6" || match["ipv6_transport_verified"] != true {
+		t.Fatalf("unexpected match %v", match)
 	}
 }
 

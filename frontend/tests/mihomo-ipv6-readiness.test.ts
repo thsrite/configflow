@@ -57,8 +57,17 @@ describe('Mihomo per-device IPv6 workflow', () => {
     expect(agentApi.prepareIPv6).not.toHaveBeenCalled()
     expect(agentApi.verifyIPv6).not.toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('主路由 · IPv6 Fake-IP 路由')
-    expect(wrapper.findAll('[data-ipv6-check-group]')).toHaveLength(3)
+    expect(wrapper.findAll('[data-ipv6-check-group]')).toHaveLength(2)
     expect(wrapper.text()).toContain('待验证的项目会提示下一步操作')
+  })
+
+  it('offers 「补齐缺少的配置」 only when the host misses a setting it writes', async () => {
+    vi.mocked(agentApi.ipv6Readiness).mockResolvedValue(response(report({ checks: [
+      { id: 'host_forwarding_ra', label: '网关信息', status: 'ok', message: '通过 RA 自动获得默认路由。' },
+      { id: 'host_persistence', label: '重启恢复配置', status: 'ok', message: '已保存。' }] })))
+    const wrapper = await mount()
+    expect(button(wrapper, '补齐缺少的配置')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('补齐仅处理')
   })
 
   it('sends the inspected interface and plan token only after rechecking the same binding', async () => {
@@ -180,9 +189,10 @@ describe('Mihomo per-device IPv6 workflow', () => {
     await flushPromises()
     expect(agentApi.verifyIPv6).toHaveBeenCalledExactlyOnceWith('gw', { profile_id: 'bound', expected_config_revision: 7 })
     expect(agentApi.prepareIPv6).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('未配置')
+    // No test client: only 「IPv6 网络」 is shown, and the older node test is ignored.
+    expect(wrapper.text()).not.toMatch(/未配置|节点/)
     expect(wrapper.text()).not.toContain('主路由 · IPv6 Fake-IP 路由')
-    expect(wrapper.findAll('[data-ipv6-check-group]')).toHaveLength(3)
+    expect(wrapper.findAll('[data-ipv6-check-group]')).toHaveLength(1)
     expect(button(wrapper, '补齐缺少的配置')).toBeDefined()
   })
 

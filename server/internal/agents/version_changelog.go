@@ -4,10 +4,11 @@
 package agents
 
 // LatestAgentVersion is LATEST_AGENT_VERSION.
-const LatestAgentVersion = "1.9.4-go"
+const LatestAgentVersion = "1.9.5-go"
 
 // versionChangelog is VERSION_CHANGELOG in its declaration order (newest first).
 var versionChangelog = []ChangelogEntry{
+	{Version: "1.9.5-go", Date: "2026-11-28", Features: []string{"IPv6 验收不再由 Agent 自选一个节点测速：之前会误选 PASS-RULE 等内置出站并报「通过节点访问检测网站失败」；节点是否用 IPv6 改为只看检测客户端实际经过的节点", "客户端分流验收能识别订阅（proxy-providers）里的节点，并按 Mihomo 记录的实际节点远端判断这次连接用的是 IPv6 还是 IPv4；支持 AnyTLS、Shadowsocks、VMess、VLESS、Trojan、TUIC 等节点，开启 smux、使用 dialer-proxy 或远端为域名时显示无法确认"}},
 	{Version: "1.9.4-go", Date: "2026-11-26", Features: []string{"修复 Shell 安装选择自定义生命周期（service_manager=command）后 Agent 因旧版服务迁移而启动即退出；重复安装和脚本升级同样可用", "核心服务配置检查按服务类型和管理方式显示结果，仅在 OxiDNS/systemd 实际校验工作目录时报告校验完成"}},
 	{Version: "1.9.3-go", Date: "2026-11-23", Features: []string{"Docker Agent 镜像不再包含 Python：进程管理由 Supervisor 换成 s6-overlay，容器启动准备、精简 Compose 与 HA 辅助容器检查改由 Agent 程序（configflow-agent docker-config、ha-compact、ha-compose、ha-companion-check）完成", "Docker 镜像中核心的标准输出与错误输出合并写入 /var/log/configflow/<核心>/current（10MB×3 轮转），日志页不再单独显示「错误输出」", "已部署的旧 Compose 安装升级镜像后照常启动；旧面板脚本用到的 supervisorctl、python3 由过渡用兼容脚本转调 Agent 子命令"}},
 	{Version: "1.9.2-go", Date: "2026-11-22", Features: []string{"Docker DNS 高可用的首次登记、重复执行核对、53 端口检查、旧容器迁移检查与只读检查改由 Agent 程序（configflow-agent ha-*）完成，不再在镜像里运行 Python 脚本", "新生成的 Docker 高可用 Compose 安装包不再包含 bootstrap.py，主容器以 configflow-agent ha-bootstrap 启动；已用旧安装包部署的实例升级镜像后照常启动"}},

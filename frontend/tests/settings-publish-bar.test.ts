@@ -113,7 +113,8 @@ describe('settings save and publish', () => {
     const id = vi.mocked(agentApi.pushConfig).mock.lastCall![1]
     expect(wrapper.find('[data-ipv6-verifier]').exists()).toBe(true)
     expect(agentApi.verifyIPv6).toHaveBeenCalledExactlyOnceWith('one', { profile_id: 'office', expected_config_revision: 7, deployment_id: id })
-    expect(wrapper.text()).toContain('IPv6 节点连接')
+    expect(wrapper.text()).toContain('IPv6 网络')
+    expect(wrapper.text()).not.toContain('IPv6 节点连接')
   })
 
   it('shows no IPv6 verification, button or device-check hint after publishing with IPv6 off', async () => {
@@ -122,7 +123,7 @@ describe('settings save and publish', () => {
     expect(wrapper.find('[data-ipv6-verifier]').exists()).toBe(false)
     expect(agentApi.verifyIPv6).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('发布成功')
-    expect(wrapper.text()).not.toMatch(/IPv6 网络|IPv6 节点连接|客户端分流|验证连接与分流|检查设备|验收/)
+    expect(wrapper.text()).not.toMatch(/IPv6 网络|客户端分流|验证连接与分流|检查设备|验收/)
     // A later draft (for example switching back to an IPv6 mode) changes nothing about this publication.
     await button(wrapper, '保存草稿').trigger('click')
     await flushPromises()

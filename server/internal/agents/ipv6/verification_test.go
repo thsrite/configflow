@@ -60,6 +60,10 @@ func TestManualVerificationSeparateStateAndStaleness(t *testing.T) {
 	if text(report["status"]) != "warning" || text(report["scope"]) != "mihomo_runtime" || !strings.Contains(string(report["checks"]), "runtime_expected_config") || !strings.Contains(string(report["checks"]), "client_not_configured") {
 		t.Fatal(string(jsonresp.Value(report)))
 	}
+	// An Agent before 1.9.5-go still reports its own node test; it is dropped.
+	if checks := string(report["checks"]); strings.Contains(checks, "runtime_proxy_http") || strings.Contains(checks, "runtime_node_ipv6_transport") || strings.Contains(checks, "runtime_evidence") {
+		t.Fatal("node test shown or required:", checks)
+	}
 	_, after, e := s.snapshot(ctx, "default")
 	if e != nil || after != revision {
 		t.Fatal("verification changed draft revision", after, e)

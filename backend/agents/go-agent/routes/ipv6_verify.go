@@ -1,7 +1,8 @@
 package routes
 
-// Verification deliberately separates a running core, DNS answers, proxy HTTP
-// success and an observed IPv6 socket. None of these alone proves a LAN path.
+// Verification reads the running core and its DNS answers. Whether traffic
+// reaches a node over IPv6 is judged only from a client's real connection
+// (verify-connections); a node delay test here would not show that path.
 import (
 	"context"
 	"encoding/json"
@@ -34,7 +35,6 @@ type ipv6VerifyReport struct {
 	Scope      string            `json:"scope"`
 	CheckedAt  string            `json:"checked_at"`
 	Checks     []ipv6VerifyCheck `json:"checks"`
-	NodeName   string            `json:"node_name,omitempty"`
 	TargetHost string            `json:"target_host,omitempty"`
 }
 
@@ -138,13 +138,7 @@ type ipv6RuntimeProxy struct {
 	ID          string   `json:"id"`
 	DialerProxy string   `json:"dialer-proxy"`
 	All         []string `json:"all"`
-	Extra       map[string]struct {
-		Alive   bool `json:"alive"`
-		History []struct {
-			Time  time.Time `json:"time"`
-			Delay int       `json:"delay"`
-		} `json:"history"`
-	} `json:"extra"`
+	Smux        bool     `json:"smux"`
 }
 
 func ipv6ActualProxy(p ipv6RuntimeProxy) bool {
@@ -152,64 +146,22 @@ func ipv6ActualProxy(p ipv6RuntimeProxy) bool {
 		return false
 	}
 	switch strings.ToLower(p.Type) {
-	case "direct", "reject", "rejectdrop", "reject-drop", "pass", "compatible", "selector", "urltest", "url-test", "fallback", "loadbalance", "load-balance", "relay":
+	case "direct", "reject", "rejectdrop", "reject-drop", "pass", "passrule", "dns", "compatible", "selector", "urltest", "url-test", "fallback", "loadbalance", "load-balance", "relay":
 		return false
 	}
 	return true
 }
 
-func ipv6SelectVerifyNode(doc map[string]any, proxies map[string]ipv6RuntimeProxy, requested string) (string, map[string]any) {
-	definitions := map[string]map[string]any{}
-	items, _ := doc["proxies"].([]any)
-	for _, item := range items {
-		if node, ok := item.(map[string]any); ok {
-			if name, ok := node["name"].(string); ok {
-				definitions[name] = node
-			}
-		}
-	}
-	if requested != "" {
-		if p, ok := proxies[requested]; ok && ipv6ActualProxy(p) {
-			return requested, definitions[requested]
-		}
-		return "", nil
-	}
-	names := make([]string, 0, len(proxies))
-	for name, p := range proxies {
-		if name != "" && len(name) <= 256 && !strings.ContainsAny(name, "\r\n\x00") && ipv6ActualProxy(p) {
-			names = append(names, name)
-		}
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		server, _ := definitions[name]["server"].(string)
-		if ip := net.ParseIP(server); ip != nil && ip.To4() == nil {
-			return name, definitions[name]
-		}
-	}
-	for _, name := range names {
-		server, _ := definitions[name]["server"].(string)
-		if server != "" && net.ParseIP(server) == nil {
-			return name, definitions[name]
-		}
-	}
-	if len(names) > 0 {
-		return names[0], definitions[names[0]]
-	}
-	return "", nil
-}
-
 func ipv6VerifyHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		TestURL              string `json:"test_url"`
-		NodeName             string `json:"node_name"`
 		ExpectedConfigSHA256 string `json:"expected_config_sha256"`
 	}
 	if err := decodeIPv6Request(w, r, &request); err != nil {
 		JsonResponse(w, 400, MessageResponse{Success: false, Message: "验收请求无效"})
 		return
 	}
-	if !ipv6VerifySupported(cfg) || cfg.ServiceType != "mihomo" || len(request.NodeName) > 256 || strings.ContainsAny(request.NodeName, "\r\n\x00") || (request.ExpectedConfigSHA256 != "" && !ipv6VerifySHA.MatchString(request.ExpectedConfigSHA256)) {
+	if !ipv6VerifySupported(cfg) || cfg.ServiceType != "mihomo" || (request.ExpectedConfigSHA256 != "" && !ipv6VerifySHA.MatchString(request.ExpectedConfigSHA256)) {
 		JsonResponse(w, 400, MessageResponse{Success: false, Message: "需要 Linux Mihomo Agent 和有效验收参数"})
 		return
 	}
@@ -287,61 +239,9 @@ func ipv6VerifyHandler(cfg *Config, w http.ResponseWriter, r *http.Request) {
 		report.add("runtime_tun", "运行中的 TUN", "ok", "已核对当前核心的 TUN 开关", "mihomo_api", "开关一致不等于客户端已经经过 TUN。")
 	}
 	ipv6VerifyDNS(ctx, &report, doc, target.Hostname())
-	var live struct {
-		Proxies map[string]ipv6RuntimeProxy `json:"proxies"`
-	}
-	if ipv6VerifyAPIStep(ctx, controller, "/proxies", &live) != nil {
-		report.add("proxy_http", "代理访问网站", "unknown", "无法读取当前核心的实际节点，未执行代理访问", "mihomo_proxy_http")
-		finish()
-		return
-	}
-	name, node := ipv6SelectVerifyNode(doc, live.Proxies, request.NodeName)
-	report.NodeName = name
-	if name == "" {
-		report.add("proxy_http", "代理访问网站", "unknown", "当前核心没有可明确选择的实际代理节点", "mihomo_proxy_http")
-		finish()
-		return
-	}
-	before := live.Proxies[name]
-	started := time.Now()
-	stopObserve := ipv6ObserveNodeSockets(ctx, cfg, node, before.DialerProxy)
-	query := url.Values{"url": {request.TestURL}, "timeout": {"8000"}, "expected": {"200-299"}}
-	step, stepCancel := context.WithTimeout(ctx, 10*time.Second)
-	var delay struct {
-		Delay int `json:"delay"`
-	}
-	err = ipv6VerifyAPI(step, controller, "/proxies/"+url.PathEscape(name)+"/delay?"+query.Encode(), &delay)
-	stepCancel()
-	socketCheck := stopObserve()
-	var after ipv6RuntimeProxy
-	if err != nil || delay.Delay <= 0 {
-		report.add("proxy_http", "代理访问网站", "error", "没有通过这个节点成功访问测试网站", "mihomo_proxy_http", "端口能够连接，不代表代理协议和网站访问都正常。")
-	} else if ipv6VerifyAPIStep(ctx, controller, "/proxies/"+url.PathEscape(name), &after) != nil || (before.ID != "" && after.ID != before.ID) {
-		report.add("proxy_http", "代理访问网站", "unknown", "收到测速结果，但无法确认同一运行节点的本次 HTTP 结果", "mihomo_proxy_http")
-	} else if ipv6FreshHTTPResult(after, request.TestURL, started) {
-		report.add("proxy_http", "代理访问网站", "ok", "实际节点已通过代理访问测试网站并取得成功 HTTP 响应", "mihomo_proxy_http", "只验证所选节点和这次目标，不代表其他节点或客户端分流。")
-	} else {
-		report.add("proxy_http", "代理访问网站", "unknown", "已收到延迟值，但未取得本次成功 HTTP 状态的证据", "mihomo_proxy_http", "延迟值本身不能证明网站返回成功状态，也不能证明使用 IPv6。")
-	}
-	report.Checks = append(report.Checks, socketCheck)
 	report.add("client_path", "客户端完整路径", "unknown", "本机验收不包含客户端经过 ROS、DNS 和 Mihomo 的完整路径", "client_path")
 	if currentFile, e := os.ReadFile(cfg.ConfigPath); e != nil || sha256Hex(currentFile) != sha256Hex(file) {
 		report.add("config_stability", "验收期间配置", "warning", "验收过程中配置发生变化，请重新验收", "deployed_file")
 	}
 	finish()
-}
-
-func ipv6FreshHTTPResult(proxy ipv6RuntimeProxy, target string, started time.Time) bool {
-	state, exists := proxy.Extra[target]
-	if !exists || !state.Alive || len(state.History) == 0 {
-		return false
-	}
-	newRecords := 0
-	for _, item := range state.History {
-		if !item.Time.Before(started) {
-			newRecords++
-		}
-	}
-	last := state.History[len(state.History)-1]
-	return newRecords == 1 && !last.Time.Before(started) && last.Delay > 0
 }

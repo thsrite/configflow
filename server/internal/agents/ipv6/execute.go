@@ -58,7 +58,9 @@ func runtimeChecks(runtime Document, hash, publication string) []Check {
 	out := []Check{}
 	present := map[string]bool{}
 	for _, c := range safeChecks(runtime, "runtime_") {
-		if c.ID == "runtime_client_path" {
+		// Agents before 1.9.5-go also test one node directly; that result is not
+		// shown any more, since the client check observes the node actually used.
+		if c.ID == "runtime_client_path" || c.ID == "runtime_proxy_http" || c.ID == "runtime_node_ipv6_transport" {
 			continue
 		}
 		out = append(out, c)
@@ -72,7 +74,7 @@ func runtimeChecks(runtime Document, hash, publication string) []Check {
 		out = append(out, check("runtime_expected_config", msgRuntimeVersion, "unknown", message))
 	}
 	missing := []string{}
-	for _, key := range []string{"deployed_config", "dns_a", "dns_aaaa", "node_ipv6_transport", "proxy_http", "runtime_core", "runtime_ipv6", "runtime_tun"} {
+	for _, key := range []string{"deployed_config", "dns_a", "dns_aaaa", "runtime_core", "runtime_ipv6", "runtime_tun"} {
 		if !present[key] {
 			missing = append(missing, key)
 		}

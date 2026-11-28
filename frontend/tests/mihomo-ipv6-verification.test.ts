@@ -17,14 +17,14 @@ const report = (extra: Partial<IPv6Verification> = {}): IPv6Verification => ({
 afterEach(() => { document.body.innerHTML = '' })
 
 describe('IPv6 verification result', () => {
-  it.each([false, true])('shows three direct results without raw rule details or another summary layer (compact=%s)', compact => {
+  it.each([false, true])('shows the two direct results without raw rule details or another summary layer (compact=%s)', compact => {
     const wrapper = mount(MihomoIPv6VerificationResult, { attachTo: document.body, props: { compact, verification: report({
       status: 'warning', checks: [...report().checks,
         { id: 'router_ros_firewall', label: '防火墙路径检查', status: 'unknown', message: '静态规则未确认', details: ['raw/prerouting 未命中终止规则', 'protocol=tcp；dst-port=1080'] },
       ],
     }) } })
-    expect(wrapper.findAll('[data-ipv6-check-group]').map(row => row.attributes('data-ipv6-check-group'))).toEqual(['ipv6-network', 'node', 'client'])
-    expect(wrapper.findAll('[data-agent-status-row]')).toHaveLength(3)
+    expect(wrapper.findAll('[data-ipv6-check-group]').map(row => row.attributes('data-ipv6-check-group'))).toEqual(['ipv6-network', 'client'])
+    expect(wrapper.findAll('[data-agent-status-row]')).toHaveLength(2)
     expect(wrapper.findAll('[data-status-details], [data-ipv6-check-id], button')).toHaveLength(0)
     expect(wrapper.text()).not.toMatch(/raw\/prerouting|protocol=tcp|防火墙路径检查|主机自检|客户端全链路验收|展开查看/)
     expect(wrapper.findAll('[data-agent-status-row]').every(row => row.attributes('data-tone') === 'success')).toBe(true)
@@ -35,20 +35,17 @@ describe('IPv6 verification result', () => {
   it('leaves empty results unverified and tells the user how to verify', () => {
     const wrapper = mount(MihomoIPv6VerificationResult, { props: { verification: report({ checks: [] }) } })
     expect(wrapper.findAll('[data-agent-status-row]').some(row => row.attributes('data-tone') === 'success')).toBe(false)
-    expect(wrapper.get('[data-ipv6-check-group="node"]').text()).toContain('验证连接与分流')
+    expect(wrapper.get('[data-ipv6-check-group="client"]').text()).toContain('验证连接与分流')
     wrapper.unmount()
   })
 
-  it('guides an unconfigured client to verification settings without inventing a pass', () => {
+  it('leaves out the client result without a test client and ignores an older node test', () => {
     const wrapper = mount(MihomoIPv6VerificationResult, { props: { verification: report({ scope: 'mihomo_runtime', checks: [
       ...report().checks.filter(check => !check.id.startsWith('client_')),
       { id: 'client_not_configured', label: '客户端全链路', status: 'unknown', message: '尚未配置独立检测客户端。' },
     ] }) } })
-    const client = wrapper.get('[data-ipv6-check-group="client"]')
-    expect(client.get('[data-agent-status-row]').attributes('data-tone')).toBe('neutral')
-    expect(client.text()).toContain('验收设置')
-    expect(client.text()).toContain('验证连接与分流')
-    expect(wrapper.get('[data-ipv6-check-group="node"] [data-agent-status-row]').attributes('data-tone')).toBe('success')
+    expect(wrapper.findAll('[data-ipv6-check-group]').map(row => row.attributes('data-ipv6-check-group'))).toEqual(['ipv6-network'])
+    expect(wrapper.text()).not.toMatch(/节点|未配置检测客户端/)
     wrapper.unmount()
   })
 
