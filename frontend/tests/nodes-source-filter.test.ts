@@ -41,6 +41,7 @@ afterAll(() => {
 })
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.stubGlobal('scrollTo', vi.fn())
   localStorage.clear()
   vi.mocked(nodeApi.getAll).mockResolvedValue({ data: storedNodes.map(node => ({ ...node })) } as any)
   vi.mocked(nodeApi.latency).mockResolvedValue({ data: { results: {} } } as any)
@@ -244,7 +245,7 @@ describe.each(['card', 'list'] as const)('%s 来源筛选', view => {
   })
 })
 
-it.each(['card', 'list'] as const)('%s 首屏只创建附近节点，后续批次保序并沿用全选', async view => {
+it.each(['card', 'list'] as const)('%s 首屏只创建附近节点，滚动到末尾仍保序并沿用全选', async view => {
   const records = Array.from({ length: 80 }, (_, i) => ({
     id: `node-${i}`, name: `节点 ${i}`, enabled: true, type: 'ss', server: 'example.com', port: 443
   }))
@@ -260,15 +261,11 @@ it.each(['card', 'list'] as const)('%s 首屏只创建附近节点，后续批�
   expect(names().length).toBeGreaterThan(initialCount)
   await click('全选')
   expect(wrapper!.text()).toContain('删除 80 项')
-  // jsdom 没有布局，模拟滚动到末页时容器和最后一个已渲染元素的位置。
-  const container = wrapper!.get('[data-name]').element.parentElement!
-  const top = -80 * 61
-  vi.spyOn(container, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, top, 500, 80 * 61))
-  const last = wrapper!.findAll('[data-name]').at(-1)!.element
-  vi.spyOn(last, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, top + (names().length - 1) * 61, 500, 61))
+  vi.stubGlobal('scrollY', records.length * 61 - window.innerHeight)
   window.dispatchEvent(new Event('scroll'))
   await flushPromises()
-  expect(names()).toEqual(records.map(node => node.name))
+  expect(names().length).toBeLessThan(records.length)
+  expect(names()).toEqual(records.slice(-names().length).map(node => node.name))
   expect(wrapper!.get('[aria-label="选择 节点 79"]').attributes('aria-checked')).toBe('true')
 })
 
@@ -282,11 +279,20 @@ it('表格中的订阅预览节点保持只读，不能编辑、删除或选中'
   expect(row.text()).toContain('测试订阅')
 })
 
-it('离屏跳过渲染覆盖全部节点磁贴，包括不能排序的订阅节点', async () => {
+it('订阅预览磁贴也随窗口回收，进入排序时完整保留可拖动磁贴', async () => {
+  const previews = Array.from({ length: 40 }, (_, i) => ({ ...previewNodes[1], name: `订阅预览 ${i}` }))
+  vi.mocked(api.post).mockResolvedValue({ data: { nodes: previews, imported_node_ids: ['imported'] } } as any)
+  vi.stubGlobal('innerHeight', 3 * 61)
   await render('card')
-  const tiles = wrapper!.findAll('[data-tile]')
-  expect(tiles.map(tile => tile.attributes('data-name'))).toContain('日本 订阅预览')
-  expect(tiles.every(tile => tile.classes('cf-cv-row'))).toBe(true)
+  expect(names()).not.toContain('订阅预览 39')
+  vi.stubGlobal('scrollY', (storedNodes.length + previews.length) * 61 - window.innerHeight)
+  window.dispatchEvent(new Event('scroll'))
+  await flushPromises()
+  expect(names()).not.toContain('香港 手动')
+  expect(wrapper!.get('[data-name="订阅预览 39"]').find('[role="checkbox"]').exists()).toBe(false)
+  await click('调整顺序')
+  expect(names()).toEqual(storedNodes.map(node => node.name))
+  expect(wrapper!.findAll('[data-tile]').every(tile => tile.classes('cf-cv-row'))).toBe(true)
 })
 
 it('保存测速设置后刷新显示的测速历史', async () => {
